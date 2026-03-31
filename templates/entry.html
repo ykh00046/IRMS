@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · Entry</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/access.css" />
+  </head>
+  <body>
+    <main class="access-shell">
+      <section class="access-stage">
+        <div class="access-hero">
+          <p class="eyebrow">IRMS Entry Gate</p>
+          <h1>ROUTE BY WORKFLOW</h1>
+          <p class="access-subtitle">
+            현장 계량과 관리 업무를 분리해 진입합니다. 계량은 작업자 선택 후 바로 시작하고,
+            관리 영역은 매니저 비밀번호 확인 후 진입합니다.
+          </p>
+        </div>
+
+        {% if current_user %}
+        <div class="session-card access-session">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+        {% endif %}
+
+        <div class="access-grid">
+          <article class="access-card access-card-work">
+            <span class="access-chip">Factory Floor</span>
+            <h2>계량 진입</h2>
+            <p>작업자 목록에서 선택한 뒤 계량 대시보드로 들어갑니다.</p>
+            <a href="/weighing/select" class="btn accent access-link">작업자 선택</a>
+          </article>
+
+          <article class="access-card access-card-mgmt">
+            <span class="access-chip">Control Room</span>
+            <h2>매니징 진입</h2>
+            <p>매니저를 선택하고 비밀번호를 입력한 뒤 관리 화면과 인사이트로 들어갑니다.</p>
+            <a href="/management/login" class="btn access-link">매니저 로그인</a>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+  </body>
+</html>

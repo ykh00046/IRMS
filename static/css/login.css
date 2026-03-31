@@ -1,0 +1,91 @@
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.login-panel {
+  width: min(920px, 100%);
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background:
+    linear-gradient(145deg, rgba(18, 20, 22, 0.98), rgba(10, 11, 12, 0.94));
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.login-copy,
+.login-form {
+  background: rgba(18, 20, 22, 0.88);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 2rem;
+}
+
+.login-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.login-copy h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  max-width: 34ch;
+}
+
+.login-note {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--text-primary);
+}
+
+.login-note code {
+  font-family: var(--font-mono);
+  color: #bfdbfe;
+  background: rgba(15, 23, 42, 0.32);
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.85rem;
+  align-content: center;
+}
+
+.login-submit {
+  margin-top: 0.5rem;
+  min-height: 46px;
+}
+
+.login-error {
+  color: #fca5a5;
+  font-size: 0.85rem;
+  min-height: 1.2rem;
+}
+
+@media (max-width: 860px) {
+  .login-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .login-copy,
+  .login-form {
+    padding: 1.5rem;
+  }
+}

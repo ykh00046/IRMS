@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · Weighing Select</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/access.css" />
+  </head>
+  <body>
+    <main class="access-shell">
+      <section class="access-stage">
+        <div class="access-hero">
+          <p class="eyebrow">Weighing Flow</p>
+          <h1>SELECT OPERATOR</h1>
+          <p class="access-subtitle">
+            작업자를 선택하면 계량 세션이 시작됩니다. 이 화면은 공용 현장 단말 기준으로 설계되어 있습니다.
+          </p>
+        </div>
+
+        <input id="next-url" type="hidden" value="{{ next_url }}" />
+
+        <div class="selection-grid">
+          {% for operator in operators %}
+          <button
+            type="button"
+            class="selection-card"
+            data-operator-select
+            data-user-id="{{ operator.id }}"
+          >
+            <span class="access-chip">{{ operator.role_label }}</span>
+            <strong>{{ operator.display_name }}</strong>
+            <span class="selection-meta">@{{ operator.username }}</span>
+          </button>
+          {% endfor %}
+        </div>
+
+        <div class="access-actions">
+          <a href="/" class="btn">처음으로</a>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/weighing_select.js"></script>
+  </body>
+</html>

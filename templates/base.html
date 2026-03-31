@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS Base Layout</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="brand-block">
+          <p class="eyebrow">Ink Recipe Operations</p>
+          <h1>IRMS SYSTEM</h1>
+        </div>
+
+        <nav class="top-nav" aria-label="Main Navigation">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/weighing" class="nav-link">Weighing</a>
+          <a href="/status" class="nav-link">Status</a>
+          <a href="/management" class="nav-link">Management</a>
+          <a href="/insight" class="nav-link">Insight</a>
+          {% if current_user.access_level == "admin" %}
+          <a href="/admin/users" class="nav-link">Users</a>
+          {% endif %}
+        </nav>
+
+        <div class="session-card">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="page-grid">
+        <section class="panel">
+          <h2 class="panel-title">Base Template</h2>
+          <p class="panel-subtitle">New Dark Industrial Layout Structure.</p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

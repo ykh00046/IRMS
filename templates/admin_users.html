@@ -1,0 +1,188 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · User Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/admin_users.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="brand-block">
+          <p class="eyebrow">Admin Control Plane</p>
+          <h1>USER MANAGEMENT</h1>
+        </div>
+
+        <nav class="top-nav" aria-label="Main Navigation">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/weighing" class="nav-link">Weighing</a>
+          <a href="/status" class="nav-link">Status</a>
+          <a href="/management" class="nav-link">Management</a>
+          <a href="/insight" class="nav-link">Insight</a>
+          <a href="/admin/users" class="nav-link active">Users</a>
+        </nav>
+
+        <div class="session-card">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="page-grid admin-users-grid">
+        <section class="panel admin-hero">
+          <div>
+            <span class="kicker">Identity Operations</span>
+            <h2 class="panel-title">작업자와 매니저 계정을 운영 데이터로 관리</h2>
+            <p class="panel-subtitle">
+              계량 진입용 작업자, 매니징 진입용 매니저, 시스템 관리자 계정을 한 화면에서 관리합니다.
+              마지막 admin 제거 금지와 자기 자신 admin 해제 금지 규칙이 서버에서 강제됩니다.
+            </p>
+            <p class="mode-note">권한 레벨: operator → manager → admin</p>
+          </div>
+          <input id="current-user-id" type="hidden" value="{{ current_user.id }}" />
+        </section>
+
+        <section class="summary-grid">
+          <article class="panel summary-card">
+            <span class="summary-label">Total Users</span>
+            <strong id="summary-total" class="summary-value">0</strong>
+          </article>
+          <article class="panel summary-card">
+            <span class="summary-label">Active Users</span>
+            <strong id="summary-active" class="summary-value">0</strong>
+          </article>
+          <article class="panel summary-card">
+            <span class="summary-label">Admins</span>
+            <strong id="summary-admins" class="summary-value">0</strong>
+          </article>
+          <article class="panel summary-card">
+            <span class="summary-label">Managers</span>
+            <strong id="summary-managers" class="summary-value">0</strong>
+          </article>
+          <article class="panel summary-card">
+            <span class="summary-label">Operators</span>
+            <strong id="summary-operators" class="summary-value">0</strong>
+          </article>
+        </section>
+
+        <section class="admin-secondary-grid">
+          <article class="panel">
+            <span class="kicker">Create Account</span>
+            <h3 class="panel-title">신규 사용자 등록</h3>
+            <form id="create-user-form" class="create-user-grid">
+              <div class="form-group">
+                <label class="filter-label" for="create-display-name">이름</label>
+                <input id="create-display-name" class="input" maxlength="50" placeholder="예: 작업자 4" />
+              </div>
+              <div class="form-group">
+                <label class="filter-label" for="create-username">아이디</label>
+                <input id="create-username" class="input mono" maxlength="50" placeholder="예: operator4" />
+              </div>
+              <div class="form-group">
+                <label class="filter-label" for="create-access-level">권한</label>
+                <select id="create-access-level" class="select">
+                  <option value="operator">Operator</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="filter-label" for="create-password">초기 비밀번호</label>
+                <input id="create-password" type="password" class="input mono" maxlength="100" placeholder="6자 이상" />
+              </div>
+              <div class="button-row create-actions">
+                <button id="create-user-submit" type="submit" class="btn accent">계정 생성</button>
+                <button id="create-user-reset" type="reset" class="btn">입력 초기화</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="panel audit-panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">Audit Stream</span>
+                <h3 class="panel-title">최근 감사 로그</h3>
+                <p class="panel-subtitle audit-subtitle">
+                  로그인, 작업자 선택, 레시피 상태 변경, 사용자 관리 이벤트를 최근 순서대로 보여줍니다.
+                </p>
+              </div>
+              <button id="audit-refresh" type="button" class="btn">새로고침</button>
+            </div>
+
+            <div class="audit-toolbar">
+              <div class="form-group audit-filter">
+                <label class="filter-label" for="audit-action-filter">이벤트 필터</label>
+                <select id="audit-action-filter" class="select">
+                  <option value="">전체</option>
+                  <option value="management_login">management_login</option>
+                  <option value="operator_select">operator_select</option>
+                  <option value="logout">logout</option>
+                  <option value="user_created">user_created</option>
+                  <option value="user_updated">user_updated</option>
+                  <option value="user_password_reset">user_password_reset</option>
+                  <option value="recipe_status_updated">recipe_status_updated</option>
+                  <option value="weighing_step_completed">weighing_step_completed</option>
+                  <option value="recipe_weighing_completed">recipe_weighing_completed</option>
+                  <option value="recipes_imported">recipes_imported</option>
+                </select>
+              </div>
+              <div class="form-group audit-filter audit-limit-group">
+                <label class="filter-label" for="audit-limit-filter">조회 개수</label>
+                <select id="audit-limit-filter" class="select">
+                  <option value="20">20</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="audit-log-list" class="audit-stream"></div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head-row">
+            <div>
+              <span class="kicker">Roster</span>
+              <h3 class="panel-title">사용자 목록</h3>
+            </div>
+            <button id="users-refresh" type="button" class="btn">새로고침</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>계정</th>
+                  <th>표시 이름</th>
+                  <th>권한</th>
+                  <th>상태</th>
+                  <th>생성 시각</th>
+                  <th>저장</th>
+                  <th>비밀번호 초기화</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/admin_users.js"></script>
+  </body>
+</html>

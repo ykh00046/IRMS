@@ -1,0 +1,173 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · Status</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/status.css" />
+  </head>
+  <body>
+    <div class="site-shell" data-current-username="{{ current_user.username }}">
+      <header class="site-header">
+        <div class="brand-block">
+          <p class="eyebrow">Live Progress Monitor</p>
+          <h1>PROCESS STATUS</h1>
+        </div>
+
+        <nav class="top-nav" aria-label="Main Navigation">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/weighing" class="nav-link">Weighing</a>
+          <a href="/status" class="nav-link active">Status</a>
+          <a href="/management" class="nav-link">Management</a>
+          <a href="/insight" class="nav-link">Insight</a>
+          {% if current_user.access_level == "admin" %}
+          <a href="/admin/users" class="nav-link">Users</a>
+          {% endif %}
+        </nav>
+
+        <div class="session-card">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="page-grid status-grid-shell">
+        <section class="panel status-hero">
+          <div>
+            <span class="kicker">Control Tower</span>
+            <h2 class="panel-title">어디서 어떤 배합이 진행 중인지 한 화면에서 확인</h2>
+            <p class="panel-subtitle">
+              위치별 진행 상태, 다음 배합 대상, 남은 원재료, 최근 계량 작업자를 자동 갱신으로 보여줍니다.
+            </p>
+          </div>
+          <div class="status-live-box">
+            <span class="status-live-dot"></span>
+            <span>Auto Refresh 10s</span>
+            <strong id="status-last-updated">-</strong>
+          </div>
+        </section>
+
+        <section class="status-summary-grid">
+          <article class="panel status-summary-card">
+            <span class="summary-label">Active Recipes</span>
+            <strong id="status-active-recipes" class="summary-value">0</strong>
+          </article>
+          <article class="panel status-summary-card">
+            <span class="summary-label">In Progress</span>
+            <strong id="status-in-progress" class="summary-value">0</strong>
+          </article>
+          <article class="panel status-summary-card">
+            <span class="summary-label">Pending</span>
+            <strong id="status-pending" class="summary-value">0</strong>
+          </article>
+          <article class="panel status-summary-card">
+            <span class="summary-label">Remaining Steps</span>
+            <strong id="status-remaining-steps" class="summary-value">0</strong>
+          </article>
+          <article class="panel status-summary-card">
+            <span class="summary-label">Open Positions</span>
+            <strong id="status-open-positions" class="summary-value">0</strong>
+          </article>
+        </section>
+
+        <section class="panel status-toolbar-panel">
+          <div class="status-toolbar">
+            <div class="form-group status-filter-group">
+              <label class="filter-label" for="status-filter">상태 필터</label>
+              <select id="status-filter" class="select">
+                <option value="active">활성 전체</option>
+                <option value="in_progress">진행중만</option>
+                <option value="pending">대기만</option>
+                <option value="completed">완료만</option>
+                <option value="canceled">취소만</option>
+                <option value="all">전체</option>
+              </select>
+            </div>
+            <div class="button-row status-toolbar-actions">
+              <button id="status-refresh" type="button" class="btn accent">새로고침</button>
+              <button id="status-reset" type="button" class="btn">필터 초기화</button>
+            </div>
+          </div>
+          <p id="status-filter-summary" class="filter-summary">활성 레시피 전체를 표시 중입니다.</p>
+        </section>
+
+        <section class="panel status-import-panel">
+          <div class="status-section-head">
+            <div>
+              <span class="kicker">Import Feed</span>
+              <h3 class="panel-title">최근 등록 레시피</h3>
+            </div>
+            <span class="status-section-note">최근 6건 기준</span>
+          </div>
+          <div class="status-import-feed" id="status-import-feed"></div>
+        </section>
+
+        <section class="status-workspace">
+          <section class="panel status-board-panel">
+            <div class="status-section-head">
+              <div>
+                <span class="kicker">Position Board</span>
+                <h3 class="panel-title">위치별 배합 진행 현황</h3>
+              </div>
+              <span class="status-section-note">Position lane 기준으로 자동 정렬</span>
+            </div>
+            <section class="status-board" id="status-board"></section>
+          </section>
+
+          <aside class="panel status-chat-panel">
+            <div class="status-section-head">
+              <div>
+                <span class="kicker">Collaboration Feed</span>
+                <h3 class="panel-title">현황 메시지</h3>
+              </div>
+              <span id="status-chat-room-meta" class="status-section-note">Room</span>
+            </div>
+
+            <div class="status-chat-tabs" id="status-chat-room-tabs"></div>
+
+            <div class="status-chat-stream" id="status-chat-messages"></div>
+
+            <form id="status-chat-form" class="status-chat-form">
+              <div id="status-chat-stage-group" class="form-group">
+                <label class="filter-label" for="status-chat-stage">단계</label>
+                <select id="status-chat-stage" class="select">
+                  <option value="registered">등록</option>
+                  <option value="in_progress">진행중</option>
+                  <option value="completed">완료</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="filter-label" for="status-chat-input">메시지</label>
+                <textarea
+                  id="status-chat-input"
+                  class="textarea status-chat-textarea"
+                  rows="4"
+                  maxlength="1000"
+                  placeholder="현재 대응 현황이나 요청 사항을 남기세요."
+                ></textarea>
+              </div>
+              <div class="button-row status-chat-actions">
+                <button id="status-chat-send" type="submit" class="btn accent">메시지 등록</button>
+              </div>
+            </form>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/status.js"></script>
+  </body>
+</html>

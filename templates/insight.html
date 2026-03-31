@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · Insight</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/insight.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="brand-block">
+          <p class="eyebrow">Consumption Intelligence</p>
+          <h1>DATA INSIGHT</h1>
+        </div>
+        
+        <nav class="top-nav" aria-label="Main Navigation">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/weighing" class="nav-link">Weighing</a>
+          <a href="/status" class="nav-link">Status</a>
+          <a href="/management" class="nav-link">Management</a>
+          <a href="/insight" class="nav-link active">Insight</a>
+          {% if current_user.access_level == "admin" %}
+          <a href="/admin/users" class="nav-link">Users</a>
+          {% endif %}
+        </nav>
+
+        <div class="session-card">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="page-grid">
+        <section class="panel">
+          <span class="kicker">Resource Dashboard</span>
+          <h2 class="panel-title">원재료 소비 메트릭</h2>
+          <p class="panel-subtitle">
+            스마트팩토리 수준의 정확도로 완료 레시피 데이터를 분석하여 중량 및 빈도를 산출합니다.
+          </p>
+        </section>
+
+        <section class="insight-filter-grid">
+          <div class="filter-group">
+            <label class="filter-label">From Date</label>
+            <input id="insight-from" type="date" class="input" />
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">To Date</label>
+            <input id="insight-to" type="date" class="input" />
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">Color Cluster</label>
+            <select id="insight-color" class="select">
+              <option value="">Total</option>
+              <option value="black">Black</option>
+              <option value="red">Red</option>
+              <option value="blue">Blue</option>
+              <option value="yellow">Yellow</option>
+              <option value="none">None/Additives</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">Material Category</label>
+            <select id="insight-category" class="select"></select>
+          </div>
+          
+          <div class="button-row" style="margin-left: auto;">
+            <button id="insight-range-week" type="button" class="btn">최근 7일</button>
+            <button id="insight-range-month" type="button" class="btn">최근 30일</button>
+            <button id="insight-query" class="btn accent">Query Data</button>
+            <button id="insight-export" class="btn">Export CSV</button>
+            <button id="insight-reset" type="button" class="btn">필터 초기화</button>
+          </div>
+        </section>
+        <section class="panel" style="padding-top: 1rem; padding-bottom: 1rem;">
+          <p id="insight-filter-summary" class="filter-summary">최근 7일 전체 소비 데이터를 표시 중입니다.</p>
+        </section>
+
+        <section class="metric-grid">
+          <article class="metric-card">
+            <span class="metric-label">Completed Tasks</span>
+            <strong id="metric-recipes" class="metric-value">0</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Total Ink Weight</span>
+            <strong id="metric-weight" class="metric-value">0.0<span style="font-size:1rem;color:var(--text-tertiary);">g</span></strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Additive Actions</span>
+            <strong id="metric-count" class="metric-value">0<span style="font-size:1rem;color:var(--text-tertiary);">ea</span></strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Active Materials</span>
+            <strong id="metric-materials" class="metric-value">0</strong>
+          </article>
+        </section>
+
+        <section class="data-grid">
+          <article class="panel">
+            <h3 class="panel-title">Weight Distribution (g)</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>원재료</th>
+                    <th>분류</th>
+                    <th>단위</th>
+                    <th>누적(Sum)</th>
+                    <th>사용 빈도</th>
+                  </tr>
+                </thead>
+                <tbody id="weight-body"></tbody>
+              </table>
+            </div>
+          </article>
+          
+          <article class="panel">
+            <h3 class="panel-title">Component Count (ea)</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>원재료</th>
+                    <th>분류</th>
+                    <th>단위</th>
+                    <th>누적(Sum)</th>
+                    <th>사용 빈도</th>
+                  </tr>
+                </thead>
+                <tbody id="count-body"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Top Material Usage Trajectory</h3>
+          <div id="bar-stack" class="bar-stack"></div>
+        </section>
+      </main>
+    </div>
+    
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/insight.js"></script>
+  </body>
+</html>

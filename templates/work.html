@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · Work Mode</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/work.css" />
+  </head>
+  <body>
+    <div class="site-shell" data-current-username="{{ current_user.username }}">
+      <header class="site-header">
+        <div class="brand-block">
+          <p class="eyebrow">Production Control</p>
+          <h1>WORKBOARD</h1>
+        </div>
+        
+        <nav class="top-nav" aria-label="Main Navigation">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/weighing" class="nav-link active">Weighing</a>
+          {% if current_user.access_level != "operator" %}
+          <a href="/status" class="nav-link">Status</a>
+          <a href="/management" class="nav-link">Management</a>
+          <a href="/insight" class="nav-link">Insight</a>
+          {% if current_user.access_level == "admin" %}
+          <a href="/admin/users" class="nav-link">Users</a>
+          {% endif %}
+          {% endif %}
+        </nav>
+
+        <div class="session-card">
+          <div class="session-info">
+            <span class="session-role">{{ current_user.role_label }}</span>
+            <span class="session-user">{{ current_user.display_name }}</span>
+            <span class="session-id">@{{ current_user.username }}</span>
+          </div>
+          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+        </div>
+      </header>
+
+      <main class="page-grid">
+        <section class="panel work-head">
+          <div>
+            <span class="kicker">Live Production Floor</span>
+            <h2 class="panel-title">현장 프로세스 (레시피)</h2>
+            <p class="panel-subtitle">
+              Color Focus로 주요 안료별로 분리하여 오염 리스크를 최소화합니다.
+            </p>
+            <p class="mode-note">단위 기준: 모든 레시피 g 고정 · 계량 입력: 수동(저울 연계 없음)</p>
+            <div class="button-row">
+              <button id="weighing-open-btn" class="btn accent">계량 모드 시작</button>
+              <button id="weighing-refresh-main-btn" class="btn">계량 큐 새로고침</button>
+            </div>
+          </div>
+          <div class="work-stats">
+            <span class="work-stats-label">Target Queue</span>
+            <strong id="work-count" class="work-count">0</strong>
+            <span id="work-status" class="work-status-text">대기 0 / 진행 0</span>
+          </div>
+        </section>
+
+        <section class="panel focus-group">
+          <h3 class="panel-title">Filter Control</h3>
+          <div class="focus-buttons">
+            <button class="focus-btn active" data-color="all">Total</button>
+            <button class="focus-btn" data-color="black">Black Focus</button>
+            <button class="focus-btn" data-color="red">Red Focus</button>
+            <button class="focus-btn" data-color="blue">Blue Focus</button>
+            <button class="focus-btn" data-color="yellow">Yellow Focus</button>
+          </div>
+          <div class="work-filter-grid">
+            <div class="filter-group">
+              <label class="filter-label">Search Recipe</label>
+              <input id="search-input" class="input" placeholder="Enter product or ink name" />
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">From Date</label>
+              <input id="from-input" type="date" class="input" />
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">To Date</label>
+              <input id="to-input" type="date" class="input" />
+            </div>
+          </div>
+          <div class="filter-bar">
+            <p id="work-filter-summary" class="filter-summary">전체 레시피를 표시 중입니다.</p>
+            <div class="button-row">
+              <button id="work-filter-reset" type="button" class="btn">필터 초기화</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Active Recipes</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr id="work-head"></tr>
+              </thead>
+              <tbody id="work-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">System Logs (Recent Completions)</h3>
+          <div id="work-log" class="work-log"></div>
+        </section>
+
+        <section class="panel work-chat-panel">
+          <div class="work-chat-head">
+            <div>
+              <span class="kicker">Shared Rooms</span>
+              <h3 class="panel-title">현황 메시지</h3>
+            </div>
+            <span id="work-chat-room-meta" class="work-chat-room-meta">Room</span>
+          </div>
+
+          <div class="work-chat-tabs" id="work-chat-room-tabs"></div>
+
+          <div class="work-chat-stream" id="work-chat-messages"></div>
+
+          <form id="work-chat-form" class="work-chat-form">
+            <div id="work-chat-stage-group" class="filter-group">
+              <label class="filter-label" for="work-chat-stage">단계</label>
+              <select id="work-chat-stage" class="select">
+                <option value="registered">등록</option>
+                <option value="in_progress">진행중</option>
+                <option value="completed">완료</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label" for="work-chat-input">메시지</label>
+              <textarea
+                id="work-chat-input"
+                class="textarea work-chat-textarea"
+                rows="4"
+                maxlength="1000"
+                placeholder="작업 현황이나 요청 사항을 남기세요."
+              ></textarea>
+            </div>
+            <div class="button-row work-chat-actions">
+              <button id="work-chat-send" type="submit" class="btn accent">메시지 등록</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <div id="weighing-mode" class="weighing-mode" aria-hidden="true">
+      <div class="weighing-scrim" data-close-weighing></div>
+      <section class="weighing-panel" role="dialog" aria-modal="true" aria-labelledby="weighing-title">
+        <header class="weighing-top">
+          <div>
+            <p class="kicker">Keyboard Weighing Flow</p>
+            <h3 id="weighing-title">계량 모드</h3>
+            <p class="weighing-subtitle">모든 목표값은 g 단위입니다. Enter/Space로 수동 완료 후 다음 계량으로 진행됩니다.</p>
+          </div>
+          <div class="weighing-controls">
+            <label class="filter-label" for="weighing-operator">작업자</label>
+            <input id="weighing-operator" class="input weighing-operator" value="{{ current_user.display_name }}" readonly />
+            <label class="filter-label" for="weighing-color-group">집중 그룹</label>
+            <select id="weighing-color-group" class="select weighing-group">
+              <option value="all">전체 순서 (Black → Red → Blue → Yellow → 기타)</option>
+              <option value="black">Black 집중</option>
+              <option value="red">Red 집중</option>
+              <option value="blue">Blue 집중</option>
+              <option value="yellow">Yellow 집중</option>
+              <option value="none">기타 집중</option>
+            </select>
+            <button id="weighing-close-btn" type="button" class="btn">종료 (Esc)</button>
+          </div>
+        </header>
+
+        <div class="weighing-progress-wrap">
+          <div class="weighing-progress-track">
+            <div id="weighing-progress-fill" class="weighing-progress-fill"></div>
+          </div>
+          <div id="weighing-progress-text" class="weighing-progress-text">0 / 0</div>
+        </div>
+
+        <div id="weighing-summary" class="weighing-summary"></div>
+
+        <article class="weighing-current">
+          <p id="weighing-state-badge" class="weighing-state-badge">READY</p>
+          <h4 id="weighing-material-name" class="weighing-material-name">대기중</h4>
+          <div id="weighing-target-value" class="weighing-target-value">-</div>
+          <div id="weighing-recipe-meta" class="weighing-recipe-meta">대기중</div>
+          <p id="weighing-action-hint" class="weighing-action-hint">
+            Enter 또는 Space를 눌러 시작하세요.
+          </p>
+        </article>
+
+        <article class="weighing-next">
+          <span class="weighing-next-label">다음 계량</span>
+          <strong id="weighing-next-value" class="weighing-next-value">-</strong>
+        </article>
+
+        <div class="button-row">
+          <button id="weighing-advance-btn" type="button" class="btn success">다음 계량 (Enter / Space)</button>
+          <button id="weighing-refresh-btn" type="button" class="btn">큐 새로고침</button>
+        </div>
+      </section>
+    </div>
+    
+    <div id="toast-root" class="toast-container"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/work.js"></script>
+  </body>
+</html>

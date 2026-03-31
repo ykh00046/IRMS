@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026-03-07T17:49:37.325Z",
+  "reason": "compaction",
+  "status": {
+    "version": "2.0",
+    "lastUpdated": "2026-03-08T00:10:00.000Z",
+    "activeFeatures": [
+      "irms-improvements"
+    ],
+    "primaryFeature": "irms-improvements",
+    "features": {
+      "irms-improvements": {
+        "phase": "check",
+        "matchRate": 97.6,
+        "updatedAt": "2026-03-08",
+        "documents": {
+          "plan": "docs/01-plan/features/irms-improvements.plan.md",
+          "design": "docs/02-design/features/irms-improvements.design.md",
+          "analysis": "docs/03-analysis/irms-improvements.analysis.md"
+        },
+        "status": {
+          "plan": {
+            "state": "completed",
+            "lastModified": "2026-03-07"
+          },
+          "design": {
+            "state": "completed",
+            "lastModified": "2026-03-07"
+          },
+          "do": {
+            "state": "completed",
+            "lastModified": "2026-03-08"
+          },
+          "analysis": {
+            "state": "completed",
+            "lastModified": "2026-03-08"
+          }
+        }
+      }
+    },
+    "pipeline": {
+      "currentPhase": "check",
+      "level": "Dynamic",
+      "phaseHistory": [
+        "plan",
+        "design",
+        "do"
+      ]
+    },
+    "session": {
+      "startedAt": "2026-03-07T15:00:00.000Z",
+      "onboardingCompleted": true,
+      "lastActivity": "2026-03-08T00:10:00.000Z"
+    },
+    "history": []
+  }
+}
