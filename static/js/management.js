@@ -7,8 +7,6 @@
   const clearBtn = document.getElementById("clear-btn");
 
   const previewMeta = document.getElementById("preview-meta");
-  const previewHead = document.getElementById("preview-head");
-  const previewBody = document.getElementById("preview-body");
   const errorList = document.getElementById("error-list");
   const warningList = document.getElementById("warning-list");
 
@@ -27,6 +25,18 @@
   const chatStage = document.getElementById("management-chat-stage");
   const chatInput = document.getElementById("management-chat-input");
   const chatSend = document.getElementById("management-chat-send");
+
+  // Tab navigation
+  const tabBtns = document.querySelectorAll(".mgmt-tab");
+  const tabPanels = document.querySelectorAll(".tab-panel");
+  tabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      tabBtns.forEach((b) => b.classList.remove("active"));
+      tabPanels.forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    });
+  });
 
   let currentPreview = null;
   let materials = [];
@@ -87,6 +97,7 @@
     registerBtn.disabled = !canRegister;
   }
 
+
   function persistHistoryFilters() {
     IRMS.savePreference(preferenceKeys.status, historyStatus.value);
     IRMS.savePreference(preferenceKeys.search, historySearch.value.trim());
@@ -140,8 +151,8 @@
     }
     previewIsStale = true;
     syncRegisterState();
-    renderPreview(currentPreview);
-    IRMS.notify("?쒗듃媛 ?섏젙?섏뼱 ?뺤젙蹂몄씠 臾댄슚?붾릺?덉뒿?덈떎. ?ㅼ떆 Validate ?섏꽭??", "warn");
+    renderValidationMeta(currentPreview);
+    IRMS.notify("시트가 수정되어 검증이 무효화되었습니다. 다시 Validate 하세요.", "warn");
   }
 
   function destroySpreadsheet() {
@@ -189,7 +200,7 @@
       suppressDirtyTracking = false;
       if (!spreadsheetFallbackNotified) {
         IRMS.notify(
-          "?ㅽ봽?덈뱶?쒗듃 UI 濡쒕뱶???ㅽ뙣?섏뿬 ?띿뒪???낅젰 紐⑤뱶濡??꾪솚?덉뒿?덈떎.",
+          "스프레드시트 UI 로드에 실패하여 텍스트 입력 모드로 전환했습니다.",
           "warn",
         );
         spreadsheetFallbackNotified = true;
@@ -199,15 +210,15 @@
 
     setRawInputMode(false);
 
-    // Create an empty 15x20 grid by default
-    const data = Array.from({ length: 15 }, () => Array(20).fill(""));
+    // Create an empty 15x10 grid by default
+    const data = Array.from({ length: 15 }, () => Array(10).fill(""));
 
     spreadsheetFactory(spreadsheetContainer, {
       worksheets: [
         {
           data,
-          minDimensions: [20, 15],
-          defaultColWidth: 100,
+          minDimensions: [10, 15],
+          defaultColWidth: 80,
           tableOverflow: true,
           tableWidth: "100%",
           tableHeight: "300px",
@@ -219,6 +230,9 @@
             markPreviewStale();
           },
           onafterchanges: () => {
+            markPreviewStale();
+          },
+          onpaste: () => {
             markPreviewStale();
           },
         },
@@ -275,188 +289,15 @@
     materials = await IRMS.getMaterials();
   }
 
-  function getSelectedChatRoom() {
-    return chatState.rooms.find((room) => room.key === chatState.selectedRoomKey) || null;
-  }
+  const chatModule = IRMS.createChat({
+    prefix: "chat",
+    stageLabels,
+    elements: { roomTabs, chatMessages, chatStageGroup, roomMeta },
+    state: chatState,
+  });
 
-  function persistSelectedChatRoom() {
-    window.localStorage.setItem("irms_chat_room", chatState.selectedRoomKey);
-  }
-
-  function renderChatRoomTabs() {
-    if (!roomTabs) {
-      return;
-    }
-
-    if (!chatState.rooms.length) {
-      roomTabs.innerHTML = '<div class="empty-state">No chat rooms available.</div>';
-      return;
-    }
-
-    roomTabs.innerHTML = chatState.rooms
-      .map((room) => {
-        const isActive = room.key === chatState.selectedRoomKey;
-        const countLabel =
-          room.messageCount > 0
-            ? `<span class="management-chat-tab-count">${IRMS.escapeHtml(IRMS.formatValue(room.messageCount))}</span>`
-            : "";
-        return `
-          <button
-            type="button"
-            class="management-chat-tab${isActive ? " active" : ""}"
-            data-room-key="${IRMS.escapeHtml(room.key)}"
-          >
-            <span>${IRMS.escapeHtml(room.name)}</span>
-            ${countLabel}
-          </button>
-        `;
-      })
-      .join("");
-  }
-
-  function syncChatStageVisibility() {
-    const room = getSelectedChatRoom();
-    const stageRequired = Boolean(room?.stageRequired);
-
-    if (chatStageGroup) {
-      chatStageGroup.classList.toggle("hidden", !stageRequired);
-    }
-
-    if (roomMeta) {
-      roomMeta.textContent = room ? room.name : "Room";
-    }
-  }
-
-  function renderChatMessages(items, options = {}) {
-    if (!chatMessages) {
-      return;
-    }
-
-    const replace = Boolean(options.replace);
-    if (!items.length && replace) {
-      chatMessages.innerHTML = `
-        <div class="management-chat-empty">
-          <strong>No messages yet.</strong>
-          <p class="muted">Post the first message in this room.</p>
-        </div>
-      `;
-      return;
-    }
-
-    const markup = items
-      .map((message) => {
-        const isOwn =
-          chatState.currentUsername && message.createdByUsername === chatState.currentUsername;
-        const stageBadge = message.stage
-          ? `<span class="management-chat-stage-badge stage-${IRMS.escapeHtml(message.stage)}">${IRMS.escapeHtml(stageLabels[message.stage] || message.stage)}</span>`
-          : "";
-
-        return `
-          <article class="management-chat-message${isOwn ? " own" : ""}" data-message-id="${message.id}">
-            <div class="management-chat-message-head">
-              <strong class="management-chat-author">${IRMS.escapeHtml(message.createdByDisplayName || message.createdByUsername)}</strong>
-              <div class="management-chat-meta">
-                ${stageBadge}
-                <time>${IRMS.escapeHtml(IRMS.formatDateTime(message.createdAt))}</time>
-              </div>
-            </div>
-            <p class="management-chat-text">${IRMS.escapeHtml(message.messageText)}</p>
-          </article>
-        `;
-      })
-      .join("");
-
-    if (replace) {
-      chatMessages.innerHTML = markup;
-    } else {
-      const emptyState = chatMessages.querySelector(".management-chat-empty");
-      if (emptyState) {
-        emptyState.remove();
-      }
-      chatMessages.insertAdjacentHTML("beforeend", markup);
-    }
-
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-
-  async function loadChatRooms() {
-    const payload = await IRMS.listChatRooms();
-    chatState.rooms = payload.items || [];
-
-    if (!chatState.rooms.length) {
-      renderChatRoomTabs();
-      syncChatStageVisibility();
-      return;
-    }
-
-    if (!chatState.rooms.some((room) => room.key === chatState.selectedRoomKey)) {
-      chatState.selectedRoomKey = chatState.rooms[0].key;
-      persistSelectedChatRoom();
-    }
-
-    renderChatRoomTabs();
-    syncChatStageVisibility();
-  }
-
-  async function loadChatMessages(options = {}) {
-    const room = getSelectedChatRoom();
-    if (!room) {
-      if (chatMessages && Boolean(options.replace)) {
-        chatMessages.innerHTML = `
-          <div class="management-chat-empty">
-            <strong>No room selected.</strong>
-            <p class="muted">Refresh the page to retry room loading.</p>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    const replace = Boolean(options.replace);
-    const afterId = replace ? 0 : Number(chatState.latestByRoom[room.key] || 0);
-    const payload = await IRMS.getChatMessages({
-      roomKey: room.key,
-      limit: 80,
-      afterId,
-    });
-
-    if (replace) {
-      renderChatMessages(payload.items || [], { replace: true });
-    } else if ((payload.items || []).length > 0) {
-      renderChatMessages(payload.items || [], { replace: false });
-    }
-
-    chatState.latestByRoom[room.key] = Number(
-      payload.latestId || chatState.latestByRoom[room.key] || 0
-    );
-    syncChatStageVisibility();
-  }
-
-  async function refreshChatPanel(options = {}) {
-    const replace = Boolean(options.replace);
-
-    try {
-      await loadChatRooms();
-      await loadChatMessages({ replace });
-    } catch (error) {
-      if (!options.silent) {
-        IRMS.notify(`Chat sync failed: ${error.message}`, "error");
-      }
-    }
-  }
-
-  function startChatPolling() {
-    if (chatState.timerId) {
-      window.clearInterval(chatState.timerId);
-    }
-
-    chatState.timerId = window.setInterval(() => {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      refreshChatPanel({ replace: false, silent: true });
-    }, 10000);
-  }
+  function refreshChatPanel(options) { return chatModule.refresh(options); }
+  function startChatPolling() { chatModule.startPolling(10000); }
 
   function renderIssues(list, target, emptyText) {
     if (!list || !list.length) {
@@ -467,69 +308,22 @@
       .slice(0, 12)
       .map(
         (item) =>
-          `<li>L${item.level} 쨌 ${IRMS.escapeHtml(item.message)}${item.row ? ` (${item.row}??` : ""}</li>`,
+          `<li>L${item.level} · ${IRMS.escapeHtml(item.message)}${item.row ? ` (행 ${item.row})` : ""}</li>`,
       )
       .join("");
   }
 
-  function renderPreview(result) {
+  function renderValidationMeta(result) {
     const rows = result?.rows || [];
-    const materialIds = new Set();
-    rows.forEach((row) =>
-      (row.items || []).forEach((item) => {
-        if (item.materialId !== undefined && item.materialId !== null) {
-          materialIds.add(item.materialId);
-        }
-      }),
-    );
-
-    const columnMaterials = materials.filter((material) =>
-      materialIds.has(material.id),
-    );
     const badges = [
       `<span class="meta-badge meta-ok">Rows ${rows.length}</span>`,
       `<span class="meta-badge meta-warn">Warn ${(result?.warnings || []).length}</span>`,
       `<span class="meta-badge meta-error">Error ${(result?.errors || []).length}</span>`,
     ];
-
     if (previewIsStale) {
-      badges.push('<span class="meta-badge meta-warn">Re-Preview Required</span>');
+      badges.push('<span class="meta-badge meta-warn">재검증 필요</span>');
     }
-
     previewMeta.innerHTML = badges.join("");
-
-    const heads = [
-      "Product Name",
-      "Position",
-      "Ink Name",
-      ...columnMaterials.map((material) => IRMS.escapeHtml(material.name)),
-    ];
-    previewHead.innerHTML = heads.map((head) => `<th>${head}</th>`).join("");
-
-    if (!rows.length) {
-      previewBody.innerHTML =
-        '<tr><td colspan="20"><div class="empty-state">誘몃━蹂닿린 ?곗씠?곌? ?놁뒿?덈떎.</div></td></tr>';
-      return;
-    }
-
-    previewBody.innerHTML = rows
-      .map((row) => {
-        const values = columnMaterials.map((material) => {
-          const item = (row.items || []).find(
-            (entry) => entry.materialId === material.id,
-          );
-          return `<td class="material-value">${item ? IRMS.formatValue(item.value) : "-"}</td>`;
-        });
-        return `
-          <tr>
-            <td>${IRMS.escapeHtml(row.productName)}</td>
-            <td>${IRMS.escapeHtml(row.position)}</td>
-            <td>${IRMS.escapeHtml(row.inkName)}</td>
-            ${values.join("")}
-          </tr>
-        `;
-      })
-      .join("");
   }
 
   async function renderHistory() {
@@ -545,7 +339,7 @@
 
       if (!rows.length) {
         historyBody.innerHTML =
-          '<tr><td colspan="7"><div class="empty-state">議곌굔??留욌뒗 ?덉떆?쇨? ?놁뒿?덈떎.</div></td></tr>';
+          '<tr><td colspan="7"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
         return;
       }
 
@@ -565,7 +359,7 @@
         )
         .join("");
     } catch (error) {
-      IRMS.notify(`?대젰 議고쉶 ?ㅽ뙣: ${error.message}`, "error");
+      IRMS.notify(`이력 조회 실패: ${error.message}`, "error");
     }
   }
 
@@ -573,24 +367,28 @@
     const raw = getSpreadsheetDataAsText();
 
     if (!raw) {
-      IRMS.notify(
-        "誘몃━蹂닿린 ?꾩뿉 ?쒗듃???곗씠?곕? ?낅젰?섍굅??遺숈뿬?ｌ쑝?몄슂.",
-        "warn",
-      );
+      IRMS.notify("데이터를 입력하거나 붙여넣은 후 Validate 하세요.", "warn");
       return;
     }
 
+    IRMS.btnLoading(previewBtn, true);
     try {
       const result = await IRMS.previewImport(raw);
       currentPreview = result;
       confirmedRawText = raw;
       previewIsStale = false;
-      renderPreview(result);
-      renderIssues(result.errors, errorList, "ERROR ?놁쓬");
-      renderIssues(result.warnings, warningList, "WARN ?놁쓬");
+      renderValidationMeta(result);
+      renderIssues(result.errors, errorList, "ERROR 없음");
+      renderIssues(result.warnings, warningList, "WARN 없음");
       syncRegisterState();
+
+      if (!result.errors.length && result.rows.length > 0) {
+        IRMS.notify(`검증 완료: ${result.rows.length}건 등록 가능`, "success");
+      }
     } catch (error) {
-      IRMS.notify(`誘몃━蹂닿린 ?ㅽ뙣: ${error.message}`, "error");
+      IRMS.notify(`검증 실패: ${error.message}`, "error");
+    } finally {
+      IRMS.btnLoading(previewBtn, false);
     }
   }
 
@@ -603,22 +401,25 @@
       !confirmedRawText.trim()
     ) {
       if (previewIsStale) {
-        IRMS.notify("?뺤젙蹂몄씠 臾댄슚?붾릺?덉뒿?덈떎. ?ㅼ떆 Validate ???깅줉?섏꽭??", "warn");
+        IRMS.notify("검정본이 무효화되었습니다. 다시 Validate 후 등록하세요.", "warn");
       }
       return;
     }
 
+    IRMS.btnLoading(registerBtn, true);
     try {
       const result = await IRMS.importRecipes(confirmedRawText, "System Gate");
       IRMS.notify(
-        `${result.created_count}嫄??덉떆?쇰? ?깅줉?덉뒿?덈떎.`,
+        `${result.created_count}건 레시피를 등록했습니다.`,
         "success",
       );
 
       // Reset everything
       handleClear();
     } catch (error) {
-      IRMS.notify(`?깅줉 ?ㅽ뙣: ${error.message}`, "error");
+      IRMS.notify(`등록 실패: ${error.message}`, "error");
+    } finally {
+      IRMS.btnLoading(registerBtn, false);
     }
   }
 
@@ -631,107 +432,18 @@
       rawInput.value = "";
     }
     currentPreview = null;
-    renderPreview({ rows: [], errors: [], warnings: [] });
-    renderIssues([], errorList, "ERROR ?놁쓬");
-    renderIssues([], warningList, "WARN ?놁쓬");
+    previewIsStale = false;
+    renderValidationMeta({ rows: [], warnings: [], errors: [] });
+    renderIssues([], errorList, "ERROR 없음");
+    renderIssues([], warningList, "WARN 없음");
     syncRegisterState();
   }
 
   previewBtn.addEventListener("click", handlePreview);
 
-  if (roomTabs) {
-    roomTabs.addEventListener("click", async (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
+  chatModule.bindRoomTabs(roomTabs);
 
-      const button = target.closest("[data-room-key]");
-      if (!(button instanceof HTMLElement)) {
-        return;
-      }
-
-      const nextRoomKey = button.dataset.roomKey;
-      if (!nextRoomKey || nextRoomKey === chatState.selectedRoomKey) {
-        return;
-      }
-
-      chatState.selectedRoomKey = nextRoomKey;
-      persistSelectedChatRoom();
-      renderChatRoomTabs();
-      syncChatStageVisibility();
-
-      try {
-        await loadChatMessages({ replace: true });
-      } catch (error) {
-        IRMS.notify(`Chat load failed: ${error.message}`, "error");
-      }
-    });
-  }
-
-  if (chatForm) {
-    chatForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (chatState.sending) {
-        return;
-      }
-
-      const room = getSelectedChatRoom();
-      if (!room) {
-        return;
-      }
-
-      const messageText = chatInput?.value.trim() || "";
-      const stage = room.stageRequired ? chatStage?.value || "registered" : null;
-
-      if (!messageText) {
-        IRMS.notify("Enter a message before sending.", "error");
-        return;
-      }
-
-      chatState.sending = true;
-      if (chatSend) {
-        chatSend.disabled = true;
-      }
-
-      try {
-        const payload = await IRMS.postChatMessage({
-          roomKey: room.key,
-          messageText,
-          stage,
-        });
-
-        if (payload.message) {
-          renderChatMessages([payload.message], { replace: false });
-          chatState.latestByRoom[room.key] = Number(
-            payload.message.id || chatState.latestByRoom[room.key] || 0
-          );
-
-          const roomIndex = chatState.rooms.findIndex((entry) => entry.key === room.key);
-          if (roomIndex >= 0) {
-            chatState.rooms[roomIndex].messageCount =
-              Number(chatState.rooms[roomIndex].messageCount || 0) + 1;
-            chatState.rooms[roomIndex].latestMessageAt = payload.message.createdAt;
-            renderChatRoomTabs();
-          }
-        }
-
-        if (chatInput) {
-          chatInput.value = "";
-          chatInput.focus();
-        }
-
-        IRMS.notify("Message posted.", "success");
-      } catch (error) {
-        IRMS.notify(`Message post failed: ${error.message}`, "error");
-      } finally {
-        chatState.sending = false;
-        if (chatSend) {
-          chatSend.disabled = false;
-        }
-      }
-    });
-  }
+  chatModule.bindForm({ form: chatForm, input: chatInput, stage: chatStage, send: chatSend });
   registerBtn.addEventListener("click", handleRegister);
   clearBtn.addEventListener("click", handleClear);
   historyStatus.addEventListener("change", () => {
@@ -776,9 +488,8 @@
       updateHistorySummary();
       initSpreadsheet();
       await loadMaterials();
-      renderPreview({ rows: [], errors: [], warnings: [] });
-      renderIssues([], errorList, "ERROR ?놁쓬");
-      renderIssues([], warningList, "WARN ?놁쓬");
+      renderIssues([], errorList, "ERROR 없음");
+      renderIssues([], warningList, "WARN 없음");
       syncRegisterState();
       await Promise.all([
         renderHistory(),
@@ -786,7 +497,7 @@
       ]);
       startChatPolling();
     } catch (error) {
-      IRMS.notify(`珥덇린???ㅽ뙣: ${error.message}`, "error");
+      IRMS.notify(`초기화 실패: ${error.message}`, "error");
     }
   })();
 });

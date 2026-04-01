@@ -1,210 +1,160 @@
-<!DOCTYPE html>
-<html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IRMS · Management</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
+{% extends "_base_app.html" %}
+
+{% block title %}Management{% endblock %}
+{% block eyebrow %}Zero-Entry Control Room{% endblock %}
+{% block heading %}DATA MANAGEMENT{% endblock %}
+
+{% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
     <link rel="stylesheet" href="/static/vendor/jspreadsheet/jspreadsheet.min.css" type="text/css" />
     <link rel="stylesheet" href="/static/vendor/jsuites/jsuites.min.css" type="text/css" />
-    
-    <link rel="stylesheet" href="/static/css/common.css" />
     <link rel="stylesheet" href="/static/css/management.css" />
-  </head>
-  <body>
-    <div class="site-shell" data-current-username="{{ current_user.username }}">
-      <header class="site-header">
-        <div class="brand-block">
-          <p class="eyebrow">Zero-Entry Control Room</p>
-          <h1>DATA MANAGEMENT</h1>
-        </div>
-        
-        <nav class="top-nav" aria-label="Main Navigation">
-          <a href="/" class="nav-link">Home</a>
-          <a href="/weighing" class="nav-link">Weighing</a>
-          <a href="/status" class="nav-link">Status</a>
-          <a href="/management" class="nav-link active">Management</a>
-          <a href="/insight" class="nav-link">Insight</a>
-          {% if current_user.access_level == "admin" %}
-          <a href="/admin/users" class="nav-link">Users</a>
-          {% endif %}
+{% endblock %}
+
+{% block content %}
+        <nav class="mgmt-tabs">
+          <button class="mgmt-tab active" data-tab="import" type="button">레시피 등록</button>
+          <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
         </nav>
 
-        <div class="session-card">
-          <div class="session-info">
-            <span class="session-role">{{ current_user.role_label }}</span>
-            <span class="session-user">{{ current_user.display_name }}</span>
-            <span class="session-id">@{{ current_user.username }}</span>
-          </div>
-          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
-        </div>
-      </header>
-
-      <main class="page-grid">
-        <section class="panel">
-          <span class="kicker">Smart Import System</span>
-          <h2 class="panel-title">엑셀 붙여넣기 기반 레시피 등록</h2>
-          <p class="panel-subtitle">
-            Preview → Validation → Register 3단계 안전 파이프라인으로 휴먼 에러를 차단합니다.
-          </p>
-          <p class="mode-note">레시피 표준 단위는 g 고정입니다. 계량은 Work 화면에서 수동 진행합니다.</p>
-        </section>
-
-        <section class="panel import-layout">
-          <div class="input-section">
-            <label for="raw-input" class="filter-label">Raw Data Input</label>
-            <p class="import-helper">
-              엑셀의 전체 영역(헤더 포함)을 복사하여 아래 표에 붙여넣기(Ctrl+V) 하세요.
-            </p>
-            <div id="spreadsheet" class="spreadsheet-container"></div>
-            <textarea
-              id="raw-input"
-              class="input import-textarea raw-input-fallback"
-              placeholder="스프레드시트 로드 실패 시 여기에 탭/줄바꿈 텍스트를 붙여넣으세요."
-              hidden
-            ></textarea>
-            
-            <div class="button-row" style="margin-top: 1.5rem;">
-              <button id="preview-btn" class="btn accent">Validate Data</button>
-              <button id="register-btn" class="btn success" disabled>Finalize Registration</button>
-              <button id="clear-btn" class="btn">Clear</button>
-            </div>
-          </div>
-          
-          <div class="issue-wrap">
-            <div id="preview-meta" class="preview-meta"></div>
-            
-            <article class="issue-panel error-panel">
-              <div class="issue-header">
-                <span>Critical Errors</span>
-                <span class="muted">(등록 불가)</span>
-              </div>
-              <ul id="error-list" class="issue-list"></ul>
-            </article>
-            
-            <article class="issue-panel warn-panel">
-              <div class="issue-header">
-                <span>Warnings</span>
-                <span class="muted">(확인 필요)</span>
-              </div>
-              <ul id="warning-list" class="issue-list"></ul>
-            </article>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-title">Data Preview</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr id="preview-head"></tr>
-              </thead>
-              <tbody id="preview-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-title">Recipe History Archive</h3>
-          <div class="history-grid">
-            <div class="filter-group">
-              <label class="filter-label">Status Filter</label>
-              <select id="history-status" class="select">
-                <option value="">Total</option>
-                <option value="pending">대기</option>
-                <option value="in_progress">진행</option>
-                <option value="completed">완료</option>
-                <option value="canceled">취소</option>
-              </select>
-            </div>
-            <div class="filter-group">
-              <label class="filter-label">Search Recipe</label>
-              <input id="history-search" class="input" placeholder="제품명 혹은 잉크명" />
-            </div>
-            <div class="filter-group">
-              <label class="filter-label">From Date</label>
-              <input id="history-from" type="date" class="input" />
-            </div>
-            <div class="filter-group">
-              <label class="filter-label">To Date</label>
-              <input id="history-to" type="date" class="input" />
-            </div>
-          </div>
-          <div class="filter-bar">
-            <p id="management-history-summary" class="filter-summary">전체 등록 이력을 표시 중입니다.</p>
-            <div class="button-row">
-              <button id="management-history-reset" type="button" class="btn">필터 초기화</button>
-            </div>
-          </div>
-          
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>UUID</th>
-                  <th>제품명</th>
-                  <th>잉크명</th>
-                  <th>상태</th>
-                  <th>등록 오퍼레이터</th>
-                  <th>타임스탬프</th>
-                  <th>항목수</th>
-                </tr>
-              </thead>
-              <tbody id="history-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel management-chat-panel">
-          <div class="management-chat-head">
-            <div>
-              <span class="kicker">Shared Rooms</span>
-              <h3 class="panel-title">Live Coordination</h3>
-            </div>
-            <span id="management-chat-room-meta" class="management-chat-room-meta">Room</span>
-          </div>
-
-          <div class="management-chat-tabs" id="management-chat-room-tabs"></div>
-
-          <div class="management-chat-stream" id="management-chat-messages"></div>
-
-          <form id="management-chat-form" class="management-chat-form">
-            <div id="management-chat-stage-group" class="filter-group">
-              <label class="filter-label" for="management-chat-stage">Stage</label>
-              <select id="management-chat-stage" class="select">
-                <option value="registered">Registered</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-            <div class="filter-group">
-              <label class="filter-label" for="management-chat-input">Message</label>
+        <!-- ── 레시피 등록 ── -->
+        <div class="tab-panel active" id="tab-import">
+          <section class="panel import-layout">
+            <div class="input-section">
+              <p class="import-helper">
+                엑셀 영역(헤더 포함)을 복사 → 아래 표에 Ctrl+V → Validate → Register
+              </p>
+              <p class="mode-note">표준 단위: g 고정 · 계량은 Weighing 화면에서 진행</p>
+              <div id="spreadsheet" class="spreadsheet-container"></div>
               <textarea
-                id="management-chat-input"
-                class="textarea management-chat-textarea"
-                rows="4"
-                maxlength="1000"
-                placeholder="Post a notice or workflow update."
+                id="raw-input"
+                class="input import-textarea raw-input-fallback"
+                placeholder="스프레드시트 로드 실패 시 여기에 탭/줄바꿈 텍스트를 붙여넣으세요."
+                hidden
               ></textarea>
+              <div class="button-row">
+                <button id="preview-btn" class="btn accent">Validate</button>
+                <button id="register-btn" class="btn success" disabled>Register</button>
+                <button id="clear-btn" class="btn">Clear</button>
+              </div>
             </div>
-            <div class="button-row management-chat-actions">
-              <button id="management-chat-send" type="submit" class="btn accent">Post Message</button>
+
+            <div class="issue-wrap">
+              <div id="preview-meta" class="preview-meta"></div>
+              <article class="issue-panel error-panel">
+                <div class="issue-header">
+                  <span>Errors</span>
+                  <span class="muted">(등록 불가)</span>
+                </div>
+                <ul id="error-list" class="issue-list"></ul>
+              </article>
+              <article class="issue-panel warn-panel">
+                <div class="issue-header">
+                  <span>Warnings</span>
+                  <span class="muted">(확인 필요)</span>
+                </div>
+                <ul id="warning-list" class="issue-list"></ul>
+              </article>
             </div>
-          </form>
-        </section>
-      </main>
-    </div>
-    
-    <div id="toast-root" class="toast-container"></div>
+          </section>
+
+        </div>
+
+        <!-- ── 등록 이력 ── -->
+        <div class="tab-panel" id="tab-history">
+          <section class="panel">
+            <h3 class="panel-title">등록 이력</h3>
+            <div class="history-grid">
+              <div class="filter-group">
+                <label class="filter-label">상태</label>
+                <select id="history-status" class="select">
+                  <option value="">전체</option>
+                  <option value="pending">대기</option>
+                  <option value="in_progress">진행</option>
+                  <option value="completed">완료</option>
+                  <option value="canceled">취소</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">검색</label>
+                <input id="history-search" class="input" placeholder="제품명 혹은 잉크명" />
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">시작일</label>
+                <input id="history-from" type="date" class="input" />
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">종료일</label>
+                <input id="history-to" type="date" class="input" />
+              </div>
+            </div>
+            <div class="filter-bar">
+              <p id="management-history-summary" class="filter-summary">전체 등록 이력을 표시 중입니다.</p>
+              <div class="button-row">
+                <button id="management-history-reset" type="button" class="btn">필터 초기화</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>UUID</th>
+                    <th>제품명</th>
+                    <th>잉크명</th>
+                    <th>상태</th>
+                    <th>등록자</th>
+                    <th>등록일시</th>
+                    <th>항목수</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+{% endblock %}
+
+{% block chat_float %}
+    <section class="panel chat-panel chat-float">
+      <div class="chat-head">
+        <div>
+          <span class="kicker">Shared Rooms</span>
+          <h3 class="panel-title">실시간 소통</h3>
+        </div>
+        <span id="management-chat-room-meta" class="chat-room-meta">Room</span>
+      </div>
+      <div class="chat-tabs" id="management-chat-room-tabs"></div>
+      <div class="chat-stream" id="management-chat-messages"></div>
+      <form id="management-chat-form" class="chat-form">
+        <div id="management-chat-stage-group" class="filter-group">
+          <label class="filter-label" for="management-chat-stage">Stage</label>
+          <select id="management-chat-stage" class="select">
+            <option value="registered">Registered</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label" for="management-chat-input">메시지</label>
+          <textarea
+            id="management-chat-input"
+            class="textarea chat-textarea"
+            rows="2"
+            maxlength="1000"
+            placeholder="메시지를 입력하세요. (Shift+Enter: 줄바꿈)"
+          ></textarea>
+        </div>
+        <div class="button-row chat-actions">
+          <button id="management-chat-send" type="submit" class="btn accent">전송</button>
+        </div>
+      </form>
+    </section>
+{% endblock %}
+
+{% block scripts %}
     <script src="/static/vendor/jsuites/jsuites.min.js"></script>
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js"></script>
-    <script src="/static/js/common.js"></script>
+    <script src="/static/js/chat.js"></script>
     <script src="/static/js/management.js"></script>
-  </body>
-</html>
+{% endblock %}

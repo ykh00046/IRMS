@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 
@@ -26,4 +27,4 @@ if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     )
 
 if not SESSION_SECRET:
-    SESSION_SECRET = "irms-dev-session-secret"
+    SESSION_SECRET = secrets.token_hex(32)

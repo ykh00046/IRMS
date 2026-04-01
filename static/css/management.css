@@ -2,11 +2,55 @@
    IRMS Management Mode
    ========================================================================= */
 
+/* Tab Navigation */
+.mgmt-tabs {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-surface-100);
+  padding: 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  width: fit-content;
+}
+
+.mgmt-tab {
+  padding: 0.55rem 1.4rem;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.mgmt-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-200);
+}
+
+.mgmt-tab.active {
+  background: var(--accent-primary);
+  color: white;
+  box-shadow: var(--glow-primary);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: contents;
+}
+
+/* Import Layout */
 .import-layout {
   display: grid;
-  grid-template-columns: 1fr 400px;
-  gap: 1.5rem;
-  align-items: stretch;
+  grid-template-columns: 1fr 280px;
+  gap: 1.25rem;
+  align-items: start;
 }
 
 .input-section {
@@ -30,6 +74,10 @@
   border-style: solid;
   border-color: var(--accent-primary);
   background: var(--bg-surface-300);
+}
+
+.input-section .button-row {
+  margin-top: 1rem;
 }
 
 .import-helper {
@@ -148,235 +196,26 @@
   border: 1px solid var(--border-subtle);
 }
 
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
+/* Chat panel (floating sidebar, styles in common.css) */
 
-.filter-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  letter-spacing: 0.05em;
-}
+/* Preview Mode Badge */
 
-.management-chat-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.management-chat-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.management-chat-room-meta {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.management-chat-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.management-chat-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface-200);
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
-}
-
-.management-chat-tab:hover {
-  border-color: var(--accent-primary);
-  transform: translateY(-1px);
-}
-
-.management-chat-tab.active {
-  background: rgba(99, 102, 241, 0.16);
-  border-color: rgba(99, 102, 241, 0.45);
-  color: var(--text-primary);
-}
-
-.management-chat-tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.5);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-.management-chat-stream {
-  min-height: 320px;
-  max-height: 520px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  padding-right: 0.3rem;
-}
-
-.management-chat-stream::-webkit-scrollbar {
-  width: 8px;
-}
-
-.management-chat-stream::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
-  border-radius: 999px;
-}
-
-.management-chat-empty {
-  display: grid;
-  place-items: center;
-  min-height: 220px;
-  padding: 1rem;
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-200);
-  text-align: center;
-}
-
-.management-chat-message {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding: 1rem 1.05rem 1rem 1.2rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-200);
-}
-
-.management-chat-message::before {
-  content: "";
-  position: absolute;
-  left: 0.7rem;
-  top: 1rem;
-  bottom: 1rem;
-  width: 3px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.35);
-}
-
-.management-chat-message.own {
-  background: rgba(59, 130, 246, 0.14);
-  border-color: rgba(59, 130, 246, 0.25);
-}
-
-.management-chat-message.own::before {
-  background: rgba(59, 130, 246, 0.9);
-}
-
-.management-chat-message-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.management-chat-author {
-  color: var(--text-primary);
-  font-size: 0.9rem;
-}
-
-.management-chat-meta {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.45rem;
-  color: var(--text-tertiary);
-  font-size: 0.75rem;
-}
-
-.management-chat-stage-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.22rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.management-chat-stage-badge.stage-registered {
-  background: rgba(59, 130, 246, 0.18);
-  color: rgb(125, 211, 252);
-}
-
-.management-chat-stage-badge.stage-in_progress {
-  background: rgba(245, 158, 11, 0.18);
-  color: rgb(253, 224, 71);
-}
-
-.management-chat-stage-badge.stage-completed {
-  background: rgba(16, 185, 129, 0.18);
-  color: rgb(110, 231, 183);
-}
-
-.management-chat-text {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-secondary);
-  line-height: 1.65;
-}
-
-.management-chat-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.management-chat-textarea {
-  min-height: 120px;
-  resize: vertical;
-}
-
-.management-chat-actions {
-  justify-content: flex-end;
-}
-
-.hidden {
-  display: none !important;
-}
-
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
+  .mgmt-tabs {
+    width: 100%;
+  }
+  .mgmt-tab {
+    flex: 1;
+    text-align: center;
+    padding: 0.55rem 0.5rem;
+    font-size: 0.8rem;
+  }
   .import-layout {
     grid-template-columns: 1fr;
+    max-width: none;
   }
   .history-grid {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .management-chat-message-head {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }
 
@@ -390,13 +229,19 @@
    JSpreadsheet Dark Theme Overrides
    ========================================================================= */
 
+.import-layout .mode-note {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
 .spreadsheet-container {
   font-family: var(--font-mono);
   font-size: 0.85rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow: auto;
   background-color: var(--bg-surface-200);
+  max-height: 310px;
 }
 
 .raw-input-fallback {
@@ -406,12 +251,12 @@
   resize: vertical;
 }
 
-/* JSpreadsheet Base Variables Override if needed, or target classes directly */
-.jexcel_container {
+/* JSpreadsheet theme overrides — !important required to beat vendor inline styles */
+.spreadsheet-container .jexcel_container {
   background: var(--bg-surface-200) !important;
 }
 
-.jexcel tbody tr td {
+.spreadsheet-container .jexcel tbody tr td {
   background-color: var(--bg-surface-200);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle) !important;
@@ -420,13 +265,12 @@
   font-family: var(--font-mono);
 }
 
-.jexcel tbody tr td.readonly {
+.spreadsheet-container .jexcel tbody tr td.readonly {
   background-color: var(--bg-surface-100);
   color: var(--text-tertiary);
 }
 
-/* Header styling */
-.jexcel thead td {
+.spreadsheet-container .jexcel thead td {
   background-color: var(--bg-surface-300) !important;
   color: var(--text-secondary) !important;
   border-bottom: 1px solid var(--border-strong) !important;
@@ -437,46 +281,42 @@
   text-transform: uppercase;
 }
 
-/* Row numbers (first column) */
-.jexcel tbody tr td[data-x="-1"] {
+.spreadsheet-container .jexcel tbody tr td[data-x="-1"] {
   background-color: var(--bg-surface-300) !important;
   color: var(--text-tertiary) !important;
   font-size: 0.75rem;
 }
 
-/* Selection & Active cell */
-.jexcel tbody tr td.highlight {
-  background-color: rgba(99, 102, 241, 0.15) !important; /* Soft accent */
+.spreadsheet-container .jexcel tbody tr td.highlight {
+  background-color: rgba(51, 65, 85, 0.15) !important;
   color: var(--text-primary);
 }
 
-.jexcel tbody tr td.highlight-left,
-.jexcel tbody tr td.highlight-right,
-.jexcel tbody tr td.highlight-top,
-.jexcel tbody tr td.highlight-bottom {
+.spreadsheet-container .jexcel tbody tr td.highlight-left,
+.spreadsheet-container .jexcel tbody tr td.highlight-right,
+.spreadsheet-container .jexcel tbody tr td.highlight-top,
+.spreadsheet-container .jexcel tbody tr td.highlight-bottom {
   border-color: var(--accent-primary) !important;
 }
 
-/* Editor Input */
-.jexcel_content .jexcel_corner {
+.spreadsheet-container .jexcel_content .jexcel_corner {
   background-color: var(--accent-primary) !important;
   border: 1px solid var(--bg-surface-100) !important;
 }
 
-.jexcel > tbody > tr > td > input, 
-.jexcel > tbody > tr > td > select, 
-.jexcel > tbody > tr > td > textarea {
+.spreadsheet-container .jexcel > tbody > tr > td > input,
+.spreadsheet-container .jexcel > tbody > tr > td > select,
+.spreadsheet-container .jexcel > tbody > tr > td > textarea {
   background-color: var(--bg-surface-300);
   color: var(--text-primary);
   font-family: var(--font-mono);
 }
 
-/* Context Menu */
 .jexcel_contextmenu {
   background: var(--bg-surface-300) !important;
   border: 1px solid var(--border-strong) !important;
   color: var(--text-secondary) !important;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
 }
 
 .jexcel_contextmenu a {

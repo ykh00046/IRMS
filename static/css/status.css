@@ -22,8 +22,8 @@
   gap: 1.5rem;
   overflow: hidden;
   background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 32%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 56%),
+    radial-gradient(circle at top right, rgba(51, 65, 85, 0.18), transparent 32%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.02), transparent 56%),
     var(--bg-surface-100);
 }
 
@@ -34,7 +34,7 @@
   justify-items: end;
   padding: 1rem 1.1rem;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.02);
   border: 1px solid var(--border-strong);
   font-size: 0.82rem;
   color: var(--text-secondary);
@@ -75,12 +75,17 @@
   flex-direction: column;
   justify-content: space-between;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), transparent),
     var(--bg-surface-100);
+  transition: border-color 0.2s ease;
+}
+
+.status-summary-card:hover {
+  border-color: var(--border-strong);
 }
 
 .summary-label {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-tertiary);
@@ -149,7 +154,7 @@
   min-height: 128px;
   padding: 1rem;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.02);
   border: 1px solid var(--border-subtle);
   position: relative;
   overflow: hidden;
@@ -160,7 +165,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: linear-gradient(180deg, #34d399, #10b981);
+  background: linear-gradient(180deg, var(--status-success), #047857);
 }
 
 .status-import-copy {
@@ -191,7 +196,7 @@
   padding: 0.3rem 0.55rem;
   border-radius: var(--radius-full);
   font-size: 0.75rem;
-  color: #a7f3d0;
+  color: var(--status-success);
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.22);
   font-family: var(--font-mono);
@@ -199,199 +204,11 @@
 
 .status-board-panel {
   background:
-    linear-gradient(180deg, rgba(37, 99, 235, 0.06), transparent 18%),
+    linear-gradient(180deg, rgba(51, 65, 85, 0.06), transparent 18%),
     var(--bg-surface-100);
 }
 
-.status-workspace {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.status-chat-panel {
-  display: grid;
-  gap: 1rem;
-  position: sticky;
-  top: 1.5rem;
-  background:
-    linear-gradient(180deg, rgba(245, 158, 11, 0.06), transparent 18%),
-    var(--bg-surface-100);
-}
-
-.status-chat-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.status-chat-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-surface-200);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.status-chat-tab:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-300);
-}
-
-.status-chat-tab.active {
-  background: #f59e0b;
-  border-color: #f59e0b;
-  color: #0a0b0c;
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.18);
-}
-
-.status-chat-tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.45rem;
-  height: 1.45rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.18);
-  font-size: 0.72rem;
-  font-family: var(--font-mono);
-}
-
-.status-chat-stream {
-  min-height: 420px;
-  max-height: 760px;
-  overflow-y: auto;
-  display: grid;
-  gap: 0.75rem;
-  padding-right: 0.35rem;
-}
-
-.status-chat-stream::-webkit-scrollbar {
-  width: 6px;
-}
-
-.status-chat-stream::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 999px;
-}
-
-.status-chat-empty {
-  min-height: 220px;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  padding: 1rem;
-}
-
-.status-chat-message {
-  display: grid;
-  gap: 0.55rem;
-  padding: 0.95rem 1rem;
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-200);
-  border: 1px solid var(--border-subtle);
-  position: relative;
-}
-
-.status-chat-message::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: rgba(245, 158, 11, 0.8);
-  border-radius: 3px 0 0 3px;
-}
-
-.status-chat-message.own {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(37, 99, 235, 0.24);
-}
-
-.status-chat-message.own::before {
-  background: rgba(37, 99, 235, 0.9);
-}
-
-.status-chat-message-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.status-chat-author {
-  font-size: 0.9rem;
-}
-
-.status-chat-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-}
-
-.status-stage-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.22rem 0.5rem;
-  border-radius: var(--radius-full);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.status-stage-badge.stage-registered {
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
-}
-
-.status-stage-badge.stage-in_progress {
-  background: rgba(245, 158, 11, 0.14);
-  color: #fcd34d;
-}
-
-.status-stage-badge.stage-completed {
-  background: rgba(16, 185, 129, 0.14);
-  color: #86efac;
-}
-
-.status-chat-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.6;
-  color: var(--text-primary);
-}
-
-.status-chat-form {
-  display: grid;
-  gap: 0.85rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.status-chat-textarea {
-  min-height: 120px;
-}
-
-.status-chat-actions {
-  justify-content: flex-end;
-  margin-top: 0;
-}
-
-.hidden {
-  display: none !important;
-}
+/* Board now uses full width (chat is floating sidebar) */
 
 .status-board {
   display: grid;
@@ -422,10 +239,10 @@
   padding: 1rem;
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 26%),
-    rgba(15, 23, 42, 0.66);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), transparent 26%),
+    rgba(248, 249, 250, 0.9);
+  border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .status-lane-head {
@@ -443,8 +260,8 @@
   gap: 0.4rem;
   padding: 0.28rem 0.55rem;
   border-radius: var(--radius-full);
-  background: rgba(37, 99, 235, 0.12);
-  color: #9bc0ff;
+  background: rgba(51, 65, 85, 0.12);
+  color: var(--text-secondary);
   font-size: 0.76rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -481,9 +298,15 @@
   padding: 1rem;
   border-radius: 16px;
   background:
-    linear-gradient(160deg, rgba(37, 99, 235, 0.08), transparent 34%),
+    linear-gradient(160deg, rgba(51, 65, 85, 0.08), transparent 34%),
     var(--bg-surface-100);
   border: 1px solid var(--border-subtle);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .status-card-head {
@@ -535,8 +358,9 @@
 .status-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1d4ed8, #60a5fa);
-  box-shadow: 0 0 18px rgba(59, 130, 246, 0.35);
+  background: linear-gradient(90deg, var(--accent-primary-hover), var(--accent-primary));
+  box-shadow: 0 0 12px rgba(51, 65, 85, 0.2);
+  transition: width 0.3s ease;
 }
 
 .status-metrics {
@@ -660,14 +484,6 @@
   .status-summary-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
-  .status-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .status-chat-panel {
-    position: static;
-  }
 }
 
 @media (max-width: 1100px) {
@@ -694,8 +510,7 @@
 
   .status-section-head,
   .status-lane-head,
-  .status-card-head,
-  .status-chat-message-head {
+  .status-card-head {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -707,10 +522,5 @@
 
   .status-metrics {
     grid-template-columns: 1fr;
-  }
-
-  .status-chat-tab {
-    width: 100%;
-    justify-content: space-between;
   }
 }

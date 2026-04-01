@@ -3,12 +3,16 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from .config import DATA_DIR, DATABASE_PATH, SEED_DEMO_DATA
+import logging
+
+from .config import APP_ENV, DATA_DIR, DATABASE_PATH, SEED_DEMO_DATA
+
+logger = logging.getLogger(__name__)
 from .security import hash_password
 
 
 def utc_now_text() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -17,7 +21,6 @@ def get_connection() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 5000")
-    connection.execute("PRAGMA journal_mode = WAL")
     return connection
 
 
@@ -34,9 +37,16 @@ _ALLOWED_TABLES = frozenset({
 })
 
 
+import re
+
+_SAFE_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
 def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_def: str) -> None:
     if table_name not in _ALLOWED_TABLES:
         raise ValueError(f"Unknown table: {table_name}")
+    if not _SAFE_IDENTIFIER.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
     columns = {
         row["name"]
         for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
@@ -131,6 +141,7 @@ def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
 
 def init_db() -> None:
     with get_connection() as connection:
+        connection.execute("PRAGMA journal_mode = WAL")
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -233,6 +244,9 @@ def init_db() -> None:
 
         apply_schema_migrations(connection)
         if SEED_DEMO_DATA:
+            if APP_ENV == "production":
+                raise RuntimeError("IRMS_SEED_DEMO_DATA must not be enabled in production.")
+            logger.warning("SEED_DEMO_DATA is enabled — inserting demo data with default passwords.")
             seed_users(connection)
             seed_chat_rooms(connection)
             seed_materials(connection)
@@ -241,12 +255,32 @@ def init_db() -> None:
 
 def seed_users(connection: sqlite3.Connection) -> None:
     seeds = [
+        # 관리자
         ("admin", "admin123", "관리자", "admin", "admin"),
-        ("manager", "manager123", "생산 매니저", "user", "manager"),
-        ("manager2", "manager223", "품질 매니저", "user", "manager"),
-        ("operator", "operator123", "작업자 1", "user", "operator"),
-        ("operator2", "operator223", "작업자 2", "user", "operator"),
-        ("operator3", "operator323", "작업자 3", "user", "operator"),
+        # 매니저
+        ("120206", "120206", "함지안", "user", "manager"),
+        ("160228", "160228", "김지훈", "user", "manager"),
+        ("130801", "130801", "김진우", "user", "manager"),
+        ("160501", "160501", "김규철", "user", "manager"),
+        ("220314", "220314", "이광준", "user", "manager"),
+        ("220316", "220316", "강도윤", "user", "manager"),
+        ("190308", "190308", "문동식", "user", "manager"),
+        ("240212", "240212", "김성근", "user", "manager"),
+        ("250411", "250411", "민윤정", "user", "manager"),
+        ("250612", "250612", "이시현", "user", "manager"),
+        ("250731", "250731", "김태균", "user", "manager"),
+        # 작업자
+        ("221023", "221023", "김도현", "user", "operator"),
+        ("240909", "240909", "김민준", "user", "operator"),
+        ("240910", "240910", "박효빈", "user", "operator"),
+        ("250941", "250941", "한가람", "user", "operator"),
+        ("251006", "251006", "김용범", "user", "operator"),
+        ("251051", "251051", "배정한", "user", "operator"),
+        ("251066", "251066", "설영훈", "user", "operator"),
+        ("251110", "251110", "최선미", "user", "operator"),
+        ("251155", "251155", "소보섭", "user", "operator"),
+        ("260152", "260152", "권효성", "user", "operator"),
+        ("260226", "260226", "김상욱", "user", "operator"),
     ]
 
     for username, password, display_name, role, access_level in seeds:
@@ -490,6 +524,7 @@ def list_audit_logs(
     connection: sqlite3.Connection,
     *,
     limit: int = 100,
+    offset: int = 0,
     action: str | None = None,
     after_id: int | None = None,
     ascending: bool = False,
@@ -525,9 +560,9 @@ def list_audit_logs(
         FROM audit_logs
         {where_sql}
         {order_sql}
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        [*params, safe_limit],
+        [*params, safe_limit, max(0, int(offset))],
     ).fetchall()
 
     items = [row_to_dict(row) for row in rows]

@@ -26,17 +26,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const weighingCloseBtn = document.getElementById("weighing-close-btn");
   const weighingRefreshBtn = document.getElementById("weighing-refresh-btn");
   const weighingAdvanceBtn = document.getElementById("weighing-advance-btn");
+  const weighingUndoBtn = document.getElementById("weighing-undo-btn");
   const weighingProgressFill = document.getElementById("weighing-progress-fill");
   const weighingProgressText = document.getElementById("weighing-progress-text");
   const weighingSummary = document.getElementById("weighing-summary");
   const weighingStateBadge = document.getElementById("weighing-state-badge");
+  const weighingProductName = document.getElementById("weighing-product-name");
+  const weighingInkLabel = document.getElementById("weighing-ink-label");
+  const weighingPositionLabel = document.getElementById("weighing-position-label");
   const weighingMaterialName = document.getElementById("weighing-material-name");
   const weighingTargetValue = document.getElementById("weighing-target-value");
-  const weighingRecipeMeta = document.getElementById("weighing-recipe-meta");
   const weighingActionHint = document.getElementById("weighing-action-hint");
   const weighingNextValue = document.getElementById("weighing-next-value");
-  const weighingColorGroup = document.getElementById("weighing-color-group");
-  const weighingOperator = document.getElementById("weighing-operator");
+  const weighingColorSelect = document.getElementById("weighing-color-select");
+  const weighingModeLabel = document.getElementById("weighing-mode-label");
 
   const state = {
     color: "all",
@@ -61,18 +64,19 @@ document.addEventListener("DOMContentLoaded", () => {
     search: "irms_work_filter_search",
     from: "irms_work_filter_from",
     to: "irms_work_filter_to",
-    weighingColor: "irms_work_weighing_color",
   };
 
   const weighing = {
     open: false,
     loading: false,
     advancing: false,
+    undoing: false,
     queue: [],
     doneCount: 0,
     initialTotal: 0,
     colorGroup: "all",
     pendingRecipeCompletion: null,
+    lastCompleted: null,
   };
 
   const stageLabels = {
@@ -81,17 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
     completed: "Completed",
   };
 
-  function colorLabel(color) {
-    const map = {
-      black: "BLACK",
-      red: "RED",
-      blue: "BLUE",
-      yellow: "YELLOW",
-      none: "기타",
-      all: "전체",
-    };
-    return map[color] || "기타";
-  }
+  var colorLabel = IRMS.colorLabel;
 
   function persistFilters() {
     IRMS.savePreference(preferenceKeys.color, state.color);
@@ -141,73 +135,45 @@ document.addEventListener("DOMContentLoaded", () => {
     render();
   }
 
-  function getVisibleMaterials(recipes, materialMap) {
-    const uniqueIds = new Set();
-    recipes.forEach((recipe) => {
-      (recipe.items || []).forEach((item) => {
-        const material = materialMap.get(item.materialId);
-        if (!material) {
-          return;
-        }
-        if (state.color !== "all" && material.colorGroup !== state.color) {
-          return;
-        }
-        uniqueIds.add(material.id);
-      });
-    });
-    return Array.from(uniqueIds)
-      .map((id) => materialMap.get(id))
-      .filter(Boolean);
-  }
-
-  function buildHeader(materials) {
-    const baseColumns = [
+  function buildHeader() {
+    tableHead.innerHTML = [
       '<th class="sticky-left">제품명</th>',
       "<th>위치</th>",
       "<th>잉크명</th>",
+      "<th>원재료</th>",
       "<th>상태</th>",
       "<th>등록시각</th>",
-    ];
-    const materialColumns = materials.map(
-      (material) => `<th>${IRMS.escapeHtml(material.name)}<br /><span class="muted">${IRMS.escapeHtml(material.unit)}</span></th>`
-    );
-    const actionColumn = ['<th class="sticky-right">완료</th>'];
-    tableHead.innerHTML = [...baseColumns, ...materialColumns, ...actionColumn].join("");
+      '<th class="sticky-right">완료</th>',
+    ].join("");
   }
 
-  function getMaterialValue(recipe, materialId) {
-    const item = (recipe.items || []).find((entry) => entry.materialId === materialId);
-    if (!item) {
-      return "-";
-    }
-    return IRMS.formatValue(item.value);
+  function countRecipeMaterials(recipe) {
+    return (recipe.items || []).length;
   }
 
-  function buildRows(recipes, materials) {
+  function buildRows(recipes) {
     if (!recipes.length) {
       tableBody.innerHTML =
-        '<tr><td colspan="24"><div class="empty-state">현재 조건에서 처리할 레시피가 없습니다.</div></td></tr>';
+        '<tr><td colspan="7"><div class="empty-state">현재 조건에서 처리할 레시피가 없습니다.</div></td></tr>';
       return;
     }
 
     tableBody.innerHTML = recipes
       .map((recipe) => {
         const status = `<span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span>`;
-        const values = materials
-          .map(
-            (material) =>
-              `<td class="material-value">${getMaterialValue(recipe, material.id)}</td>`
-          )
-          .join("");
+        const materialCount = countRecipeMaterials(recipe);
+        const materialCell = materialCount > 0
+          ? `<span class="material-count-badge">${materialCount}종</span>`
+          : "-";
 
         return `
           <tr class="recipe-row" data-id="${recipe.id}">
             <td class="sticky-left product-cell">${IRMS.escapeHtml(recipe.productName)}</td>
             <td>${IRMS.escapeHtml(recipe.position || "-")}</td>
             <td>${IRMS.escapeHtml(recipe.inkName)}</td>
+            <td>${materialCell}</td>
             <td>${status}</td>
             <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
-            ${values}
             <td class="sticky-right">
               <button type="button" class="btn success complete-btn" data-id="${recipe.id}">
                 완료
@@ -219,187 +185,25 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
-  function getSelectedChatRoom() {
-    return state.rooms.find((room) => room.key === state.selectedRoomKey) || null;
-  }
+  const chatModule = IRMS.createChat({
+    prefix: "chat",
+    stageLabels,
+    elements: { roomTabs, chatMessages, chatStageGroup, roomMeta },
+    state: {
+      get rooms() { return state.rooms; },
+      set rooms(v) { state.rooms = v; },
+      get selectedRoomKey() { return state.selectedRoomKey; },
+      set selectedRoomKey(v) { state.selectedRoomKey = v; },
+      get latestByRoom() { return state.chatLatestIdByRoom; },
+      set latestByRoom(v) { state.chatLatestIdByRoom = v; },
+      get timerId() { return state.chatTimerId; },
+      set timerId(v) { state.chatTimerId = v; },
+      get currentUsername() { return state.currentUsername; },
+    },
+  });
 
-  function persistSelectedChatRoom() {
-    window.localStorage.setItem("irms_chat_room", state.selectedRoomKey);
-  }
-
-  function renderChatRoomTabs() {
-    if (!roomTabs) {
-      return;
-    }
-
-    if (!state.rooms.length) {
-      roomTabs.innerHTML = '<div class="empty-state">No chat rooms available.</div>';
-      return;
-    }
-
-    roomTabs.innerHTML = state.rooms
-      .map((room) => {
-        const isActive = room.key === state.selectedRoomKey;
-        const countLabel =
-          room.messageCount > 0
-            ? `<span class="work-chat-tab-count">${IRMS.escapeHtml(IRMS.formatValue(room.messageCount))}</span>`
-            : "";
-        return `
-          <button
-            type="button"
-            class="work-chat-tab${isActive ? " active" : ""}"
-            data-room-key="${IRMS.escapeHtml(room.key)}"
-          >
-            <span>${IRMS.escapeHtml(room.name)}</span>
-            ${countLabel}
-          </button>
-        `;
-      })
-      .join("");
-  }
-
-  function syncChatStageVisibility() {
-    const room = getSelectedChatRoom();
-    const stageRequired = Boolean(room?.stageRequired);
-
-    if (chatStageGroup) {
-      chatStageGroup.classList.toggle("hidden", !stageRequired);
-    }
-
-    if (roomMeta) {
-      roomMeta.textContent = room ? room.name : "Room";
-    }
-  }
-
-  function renderChatMessages(items, options = {}) {
-    if (!chatMessages) {
-      return;
-    }
-
-    const replace = Boolean(options.replace);
-    if (!items.length && replace) {
-      chatMessages.innerHTML = `
-        <div class="work-chat-empty">
-          <strong>No messages yet.</strong>
-          <p class="muted">Post the first message in this room.</p>
-        </div>
-      `;
-      return;
-    }
-
-    const markup = items
-      .map((message) => {
-        const isOwn = state.currentUsername && message.createdByUsername === state.currentUsername;
-        const stageBadge = message.stage
-          ? `<span class="work-chat-stage-badge stage-${IRMS.escapeHtml(message.stage)}">${IRMS.escapeHtml(stageLabels[message.stage] || message.stage)}</span>`
-          : "";
-
-        return `
-          <article class="work-chat-message${isOwn ? " own" : ""}" data-message-id="${message.id}">
-            <div class="work-chat-message-head">
-              <strong class="work-chat-author">${IRMS.escapeHtml(message.createdByDisplayName || message.createdByUsername)}</strong>
-              <div class="work-chat-meta">
-                ${stageBadge}
-                <time>${IRMS.escapeHtml(IRMS.formatDateTime(message.createdAt))}</time>
-              </div>
-            </div>
-            <p class="work-chat-text">${IRMS.escapeHtml(message.messageText)}</p>
-          </article>
-        `;
-      })
-      .join("");
-
-    if (replace) {
-      chatMessages.innerHTML = markup;
-    } else {
-      const emptyState = chatMessages.querySelector(".work-chat-empty");
-      if (emptyState) {
-        emptyState.remove();
-      }
-      chatMessages.insertAdjacentHTML("beforeend", markup);
-    }
-
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-
-  async function loadChatRooms() {
-    const payload = await IRMS.listChatRooms();
-    state.rooms = payload.items || [];
-
-    if (!state.rooms.length) {
-      renderChatRoomTabs();
-      syncChatStageVisibility();
-      return;
-    }
-
-    if (!state.rooms.some((room) => room.key === state.selectedRoomKey)) {
-      state.selectedRoomKey = state.rooms[0].key;
-      persistSelectedChatRoom();
-    }
-
-    renderChatRoomTabs();
-    syncChatStageVisibility();
-  }
-
-  async function loadChatMessages(options = {}) {
-    const room = getSelectedChatRoom();
-    if (!room) {
-      if (chatMessages && Boolean(options.replace)) {
-        chatMessages.innerHTML = `
-          <div class="work-chat-empty">
-            <strong>No room selected.</strong>
-            <p class="muted">Refresh the page to retry room loading.</p>
-          </div>
-        `;
-      }
-      return;
-    }
-
-    const replace = Boolean(options.replace);
-    const afterId = replace ? 0 : Number(state.chatLatestIdByRoom[room.key] || 0);
-    const payload = await IRMS.getChatMessages({
-      roomKey: room.key,
-      limit: 80,
-      afterId,
-    });
-
-    if (replace) {
-      renderChatMessages(payload.items || [], { replace: true });
-    } else if ((payload.items || []).length > 0) {
-      renderChatMessages(payload.items || [], { replace: false });
-    }
-
-    state.chatLatestIdByRoom[room.key] = Number(
-      payload.latestId || state.chatLatestIdByRoom[room.key] || 0
-    );
-    syncChatStageVisibility();
-  }
-
-  async function refreshChatPanel(options = {}) {
-    const replace = Boolean(options.replace);
-
-    try {
-      await loadChatRooms();
-      await loadChatMessages({ replace });
-    } catch (error) {
-      if (!options.silent) {
-        IRMS.notify(`Chat sync failed: ${error.message}`, "error");
-      }
-    }
-  }
-
-  function startChatPolling() {
-    if (state.chatTimerId) {
-      window.clearInterval(state.chatTimerId);
-    }
-
-    state.chatTimerId = window.setInterval(() => {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      refreshChatPanel({ replace: false, silent: true });
-    }, 10000);
-  }
+  function refreshChatPanel(options) { return chatModule.refresh(options); }
+  function startChatPolling() { chatModule.startPolling(10000); }
 
   function renderStats(recipes) {
     const pendingCount = recipes.filter((recipe) => recipe.status === "pending").length;
@@ -450,8 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateFilterSummary();
 
     try {
-      const [materials, activeRecipes, completedRecipes] = await Promise.all([
-        IRMS.getMaterials(),
+      const [activeRecipes, completedRecipes] = await Promise.all([
         IRMS.getRecipes({ search, dateFrom: from, dateTo: to }),
         IRMS.getRecipes({ status: "completed" }),
       ]);
@@ -463,17 +266,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const working = activeRecipes.filter(
         (recipe) => recipe.status === "pending" || recipe.status === "in_progress"
       );
-      const materialMap = new Map(materials.map((material) => [material.id, material]));
-      const visibleMaterials = getVisibleMaterials(working, materialMap);
 
-      buildHeader(visibleMaterials);
-      buildRows(working, visibleMaterials);
+      buildHeader();
+      buildRows(working);
       renderStats(working);
       renderLog(completedRecipes);
     } catch (error) {
       IRMS.notify(`데이터 로드 실패: ${error.message}`, "error");
       tableBody.innerHTML =
-        '<tr><td colspan="24"><div class="empty-state">데이터를 불러오지 못했습니다.</div></td></tr>';
+        '<tr><td colspan="7"><div class="empty-state">데이터를 불러오지 못했습니다.</div></td></tr>';
     }
   }
 
@@ -570,17 +371,15 @@ document.addEventListener("DOMContentLoaded", () => {
     weighing.doneCount = 0;
     weighing.initialTotal = Number(totalSteps || 0);
     weighing.pendingRecipeCompletion = null;
+    weighing.lastCompleted = null;
   }
 
   function getQueueColorCounts(queue) {
     return queue.reduce(
       (acc, item) => {
         const group = item.colorGroup || "none";
-        if (!Object.prototype.hasOwnProperty.call(acc, group)) {
-          acc.none += 1;
-          return acc;
-        }
-        acc[group] += 1;
+        const key = Object.prototype.hasOwnProperty.call(acc, group) ? group : "none";
+        acc[key] += 1;
         return acc;
       },
       { black: 0, red: 0, blue: 0, yellow: 0, none: 0 }
@@ -588,13 +387,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncWeighingControls() {
+    const busy = weighing.loading || weighing.advancing || weighing.undoing;
     const hasAction = Boolean(weighing.pendingRecipeCompletion) || weighing.queue.length > 0;
-    const disableAdvance = weighing.loading || weighing.advancing || !hasAction;
     if (weighingAdvanceBtn) {
-      weighingAdvanceBtn.disabled = disableAdvance;
+      weighingAdvanceBtn.disabled = busy || !hasAction;
+    }
+    if (weighingUndoBtn) {
+      weighingUndoBtn.disabled = busy || !weighing.lastCompleted;
     }
     if (weighingRefreshBtn) {
-      weighingRefreshBtn.disabled = weighing.loading || weighing.advancing;
+      weighingRefreshBtn.disabled = busy;
     }
   }
 
@@ -636,9 +438,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const pending = weighing.pendingRecipeCompletion;
       weighingStateBadge.className = "weighing-state-badge state-recipe";
       weighingStateBadge.textContent = "RECIPE COMPLETE";
-      weighingMaterialName.textContent = `${pending.productName} · ${pending.inkName}`;
+      weighingProductName.textContent = pending.productName;
+      weighingInkLabel.textContent = pending.inkName;
+      weighingPositionLabel.textContent = pending.position || "-";
+      weighingMaterialName.textContent = "모든 계량 완료";
       weighingTargetValue.textContent = "완료 처리";
-      weighingRecipeMeta.textContent = `${pending.position || "-"} | 모든 계량 완료`;
       weighingActionHint.textContent =
         "Enter 또는 Space를 눌러 레시피 완료를 확정하고 다음 계량으로 이동하세요.";
       const nextStep = weighing.queue[0];
@@ -653,20 +457,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!current) {
       weighingStateBadge.className = "weighing-state-badge state-idle";
       weighingStateBadge.textContent = "IDLE";
+      weighingProductName.textContent = "-";
+      weighingInkLabel.textContent = "-";
+      weighingPositionLabel.textContent = "-";
       weighingMaterialName.textContent = "대기중";
       weighingTargetValue.textContent = "-";
-      weighingRecipeMeta.textContent = "남은 계량 항목이 없습니다.";
       weighingActionHint.textContent = "큐를 새로고침하거나 Esc로 계량 모드를 종료하세요.";
       weighingNextValue.textContent = "-";
       syncWeighingControls();
       return;
     }
 
-    weighingStateBadge.className = "weighing-state-badge";
+    const colorBadgeClass = current.colorGroup && current.colorGroup !== "none"
+      ? `color-${current.colorGroup}` : "";
+    weighingStateBadge.className = `weighing-state-badge ${colorBadgeClass}`.trim();
     weighingStateBadge.textContent = `${colorLabel(current.colorGroup)} STEP`;
+    weighingProductName.textContent = current.productName;
+    weighingInkLabel.textContent = current.inkName;
+    weighingPositionLabel.textContent = `위치: ${current.position || "-"}`;
     weighingMaterialName.textContent = current.materialName;
     weighingTargetValue.textContent = `${IRMS.formatValue(current.targetValue)} ${current.unit || ""}`.trim();
-    weighingRecipeMeta.textContent = `${current.productName} · ${current.position || "-"} · ${current.inkName}`;
     weighingActionHint.textContent = "Enter 또는 Space를 눌러 현재 계량을 완료 처리하세요.";
 
     const nextStep = weighing.queue[1];
@@ -681,7 +491,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadWeighingQueue(options = {}) {
     const resetProgress = Boolean(options.resetProgress);
     const notifySummary = Boolean(options.notifySummary);
-    const selectedGroup = (weighingColorGroup?.value || weighing.colorGroup || "all").trim();
+    const selectedGroup = (weighing.colorGroup || "all").trim();
 
     weighing.loading = true;
     syncWeighingControls();
@@ -720,9 +530,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function openWeighingMode() {
-    if (!weighingMode) {
+    if (!weighingMode) return;
+    const selected = weighingColorSelect?.value;
+    if (!selected) {
+      IRMS.notify("계량 모드를 선택하세요.", "warn");
       return;
     }
+    weighing.colorGroup = selected;
+
+    // Show mode label in header
+    if (weighingModeLabel) {
+      const opt = weighingColorSelect.options[weighingColorSelect.selectedIndex];
+      weighingModeLabel.textContent = opt ? opt.textContent : "";
+    }
+
     weighing.open = true;
     weighingMode.classList.add("active");
     weighingMode.setAttribute("aria-hidden", "false");
@@ -738,6 +559,8 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingMode.classList.remove("active");
     weighingMode.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
+    if (weighingColorSelect) weighingColorSelect.value = "";
+    if (weighingOpenBtn) weighingOpenBtn.disabled = true;
   }
 
   async function handleWeighingAdvance() {
@@ -769,15 +592,20 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const measuredBy = weighingOperator?.value?.trim() || "작업자";
       const stepResult = await IRMS.completeWeighingStep(
         current.recipeId,
-        current.materialId,
-        measuredBy
+        current.materialId
       );
 
       weighing.queue.shift();
       weighing.doneCount += 1;
+      weighing.lastCompleted = {
+        recipeId: current.recipeId,
+        materialId: current.materialId,
+        materialName: current.materialName,
+        productName: current.productName,
+        inkName: current.inkName,
+      };
 
       if (stepResult.ready_for_recipe_completion) {
         weighing.pendingRecipeCompletion = current;
@@ -799,99 +627,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  if (roomTabs) {
-    roomTabs.addEventListener("click", async (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
+  async function handleWeighingUndo() {
+    if (!weighing.open || weighing.loading || weighing.advancing || weighing.undoing) {
+      return;
+    }
+    if (!weighing.lastCompleted) {
+      IRMS.notify("되돌릴 수 있는 스텝이 없습니다.", "info");
+      return;
+    }
 
-      const button = target.closest("[data-room-key]");
-      if (!(button instanceof HTMLElement)) {
-        return;
-      }
+    weighing.undoing = true;
+    syncWeighingControls();
 
-      const nextRoomKey = button.dataset.roomKey;
-      if (!nextRoomKey || nextRoomKey === state.selectedRoomKey) {
-        return;
+    try {
+      const target = weighing.lastCompleted;
+      await IRMS.undoWeighingStep(target.recipeId, target.materialId);
+      weighing.lastCompleted = null;
+      if (weighing.doneCount > 0) {
+        weighing.doneCount -= 1;
       }
-
-      state.selectedRoomKey = nextRoomKey;
-      persistSelectedChatRoom();
-      renderChatRoomTabs();
-      syncChatStageVisibility();
-
-      try {
-        await loadChatMessages({ replace: true });
-      } catch (error) {
-        IRMS.notify(`Chat load failed: ${error.message}`, "error");
-      }
-    });
+      weighing.pendingRecipeCompletion = null;
+      IRMS.notify(`${target.materialName} 되돌림 완료`, "success");
+      await loadWeighingQueue();
+      await render();
+      renderWeighingPanel();
+    } catch (error) {
+      IRMS.notify(`되돌리기 실패: ${error.message}`, "error");
+    } finally {
+      weighing.undoing = false;
+      syncWeighingControls();
+    }
   }
 
-  if (chatForm) {
-    chatForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (state.chatSending) {
-        return;
-      }
+  chatModule.bindRoomTabs(roomTabs);
 
-      const room = getSelectedChatRoom();
-      if (!room) {
-        return;
-      }
-
-      const messageText = chatInput?.value.trim() || "";
-      const stage = room.stageRequired ? chatStage?.value || "registered" : null;
-
-      if (!messageText) {
-        IRMS.notify("Enter a message before sending.", "error");
-        return;
-      }
-
-      state.chatSending = true;
-      if (chatSend) {
-        chatSend.disabled = true;
-      }
-
-      try {
-        const payload = await IRMS.postChatMessage({
-          roomKey: room.key,
-          messageText,
-          stage,
-        });
-
-        if (payload.message) {
-          renderChatMessages([payload.message], { replace: false });
-          state.chatLatestIdByRoom[room.key] = Number(
-            payload.message.id || state.chatLatestIdByRoom[room.key] || 0
-          );
-
-          const roomIndex = state.rooms.findIndex((entry) => entry.key === room.key);
-          if (roomIndex >= 0) {
-            state.rooms[roomIndex].messageCount =
-              Number(state.rooms[roomIndex].messageCount || 0) + 1;
-            state.rooms[roomIndex].latestMessageAt = payload.message.createdAt;
-            renderChatRoomTabs();
-          }
-        }
-
-        if (chatInput) {
-          chatInput.value = "";
-          chatInput.focus();
-        }
-
-        IRMS.notify("Message posted.", "success");
-      } catch (error) {
-        IRMS.notify(`Message post failed: ${error.message}`, "error");
-      } finally {
-        state.chatSending = false;
-        if (chatSend) {
-          chatSend.disabled = false;
-        }
-      }
-    });
-  }
+  chatModule.bindForm({ form: chatForm, input: chatInput, stage: chatStage, send: chatSend });
 
   focusButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -951,7 +721,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (row) {
         row.classList.remove("removing");
       }
-      IRMS.notify(`완료 처리 실패: ${error.message}`, "error");
+      const msg = error.message || "";
+      if (msg.includes("WEIGHING_INCOMPLETE")) {
+        const remaining = msg.split(":")[1] || "?";
+        IRMS.notify(`계량이 완료되지 않았습니다. 미계량 ${remaining}건이 남아있습니다. 계량 모드에서 진행해 주세요.`, "error");
+      } else {
+        IRMS.notify(`완료 처리 실패: ${msg}`, "error");
+      }
     }
   });
 
@@ -974,13 +750,14 @@ document.addEventListener("DOMContentLoaded", () => {
   if (weighingAdvanceBtn) {
     weighingAdvanceBtn.addEventListener("click", handleWeighingAdvance);
   }
-  if (weighingColorGroup) {
-    weighing.colorGroup = IRMS.loadPreference(preferenceKeys.weighingColor, "all") || "all";
-    weighingColorGroup.value = weighing.colorGroup;
-    weighingColorGroup.addEventListener("change", () => {
-      weighing.colorGroup = weighingColorGroup.value || "all";
-      IRMS.savePreference(preferenceKeys.weighingColor, weighing.colorGroup);
-      loadWeighingQueue({ resetProgress: true, notifySummary: true });
+  if (weighingUndoBtn) {
+    weighingUndoBtn.addEventListener("click", handleWeighingUndo);
+  }
+  if (weighingColorSelect) {
+    weighingColorSelect.value = "";
+    if (weighingOpenBtn) weighingOpenBtn.disabled = true;
+    weighingColorSelect.addEventListener("change", () => {
+      if (weighingOpenBtn) weighingOpenBtn.disabled = !weighingColorSelect.value;
     });
   }
   if (weighingMode) {

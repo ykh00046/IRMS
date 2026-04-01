@@ -242,10 +242,8 @@
   }
 
   async function loadAuditLogs() {
+    IRMS.btnLoading(auditRefreshBtn, true);
     try {
-      if (auditRefreshBtn) {
-        auditRefreshBtn.disabled = true;
-      }
       const result = await IRMS.listAuditLogs({
         action: String(auditActionFilter?.value || "") || undefined,
         limit: Number(auditLimitFilter?.value || 50),
@@ -254,9 +252,7 @@
     } catch (error) {
       IRMS.notify(`감사 로그 조회 실패: ${error.message}`, "error");
     } finally {
-      if (auditRefreshBtn) {
-        auditRefreshBtn.disabled = false;
-      }
+      IRMS.btnLoading(auditRefreshBtn, false);
     }
   }
 
@@ -277,7 +273,7 @@
       return;
     }
 
-    createSubmit.disabled = true;
+    IRMS.btnLoading(createSubmit, true);
     try {
       await IRMS.createUser({
         displayName,
@@ -295,7 +291,7 @@
         : error.message;
       IRMS.notify(`계정 생성 실패: ${message}`, "error");
     } finally {
-      createSubmit.disabled = false;
+      IRMS.btnLoading(createSubmit, false);
     }
   }
 

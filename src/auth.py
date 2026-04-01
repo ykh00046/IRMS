@@ -107,6 +107,12 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
 
     user = get_user_by_id(int(user_id))
     if user:
+        max_level = request.session.get("max_level")
+        if max_level:
+            max_rank = ACCESS_LEVEL_RANK.get(max_level, 0)
+            user_rank = ACCESS_LEVEL_RANK.get(user.get("access_level", ""), 0)
+            if user_rank > max_rank:
+                user["access_level"] = max_level
         return user
 
     request.session.clear()
@@ -135,9 +141,11 @@ def require_access_level(required_level: str):
     return dependency
 
 
-def login_user(request: Request, user: dict[str, Any]) -> None:
+def login_user(request: Request, user: dict[str, Any], max_level: str | None = None) -> None:
     request.session.clear()
     request.session["user_id"] = user["id"]
+    if max_level:
+        request.session["max_level"] = max_level
 
 
 def logout_user(request: Request) -> None:

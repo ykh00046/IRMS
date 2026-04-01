@@ -180,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function render() {
     persistFilters();
     updateFilterSummary();
+    IRMS.btnLoading(queryBtn, true);
     try {
       snapshot = await IRMS.getStats({
         dateFrom: fromInput.value,
@@ -193,6 +194,8 @@ document.addEventListener("DOMContentLoaded", () => {
       renderBars(snapshot);
     } catch (error) {
       IRMS.notify(`통계 조회 실패: ${error.message}`, "error");
+    } finally {
+      IRMS.btnLoading(queryBtn, false);
     }
   }
 

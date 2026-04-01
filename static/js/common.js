@@ -462,13 +462,22 @@
     };
   }
 
-  async function completeWeighingStep(recipeId, materialId, measuredBy) {
+  async function completeWeighingStep(recipeId, materialId) {
     return request("/weighing/step/complete", {
       method: "POST",
       body: {
         recipe_id: recipeId,
         material_id: materialId,
-        measured_by: measuredBy || "작업자",
+      },
+    });
+  }
+
+  async function undoWeighingStep(recipeId, materialId) {
+    return request("/weighing/step/undo", {
+      method: "POST",
+      body: {
+        recipe_id: recipeId,
+        material_id: materialId,
       },
     });
   }
@@ -630,6 +639,40 @@
     }
   }
 
+  function showLoading(el) {
+    if (!el) return null;
+    let overlay = el.querySelector('.loading-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.className = 'loading-overlay';
+      overlay.innerHTML = '<div class="spinner"></div>';
+      el.style.position = el.style.position || 'relative';
+      el.appendChild(overlay);
+    }
+    requestAnimationFrame(() => overlay.classList.add('active'));
+    return overlay;
+  }
+
+  function hideLoading(el) {
+    if (!el) return;
+    const overlay = el.querySelector('.loading-overlay');
+    if (overlay) overlay.classList.remove('active');
+  }
+
+  function btnLoading(btn, loading) {
+    if (!btn) return;
+    if (loading) {
+      btn._origHTML = btn.innerHTML;
+      btn.innerHTML = '<div class="spinner"></div>';
+      btn.classList.add('loading');
+      btn.disabled = true;
+    } else {
+      btn.innerHTML = btn._origHTML || btn.innerHTML;
+      btn.classList.remove('loading');
+      btn.disabled = false;
+    }
+  }
+
   function notify(message, type) {
     const root =
       document.getElementById("toast-root") ||
@@ -688,6 +731,7 @@
     importRecipes,
     getWeighingQueue,
     completeWeighingStep,
+    undoWeighingStep,
     completeWeighingRecipe,
     getStats,
     exportStatsCsv,
@@ -702,7 +746,177 @@
     savePreference,
     clearPreference,
     notify,
+    showLoading,
+    hideLoading,
+    btnLoading,
   };
 
+  /**
+   * Shared login form handler.
+   * @param {object} opts
+   * @param {string} opts.formId - form element ID
+   * @param {string} opts.usernameId - username input ID
+   * @param {string} opts.passwordId - password input ID
+   * @param {string} opts.submitId - submit button ID
+   * @param {string} opts.errorId - error display element ID
+   * @param {string} opts.nextId - hidden next-url input ID
+   * @param {Function} opts.loginFn - IRMS.login or IRMS.loginManager
+   * @param {string} opts.defaultNext - fallback redirect URL
+   * @param {string} opts.emptyMsg - message for empty fields
+   * @param {string} opts.failMsg - message for invalid credentials
+   */
+  function bindLoginForm(opts) {
+    const form = document.getElementById(opts.formId);
+    const usernameInput = document.getElementById(opts.usernameId);
+    const passwordInput = document.getElementById(opts.passwordId);
+    const submitBtn = document.getElementById(opts.submitId);
+    const errorNode = document.getElementById(opts.errorId);
+    const nextInput = document.getElementById(opts.nextId || "next-url");
+
+    function setError(message) {
+      if (!errorNode) return;
+      if (!message) { errorNode.hidden = true; errorNode.textContent = ""; return; }
+      errorNode.hidden = false;
+      errorNode.textContent = message;
+    }
+
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const username = String(usernameInput?.value || "").trim();
+      const password = String(passwordInput?.value || "");
+      if (!username || !password) { setError(opts.emptyMsg); return; }
+      setError("");
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        await opts.loginFn(username, password);
+        const nextUrl = String(nextInput?.value || opts.defaultNext);
+        window.location.assign(nextUrl.startsWith("/") ? nextUrl : opts.defaultNext);
+      } catch (error) {
+        setError(error.message === "INVALID_CREDENTIALS" ? opts.failMsg : error.message);
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  window.IRMS.bindLoginForm = bindLoginForm;
+
+  function colorLabel(color) {
+    var map = {
+      black: "BLACK", red: "RED", blue: "BLUE", yellow: "YELLOW",
+      none: "기타", all: "전체",
+    };
+    return map[color] || "기타";
+  }
+  window.IRMS.colorLabel = colorLabel;
+
+  function initTableScrollHints() {
+    document.querySelectorAll(".table-wrap").forEach(function (wrap) {
+      function update() {
+        var hasScroll = wrap.scrollWidth > wrap.clientWidth + 1;
+        wrap.classList.toggle("has-scroll", hasScroll);
+        wrap.classList.toggle("scrolled-end", hasScroll && wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2);
+      }
+      wrap.addEventListener("scroll", update, { passive: true });
+      update();
+      new ResizeObserver(update).observe(wrap);
+    });
+  }
+
+  window.IRMS.initTableScrollHints = initTableScrollHints;
+
+  /* ── Chat notification: sound + TTS ── */
+  var notifSoundCtx = null;
+
+  function playChatSound() {
+    try {
+      if (!notifSoundCtx) notifSoundCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = notifSoundCtx;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1047, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch (_) { /* AudioContext unavailable */ }
+  }
+
+  function speakText(text) {
+    if (!window.speechSynthesis) return;
+    var utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ko-KR";
+    utterance.rate = 1.1;
+    utterance.volume = 0.9;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  window.IRMS.playChatSound = playChatSound;
+  window.IRMS.speakText = speakText;
+
   bindLogoutButton();
+
+  const navToggle = document.getElementById("nav-toggle");
+  const topNav = document.querySelector(".top-nav");
+  if (navToggle && topNav) {
+    navToggle.addEventListener("click", () => {
+      const isOpen = topNav.classList.toggle("open");
+      navToggle.classList.toggle("active", isOpen);
+      navToggle.setAttribute("aria-expanded", String(isOpen));
+    });
+  }
+
+  // Floating chat sidebar
+  const chatFloat = document.querySelector(".chat-float");
+  if (chatFloat) {
+    const toggle = document.createElement("button");
+    toggle.className = "chat-float-toggle";
+    toggle.type = "button";
+    toggle.setAttribute("aria-label", "메시지");
+    toggle.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    document.body.appendChild(toggle);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "chat-float-close";
+    closeBtn.type = "button";
+    closeBtn.setAttribute("aria-label", "닫기");
+    closeBtn.innerHTML = "&times;";
+    const chatHead = chatFloat.querySelector(".chat-head");
+    if (chatHead) {
+      chatHead.appendChild(closeBtn);
+    } else {
+      chatFloat.prepend(closeBtn);
+    }
+
+    function setChatOpen(open) {
+      chatFloat.classList.toggle("open", open);
+      toggle.classList.toggle("active", open);
+    }
+
+    toggle.addEventListener("click", () => setChatOpen(!chatFloat.classList.contains("open")));
+    closeBtn.addEventListener("click", () => setChatOpen(false));
+  }
+
+  // Enter to send in chat textareas (Shift+Enter for newline)
+  document.addEventListener("keydown", (e) => {
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.isComposing &&
+      e.target.classList.contains("chat-textarea")
+    ) {
+      e.preventDefault();
+      const form = e.target.closest("form");
+      if (form) form.requestSubmit();
+    }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initTableScrollHints);
+  } else {
+    initTableScrollHints();
+  }
 })();

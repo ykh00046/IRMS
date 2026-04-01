@@ -26,10 +26,15 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  transition: border-color 0.2s ease;
+}
+
+.summary-card:hover {
+  border-color: var(--border-strong);
 }
 
 .summary-label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
@@ -84,8 +89,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.12), transparent 55%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+    linear-gradient(135deg, rgba(51, 65, 85, 0.12), transparent 55%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.01));
 }
 
 .audit-filter {
@@ -110,8 +115,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(10, 11, 12, 0.85);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.01)),
+    var(--bg-surface-100);
 }
 
 .audit-item::before {
@@ -122,7 +127,7 @@
   bottom: 0.95rem;
   width: 3px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #60a5fa, rgba(37, 99, 235, 0.15));
+  background: linear-gradient(180deg, var(--accent-primary), rgba(51, 65, 85, 0.15));
 }
 
 .audit-item-top {
@@ -138,9 +143,9 @@
   align-items: center;
   padding: 0.24rem 0.55rem;
   border-radius: var(--radius-full);
-  background: rgba(37, 99, 235, 0.16);
-  color: #bfdbfe;
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(51, 65, 85, 0.16);
+  color: var(--text-secondary);
+  border: 1px solid rgba(51, 65, 85, 0.35);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -212,14 +217,14 @@
 }
 
 .inline-chip.current {
-  color: #93c5fd;
-  background: rgba(37, 99, 235, 0.14);
+  color: var(--status-info);
+  background: var(--status-info-bg);
   border-color: rgba(59, 130, 246, 0.4);
 }
 
 .inline-chip.inactive {
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--status-error);
+  background: var(--status-error-bg);
   border-color: rgba(239, 68, 68, 0.35);
 }
 

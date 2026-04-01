@@ -33,6 +33,7 @@
             class="selection-card"
             data-operator-select
             data-user-id="{{ operator.id }}"
+            aria-label="{{ operator.display_name }} 작업자 선택"
           >
             <span class="access-chip">{{ operator.role_label }}</span>
             <strong>{{ operator.display_name }}</strong>
@@ -47,7 +48,7 @@
       </section>
     </main>
 
-    <div id="toast-root" class="toast-container"></div>
+    <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script src="/static/js/common.js"></script>
     <script src="/static/js/weighing_select.js"></script>
   </body>

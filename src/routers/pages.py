@@ -76,7 +76,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             _build_context(
                 request,
                 next_url=_safe_next(next, "/weighing"),
-                operators=list_users_by_access_levels("operator"),
+                operators=list_users_by_access_levels("operator", "manager", "admin"),
             ),
         )
 
