@@ -419,14 +419,34 @@
     return mapPreview(payload);
   }
 
-  async function importRecipes(rawText, createdBy) {
+  async function importRecipes(rawText, createdBy, revisionOf) {
+    const body = {
+      raw_text: rawText,
+      created_by: createdBy || "관리자",
+    };
+    if (revisionOf != null) {
+      body.revision_of = revisionOf;
+    }
     return request("/recipes/import", {
       method: "POST",
-      body: {
-        raw_text: rawText,
-        created_by: createdBy || "관리자",
-      },
+      body,
     });
+  }
+
+  async function getProducts() {
+    const payload = await request("/recipes/products");
+    return payload.items || [];
+  }
+
+  async function getRecipesByProduct(productName, limit) {
+    const query = { product_name: productName };
+    if (limit) query.limit = limit;
+    const payload = await request("/recipes/by-product", { query });
+    return payload;
+  }
+
+  async function getRecipeDetail(recipeId) {
+    return request(`/recipes/${recipeId}/detail`);
   }
 
   function mapWeighingStep(row) {
@@ -729,6 +749,9 @@
     updateRecipeStatus,
     previewImport,
     importRecipes,
+    getProducts,
+    getRecipesByProduct,
+    getRecipeDetail,
     getWeighingQueue,
     completeWeighingStep,
     undoWeighingStep,

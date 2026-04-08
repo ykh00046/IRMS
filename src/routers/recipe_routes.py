@@ -99,6 +99,96 @@ def build_router() -> tuple[APIRouter, APIRouter]:
 
         return {"items": items, "total": len(items)}
 
+    @operator_router.get("/recipes/products")
+    async def list_products() -> dict[str, Any]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT product_name FROM recipes ORDER BY product_name ASC"
+            ).fetchall()
+        items = [row["product_name"] for row in rows]
+        return {"items": items, "total": len(items)}
+
+    @operator_router.get("/recipes/by-product")
+    async def recipes_by_product(
+        product_name: str = Query(..., min_length=1, max_length=200),
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            recipe_rows = connection.execute(
+                """
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+                       r.created_by, r.created_at, r.completed_at, r.revision_of
+                FROM recipes r
+                WHERE r.product_name = ?
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT ?
+                """,
+                (product_name, limit),
+            ).fetchall()
+
+            recipe_ids = [row["id"] for row in recipe_rows]
+            item_map = _fetch_recipe_items(connection, recipe_ids)
+
+        items = []
+        for recipe_row in recipe_rows:
+            payload = row_to_dict(recipe_row)
+            recipe_items = item_map.get(recipe_row["id"], [])
+            payload["items"] = [
+                {
+                    "material_id": it["material_id"],
+                    "material_name": it["material_name"],
+                    "unit": it.get("unit"),
+                    "value": it["target_value"],
+                }
+                for it in recipe_items
+            ]
+            items.append(payload)
+
+        return {"product_name": product_name, "items": items, "total": len(items)}
+
+    @operator_router.get("/recipes/{recipe_id}/detail")
+    async def recipe_detail(recipe_id: int) -> dict[str, Any]:
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                """
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+                       r.created_by, r.created_at, r.completed_at, r.revision_of
+                FROM recipes r
+                WHERE r.id = ?
+                """,
+                (recipe_id,),
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+
+            item_map = _fetch_recipe_items(connection, [recipe_id])
+
+        recipe = row_to_dict(recipe_row)
+        recipe_items = item_map.get(recipe_id, [])
+        recipe["items"] = [
+            {
+                "material_id": it["material_id"],
+                "material_name": it["material_name"],
+                "unit": it.get("unit"),
+                "value": it["target_value"],
+                "measured_at": it.get("measured_at"),
+                "measured_by": it.get("measured_by"),
+            }
+            for it in recipe_items
+        ]
+
+        # Build TSV for clipboard copy / spreadsheet load
+        material_names = [it["material_name"] for it in recipe_items]
+        header = ["제품명", "위치", "잉크명"] + material_names
+        values = [
+            recipe["product_name"] or "",
+            recipe["position"] or "",
+            recipe["ink_name"] or "",
+        ] + [str(it["target_value"]) if it["target_value"] is not None else "" for it in recipe_items]
+        recipe["tsv"] = "\t".join(header) + "\n" + "\t".join(values)
+
+        return recipe
+
     @operator_router.get("/recipes")
     async def list_recipes(
         status: str | None = None,
@@ -376,8 +466,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                     """
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
-                        raw_input_hash, raw_input_text
-                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?)
+                        raw_input_hash, raw_input_text, revision_of
+                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -387,6 +477,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         now,
                         raw_hash,
                         body.raw_text,
+                        body.revision_of,
                     ),
                 )
                 recipe_id = cursor.lastrowid
@@ -412,6 +503,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                     "created_ids": created_ids,
                     "warnings_count": len(parsed["warnings"]),
                     "raw_hash": raw_hash,
+                    "revision_of": body.revision_of,
                 },
             )
             connection.commit()

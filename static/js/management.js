@@ -45,6 +45,19 @@
   let previewIsStale = false;
   let suppressDirtyTracking = false;
   let spreadsheetFallbackNotified = false;
+  // Lookup tab elements
+  const lookupProduct = document.getElementById("lookup-product");
+  const productList = document.getElementById("product-list");
+  const lookupBtn = document.getElementById("lookup-btn");
+  const lookupResult = document.getElementById("lookup-result");
+  const lookupActions = document.getElementById("lookup-actions");
+  const lookupSelectedLabel = document.getElementById("lookup-selected-label");
+  const lookupCopyBtn = document.getElementById("lookup-copy-btn");
+  const lookupCloneBtn = document.getElementById("lookup-clone-btn");
+
+  let selectedRecipeId = null;
+  let pendingRevisionOf = null;
+
   const chatState = {
     currentUsername: shell?.dataset.currentUsername || "",
     selectedRoomKey: window.localStorage.getItem("irms_chat_room") || "notice",
@@ -346,7 +359,7 @@
       historyBody.innerHTML = rows
         .map(
           (recipe) => `
-            <tr>
+            <tr class="history-row" data-recipe-id="${recipe.id}">
               <td>${recipe.id}</td>
               <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}</td>
               <td>${IRMS.escapeHtml(recipe.inkName)}</td>
@@ -358,6 +371,65 @@
           `,
         )
         .join("");
+
+      // Accordion: row click to expand detail
+      historyBody.querySelectorAll(".history-row").forEach((row) => {
+        row.style.cursor = "pointer";
+        row.addEventListener("click", async () => {
+          const recipeId = Number(row.dataset.recipeId);
+          const existing = row.nextElementSibling;
+          if (existing && existing.classList.contains("history-detail-row")) {
+            existing.remove();
+            row.classList.remove("selected");
+            return;
+          }
+          // Close any other open detail
+          historyBody.querySelectorAll(".history-detail-row").forEach((r) => r.remove());
+          historyBody.querySelectorAll(".history-row.selected").forEach((r) => r.classList.remove("selected"));
+
+          row.classList.add("selected");
+          try {
+            const detail = await IRMS.getRecipeDetail(recipeId);
+            const items = detail.items || [];
+            const itemsHtml = items.length
+              ? items.map((it) =>
+                  `<span class="detail-chip">${IRMS.escapeHtml(it.material_name)}: ${IRMS.formatValue(it.value)}g</span>`
+                ).join("")
+              : '<span class="muted">재료 없음</span>';
+
+            const detailRow = document.createElement("tr");
+            detailRow.classList.add("history-detail-row");
+            detailRow.innerHTML = `<td colspan="7">
+              <div class="history-detail-content">
+                <div class="detail-items">${itemsHtml}</div>
+                <div class="detail-actions">
+                  <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
+                  <button class="btn btn-sm accent history-clone-btn" data-recipe-id="${recipeId}">복제하여 등록</button>
+                </div>
+              </div>
+            </td>`;
+            row.after(detailRow);
+
+            detailRow.querySelector(".history-copy-btn").addEventListener("click", async (e) => {
+              e.stopPropagation();
+              try {
+                await copyToClipboard(detail.tsv);
+                IRMS.notify("클립보드에 복사되었습니다. 엑셀에서 Ctrl+V로 붙여넣으세요.", "success");
+              } catch (err) {
+                IRMS.notify(`복사 실패: ${err.message}`, "error");
+              }
+            });
+
+            detailRow.querySelector(".history-clone-btn").addEventListener("click", (e) => {
+              e.stopPropagation();
+              selectedRecipeId = recipeId;
+              handleLookupClone();
+            });
+          } catch (error) {
+            IRMS.notify(`상세 조회 실패: ${error.message}`, "error");
+          }
+        });
+      });
     } catch (error) {
       IRMS.notify(`이력 조회 실패: ${error.message}`, "error");
     }
@@ -408,7 +480,7 @@
 
     IRMS.btnLoading(registerBtn, true);
     try {
-      const result = await IRMS.importRecipes(confirmedRawText, "System Gate");
+      const result = await IRMS.importRecipes(confirmedRawText, "System Gate", pendingRevisionOf);
       IRMS.notify(
         `${result.created_count}건 레시피를 등록했습니다.`,
         "success",
@@ -426,6 +498,7 @@
   function handleClear() {
     confirmedRawText = "";
     previewIsStale = false;
+    pendingRevisionOf = null;
     if (sheet) {
       initSpreadsheet(); // Reinitialize to clear
     } else if (rawInput) {
@@ -477,6 +550,241 @@
   }
 
 
+  // ── Lookup Tab Logic ──
+
+  async function loadProducts() {
+    try {
+      const items = await IRMS.getProducts();
+      if (productList) {
+        productList.innerHTML = items
+          .map((name) => `<option value="${IRMS.escapeHtml(name)}">`)
+          .join("");
+      }
+    } catch (error) {
+      IRMS.notify(`제품 목록 로드 실패: ${error.message}`, "error");
+    }
+  }
+
+  function setLookupSelection(recipeId) {
+    selectedRecipeId = recipeId;
+    const rows = lookupResult.querySelectorAll("tbody tr");
+    rows.forEach((row) => {
+      row.classList.toggle("selected", Number(row.dataset.recipeId) === recipeId);
+    });
+    if (lookupSelectedLabel) {
+      lookupSelectedLabel.textContent = recipeId ? `선택: #${recipeId}` : "선택: 없음";
+    }
+    if (lookupCopyBtn) lookupCopyBtn.disabled = !recipeId;
+    if (lookupCloneBtn) lookupCloneBtn.disabled = !recipeId;
+    if (lookupActions) lookupActions.hidden = !recipeId;
+  }
+
+  async function handleLookup() {
+    const productName = lookupProduct ? lookupProduct.value.trim() : "";
+    if (!productName) {
+      IRMS.notify("제품명을 입력해주세요.", "warn");
+      return;
+    }
+
+    IRMS.btnLoading(lookupBtn, true);
+    try {
+      const data = await IRMS.getRecipesByProduct(productName);
+      const recipes = data.items || [];
+
+      if (!recipes.length) {
+        lookupResult.innerHTML = '<p class="empty-state">해당 제품의 레시피가 없습니다.</p>';
+        setLookupSelection(null);
+        return;
+      }
+
+      // Collect all unique material names across recipes for pivot columns
+      const allMaterials = [];
+      const materialSet = new Set();
+      for (const recipe of recipes) {
+        for (const item of recipe.items || []) {
+          if (!materialSet.has(item.material_name)) {
+            materialSet.add(item.material_name);
+            allMaterials.push(item.material_name);
+          }
+        }
+      }
+
+      // Build pivot table
+      const headerCells = [
+        "<th>ID</th>",
+        "<th>위치</th>",
+        "<th>잉크명</th>",
+        ...allMaterials.map((m) => `<th>${IRMS.escapeHtml(m)}</th>`),
+        "<th>상태</th>",
+        "<th>등록일</th>",
+        "<th>등록자</th>",
+      ].join("");
+
+      const bodyRows = recipes
+        .map((recipe) => {
+          const valueMap = {};
+          for (const item of recipe.items || []) {
+            valueMap[item.material_name] = item.value;
+          }
+          const materialCells = allMaterials
+            .map((m) => {
+              const val = valueMap[m];
+              return val != null
+                ? `<td class="value-cell">${IRMS.formatValue(val)}</td>`
+                : '<td class="value-cell muted">-</td>';
+            })
+            .join("");
+
+          return `<tr data-recipe-id="${recipe.id}">
+            <td>${recipe.id}</td>
+            <td>${IRMS.escapeHtml(recipe.position || "-")}</td>
+            <td>${IRMS.escapeHtml(recipe.ink_name || "")}</td>
+            ${materialCells}
+            <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
+            <td>${IRMS.formatDateTime(recipe.created_at)}</td>
+            <td>${IRMS.escapeHtml(recipe.created_by || "-")}</td>
+          </tr>`;
+        })
+        .join("");
+
+      lookupResult.innerHTML = `<table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+
+      // Row click to select
+      lookupResult.querySelectorAll("tbody tr").forEach((row) => {
+        row.addEventListener("click", () => {
+          setLookupSelection(Number(row.dataset.recipeId));
+        });
+      });
+
+      setLookupSelection(null);
+      if (lookupActions) lookupActions.hidden = false;
+    } catch (error) {
+      IRMS.notify(`조회 실패: ${error.message}`, "error");
+    } finally {
+      IRMS.btnLoading(lookupBtn, false);
+    }
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback for non-HTTPS or older browsers
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return Promise.resolve();
+  }
+
+  async function handleLookupCopy() {
+    if (!selectedRecipeId) return;
+    try {
+      const detail = await IRMS.getRecipeDetail(selectedRecipeId);
+      await copyToClipboard(detail.tsv);
+      IRMS.notify("클립보드에 복사되었습니다. 엑셀에서 Ctrl+V로 붙여넣으세요.", "success");
+    } catch (error) {
+      IRMS.notify(`복사 실패: ${error.message}`, "error");
+    }
+  }
+
+  async function handleLookupClone() {
+    if (!selectedRecipeId) return;
+    try {
+      const detail = await IRMS.getRecipeDetail(selectedRecipeId);
+      const tsvRows = detail.tsv.split("\n").map((r) => r.split("\t"));
+
+      // Switch to import tab
+      tabBtns.forEach((b) => b.classList.remove("active"));
+      tabPanels.forEach((p) => p.classList.remove("active"));
+      const importTab = document.querySelector('[data-tab="import"]');
+      if (importTab) importTab.classList.add("active");
+      document.getElementById("tab-import").classList.add("active");
+
+      // Load data into spreadsheet
+      suppressDirtyTracking = true;
+      destroySpreadsheet();
+
+      const spreadsheetFactory = getSpreadsheetFactory();
+      if (spreadsheetFactory && spreadsheetContainer) {
+        // Pad rows to at least 15 rows
+        while (tsvRows.length < 15) {
+          tsvRows.push(Array(tsvRows[0]?.length || 10).fill(""));
+        }
+        // Pad columns to at least 10
+        for (const row of tsvRows) {
+          while (row.length < 10) row.push("");
+        }
+
+        spreadsheetFactory(spreadsheetContainer, {
+          worksheets: [
+            {
+              data: tsvRows,
+              minDimensions: [Math.max(10, tsvRows[0].length), 15],
+              defaultColWidth: 80,
+              tableOverflow: true,
+              tableWidth: "100%",
+              tableHeight: "300px",
+              rowResize: true,
+              columnDrag: true,
+              contextMenu: true,
+              textOverflow: true,
+              onchange: () => markPreviewStale(),
+              onafterchanges: () => markPreviewStale(),
+              onpaste: () => markPreviewStale(),
+            },
+          ],
+        });
+
+        setRawInputMode(false);
+        setTimeout(() => {
+          getActiveWorksheet();
+          suppressDirtyTracking = false;
+        }, 0);
+      } else if (rawInput) {
+        rawInput.value = detail.tsv;
+        setRawInputMode(true);
+        suppressDirtyTracking = false;
+      }
+
+      pendingRevisionOf = selectedRecipeId;
+      currentPreview = null;
+      previewIsStale = false;
+      confirmedRawText = "";
+      renderValidationMeta({ rows: [], warnings: [], errors: [] });
+      renderIssues([], errorList, "ERROR 없음");
+      renderIssues([], warningList, "WARN 없음");
+      syncRegisterState();
+
+      IRMS.notify(`레시피 #${selectedRecipeId}을 불러왔습니다. 수정 후 Validate → Register 하세요.`, "info");
+    } catch (error) {
+      IRMS.notify(`복제 실패: ${error.message}`, "error");
+    }
+  }
+
+  // Lookup event listeners
+  if (lookupBtn) {
+    lookupBtn.addEventListener("click", handleLookup);
+  }
+  if (lookupProduct) {
+    lookupProduct.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleLookup();
+      }
+    });
+  }
+  if (lookupCopyBtn) {
+    lookupCopyBtn.addEventListener("click", handleLookupCopy);
+  }
+  if (lookupCloneBtn) {
+    lookupCloneBtn.addEventListener("click", handleLookupClone);
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       refreshChatPanel({ replace: false, silent: true });
@@ -494,6 +802,7 @@
       await Promise.all([
         renderHistory(),
         refreshChatPanel({ replace: true, silent: true }),
+        loadProducts(),
       ]);
       startChatPolling();
     } catch (error) {

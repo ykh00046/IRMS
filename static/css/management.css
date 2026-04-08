@@ -196,6 +196,137 @@
   border: 1px solid var(--border-subtle);
 }
 
+/* Lookup Tab */
+.lookup-search {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1.25rem;
+}
+
+.lookup-search .filter-group {
+  flex: 1;
+  max-width: 400px;
+}
+
+.lookup-result {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.lookup-result table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lookup-result thead td,
+.lookup-result thead th {
+  background-color: var(--bg-surface-300);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.lookup-result tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.lookup-result tbody tr:hover {
+  background: var(--bg-surface-200);
+}
+
+.lookup-result tbody tr.selected {
+  background: rgba(59, 130, 246, 0.1);
+  outline: 1px solid var(--accent-primary);
+  outline-offset: -1px;
+}
+
+.lookup-result tbody td {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.lookup-result tbody td.value-cell {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.lookup-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lookup-actions .muted {
+  margin-right: auto;
+}
+
+/* History Accordion */
+.history-row {
+  transition: background 0.15s ease;
+}
+
+.history-row:hover {
+  background: var(--bg-surface-200);
+}
+
+.history-row.selected {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.history-detail-row td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.history-detail-content {
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface-200);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.detail-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.detail-chip {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  background: var(--bg-surface-300);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+}
+
 /* Chat panel (floating sidebar, styles in common.css) */
 
 /* Preview Mode Badge */

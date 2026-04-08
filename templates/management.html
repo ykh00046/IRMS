@@ -15,6 +15,7 @@
         <nav class="mgmt-tabs">
           <button class="mgmt-tab active" data-tab="import" type="button">레시피 등록</button>
           <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
+          <button class="mgmt-tab" data-tab="lookup" type="button">레시피 조회</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
@@ -109,6 +110,29 @@
                 </thead>
                 <tbody id="history-body"></tbody>
               </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- ── 레시피 조회 ── -->
+        <div class="tab-panel" id="tab-lookup">
+          <section class="panel">
+            <h3 class="panel-title">레시피 조회</h3>
+            <div class="lookup-search">
+              <div class="filter-group">
+                <label class="filter-label">제품명</label>
+                <input id="lookup-product" class="input" list="product-list" placeholder="제품명 입력 또는 선택" />
+                <datalist id="product-list"></datalist>
+              </div>
+              <button id="lookup-btn" class="btn accent">검색</button>
+            </div>
+            <div id="lookup-result" class="lookup-result">
+              <p class="empty-state">제품명을 선택하면 해당 제품의 레시피가 표시됩니다.</p>
+            </div>
+            <div id="lookup-actions" class="button-row lookup-actions" hidden>
+              <span id="lookup-selected-label" class="muted">선택: 없음</span>
+              <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
+              <button id="lookup-clone-btn" class="btn accent" disabled>복제하여 등록</button>
             </div>
           </section>
         </div>

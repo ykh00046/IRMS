@@ -18,6 +18,7 @@ class OperatorSelectRequest(BaseModel):
 class ImportRequest(BaseModel):
     raw_text: str = Field(min_length=1)
     created_by: str = Field(default="관리자")
+    revision_of: int | None = None
 
 
 class StatusUpdateRequest(BaseModel):
