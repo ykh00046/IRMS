@@ -13,6 +13,17 @@ from ..services.import_parser import parse_import_text
 from .models import ImportRequest, StatusUpdateRequest, actor_name, recipe_label
 
 
+def _format_display_value(weight, text) -> str:
+    """Combine weight and text into a display string."""
+    if weight is not None and text:
+        return f"{weight} ({text})"
+    if weight is not None:
+        return str(weight)
+    if text:
+        return text
+    return ""
+
+
 def _fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
     """Shared helper to fetch recipe items with material info."""
     if not recipe_ids:
@@ -26,7 +37,8 @@ def _fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dic
             m.unit_type,
             m.unit,
             m.color_group,
-            COALESCE(ri.value_weight, ri.value_text) AS target_value,
+            ri.value_weight,
+            ri.value_text,
             ri.measured_at,
             ri.measured_by
         FROM recipe_items ri
@@ -41,7 +53,9 @@ def _fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dic
 
     item_map: dict[int, list[dict[str, Any]]] = {}
     for item_row in item_rows:
-        item_map.setdefault(int(item_row["recipe_id"]), []).append(row_to_dict(item_row))
+        item = row_to_dict(item_row)
+        item["target_value"] = _format_display_value(item.get("value_weight"), item.get("value_text"))
+        item_map.setdefault(int(item_row["recipe_id"]), []).append(item)
     return item_map
 
 

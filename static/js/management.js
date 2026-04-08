@@ -393,7 +393,7 @@
             const items = detail.items || [];
             const itemsHtml = items.length
               ? items.map((it) =>
-                  `<span class="detail-chip">${IRMS.escapeHtml(it.material_name)}: ${IRMS.formatValue(it.value)}g</span>`
+                  `<span class="detail-chip">${IRMS.escapeHtml(it.material_name)}: ${IRMS.escapeHtml(String(it.value))}</span>`
                 ).join("")
               : '<span class="muted">재료 없음</span>';
 
@@ -629,8 +629,8 @@
           const materialCells = allMaterials
             .map((m) => {
               const val = valueMap[m];
-              return val != null
-                ? `<td class="value-cell">${IRMS.formatValue(val)}</td>`
+              return val != null && val !== ""
+                ? `<td class="value-cell">${IRMS.escapeHtml(String(val))}</td>`
                 : '<td class="value-cell muted">-</td>';
             })
             .join("");

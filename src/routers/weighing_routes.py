@@ -42,7 +42,7 @@ def build_router() -> APIRouter:
                     r.ink_name, r.status AS recipe_status, r.created_at,
                     ri.material_id, m.name AS material_name,
                     m.unit_type, m.unit, m.color_group,
-                    COALESCE(ri.value_weight, ri.value_text) AS target_value
+                    ri.value_weight, ri.value_text
                 FROM recipes r
                 JOIN recipe_items ri ON ri.recipe_id = r.id
                 JOIN materials m ON m.id = ri.material_id
@@ -60,12 +60,15 @@ def build_router() -> APIRouter:
                 params,
             ).fetchall()
 
+        from .recipe_routes import _format_display_value
+
         items: list[dict[str, Any]] = []
         by_color = {"black": 0, "red": 0, "blue": 0, "yellow": 0, "none": 0}
         recipe_ids: set[int] = set()
 
         for index, row in enumerate(rows, start=1):
             payload = row_to_dict(row)
+            payload["target_value"] = _format_display_value(payload.get("value_weight"), payload.get("value_text"))
             payload["sequence"] = index
             items.append(payload)
             recipe_ids.add(row["recipe_id"])
@@ -105,7 +108,7 @@ def build_router() -> APIRouter:
             item_row = connection.execute(
                 """
                 SELECT ri.id, m.name AS material_name,
-                    COALESCE(ri.value_weight, ri.value_text) AS target_value
+                    ri.value_weight, ri.value_text
                 FROM recipe_items ri
                 JOIN materials m ON m.id = ri.material_id
                 WHERE ri.recipe_id = ? AND ri.material_id = ?
@@ -159,6 +162,7 @@ def build_router() -> APIRouter:
 
             recipe_payload = row_to_dict(recipe_row)
             item_payload = row_to_dict(item_row)
+            item_payload["target_value"] = _format_display_value(item_payload.get("value_weight"), item_payload.get("value_text"))
             write_audit_log(
                 connection,
                 action="weighing_step_completed",

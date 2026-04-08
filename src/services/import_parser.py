@@ -1,7 +1,77 @@
+import re
 import sqlite3
 from typing import Any
 
 from ..database import normalize_token
+
+
+def _auto_register_material(connection: sqlite3.Connection, name: str) -> dict[str, Any]:
+    """Register an unknown material and return its payload."""
+    cursor = connection.execute(
+        """
+        INSERT INTO materials (name, unit_type, unit, color_group, category, is_active)
+        VALUES (?, 'weight', 'g', 'none', '미분류', 1)
+        """,
+        (name,),
+    )
+    return {
+        "id": cursor.lastrowid,
+        "name": name,
+        "unit_type": "weight",
+        "unit": "g",
+        "color_group": "none",
+        "category": "미분류",
+    }
+
+
+def _parse_value(raw: str) -> tuple[float | None, str | None]:
+    """Split a cell value into numeric and text parts.
+
+    Examples:
+        "13.00"          -> (13.0, None)
+        "33 (RFC-5)"     -> (33.0, "RFC-5")
+        "APB"            -> (None, "APB")
+        "BYK-199 : 5"   -> (5.0, "BYK-199")
+        "12.50 (HR10)"   -> (12.5, "HR10")
+        "-"              -> skip (returns None, None)
+    """
+    stripped = raw.strip()
+    if not stripped or stripped == "-":
+        return None, None
+
+    # Try pure number first (with comma removal)
+    clean = stripped.replace(",", "")
+    try:
+        return float(clean), None
+    except ValueError:
+        pass
+
+    # Try "number (text)" pattern: e.g. "12.50 (HR10)", "33 (RFC-5)"
+    m = re.match(r"^([\d.]+)\s*\((.+?)\)$", stripped)
+    if m:
+        try:
+            return float(m.group(1)), m.group(2).strip()
+        except ValueError:
+            pass
+
+    # Try "text : number" pattern: e.g. "BYK-199 : 5"
+    m = re.match(r"^(.+?)\s*:\s*([\d.]+)$", stripped)
+    if m:
+        try:
+            return float(m.group(2)), m.group(1).strip()
+        except ValueError:
+            pass
+
+    # Try "number text" pattern: e.g. "33 RFC-5"
+    m = re.match(r"^([\d.]+)\s+(.+)$", stripped)
+    if m:
+        try:
+            return float(m.group(1)), m.group(2).strip()
+        except ValueError:
+            pass
+
+    # Pure text
+    return None, stripped
 
 
 def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str, Any]:
@@ -136,11 +206,15 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             if not header.strip():
                 continue
 
-            mat = token_to_material.get(normalize_token(header))
-            if not mat:
-                continue
+            token = normalize_token(header)
+            mat = token_to_material.get(token)
 
-            if mat["id"] not in used_material_ids:
+            if not mat:
+                # Auto-register unknown material
+                mat = _auto_register_material(connection, header.strip())
+                token_to_material[token] = mat
+                header_warnings.append({"level": 3, "message": f"새 원재료를 자동 등록했습니다: {header.strip()}", "row": current_row_index})
+            elif mat["id"] not in used_material_ids:
                 header_warnings.append({"level": 3, "message": f"처음 사용하는 원재료입니다: {mat['name']} — 맞는지 확인해 주세요.", "row": current_row_index})
 
             mat_cols.append({"index": idx, "header": header, "material": mat})
@@ -215,40 +289,27 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
 
         for col in current_config["material_columns"]:
             idx = col["index"]
-            val = cells[idx] if idx < len(cells) else ""
-            if not val:
+            raw_val = cells[idx] if idx < len(cells) else ""
+            if not raw_val:
                 continue
 
             mat = col["material"]
-            norm_val = val.replace(",", "")
+            numeric_value, text_value = _parse_value(raw_val)
 
-            numeric_value = None
-            try:
-                numeric_value = float(norm_val)
-            except ValueError:
-                pass
-
-            if mat["unit_type"] == "weight" and numeric_value is None:
-                errors.append({"level": 2, "message": f"숫자 입력 필요: {mat['name']} ({val})", "row": row_index})
-                continue
-
-            if numeric_value is not None and numeric_value < 0:
-                errors.append({"level": 2, "message": f"음수 값 불가: {mat['name']}", "row": row_index})
-                continue
-
-            if numeric_value is not None and numeric_value > 10000:
-                warnings.append({"level": 3, "message": f"이상치 의심: {mat['name']}={numeric_value}", "row": row_index})
+            if numeric_value is None and text_value is None:
+                continue  # "-" or empty
 
             row_items.append({
                 "material_id": mat["id"],
-                "value_weight": float(numeric_value) if numeric_value is not None else None,
-                "value_text": val if numeric_value is None else None,
+                "value_weight": numeric_value,
+                "value_text": text_value,
             })
 
+            display = raw_val.strip()
             preview_items.append({
                 "material_id": mat["id"],
                 "material_name": mat["name"],
-                "value": numeric_value if numeric_value is not None else val,
+                "value": numeric_value if numeric_value is not None and text_value is None else display,
             })
 
         parsed_rows.append({

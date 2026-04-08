@@ -98,3 +98,4 @@ echo    2. Double-click update_and_run.bat
 echo ============================================
 echo.
 pause
+\r

@@ -447,7 +447,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "Enter 또는 Space를 눌러 레시피 완료를 확정하고 다음 계량으로 이동하세요.";
       const nextStep = weighing.queue[0];
       weighingNextValue.textContent = nextStep
-        ? `${nextStep.materialName} · ${IRMS.formatValue(nextStep.targetValue)} ${nextStep.unit || ""} (${nextStep.productName})`
+        ? `${nextStep.materialName} · ${nextStep.targetValue} (${nextStep.productName})`
         : "다음 계량 없음";
       syncWeighingControls();
       return;
@@ -476,12 +476,16 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingInkLabel.textContent = current.inkName;
     weighingPositionLabel.textContent = `위치: ${current.position || "-"}`;
     weighingMaterialName.textContent = current.materialName;
-    weighingTargetValue.textContent = `${IRMS.formatValue(current.targetValue)} ${current.unit || ""}`.trim();
+    weighingTargetValue.textContent = current.targetValue;
     weighingActionHint.textContent = "Enter 또는 Space를 눌러 현재 계량을 완료 처리하세요.";
+
+    // TTS: announce material and value (especially when text is included)
+    const ttsText = `${current.materialName}, ${current.targetValue}`;
+    IRMS.speakText(ttsText);
 
     const nextStep = weighing.queue[1];
     if (nextStep) {
-      weighingNextValue.textContent = `${nextStep.materialName} · ${IRMS.formatValue(nextStep.targetValue)} ${nextStep.unit || ""} (${nextStep.productName})`;
+      weighingNextValue.textContent = `${nextStep.materialName} · ${nextStep.targetValue} (${nextStep.productName})`;
     } else {
       weighingNextValue.textContent = "현재 큐 기준 마지막 스텝입니다.";
     }
