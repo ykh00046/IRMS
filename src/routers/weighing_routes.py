@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
 from ..database import get_connection, row_to_dict, utc_now_text, write_audit_log
+from .recipe_routes import _format_display_value
 from .models import (
     WeighingRecipeCompleteRequest,
     WeighingStepRequest,
