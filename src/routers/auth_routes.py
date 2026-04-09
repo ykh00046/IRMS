@@ -69,7 +69,7 @@ def build_router() -> APIRouter:
 
     @router.post("/auth/operator-select")
     async def auth_operator_select(request: Request, body: OperatorSelectRequest) -> dict[str, Any]:
-        user = get_user_for_selection(body.user_id, ("operator", "manager", "admin"))
+        user = get_user_for_selection(body.user_id, ("operator", "manager"))
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OPERATOR_NOT_FOUND")
         login_user(request, user, max_level="operator")

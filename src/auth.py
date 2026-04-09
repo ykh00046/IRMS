@@ -8,18 +8,16 @@ from .security import verify_password
 ACCESS_LEVEL_RANK = {
     "operator": 1,
     "manager": 2,
-    "admin": 3,
 }
 
 ACCESS_LEVEL_LABEL = {
-    "operator": "Operator",
-    "manager": "Manager",
-    "admin": "Admin",
+    "operator": "담당자",
+    "manager": "책임자",
 }
 
 
 def to_public_user(row) -> dict[str, Any]:
-    access_level = row["access_level"] or ("admin" if row["role"] == "admin" else "operator")
+    access_level = row["access_level"] or ("manager" if row["role"] == "admin" else "operator")
     return {
         "id": row["id"],
         "username": row["username"],

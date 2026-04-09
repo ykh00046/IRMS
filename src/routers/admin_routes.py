@@ -15,7 +15,7 @@ from .models import (
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(dependencies=[Depends(require_access_level("admin"))])
+    router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.get("/admin/users")
     async def admin_list_users() -> dict[str, Any]:
@@ -26,9 +26,8 @@ def build_router() -> APIRouter:
                 FROM users
                 ORDER BY
                     CASE access_level
-                        WHEN 'admin' THEN 0
-                        WHEN 'manager' THEN 1
-                        ELSE 2
+                        WHEN 'manager' THEN 0
+                        ELSE 1
                     END,
                     is_active DESC,
                     display_name ASC,
@@ -40,7 +39,6 @@ def build_router() -> APIRouter:
         summary = {
             "total": len(items),
             "active": sum(1 for item in items if item["is_active"]),
-            "admins": sum(1 for item in items if item["access_level"] == "admin"),
             "managers": sum(1 for item in items if item["access_level"] == "manager"),
             "operators": sum(1 for item in items if item["access_level"] == "operator"),
         }
@@ -135,26 +133,6 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
             target = serialize_admin_user(target_row)
-            removing_admin_access = target["access_level"] == "admin" and (
-                body.access_level != "admin" or not body.is_active
-            )
-
-            if int(target["id"]) == int(current_user["id"]) and removing_admin_access:
-                raise HTTPException(status_code=400, detail="SELF_ADMIN_LOCKOUT")
-
-            if removing_admin_access:
-                active_admin_count = int(
-                    connection.execute(
-                        """
-                        SELECT COUNT(*) AS count
-                        FROM users
-                        WHERE access_level = 'admin' AND is_active = 1 AND id != ?
-                        """,
-                        (target_id,),
-                    ).fetchone()["count"]
-                )
-                if active_admin_count < 1:
-                    raise HTTPException(status_code=400, detail="LAST_ACTIVE_ADMIN_REQUIRED")
 
             connection.execute(
                 """

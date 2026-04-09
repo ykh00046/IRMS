@@ -383,7 +383,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (operatorCount) operatorCount.textContent = String(data.totalOperators);
 
     if (!data.operators.length) {
-      operatorGrid.innerHTML = '<p class="operator-empty">당일 작업을 시작한 작업자가 없습니다.</p>';
+      operatorGrid.innerHTML = '<p class="operator-empty">당일 작업을 시작한 담당자가 없습니다.</p>';
       return;
     }
 

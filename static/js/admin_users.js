@@ -11,7 +11,6 @@
 
   const summaryTotal = document.getElementById("summary-total");
   const summaryActive = document.getElementById("summary-active");
-  const summaryAdmins = document.getElementById("summary-admins");
   const summaryManagers = document.getElementById("summary-managers");
   const summaryOperators = document.getElementById("summary-operators");
 
@@ -24,9 +23,8 @@
 
   function accessLabel(accessLevel) {
     const map = {
-      admin: "Admin",
-      manager: "Manager",
-      operator: "Operator",
+      manager: "책임자",
+      operator: "담당자",
     };
     return map[accessLevel] || accessLevel;
   }
@@ -55,13 +53,12 @@
   function renderSummary(summary) {
     summaryTotal.textContent = String(summary.total || 0);
     summaryActive.textContent = String(summary.active || 0);
-    summaryAdmins.textContent = String(summary.admins || 0);
     summaryManagers.textContent = String(summary.managers || 0);
     summaryOperators.textContent = String(summary.operators || 0);
   }
 
   function accessOptions(selected) {
-    return ["operator", "manager", "admin"]
+    return ["operator", "manager"]
       .map(
         (accessLevel) =>
           `<option value="${accessLevel}"${selected === accessLevel ? " selected" : ""}>${accessLabel(accessLevel)}</option>`,
@@ -317,8 +314,6 @@
       await refreshDashboard();
     } catch (error) {
       const messageMap = {
-        SELF_ADMIN_LOCKOUT: "현재 로그인한 admin 계정은 admin 권한 해제 또는 비활성화할 수 없습니다.",
-        LAST_ACTIVE_ADMIN_REQUIRED: "활성 admin은 최소 1명 이상 유지되어야 합니다.",
         USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
       };
       IRMS.notify(`저장 실패: ${messageMap[error.message] || error.message}`, "error");

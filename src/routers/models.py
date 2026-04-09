@@ -17,7 +17,7 @@ class OperatorSelectRequest(BaseModel):
 
 class ImportRequest(BaseModel):
     raw_text: str = Field(min_length=1)
-    created_by: str = Field(default="관리자")
+    created_by: str = Field(default="책임자")
     revision_of: int | None = None
 
 
@@ -43,13 +43,13 @@ class WeighingRecipeCompleteRequest(BaseModel):
 class AdminUserCreateRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
     display_name: str = Field(min_length=1, max_length=50)
-    access_level: Literal["operator", "manager", "admin"]
+    access_level: Literal["operator", "manager"]
     password: str = Field(min_length=6, max_length=100)
 
 
 class AdminUserUpdateRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=50)
-    access_level: Literal["operator", "manager", "admin"]
+    access_level: Literal["operator", "manager"]
     is_active: bool
 
 
@@ -71,7 +71,7 @@ def actor_name(current_user: dict[str, Any]) -> str:
 
 
 def role_for_access_level(access_level: str) -> str:
-    return "admin" if access_level == "admin" else "user"
+    return "user"
 
 
 def serialize_admin_user(row: Any) -> dict[str, Any]:

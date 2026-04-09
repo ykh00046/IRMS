@@ -76,7 +76,7 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         """
         UPDATE users
         SET access_level = CASE
-            WHEN role = 'admin' OR username = 'admin' THEN 'admin'
+            WHEN role = 'admin' OR username = 'admin' THEN 'manager'
             ELSE 'operator'
         END
         WHERE access_level IS NULL OR TRIM(access_level) = ''
@@ -255,9 +255,7 @@ def init_db() -> None:
 
 def seed_users(connection: sqlite3.Connection) -> None:
     seeds = [
-        # 관리자
-        ("admin", "admin123", "관리자", "admin", "admin"),
-        # 매니저
+        # 책임자
         ("120206", "120206", "함지안", "user", "manager"),
         ("160228", "160228", "김지훈", "user", "manager"),
         ("130801", "130801", "김진우", "user", "manager"),
@@ -269,7 +267,7 @@ def seed_users(connection: sqlite3.Connection) -> None:
         ("250411", "250411", "민윤정", "user", "manager"),
         ("250612", "250612", "이시현", "user", "manager"),
         ("250731", "250731", "김태균", "user", "manager"),
-        # 작업자
+        # 담당자
         ("221023", "221023", "김도현", "user", "operator"),
         ("240909", "240909", "김민준", "user", "operator"),
         ("240910", "240910", "박효빈", "user", "operator"),

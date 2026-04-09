@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const nextUrl = String(nextInput?.value || "/weighing");
       window.location.assign(nextUrl.startsWith("/") ? nextUrl : "/weighing");
     } catch (error) {
-      IRMS.notify(`작업자 선택 실패: ${error.message}`, "error");
+      IRMS.notify(`담당자 선택 실패: ${error.message}`, "error");
       buttons.forEach((node) => {
         node.disabled = false;
       });

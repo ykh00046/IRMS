@@ -228,7 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
         (recipe) => `
           <article class="work-log-item">
             <strong>${IRMS.escapeHtml(recipe.productName)} · ${IRMS.escapeHtml(recipe.inkName)}</strong>
-            <span class="muted">작업자 ${IRMS.escapeHtml(recipe.createdBy)}</span>
+            <span class="muted">담당자 ${IRMS.escapeHtml(recipe.createdBy)}</span>
             <time>${IRMS.formatDateTime(recipe.completedAt)}</time>
           </article>
         `

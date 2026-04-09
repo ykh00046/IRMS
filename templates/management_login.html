@@ -28,7 +28,6 @@
             <strong>기본 계정</strong>
             <code>manager / manager123</code>
             <code>manager2 / manager223</code>
-            <code>admin / admin123</code>
           </div>
           {% endif %}
         </div>
@@ -36,7 +35,7 @@
         <form id="management-login-form" class="access-form">
           <input id="next-url" type="hidden" value="{{ next_url }}" />
 
-          <label class="filter-label" for="manager-username">매니저</label>
+          <label class="filter-label" for="manager-username">책임자</label>
           <select id="manager-username" class="select">
             {% for manager in managers %}
             <option value="{{ manager.username }}">{{ manager.display_name }} (@{{ manager.username }})</option>
@@ -44,7 +43,7 @@
           </select>
           {% if not managers %}
           <p class="login-error">
-            활성화된 관리자 계정이 없습니다. 운영 환경에서는 별도 사용자 프로비저닝 후 로그인하세요.
+            활성화된 책임자 계정이 없습니다. 사용자 계정 등록 후 로그인하세요.
           </p>
           {% endif %}
 

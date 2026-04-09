@@ -34,9 +34,7 @@
           <a href="/status" class="nav-link{{ ' active' if request.url.path == '/status' else '' }}">Status</a>
           <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">Management</a>
           <a href="/insight" class="nav-link{{ ' active' if request.url.path == '/insight' else '' }}">Insight</a>
-          {% if current_user.access_level == "admin" %}
           <a href="/admin/users" class="nav-link{{ ' active' if request.url.path == '/admin/users' else '' }}">Users</a>
-          {% endif %}
           {% endif %}
         </nav>
 
