@@ -46,8 +46,8 @@ def _protected_page_response(
         return _entry_redirect("/management/login", request)
 
     return templates.TemplateResponse(
-        template_name,
-        {
+        name=template_name,
+        context={
             "request": request,
             "current_user": current_user,
         },
@@ -60,8 +60,8 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/", response_class=HTMLResponse)
     async def entry_page(request: Request) -> Response:
         return templates.TemplateResponse(
-            "entry.html",
-            _build_context(request),
+            name="entry.html",
+            context=_build_context(request),
         )
 
     @router.get("/login", response_class=HTMLResponse)
@@ -72,8 +72,8 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/weighing/select", response_class=HTMLResponse)
     async def weighing_select_page(request: Request, next: str | None = None) -> Response:
         return templates.TemplateResponse(
-            "weighing_select.html",
-            _build_context(
+            name="weighing_select.html",
+            context=_build_context(
                 request,
                 next_url=_safe_next(next, "/weighing"),
                 operators=list_users_by_access_levels("operator", "manager", "admin"),
@@ -88,8 +88,8 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             return RedirectResponse(url=next_url, status_code=303)
 
         return templates.TemplateResponse(
-            "management_login.html",
-            _build_context(
+            name="management_login.html",
+            context=_build_context(
                 request,
                 next_url=next_url,
                 show_demo_credentials=SEED_DEMO_DATA,
