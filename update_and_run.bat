@@ -48,13 +48,13 @@ if not defined LOCAL_IP set "LOCAL_IP=0.0.0.0"
 
 echo [3/3] Starting IRMS server...
 echo ============================================
-echo  Local:   http://127.0.0.1:8000
-echo  Network: http://%LOCAL_IP%:8000
+echo  Local:   http://127.0.0.1:9000
+echo  Network: http://%LOCAL_IP%:9000
 echo ============================================
 echo.
 echo  Press Ctrl+C to stop the server.
 echo.
-.venv\Scripts\python.exe -m uvicorn src.main:app --host 0.0.0.0 --port 8000
+.venv\Scripts\python.exe -m uvicorn src.main:app --host 0.0.0.0 --port 9000
 
 echo.
 echo [IRMS] Server stopped.
