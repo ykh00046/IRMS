@@ -23,6 +23,10 @@ def _build_context(request: Request, **extra) -> dict:
     return context
 
 
+def _render(templates: Jinja2Templates, request: Request, name: str, context: dict) -> Response:
+    return templates.TemplateResponse(request, name, context)
+
+
 def _entry_redirect(target_path: str, request: Request) -> RedirectResponse:
     next_url = quote(request.url.path or target_path, safe="/")
     joiner = "&" if "?" in target_path else "?"
@@ -45,13 +49,9 @@ def _protected_page_response(
             return RedirectResponse(url="/management", status_code=303)
         return _entry_redirect("/management/login", request)
 
-    return templates.TemplateResponse(
-        name=template_name,
-        context={
-            "request": request,
-            "current_user": current_user,
-        },
-    )
+    return _render(templates, request, template_name, {
+        "current_user": current_user,
+    })
 
 
 def build_router(templates: Jinja2Templates) -> APIRouter:
@@ -59,10 +59,9 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     async def entry_page(request: Request) -> Response:
-        return templates.TemplateResponse(
-            name="entry.html",
-            context=_build_context(request),
-        )
+        return _render(templates, request, "entry.html", {
+            "current_user": get_current_user(request, required=False),
+        })
 
     @router.get("/login", response_class=HTMLResponse)
     async def legacy_login_page(request: Request, next: str | None = None) -> Response:
@@ -71,14 +70,11 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/weighing/select", response_class=HTMLResponse)
     async def weighing_select_page(request: Request, next: str | None = None) -> Response:
-        return templates.TemplateResponse(
-            name="weighing_select.html",
-            context=_build_context(
-                request,
-                next_url=_safe_next(next, "/weighing"),
-                operators=list_users_by_access_levels("operator", "manager", "admin"),
-            ),
-        )
+        return _render(templates, request, "weighing_select.html", {
+            "current_user": get_current_user(request, required=False),
+            "next_url": _safe_next(next, "/weighing"),
+            "operators": list_users_by_access_levels("operator", "manager", "admin"),
+        })
 
     @router.get("/management/login", response_class=HTMLResponse)
     async def management_login_page(request: Request, next: str | None = None) -> Response:
@@ -87,15 +83,12 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         if current_user and has_access_level(current_user, "manager"):
             return RedirectResponse(url=next_url, status_code=303)
 
-        return templates.TemplateResponse(
-            name="management_login.html",
-            context=_build_context(
-                request,
-                next_url=next_url,
-                show_demo_credentials=SEED_DEMO_DATA,
-                managers=list_users_by_access_levels("manager", "admin"),
-            ),
-        )
+        return _render(templates, request, "management_login.html", {
+            "current_user": current_user,
+            "next_url": next_url,
+            "show_demo_credentials": SEED_DEMO_DATA,
+            "managers": list_users_by_access_levels("manager", "admin"),
+        })
 
     @router.get("/weighing", response_class=HTMLResponse)
     async def work_page(request: Request) -> Response:
