@@ -345,6 +345,38 @@
     };
   }
 
+  async function getOperatorProgress() {
+    const payload = await request("/recipes/operator-progress");
+    return {
+      date: payload.date,
+      totalOperators: Number(payload.total_operators || 0),
+      operators: (payload.operators || []).map((op) => ({
+        name: op.name,
+        completedSteps: Number(op.completed_steps || 0),
+        totalSteps: Number(op.total_steps || 0),
+        progressPct: Number(op.progress_pct || 0),
+        lastMeasuredAt: op.last_measured_at,
+        currentRecipe: op.current_recipe
+          ? {
+              recipeId: op.current_recipe.recipe_id,
+              productName: op.current_recipe.product_name,
+              inkName: op.current_recipe.ink_name,
+              position: op.current_recipe.position,
+            }
+          : null,
+        categorySummary: (op.category_summary || []).map((c) => ({
+          category: c.category,
+          completed: Number(c.completed || 0),
+          total: Number(c.total || 0),
+        })),
+        workedRecipes: (op.worked_recipes || []).map((w) => ({
+          productName: w.product_name,
+          count: Number(w.count || 0),
+        })),
+      })),
+    };
+  }
+
   async function listChatRooms() {
     const payload = await request("/chat/rooms");
     return {
@@ -744,6 +776,7 @@
     postChatMessage,
     getRecipeImportNotifications,
     getRecipeProgress,
+    getOperatorProgress,
     getMaterials,
     getRecipes,
     updateRecipeStatus,

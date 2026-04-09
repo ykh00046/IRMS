@@ -364,6 +364,75 @@ document.addEventListener("DOMContentLoaded", async () => {
       .join("");
   }
 
+  const operatorGrid = document.getElementById("operatorGrid");
+  const operatorCount = document.getElementById("operatorCount");
+
+  function formatOpTime(isoStr) {
+    if (!isoStr) return "-";
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function isInactive(isoStr) {
+    if (!isoStr) return true;
+    return Date.now() - new Date(isoStr).getTime() > 5 * 60 * 1000;
+  }
+
+  function renderOperatorSection(data) {
+    if (!operatorGrid) return;
+    if (operatorCount) operatorCount.textContent = String(data.totalOperators);
+
+    if (!data.operators.length) {
+      operatorGrid.innerHTML = '<p class="operator-empty">당일 작업을 시작한 작업자가 없습니다.</p>';
+      return;
+    }
+
+    operatorGrid.innerHTML = data.operators.map((op) => {
+      const done = op.progressPct >= 100;
+      const inactive = isInactive(op.lastMeasuredAt);
+
+      const currentHtml = op.currentRecipe
+        ? `<div class="operator-current">
+             <span class="current-label">현재:</span>
+             <span class="current-recipe">${IRMS.escapeHtml(op.currentRecipe.productName)} · ${IRMS.escapeHtml(op.currentRecipe.inkName)} · P${IRMS.escapeHtml(String(op.currentRecipe.position || ""))}</span>
+           </div>`
+        : "";
+
+      const catHtml = op.categorySummary
+        .map((c) => `<span class="op-category-chip">${IRMS.escapeHtml(c.category)} ${c.completed}/${c.total}</span>`)
+        .join("");
+
+      const workedHtml = op.workedRecipes.length
+        ? `<div class="operator-worked">
+             <span class="worked-label">작업 이력:</span>${op.workedRecipes.map((w) => `${IRMS.escapeHtml(w.productName)}(${w.count})`).join(" ")}
+           </div>`
+        : "";
+
+      return `
+        <div class="operator-card${done ? " op-completed" : ""}">
+          <div class="operator-header">
+            <span class="operator-name">${IRMS.escapeHtml(op.name)}</span>
+            <span class="operator-time${inactive ? " inactive" : ""}">${formatOpTime(op.lastMeasuredAt)}</span>
+          </div>
+          <div class="op-progress-bar"><div class="op-progress-fill" style="width:${Math.min(100, op.progressPct)}%"></div></div>
+          <span class="op-progress-text">${op.completedSteps} / ${op.totalSteps} (${op.progressPct}%)</span>
+          ${currentHtml}
+          <div class="operator-categories">${catHtml}</div>
+          ${workedHtml}
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function loadOperatorProgress() {
+    try {
+      const data = await IRMS.getOperatorProgress();
+      renderOperatorSection(data);
+    } catch (_err) {
+      // Keep stable if operator endpoint fails
+    }
+  }
+
   async function loadStatusBoard() {
     if (state.loading) {
       return;
@@ -445,6 +514,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await checkImportAlerts();
     await Promise.all([
       loadStatusBoard(),
+      loadOperatorProgress(),
       chat.refresh({ silent: true }),
     ]);
   }
@@ -473,6 +543,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         await Promise.all([
           loadStatusBoard(),
+          loadOperatorProgress(),
           chat.refresh({ replace: true }),
         ]);
       } finally {
@@ -504,6 +575,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateFilterSummary();
   await Promise.all([
     loadStatusBoard(),
+    loadOperatorProgress(),
     chat.loadMessages({ replace: true }),
   ]);
   startAutoRefresh();

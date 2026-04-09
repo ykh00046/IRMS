@@ -202,6 +202,136 @@
   font-family: var(--font-mono);
 }
 
+/* ── Operator Progress Section ── */
+.status-operator-panel {
+  grid-column: 1 / -1;
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.06), transparent 50%),
+    var(--bg-surface-100);
+}
+
+.operator-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.operator-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.2s ease;
+}
+
+.operator-card:hover {
+  border-color: var(--border-strong);
+}
+
+.operator-card.op-completed {
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.operator-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.operator-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.operator-time {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.operator-time.inactive {
+  color: var(--text-tertiary);
+}
+
+.op-progress-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-300);
+  overflow: hidden;
+}
+
+.op-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-primary-hover), var(--accent-primary));
+  transition: width 0.3s ease;
+}
+
+.op-completed .op-progress-fill {
+  background: linear-gradient(90deg, #059669, var(--status-success));
+}
+
+.op-progress-text {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.operator-current {
+  font-size: 0.85rem;
+}
+
+.current-label {
+  color: var(--text-tertiary);
+  margin-right: 0.3rem;
+}
+
+.current-recipe {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.operator-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.op-category-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface-300);
+  border: 1px solid var(--border-subtle);
+}
+
+.operator-worked {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.worked-label {
+  color: var(--text-tertiary);
+  margin-right: 0.3rem;
+}
+
+.operator-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
 .status-board-panel {
   background:
     linear-gradient(180deg, rgba(51, 65, 85, 0.06), transparent 18%),
@@ -504,7 +634,8 @@
 
   .status-summary-grid,
   .status-import-feed,
-  .status-board {
+  .status-board,
+  .operator-grid {
     grid-template-columns: 1fr;
   }
 

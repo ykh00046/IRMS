@@ -1,7 +1,7 @@
 import csv
 import hashlib
 import io
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -452,6 +452,139 @@ def build_router() -> tuple[APIRouter, APIRouter]:
 
         summary["open_positions"] = len(active_positions)
         return {"status_filter": normalized_filter, "summary": summary, "items": items}
+
+    @manager_router.get("/recipes/operator-progress")
+    async def operator_progress() -> dict[str, Any]:
+        today = datetime.now(timezone.utc).date()
+        day_start = f"{today}T00:00:00Z"
+        day_end = f"{today + timedelta(days=1)}T00:00:00Z"
+
+        with get_connection() as connection:
+            # 1) operators who measured today
+            op_rows = connection.execute(
+                """
+                SELECT ri.measured_by AS name,
+                       COUNT(*)       AS completed_steps,
+                       MAX(ri.measured_at) AS last_measured_at
+                FROM recipe_items ri
+                WHERE ri.measured_by IS NOT NULL
+                  AND ri.measured_at >= ? AND ri.measured_at < ?
+                GROUP BY ri.measured_by
+                ORDER BY last_measured_at DESC
+                """,
+                (day_start, day_end),
+            ).fetchall()
+
+            operators = []
+            for op in op_rows:
+                op_name = op["name"]
+                completed_steps = op["completed_steps"]
+
+                # 2) recipe IDs this operator touched today
+                recipe_id_rows = connection.execute(
+                    """
+                    SELECT DISTINCT recipe_id
+                    FROM recipe_items
+                    WHERE measured_by = ? AND measured_at >= ? AND measured_at < ?
+                    """,
+                    (op_name, day_start, day_end),
+                ).fetchall()
+                recipe_ids = [r["recipe_id"] for r in recipe_id_rows]
+
+                if not recipe_ids:
+                    continue
+
+                placeholders = ", ".join("?" for _ in recipe_ids)
+
+                # 3) total steps across those recipes (for this operator + unassigned)
+                total_row = connection.execute(
+                    f"""
+                    SELECT COUNT(*) AS total_steps
+                    FROM recipe_items
+                    WHERE recipe_id IN ({placeholders})
+                      AND (measured_by = ? OR measured_by IS NULL)
+                    """,
+                    [*recipe_ids, op_name],
+                ).fetchone()
+                total_steps = total_row["total_steps"] if total_row else completed_steps
+
+                progress_pct = round((completed_steps / total_steps) * 100, 1) if total_steps else 0.0
+
+                # 4) category summary
+                cat_rows = connection.execute(
+                    f"""
+                    SELECT COALESCE(m.category, '미분류') AS category,
+                           COUNT(CASE WHEN ri.measured_at IS NOT NULL
+                                       AND ri.measured_at >= ? AND ri.measured_at < ?
+                                 THEN 1 END) AS completed,
+                           COUNT(*) AS total
+                    FROM recipe_items ri
+                    JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id IN ({placeholders})
+                    GROUP BY COALESCE(m.category, '미분류')
+                    ORDER BY total DESC
+                    """,
+                    [day_start, day_end, *recipe_ids],
+                ).fetchall()
+                category_summary = [
+                    {"category": r["category"], "completed": r["completed"], "total": r["total"]}
+                    for r in cat_rows
+                ]
+
+                # 5) current recipe (most recently touched, still in_progress)
+                current_row = connection.execute(
+                    """
+                    SELECT r.id, r.product_name, r.ink_name, r.position
+                    FROM recipes r
+                    WHERE r.id = (
+                        SELECT ri.recipe_id
+                        FROM recipe_items ri
+                        WHERE ri.measured_by = ?
+                          AND ri.measured_at >= ? AND ri.measured_at < ?
+                        ORDER BY ri.measured_at DESC LIMIT 1
+                    ) AND r.status = 'in_progress'
+                    """,
+                    (op_name, day_start, day_end),
+                ).fetchone()
+                current_recipe = (
+                    {
+                        "recipe_id": current_row["id"],
+                        "product_name": current_row["product_name"],
+                        "ink_name": current_row["ink_name"],
+                        "position": current_row["position"],
+                    }
+                    if current_row
+                    else None
+                )
+
+                # 6) worked recipes (product_name + count)
+                worked_rows = connection.execute(
+                    f"""
+                    SELECT r.product_name, COUNT(DISTINCT r.id) AS cnt
+                    FROM recipes r
+                    WHERE r.id IN ({placeholders})
+                    GROUP BY r.product_name
+                    ORDER BY cnt DESC
+                    """,
+                    recipe_ids,
+                ).fetchall()
+                worked_recipes = [
+                    {"product_name": r["product_name"], "count": r["cnt"]}
+                    for r in worked_rows
+                ]
+
+                operators.append({
+                    "name": op_name,
+                    "completed_steps": completed_steps,
+                    "total_steps": total_steps,
+                    "progress_pct": progress_pct,
+                    "last_measured_at": op["last_measured_at"],
+                    "current_recipe": current_recipe,
+                    "category_summary": category_summary,
+                    "worked_recipes": worked_recipes,
+                })
+
+        return {"date": str(today), "operators": operators, "total_operators": len(operators)}
 
     @manager_router.post("/recipes/import/preview")
     async def import_preview(body: ImportRequest) -> dict[str, Any]:

@@ -1,65 +1,57 @@
 {
   "project": "IRMS",
-  "feature": "irms-improvements",
+  "feature": "status-operator-view",
   "level": "dynamic",
-  "phase": "archived",
-  "matchRate": 97.6,
-  "updatedAt": "2026-03-08",
-  "activeFeatures": [],
-  "archivedTo": "docs/archive/2026-03/irms-improvements",
+  "phase": "completed",
+  "matchRate": 95,
+  "updatedAt": "2026-04-09",
+  "activeFeatures": ["status-operator-view"],
   "documents": {
-    "index": "docs/_INDEX.md",
-    "plan": "docs/01-plan/features/irms-improvements.plan.md",
-    "design": "docs/02-design/features/irms-improvements.design.md",
-    "analysis": "docs/03-analysis/irms-improvements.analysis.md",
-    "report": "docs/04-report/irms-improvements.report.md"
+    "plan": "docs/01-plan/features/status-operator-view.plan.md",
+    "design": "docs/02-design/features/status-operator-view.design.md",
+    "analysis": "docs/03-analysis/status-operator-view.analysis.md",
+    "report": "docs/04-report/features/status-operator-view.report.md"
   },
   "status": {
     "plan": {
       "state": "completed",
-      "lastModified": "2026-03-07"
+      "lastModified": "2026-04-07"
     },
     "design": {
       "state": "completed",
-      "lastModified": "2026-03-07"
+      "lastModified": "2026-04-09"
     },
     "do": {
       "state": "completed",
-      "lastModified": "2026-03-08",
+      "lastModified": "2026-04-09",
       "artifacts": [
-        "src/database.py",
-        "src/routers/api.py",
+        "src/routers/recipe_routes.py",
         "static/js/common.js",
-        "static/js/work.js",
-        "static/js/management.js",
-        "static/js/insight.js",
-        "templates/management.html",
-        "static/vendor/jspreadsheet/jspreadsheet.min.js",
-        "static/vendor/jspreadsheet/jspreadsheet.min.css",
-        "static/vendor/jsuites/jsuites.min.js",
-        "static/vendor/jsuites/jsuites.min.css"
+        "templates/status.html",
+        "static/css/status.css",
+        "static/js/status.js"
       ]
     },
     "analysis": {
       "state": "completed",
-      "lastModified": "2026-03-08"
+      "lastModified": "2026-04-09"
     },
     "report": {
       "state": "completed",
-      "lastModified": "2026-03-08"
+      "lastModified": "2026-04-09"
     }
   },
   "sourceSkill": "pdca",
-  "sessionCount": 4,
+  "sessionCount": 12,
   "lastSession": {
-    "startedAt": "2026-03-31T06:11:06.948Z",
+    "startedAt": "2026-04-09",
     "platform": "claude",
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "irms",
-    "matchRate": 92,
-    "archivedTo": "docs/archive/2026-03/irms",
-    "completedAt": "2026-03-06"
+    "feature": "irms-improvements",
+    "matchRate": 97.6,
+    "archivedTo": "docs/archive/2026-03/irms-improvements",
+    "completedAt": "2026-03-08"
   }
 }
