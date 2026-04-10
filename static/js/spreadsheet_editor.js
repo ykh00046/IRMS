@@ -424,29 +424,135 @@
     }
   }
 
-  // ── Transfer to Import tab ───────────────────────
+  // ── Register recipes directly ─────────────────────
 
-  function transferToImport() {
-    const rows = collectSheetData();
-    if (!rows.length) {
-      IRMS.notify("전달할 행이 없습니다.", "warn");
+  function buildTsv() {
+    const ws = getWorksheet();
+    if (!ws) return null;
+
+    const rawData = ws.getData();
+    const headerCols = sheetColumns;
+    const header = headerCols.map((c) => c.name).join("\t");
+    const dataLines = [];
+
+    for (let ri = 0; ri < rawData.length; ri++) {
+      let hasValue = false;
+      const vals = headerCols.map((col, ci) => {
+        const key = `${ci}_${ri}`;
+        const formula = formulaMap[key];
+        // For formulas, use displayed value (calculated result), not formula text
+        const displayed = String(rawData[ri][ci] ?? "").trim();
+        const val = formula ? displayed : displayed;
+        if (val) hasValue = true;
+        return val;
+      });
+      if (hasValue) dataLines.push(vals.join("\t"));
+    }
+
+    if (!dataLines.length) return null;
+    return [header, ...dataLines].join("\n");
+  }
+
+  function nextVersionName(currentName) {
+    // "test-3" → "test-4", "ABC-12" → "ABC-13", "YM6-B" → "YM6-B" (no number)
+    const match = currentName.match(/^(.+-)(\d+)$/);
+    if (match) {
+      return `${match[1]}${Number(match[2]) + 1}`;
+    }
+    return currentName;
+  }
+
+  async function registerRecipes() {
+    if (!activeProductId) {
+      IRMS.notify("제품을 먼저 선택하세요.", "warn");
       return;
     }
 
-    // Build TSV: header row + data rows (exclude formula values, send raw)
-    const headerCols = sheetColumns;
-    const header = headerCols.map((c) => c.name).join("\t");
-    const dataLines = rows.map((row) =>
-      headerCols.map((col) => {
-        const val = row.cells[String(col.colIndex)] || "";
-        // Don't transfer formula text, transfer display value instead
-        return val.startsWith("=") ? "" : val;
-      }).join("\t"),
-    );
-    const tsv = [header, ...dataLines].join("\n");
+    // Save first if dirty
+    if (isDirty) {
+      await saveSheet();
+    }
 
-    window.dispatchEvent(new CustomEvent("ss-transfer-to-import", { detail: { tsv } }));
-    IRMS.notify(`${rows.length}행을 레시피 등록 탭으로 전달합니다.`, "success");
+    const tsv = buildTsv();
+    if (!tsv) {
+      IRMS.notify("등록할 행이 없습니다.", "warn");
+      return;
+    }
+
+    // Get current product name and compute next version
+    const product = products.find((p) => p.id === activeProductId);
+    const currentName = product?.name || "";
+    const nextName = nextVersionName(currentName);
+
+    // Replace product name column in TSV with next version name
+    const lines = tsv.split("\n");
+    const headers = lines[0].split("\t");
+    const productColIdx = headers.indexOf("제품명");
+
+    let registrationTsv = tsv;
+    if (productColIdx >= 0 && nextName !== currentName) {
+      const newLines = [lines[0]];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split("\t");
+        cols[productColIdx] = nextName;
+        newLines.push(cols.join("\t"));
+      }
+      registrationTsv = newLines.join("\n");
+    }
+
+    // Preview first to check for duplicates/errors
+    const registerBtn = $("ss-register");
+    IRMS.btnLoading(registerBtn, true);
+    try {
+      const preview = await IRMS.previewImport(registrationTsv);
+
+      if (preview.errors && preview.errors.length > 0) {
+        IRMS.notify("등록 오류: " + preview.errors[0].message, "error");
+        return;
+      }
+
+      // Check for duplicate product name
+      const rowCount = preview.rows?.length || (lines.length - 1);
+      const versionLabel = nextName !== currentName
+        ? `${currentName} → ${nextName}`
+        : currentName;
+
+      // Check existing recipes with same product name
+      let duplicateWarning = "";
+      try {
+        const existing = await IRMS.getRecipes({ search: nextName });
+        const activeRecipes = (existing || []).filter(
+          (r) => r.status === "pending" || r.status === "in_progress"
+        );
+        if (activeRecipes.length > 0) {
+          duplicateWarning = `\n\n⚠ "${nextName}" 이름의 활성 레시피가 ${activeRecipes.length}건 있습니다.`;
+        }
+      } catch (_e) { /* ignore */ }
+
+      const confirmed = confirm(
+        `${versionLabel} (${rowCount}행)을 레시피로 등록하시겠습니까?${duplicateWarning}`
+      );
+      if (!confirmed) return;
+
+      const result = await IRMS.importRecipes(registrationTsv, "레시피 편집");
+      IRMS.notify(`${result.created_count}건 레시피를 등록했습니다. (${versionLabel})`, "success");
+
+      // Auto-create next version product in spreadsheet if name changed
+      if (nextName !== currentName) {
+        try {
+          const newProduct = await IRMS.ssCreateProduct({ name: nextName });
+          activeProductId = newProduct.id;
+          await loadProducts();
+        } catch (_e) {
+          // Product might already exist — just reload
+          await loadProducts();
+        }
+      }
+    } catch (err) {
+      IRMS.notify("레시피 등록 실패: " + err.message, "error");
+    } finally {
+      IRMS.btnLoading(registerBtn, false);
+    }
   }
 
   // ── Event binding ────────────────────────────────
@@ -470,7 +576,7 @@
     $("ss-del-row")?.addEventListener("click", deleteLastRowLocal);
     $("ss-manage-cols")?.addEventListener("click", openColumnModal);
     $("ss-save")?.addEventListener("click", saveSheet);
-    $("ss-to-import")?.addEventListener("click", transferToImport);
+    $("ss-register")?.addEventListener("click", registerRecipes);
 
     // Column modal
     $("ss-col-modal-close")?.addEventListener("click", closeColumnModal);
@@ -490,6 +596,12 @@
         setTimeout(() => loadProducts(), 50);
       }
     });
+
+    // Auto-load if editor tab is active on page load
+    const editorPanel = document.getElementById("tab-editor");
+    if (editorPanel?.classList.contains("active")) {
+      loadProducts();
+    }
   }
 
   window.IRMS_SpreadsheetEditor = { init, loadProducts };

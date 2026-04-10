@@ -14,14 +14,14 @@
 
 {% block content %}
         <nav class="mgmt-tabs">
-          <button class="mgmt-tab active" data-tab="import" type="button">레시피 등록</button>
+          <button class="mgmt-tab active" data-tab="editor" type="button">레시피 편집</button>
+          <button class="mgmt-tab" data-tab="import" type="button">레시피 등록</button>
           <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
           <button class="mgmt-tab" data-tab="lookup" type="button">레시피 조회</button>
-          <button class="mgmt-tab" data-tab="editor" type="button">레시피 편집</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
-        <div class="tab-panel active" id="tab-import">
+        <div class="tab-panel" id="tab-import">
           <section class="panel import-layout">
             <div class="input-section">
               <p class="import-helper">
@@ -140,7 +140,7 @@
         </div>
 
         <!-- ── 레시피 편집 ── -->
-        <div class="tab-panel" id="tab-editor">
+        <div class="tab-panel active" id="tab-editor">
           <section class="panel ss-editor-layout">
             <div class="ss-toolbar">
               <div class="ss-product-tabs" id="ss-product-tabs"></div>
@@ -161,7 +161,7 @@
                 </div>
                 <div class="ss-actions-right">
                   <button id="ss-save" class="btn accent" type="button">저장</button>
-                  <button id="ss-to-import" class="btn success" type="button">등록 전달</button>
+                  <button id="ss-register" class="btn success" type="button">레시피 등록</button>
                 </div>
               </div>
             </div>
