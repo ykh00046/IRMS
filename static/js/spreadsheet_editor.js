@@ -269,6 +269,10 @@
   // ── Column management modal ──────────────────────
 
   function openColumnModal() {
+    if (!activeProductId) {
+      IRMS.notify("제품을 먼저 선택하세요.", "warn");
+      return;
+    }
     renderColumnList();
     $("ss-col-modal").hidden = false;
   }
@@ -299,6 +303,7 @@
   }
 
   async function addColumn() {
+    if (!activeProductId) return;
     const nameInput = $("ss-new-col-name");
     const typeSelect = $("ss-new-col-type");
     const name = nameInput.value.trim();
