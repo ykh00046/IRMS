@@ -143,7 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "<th>원재료</th>",
       "<th>상태</th>",
       "<th>등록시각</th>",
-      '<th class="sticky-right">완료</th>',
+      '<th class="sticky-right">처리</th>',
     ].join("");
   }
 
@@ -175,9 +175,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <td>${status}</td>
             <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
             <td class="sticky-right">
-              <button type="button" class="btn success complete-btn" data-id="${recipe.id}">
-                완료
-              </button>
+              ${recipe.status === "in_progress"
+                ? `<button type="button" class="btn success complete-btn" data-id="${recipe.id}">완료 처리</button>`
+                : `<span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span>`
+              }
             </td>
           </tr>
         `;
