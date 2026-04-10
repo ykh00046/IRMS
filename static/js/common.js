@@ -1021,6 +1021,18 @@
 
     toggle.addEventListener("click", () => setChatOpen(!chatFloat.classList.contains("open")));
     closeBtn.addEventListener("click", () => setChatOpen(false));
+
+    // Close on overlay (backdrop) click
+    const overlay = document.createElement("div");
+    overlay.className = "chat-float-overlay";
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", () => setChatOpen(false));
+
+    const origSetChatOpen = setChatOpen;
+    setChatOpen = function (open) {
+      origSetChatOpen(open);
+      overlay.classList.toggle("active", open);
+    };
   }
 
   // Enter to send in chat textareas (Shift+Enter for newline)

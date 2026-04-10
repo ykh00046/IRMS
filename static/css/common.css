@@ -1098,13 +1098,13 @@ tr:hover td.sticky-right {
 }
 
 .chat-float-close {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
   background: var(--bg-surface-300);
   color: var(--text-secondary);
-  font-size: 1.2rem;
+  font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
   display: flex;
@@ -1115,8 +1115,23 @@ tr:hover td.sticky-right {
 }
 
 .chat-float-close:hover {
-  background: var(--bg-surface-200);
-  color: var(--text-primary);
+  background: var(--danger, #dc2626);
+  color: #fff;
+}
+
+.chat-float-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 199;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.chat-float-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .chat-float .chat-head {
