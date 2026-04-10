@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/vendor/jspreadsheet/jspreadsheet.min.css" type="text/css" />
     <link rel="stylesheet" href="/static/vendor/jsuites/jsuites.min.css" type="text/css" />
     <link rel="stylesheet" href="/static/css/management.css" />
+    <link rel="stylesheet" href="/static/css/spreadsheet_editor.css" />
 {% endblock %}
 
 {% block content %}
@@ -16,6 +17,7 @@
           <button class="mgmt-tab active" data-tab="import" type="button">레시피 등록</button>
           <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
           <button class="mgmt-tab" data-tab="lookup" type="button">레시피 조회</button>
+          <button class="mgmt-tab" data-tab="editor" type="button">레시피 편집</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
@@ -137,6 +139,70 @@
           </section>
         </div>
 
+        <!-- ── 레시피 편집 ── -->
+        <div class="tab-panel" id="tab-editor">
+          <section class="panel ss-editor-layout">
+            <div class="ss-toolbar">
+              <div class="ss-product-tabs" id="ss-product-tabs"></div>
+              <button id="ss-add-product" class="btn ss-add-btn" type="button" title="제품 추가">+</button>
+            </div>
+
+            <div id="ss-empty-state" class="empty-state-block">
+              제품이 없습니다. [+] 버튼으로 제품을 추가하세요.
+            </div>
+
+            <div id="ss-sheet-area" hidden>
+              <div id="ss-spreadsheet" class="ss-spreadsheet-container"></div>
+              <div class="ss-actions">
+                <div class="ss-actions-left">
+                  <button id="ss-add-row" class="btn" type="button">행 추가</button>
+                  <button id="ss-del-row" class="btn" type="button">마지막 행 삭제</button>
+                  <button id="ss-manage-cols" class="btn" type="button">컬럼 관리</button>
+                </div>
+                <div class="ss-actions-right">
+                  <button id="ss-save" class="btn accent" type="button">저장</button>
+                  <button id="ss-to-import" class="btn success" type="button">등록 전달</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Column management modal -->
+          <div id="ss-col-modal" class="ss-modal-overlay" hidden>
+            <div class="ss-modal">
+              <div class="ss-modal-header">
+                <h3>컬럼 관리</h3>
+                <button id="ss-col-modal-close" class="btn" type="button">닫기</button>
+              </div>
+              <div class="ss-modal-body">
+                <div id="ss-col-list" class="ss-col-list"></div>
+                <div class="ss-col-add-form">
+                  <h4>컬럼 추가</h4>
+                  <div class="ss-col-add-row">
+                    <input id="ss-new-col-name" class="input" placeholder="컬럼 이름" maxlength="50" />
+                    <select id="ss-new-col-type" class="select">
+                      <option value="numeric">재료 (숫자)</option>
+                      <option value="text">텍스트</option>
+                      <option value="formula">수식</option>
+                    </select>
+                    <button id="ss-add-col-btn" class="btn accent" type="button">추가</button>
+                  </div>
+                  <div id="ss-formula-config" class="ss-formula-config" hidden>
+                    <select id="ss-formula-type" class="select">
+                      <option value="SUM">SUM (합계)</option>
+                      <option value="WEIGHTED">WEIGHTED (가중합)</option>
+                      <option value="CUSTOM">CUSTOM (수식)</option>
+                    </select>
+                    <textarea id="ss-formula-params" class="textarea" rows="2"
+                      placeholder='SUM: {"sourceColumns":[3,4,5]}&#10;WEIGHTED: {"weights":{"3":0.75,"4":0.28}}&#10;CUSTOM: {"expression":"c3*0.5+c4"}'
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
 {% endblock %}
 
 {% block chat_float %}
@@ -180,5 +246,6 @@
     <script src="/static/vendor/jsuites/jsuites.min.js"></script>
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js"></script>
     <script src="/static/js/chat.js"></script>
+    <script src="/static/js/spreadsheet_editor.js"></script>
     <script src="/static/js/management.js"></script>
 {% endblock %}

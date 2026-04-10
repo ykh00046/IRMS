@@ -1,57 +1,26 @@
 {
   "project": "IRMS",
-  "feature": "status-operator-view",
+  "feature": "recipe-spreadsheet-editor",
   "level": "dynamic",
-  "phase": "completed",
+  "phase": "archived",
   "matchRate": 95,
-  "updatedAt": "2026-04-09",
-  "activeFeatures": ["status-operator-view"],
-  "documents": {
-    "plan": "docs/01-plan/features/status-operator-view.plan.md",
-    "design": "docs/02-design/features/status-operator-view.design.md",
-    "analysis": "docs/03-analysis/status-operator-view.analysis.md",
-    "report": "docs/04-report/features/status-operator-view.report.md"
-  },
-  "status": {
-    "plan": {
-      "state": "completed",
-      "lastModified": "2026-04-07"
-    },
-    "design": {
-      "state": "completed",
-      "lastModified": "2026-04-09"
-    },
-    "do": {
-      "state": "completed",
-      "lastModified": "2026-04-09",
-      "artifacts": [
-        "src/routers/recipe_routes.py",
-        "static/js/common.js",
-        "templates/status.html",
-        "static/css/status.css",
-        "static/js/status.js"
-      ]
-    },
-    "analysis": {
-      "state": "completed",
-      "lastModified": "2026-04-09"
-    },
-    "report": {
-      "state": "completed",
-      "lastModified": "2026-04-09"
-    }
-  },
+  "updatedAt": "2026-04-10",
+  "activeFeatures": [
+    "status-operator-view"
+  ],
+  "documents": {},
+  "status": {},
   "sourceSkill": "pdca",
-  "sessionCount": 12,
+  "sessionCount": 13,
   "lastSession": {
-    "startedAt": "2026-04-09",
+    "startedAt": "2026-04-09T09:38:48.771Z",
     "platform": "claude",
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "irms-improvements",
-    "matchRate": 97.6,
-    "archivedTo": "docs/archive/2026-03/irms-improvements",
-    "completedAt": "2026-03-08"
+    "feature": "recipe-spreadsheet-editor",
+    "matchRate": 95,
+    "archivedTo": "docs/archive/2026-04/recipe-spreadsheet-editor",
+    "completedAt": "2026-04-10"
   }
 }

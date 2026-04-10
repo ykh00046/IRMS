@@ -785,6 +785,74 @@
     lookupCloneBtn.addEventListener("click", handleLookupClone);
   }
 
+  // Handle transfer from spreadsheet editor tab
+  window.addEventListener("ss-transfer-to-import", (e) => {
+    const tsv = e.detail?.tsv;
+    if (!tsv) return;
+
+    const tsvRows = tsv.split("\n").map((r) => r.split("\t"));
+
+    // Switch to import tab
+    tabBtns.forEach((b) => b.classList.remove("active"));
+    tabPanels.forEach((p) => p.classList.remove("active"));
+    const importTab = document.querySelector('[data-tab="import"]');
+    if (importTab) importTab.classList.add("active");
+    document.getElementById("tab-import").classList.add("active");
+
+    // Load data into spreadsheet
+    suppressDirtyTracking = true;
+    destroySpreadsheet();
+
+    const spreadsheetFactory = getSpreadsheetFactory();
+    if (spreadsheetFactory && spreadsheetContainer) {
+      while (tsvRows.length < 15) {
+        tsvRows.push(Array(tsvRows[0]?.length || 10).fill(""));
+      }
+      for (const row of tsvRows) {
+        while (row.length < 10) row.push("");
+      }
+
+      spreadsheetFactory(spreadsheetContainer, {
+        worksheets: [
+          {
+            data: tsvRows,
+            minDimensions: [Math.max(10, tsvRows[0].length), 15],
+            defaultColWidth: 80,
+            tableOverflow: true,
+            tableWidth: "100%",
+            tableHeight: "300px",
+            rowResize: true,
+            columnDrag: true,
+            contextMenu: true,
+            textOverflow: true,
+            onchange: () => markPreviewStale(),
+            onafterchanges: () => markPreviewStale(),
+            onpaste: () => markPreviewStale(),
+          },
+        ],
+      });
+
+      setRawInputMode(false);
+      setTimeout(() => {
+        getActiveWorksheet();
+        suppressDirtyTracking = false;
+      }, 0);
+    } else if (rawInput) {
+      rawInput.value = tsv;
+      setRawInputMode(true);
+      suppressDirtyTracking = false;
+    }
+
+    pendingRevisionOf = null;
+    currentPreview = null;
+    previewIsStale = false;
+    confirmedRawText = "";
+    renderValidationMeta({ rows: [], warnings: [], errors: [] });
+    renderIssues([], errorList, "ERROR 없음");
+    renderIssues([], warningList, "WARN 없음");
+    syncRegisterState();
+  });
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       refreshChatPanel({ replace: false, silent: true });

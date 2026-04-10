@@ -34,6 +34,10 @@ _ALLOWED_TABLES = frozenset({
     "audit_logs",
     "chat_rooms",
     "chat_messages",
+    "ss_products",
+    "ss_columns",
+    "ss_rows",
+    "ss_cells",
 })
 
 
@@ -239,6 +243,46 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_chat_rooms_sort_order ON chat_rooms(sort_order, is_active);
             CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_key, id DESC);
             CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
+
+            -- Spreadsheet editor tables
+            CREATE TABLE IF NOT EXISTS ss_products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ss_columns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL REFERENCES ss_products(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                col_index INTEGER NOT NULL,
+                col_type TEXT NOT NULL CHECK (col_type IN ('text', 'numeric', 'formula')),
+                formula_type TEXT,
+                formula_params TEXT,
+                is_readonly INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(product_id, col_index)
+            );
+
+            CREATE TABLE IF NOT EXISTS ss_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL REFERENCES ss_products(id) ON DELETE CASCADE,
+                row_index INTEGER NOT NULL,
+                UNIQUE(product_id, row_index)
+            );
+
+            CREATE TABLE IF NOT EXISTS ss_cells (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                row_id INTEGER NOT NULL REFERENCES ss_rows(id) ON DELETE CASCADE,
+                column_id INTEGER NOT NULL REFERENCES ss_columns(id) ON DELETE CASCADE,
+                value TEXT,
+                UNIQUE(row_id, column_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ss_columns_product ON ss_columns(product_id, col_index);
+            CREATE INDEX IF NOT EXISTS idx_ss_rows_product ON ss_rows(product_id, row_index);
+            CREATE INDEX IF NOT EXISTS idx_ss_cells_row ON ss_cells(row_id);
             """
         )
 

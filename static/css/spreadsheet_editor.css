@@ -1,0 +1,244 @@
+/* ── Spreadsheet Editor Tab ── */
+
+.ss-editor-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Toolbar: product tabs + add button */
+.ss-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.ss-product-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.ss-product-tab {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+}
+
+.ss-product-tab:hover {
+  background: var(--surface-hover, #e8e8e8);
+}
+
+.ss-product-tab.active {
+  background: var(--primary, #2563eb);
+  color: #fff;
+  border-color: var(--primary, #2563eb);
+}
+
+.ss-product-tab .ss-tab-close {
+  margin-left: 0.4rem;
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.ss-product-tab .ss-tab-close:hover {
+  opacity: 1;
+}
+
+.ss-add-btn {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+/* Spreadsheet container */
+.ss-spreadsheet-container {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: auto;
+  min-height: 200px;
+}
+
+.ss-spreadsheet-container .jss_content {
+  font-size: 0.82rem;
+}
+
+/* Read-only (formula) columns — light blue background */
+.ss-formula-cell {
+  background: #e8f4fd !important;
+  color: #1a5276;
+  font-weight: 600;
+}
+
+/* Action bar */
+.ss-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ss-actions-left,
+.ss-actions-right {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Empty state */
+.ss-editor-layout .empty-state-block {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ── Column management modal ── */
+
+.ss-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ss-modal {
+  background: var(--bg, #fff);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: min(520px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ss-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ss-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ss-modal-body {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+
+/* Column list inside modal */
+.ss-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.ss-col-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.ss-col-item .ss-col-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.ss-col-item .ss-col-type {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.ss-col-item .ss-col-fixed {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.ss-col-item .ss-col-del {
+  color: var(--danger, #dc2626);
+  cursor: pointer;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.ss-col-item .ss-col-del:hover {
+  opacity: 1;
+}
+
+/* Add column form */
+.ss-col-add-form {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.ss-col-add-form h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.ss-col-add-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ss-col-add-row .input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.ss-formula-config {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ss-formula-config .textarea {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 600px) {
+  .ss-actions {
+    flex-direction: column;
+  }
+  .ss-actions-left,
+  .ss-actions-right {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .ss-actions-left .btn,
+  .ss-actions-right .btn {
+    flex: 1;
+  }
+}
