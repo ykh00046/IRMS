@@ -79,13 +79,6 @@
   font-size: 0.82rem;
 }
 
-/* Read-only (formula) columns — light blue background */
-.ss-formula-cell {
-  background: #e8f4fd !important;
-  color: #1a5276;
-  font-weight: 600;
-}
-
 /* Action bar */
 .ss-actions {
   display: flex;
@@ -214,18 +207,6 @@
 .ss-col-add-row .input {
   flex: 1;
   min-width: 120px;
-}
-
-.ss-formula-config {
-  margin-top: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.ss-formula-config .textarea {
-  font-family: monospace;
-  font-size: 0.8rem;
 }
 
 @media (max-width: 600px) {

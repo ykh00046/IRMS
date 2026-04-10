@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IRMS · Weighing Select</title>
+    <title>IRMS · Weighing Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,36 +15,46 @@
   </head>
   <body>
     <main class="access-shell">
-      <section class="access-stage">
+      <section class="access-stage access-stage-split">
         <div class="access-hero">
           <p class="eyebrow">Weighing Flow</p>
-          <h1>SELECT OPERATOR</h1>
+          <h1>OPERATOR SIGN-IN</h1>
           <p class="access-subtitle">
-            담당자를 선택하면 계량 화면으로 이동합니다. 이 화면은 공용 현장 단말 기준으로 설계되어 있습니다.
+            담당자를 선택하고 비밀번호(사번)를 입력하면 계량 화면으로 이동합니다.
           </p>
         </div>
 
-        <input id="next-url" type="hidden" value="{{ next_url }}" />
+        <form id="operator-login-form" class="access-form">
+          <input id="next-url" type="hidden" value="{{ next_url }}" />
 
-        <div class="selection-grid">
-          {% for operator in operators %}
-          <button
-            type="button"
-            class="selection-card"
-            data-operator-select
-            data-user-id="{{ operator.id }}"
-            aria-label="{{ operator.display_name }} 담당자 선택"
-          >
-            <span class="access-chip">{{ operator.role_label }}</span>
-            <strong>{{ operator.display_name }}</strong>
-            <span class="selection-meta">@{{ operator.username }}</span>
-          </button>
-          {% endfor %}
-        </div>
+          <label class="filter-label" for="operator-username">담당자</label>
+          <select id="operator-username" class="select">
+            {% for operator in operators %}
+            <option value="{{ operator.username }}">{{ operator.display_name }} (@{{ operator.username }})</option>
+            {% endfor %}
+          </select>
+          {% if not operators %}
+          <p class="login-error">
+            활성화된 담당자 계정이 없습니다. 사용자 계정 등록 후 로그인하세요.
+          </p>
+          {% endif %}
 
-        <div class="access-actions">
-          <a href="/" class="btn">처음으로</a>
-        </div>
+          <label class="filter-label" for="operator-password">비밀번호</label>
+          <input
+            id="operator-password"
+            type="password"
+            class="input"
+            autocomplete="current-password"
+            placeholder="사번을 입력하세요"
+          />
+
+          <p id="operator-login-error" class="login-error" hidden></p>
+
+          <div class="access-actions">
+            <a href="/" class="btn">처음으로</a>
+            <button id="operator-login-submit" type="submit" class="btn accent">계량 시작</button>
+          </div>
+        </form>
       </section>
     </main>
 

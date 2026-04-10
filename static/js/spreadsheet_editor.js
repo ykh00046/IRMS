@@ -1,6 +1,7 @@
 /**
  * Spreadsheet Editor — "레시피 편집" tab in Management page.
- * Manages product tabs, JSpreadsheet instance, save/load, and column management.
+ * Manages product tabs, JSpreadsheet instance, save/load, column management,
+ * and Excel-style formula cells (cells starting with '=').
  */
 (function () {
   "use strict";
@@ -11,7 +12,9 @@
   let sheetInstance = null;
   let isDirty = false;
 
-  // DOM refs (resolved on init)
+  // Formula storage: key = "colIdx_rowIdx", value = "=B1+C1"
+  let formulaMap = {};
+
   const $ = (id) => document.getElementById(id);
 
   function getFactory() {
@@ -106,6 +109,7 @@
 
   async function loadSheet(productId) {
     destroySheet();
+    formulaMap = {};
     try {
       const data = await IRMS.ssLoadSheet(productId);
       sheetColumns = data.columns || [];
@@ -127,14 +131,12 @@
     const columns = data.columns || [];
     const rows = data.rows || [];
 
-    // Build JSpreadsheet column config
     const jssColumns = columns.map((col) => ({
       title: col.name,
       width: col.colType === "text" ? 100 : 80,
-      readOnly: col.isReadonly,
     }));
 
-    // Build data array
+    // Build data array, extracting formulas into formulaMap
     const jssData = [];
     const maxRow = rows.length > 0 ? Math.max(...rows.map((r) => r.rowIndex)) + 1 : 0;
     const totalRows = Math.max(maxRow, 5);
@@ -142,7 +144,15 @@
     for (let ri = 0; ri < totalRows; ri++) {
       const rowData = rows.find((r) => r.rowIndex === ri);
       const cells = rowData?.cells || {};
-      const rowArr = columns.map((col) => cells[String(col.colIndex)] || "");
+      const rowArr = columns.map((col, ci) => {
+        const cellVal = cells[String(col.colIndex)];
+        if (cellVal && typeof cellVal === "object" && cellVal.formula) {
+          // Formula cell: store formula, display calculated value
+          formulaMap[`${ci}_${ri}`] = cellVal.formula;
+          return cellVal.display || "#ERR";
+        }
+        return cellVal || "";
+      });
       jssData.push(rowArr);
     }
 
@@ -159,32 +169,98 @@
           tableHeight: "400px",
           rowResize: true,
           contextMenu: true,
-          onchange: () => { isDirty = true; },
+          onchange: handleCellChange,
           onafterchanges: () => { isDirty = true; },
           onpaste: () => { isDirty = true; },
+          oneditionstart: handleEditStart,
+          oneditionend: handleEditEnd,
         },
       ],
     });
 
-    // Resolve worksheet reference
     setTimeout(() => {
       getWorksheet();
-      applyFormulaCellStyle(columns);
+      applyFormulaStyles();
     }, 50);
   }
 
-  function applyFormulaCellStyle(columns) {
+  // ── Formula cell handling ───────────────────────
+
+  function handleCellChange(_instance, cell, colIdx, rowIdx, newValue) {
+    const ci = typeof colIdx === "string" ? parseInt(colIdx, 10) : colIdx;
+    const ri = typeof rowIdx === "string" ? parseInt(rowIdx, 10) : rowIdx;
+    const key = `${ci}_${ri}`;
+
+    if (typeof newValue === "string" && newValue.startsWith("=")) {
+      // User entered a formula
+      formulaMap[key] = newValue;
+      isDirty = true;
+    } else {
+      // Regular value — remove any old formula
+      delete formulaMap[key];
+      isDirty = true;
+    }
+  }
+
+  function handleEditStart(_el, cell, colIdx, rowIdx) {
+    const ci = typeof colIdx === "string" ? parseInt(colIdx, 10) : colIdx;
+    const ri = typeof rowIdx === "string" ? parseInt(rowIdx, 10) : rowIdx;
+    const key = `${ci}_${ri}`;
+    const formula = formulaMap[key];
+    if (formula) {
+      // Show formula text while editing
+      const ws = getWorksheet();
+      if (ws) {
+        const cellName = jssCell(ci, ri);
+        ws.setValue(cellName, formula, true);
+      }
+    }
+  }
+
+  function handleEditEnd(_el, cell, colIdx, rowIdx, newValue) {
+    const ci = typeof colIdx === "string" ? parseInt(colIdx, 10) : colIdx;
+    const ri = typeof rowIdx === "string" ? parseInt(rowIdx, 10) : rowIdx;
+    const key = `${ci}_${ri}`;
+
+    if (typeof newValue === "string" && newValue.startsWith("=")) {
+      // Keep formula, show placeholder until save
+      formulaMap[key] = newValue;
+      const ws = getWorksheet();
+      if (ws) {
+        const cellName = jssCell(ci, ri);
+        ws.setValue(cellName, "...", true);
+        applyFormulaStyleToCell(ws, ci, ri);
+      }
+    } else {
+      // Cleared formula
+      if (formulaMap[key]) {
+        delete formulaMap[key];
+        removeFormulaStyleFromCell(ci, ri);
+      }
+    }
+  }
+
+  function applyFormulaStyles() {
     const ws = getWorksheet();
     if (!ws) return;
-    const data = ws.getData();
-    columns.forEach((col, ci) => {
-      if (col.colType !== "formula") return;
-      for (let ri = 0; ri < data.length; ri++) {
-        const cellName = jssCell(ci, ri);
-        try { ws.setStyle(cellName, "background-color", "#e8f4fd"); } catch (_e) { /* ignore */ }
-        try { ws.setStyle(cellName, "color", "#1a5276"); } catch (_e) { /* ignore */ }
-      }
-    });
+    for (const key of Object.keys(formulaMap)) {
+      const [ci, ri] = key.split("_").map(Number);
+      applyFormulaStyleToCell(ws, ci, ri);
+    }
+  }
+
+  function applyFormulaStyleToCell(ws, ci, ri) {
+    const cellName = jssCell(ci, ri);
+    try { ws.setStyle(cellName, "background-color", "#e8f4fd"); } catch (_e) { /* ignore */ }
+    try { ws.setStyle(cellName, "color", "#1a5276"); } catch (_e) { /* ignore */ }
+  }
+
+  function removeFormulaStyleFromCell(ci, ri) {
+    const ws = getWorksheet();
+    if (!ws) return;
+    const cellName = jssCell(ci, ri);
+    try { ws.setStyle(cellName, "background-color", ""); } catch (_e) { /* ignore */ }
+    try { ws.setStyle(cellName, "color", ""); } catch (_e) { /* ignore */ }
   }
 
   function jssCell(col, row) {
@@ -202,6 +278,7 @@
     }
     if (container) container.innerHTML = "";
     sheetInstance = null;
+    formulaMap = {};
   }
 
   function collectSheetData() {
@@ -214,9 +291,13 @@
       const cells = {};
       let hasValue = false;
       rawData[ri].forEach((val, ci) => {
-        const strVal = String(val ?? "").trim();
-        if (strVal) {
-          cells[String(sheetColumns[ci]?.colIndex ?? ci)] = strVal;
+        // Check if this cell has a formula stored
+        const key = `${ci}_${ri}`;
+        const formula = formulaMap[key];
+        const cellValue = formula || String(val ?? "").trim();
+
+        if (cellValue) {
+          cells[String(sheetColumns[ci]?.colIndex ?? ci)] = cellValue;
           hasValue = true;
         }
       });
@@ -236,7 +317,7 @@
       const result = await IRMS.ssSaveSheet(activeProductId, rows);
       IRMS.notify(`저장 완료 (${result.rowCount}행)`, "success");
       isDirty = false;
-      // Reload to get calculated values
+      // Reload to get calculated formula values
       await loadSheet(activeProductId);
     } catch (err) {
       IRMS.notify("저장 실패: " + err.message, "error");
@@ -262,7 +343,12 @@
       IRMS.notify("최소 1행은 유지해야 합니다.", "warn");
       return;
     }
-    ws.deleteRow(data.length - 1);
+    const lastRow = data.length - 1;
+    // Clean up formula entries for deleted row
+    sheetColumns.forEach((_col, ci) => {
+      delete formulaMap[`${ci}_${lastRow}`];
+    });
+    ws.deleteRow(lastRow);
     isDirty = true;
   }
 
@@ -286,9 +372,7 @@
     list.innerHTML = sheetColumns
       .map((col) => {
         const isFixed = col.colIndex <= 2;
-        const typeLabel = col.colType === "formula"
-          ? `수식 (${col.formulaType || "?"})`
-          : col.colType === "numeric" ? "숫자" : "텍스트";
+        const typeLabel = col.colType === "numeric" ? "숫자" : "텍스트";
         return `
           <div class="ss-col-item">
             <span class="ss-col-name">${IRMS.escapeHtml(col.name)}</span>
@@ -314,24 +398,9 @@
       return;
     }
 
-    const body = { name, colType };
-
-    if (colType === "formula") {
-      const formulaType = $("ss-formula-type").value;
-      const paramsRaw = $("ss-formula-params").value.trim();
-      body.formulaType = formulaType;
-      try {
-        body.formulaParams = paramsRaw ? JSON.parse(paramsRaw) : {};
-      } catch (_e) {
-        IRMS.notify("수식 파라미터 JSON 형식이 올바르지 않습니다.", "error");
-        return;
-      }
-    }
-
     try {
-      await IRMS.ssAddColumn(activeProductId, body);
+      await IRMS.ssAddColumn(activeProductId, { name, colType });
       nameInput.value = "";
-      $("ss-formula-params").value = "";
       IRMS.notify("컬럼을 추가했습니다.", "success");
       closeColumnModal();
       await loadSheet(activeProductId);
@@ -364,15 +433,18 @@
       return;
     }
 
-    // Build TSV: header row + data rows
-    const headerCols = sheetColumns.filter((c) => c.colType !== "formula");
+    // Build TSV: header row + data rows (exclude formula values, send raw)
+    const headerCols = sheetColumns;
     const header = headerCols.map((c) => c.name).join("\t");
     const dataLines = rows.map((row) =>
-      headerCols.map((col) => row.cells[String(col.colIndex)] || "").join("\t"),
+      headerCols.map((col) => {
+        const val = row.cells[String(col.colIndex)] || "";
+        // Don't transfer formula text, transfer display value instead
+        return val.startsWith("=") ? "" : val;
+      }).join("\t"),
     );
     const tsv = [header, ...dataLines].join("\n");
 
-    // Dispatch custom event for management.js to pick up
     window.dispatchEvent(new CustomEvent("ss-transfer-to-import", { detail: { tsv } }));
     IRMS.notify(`${rows.length}행을 레시피 등록 탭으로 전달합니다.`, "success");
   }
@@ -380,10 +452,8 @@
   // ── Event binding ────────────────────────────────
 
   function init() {
-    // Only run if the editor tab elements exist
     if (!$("ss-product-tabs")) return;
 
-    // Product tab clicks
     $("ss-product-tabs").addEventListener("click", (e) => {
       const delBtn = e.target.closest("[data-delete-product]");
       if (delBtn) {
@@ -413,22 +483,15 @@
       if (del) deleteColumn(Number(del.dataset.delCol));
     });
 
-    // Show/hide formula config based on column type
-    $("ss-new-col-type")?.addEventListener("change", (e) => {
-      $("ss-formula-config").hidden = e.target.value !== "formula";
-    });
-
     // Listen for tab activation to load data
     document.addEventListener("click", (e) => {
       const tab = e.target.closest('[data-tab="editor"]');
       if (tab) {
-        // Small delay to let tab switch animation complete
         setTimeout(() => loadProducts(), 50);
       }
     });
   }
 
-  // Expose for management.js integration
   window.IRMS_SpreadsheetEditor = { init, loadProducts };
 
   document.addEventListener("DOMContentLoaded", init);

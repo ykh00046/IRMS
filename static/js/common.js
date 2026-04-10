@@ -210,11 +210,12 @@
     return mapUser(payload.user);
   }
 
-  async function selectOperator(userId) {
-    const payload = await request("/auth/operator-select", {
+  async function loginOperator(username, password) {
+    const payload = await request("/auth/operator-login", {
       method: "POST",
       body: {
-        user_id: userId,
+        username,
+        password,
       },
     });
     return mapUser(payload.user);
@@ -812,14 +813,10 @@
     return request(`/spreadsheet/rows/${rowId}`, { method: "DELETE" });
   }
 
-  async function ssCalculate(body) {
-    return request("/spreadsheet/calculate", { method: "POST", body });
-  }
-
   window.IRMS = {
     login,
     loginManager,
-    selectOperator,
+    loginOperator,
     logout,
     getCurrentUser,
     listUsers,
@@ -857,7 +854,6 @@
     ssDeleteColumn,
     ssAddRow,
     ssDeleteRow,
-    ssCalculate,
     statusLabel,
     statusClass,
     formatDateTime,

@@ -103,6 +103,20 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "raw_input_text", "TEXT")
     ensure_column(connection, "recipes", "revision_of", "INTEGER")
 
+    # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
+    if not has_migration(connection, "formula_columns_to_numeric"):
+        connection.execute(
+            """
+            UPDATE ss_columns
+               SET col_type = 'numeric',
+                   formula_type = NULL,
+                   formula_params = NULL,
+                   is_readonly = 0
+             WHERE col_type = 'formula'
+            """
+        )
+        record_migration(connection, "formula_columns_to_numeric")
+
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     if has_migration(connection, "standardize_units_to_grams"):
@@ -258,7 +272,7 @@ def init_db() -> None:
                 product_id INTEGER NOT NULL REFERENCES ss_products(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 col_index INTEGER NOT NULL,
-                col_type TEXT NOT NULL CHECK (col_type IN ('text', 'numeric', 'formula')),
+                col_type TEXT NOT NULL CHECK (col_type IN ('text', 'numeric')),
                 formula_type TEXT,
                 formula_params TEXT,
                 is_readonly INTEGER NOT NULL DEFAULT 0,

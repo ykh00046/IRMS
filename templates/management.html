@@ -181,21 +181,10 @@
                   <div class="ss-col-add-row">
                     <input id="ss-new-col-name" class="input" placeholder="컬럼 이름" maxlength="50" />
                     <select id="ss-new-col-type" class="select">
-                      <option value="numeric">재료 (숫자)</option>
+                      <option value="numeric">숫자</option>
                       <option value="text">텍스트</option>
-                      <option value="formula">수식</option>
                     </select>
                     <button id="ss-add-col-btn" class="btn accent" type="button">추가</button>
-                  </div>
-                  <div id="ss-formula-config" class="ss-formula-config" hidden>
-                    <select id="ss-formula-type" class="select">
-                      <option value="SUM">SUM (합계)</option>
-                      <option value="WEIGHTED">WEIGHTED (가중합)</option>
-                      <option value="CUSTOM">CUSTOM (수식)</option>
-                    </select>
-                    <textarea id="ss-formula-params" class="textarea" rows="2"
-                      placeholder='SUM: {"sourceColumns":[3,4,5]}&#10;WEIGHTED: {"weights":{"3":0.75,"4":0.28}}&#10;CUSTOM: {"expression":"c3*0.5+c4"}'
-                    ></textarea>
                   </div>
                 </div>
               </div>

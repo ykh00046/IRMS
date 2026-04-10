@@ -1,9 +1,9 @@
 {
   "project": "IRMS",
-  "feature": "recipe-spreadsheet-editor",
+  "feature": "formula-excel-style",
   "level": "dynamic",
   "phase": "archived",
-  "matchRate": 95,
+  "matchRate": 100,
   "updatedAt": "2026-04-10",
   "activeFeatures": [
     "status-operator-view"
@@ -11,16 +11,16 @@
   "documents": {},
   "status": {},
   "sourceSkill": "pdca",
-  "sessionCount": 13,
+  "sessionCount": 15,
   "lastSession": {
-    "startedAt": "2026-04-09T09:38:48.771Z",
+    "startedAt": "2026-04-10T03:21:32.499Z",
     "platform": "claude",
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "recipe-spreadsheet-editor",
-    "matchRate": 95,
-    "archivedTo": "docs/archive/2026-04/recipe-spreadsheet-editor",
+    "feature": "formula-excel-style",
+    "matchRate": 100,
+    "archivedTo": "docs/archive/2026-04/formula-excel-style",
     "completedAt": "2026-04-10"
   }
 }

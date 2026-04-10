@@ -1,32 +1,14 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const nextInput = document.getElementById("next-url");
-  const buttons = Array.from(document.querySelectorAll("[data-operator-select]"));
-
-  async function handleSelect(button) {
-    const userId = Number(button.dataset.userId);
-    if (!Number.isFinite(userId)) {
-      return;
-    }
-
-    buttons.forEach((node) => {
-      node.disabled = true;
-    });
-
-    try {
-      await IRMS.selectOperator(userId);
-      const nextUrl = String(nextInput?.value || "/weighing");
-      window.location.assign(nextUrl.startsWith("/") ? nextUrl : "/weighing");
-    } catch (error) {
-      IRMS.notify(`담당자 선택 실패: ${error.message}`, "error");
-      buttons.forEach((node) => {
-        node.disabled = false;
-      });
-    }
-  }
-
-  buttons.forEach((button) => {
-    button.addEventListener("click", () => {
-      handleSelect(button);
-    });
+  IRMS.bindLoginForm({
+    formId: "operator-login-form",
+    usernameId: "operator-username",
+    passwordId: "operator-password",
+    submitId: "operator-login-submit",
+    errorId: "operator-login-error",
+    nextId: "next-url",
+    loginFn: IRMS.loginOperator,
+    defaultNext: "/weighing",
+    emptyMsg: "담당자와 비밀번호를 모두 입력하세요.",
+    failMsg: "비밀번호가 올바르지 않습니다.",
   });
 });

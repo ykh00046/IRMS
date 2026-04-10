@@ -7,14 +7,13 @@ from slowapi.util import get_remote_address
 from ..auth import (
     authenticate_user,
     get_current_user,
-    get_user_for_selection,
     has_access_level,
     login_user,
     logout_user,
     require_access_level,
 )
 from ..database import get_connection, write_audit_log
-from .models import LoginRequest, OperatorSelectRequest, actor_name
+from .models import LoginRequest, actor_name
 
 
 def build_router() -> APIRouter:
@@ -67,11 +66,13 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_CREDENTIALS")
         return _do_login(request, user, "management_login", "management_login")
 
-    @router.post("/auth/operator-select")
-    async def auth_operator_select(request: Request, body: OperatorSelectRequest) -> dict[str, Any]:
-        user = get_user_for_selection(body.user_id, ("operator", "manager"))
+    @router.post("/auth/operator-login")
+    @limiter.limit("5/minute")
+    async def auth_operator_login(request: Request, body: LoginRequest) -> dict[str, Any]:
+        user = authenticate_user(body.username, body.password)
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OPERATOR_NOT_FOUND")
+            _log_failed_login(request, body.username, "operator_login")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_CREDENTIALS")
         login_user(request, user, max_level="operator")
         with get_connection() as connection:
             write_audit_log(
@@ -81,7 +82,7 @@ def build_router() -> APIRouter:
                 target_type="session",
                 target_id=user["id"],
                 target_label=user["username"],
-                details={"entry_point": "weighing_select"},
+                details={"entry_point": "operator_login"},
             )
             connection.commit()
         return {"user": user}

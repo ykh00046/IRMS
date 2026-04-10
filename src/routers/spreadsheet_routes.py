@@ -1,16 +1,15 @@
-"""Spreadsheet editor API routes — product/column/row/cell CRUD + formula calculation."""
+"""Spreadsheet editor API routes — product/column/row/cell CRUD + excel-style formulas."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..auth import require_access_level
 from ..database import get_connection, utc_now_text
-from .spreadsheet_formulas import calculate_row, parse_formula_params
+from .spreadsheet_formulas import evaluate_row, is_formula
 
 
 # ── Request models ──────────────────────────────────────────
@@ -29,8 +28,6 @@ class ProductUpdate(BaseModel):
 class ColumnCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     colType: str = Field("numeric")
-    formulaType: str | None = None
-    formulaParams: dict[str, Any] | None = None
 
 
 class RowCells(BaseModel):
@@ -42,28 +39,17 @@ class SheetSave(BaseModel):
     rows: list[RowCells]
 
 
-class CalcRequest(BaseModel):
-    formulaType: str
-    formulaParams: dict[str, Any] = Field(default_factory=dict)
-    values: dict[str, str] = Field(default_factory=dict)
-
-
 # ── Helpers ─────────────────────────────────────────────────
 
 
 def _col_dict(row) -> dict[str, Any]:
-    params = parse_formula_params(row["formula_params"])
-    d: dict[str, Any] = {
+    return {
         "id": row["id"],
         "name": row["name"],
         "colIndex": row["col_index"],
         "colType": row["col_type"],
         "isReadonly": bool(row["is_readonly"]),
     }
-    if row["formula_type"]:
-        d["formulaType"] = row["formula_type"]
-        d["formulaParams"] = params
-    return d
 
 
 def _load_columns(conn, product_id: int) -> list[dict[str, Any]]:
@@ -97,13 +83,22 @@ def _load_sheet_data(conn, product_id: int, columns: list[dict[str, Any]]) -> li
             if idx is not None:
                 cell_values[idx] = cell["value"] or ""
 
-        computed = calculate_row(columns, cell_values)
-        cell_values.update(computed)
+        # Evaluate formula cells
+        computed = evaluate_row(columns, cell_values)
+
+        # Build response: formula cells get {formula, display}, others get plain string
+        cells_out: dict[str, Any] = {}
+        for idx, val in cell_values.items():
+            key = str(idx)
+            if is_formula(val):
+                cells_out[key] = {"formula": val, "display": computed.get(idx, "#ERR")}
+            else:
+                cells_out[key] = val
 
         result.append({
             "id": db_row["id"],
             "rowIndex": db_row["row_index"],
-            "cells": {str(k): v for k, v in cell_values.items()},
+            "cells": cells_out,
         })
     return result
 
@@ -254,33 +249,27 @@ def build_router() -> APIRouter:
                     col_idx = int(col_idx_str)
                     cell_values[col_idx] = val
 
-                # Save non-formula cells
+                # Save all cells as-is (including formula text like "=A1+B1")
                 for col_idx, val in cell_values.items():
                     col_db_id = col_index_to_id.get(col_idx)
                     if col_db_id is None:
-                        continue
-                    # Skip formula columns — they are calculated
-                    col_info = next((c for c in columns if c["colIndex"] == col_idx), None)
-                    if col_info and col_info["colType"] == "formula":
                         continue
                     conn.execute(
                         "INSERT INTO ss_cells (row_id, column_id, value) VALUES (?, ?, ?)",
                         (row_id, col_db_id, val),
                     )
 
-                # Calculate formula columns
-                computed = calculate_row(columns, cell_values)
-                for col_idx, val in computed.items():
-                    col_db_id = col_index_to_id.get(col_idx)
-                    if col_db_id:
-                        conn.execute(
-                            "INSERT INTO ss_cells (row_id, column_id, value) VALUES (?, ?, ?)",
-                            (row_id, col_db_id, val),
-                        )
+                # Evaluate formulas for response
+                computed = evaluate_row(columns, cell_values)
 
-                all_cells = {str(k): v for k, v in cell_values.items()}
-                all_cells.update({str(k): v for k, v in computed.items()})
-                saved_rows.append({"rowIndex": row_data.rowIndex, "cells": all_cells})
+                cells_out: dict[str, Any] = {}
+                for idx, val in cell_values.items():
+                    key = str(idx)
+                    if is_formula(val):
+                        cells_out[key] = {"formula": val, "display": computed.get(idx, "#ERR")}
+                    else:
+                        cells_out[key] = val
+                saved_rows.append({"rowIndex": row_data.rowIndex, "cells": cells_out})
 
             conn.execute(
                 "UPDATE ss_products SET updated_at = ? WHERE id = ?", (now, product_id)
@@ -302,17 +291,15 @@ def build_router() -> APIRouter:
             if col_count >= 30:
                 raise HTTPException(status_code=400, detail="COLUMN_LIMIT_EXCEEDED")
 
-            if body.colType not in ("text", "numeric", "formula"):
+            if body.colType not in ("text", "numeric"):
                 raise HTTPException(status_code=400, detail="INVALID_COL_TYPE")
 
             col_index = _next_col_index(conn, product_id)
-            is_readonly = 1 if body.colType == "formula" else 0
-            params_json = json.dumps(body.formulaParams) if body.formulaParams else None
 
             cursor = conn.execute(
-                "INSERT INTO ss_columns (product_id, name, col_index, col_type, formula_type, formula_params, is_readonly) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (product_id, body.name, col_index, body.colType, body.formulaType, params_json, is_readonly),
+                "INSERT INTO ss_columns (product_id, name, col_index, col_type, is_readonly) "
+                "VALUES (?, ?, ?, ?, 0)",
+                (product_id, body.name, col_index, body.colType),
             )
             conn.execute("UPDATE ss_products SET updated_at = ? WHERE id = ?", (now, product_id))
             conn.commit()
@@ -321,9 +308,7 @@ def build_router() -> APIRouter:
                 "name": body.name,
                 "colIndex": col_index,
                 "colType": body.colType,
-                "isReadonly": bool(is_readonly),
-                "formulaType": body.formulaType,
-                "formulaParams": body.formulaParams,
+                "isReadonly": False,
             }
 
     @router.delete("/columns/{column_id}")
@@ -371,14 +356,5 @@ def build_router() -> APIRouter:
             conn.execute("UPDATE ss_products SET updated_at = ? WHERE id = ?", (now, product_id))
             conn.commit()
             return {"deleted": True}
-
-    # ── Formula calculation ─────────────────────────────
-
-    @router.post("/calculate")
-    async def calculate(body: CalcRequest) -> dict[str, Any]:
-        from .spreadsheet_formulas import calculate_formula
-        row_values = {int(k): float(v) for k, v in body.values.items() if v}
-        result = calculate_formula(body.formulaType, body.formulaParams, row_values)
-        return {"result": result}
 
     return router
