@@ -817,4 +817,23 @@ document.addEventListener("DOMContentLoaded", () => {
   checkRecipeImportNotifications({ silent: true });
   startRecipeImportPolling();
   startChatPolling();
+
+  // ── 담당자 30분 비활동 자동 로그아웃 ──
+  const IDLE_TIMEOUT = 30 * 60 * 1000; // 30분
+  let idleTimer = null;
+
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(async () => {
+      try {
+        await IRMS.logout();
+      } catch (_e) { /* ignore */ }
+      window.location.assign("/weighing/select");
+    }, IDLE_TIMEOUT);
+  }
+
+  ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((evt) => {
+    document.addEventListener(evt, resetIdleTimer, { passive: true });
+  });
+  resetIdleTimer();
 });
