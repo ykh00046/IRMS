@@ -360,11 +360,11 @@
       return;
     }
     renderColumnList();
-    $("ss-col-modal").hidden = false;
+    $("ss-col-modal").classList.add("active");
   }
 
   function closeColumnModal() {
-    $("ss-col-modal").hidden = true;
+    $("ss-col-modal").classList.remove("active");
   }
 
   function renderColumnList() {
