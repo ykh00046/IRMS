@@ -1,13 +1,13 @@
 {
   "project": "IRMS",
-  "feature": "recipe-version-history",
+  "feature": "measurement-dashboard",
   "level": "dynamic",
-  "phase": "completed",
-  "matchRate": 98,
+  "phase": "plan",
+  "matchRate": 0,
   "updatedAt": "2026-04-15",
   "activeFeatures": [
     "status-operator-view",
-    "recipe-version-history"
+    "measurement-dashboard"
   ],
   "documents": {},
   "status": {},
@@ -19,9 +19,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "material-stock-tracking",
+    "feature": "recipe-version-history",
     "matchRate": 98,
-    "archivedTo": "docs/archive/2026-04/material-stock-tracking",
-    "completedAt": "2026-04-14"
+    "archivedTo": "docs/archive/2026-04/recipe-version-history",
+    "completedAt": "2026-04-15"
   }
 }
