@@ -1,20 +1,14 @@
 {
   "project": "IRMS",
-  "feature": "excel-recipe-migration",
+  "feature": null,
   "level": "dynamic",
-  "phase": "design",
-  "matchRate": 0,
+  "phase": "archived",
+  "matchRate": 97,
   "updatedAt": "2026-04-14",
   "activeFeatures": [
-    "status-operator-view",
-    "excel-recipe-migration"
+    "status-operator-view"
   ],
-  "documents": {
-    "excel-recipe-migration": {
-      "plan": "docs/01-plan/features/excel-recipe-migration.plan.md",
-      "design": "docs/02-design/features/excel-recipe-migration.design.md"
-    }
-  },
+  "documents": {},
   "status": {},
   "sourceSkill": "pdca",
   "sessionCount": 17,
@@ -24,9 +18,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "formula-excel-style",
-    "matchRate": 100,
-    "archivedTo": "docs/archive/2026-04/formula-excel-style",
-    "completedAt": "2026-04-10"
+    "feature": "excel-recipe-migration",
+    "matchRate": 97,
+    "archivedTo": "docs/archive/2026-04/excel-recipe-migration",
+    "completedAt": "2026-04-14"
   }
 }
