@@ -485,7 +485,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const stepKey = `${current.recipeId}:${current.materialId}`;
     if (weighing.lastSpokenStepKey !== stepKey) {
       weighing.lastSpokenStepKey = stepKey;
-      IRMS.speakText(`${current.materialName}, ${current.targetValue}`);
+      const spokenValue = String(current.targetValue || "").trim();
+      if (spokenValue && spokenValue !== "-") {
+        IRMS.speakText(`${current.materialName}, ${spokenValue}`);
+      }
     }
 
     const nextStep = weighing.queue[1];

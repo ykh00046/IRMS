@@ -103,6 +103,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "raw_input_text", "TEXT")
     ensure_column(connection, "recipes", "revision_of", "INTEGER")
 
+    # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
+    ensure_column(connection, "recipes", "remark", "TEXT")
+
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):
         connection.execute(

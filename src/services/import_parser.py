@@ -1,8 +1,8 @@
-import re
 import sqlite3
 from typing import Any
 
 from ..database import normalize_token
+from .cell_value_parser import parse_cell
 
 
 def _auto_register_material(connection: sqlite3.Connection, name: str) -> dict[str, Any]:
@@ -25,53 +25,15 @@ def _auto_register_material(connection: sqlite3.Connection, name: str) -> dict[s
 
 
 def _parse_value(raw: str) -> tuple[float | None, str | None]:
-    """Split a cell value into numeric and text parts.
+    """Delegate to the canonical `parse_cell` parser.
 
-    Examples:
-        "13.00"          -> (13.0, None)
-        "33 (RFC-5)"     -> (33.0, "RFC-5")
-        "APB"            -> (None, "APB")
-        "BYK-199 : 5"   -> (5.0, "BYK-199")
-        "12.50 (HR10)"   -> (12.5, "HR10")
-        "-"              -> skip (returns None, None)
+    Tab-paste importer treats "-" as a skip (returns (None, None)) so that
+    placeholder rows don't create empty text items.
     """
-    stripped = raw.strip()
-    if not stripped or stripped == "-":
+    stripped = raw.strip().replace(",", "") if raw else ""
+    if stripped == "-":
         return None, None
-
-    # Try pure number first (with comma removal)
-    clean = stripped.replace(",", "")
-    try:
-        return float(clean), None
-    except ValueError:
-        pass
-
-    # Try "number (text)" pattern: e.g. "12.50 (HR10)", "33 (RFC-5)"
-    m = re.match(r"^([\d.]+)\s*\((.+?)\)$", stripped)
-    if m:
-        try:
-            return float(m.group(1)), m.group(2).strip()
-        except ValueError:
-            pass
-
-    # Try "text : number" pattern: e.g. "BYK-199 : 5"
-    m = re.match(r"^(.+?)\s*:\s*([\d.]+)$", stripped)
-    if m:
-        try:
-            return float(m.group(2)), m.group(1).strip()
-        except ValueError:
-            pass
-
-    # Try "number text" pattern: e.g. "33 RFC-5"
-    m = re.match(r"^([\d.]+)\s+(.+)$", stripped)
-    if m:
-        try:
-            return float(m.group(1)), m.group(2).strip()
-        except ValueError:
-            pass
-
-    # Pure text
-    return None, stripped
+    return parse_cell(stripped)
 
 
 def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str, Any]:
@@ -128,6 +90,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
         key: {normalize_token(candidate) for candidate in candidates}
         for key, candidates in required_map.items()
     }
+    remark_tokens = {normalize_token(c) for c in ["비고", "REMARK", "NOTE"]}
 
     def get_header_config(row_cells, current_row_index, previous_config):
         normalized_headers = [normalize_token(c) for c in row_cells]
@@ -198,10 +161,18 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
         header_warnings = []
         req_index_set = set(req_indexes.values())
 
+        remark_index = next(
+            (i for i, val in enumerate(row_cells)
+             if i > ink_index and normalize_token(val) in remark_tokens),
+            -1,
+        )
+
         for idx, header in enumerate(row_cells):
             if idx in req_index_set:
                 continue
             if idx <= ink_index:
+                continue
+            if idx == remark_index:
                 continue
             if not header.strip():
                 continue
@@ -221,6 +192,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
 
         return {
             "required_indexes": req_indexes,
+            "remark_index": remark_index,
             "material_columns": mat_cols,
             "warnings": header_warnings,
             "headers": row_cells,
@@ -312,10 +284,18 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
                 "value": numeric_value if numeric_value is not None and text_value is None else display,
             })
 
+        remark_idx = current_config.get("remark_index", -1)
+        remark_val = (
+            cells[remark_idx].strip()
+            if 0 <= remark_idx < len(cells) and cells[remark_idx].strip()
+            else None
+        )
+
         parsed_rows.append({
             "product_name": prod or "(미입력)",
             "position": pos or "-",
             "ink_name": ink or "(미입력)",
+            "remark": remark_val,
             "items": row_items,
         })
 
@@ -323,6 +303,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             "product_name": prod or "(미입력)",
             "position": pos or "-",
             "ink_name": ink or "(미입력)",
+            "remark": remark_val,
             "items": preview_items,
         })
 

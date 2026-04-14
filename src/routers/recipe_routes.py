@@ -131,7 +131,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             recipe_rows = connection.execute(
                 """
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-                       r.created_by, r.created_at, r.completed_at, r.revision_of
+                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
                 FROM recipes r
                 WHERE r.product_name = ?
                 ORDER BY r.created_at DESC, r.id DESC
@@ -166,7 +166,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             recipe_row = connection.execute(
                 """
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-                       r.created_by, r.created_at, r.completed_at, r.revision_of
+                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
                 FROM recipes r
                 WHERE r.id = ?
                 """,
@@ -232,7 +232,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         with get_connection() as connection:
             recipe_rows = connection.execute(
                 f"""
-                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.created_by, r.created_at, r.completed_at
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.created_by, r.created_at, r.completed_at, r.remark
                 FROM recipes r
                 {where_sql}
                 ORDER BY r.created_at DESC, r.id DESC
@@ -383,7 +383,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 f"""
                 SELECT
                     r.id, r.product_name, r.position, r.ink_name, r.status,
-                    r.created_by, r.created_at, r.completed_at, r.started_by, r.started_at
+                    r.created_by, r.created_at, r.completed_at, r.started_by, r.started_at, r.remark
                 FROM recipes r
                 {where_sql}
                 ORDER BY
@@ -613,8 +613,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                     """
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
-                        raw_input_hash, raw_input_text, revision_of
-                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?)
+                        raw_input_hash, raw_input_text, revision_of, remark
+                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -625,6 +625,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         raw_hash,
                         body.raw_text,
                         body.revision_of,
+                        parsed_row.get("remark"),
                     ),
                 )
                 recipe_id = cursor.lastrowid
