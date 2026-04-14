@@ -1,12 +1,13 @@
 {
   "project": "IRMS",
-  "feature": null,
+  "feature": "recipe-version-history",
   "level": "dynamic",
-  "phase": "archived",
-  "matchRate": 97,
+  "phase": "plan",
+  "matchRate": 0,
   "updatedAt": "2026-04-14",
   "activeFeatures": [
-    "status-operator-view"
+    "status-operator-view",
+    "recipe-version-history"
   ],
   "documents": {},
   "status": {},
@@ -18,9 +19,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "excel-recipe-migration",
-    "matchRate": 97,
-    "archivedTo": "docs/archive/2026-04/excel-recipe-migration",
+    "feature": "material-stock-tracking",
+    "matchRate": 98,
+    "archivedTo": "docs/archive/2026-04/material-stock-tracking",
     "completedAt": "2026-04-14"
   }
 }

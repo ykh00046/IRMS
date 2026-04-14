@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-04-09T09:36:53.601Z",
+  "reason": "compaction",
+  "status": {
+    "version": "2.0",
+    "lastUpdated": "2026-03-08T00:10:00.000Z",
+    "activeFeatures": [],
+    "primaryFeature": null,
+    "features": {
+      "irms-improvements": {
+        "phase": "archived",
+        "matchRate": 97.6,
+        "updatedAt": "2026-03-08",
+        "archivedTo": "docs/archive/2026-03/irms-improvements",
+        "archivedAt": "2026-03-08",
+        "documents": {
+          "plan": "docs/archive/2026-03/irms-improvements/irms-improvements.plan.md",
+          "design": "docs/archive/2026-03/irms-improvements/irms-improvements.design.md",
+          "analysis": "docs/archive/2026-03/irms-improvements/irms-improvements.analysis.md",
+          "report": "docs/archive/2026-03/irms-improvements/irms-improvements.report.md"
+        },
+        "status": {
+          "plan": {
+            "state": "completed",
+            "lastModified": "2026-03-07"
+          },
+          "design": {
+            "state": "completed",
+            "lastModified": "2026-03-07"
+          },
+          "do": {
+            "state": "completed",
+            "lastModified": "2026-03-08"
+          },
+          "analysis": {
+            "state": "completed",
+            "lastModified": "2026-03-08"
+          },
+          "report": {
+            "state": "completed",
+            "lastModified": "2026-03-08"
+          }
+        }
+      }
+    },
+    "pipeline": {
+      "currentPhase": "archived",
+      "level": "Dynamic",
+      "phaseHistory": [
+        "plan",
+        "design",
+        "do",
+        "check",
+        "completed"
+      ]
+    },
+    "session": {
+      "startedAt": "2026-03-07T15:00:00.000Z",
+      "onboardingCompleted": true,
+      "lastActivity": "2026-03-08T00:10:00.000Z"
+    },
+    "history": []
+  }
+}
