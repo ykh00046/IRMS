@@ -965,8 +965,14 @@
   }
 
   function speakText(text) {
-    if (!window.speechSynthesis) return;
-    var utterance = new SpeechSynthesisUtterance(text);
+    if (!window.speechSynthesis || !text) return;
+    var cleaned = String(text)
+      .replace(/[()（）\[\]]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned) return;
+    try { window.speechSynthesis.cancel(); } catch (_) { /* ignore */ }
+    var utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = "ko-KR";
     utterance.rate = 1.1;
     utterance.volume = 0.9;

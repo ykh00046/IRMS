@@ -436,6 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (weighing.pendingRecipeCompletion) {
+      weighing.lastSpokenStepKey = null;
       const pending = weighing.pendingRecipeCompletion;
       weighingStateBadge.className = "weighing-state-badge state-recipe";
       weighingStateBadge.textContent = "RECIPE COMPLETE";
@@ -456,6 +457,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const current = weighing.queue[0];
     if (!current) {
+      weighing.lastSpokenStepKey = null;
       weighingStateBadge.className = "weighing-state-badge state-idle";
       weighingStateBadge.textContent = "IDLE";
       weighingProductName.textContent = "-";
@@ -480,9 +482,11 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingTargetValue.textContent = current.targetValue;
     weighingActionHint.textContent = "Enter 또는 Space를 눌러 현재 계량을 완료 처리하세요.";
 
-    // TTS: announce material and value (especially when text is included)
-    const ttsText = `${current.materialName}, ${current.targetValue}`;
-    IRMS.speakText(ttsText);
+    const stepKey = `${current.recipeId}:${current.materialId}`;
+    if (weighing.lastSpokenStepKey !== stepKey) {
+      weighing.lastSpokenStepKey = stepKey;
+      IRMS.speakText(`${current.materialName}, ${current.targetValue}`);
+    }
 
     const nextStep = weighing.queue[1];
     if (nextStep) {

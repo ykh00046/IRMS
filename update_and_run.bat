@@ -37,6 +37,14 @@ if errorlevel 1 (
 )
 echo.
 
+:: ── 2.5. Check .env ──
+if not exist ".env" (
+  echo [WARN] .env file not found. Running with development defaults.
+  echo        For production, copy .env.example to .env and set IRMS_ENV=production
+  echo        and a unique IRMS_SESSION_SECRET.
+  echo.
+)
+
 :: ── 3. Start server ──
 set "LOCAL_IP="
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
