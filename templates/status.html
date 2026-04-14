@@ -11,6 +11,7 @@
 {% block main_class %}status-grid-shell{% endblock %}
 
 {% block content %}
+        <div id="status-stock-banner" class="stock-banner" hidden></div>
         <section class="panel status-hero">
           <div>
             <span class="kicker">Control Tower</span>
@@ -145,4 +146,31 @@
 {% block scripts %}
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/status.js"></script>
+    <script>
+      (() => {
+        const banner = document.getElementById("status-stock-banner");
+        if (!banner) return;
+        async function refresh() {
+          try {
+            const res = await fetch("/api/materials/stock");
+            if (!res.ok) return;
+            const data = await res.json();
+            const alerts = (data.items || []).filter((m) => m.status !== "ok");
+            if (!alerts.length) {
+              banner.hidden = true;
+              return;
+            }
+            const neg = alerts.filter((m) => m.status === "negative").length;
+            const low = alerts.filter((m) => m.status === "low").length;
+            const parts = [];
+            if (neg) parts.push(`음수 재고 ${neg}개`);
+            if (low) parts.push(`임계치 미달 ${low}개`);
+            banner.textContent = `⚠ 재고 주의: ${parts.join(", ")} - 책임자에게 알려주세요`;
+            banner.hidden = false;
+          } catch (_) {}
+        }
+        refresh();
+        setInterval(refresh, 30000);
+      })();
+    </script>
 {% endblock %}

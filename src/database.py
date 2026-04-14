@@ -106,6 +106,35 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")
 
+    # material-stock-tracking: 원재료 재고 추적
+    ensure_column(connection, "materials", "stock_quantity", "REAL NOT NULL DEFAULT 0")
+    ensure_column(connection, "materials", "stock_threshold", "REAL NOT NULL DEFAULT 0")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_stock_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL,
+            delta REAL NOT NULL,
+            balance_after REAL NOT NULL,
+            reason TEXT NOT NULL,
+            actor_id INTEGER,
+            actor_name TEXT,
+            recipe_id INTEGER,
+            recipe_item_id INTEGER,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (material_id) REFERENCES materials(id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stock_logs_material ON material_stock_logs(material_id, created_at DESC)"
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_logs_item_measurement "
+        "ON material_stock_logs(recipe_item_id) WHERE reason = 'measurement'"
+    )
+
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):
         connection.execute(

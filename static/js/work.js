@@ -40,6 +40,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const weighingNextValue = document.getElementById("weighing-next-value");
   const weighingColorSelect = document.getElementById("weighing-color-select");
   const weighingModeLabel = document.getElementById("weighing-mode-label");
+  const workStockBanner = document.getElementById("work-stock-banner");
+  const weighingCurrentCard = document.querySelector(".weighing-current");
+
+  const lowStockSet = new Set();
+  async function refreshLowStock() {
+    try {
+      const res = await fetch("/api/materials/stock");
+      if (!res.ok) return;
+      const data = await res.json();
+      lowStockSet.clear();
+      let neg = 0, low = 0;
+      (data.items || []).forEach((m) => {
+        if (m.status === "negative") { lowStockSet.add(m.id); neg++; }
+        else if (m.status === "low") { lowStockSet.add(m.id); low++; }
+      });
+      if (workStockBanner) {
+        if (neg || low) {
+          const parts = [];
+          if (neg) parts.push(`음수 재고 ${neg}개`);
+          if (low) parts.push(`임계치 미달 ${low}개`);
+          workStockBanner.textContent = `⚠ 재고 주의: ${parts.join(", ")} - 책임자에게 알려주세요`;
+          workStockBanner.hidden = false;
+        } else {
+          workStockBanner.hidden = true;
+        }
+      }
+    } catch (_) {}
+  }
+  refreshLowStock();
+  setInterval(refreshLowStock, 30000);
 
   const state = {
     color: "all",
@@ -481,6 +511,13 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingMaterialName.textContent = current.materialName;
     weighingTargetValue.textContent = current.targetValue;
     weighingActionHint.textContent = "Enter 또는 Space를 눌러 현재 계량을 완료 처리하세요.";
+
+    if (weighingCurrentCard) {
+      weighingCurrentCard.classList.toggle(
+        "stock-warning-stripe",
+        lowStockSet.has(current.materialId)
+      );
+    }
 
     const stepKey = `${current.recipeId}:${current.materialId}`;
     if (weighing.lastSpokenStepKey !== stepKey) {

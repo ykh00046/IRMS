@@ -1269,3 +1269,19 @@ tr:hover td.sticky-right {
     font-size: 0.7rem;
   }
 }
+
+/* material-stock-tracking — global banner */
+.stock-banner {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-weight: 600;
+}
+.stock-warning-stripe {
+  background: linear-gradient(90deg, rgba(251,191,36,0.15), transparent);
+  border-left: 4px solid #fbbf24;
+  padding-left: 8px;
+}

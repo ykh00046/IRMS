@@ -18,7 +18,89 @@
           <button class="mgmt-tab" data-tab="import" type="button">레시피 등록</button>
           <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
           <button class="mgmt-tab" data-tab="lookup" type="button">레시피 조회</button>
+          <button class="mgmt-tab" data-tab="stock" type="button">원재료 재고</button>
         </nav>
+
+        <div id="mgmt-stock-banner" class="stock-banner" hidden></div>
+
+        <!-- ── 원재료 재고 ── -->
+        <div class="tab-panel" id="tab-stock">
+          <section class="panel">
+            <div class="panel-header-row">
+              <h3 class="panel-title">원재료 재고 현황</h3>
+              <div class="button-row">
+                <input id="stock-search" class="input" placeholder="원재료명 검색" />
+                <button id="stock-refresh" class="btn" type="button">새로고침</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>원재료명</th>
+                    <th>카테고리</th>
+                    <th class="num">현재 재고 (g)</th>
+                    <th class="num">임계치 (g)</th>
+                    <th>상태</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="stock-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Stock action modal -->
+          <div id="stock-modal" class="ss-modal-overlay" hidden>
+            <div class="ss-modal">
+              <div class="ss-modal-header">
+                <h3 id="stock-modal-title">재고 조정</h3>
+                <button id="stock-modal-close" class="btn" type="button">닫기</button>
+              </div>
+              <div class="ss-modal-body">
+                <div id="stock-modal-material" class="muted"></div>
+                <div class="filter-group">
+                  <label class="filter-label" id="stock-modal-amount-label">수량 (g)</label>
+                  <input id="stock-modal-amount" type="number" step="0.01" class="input" />
+                </div>
+                <div class="filter-group">
+                  <label class="filter-label">메모</label>
+                  <textarea id="stock-modal-note" class="textarea" rows="2"></textarea>
+                </div>
+                <div class="button-row">
+                  <button id="stock-modal-submit" class="btn accent" type="button">확인</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stock log modal -->
+          <div id="stock-log-modal" class="ss-modal-overlay" hidden>
+            <div class="ss-modal">
+              <div class="ss-modal-header">
+                <h3 id="stock-log-title">입출고 이력</h3>
+                <button id="stock-log-close" class="btn" type="button">닫기</button>
+              </div>
+              <div class="ss-modal-body">
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>일시</th>
+                        <th>사유</th>
+                        <th class="num">변동</th>
+                        <th class="num">잔량</th>
+                        <th>담당자</th>
+                        <th>메모</th>
+                      </tr>
+                    </thead>
+                    <tbody id="stock-log-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- ── 레시피 등록 ── -->
         <div class="tab-panel" id="tab-import">
@@ -237,4 +319,5 @@
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/spreadsheet_editor.js"></script>
     <script src="/static/js/management.js"></script>
+    <script src="/static/js/stock.js"></script>
 {% endblock %}

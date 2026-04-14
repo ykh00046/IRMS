@@ -458,3 +458,40 @@
   background: var(--bg-surface-200) !important;
   color: var(--text-primary) !important;
 }
+
+/* material-stock-tracking */
+.stock-banner {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-weight: 600;
+}
+.panel-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.panel-header-row .button-row { gap: 8px; }
+.panel-header-row .input { width: 200px; }
+.num { text-align: right; }
+.stock-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.stock-ok { background: #dcfce7; color: #166534; }
+.stock-low { background: #fef3c7; color: #92400e; }
+.stock-negative { background: #fecaca; color: #991b1b; }
+tr.row-low { background: rgba(251, 191, 36, 0.08); }
+tr.row-negative { background: rgba(239, 68, 68, 0.1); }
+.btn.btn-sm { padding: 2px 8px; font-size: 12px; }
+.text-negative { color: #b91c1c; }
+.text-positive { color: #15803d; }
+.ss-modal-overlay[hidden] { display: none !important; }

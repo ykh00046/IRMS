@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
 from ..database import get_connection, row_to_dict, utc_now_text, write_audit_log
+from ..services import stock_service
 from .recipe_routes import _format_display_value
 from .models import (
     WeighingRecipeCompleteRequest,
@@ -143,6 +144,18 @@ def build_router() -> APIRouter:
             if update_cursor.rowcount == 0:
                 raise HTTPException(status_code=409, detail="STEP_ALREADY_COMPLETED")
 
+            stock_info = None
+            item_weight = item_row["value_weight"]
+            if item_weight is not None:
+                stock_info = stock_service.deduct_for_measurement(
+                    connection,
+                    material_id=body.material_id,
+                    weight=float(item_weight),
+                    recipe_id=body.recipe_id,
+                    recipe_item_id=int(item_row["id"]),
+                    actor=current_user,
+                )
+
             remaining_in_recipe = int(
                 connection.execute(
                     "SELECT COUNT(*) AS count FROM recipe_items WHERE recipe_id = ? AND measured_at IS NULL",
@@ -223,6 +236,9 @@ def build_router() -> APIRouter:
             if not item_row["measured_at"]:
                 raise HTTPException(status_code=409, detail="STEP_NOT_COMPLETED")
 
+            stock_service.reverse_measurement(
+                connection, recipe_item_id=int(item_row["id"])
+            )
             connection.execute(
                 """
                 UPDATE recipe_items
