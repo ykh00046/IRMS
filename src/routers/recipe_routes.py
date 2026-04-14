@@ -209,6 +209,184 @@ def build_router() -> tuple[APIRouter, APIRouter]:
 
         return recipe
 
+    def _find_chain_root(connection, recipe_id: int) -> int:
+        current = recipe_id
+        seen: set[int] = set()
+        while current is not None and current not in seen:
+            seen.add(current)
+            row = connection.execute(
+                "SELECT revision_of FROM recipes WHERE id = ?", (current,)
+            ).fetchone()
+            if not row:
+                return current
+            parent = row["revision_of"]
+            if parent is None:
+                return current
+            current = int(parent)
+        return current
+
+    def _fetch_chain(connection, root_id: int) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            """
+            WITH RECURSIVE chain(id) AS (
+                SELECT ?
+                UNION ALL
+                SELECT r.id FROM recipes r, chain c WHERE r.revision_of = c.id
+            )
+            SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+                   r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
+            FROM recipes r
+            WHERE r.id IN (SELECT id FROM chain)
+            ORDER BY r.created_at ASC, r.id ASC
+            """,
+            (root_id,),
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
+    @operator_router.get("/recipes/{recipe_id}/history")
+    async def recipe_history(recipe_id: int) -> dict[str, Any]:
+        with get_connection() as connection:
+            exists = connection.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            root_id = _find_chain_root(connection, recipe_id)
+            chain = _fetch_chain(connection, root_id)
+            item_map = _fetch_recipe_items(connection, [r["id"] for r in chain])
+
+        if not chain:
+            return {"root_id": root_id, "current_id": recipe_id, "items": []}
+
+        current_id = max(chain, key=lambda r: (r["created_at"] or "", r["id"]))["id"]
+        items = []
+        for idx, rec in enumerate(chain, start=1):
+            items.append({
+                "id": rec["id"],
+                "version_label": f"v{idx}",
+                "product_name": rec["product_name"],
+                "position": rec["position"],
+                "ink_name": rec["ink_name"],
+                "status": rec["status"],
+                "created_by": rec["created_by"],
+                "created_at": rec["created_at"],
+                "remark": rec.get("remark"),
+                "revision_of": rec.get("revision_of"),
+                "item_count": len(item_map.get(rec["id"], [])),
+                "is_current": rec["id"] == current_id,
+                "is_root": rec.get("revision_of") is None,
+            })
+        return {"root_id": root_id, "current_id": current_id, "items": items}
+
+    @operator_router.get("/recipes/history/compare")
+    async def recipe_history_compare(ids: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:
+        try:
+            id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="INVALID_IDS")
+        if len(id_list) < 2:
+            raise HTTPException(status_code=400, detail="NEED_AT_LEAST_TWO")
+        if len(id_list) > 50:
+            raise HTTPException(status_code=400, detail="TOO_MANY_IDS")
+
+        with get_connection() as connection:
+            placeholders = ",".join("?" for _ in id_list)
+            recipe_rows = connection.execute(
+                f"""
+                SELECT id, product_name, position, ink_name, status, created_by,
+                       created_at, revision_of, remark
+                FROM recipes WHERE id IN ({placeholders})
+                """,
+                id_list,
+            ).fetchall()
+            if len(recipe_rows) != len(id_list):
+                raise HTTPException(status_code=404, detail="SOME_RECIPES_NOT_FOUND")
+
+            roots = {_find_chain_root(connection, int(r["id"])) for r in recipe_rows}
+            if len(roots) > 1:
+                raise HTTPException(status_code=400, detail="DIFFERENT_CHAINS")
+
+            item_map = _fetch_recipe_items(connection, id_list)
+
+        by_id = {int(r["id"]): row_to_dict(r) for r in recipe_rows}
+
+        root_id = next(iter(roots))
+        with get_connection() as connection:
+            chain = _fetch_chain(connection, root_id)
+        label_map: dict[int, str] = {}
+        for idx, rec in enumerate(chain, start=1):
+            label_map[int(rec["id"])] = f"v{idx}"
+
+        ordered = sorted(id_list, key=lambda x: (by_id[x]["created_at"] or "", x))
+
+        versions = []
+        for rid in ordered:
+            rec = by_id[rid]
+            versions.append({
+                "id": rid,
+                "version_label": label_map.get(rid, "?"),
+                "product_name": rec["product_name"],
+                "position": rec["position"],
+                "ink_name": rec["ink_name"],
+                "created_by": rec["created_by"],
+                "created_at": rec["created_at"],
+            })
+
+        material_order: list[int] = []
+        material_names: dict[int, str] = {}
+        per_recipe: dict[int, dict[int, dict]] = {}
+        for rid in ordered:
+            per_recipe[rid] = {}
+            for it in item_map.get(rid, []):
+                mid = int(it["material_id"])
+                per_recipe[rid][mid] = it
+                if mid not in material_names:
+                    material_names[mid] = it["material_name"]
+                    material_order.append(mid)
+
+        material_order.sort(key=lambda mid: material_names[mid])
+
+        materials_payload = []
+        for mid in material_order:
+            values = []
+            distinct_values: set[str] = set()
+            present_count = 0
+            for rid in ordered:
+                it = per_recipe[rid].get(mid)
+                if it:
+                    present_count += 1
+                    weight = it.get("value_weight")
+                    text = it.get("value_text")
+                    key = f"{weight}|{text}"
+                    distinct_values.add(key)
+                    values.append({
+                        "version_id": rid,
+                        "value_weight": weight,
+                        "value_text": text,
+                        "display": it.get("target_value"),
+                    })
+                else:
+                    values.append({
+                        "version_id": rid,
+                        "value_weight": None,
+                        "value_text": None,
+                        "display": None,
+                    })
+
+            if present_count < len(ordered):
+                status = "partial"
+            elif len(distinct_values) == 1:
+                status = "same"
+            else:
+                status = "modified"
+
+            materials_payload.append({
+                "material_id": mid,
+                "material_name": material_names[mid],
+                "values": values,
+                "change_status": status,
+            })
+
+        return {"versions": versions, "materials": materials_payload}
+
     @operator_router.get("/recipes")
     async def list_recipes(
         status: str | None = None,

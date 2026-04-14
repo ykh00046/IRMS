@@ -216,6 +216,7 @@
             <div id="lookup-actions" class="button-row lookup-actions" hidden>
               <span id="lookup-selected-label" class="muted">선택: 없음</span>
               <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
+              <button id="lookup-history-btn" class="btn" disabled>버전 이력</button>
               <button id="lookup-clone-btn" class="btn accent" disabled>복제하여 등록</button>
             </div>
           </section>
@@ -269,6 +270,57 @@
                     <button id="ss-add-col-btn" class="btn accent" type="button">추가</button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── 버전 이력 모달 ── -->
+        <div id="history-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal ss-modal-wide">
+            <div class="ss-modal-header">
+              <h3 id="history-modal-title">버전 이력</h3>
+              <button id="history-modal-close" class="btn" type="button">닫기</button>
+            </div>
+            <div class="ss-modal-body">
+              <div id="history-modal-subtitle" class="muted"></div>
+              <div class="table-wrap">
+                <table class="history-table">
+                  <thead>
+                    <tr>
+                      <th style="width:40px"></th>
+                      <th>버전</th>
+                      <th>등록일시</th>
+                      <th>등록자</th>
+                      <th class="num">항목수</th>
+                      <th>상태</th>
+                      <th>작업</th>
+                    </tr>
+                  </thead>
+                  <tbody id="version-history-body"></tbody>
+                </table>
+              </div>
+              <div class="button-row">
+                <button id="history-compare-btn" class="btn accent" type="button" disabled>선택한 버전 비교</button>
+                <span class="muted">2개 이상 체크 후 비교</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── 버전 비교 모달 ── -->
+        <div id="compare-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal ss-modal-wide">
+            <div class="ss-modal-header">
+              <h3 id="compare-modal-title">버전 비교</h3>
+              <button id="compare-modal-close" class="btn" type="button">닫기</button>
+            </div>
+            <div class="ss-modal-body">
+              <div class="compare-scroll">
+                <table class="compare-table">
+                  <thead id="compare-thead"></thead>
+                  <tbody id="compare-tbody"></tbody>
+                </table>
               </div>
             </div>
           </div>

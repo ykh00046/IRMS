@@ -54,6 +54,20 @@
   const lookupSelectedLabel = document.getElementById("lookup-selected-label");
   const lookupCopyBtn = document.getElementById("lookup-copy-btn");
   const lookupCloneBtn = document.getElementById("lookup-clone-btn");
+  const lookupHistoryBtn = document.getElementById("lookup-history-btn");
+  const historyModal = document.getElementById("history-modal");
+  const historyModalClose = document.getElementById("history-modal-close");
+  const historyModalTitle = document.getElementById("history-modal-title");
+  const historyModalSubtitle = document.getElementById("history-modal-subtitle");
+  const versionHistoryBody = document.getElementById("version-history-body");
+  const historyCompareBtn = document.getElementById("history-compare-btn");
+  const compareModal = document.getElementById("compare-modal");
+  const compareModalClose = document.getElementById("compare-modal-close");
+  const compareModalTitle = document.getElementById("compare-modal-title");
+  const compareThead = document.getElementById("compare-thead");
+  const compareTbody = document.getElementById("compare-tbody");
+
+  let currentHistoryChain = null;
 
   let selectedRecipeId = null;
   let pendingRevisionOf = null;
@@ -576,7 +590,137 @@
     }
     if (lookupCopyBtn) lookupCopyBtn.disabled = !recipeId;
     if (lookupCloneBtn) lookupCloneBtn.disabled = !recipeId;
+    if (lookupHistoryBtn) lookupHistoryBtn.disabled = !recipeId;
     if (lookupActions) lookupActions.hidden = !recipeId;
+  }
+
+  async function handleLookupHistory() {
+    if (!selectedRecipeId) return;
+    try {
+      const res = await fetch(`/api/recipes/${selectedRecipeId}/history`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      currentHistoryChain = data;
+      renderHistoryModal(data);
+      if (historyModal) historyModal.hidden = false;
+    } catch (error) {
+      IRMS.notify(`버전 이력 조회 실패: ${error.message}`, "error");
+    }
+  }
+
+  function renderHistoryModal(data) {
+    const items = data.items || [];
+    if (historyModalSubtitle && items.length) {
+      const first = items[0];
+      historyModalSubtitle.textContent = `${first.product_name || ""} / ${first.position || "-"} / ${first.ink_name || ""}`;
+    }
+    if (historyModalTitle) {
+      historyModalTitle.textContent = `버전 이력 (${items.length}개)`;
+    }
+    if (!items.length) {
+      versionHistoryBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">이력이 없습니다.</div></td></tr>';
+      return;
+    }
+    versionHistoryBody.innerHTML = items
+      .map(
+        (it) => `
+          <tr data-recipe-id="${it.id}">
+            <td><input type="checkbox" class="version-check" value="${it.id}" /></td>
+            <td><strong>${IRMS.escapeHtml(it.version_label)}</strong>${it.is_current ? ' <span class="status-chip status-completed">현재 사용</span>' : ""}</td>
+            <td>${IRMS.formatDateTime(it.created_at)}</td>
+            <td>${IRMS.escapeHtml(it.created_by || "-")}</td>
+            <td class="num">${it.item_count}</td>
+            <td><span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span></td>
+            <td><button class="btn btn-sm history-row-clone" data-recipe-id="${it.id}" type="button">이 버전 복제</button></td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    versionHistoryBody.querySelectorAll(".version-check").forEach((cb) => {
+      cb.addEventListener("change", updateCompareButtonState);
+    });
+    versionHistoryBody.querySelectorAll(".history-row-clone").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const rid = Number(btn.dataset.recipeId);
+        selectedRecipeId = rid;
+        if (historyModal) historyModal.hidden = true;
+        handleLookupClone();
+      });
+    });
+    updateCompareButtonState();
+  }
+
+  function getSelectedVersionIds() {
+    if (!versionHistoryBody) return [];
+    return Array.from(versionHistoryBody.querySelectorAll(".version-check:checked")).map((cb) => Number(cb.value));
+  }
+
+  function updateCompareButtonState() {
+    if (!historyCompareBtn) return;
+    historyCompareBtn.disabled = getSelectedVersionIds().length < 2;
+  }
+
+  async function handleCompareVersions() {
+    const ids = getSelectedVersionIds();
+    if (ids.length < 2) return;
+    try {
+      const res = await fetch(`/api/recipes/history/compare?ids=${ids.join(",")}`, { credentials: "same-origin" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      renderCompareModal(data);
+      if (compareModal) compareModal.hidden = false;
+    } catch (error) {
+      IRMS.notify(`버전 비교 실패: ${error.message}`, "error");
+    }
+  }
+
+  function renderCompareModal(data) {
+    const versions = data.versions || [];
+    const materials = data.materials || [];
+    if (compareModalTitle) {
+      const labels = versions.map((v) => v.version_label).join(", ");
+      compareModalTitle.textContent = `버전 비교 (${labels})`;
+    }
+    const statusLabel = { same: "동일", modified: "수정", partial: "추가/제거" };
+    const headerCells = [
+      '<th class="compare-sticky">원재료</th>',
+      ...versions.map((v) => `<th>${IRMS.escapeHtml(v.version_label)}<br><span class="muted">${IRMS.formatDateTime(v.created_at)}</span></th>`),
+      "<th>상태</th>",
+    ].join("");
+    compareThead.innerHTML = `<tr>${headerCells}</tr>`;
+
+    if (!materials.length) {
+      compareTbody.innerHTML = `<tr><td colspan="${versions.length + 2}"><div class="empty-state">비교할 재료가 없습니다.</div></td></tr>`;
+      return;
+    }
+    compareTbody.innerHTML = materials
+      .map((mat) => {
+        const valueMap = {};
+        for (const v of mat.values) {
+          valueMap[v.version_id] = v;
+        }
+        const cells = versions
+          .map((ver) => {
+            const entry = valueMap[ver.id];
+            if (!entry) return '<td class="value-cell muted">-</td>';
+            const display = entry.value_text != null && entry.value_text !== ""
+              ? entry.value_text
+              : (entry.value_weight != null ? String(entry.value_weight) : "-");
+            return `<td class="value-cell">${IRMS.escapeHtml(display)}</td>`;
+          })
+          .join("");
+        return `<tr class="compare-${mat.change_status}">
+          <td class="compare-sticky">${IRMS.escapeHtml(mat.material_name)}</td>
+          ${cells}
+          <td>${statusLabel[mat.change_status] || mat.change_status}</td>
+        </tr>`;
+      })
+      .join("");
   }
 
   async function handleLookup() {
@@ -783,6 +927,18 @@
   }
   if (lookupCloneBtn) {
     lookupCloneBtn.addEventListener("click", handleLookupClone);
+  }
+  if (lookupHistoryBtn) {
+    lookupHistoryBtn.addEventListener("click", handleLookupHistory);
+  }
+  if (historyModalClose) {
+    historyModalClose.addEventListener("click", () => { historyModal.hidden = true; });
+  }
+  if (historyCompareBtn) {
+    historyCompareBtn.addEventListener("click", handleCompareVersions);
+  }
+  if (compareModalClose) {
+    compareModalClose.addEventListener("click", () => { compareModal.hidden = true; });
   }
 
   // (ss-transfer-to-import removed — editor tab now registers directly)
