@@ -79,22 +79,68 @@
     await loadSheet(productId);
   }
 
-  async function createProduct() {
-    const name = prompt("새 제품 이름을 입력하세요:");
-    if (!name?.trim()) return;
-    const typeInput = prompt("레시피 종류를 입력하세요:\n  1 = 액상 (PL 계열)\n  2 = 파우더 (컬러 안료)", "1");
-    if (typeInput === null) return;
-    const recipeType = typeInput.trim() === "2" ? "powder" : "solution";
+  let productModalMode = "create";
+  let productModalTargetId = null;
+
+  function openProductModal(mode, product) {
+    productModalMode = mode;
+    productModalTargetId = product?.id || null;
+    $("ss-product-modal-title").textContent = mode === "edit" ? "제품 수정" : "새 제품";
+    $("ss-product-name").value = product?.name || "";
+    $("ss-product-name").disabled = mode === "edit";
+    const recipeType = product?.recipeType || "solution";
+    document.querySelectorAll('input[name="ss-recipe-type"]').forEach((r) => {
+      r.checked = r.value === recipeType;
+    });
+    $("ss-product-modal-warn").hidden = mode !== "edit";
+    $("ss-product-modal").hidden = false;
+    if (mode !== "edit") setTimeout(() => $("ss-product-name").focus(), 50);
+  }
+
+  function closeProductModal() {
+    $("ss-product-modal").hidden = true;
+    productModalTargetId = null;
+  }
+
+  async function submitProductModal() {
+    const name = $("ss-product-name").value.trim();
+    const recipeType = document.querySelector('input[name="ss-recipe-type"]:checked')?.value || "solution";
+    const typeLabel = recipeType === "powder" ? "파우더" : "액상";
+
+    if (productModalMode === "create") {
+      if (!name) { IRMS.notify("제품 이름을 입력하세요.", "error"); return; }
+      try {
+        const result = await IRMS.ssCreateProduct({ name, recipeType });
+        activeProductId = result.id;
+        IRMS.notify(`${typeLabel} 제품을 생성했습니다.`, "success");
+        closeProductModal();
+        await loadProducts();
+      } catch (err) {
+        const msg = err.message === "PRODUCT_NAME_EXISTS" ? "이미 존재하는 제품명입니다." : err.message;
+        IRMS.notify("제품 생성 실패: " + msg, "error");
+      }
+      return;
+    }
+
+    // edit
     try {
-      const result = await IRMS.ssCreateProduct({ name: name.trim(), recipeType });
-      activeProductId = result.id;
-      const typeLabel = recipeType === "powder" ? "파우더" : "액상";
-      IRMS.notify(`${typeLabel} 제품을 생성했습니다.`, "success");
+      await IRMS.ssUpdateProduct(productModalTargetId, { recipeType });
+      IRMS.notify(`${typeLabel}(으)로 변경했습니다.`, "success");
+      closeProductModal();
       await loadProducts();
     } catch (err) {
-      const msg = err.message === "PRODUCT_NAME_EXISTS" ? "이미 존재하는 제품명입니다." : err.message;
-      IRMS.notify("제품 생성 실패: " + msg, "error");
+      IRMS.notify("제품 수정 실패: " + err.message, "error");
     }
+  }
+
+  function createProduct() {
+    openProductModal("create", null);
+  }
+
+  function editActiveProduct() {
+    const p = products.find((x) => x.id === activeProductId);
+    if (!p) return;
+    openProductModal("edit", p);
   }
 
   async function deleteProduct(productId) {
@@ -578,6 +624,20 @@
     });
 
     $("ss-add-product").addEventListener("click", createProduct);
+    $("ss-product-modal-close")?.addEventListener("click", closeProductModal);
+    $("ss-product-modal")?.addEventListener("click", (e) => {
+      if (e.target === $("ss-product-modal")) closeProductModal();
+    });
+    $("ss-product-modal-save")?.addEventListener("click", submitProductModal);
+    // Double-click active tab to edit type
+    $("ss-product-tabs")?.addEventListener("dblclick", (e) => {
+      const tab = e.target.closest("[data-product-id]");
+      if (tab) {
+        const id = Number(tab.dataset.productId);
+        const p = products.find((x) => x.id === id);
+        if (p) openProductModal("edit", p);
+      }
+    });
     $("ss-add-row")?.addEventListener("click", addRowLocal);
     $("ss-del-row")?.addEventListener("click", deleteLastRowLocal);
     $("ss-manage-cols")?.addEventListener("click", openColumnModal);

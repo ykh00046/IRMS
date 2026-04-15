@@ -250,6 +250,47 @@
             </div>
           </section>
 
+          <!-- Product create/edit modal -->
+          <div id="ss-product-modal" class="ss-modal-overlay" hidden>
+            <div class="ss-modal">
+              <div class="ss-modal-header">
+                <h3 id="ss-product-modal-title">새 제품</h3>
+                <button id="ss-product-modal-close" class="btn" type="button">닫기</button>
+              </div>
+              <div class="ss-modal-body">
+                <div class="form-group">
+                  <label class="filter-label" for="ss-product-name">제품 이름</label>
+                  <input id="ss-product-name" class="input" maxlength="100" placeholder="예: Star Glow A" />
+                </div>
+                <div class="form-group">
+                  <label class="filter-label">레시피 종류</label>
+                  <div class="ss-type-choice">
+                    <label class="ss-type-option">
+                      <input type="radio" name="ss-recipe-type" value="solution" checked />
+                      <span class="ss-type-card">
+                        <strong>액상 (Solution)</strong>
+                        <small>PL 계열 · TOTAL / BINDER / 분산제 / 안료량 / APB / Glycerol 자동 수식</small>
+                      </span>
+                    </label>
+                    <label class="ss-type-option">
+                      <input type="radio" name="ss-recipe-type" value="powder" />
+                      <span class="ss-type-card">
+                        <strong>파우더 (Powder)</strong>
+                        <small>RAVEN / BLACK / RED / BLUE / YELLOW / WHITE / TTO-55(b) / GLYCEROL</small>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <p id="ss-product-modal-warn" class="muted small" hidden>
+                  종류를 변경하면 기본 컬럼 구성이 바뀝니다. 기존 데이터는 유지되지만 새 기본 컬럼이 추가됩니다.
+                </p>
+                <div class="button-row">
+                  <button id="ss-product-modal-save" class="btn accent" type="button">확인</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Column management modal -->
           <div id="ss-col-modal" class="ss-modal-overlay">
             <div class="ss-modal">

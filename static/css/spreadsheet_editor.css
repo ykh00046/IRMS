@@ -69,6 +69,28 @@
 .ss-tab-type-solution { background: #2563eb; }
 .ss-tab-type-powder { background: #b45309; }
 
+.ss-type-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+.ss-type-option { cursor: pointer; }
+.ss-type-option input { display: none; }
+.ss-type-card {
+  display: block;
+  padding: 14px;
+  border: 2px solid var(--border-color, #2a3344);
+  border-radius: 10px;
+  transition: all 0.15s;
+}
+.ss-type-card strong { display: block; margin-bottom: 4px; }
+.ss-type-card small { color: var(--text-muted, #94a3b8); font-size: 0.72rem; line-height: 1.4; }
+.ss-type-option input:checked + .ss-type-card {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .ss-add-btn {
   min-width: 2rem;
   height: 2rem;

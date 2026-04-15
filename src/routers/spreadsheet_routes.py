@@ -37,6 +37,10 @@ _DEFAULT_COLUMNS: dict[str, list[tuple[str, str, str | None]]] = {
         ("PL-735", "numeric", None),
         ("TOTAL", "numeric", "=SUM(D1:J1)"),
         ("BINDER(PCB)", "numeric", "=(D1*0.75)+(E1*0.8)+(F1*0.75)+(G1*0.75)+(H1*0.77)+(I1*0.57)+(J1*0.5)"),
+        ("분산제", "numeric", "=(D1*0.1)+(E1*0.05)+(F1*0.1)+(G1*0.05)+(H1*0.1)+(I1*0.03)+(J1*0.05)"),
+        ("안료량", "numeric", "=K1-L1-M1"),
+        ("APB", "numeric", "=(L1*0.15)+(N1*0.1)"),
+        ("Glycerol", "numeric", "=K1*0.05"),
     ],
     "powder": [
         ("제품명", "text", None),
@@ -51,6 +55,7 @@ _DEFAULT_COLUMNS: dict[str, list[tuple[str, str, str | None]]] = {
         ("TTO-55(b)", "numeric", None),
         ("PB", "text", None),
         ("HDI", "text", None),
+        ("GLYCEROL", "numeric", None),
     ],
 }
 
@@ -58,6 +63,7 @@ _DEFAULT_COLUMNS: dict[str, list[tuple[str, str, str | None]]] = {
 class ProductUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = None
+    recipeType: str | None = Field(None, pattern="^(solution|powder)$")
 
 
 class ColumnCreate(BaseModel):
@@ -256,12 +262,35 @@ def build_router() -> APIRouter:
                 if dup:
                     raise HTTPException(status_code=409, detail="PRODUCT_NAME_EXISTS")
 
+            new_type = body.recipeType or (product["recipe_type"] if "recipe_type" in product.keys() else "solution")
+            type_changed = body.recipeType is not None and body.recipeType != (product["recipe_type"] if "recipe_type" in product.keys() else "solution")
+
             conn.execute(
-                "UPDATE ss_products SET name = ?, description = ?, updated_at = ? WHERE id = ?",
-                (new_name, new_desc, now, product_id),
+                "UPDATE ss_products SET name = ?, description = ?, recipe_type = ?, updated_at = ? WHERE id = ?",
+                (new_name, new_desc, new_type, now, product_id),
             )
+
+            # On type change: append missing default columns from the new template (non-destructive).
+            if type_changed:
+                template = _DEFAULT_COLUMNS.get(new_type, [])
+                existing_names = {
+                    row["name"] for row in conn.execute(
+                        "SELECT name FROM ss_columns WHERE product_id = ?", (product_id,)
+                    ).fetchall()
+                }
+                next_idx = _next_col_index(conn, product_id)
+                for col_name, col_type, _formula in template:
+                    if col_name in existing_names:
+                        continue
+                    conn.execute(
+                        "INSERT INTO ss_columns (product_id, name, col_index, col_type, is_readonly) "
+                        "VALUES (?, ?, ?, ?, 0)",
+                        (product_id, col_name, next_idx, col_type),
+                    )
+                    next_idx += 1
+
             conn.commit()
-            return {"id": product_id, "name": new_name, "description": new_desc, "updatedAt": now}
+            return {"id": product_id, "name": new_name, "description": new_desc, "recipeType": new_type, "updatedAt": now}
 
     @router.delete("/products/{product_id}")
     async def delete_product(product_id: int) -> dict[str, Any]:
@@ -280,7 +309,12 @@ def build_router() -> APIRouter:
             columns = _load_columns(conn, product_id)
             rows = _load_sheet_data(conn, product_id, columns)
             return {
-                "product": {"id": product["id"], "name": product["name"], "description": product["description"]},
+                "product": {
+                    "id": product["id"],
+                    "name": product["name"],
+                    "description": product["description"],
+                    "recipeType": product["recipe_type"] if "recipe_type" in product.keys() else "solution",
+                },
                 "columns": columns,
                 "rows": rows,
             }

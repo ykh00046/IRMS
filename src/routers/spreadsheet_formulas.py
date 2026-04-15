@@ -78,29 +78,37 @@ def evaluate_row(
     columns: list[dict[str, Any]],
     cell_values: dict[int, str],
 ) -> dict[int, str]:
-    """Evaluate all formula cells in a single row.
+    """Evaluate all formula cells in a single row with chain support.
 
-    Args:
-        columns: list of column dicts with 'colIndex' key
-        cell_values: {colIndex: raw_string_value}
-
-    Returns:
-        {colIndex: calculated_string} for formula cells only.
+    Performs iterative passes so formulas referencing other formula cells
+    resolve correctly (e.g. 안료량 = K - L - M where L and M are formulas).
     """
-    # Build numeric lookup from non-formula cells
     numeric_values: dict[int, float] = {}
-    for col in columns:
-        idx = col["colIndex"]
-        raw = cell_values.get(idx, "")
-        if not is_formula(raw):
-            numeric_values[idx] = _to_float(raw)
-
-    results: dict[int, str] = {}
+    formula_cols: list[tuple[int, str]] = []
     for col in columns:
         idx = col["colIndex"]
         raw = cell_values.get(idx, "")
         if is_formula(raw):
-            results[idx] = evaluate_cell(raw, numeric_values)
+            formula_cols.append((idx, raw))
+            numeric_values[idx] = 0.0
+        else:
+            numeric_values[idx] = _to_float(raw)
+
+    results: dict[int, str] = {}
+    max_passes = max(1, len(formula_cols) + 1)
+    for _ in range(max_passes):
+        changed = False
+        for idx, raw in formula_cols:
+            new_result = evaluate_cell(raw, numeric_values)
+            if results.get(idx) != new_result:
+                results[idx] = new_result
+                try:
+                    numeric_values[idx] = float(new_result) if new_result != ERR else 0.0
+                except ValueError:
+                    numeric_values[idx] = 0.0
+                changed = True
+        if not changed:
+            break
 
     return results
 
@@ -243,4 +251,4 @@ def _to_float(val: str | None) -> float:
 def _fmt(value: float) -> str:
     if value == int(value) and abs(value) < 1e15:
         return str(int(value))
-    return f"{value:.4f}".rstrip("0").rstrip(".")
+    return f"{value:.6f}".rstrip("0").rstrip(".")
