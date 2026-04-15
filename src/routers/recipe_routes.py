@@ -210,20 +210,21 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return recipe
 
     def _find_chain_root(connection, recipe_id: int) -> int:
-        current = recipe_id
-        seen: set[int] = set()
-        while current is not None and current not in seen:
-            seen.add(current)
-            row = connection.execute(
-                "SELECT revision_of FROM recipes WHERE id = ?", (current,)
-            ).fetchone()
-            if not row:
-                return current
-            parent = row["revision_of"]
-            if parent is None:
-                return current
-            current = int(parent)
-        return current
+        row = connection.execute(
+            """
+            WITH RECURSIVE up(id, parent, depth) AS (
+                SELECT id, revision_of, 0 FROM recipes WHERE id = ?
+                UNION ALL
+                SELECT r.id, r.revision_of, up.depth + 1
+                FROM recipes r, up
+                WHERE r.id = up.parent AND up.depth < 100
+            )
+            SELECT id FROM up WHERE parent IS NULL
+            ORDER BY depth DESC LIMIT 1
+            """,
+            (recipe_id,),
+        ).fetchone()
+        return int(row["id"]) if row else recipe_id
 
     def _fetch_chain(connection, root_id: int) -> list[dict[str, Any]]:
         rows = connection.execute(

@@ -284,8 +284,11 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_recipes_status ON recipes(status);
             CREATE INDEX IF NOT EXISTS idx_recipes_created_at ON recipes(created_at);
             CREATE INDEX IF NOT EXISTS idx_recipes_raw_hash ON recipes(raw_input_hash) WHERE raw_input_hash IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_recipes_completed_at ON recipes(completed_at) WHERE status = 'completed' AND completed_at IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_recipes_revision_of ON recipes(revision_of) WHERE revision_of IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
             CREATE INDEX IF NOT EXISTS idx_recipe_items_material ON recipe_items(material_id);
+            CREATE INDEX IF NOT EXISTS idx_recipe_items_measured_by ON recipe_items(measured_by, measured_at) WHERE measured_by IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_alias_name ON material_aliases(alias_name);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
