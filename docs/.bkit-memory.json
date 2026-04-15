@@ -1,13 +1,13 @@
 {
   "project": "IRMS",
-  "feature": "measurement-dashboard",
+  "feature": "cloudflare-tunnel-access",
   "level": "dynamic",
-  "phase": "completed",
-  "matchRate": 97,
+  "phase": "plan",
+  "matchRate": 0,
   "updatedAt": "2026-04-15",
   "activeFeatures": [
     "status-operator-view",
-    "measurement-dashboard"
+    "cloudflare-tunnel-access"
   ],
   "documents": {},
   "status": {},
@@ -19,9 +19,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "recipe-version-history",
-    "matchRate": 98,
-    "archivedTo": "docs/archive/2026-04/recipe-version-history",
+    "feature": "measurement-dashboard",
+    "matchRate": 97,
+    "archivedTo": "docs/archive/2026-04/measurement-dashboard",
     "completedAt": "2026-04-15"
   }
 }
