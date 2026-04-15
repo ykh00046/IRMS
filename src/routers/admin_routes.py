@@ -217,4 +217,45 @@ def build_router() -> APIRouter:
 
         return {"status": "ok"}
 
+    @router.delete("/admin/users/{user_id}")
+    async def admin_delete_user(user_id: int, request: Request) -> dict[str, str]:
+        current_user = get_current_user(request)
+        if int(current_user["id"]) == int(user_id):
+            raise HTTPException(status_code=400, detail="CANNOT_DELETE_SELF")
+
+        with get_connection() as connection:
+            target_row = connection.execute(
+                "SELECT id, username, display_name, access_level, is_active FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if not target_row:
+                raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+
+            target_user = row_to_dict(target_row)
+
+            if target_user["access_level"] == "manager":
+                remaining = connection.execute(
+                    "SELECT COUNT(*) AS c FROM users WHERE access_level = 'manager' AND is_active = 1 AND id != ?",
+                    (user_id,),
+                ).fetchone()
+                if int(remaining["c"]) == 0:
+                    raise HTTPException(status_code=400, detail="LAST_MANAGER")
+
+            connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            write_audit_log(
+                connection,
+                action="user_deleted",
+                actor=current_user,
+                target_type="user",
+                target_id=target_user["id"],
+                target_label=str(target_user["username"]),
+                details={
+                    "display_name": target_user["display_name"],
+                    "access_level": target_user["access_level"],
+                },
+            )
+            connection.commit()
+
+        return {"status": "ok"}
+
     return router

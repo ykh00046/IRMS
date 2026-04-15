@@ -428,6 +428,16 @@ body {
   box-shadow: var(--glow-primary);
 }
 
+.btn.danger {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: white;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: #991b1b;
+}
+
 .btn.success {
   background: var(--status-success);
   border-color: var(--status-success);

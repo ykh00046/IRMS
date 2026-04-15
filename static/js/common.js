@@ -285,6 +285,10 @@
     });
   }
 
+  async function deleteUser(userId) {
+    return request(`/admin/users/${userId}`, { method: "DELETE" });
+  }
+
   async function listAuditLogs(filters) {
     const payload = await request("/admin/audit-logs", {
       query: {
@@ -835,6 +839,7 @@
     createUser,
     updateUser,
     resetUserPassword,
+    deleteUser,
     listAuditLogs,
     listChatRooms,
     getChatMessages,

@@ -38,6 +38,7 @@
       user_created: "User Created",
       user_updated: "User Updated",
       user_password_reset: "Password Reset",
+      user_deleted: "User Deleted",
       recipe_status_updated: "Recipe Status",
       weighing_step_completed: "Weighing Step",
       recipe_weighing_completed: "Recipe Complete",
@@ -76,7 +77,7 @@
   function renderUsersTable(items) {
     if (!items.length) {
       usersBody.innerHTML =
-        '<tr><td colspan="7"><div class="empty-state-block">사용자 데이터가 없습니다.</div></td></tr>';
+        '<tr><td colspan="8"><div class="empty-state-block">사용자 데이터가 없습니다.</div></td></tr>';
       return;
     }
 
@@ -131,6 +132,11 @@
                 />
                 <button type="button" class="btn accent" data-action="reset-password">비밀번호 재설정</button>
               </div>
+            </td>
+            <td>
+              ${isCurrentUser
+                ? '<span class="helper-text">본인 계정</span>'
+                : '<button type="button" class="btn danger" data-action="delete">삭제</button>'}
             </td>
           </tr>
         `;
@@ -365,8 +371,35 @@
 
     if (button.dataset.action === "reset-password") {
       await handlePasswordReset(row, button);
+      return;
+    }
+
+    if (button.dataset.action === "delete") {
+      await handleDelete(row, button);
     }
   });
+
+  async function handleDelete(row, button) {
+    const userId = Number(row.dataset.userId);
+    const displayName = row.querySelector('[data-field="display-name"]')?.value || "";
+    if (!window.confirm(`'${displayName}' 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      await IRMS.deleteUser(userId);
+      IRMS.notify("사용자를 삭제했습니다.", "success");
+      await refreshDashboard();
+    } catch (error) {
+      const messageMap = {
+        USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
+        CANNOT_DELETE_SELF: "본인 계정은 삭제할 수 없습니다.",
+        LAST_MANAGER: "마지막 책임자 계정은 삭제할 수 없습니다.",
+      };
+      IRMS.notify(`삭제 실패: ${messageMap[error.message] || error.message}`, "error");
+      button.disabled = false;
+    }
+  }
 
   createForm?.addEventListener("submit", handleCreate);
   refreshBtn?.addEventListener("click", loadUsers);
