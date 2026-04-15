@@ -106,6 +106,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")
 
+    # single-session enforcement: 로그인 시 발급, 새 로그인 시 회전
+    ensure_column(connection, "users", "session_token", "TEXT")
+
     # material-stock-tracking: 원재료 재고 추적
     ensure_column(connection, "materials", "stock_quantity", "REAL NOT NULL DEFAULT 0")
     ensure_column(connection, "materials", "stock_threshold", "REAL NOT NULL DEFAULT 0")
@@ -280,6 +283,7 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_recipes_status ON recipes(status);
             CREATE INDEX IF NOT EXISTS idx_recipes_created_at ON recipes(created_at);
+            CREATE INDEX IF NOT EXISTS idx_recipes_raw_hash ON recipes(raw_input_hash) WHERE raw_input_hash IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
             CREATE INDEX IF NOT EXISTS idx_recipe_items_material ON recipe_items(material_id);
             CREATE INDEX IF NOT EXISTS idx_alias_name ON material_aliases(alias_name);

@@ -19,6 +19,7 @@ class ImportRequest(BaseModel):
     raw_text: str = Field(min_length=1)
     created_by: str = Field(default="책임자")
     revision_of: int | None = None
+    force: bool = False
 
 
 class StatusUpdateRequest(BaseModel):

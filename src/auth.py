@@ -1,3 +1,4 @@
+import secrets
 from typing import Any
 
 from fastapi import HTTPException, Request, status
@@ -103,8 +104,15 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
         return None
 
-    user = get_user_by_id(int(user_id))
-    if user:
+    cookie_token = request.session.get("session_token")
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, username, display_name, role, access_level, is_active, session_token "
+            "FROM users WHERE id = ? AND is_active = 1",
+            (int(user_id),),
+        ).fetchone()
+    if row and (cookie_token or "") == (row["session_token"] or ""):
+        user = to_public_user(row)
         max_level = request.session.get("max_level")
         if max_level:
             max_rank = ACCESS_LEVEL_RANK.get(max_level, 0)
@@ -140,11 +148,27 @@ def require_access_level(required_level: str):
 
 
 def login_user(request: Request, user: dict[str, Any], max_level: str | None = None) -> None:
+    token = secrets.token_urlsafe(32)
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE users SET session_token = ? WHERE id = ?",
+            (token, int(user["id"])),
+        )
+        connection.commit()
     request.session.clear()
     request.session["user_id"] = user["id"]
+    request.session["session_token"] = token
     if max_level:
         request.session["max_level"] = max_level
 
 
 def logout_user(request: Request) -> None:
+    user_id = request.session.get("user_id")
+    if user_id:
+        with get_connection() as connection:
+            connection.execute(
+                "UPDATE users SET session_token = NULL WHERE id = ?",
+                (int(user_id),),
+            )
+            connection.commit()
     request.session.clear()

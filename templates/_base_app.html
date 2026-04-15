@@ -58,6 +58,12 @@
     {% block chat_float %}{% endblock %}
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
+    {% if current_user.access_level != "operator" %}
+    <div id="negative-stock-banner" class="neg-stock-banner" hidden>
+      <span class="neg-stock-icon">⚠</span>
+      <span class="neg-stock-text">음수 재고 발생: <span id="neg-stock-list"></span></span>
+    </div>
+    {% endif %}
     <script src="/static/js/common.js"></script>
     {% block scripts %}{% endblock %}
   </body>

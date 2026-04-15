@@ -1285,3 +1285,24 @@ tr:hover td.sticky-right {
   border-left: 4px solid #fbbf24;
   padding-left: 8px;
 }
+
+.neg-stock-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9000;
+  background: #b91c1c;
+  color: #fff;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.2);
+}
+.neg-stock-banner[hidden] { display: none; }
+.neg-stock-icon { font-size: 18px; }
+.neg-stock-text { flex: 1; }
+#neg-stock-list { font-weight: 500; }

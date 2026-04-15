@@ -996,6 +996,34 @@
 
   bindLogoutButton();
 
+  // ── Negative stock banner (manager pages only) ──
+  async function pollNegativeStock() {
+    const banner = document.getElementById("negative-stock-banner");
+    const list = document.getElementById("neg-stock-list");
+    if (!banner || !list) return;
+    try {
+      const data = await request("/materials/stock");
+      const negatives = (data.items || []).filter((m) => m.status === "negative");
+      if (negatives.length === 0) {
+        banner.hidden = true;
+        return;
+      }
+      const names = negatives
+        .slice(0, 5)
+        .map((m) => `${escapeHtml(m.name)} (${formatValue(m.stock_quantity)}g)`)
+        .join(", ");
+      const more = negatives.length > 5 ? ` 외 ${negatives.length - 5}건` : "";
+      list.innerHTML = names + more;
+      banner.hidden = false;
+    } catch (_e) {
+      // silent fail — don't disrupt page
+    }
+  }
+  if (document.getElementById("negative-stock-banner")) {
+    pollNegativeStock();
+    setInterval(pollNegativeStock, 60000);
+  }
+
   const navToggle = document.getElementById("nav-toggle");
   const topNav = document.querySelector(".top-nav");
   if (navToggle && topNav) {

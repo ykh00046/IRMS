@@ -228,10 +228,11 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     def _fetch_chain(connection, root_id: int) -> list[dict[str, Any]]:
         rows = connection.execute(
             """
-            WITH RECURSIVE chain(id) AS (
-                SELECT ?
+            WITH RECURSIVE chain(id, depth) AS (
+                SELECT ?, 0
                 UNION ALL
-                SELECT r.id FROM recipes r, chain c WHERE r.revision_of = c.id
+                SELECT r.id, c.depth + 1 FROM recipes r, chain c
+                WHERE r.revision_of = c.id AND c.depth < 100
             )
             SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
                    r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
@@ -932,6 +933,24 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             created_ids = []
             now = utc_now_text()
             raw_hash = hashlib.sha256(body.raw_text.encode()).hexdigest()
+
+            if not body.force and body.revision_of is None:
+                existing = connection.execute(
+                    "SELECT id, product_name, created_at FROM recipes WHERE raw_input_hash = ? AND revision_of IS NULL LIMIT 5",
+                    (raw_hash,),
+                ).fetchall()
+                if existing:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "DUPLICATE_IMPORT",
+                            "message": "동일한 내용이 이미 등록되어 있습니다. 다시 등록하려면 force 옵션을 사용하세요.",
+                            "existing": [
+                                {"id": r["id"], "product_name": r["product_name"], "created_at": r["created_at"]}
+                                for r in existing
+                            ],
+                        },
+                    )
 
             for parsed_row in parsed["parsed_rows"]:
                 cursor = connection.execute(
