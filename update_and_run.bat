@@ -45,6 +45,12 @@ if not exist ".env" (
   echo.
 )
 
+:: ── 2.7. Free port 9000 if already in use ──
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":9000 .*LISTENING"') do (
+  echo [INFO] Port 9000 is in use by PID %%p. Terminating...
+  taskkill /PID %%p /F >nul 2>&1
+)
+
 :: ── 3. Start server ──
 set "LOCAL_IP="
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
