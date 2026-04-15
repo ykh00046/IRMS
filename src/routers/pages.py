@@ -100,6 +100,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     async def insight_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "insight.html", "manager")
 
+    @router.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard_page(request: Request) -> Response:
+        return _protected_page_response(request, templates, "dashboard.html", "manager")
+
     @router.get("/status", response_class=HTMLResponse)
     async def status_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "status.html", "manager")

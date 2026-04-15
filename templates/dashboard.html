@@ -1,0 +1,118 @@
+{% extends "_base_app.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block eyebrow %}Production Insight{% endblock %}
+{% block heading %}계량 대시보드{% endblock %}
+
+{% block styles %}
+    <link rel="stylesheet" href="/static/css/dashboard.css" />
+{% endblock %}
+
+{% block content %}
+        <section class="panel dashboard-filter-panel">
+          <div class="dashboard-filter-row">
+            <div class="dashboard-presets">
+              <button class="btn preset-btn" data-preset="today" type="button">오늘</button>
+              <button class="btn preset-btn active" data-preset="7d" type="button">7일</button>
+              <button class="btn preset-btn" data-preset="30d" type="button">30일</button>
+            </div>
+            <div class="dashboard-custom-range">
+              <label class="filter-label">시작</label>
+              <input id="dash-from" type="date" class="input" />
+              <label class="filter-label">종료</label>
+              <input id="dash-to" type="date" class="input" />
+              <button id="dash-apply" class="btn accent" type="button">적용</button>
+            </div>
+            <button id="dash-refresh" class="btn" type="button">새로고침</button>
+          </div>
+        </section>
+
+        <section class="dashboard-cards">
+          <div class="metric-card">
+            <div class="metric-label">완료 레시피</div>
+            <div class="metric-value" id="card-completed">–</div>
+            <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">계량 횟수</div>
+            <div class="metric-value" id="card-measurement">–</div>
+            <div class="metric-unit">회</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">총 사용량</div>
+            <div class="metric-value" id="card-weight">–</div>
+            <div class="metric-unit">g</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">시간당 속도</div>
+            <div class="metric-value" id="card-throughput">–</div>
+            <div class="metric-unit">회/시간</div>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="panel dashboard-chart-panel">
+            <h3 class="panel-title">일자별 추이</h3>
+            <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+          </div>
+          <div class="panel dashboard-chart-panel">
+            <h3 class="panel-title">재료 사용량 TOP 10</h3>
+            <div class="chart-wrap"><canvas id="chart-materials"></canvas></div>
+            <p class="muted small">막대 클릭 시 해당 재료 상세</p>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="panel dashboard-chart-panel">
+            <h3 class="panel-title">일자별 시간당 속도</h3>
+            <div class="chart-wrap"><canvas id="chart-throughput"></canvas></div>
+          </div>
+          <div class="panel dashboard-operators-panel">
+            <h3 class="panel-title">담당자별 실적</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>담당자</th>
+                    <th class="num">계량 건수</th>
+                    <th class="num">총 사용량 (g)</th>
+                    <th class="num">완료 레시피</th>
+                  </tr>
+                </thead>
+                <tbody id="operators-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Material drill-down modal -->
+        <div id="material-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal ss-modal-wide">
+            <div class="ss-modal-header">
+              <h3 id="material-modal-title">재료 상세</h3>
+              <button id="material-modal-close" class="btn" type="button">닫기</button>
+            </div>
+            <div class="ss-modal-body">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>제품명</th>
+                      <th>잉크명</th>
+                      <th class="num">사용량 (g)</th>
+                      <th>담당자</th>
+                      <th>계량일시</th>
+                    </tr>
+                  </thead>
+                  <tbody id="material-modal-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/vendor/chartjs/chart.umd.min.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+{% endblock %}

@@ -2,8 +2,8 @@
   "project": "IRMS",
   "feature": "measurement-dashboard",
   "level": "dynamic",
-  "phase": "plan",
-  "matchRate": 0,
+  "phase": "completed",
+  "matchRate": 97,
   "updatedAt": "2026-04-15",
   "activeFeatures": [
     "status-operator-view",
