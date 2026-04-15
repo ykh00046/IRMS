@@ -39,7 +39,9 @@ def create_app() -> FastAPI:
         cookie_secure=not IS_DEVELOPMENT,
         exempt_urls=[
             re.compile(r"^/health$"),
-            re.compile(r"^/api/"),
+            re.compile(r"^/api/auth/login$"),
+            re.compile(r"^/api/auth/management-login$"),
+            re.compile(r"^/api/auth/operator-login$"),
         ],
     )
 

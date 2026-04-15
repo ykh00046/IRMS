@@ -20,8 +20,8 @@ def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str, str, str
             raise HTTPException(status_code=400, detail="INVALID_DATE")
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="INVALID_RANGE")
-    from_ts = f"{from_date.isoformat()} 00:00:00"
-    to_ts = f"{to_date.isoformat()} 23:59:59"
+    from_ts = f"{from_date.isoformat()}T00:00:00Z"
+    to_ts = f"{to_date.isoformat()}T23:59:59Z"
     return from_date.isoformat(), to_date.isoformat(), from_ts, to_ts
 
 

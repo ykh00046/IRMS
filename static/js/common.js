@@ -1,6 +1,11 @@
 (function () {
   "use strict";
 
+  function getCsrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+
   async function request(path, options) {
     const method = options?.method || "GET";
     const query = options?.query || null;
@@ -17,10 +22,17 @@
       });
     }
 
+    const headers = body ? { "Content-Type": "application/json" } : {};
+    const isUnsafe = !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+    if (isUnsafe) {
+      const token = getCsrfToken();
+      if (token) headers["x-csrftoken"] = token;
+    }
+
     const response = await fetch(endpoint, {
       method,
       credentials: "same-origin",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
 

@@ -86,14 +86,14 @@ def deduct_for_measurement(
     if existing:
         return None
 
-    current = _current_stock(connection, material_id)
-    new_balance = current - weight
+    row = connection.execute(
+        "UPDATE materials SET stock_quantity = stock_quantity - ? WHERE id = ? RETURNING stock_quantity",
+        (weight, material_id),
+    ).fetchone()
+    if row is None:
+        return None
+    new_balance = float(row["stock_quantity"])
     note = "음수 재고 발생" if new_balance < 0 else None
-
-    connection.execute(
-        "UPDATE materials SET stock_quantity = ? WHERE id = ?",
-        (new_balance, material_id),
-    )
     log_id = _insert_log(
         connection,
         material_id=material_id,
@@ -138,12 +138,14 @@ def _apply_delta(
 ) -> dict[str, Any]:
     if reason not in VALID_REASONS:
         raise ValueError(f"invalid reason: {reason}")
-    current = _current_stock(connection, material_id)
-    new_balance = current + delta
-    connection.execute(
-        "UPDATE materials SET stock_quantity = ? WHERE id = ?",
-        (new_balance, material_id),
-    )
+    row = connection.execute(
+        "UPDATE materials SET stock_quantity = stock_quantity + ? WHERE id = ? RETURNING stock_quantity",
+        (delta, material_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"material not found: {material_id}")
+    new_balance = float(row["stock_quantity"])
+    current = new_balance - delta
     log_id = _insert_log(
         connection,
         material_id=material_id,
