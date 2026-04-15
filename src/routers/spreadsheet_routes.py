@@ -18,6 +18,41 @@ from .spreadsheet_formulas import evaluate_row, is_formula
 class ProductCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
+    recipeType: str = Field("solution", pattern="^(solution|powder)$")
+
+
+# Default columns per recipe type, based on reference excel files.
+# Numeric material columns are the ones operators weigh; TOTAL/BINDER are excel formulas.
+_DEFAULT_COLUMNS: dict[str, list[tuple[str, str, str | None]]] = {
+    "solution": [
+        ("제품명", "text", None),
+        ("위치", "text", None),
+        ("잉크명", "text", None),
+        ("PL-835-1", "numeric", None),
+        ("PL-150-2", "numeric", None),
+        ("PL-135", "numeric", None),
+        ("PL-580-2", "numeric", None),
+        ("PL-345-3", "numeric", None),
+        ("PL-700-2", "numeric", None),
+        ("PL-735", "numeric", None),
+        ("TOTAL", "numeric", "=SUM(D1:J1)"),
+        ("BINDER(PCB)", "numeric", "=(D1*0.75)+(E1*0.8)+(F1*0.75)+(G1*0.75)+(H1*0.77)+(I1*0.57)+(J1*0.5)"),
+    ],
+    "powder": [
+        ("제품명", "text", None),
+        ("위치", "text", None),
+        ("잉크명", "text", None),
+        ("RAVEN", "numeric", None),
+        ("BLACK", "numeric", None),
+        ("RED", "numeric", None),
+        ("BLUE", "numeric", None),
+        ("YELLOW", "numeric", None),
+        ("WHITE", "numeric", None),
+        ("TTO-55(b)", "numeric", None),
+        ("PB", "text", None),
+        ("HDI", "text", None),
+    ],
+}
 
 
 class ProductUpdate(BaseModel):
@@ -144,6 +179,7 @@ def build_router() -> APIRouter:
                     "id": r["id"],
                     "name": r["name"],
                     "description": r["description"],
+                    "recipeType": r["recipe_type"] if "recipe_type" in r.keys() else "solution",
                     "columnCount": col_count,
                     "rowCount": row_count,
                     "updatedAt": r["updated_at"],
@@ -161,24 +197,49 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=409, detail="PRODUCT_NAME_EXISTS")
 
             cursor = conn.execute(
-                "INSERT INTO ss_products (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (body.name, body.description, now, now),
+                "INSERT INTO ss_products (name, description, recipe_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (body.name, body.description, body.recipeType, now, now),
             )
             product_id = cursor.lastrowid
 
-            # Create default columns: 제품명, 위치, 잉크명
-            defaults = [
-                (product_id, "제품명", 0, "text", None, None, 1),
-                (product_id, "위치", 1, "text", None, None, 0),
-                (product_id, "잉크명", 2, "text", None, None, 0),
-            ]
+            template = _DEFAULT_COLUMNS.get(body.recipeType, _DEFAULT_COLUMNS["solution"])
+            defaults = []
+            for idx, (col_name, col_type, formula) in enumerate(template):
+                is_readonly = 1 if idx == 0 else 0
+                defaults.append((product_id, col_name, idx, col_type, None, None, is_readonly))
             conn.executemany(
                 "INSERT INTO ss_columns (product_id, name, col_index, col_type, formula_type, formula_params, is_readonly) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 defaults,
             )
+
+            # Seed first row with default formulas (TOTAL / BINDER) so operators see them pre-filled.
+            has_formulas = any(f for _, _, f in template)
+            if has_formulas:
+                row_cursor = conn.execute(
+                    "INSERT INTO ss_rows (product_id, row_index) VALUES (?, 0)",
+                    (product_id,),
+                )
+                row_id = row_cursor.lastrowid
+                col_rows = conn.execute(
+                    "SELECT id, col_index FROM ss_columns WHERE product_id = ? ORDER BY col_index",
+                    (product_id,),
+                ).fetchall()
+                for col_row, (_, _, formula) in zip(col_rows, template):
+                    if formula:
+                        conn.execute(
+                            "INSERT INTO ss_cells (row_id, column_id, value) VALUES (?, ?, ?)",
+                            (row_id, col_row["id"], formula),
+                        )
+
             conn.commit()
-            return {"id": product_id, "name": body.name, "description": body.description, "createdAt": now}
+            return {
+                "id": product_id,
+                "name": body.name,
+                "description": body.description,
+                "recipeType": body.recipeType,
+                "createdAt": now,
+            }
 
     @router.patch("/products/{product_id}")
     async def update_product(product_id: int, body: ProductUpdate) -> dict[str, Any]:

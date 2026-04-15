@@ -57,6 +57,18 @@
   opacity: 1;
 }
 
+.ss-tab-type {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 6px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+}
+.ss-tab-type-solution { background: #2563eb; }
+.ss-tab-type-powder { background: #b45309; }
+
 .ss-add-btn {
   min-width: 2rem;
   height: 2rem;

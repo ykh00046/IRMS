@@ -109,6 +109,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # single-session enforcement: 로그인 시 발급, 새 로그인 시 회전
     ensure_column(connection, "users", "session_token", "TEXT")
 
+    # spreadsheet recipe type: 액상(solution) / 파우더(powder)
+    ensure_column(connection, "ss_products", "recipe_type", "TEXT NOT NULL DEFAULT 'solution'")
+
     # material-stock-tracking: 원재료 재고 추적
     ensure_column(connection, "materials", "stock_quantity", "REAL NOT NULL DEFAULT 0")
     ensure_column(connection, "materials", "stock_threshold", "REAL NOT NULL DEFAULT 0")

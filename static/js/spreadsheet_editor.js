@@ -58,14 +58,16 @@
   function renderProductTabs() {
     const container = $("ss-product-tabs");
     container.innerHTML = products
-      .map(
-        (p) => `
+      .map((p) => {
+        const typeLabel = p.recipeType === "powder" ? "파우더" : "액상";
+        return `
       <button class="ss-product-tab${p.id === activeProductId ? " active" : ""}"
               data-product-id="${p.id}" type="button">
+        <span class="ss-tab-type ss-tab-type-${p.recipeType || "solution"}">${typeLabel}</span>
         ${IRMS.escapeHtml(p.name)}
         <span class="ss-tab-close" data-delete-product="${p.id}" title="삭제">&times;</span>
-      </button>`,
-      )
+      </button>`;
+      })
       .join("");
   }
 
@@ -80,10 +82,14 @@
   async function createProduct() {
     const name = prompt("새 제품 이름을 입력하세요:");
     if (!name?.trim()) return;
+    const typeInput = prompt("레시피 종류를 입력하세요:\n  1 = 액상 (PL 계열)\n  2 = 파우더 (컬러 안료)", "1");
+    if (typeInput === null) return;
+    const recipeType = typeInput.trim() === "2" ? "powder" : "solution";
     try {
-      const result = await IRMS.ssCreateProduct({ name: name.trim() });
+      const result = await IRMS.ssCreateProduct({ name: name.trim(), recipeType });
       activeProductId = result.id;
-      IRMS.notify("제품을 생성했습니다.", "success");
+      const typeLabel = recipeType === "powder" ? "파우더" : "액상";
+      IRMS.notify(`${typeLabel} 제품을 생성했습니다.`, "success");
       await loadProducts();
     } catch (err) {
       const msg = err.message === "PRODUCT_NAME_EXISTS" ? "이미 존재하는 제품명입니다." : err.message;
