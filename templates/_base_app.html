@@ -28,14 +28,14 @@
         </button>
 
         <nav class="top-nav" aria-label="Main Navigation">
-          <a href="/" class="nav-link{{ ' active' if request.url.path == '/' else '' }}">Home</a>
-          <a href="/weighing" class="nav-link{{ ' active' if request.url.path == '/weighing' else '' }}">Weighing</a>
+          <a href="/" class="nav-link{{ ' active' if request.url.path == '/' else '' }}">홈</a>
+          <a href="/weighing" class="nav-link{{ ' active' if request.url.path == '/weighing' else '' }}">계량</a>
           {% if current_user.access_level != "operator" %}
-          <a href="/status" class="nav-link{{ ' active' if request.url.path == '/status' else '' }}">Status</a>
-          <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">Management</a>
-          <a href="/insight" class="nav-link{{ ' active' if request.url.path == '/insight' else '' }}">Insight</a>
-          <a href="/dashboard" class="nav-link{{ ' active' if request.url.path == '/dashboard' else '' }}">Dashboard</a>
-          <a href="/admin/users" class="nav-link{{ ' active' if request.url.path == '/admin/users' else '' }}">Users</a>
+          <a href="/status" class="nav-link{{ ' active' if request.url.path == '/status' else '' }}">현황</a>
+          <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">관리</a>
+          <a href="/dashboard" class="nav-link{{ ' active' if request.url.path == '/dashboard' else '' }}">운영 대시</a>
+          <a href="/insight" class="nav-link{{ ' active' if request.url.path == '/insight' else '' }}">재료 분석</a>
+          <a href="/admin/users" class="nav-link{{ ' active' if request.url.path == '/admin/users' else '' }}">사용자</a>
           {% endif %}
         </nav>
 

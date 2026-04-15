@@ -372,7 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (error) {
       if (!silent) {
-        IRMS.notify(`Recipe alert sync failed: ${error.message}`, "error");
+        IRMS.notify(`레시피 알림 동기화 실패: ${error.message}`, "error");
       }
     } finally {
       recipeImportNotice.checking = false;

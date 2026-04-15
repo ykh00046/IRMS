@@ -39,7 +39,7 @@
       if (!els.roomTabs) return;
 
       if (!chatState.rooms.length) {
-        els.roomTabs.innerHTML = '<div class="empty-state">No chat rooms available.</div>';
+        els.roomTabs.innerHTML = '<div class="empty-state">대화방이 없습니다.</div>';
         return;
       }
 
@@ -212,7 +212,7 @@
         await loadMessages({ replace: Boolean(options.replace) });
       } catch (error) {
         if (!options.silent) {
-          IRMS.notify(`Chat sync failed: ${error.message}`, "error");
+          IRMS.notify(`메시지 동기화 실패: ${error.message}`, "error");
         }
       }
     }
@@ -314,7 +314,7 @@
         try {
           await loadMessages({ replace: true });
         } catch (error) {
-          IRMS.notify(`Chat load failed: ${error.message}`, "error");
+          IRMS.notify(`메시지 불러오기 실패: ${error.message}`, "error");
         }
       });
     }

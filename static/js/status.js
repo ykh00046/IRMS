@@ -470,7 +470,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       setLastUpdated();
     } catch (error) {
-      IRMS.notify(`Status load failed: ${error.message}`, "error");
+      IRMS.notify(`현황 불러오기 실패: ${error.message}`, "error");
     } finally {
       state.loading = false;
       if (refreshButton) {

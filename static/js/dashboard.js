@@ -69,6 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadAll() {
     const range = getCurrentRange();
+    const main = document.querySelector("main.page-grid") || document.body;
+    IRMS.showLoading(main);
     try {
       const [summary, trend, materials, throughput, operators] = await Promise.all([
         fetchJSON(`/api/dashboard/summary?${qs(range)}`),
@@ -83,7 +85,9 @@ document.addEventListener("DOMContentLoaded", () => {
       renderThroughput(throughput);
       renderOperators(operators);
     } catch (error) {
-      IRMS.notify(`대시보드 로드 실패: ${error.message}`, "error");
+      IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
+    } finally {
+      IRMS.hideLoading(main);
     }
   }
 
