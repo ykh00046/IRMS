@@ -251,4 +251,4 @@ def _to_float(val: str | None) -> float:
 def _fmt(value: float) -> str:
     if value == int(value) and abs(value) < 1e15:
         return str(int(value))
-    return f"{value:.6f}".rstrip("0").rstrip(".")
+    return f"{value:.2f}".rstrip("0").rstrip(".")
