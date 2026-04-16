@@ -137,7 +137,7 @@
     const note = modalNote.value.trim();
 
     if (isNaN(amount)) {
-      alert("숫자를 입력해주세요.");
+      IRMS.notify("숫자를 입력해주세요.", "error");
       return;
     }
 
@@ -146,11 +146,11 @@
       url = `/api/materials/${id}/stock/restock`;
       body = { amount, note: note || null };
     } else if (mode === "adjust") {
-      if (!note) return alert("조정 사유를 입력해주세요.");
+      if (!note) { IRMS.notify("조정 사유를 입력해주세요.", "error"); return; }
       url = `/api/materials/${id}/stock/adjust`;
       body = { new_quantity: amount, note };
     } else if (mode === "discard") {
-      if (!note) return alert("폐기 사유를 입력해주세요.");
+      if (!note) { IRMS.notify("폐기 사유를 입력해주세요.", "error"); return; }
       url = `/api/materials/${id}/stock/discard`;
       body = { amount, note };
     } else if (mode === "threshold") {
@@ -165,7 +165,7 @@
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      alert(`오류: ${err.detail || res.status}`);
+      IRMS.notify(`오류: ${err.detail || res.status}`, "error");
       return;
     }
     closeModal();

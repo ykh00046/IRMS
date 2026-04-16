@@ -1,8 +1,8 @@
 {% extends "_base_app.html" %}
 
-{% block title %}User Management{% endblock %}
-{% block eyebrow %}Admin Control Plane{% endblock %}
-{% block heading %}USER MANAGEMENT{% endblock %}
+{% block title %}사용자 관리{% endblock %}
+{% block eyebrow %}관리자 설정{% endblock %}
+{% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/admin_users.css" />
@@ -13,7 +13,7 @@
 {% block content %}
         <section class="panel admin-hero">
           <div>
-            <span class="kicker">Identity Operations</span>
+            <span class="kicker">사용자 관리</span>
             <h2 class="panel-title">담당자와 책임자 계정을 한 화면에서 관리</h2>
             <p class="panel-subtitle">
               계량용 담당자와 관리용 책임자 계정을 등록하고 권한을 설정합니다.
@@ -25,11 +25,11 @@
 
         <section class="summary-grid">
           <article class="panel summary-card">
-            <span class="summary-label">Total Users</span>
+            <span class="summary-label">전체 사용자</span>
             <strong id="summary-total" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
-            <span class="summary-label">Active Users</span>
+            <span class="summary-label">활성 사용자</span>
             <strong id="summary-active" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
@@ -44,7 +44,7 @@
 
         <section class="admin-secondary-grid">
           <article class="panel">
-            <span class="kicker">Create Account</span>
+            <span class="kicker">계정 생성</span>
             <h3 class="panel-title">신규 사용자 등록</h3>
             <form id="create-user-form" class="create-user-grid">
               <div class="form-group">
@@ -76,7 +76,7 @@
           <article class="panel audit-panel">
             <div class="panel-head-row">
               <div>
-                <span class="kicker">Audit Stream</span>
+                <span class="kicker">감사 로그</span>
                 <h3 class="panel-title">최근 감사 로그</h3>
                 <p class="panel-subtitle audit-subtitle">
                   로그인, 담당자 선택, 레시피 상태 변경, 사용자 관리 이벤트를 최근 순서대로 보여줍니다.
@@ -120,7 +120,7 @@
         <section class="panel">
           <div class="panel-head-row">
             <div>
-              <span class="kicker">Roster</span>
+              <span class="kicker">사용자 목록</span>
               <h3 class="panel-title">사용자 목록</h3>
             </div>
             <button id="users-refresh" type="button" class="btn">새로고침</button>

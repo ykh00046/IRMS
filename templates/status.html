@@ -1,8 +1,8 @@
 {% extends "_base_app.html" %}
 
-{% block title %}Status{% endblock %}
-{% block eyebrow %}Live Progress Monitor{% endblock %}
-{% block heading %}PROCESS STATUS{% endblock %}
+{% block title %}현황{% endblock %}
+{% block eyebrow %}실시간 진행 현황{% endblock %}
+{% block heading %}현황{% endblock %}
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/status.css" />
@@ -14,7 +14,7 @@
         <div id="status-stock-banner" class="stock-banner" hidden></div>
         <section class="panel status-hero">
           <div>
-            <span class="kicker">Control Tower</span>
+            <span class="kicker">통합 현황</span>
             <h2 class="panel-title">어디서 어떤 배합이 진행 중인지 한 화면에서 확인</h2>
             <p class="panel-subtitle">
               위치별 진행 상태, 다음 배합 대상, 남은 원재료, 최근 계량 담당자를 자동 갱신으로 보여줍니다.
@@ -29,23 +29,23 @@
 
         <section class="status-summary-grid">
           <article class="panel status-summary-card">
-            <span class="summary-label">Active Recipes</span>
+            <span class="summary-label">전체 레시피</span>
             <strong id="status-active-recipes" class="summary-value">0</strong>
           </article>
           <article class="panel status-summary-card">
-            <span class="summary-label">In Progress</span>
+            <span class="summary-label">진행중</span>
             <strong id="status-in-progress" class="summary-value">0</strong>
           </article>
           <article class="panel status-summary-card">
-            <span class="summary-label">Pending</span>
+            <span class="summary-label">대기</span>
             <strong id="status-pending" class="summary-value">0</strong>
           </article>
           <article class="panel status-summary-card">
-            <span class="summary-label">Remaining Steps</span>
+            <span class="summary-label">잔여 항목</span>
             <strong id="status-remaining-steps" class="summary-value">0</strong>
           </article>
           <article class="panel status-summary-card">
-            <span class="summary-label">Open Positions</span>
+            <span class="summary-label">미배치 위치</span>
             <strong id="status-open-positions" class="summary-value">0</strong>
           </article>
         </section>
@@ -74,7 +74,7 @@
         <section class="panel status-operator-panel" id="operatorProgressSection">
           <div class="status-section-head">
             <div>
-              <span class="kicker">Operator Progress</span>
+              <span class="kicker">담당자 진행</span>
               <h3 class="panel-title">담당자 현황</h3>
             </div>
             <span class="status-section-note">당일 담당자 <strong id="operatorCount">0</strong>명</span>
@@ -85,7 +85,7 @@
         <section class="panel status-import-panel">
           <div class="status-section-head">
             <div>
-              <span class="kicker">Import Feed</span>
+              <span class="kicker">최근 등록</span>
               <h3 class="panel-title">최근 등록 레시피</h3>
             </div>
             <span class="status-section-note">최근 6건 기준</span>
@@ -96,7 +96,7 @@
         <section class="panel status-board-panel">
           <div class="status-section-head">
             <div>
-              <span class="kicker">Position Board</span>
+              <span class="kicker">위치 현황</span>
               <h3 class="panel-title">위치별 배합 진행 현황</h3>
             </div>
             <span class="status-section-note">Position lane 기준으로 자동 정렬</span>
@@ -110,7 +110,7 @@
     <aside class="panel chat-panel chat-float">
       <div class="chat-head">
         <div>
-          <span class="kicker">Collaboration Feed</span>
+          <span class="kicker">현황 대화</span>
           <h3 class="panel-title">현황 메시지</h3>
         </div>
         <span id="status-chat-room-meta" class="chat-room-meta">Room</span>

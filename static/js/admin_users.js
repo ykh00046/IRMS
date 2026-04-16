@@ -69,8 +69,8 @@
 
   function activeOptions(isActive) {
     return `
-      <option value="true"${isActive ? " selected" : ""}>Active</option>
-      <option value="false"${!isActive ? " selected" : ""}>Inactive</option>
+      <option value="true"${isActive ? " selected" : ""}>활성</option>
+      <option value="false"${!isActive ? " selected" : ""}>비활성</option>
     `;
   }
 
@@ -90,8 +90,8 @@
               <div class="user-meta">
                 <span class="user-name">
                   ${IRMS.escapeHtml(user.displayName)}
-                  ${isCurrentUser ? '<span class="inline-chip current">Current</span>' : ""}
-                  ${!user.isActive ? '<span class="inline-chip inactive">Inactive</span>' : ""}
+                  ${isCurrentUser ? '<span class="inline-chip current">본인</span>' : ""}
+                  ${!user.isActive ? '<span class="inline-chip inactive">비활성</span>' : ""}
                 </span>
                 <span class="user-id">@${IRMS.escapeHtml(user.username)}</span>
               </div>

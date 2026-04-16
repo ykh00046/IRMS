@@ -1,8 +1,8 @@
 {% extends "_base_app.html" %}
 
-{% block title %}Management{% endblock %}
-{% block eyebrow %}Zero-Entry Control Room{% endblock %}
-{% block heading %}DATA MANAGEMENT{% endblock %}
+{% block title %}관리{% endblock %}
+{% block eyebrow %}데이터 관리{% endblock %}
+{% block heading %}관리{% endblock %}
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
@@ -292,7 +292,7 @@
           </div>
 
           <!-- Column management modal -->
-          <div id="ss-col-modal" class="ss-modal-overlay">
+          <div id="ss-col-modal" class="ss-modal-overlay" hidden>
             <div class="ss-modal">
               <div class="ss-modal-header">
                 <h3>컬럼 관리</h3>
@@ -373,20 +373,20 @@
     <section class="panel chat-panel chat-float">
       <div class="chat-head">
         <div>
-          <span class="kicker">Shared Rooms</span>
+          <span class="kicker">공유 대화방</span>
           <h3 class="panel-title">실시간 소통</h3>
         </div>
-        <span id="management-chat-room-meta" class="chat-room-meta">Room</span>
+        <span id="management-chat-room-meta" class="chat-room-meta">대화방</span>
       </div>
       <div class="chat-tabs" id="management-chat-room-tabs"></div>
       <div class="chat-stream" id="management-chat-messages"></div>
       <form id="management-chat-form" class="chat-form">
         <div id="management-chat-stage-group" class="filter-group">
-          <label class="filter-label" for="management-chat-stage">Stage</label>
+          <label class="filter-label" for="management-chat-stage">단계</label>
           <select id="management-chat-stage" class="select">
-            <option value="registered">Registered</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
+            <option value="registered">등록</option>
+            <option value="in_progress">진행중</option>
+            <option value="completed">완료</option>
           </select>
         </div>
         <div class="filter-group">

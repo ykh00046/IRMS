@@ -73,7 +73,7 @@
         els.chatStageGroup.classList.toggle("hidden", !stageRequired);
       }
       if (els.roomMeta) {
-        els.roomMeta.textContent = room ? room.name : "Room";
+        els.roomMeta.textContent = room ? room.name : "대화방";
       }
     }
 
@@ -85,8 +85,8 @@
       if (!items.length && replace) {
         els.chatMessages.innerHTML = `
           <div class="${prefix}-empty">
-            <strong>No messages yet.</strong>
-            <p class="muted">Post the first message in this room.</p>
+            <strong>메시지가 없습니다.</strong>
+            <p class="muted">첫 메시지를 입력하세요.</p>
           </div>
         `;
         return;
@@ -167,8 +167,8 @@
         if (els.chatMessages && Boolean(options.replace)) {
           els.chatMessages.innerHTML = `
             <div class="${prefix}-empty">
-              <strong>No room selected.</strong>
-              <p class="muted">Refresh the page to retry room loading.</p>
+              <strong>대화방이 선택되지 않았습니다.</strong>
+              <p class="muted">페이지를 새로고침하세요.</p>
             </div>
           `;
         }

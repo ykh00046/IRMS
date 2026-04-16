@@ -1,8 +1,8 @@
 {% extends "_base_app.html" %}
 
-{% block title %}Work Mode{% endblock %}
-{% block eyebrow %}Production Control{% endblock %}
-{% block heading %}WORKBOARD{% endblock %}
+{% block title %}작업 현황{% endblock %}
+{% block eyebrow %}배합 관리{% endblock %}
+{% block heading %}작업 현황{% endblock %}
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/work.css" />
@@ -39,25 +39,25 @@
         </section>
 
         <section class="panel focus-group">
-          <h3 class="panel-title">Filter Control</h3>
+          <h3 class="panel-title">필터</h3>
           <div class="focus-buttons">
-            <button class="focus-btn active" data-color="all" aria-label="전체 색상 보기">Total</button>
-            <button class="focus-btn" data-color="black" aria-label="Black 잉크 필터">Black Focus</button>
-            <button class="focus-btn" data-color="red" aria-label="Red 잉크 필터">Red Focus</button>
-            <button class="focus-btn" data-color="blue" aria-label="Blue 잉크 필터">Blue Focus</button>
-            <button class="focus-btn" data-color="yellow" aria-label="Yellow 잉크 필터">Yellow Focus</button>
+            <button class="focus-btn active" data-color="all" aria-label="전체 색상 보기">전체</button>
+            <button class="focus-btn" data-color="black" aria-label="Black 잉크 필터">Black</button>
+            <button class="focus-btn" data-color="red" aria-label="Red 잉크 필터">Red</button>
+            <button class="focus-btn" data-color="blue" aria-label="Blue 잉크 필터">Blue</button>
+            <button class="focus-btn" data-color="yellow" aria-label="Yellow 잉크 필터">Yellow</button>
           </div>
           <div class="work-filter-grid">
             <div class="filter-group">
-              <label class="filter-label">Search Recipe</label>
-              <input id="search-input" class="input" placeholder="Enter product or ink name" />
+              <label class="filter-label">레시피 검색</label>
+              <input id="search-input" class="input" placeholder="제품명 또는 잉크명 입력" />
             </div>
             <div class="filter-group">
-              <label class="filter-label">From Date</label>
+              <label class="filter-label">시작일</label>
               <input id="from-input" type="date" class="input" />
             </div>
             <div class="filter-group">
-              <label class="filter-label">To Date</label>
+              <label class="filter-label">종료일</label>
               <input id="to-input" type="date" class="input" />
             </div>
           </div>
