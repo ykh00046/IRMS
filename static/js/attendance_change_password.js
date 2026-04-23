@@ -86,7 +86,12 @@
     window.location.assign("/attendance/login");
   }
 
+  const laterBtn = document.getElementById("att-change-later");
+
   form?.addEventListener("submit", onSubmit);
   logoutBtn?.addEventListener("click", onLogout);
+  laterBtn?.addEventListener("click", () => {
+    window.location.assign("/attendance");
+  });
   currentInput?.focus();
 })();

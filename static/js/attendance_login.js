@@ -52,13 +52,9 @@
         setHint(mapError(detail), "error");
         return;
       }
-      const data = await response.json();
+      await response.json();
       setHint("로그인 성공. 이동 중...", "muted");
-      if (data.password_reset_required) {
-        window.location.assign("/attendance/change-password");
-      } else {
-        window.location.assign("/attendance");
-      }
+      window.location.assign("/attendance");
     } catch (error) {
       setHint(error.message || "네트워크 오류", "error");
     }
