@@ -433,6 +433,10 @@
     };
   }
 
+  async function clearChatMessages() {
+    return request("/chat/messages", { method: "DELETE" });
+  }
+
   async function getMaterials() {
     const payload = await request("/materials");
     return (payload.items || []).map(mapMaterial);
@@ -455,6 +459,10 @@
       body: { action },
     });
     return mapRecipe(payload);
+  }
+
+  async function deleteRecipe(recipeId) {
+    return request(`/recipes/${recipeId}`, { method: "DELETE" });
   }
 
   async function previewImport(rawText, createdBy) {
@@ -557,6 +565,13 @@
       body: { recipe_id: recipeId },
     });
     return mapRecipe(payload);
+  }
+
+  async function resetWeighingRecipe(recipeId) {
+    return request("/weighing/recipe/reset", {
+      method: "POST",
+      body: { recipe_id: recipeId },
+    });
   }
 
   async function getStats(filters) {
@@ -844,12 +859,14 @@
     listChatRooms,
     getChatMessages,
     postChatMessage,
+    clearChatMessages,
     getRecipeImportNotifications,
     getRecipeProgress,
     getOperatorProgress,
     getMaterials,
     getRecipes,
     updateRecipeStatus,
+    deleteRecipe,
     previewImport,
     importRecipes,
     getProducts,
@@ -859,6 +876,7 @@
     completeWeighingStep,
     undoWeighingStep,
     completeWeighingRecipe,
+    resetWeighingRecipe,
     getStats,
     exportStatsCsv,
     ssListProducts,
@@ -967,6 +985,7 @@
     try {
       if (!notifSoundCtx) notifSoundCtx = new (window.AudioContext || window.webkitAudioContext)();
       var ctx = notifSoundCtx;
+      if (ctx.state === "suspended") { ctx.resume(); }
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
       osc.connect(gain);
@@ -980,6 +999,15 @@
       osc.stop(ctx.currentTime + 0.3);
     } catch (_) { /* AudioContext unavailable */ }
   }
+
+  // Resume AudioContext on first user interaction (browser autoplay policy)
+  function resumeAudioCtx() {
+    if (notifSoundCtx && notifSoundCtx.state === "suspended") notifSoundCtx.resume();
+    document.removeEventListener("click", resumeAudioCtx);
+    document.removeEventListener("keydown", resumeAudioCtx);
+  }
+  document.addEventListener("click", resumeAudioCtx);
+  document.addEventListener("keydown", resumeAudioCtx);
 
   function speakText(text) {
     if (!window.speechSynthesis || !text) return;
@@ -1001,7 +1029,7 @@
 
   bindLogoutButton();
 
-  // ── Negative stock banner (manager pages only) ──
+  // ── Stock alert banner (all pages, all users) ──
   async function pollNegativeStock() {
     const banner = document.getElementById("negative-stock-banner");
     const list = document.getElementById("neg-stock-list");
@@ -1009,16 +1037,23 @@
     try {
       const data = await request("/materials/stock");
       const negatives = (data.items || []).filter((m) => m.status === "negative");
-      if (negatives.length === 0) {
+      const lows = (data.items || []).filter((m) => m.status === "low");
+      if (negatives.length === 0 && lows.length === 0) {
         banner.hidden = true;
         return;
       }
-      const names = negatives
-        .slice(0, 5)
-        .map((m) => `${escapeHtml(m.name)} (${formatValue(m.stock_quantity)}g)`)
-        .join(", ");
-      const more = negatives.length > 5 ? ` 외 ${negatives.length - 5}건` : "";
-      list.innerHTML = names + more;
+      const parts = [];
+      if (negatives.length > 0) {
+        const names = negatives.slice(0, 3).map((m) => escapeHtml(m.name)).join(", ");
+        const more = negatives.length > 3 ? ` 외 ${negatives.length - 3}건` : "";
+        parts.push(`재고 부족: ${names}${more}`);
+      }
+      if (lows.length > 0) {
+        const names = lows.slice(0, 3).map((m) => escapeHtml(m.name)).join(", ");
+        const more = lows.length > 3 ? ` 외 ${lows.length - 3}건` : "";
+        parts.push(`임계치 미달: ${names}${more}`);
+      }
+      list.innerHTML = parts.join(" · ");
       banner.hidden = false;
     } catch (_e) {
       // silent fail — don't disrupt page

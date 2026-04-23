@@ -9,11 +9,13 @@ from .security import verify_password
 ACCESS_LEVEL_RANK = {
     "operator": 1,
     "manager": 2,
+    "admin": 3,
 }
 
 ACCESS_LEVEL_LABEL = {
     "operator": "담당자",
     "manager": "책임자",
+    "admin": "관리자",
 }
 
 

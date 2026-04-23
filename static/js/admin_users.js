@@ -23,6 +23,7 @@
 
   function accessLabel(accessLevel) {
     const map = {
+      admin: "관리자",
       manager: "책임자",
       operator: "담당자",
     };
@@ -51,15 +52,18 @@
     return IRMS.formatDateTime(value);
   }
 
+  const summaryAdmins = document.getElementById("summary-admins");
+
   function renderSummary(summary) {
     summaryTotal.textContent = String(summary.total || 0);
     summaryActive.textContent = String(summary.active || 0);
+    if (summaryAdmins) summaryAdmins.textContent = String(summary.admins || 0);
     summaryManagers.textContent = String(summary.managers || 0);
     summaryOperators.textContent = String(summary.operators || 0);
   }
 
   function accessOptions(selected) {
-    return ["operator", "manager"]
+    return ["operator", "manager", "admin"]
       .map(
         (accessLevel) =>
           `<option value="${accessLevel}"${selected === accessLevel ? " selected" : ""}>${accessLabel(accessLevel)}</option>`,
@@ -406,6 +410,23 @@
   auditRefreshBtn?.addEventListener("click", loadAuditLogs);
   auditActionFilter?.addEventListener("change", loadAuditLogs);
   auditLimitFilter?.addEventListener("change", loadAuditLogs);
+
+  // Chat reset
+  const chatResetBtn = document.getElementById("chat-reset-btn");
+  if (chatResetBtn) {
+    chatResetBtn.addEventListener("click", async () => {
+      if (!window.confirm("모든 대화방의 메시지를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+      try {
+        chatResetBtn.disabled = true;
+        const data = await IRMS.clearChatMessages();
+        IRMS.notify(`대화방을 초기화했습니다. (${data.deleted_count}건 삭제)`, "success");
+      } catch (err) {
+        IRMS.notify(`초기화 실패: ${err.message}`, "error");
+      } finally {
+        chatResetBtn.disabled = false;
+      }
+    });
+  }
 
   refreshDashboard();
 });

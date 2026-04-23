@@ -18,7 +18,7 @@
             <p class="panel-subtitle">
               계량용 담당자와 관리용 책임자 계정을 등록하고 권한을 설정합니다.
             </p>
-            <p class="mode-note">권한 레벨: 담당자 → 책임자</p>
+            <p class="mode-note">권한 레벨: 담당자 → 책임자 → 관리자</p>
           </div>
           <input id="current-user-id" type="hidden" value="{{ current_user.id }}" />
         </section>
@@ -31,6 +31,10 @@
           <article class="panel summary-card">
             <span class="summary-label">활성 사용자</span>
             <strong id="summary-active" class="summary-value">0</strong>
+          </article>
+          <article class="panel summary-card">
+            <span class="summary-label">관리자</span>
+            <strong id="summary-admins" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
             <span class="summary-label">책임자</span>
@@ -60,6 +64,7 @@
                 <select id="create-access-level" class="select">
                   <option value="operator">담당자</option>
                   <option value="manager">책임자</option>
+                  <option value="admin">관리자</option>
                 </select>
               </div>
               <div class="form-group">
@@ -142,6 +147,19 @@
               </thead>
               <tbody id="users-body"></tbody>
             </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head-row">
+            <div>
+              <span class="kicker">시스템 관리</span>
+              <h3 class="panel-title">대화방 관리</h3>
+            </div>
+          </div>
+          <p class="panel-subtitle">테스트 대화 내역 등 모든 대화방 메시지를 초기화합니다.</p>
+          <div class="button-row">
+            <button id="chat-reset-btn" class="btn danger" type="button">대화방 전체 초기화</button>
           </div>
         </section>
 {% endblock %}

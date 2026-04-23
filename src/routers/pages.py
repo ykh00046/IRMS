@@ -114,7 +114,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/admin/users", response_class=HTMLResponse)
     async def admin_users_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "admin_users.html", "manager")
+        return _protected_page_response(request, templates, "admin_users.html", "admin")
 
     @router.get("/work.html", response_class=HTMLResponse)
     async def work_page_alias(request: Request) -> Response:

@@ -324,7 +324,7 @@
   });
 
   function refreshChatPanel(options) { return chatModule.refresh(options); }
-  function startChatPolling() { chatModule.startPolling(10000); }
+  function startChatPolling() { chatModule.startPolling(3000); }
 
   function renderIssues(list, target, emptyText) {
     if (!list || !list.length) {
@@ -419,6 +419,12 @@
                 <div class="detail-actions">
                   <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
                   <button class="btn btn-sm accent history-clone-btn" data-recipe-id="${recipeId}">복제하여 등록</button>
+                  ${detail.status === "pending" || detail.status === "in_progress"
+                    ? `<button class="btn btn-sm history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
+                    : ""}
+                  ${detail.status === "pending" || detail.status === "canceled"
+                    ? `<button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">삭제</button>`
+                    : ""}
                 </div>
               </div>
             </td>`;
@@ -439,6 +445,36 @@
               selectedRecipeId = recipeId;
               handleLookupClone();
             });
+
+            const cancelBtn = detailRow.querySelector(".history-cancel-btn");
+            if (cancelBtn) {
+              cancelBtn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                if (!window.confirm("이 레시피를 등록 취소하시겠습니까?")) return;
+                try {
+                  await IRMS.updateRecipeStatus(recipeId, "cancel");
+                  IRMS.notify("레시피를 취소했습니다.", "success");
+                  renderHistory();
+                } catch (err) {
+                  IRMS.notify(`취소 실패: ${err.message}`, "error");
+                }
+              });
+            }
+
+            const deleteBtn = detailRow.querySelector(".history-delete-btn");
+            if (deleteBtn) {
+              deleteBtn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                if (!window.confirm("이 레시피를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+                try {
+                  await IRMS.deleteRecipe(recipeId);
+                  IRMS.notify("레시피를 삭제했습니다.", "success");
+                  renderHistory();
+                } catch (err) {
+                  IRMS.notify(`삭제 실패: ${err.message}`, "error");
+                }
+              });
+            }
           } catch (error) {
             IRMS.notify(`상세 조회 실패: ${error.message}`, "error");
           }

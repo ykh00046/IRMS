@@ -283,6 +283,55 @@ def build_router() -> APIRouter:
             "undone": True,
         }
 
+    @router.post("/weighing/recipe/reset")
+    async def reset_weighing_recipe(
+        body: WeighingRecipeCompleteRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Reset all measurements for a recipe — revert to pending."""
+        current_user = get_current_user(request)
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT id, product_name, ink_name, status FROM recipes WHERE id = ?",
+                (body.recipe_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            if row["status"] in {"completed", "canceled"}:
+                raise HTTPException(status_code=409, detail="RECIPE_ALREADY_CLOSED")
+
+            # Reverse all stock deductions for measured items
+            measured_items = connection.execute(
+                "SELECT id FROM recipe_items WHERE recipe_id = ? AND measured_at IS NOT NULL",
+                (body.recipe_id,),
+            ).fetchall()
+            for item in measured_items:
+                stock_service.reverse_measurement(connection, recipe_item_id=int(item["id"]))
+
+            # Clear all measurements
+            connection.execute(
+                "UPDATE recipe_items SET measured_at = NULL, measured_by = NULL WHERE recipe_id = ?",
+                (body.recipe_id,),
+            )
+            # Revert recipe to pending
+            connection.execute(
+                "UPDATE recipes SET status = 'pending', started_by = NULL, started_at = NULL WHERE id = ?",
+                (body.recipe_id,),
+            )
+
+            write_audit_log(
+                connection,
+                action="weighing_recipe_reset",
+                actor=current_user,
+                target_type="recipe",
+                target_id=body.recipe_id,
+                target_label=recipe_label(row_to_dict(row)),
+                details={"reset_items": len(measured_items)},
+            )
+            connection.commit()
+
+        return {"recipe_id": body.recipe_id, "status": "pending", "reset_items": len(measured_items)}
+
     @router.post("/weighing/recipe/complete")
     async def complete_weighing_recipe(
         body: WeighingRecipeCompleteRequest,

@@ -122,9 +122,8 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="CHAT_ROOM_NOT_FOUND")
 
             room = serialize_chat_room(room_row)
-            if room["stage_required"] and not stage:
-                raise HTTPException(status_code=400, detail="CHAT_STAGE_REQUIRED")
-            if not room["stage_required"]:
+            # Stage is optional now — no longer enforced
+            if not stage:
                 stage = None
 
             created_at = utc_now_text()
@@ -171,5 +170,28 @@ def build_router() -> APIRouter:
             connection.commit()
 
         return {"room": room, "message": serialize_chat_message(row)}
+
+    @router.delete("/chat/messages")
+    async def clear_all_chat_messages(request: Request) -> dict[str, Any]:
+        current_user = get_current_user(request)
+        from ..auth import has_access_level
+        if not has_access_level(current_user, "admin"):
+            raise HTTPException(status_code=403, detail="ADMIN_REQUIRED")
+
+        with get_connection() as connection:
+            count = connection.execute("SELECT COUNT(*) AS c FROM chat_messages").fetchone()["c"]
+            connection.execute("DELETE FROM chat_messages")
+            write_audit_log(
+                connection,
+                action="chat_messages_cleared",
+                actor=current_user,
+                target_type="chat",
+                target_id="all",
+                target_label="전체 대화방",
+                details={"deleted_count": count},
+            )
+            connection.commit()
+
+        return {"status": "ok", "deleted_count": count}
 
     return router

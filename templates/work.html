@@ -17,18 +17,18 @@
               Color Focus로 주요 안료별로 분리하여 오염 리스크를 최소화합니다.
             </p>
             <p class="mode-note">단위 기준: 모든 레시피 g 고정 · 계량 입력: 수동(저울 연계 없음)</p>
-            <div class="button-row weighing-entry">
-              <select id="weighing-color-select" class="select weighing-entry-select">
-                <option value="">계량 모드 선택</option>
-                <option value="all">파우더 계량 (전체 순서)</option>
-                <option value="black">단일 집중 — Black (액상 계량)</option>
-                <option value="red">단일 집중 — Red (액상 계량)</option>
-                <option value="blue">단일 집중 — Blue (액상 계량)</option>
-                <option value="yellow">단일 집중 — Yellow (액상 계량)</option>
-                <option value="none">단일 집중 — 기타 (액상 계량)</option>
-              </select>
-              <button id="weighing-open-btn" class="btn accent" disabled>계량 시작</button>
-              <button id="weighing-refresh-main-btn" class="btn">큐 새로고침</button>
+            <div class="weighing-mode-buttons">
+              <button id="weighing-powder-btn" class="btn accent weighing-mode-btn" type="button">파우더 모드</button>
+              <button id="weighing-liquid-btn" class="btn accent weighing-mode-btn" type="button">액상 모드</button>
+              <button id="weighing-refresh-main-btn" class="btn" type="button">큐 새로고침</button>
+            </div>
+            <div id="liquid-color-picker" class="liquid-color-picker" hidden>
+              <span class="liquid-color-label">액상 색상 선택:</span>
+              <button class="btn liquid-color-btn" data-liquid-color="black" type="button">Black</button>
+              <button class="btn liquid-color-btn" data-liquid-color="red" type="button">Red</button>
+              <button class="btn liquid-color-btn" data-liquid-color="blue" type="button">Blue</button>
+              <button class="btn liquid-color-btn" data-liquid-color="yellow" type="button">Yellow</button>
+              <button class="btn liquid-color-btn" data-liquid-color="none" type="button">기타</button>
             </div>
           </div>
           <div class="work-stats">
@@ -38,36 +38,6 @@
           </div>
         </section>
 
-        <section class="panel focus-group">
-          <h3 class="panel-title">필터</h3>
-          <div class="focus-buttons">
-            <button class="focus-btn active" data-color="all" aria-label="전체 색상 보기">전체</button>
-            <button class="focus-btn" data-color="black" aria-label="Black 잉크 필터">Black</button>
-            <button class="focus-btn" data-color="red" aria-label="Red 잉크 필터">Red</button>
-            <button class="focus-btn" data-color="blue" aria-label="Blue 잉크 필터">Blue</button>
-            <button class="focus-btn" data-color="yellow" aria-label="Yellow 잉크 필터">Yellow</button>
-          </div>
-          <div class="work-filter-grid">
-            <div class="filter-group">
-              <label class="filter-label">레시피 검색</label>
-              <input id="search-input" class="input" placeholder="제품명 또는 잉크명 입력" />
-            </div>
-            <div class="filter-group">
-              <label class="filter-label">시작일</label>
-              <input id="from-input" type="date" class="input" />
-            </div>
-            <div class="filter-group">
-              <label class="filter-label">종료일</label>
-              <input id="to-input" type="date" class="input" />
-            </div>
-          </div>
-          <div class="filter-bar">
-            <p id="work-filter-summary" class="filter-summary">전체 레시피를 표시 중입니다.</p>
-            <div class="button-row">
-              <button id="work-filter-reset" type="button" class="btn">필터 초기화</button>
-            </div>
-          </div>
-        </section>
 
         <section class="panel">
           <h3 class="panel-title">Active Recipes</h3>
@@ -79,11 +49,6 @@
               <tbody id="work-body"></tbody>
             </table>
           </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-title">System Logs (Recent Completions)</h3>
-          <div id="work-log" class="work-log"></div>
         </section>
 
 {% endblock %}
@@ -100,14 +65,6 @@
       <div class="chat-tabs" id="work-chat-room-tabs"></div>
       <div class="chat-stream" id="work-chat-messages"></div>
       <form id="work-chat-form" class="chat-form">
-        <div id="work-chat-stage-group" class="filter-group">
-          <label class="filter-label" for="work-chat-stage">단계</label>
-          <select id="work-chat-stage" class="select">
-            <option value="registered">등록</option>
-            <option value="in_progress">진행중</option>
-            <option value="completed">완료</option>
-          </select>
-        </div>
         <div class="filter-group">
           <label class="filter-label" for="work-chat-input">메시지</label>
           <textarea

@@ -545,6 +545,38 @@ def build_router() -> tuple[APIRouter, APIRouter]:
 
         return row_to_dict(updated)
 
+    @manager_router.delete("/recipes/{recipe_id}")
+    async def delete_recipe(recipe_id: int, request: Request) -> dict[str, str]:
+        current_user = get_current_user(request)
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT id, product_name, ink_name, status, created_by FROM recipes WHERE id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="RECIPE_NOT_FOUND")
+
+            if row["status"] not in ("pending", "canceled"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="CANNOT_DELETE_ACTIVE_RECIPE",
+                )
+
+            connection.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (recipe_id,))
+            connection.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+            write_audit_log(
+                connection,
+                action="recipe_deleted",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=f"{row['product_name']} · {row['ink_name']}",
+                details={"status": row["status"], "created_by": row["created_by"]},
+            )
+            connection.commit()
+
+        return {"status": "ok"}
+
     # ---- material stock tracking ----
 
     class _StockAmountBody(BaseModel):

@@ -316,8 +316,33 @@
   border: 1px solid var(--border-subtle);
 }
 
-.weighing-entry-select {
-  min-width: 260px;
+.weighing-mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.weighing-mode-btn {
+  min-width: 140px;
+}
+
+.liquid-color-picker {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.liquid-color-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-right: 0.25rem;
+}
+
+.liquid-color-btn {
+  min-width: 70px;
 }
 
 .weighing-progress-wrap {

@@ -35,7 +35,9 @@
           <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">관리</a>
           <a href="/dashboard" class="nav-link{{ ' active' if request.url.path == '/dashboard' else '' }}">운영 대시</a>
           <a href="/insight" class="nav-link{{ ' active' if request.url.path == '/insight' else '' }}">재료 분석</a>
+          {% if current_user.access_level == "admin" %}
           <a href="/admin/users" class="nav-link{{ ' active' if request.url.path == '/admin/users' else '' }}">사용자</a>
+          {% endif %}
           {% endif %}
         </nav>
 
@@ -58,12 +60,10 @@
     {% block chat_float %}{% endblock %}
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
-    {% if current_user.access_level != "operator" %}
     <div id="negative-stock-banner" class="neg-stock-banner" hidden>
       <span class="neg-stock-icon">⚠</span>
-      <span class="neg-stock-text">음수 재고 발생: <span id="neg-stock-list"></span></span>
+      <span class="neg-stock-text"><span id="neg-stock-list"></span></span>
     </div>
-    {% endif %}
     <script src="/static/js/common.js"></script>
     {% block scripts %}{% endblock %}
   </body>

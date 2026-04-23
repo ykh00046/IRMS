@@ -155,6 +155,18 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         )
         record_migration(connection, "formula_columns_to_numeric")
 
+    # admin access level: 김지훈, 김진우, 함지안 → admin
+    if not has_migration(connection, "admin_access_level"):
+        connection.execute(
+            """
+            UPDATE users
+            SET access_level = 'admin'
+            WHERE display_name IN ('김지훈', '김진우', '함지안')
+              AND access_level = 'manager'
+            """
+        )
+        record_migration(connection, "admin_access_level")
+
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     if has_migration(connection, "standardize_units_to_grams"):

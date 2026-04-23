@@ -135,13 +135,20 @@
       const newRooms = payload.items || [];
 
       // Track unread for non-active rooms by messageCount delta
+      var hasOtherRoomNew = false;
       newRooms.forEach(function (room) {
         var prev = prevMessageCounts[room.key];
         if (prev !== undefined && room.messageCount > prev && room.key !== chatState.selectedRoomKey) {
           unreadByRoom[room.key] = (unreadByRoom[room.key] || 0) + (room.messageCount - prev);
+          hasOtherRoomNew = true;
         }
         prevMessageCounts[room.key] = room.messageCount;
       });
+
+      // Play sound for new messages in non-selected rooms
+      if (hasOtherRoomNew) {
+        IRMS.playChatSound();
+      }
 
       chatState.rooms = newRooms;
 
@@ -252,7 +259,7 @@
         if (!room) return;
 
         const messageText = input?.value.trim() || "";
-        const stageVal = room.stageRequired ? stage?.value || "registered" : null;
+        const stageVal = null;
 
         if (!messageText) {
           IRMS.notify("메시지를 입력하세요.", "error");

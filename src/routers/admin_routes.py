@@ -15,7 +15,7 @@ from .models import (
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
+    router = APIRouter(dependencies=[Depends(require_access_level("admin"))])
 
     @router.get("/admin/users")
     async def admin_list_users() -> dict[str, Any]:
@@ -39,6 +39,7 @@ def build_router() -> APIRouter:
         summary = {
             "total": len(items),
             "active": sum(1 for item in items if item["is_active"]),
+            "admins": sum(1 for item in items if item["access_level"] == "admin"),
             "managers": sum(1 for item in items if item["access_level"] == "manager"),
             "operators": sum(1 for item in items if item["access_level"] == "operator"),
         }
@@ -233,9 +234,9 @@ def build_router() -> APIRouter:
 
             target_user = row_to_dict(target_row)
 
-            if target_user["access_level"] == "manager":
+            if target_user["access_level"] in ("manager", "admin"):
                 remaining = connection.execute(
-                    "SELECT COUNT(*) AS c FROM users WHERE access_level = 'manager' AND is_active = 1 AND id != ?",
+                    "SELECT COUNT(*) AS c FROM users WHERE access_level IN ('manager', 'admin') AND is_active = 1 AND id != ?",
                     (user_id,),
                 ).fetchone()
                 if int(remaining["c"]) == 0:

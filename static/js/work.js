@@ -2,25 +2,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const shell = document.querySelector(".site-shell");
   const tableHead = document.getElementById("work-head");
   const tableBody = document.getElementById("work-body");
-  const searchInput = document.getElementById("search-input");
-  const fromInput = document.getElementById("from-input");
-  const toInput = document.getElementById("to-input");
-  const filterSummary = document.getElementById("work-filter-summary");
-  const filterResetBtn = document.getElementById("work-filter-reset");
   const statsCount = document.getElementById("work-count");
   const statsStatus = document.getElementById("work-status");
-  const focusButtons = Array.from(document.querySelectorAll("[data-color]"));
-  const logWrap = document.getElementById("work-log");
   const roomMeta = document.getElementById("work-chat-room-meta");
   const roomTabs = document.getElementById("work-chat-room-tabs");
   const chatMessages = document.getElementById("work-chat-messages");
   const chatForm = document.getElementById("work-chat-form");
-  const chatStageGroup = document.getElementById("work-chat-stage-group");
-  const chatStage = document.getElementById("work-chat-stage");
   const chatInput = document.getElementById("work-chat-input");
   const chatSend = document.getElementById("work-chat-send");
 
-  const weighingOpenBtn = document.getElementById("weighing-open-btn");
   const weighingRefreshMainBtn = document.getElementById("weighing-refresh-main-btn");
   const weighingMode = document.getElementById("weighing-mode");
   const weighingCloseBtn = document.getElementById("weighing-close-btn");
@@ -38,7 +28,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const weighingTargetValue = document.getElementById("weighing-target-value");
   const weighingActionHint = document.getElementById("weighing-action-hint");
   const weighingNextValue = document.getElementById("weighing-next-value");
-  const weighingColorSelect = document.getElementById("weighing-color-select");
+  const weighingPowderBtn = document.getElementById("weighing-powder-btn");
+  const weighingLiquidBtn = document.getElementById("weighing-liquid-btn");
+  const liquidColorPicker = document.getElementById("liquid-color-picker");
   const weighingModeLabel = document.getElementById("weighing-mode-label");
   const workStockBanner = document.getElementById("work-stock-banner");
   const weighingCurrentCard = document.querySelector(".weighing-current");
@@ -89,13 +81,6 @@ document.addEventListener("DOMContentLoaded", () => {
     timerId: null,
   };
 
-  const preferenceKeys = {
-    color: "irms_work_filter_color",
-    search: "irms_work_filter_search",
-    from: "irms_work_filter_from",
-    to: "irms_work_filter_to",
-  };
-
   const weighing = {
     open: false,
     loading: false,
@@ -117,53 +102,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   var colorLabel = IRMS.colorLabel;
 
-  function persistFilters() {
-    IRMS.savePreference(preferenceKeys.color, state.color);
-    IRMS.savePreference(preferenceKeys.search, searchInput.value.trim());
-    IRMS.savePreference(preferenceKeys.from, fromInput.value);
-    IRMS.savePreference(preferenceKeys.to, toInput.value);
-  }
-
-  function updateFilterSummary() {
-    if (!filterSummary) {
-      return;
-    }
-
-    const parts = [`색상 ${colorLabel(state.color)}`];
-    const search = searchInput.value.trim();
-    const from = fromInput.value;
-    const to = toInput.value;
-
-    if (search) {
-      parts.push(`검색어 "${search}"`);
-    }
-    if (from || to) {
-      parts.push(`기간 ${from || "시작 미지정"} ~ ${to || "종료 미지정"}`);
-    }
-
-    filterSummary.textContent = `${parts.join(" · ")} 기준으로 작업 큐를 표시 중입니다.`;
-  }
-
-  function restoreFilters() {
-    state.color = IRMS.loadPreference(preferenceKeys.color, "all") || "all";
-    searchInput.value = IRMS.loadPreference(preferenceKeys.search, "");
-    fromInput.value = IRMS.loadPreference(preferenceKeys.from, "");
-    toInput.value = IRMS.loadPreference(preferenceKeys.to, "");
-  }
-
-  function resetFilters() {
-    state.color = "all";
-    searchInput.value = "";
-    fromInput.value = "";
-    toInput.value = "";
-    IRMS.clearPreference(preferenceKeys.color);
-    IRMS.clearPreference(preferenceKeys.search);
-    IRMS.clearPreference(preferenceKeys.from);
-    IRMS.clearPreference(preferenceKeys.to);
-    activateColorButton(state.color);
-    updateFilterSummary();
-    render();
-  }
 
   function buildHeader() {
     tableHead.innerHTML = [
@@ -206,7 +144,8 @@ document.addEventListener("DOMContentLoaded", () => {
             <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
             <td class="sticky-right">
               ${recipe.status === "in_progress"
-                ? `<button type="button" class="btn success complete-btn" data-id="${recipe.id}">완료 처리</button>`
+                ? `<button type="button" class="btn success complete-btn" data-id="${recipe.id}">완료</button>
+                   <button type="button" class="btn reset-btn" data-reset-id="${recipe.id}">원복</button>`
                 : `<span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span>`
               }
             </td>
@@ -219,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatModule = IRMS.createChat({
     prefix: "chat",
     stageLabels,
-    elements: { roomTabs, chatMessages, chatStageGroup, roomMeta },
+    elements: { roomTabs, chatMessages, roomMeta },
     state: {
       get rooms() { return state.rooms; },
       set rooms(v) { state.rooms = v; },
@@ -234,37 +173,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function refreshChatPanel(options) { return chatModule.refresh(options); }
-  function startChatPolling() { chatModule.startPolling(10000); }
+  function startChatPolling() { chatModule.startPolling(3000); }
 
   function renderStats(recipes) {
     const pendingCount = recipes.filter((recipe) => recipe.status === "pending").length;
     const inProgressCount = recipes.filter((recipe) => recipe.status === "in_progress").length;
     statsCount.textContent = String(recipes.length);
     statsStatus.textContent = `대기 ${pendingCount} / 진행 ${inProgressCount}`;
-  }
-
-  function renderLog(completedRecipes) {
-    const logs = completedRecipes
-      .filter((recipe) => recipe.completedAt)
-      .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))
-      .slice(0, 8);
-
-    if (!logs.length) {
-      logWrap.innerHTML = '<div class="empty-state">완료 로그가 아직 없습니다.</div>';
-      return;
-    }
-
-    logWrap.innerHTML = logs
-      .map(
-        (recipe) => `
-          <article class="work-log-item">
-            <strong>${IRMS.escapeHtml(recipe.productName)} · ${IRMS.escapeHtml(recipe.inkName)}</strong>
-            <span class="muted">담당자 ${IRMS.escapeHtml(recipe.createdBy)}</span>
-            <time>${IRMS.formatDateTime(recipe.completedAt)}</time>
-          </article>
-        `
-      )
-      .join("");
   }
 
   function storeLastSeenRecipeImportId(nextId) {
@@ -278,17 +193,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function render() {
     const token = ++state.loadingToken;
-    const search = searchInput.value.trim();
-    const from = fromInput.value;
-    const to = toInput.value;
-    persistFilters();
-    updateFilterSummary();
 
     try {
-      const [activeRecipes, completedRecipes] = await Promise.all([
-        IRMS.getRecipes({ search, dateFrom: from, dateTo: to }),
-        IRMS.getRecipes({ status: "completed" }),
-      ]);
+      const activeRecipes = await IRMS.getRecipes({});
 
       if (token !== state.loadingToken) {
         return;
@@ -301,7 +208,6 @@ document.addEventListener("DOMContentLoaded", () => {
       buildHeader();
       buildRows(working);
       renderStats(working);
-      renderLog(completedRecipes);
     } catch (error) {
       IRMS.notify(`데이터 로드 실패: ${error.message}`, "error");
       tableBody.innerHTML =
@@ -390,12 +296,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       checkRecipeImportNotifications();
     }, 8000);
-  }
-
-  function activateColorButton(color) {
-    focusButtons.forEach((button) => {
-      button.classList.toggle("active", button.dataset.color === color);
-    });
   }
 
   function resetWeighingProgress(totalSteps) {
@@ -578,25 +478,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function openWeighingMode() {
+  function openWeighingMode(colorGroup, modeLabel) {
     if (!weighingMode) return;
-    const selected = weighingColorSelect?.value;
-    if (!selected) {
-      IRMS.notify("계량 모드를 선택하세요.", "warn");
-      return;
-    }
-    weighing.colorGroup = selected;
+    weighing.colorGroup = colorGroup;
 
-    // Show mode label in header
     if (weighingModeLabel) {
-      const opt = weighingColorSelect.options[weighingColorSelect.selectedIndex];
-      weighingModeLabel.textContent = opt ? opt.textContent : "";
+      weighingModeLabel.textContent = modeLabel || "";
     }
 
     weighing.open = true;
     weighingMode.classList.add("active");
     weighingMode.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
+    if (liquidColorPicker) liquidColorPicker.hidden = true;
     loadWeighingQueue({ resetProgress: true });
   }
 
@@ -608,8 +502,6 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingMode.classList.remove("active");
     weighingMode.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
-    if (weighingColorSelect) weighingColorSelect.value = "";
-    if (weighingOpenBtn) weighingOpenBtn.disabled = true;
   }
 
   async function handleWeighingAdvance() {
@@ -712,77 +604,70 @@ document.addEventListener("DOMContentLoaded", () => {
 
   chatModule.bindForm({ form: chatForm, input: chatInput, stage: chatStage, send: chatSend });
 
-  focusButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      state.color = button.dataset.color || "all";
-      activateColorButton(state.color);
-      persistFilters();
-      updateFilterSummary();
-      render();
-    });
-  });
-
-  searchInput.addEventListener(
-    "input",
-    IRMS.debounce(() => {
-      persistFilters();
-      updateFilterSummary();
-      render();
-    }, 300),
-  );
-  fromInput.addEventListener("change", () => {
-    persistFilters();
-    updateFilterSummary();
-    render();
-  });
-  toInput.addEventListener("change", () => {
-    persistFilters();
-    updateFilterSummary();
-    render();
-  });
-  if (filterResetBtn) {
-    filterResetBtn.addEventListener("click", resetFilters);
-  }
-
   tableBody.addEventListener("click", async (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement) || !target.classList.contains("complete-btn")) {
-      return;
-    }
-    const recipeId = Number(target.dataset.id);
-    if (!Number.isFinite(recipeId)) {
+    if (!(target instanceof HTMLElement)) return;
+
+    // Complete button
+    if (target.classList.contains("complete-btn")) {
+      const recipeId = Number(target.dataset.id);
+      if (!Number.isFinite(recipeId)) return;
+      if (!window.confirm("선택한 레시피를 완료 처리하시겠습니까?")) return;
+
+      const row = tableBody.querySelector(`tr[data-id="${recipeId}"]`);
+      try {
+        if (row) row.classList.add("removing");
+        await IRMS.updateRecipeStatus(recipeId, "complete");
+        IRMS.notify("레시피를 완료 처리했습니다.", "success");
+        window.setTimeout(render, row ? 280 : 0);
+      } catch (error) {
+        if (row) row.classList.remove("removing");
+        const msg = error.message || "";
+        if (msg.includes("WEIGHING_INCOMPLETE")) {
+          const remaining = msg.split(":")[1] || "?";
+          IRMS.notify(`미계량 ${remaining}건이 남아있습니다. 계량 모드에서 진행해 주세요.`, "error");
+        } else {
+          IRMS.notify(`완료 처리 실패: ${msg}`, "error");
+        }
+      }
       return;
     }
 
-    if (!window.confirm("선택한 레시피를 완료 처리하시겠습니까?")) {
-      return;
-    }
+    // Reset button
+    if (target.classList.contains("reset-btn")) {
+      const recipeId = Number(target.dataset.resetId);
+      if (!Number.isFinite(recipeId)) return;
+      if (!window.confirm("이 레시피의 계량을 모두 초기화(원복)하시겠습니까?")) return;
 
-    const row = tableBody.querySelector(`tr[data-id="${recipeId}"]`);
-    try {
-      if (row) {
-        row.classList.add("removing");
-      }
-      await IRMS.updateRecipeStatus(recipeId, "complete");
-      IRMS.notify("레시피를 완료 처리했습니다.", "success");
-      window.setTimeout(render, row ? 280 : 0);
-    } catch (error) {
-      if (row) {
-        row.classList.remove("removing");
-      }
-      const msg = error.message || "";
-      if (msg.includes("WEIGHING_INCOMPLETE")) {
-        const remaining = msg.split(":")[1] || "?";
-        IRMS.notify(`계량이 완료되지 않았습니다. 미계량 ${remaining}건이 남아있습니다. 계량 모드에서 진행해 주세요.`, "error");
-      } else {
-        IRMS.notify(`완료 처리 실패: ${msg}`, "error");
+      try {
+        await IRMS.resetWeighingRecipe(recipeId);
+        IRMS.notify("레시피 계량을 원복했습니다.", "success");
+        render();
+      } catch (error) {
+        IRMS.notify(`원복 실패: ${error.message}`, "error");
       }
     }
   });
 
-  if (weighingOpenBtn) {
-    weighingOpenBtn.addEventListener("click", openWeighingMode);
+  // Powder mode: start immediately with "all"
+  if (weighingPowderBtn) {
+    weighingPowderBtn.addEventListener("click", () => {
+      openWeighingMode("all", "파우더 모드");
+    });
   }
+  // Liquid mode: show color picker
+  if (weighingLiquidBtn) {
+    weighingLiquidBtn.addEventListener("click", () => {
+      if (liquidColorPicker) liquidColorPicker.hidden = !liquidColorPicker.hidden;
+    });
+  }
+  // Liquid color selection
+  document.querySelectorAll(".liquid-color-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const color = btn.dataset.liquidColor;
+      openWeighingMode(color, "액상 모드 — " + (btn.textContent || color));
+    });
+  });
   if (weighingRefreshMainBtn) {
     weighingRefreshMainBtn.addEventListener("click", () => {
       loadWeighingQueue({ notifySummary: true });
@@ -801,13 +686,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (weighingUndoBtn) {
     weighingUndoBtn.addEventListener("click", handleWeighingUndo);
-  }
-  if (weighingColorSelect) {
-    weighingColorSelect.value = "";
-    if (weighingOpenBtn) weighingOpenBtn.disabled = true;
-    weighingColorSelect.addEventListener("change", () => {
-      if (weighingOpenBtn) weighingOpenBtn.disabled = !weighingColorSelect.value;
-    });
   }
   if (weighingMode) {
     weighingMode.addEventListener("click", (event) => {
@@ -853,9 +731,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  restoreFilters();
-  activateColorButton(state.color);
-  updateFilterSummary();
   render();
   refreshChatPanel({ replace: true, silent: true });
   checkRecipeImportNotifications({ silent: true });
