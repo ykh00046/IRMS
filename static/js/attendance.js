@@ -176,20 +176,20 @@
       const missOut = !row.check_out;
       const late = (row.late_hours || 0) > 0;
       tr.innerHTML = `
-        <td>${escape(row.date)}</td>
+        <td class="att-date-cell"><span class="att-num">${escape(row.date.slice(5))}</span></td>
         <td class="att-weekday-cell">${escape(row.weekday)}</td>
-        <td>${escape(row.day_type)}</td>
-        <td class="${missIn ? "att-miss" : ""}">${escape(row.check_in || "—")}</td>
-        <td class="${missOut ? "att-miss" : ""}">${escape(row.check_out || "—")}${row.next_day ? " ⏭" : ""}</td>
-        <td class="att-col-weekday">${hoursCell(row.weekday_normal)}</td>
+        <td class="att-daytype-cell">${dayTypePill(row)}</td>
+        <td class="${missIn ? "att-miss" : "att-time-cell"}"><span class="att-num">${escape(row.check_in || "—")}</span></td>
+        <td class="${missOut ? "att-miss" : "att-time-cell"}"><span class="att-num">${escape(row.check_out || "—")}</span>${row.next_day ? " ⏭" : ""}</td>
+        <td class="att-col-weekday att-col-first">${hoursCell(row.weekday_normal)}</td>
         <td class="att-col-weekday">${hoursCell(row.weekday_overtime)}</td>
         <td class="att-col-weekday">${hoursCell(row.weekday_night)}</td>
         <td class="att-col-weekday">${hoursCell(row.weekday_early)}</td>
-        <td class="att-col-holiday">${hoursCell(row.holiday_normal)}</td>
+        <td class="att-col-holiday att-col-first">${hoursCell(row.holiday_normal)}</td>
         <td class="att-col-holiday">${hoursCell(row.holiday_overtime)}</td>
         <td class="att-col-holiday">${hoursCell(row.holiday_night)}</td>
         <td class="att-col-holiday">${hoursCell(row.holiday_early)}</td>
-        <td class="${late ? "att-late" : ""}">${hoursCell(row.late_hours)}</td>
+        <td class="att-col-adjust-first ${late ? "att-late" : ""}">${hoursCell(row.late_hours)}</td>
         <td>${hoursCell(row.early_leave_hours)}</td>
         <td>${hoursCell(row.outing_hours)}</td>
         <td class="att-note-cell">${escape(row.note || "")}</td>`;
@@ -223,8 +223,26 @@
   }
 
   function hoursCell(value) {
-    if (!value || value === 0) return '<span style="color:#94a3b8">0</span>';
-    return Number(value).toFixed(1);
+    if (!value || value === 0) return '<span class="att-zero">·</span>';
+    return `<span class="att-num">${Number(value).toFixed(1)}</span>`;
+  }
+
+  function dayTypePill(row) {
+    const dayType = (row.day_type || "").trim();
+    const weekday = (row.weekday || "").trim();
+    let cls = "att-pill att-pill-weekday";
+    let text = dayType || "평일";
+    if (dayType.includes("토") || weekday === "토") {
+      cls = "att-pill att-pill-saturday";
+      text = dayType || "토요일";
+    } else if (dayType.includes("일") || weekday === "일") {
+      cls = "att-pill att-pill-sunday";
+      text = dayType || "일요일";
+    } else if (dayType && dayType !== "평일") {
+      cls = "att-pill att-pill-holiday";
+      text = dayType;
+    }
+    return `<span class="${cls}">${escape(text)}</span>`;
   }
 
   function updateMonthNav() {

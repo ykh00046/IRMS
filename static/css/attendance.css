@@ -239,18 +239,32 @@
 
 .att-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.88rem;
 }
 
 .att-table th,
 .att-table td {
-  padding: 0.5rem 0.55rem;
+  padding: 0.5rem 0.6rem;
   border-bottom: 1px solid #eceef3;
   text-align: center;
   white-space: nowrap;
+  line-height: 1.3;
 }
 
+/* Monospace numeric cells for easy column comparison. */
+.att-num {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.att-zero {
+  color: #cbd5e1;
+  font-weight: 400;
+}
+
+/* Group header row (평일 근무 / 휴일 근무). */
 .att-table thead tr:first-child th {
   background: #e2e8f0;
   font-weight: 700;
@@ -258,9 +272,11 @@
   font-size: 0.82rem;
   position: sticky;
   top: 0;
+  z-index: 2;
   border-bottom: 1px solid #cbd5e1;
 }
 
+/* Sub-header row (정상/연장/야근/조출). */
 .att-table thead tr:nth-child(2) th {
   background: #f1f4f9;
   font-weight: 600;
@@ -268,41 +284,64 @@
   font-size: 0.78rem;
   position: sticky;
   top: 2.05rem;
+  z-index: 1;
   border-bottom: 1px solid #cbd5e1;
 }
 
 .att-table th.att-group-weekday {
-  background: #e0f2fe;
-  color: #075985;
+  background: #dbeafe;
+  color: #0c4a6e;
+  letter-spacing: 0.04em;
 }
 
 .att-table th.att-group-holiday {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fecaca;
+  color: #7f1d1d;
+  letter-spacing: 0.04em;
 }
 
+/* Column family tint. */
 .att-table td.att-col-weekday {
-  background: rgba(186, 230, 253, 0.18);
+  background: rgba(186, 230, 253, 0.22);
 }
 
 .att-table td.att-col-holiday {
   background: rgba(254, 202, 202, 0.22);
 }
 
-/* Row tints override column tints for weekend/holiday days. */
+/* Thick vertical separator: at the start of a column family,
+   at the start of the adjust group (지각/조퇴/외출). */
+.att-table td.att-col-first,
+.att-table th.att-col-first,
+.att-table td.att-col-adjust-first {
+  border-left: 2px solid #94a3b8;
+}
+
+/* Zebra stripes (only on plain rows — weekend/holiday rows own color). */
+.att-table tbody tr:nth-child(even) > td {
+  background-color: rgba(241, 245, 249, 0.55);
+}
+.att-table tbody tr:nth-child(even) > td.att-col-weekday {
+  background-color: rgba(186, 230, 253, 0.32);
+}
+.att-table tbody tr:nth-child(even) > td.att-col-holiday {
+  background-color: rgba(254, 202, 202, 0.32);
+}
+
+/* Saturday / Sunday / holiday row tints — these override the zebra stripes. */
 .att-table tr.att-day-saturday > td {
-  background: #eff6ff;
+  background: #eff6ff !important;
 }
 
 .att-table tr.att-day-saturday > td.att-col-weekday {
-  background: #dbeafe;
+  background: #dbeafe !important;
 }
 
 .att-table tr.att-day-saturday > td.att-col-holiday {
-  background: #bfdbfe;
+  background: #bfdbfe !important;
 }
 
-.att-table tr.att-day-saturday > td:first-child,
+.att-table tr.att-day-saturday > td.att-date-cell,
 .att-table tr.att-day-saturday > td.att-weekday-cell {
   color: #1d4ed8;
   font-weight: 700;
@@ -310,22 +349,22 @@
 
 .att-table tr.att-day-sunday > td,
 .att-table tr.att-day-holiday > td {
-  background: #fff1f2;
+  background: #fff1f2 !important;
 }
 
 .att-table tr.att-day-sunday > td.att-col-weekday,
 .att-table tr.att-day-holiday > td.att-col-weekday {
-  background: #ffe4e6;
+  background: #ffe4e6 !important;
 }
 
 .att-table tr.att-day-sunday > td.att-col-holiday,
 .att-table tr.att-day-holiday > td.att-col-holiday {
-  background: #fecdd3;
+  background: #fecdd3 !important;
 }
 
-.att-table tr.att-day-sunday > td:first-child,
+.att-table tr.att-day-sunday > td.att-date-cell,
 .att-table tr.att-day-sunday > td.att-weekday-cell,
-.att-table tr.att-day-holiday > td:first-child,
+.att-table tr.att-day-holiday > td.att-date-cell,
 .att-table tr.att-day-holiday > td.att-weekday-cell {
   color: #b91c1c;
   font-weight: 700;
@@ -341,12 +380,55 @@
   font-weight: 700;
 }
 
+.att-table td.att-date-cell,
+.att-table td.att-weekday-cell,
+.att-table td.att-time-cell {
+  font-weight: 600;
+}
+
 .att-table td.att-note-cell {
   color: var(--text-secondary, #334155);
   font-size: 0.82rem;
   max-width: 180px;
   white-space: normal;
   text-align: left;
+}
+
+/* 구분 pill badges. */
+.att-pill {
+  display: inline-block;
+  padding: 0.14rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.att-pill-weekday {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.att-pill-saturday {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.att-pill-sunday {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+.att-pill-holiday {
+  background: #fed7aa;
+  color: #7c2d12;
+}
+
+.att-daytype-cell {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .att-empty-row td {
