@@ -37,6 +37,16 @@ FILENAME_REGEX = re.compile(r"^monthly_attendance_(\d{4}-\d{2})\.xlsx$")
 ANNUAL_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "반차", "유급", "공가")
 HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 
+# Baseline (출근, 퇴근) per shift_time, expressed in minutes-from-midnight.
+# 퇴근 baseline이 1440 이상이면 익일 표기(ERP는 19:00 → 다음 날 07:00 근무를
+# 19:00 → 31:00으로 기록함). 빈 shift_time은 교대조의 비번 날을 뜻하므로
+# anomaly 감지 대상에서 제외된다.
+SHIFT_BASELINES = {
+    "주간":        (9 * 60,  18 * 60),   # 09:00 ~ 18:00 (평일만)
+    "2교대(주간)": (7 * 60,  19 * 60),   # 07:00 ~ 19:00
+    "2교대(야간)": (19 * 60, 31 * 60),   # 19:00 ~ 익일 07:00 (ERP 표기 31:00)
+}
+
 COL_DATE = 0
 COL_WEEKDAY = 1
 COL_DAY_TYPE = 2
@@ -170,27 +180,49 @@ def current_date() -> str:
     return _dt.date.today().isoformat()
 
 
+def _hhmm_to_minutes(text: str | None) -> int | None:
+    """ERP 시각 문자열을 '자정 기준 분'으로 변환.
+
+    ERP는 야간조 퇴근을 익일 07:04처럼 ``31:04``로 기록하므로 단순
+    문자열 비교가 불가능하다. 시:분을 읽어 분 단위 정수로 반환하고,
+    파싱이 실패하면 ``None``을 돌려준다.
+    """
+    if not text:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    try:
+        h_part, _, m_part = s.partition(":")
+        return int(h_part) * 60 + int(m_part or 0)
+    except ValueError:
+        return None
+
+
 def detect_today_anomalies(
     year_month: str, target_date: str
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Return (day_type, anomalies) for ``target_date`` in the given month.
+    """``target_date``의 미처리 근태 이상을 감지해 반환.
 
-    ``day_type`` is the value from the 구분 column for the first row seen on
-    that date (empty if the date has no rows). Anomalies are only produced
-    when ``day_type == "평일"``; weekend and custom-holiday days deliberately
-    return an empty list so the tray popup stays silent on non-working days.
+    알림은 **이상 현상 자체**가 아니라 **이상한데 관리자가 아직 처리하지
+    못한 상태**에 뜬다. 즉 ``late_hours > 0`` 같은 값은 ERP/관리자가
+    지각으로 이미 인지·기록한 상태이므로 감지 대상이 아니며, 반대로
+    ``late_hours == 0`` 인데 실제 출근 시각이 기준보다 늦으면 "미처리
+    지각"으로 올라간다. 조퇴도 같은 원리.
 
-    Detection rules per employee row on the weekday:
-      - check_in 없음           → "출근 누락"  (출근 기록이 들어오면 해소)
-      - check_out 없음          → "퇴근 누락"  (퇴근 기록이 들어오면 해소)
-      - early_leave_hours > 0   → "조퇴 {:g}시간"
+    감지 규칙:
+      - day_type == '평일'만 대상 (주간·2교대 모두 ERP가 근무일을
+        '평일'로 기록). 토/일/주휴 등은 제외.
+      - 연차/반차/반반차/월차/휴가/공가 키워드가 day_type 또는
+        비고에 있으면 전체 감지 대상에서 제외 (이미 처리됨).
+      - shift_time이 ``SHIFT_BASELINES``에 없으면 감지 제외
+        (빈 값 = 교대조 비번 날; 알 수 없는 근무형태).
 
-    ``late_hours`` (지각) is intentionally NOT flagged: once a tardy
-    row is written it stays in the Excel for the rest of the day,
-    so alerting on it would create a popup that keeps repeating
-    every 30 minutes until midnight with no way for the worker to
-    resolve it. The main /attendance page still surfaces tardy
-    counts in the monthly summary.
+    이상 항목:
+      - check_in 없음   → "출근 누락"
+      - check_out 없음  → "퇴근 누락"
+      - check_in 시각 > 기준 출근  AND late_hours == 0        → "지각 미처리"
+      - check_out 시각 < 기준 퇴근 AND early_leave_hours == 0 → "조퇴 미처리"
 
     Raises ``MonthFileNotFound`` or ``FileLocked`` on I/O issues.
     """
@@ -214,19 +246,43 @@ def detect_today_anomalies(
                 continue
             if _is_annual_leave_row(row):
                 continue
+
+            shift_time = rec.get("shift_time", "") or ""
+            baseline = SHIFT_BASELINES.get(shift_time)
+            if baseline is None:
+                # 빈 shift_time (교대조 비번날) 혹은 알 수 없는 근무형태
+                continue
+            base_in, base_out = baseline
+
             issues: list[str] = []
             if not row.check_in:
                 issues.append("출근 누락")
             if not row.check_out:
                 issues.append("퇴근 누락")
-            if row.early_leave_hours > 0:
-                issues.append(f"조퇴 {row.early_leave_hours:g}시간")
+
+            in_mins = _hhmm_to_minutes(row.check_in)
+            if (
+                in_mins is not None
+                and in_mins > base_in
+                and row.late_hours == 0
+            ):
+                issues.append("지각 미처리")
+
+            out_mins = _hhmm_to_minutes(row.check_out)
+            if (
+                out_mins is not None
+                and out_mins < base_out
+                and row.early_leave_hours == 0
+            ):
+                issues.append("조퇴 미처리")
+
             if issues:
                 anomalies.append(
                     {
                         "emp_id": rec["emp_id"],
                         "name": rec["name"],
                         "department": rec["department"],
+                        "shift_time": shift_time,
                         "issues": issues,
                     }
                 )
