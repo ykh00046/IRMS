@@ -12,6 +12,8 @@
   const profileMeta = document.getElementById("att-profile-meta");
   const adminPicker = document.getElementById("att-admin-picker");
   const empSelect = document.getElementById("att-emp-select");
+  const empDirectInput = document.getElementById("att-emp-direct");
+  const empDirectBtn = document.getElementById("att-emp-direct-btn");
   const changePwBtn = document.getElementById("att-change-pw-btn");
   const logoutBtn = document.getElementById("att-logout-btn");
 
@@ -31,6 +33,12 @@
   function formatHours(value) {
     if (typeof value !== "number" || !isFinite(value)) return "0.0h";
     return `${value.toFixed(1)}h`;
+  }
+
+  function formatDays(value) {
+    const numeric = Number(value || 0);
+    if (!isFinite(numeric)) return "0";
+    return numeric % 1 === 0 ? String(numeric) : numeric.toFixed(1);
   }
 
   function formatCountHours(count, hours) {
@@ -120,7 +128,6 @@
 
   function renderSummary(summary) {
     if (!summary) return;
-    document.getElementById("att-work-days").textContent = summary.work_days || 0;
     document.getElementById("att-late").textContent = formatCountHours(
       summary.late_count,
       summary.late_total
@@ -157,6 +164,38 @@
     document.getElementById("att-hd-early").textContent = formatHours(
       summary.holiday_early
     );
+  }
+
+  function renderAnnualSummary(summary) {
+    const year = summary?.year || Number(String(state.month || "").slice(0, 4)) || new Date().getFullYear();
+    const months = Number(summary?.months_count || 0);
+    const availableMonths = Number(summary?.available_months_count || 0);
+    const skippedMonths = Array.isArray(summary?.skipped_months) ? summary.skipped_months : [];
+    document.getElementById("att-year-late-count").textContent = String(
+      summary?.late_count || 0
+    );
+    document.getElementById("att-year-late-hours").textContent = formatHours(
+      summary?.late_total || 0
+    );
+    document.getElementById("att-year-leave-days").textContent = formatDays(
+      summary?.annual_leave_days || 0
+    );
+    document.getElementById("att-year-leave-count").textContent = `${summary?.annual_leave_count || 0}건`;
+
+    let scopeText =
+      months > 0
+        ? `${year}년 · ${months}개월 반영`
+        : `${year}년 · 반영된 월 없음`;
+    if (availableMonths > 0 && skippedMonths.length > 0) {
+      scopeText += ` · ${skippedMonths.length}개월 제외`;
+    }
+
+    const lateScope = document.getElementById("att-year-late-scope");
+    const leaveScope = document.getElementById("att-year-leave-scope");
+    lateScope.textContent = scopeText;
+    leaveScope.textContent = `${scopeText} · 반차 0.5일 기준`;
+    lateScope.classList.toggle("warn", skippedMonths.length > 0);
+    leaveScope.classList.toggle("warn", skippedMonths.length > 0);
   }
 
   function renderRows(rows) {
@@ -261,12 +300,17 @@
     state.availableMonths = payload.available_months || [];
     const items = payload.items || [];
     empSelect.innerHTML = "";
+    if (empDirectInput && !empDirectInput.value && state.selectedEmpId) {
+      empDirectInput.value = state.selectedEmpId;
+    }
     if (!items.length) {
       const opt = document.createElement("option");
       opt.value = "";
       opt.textContent = "이번 달 엑셀에 직원 없음";
       empSelect.appendChild(opt);
       empSelect.disabled = true;
+      adminPicker.hidden = false;
+      updateMonthNav();
       return;
     }
     empSelect.disabled = false;
@@ -292,6 +336,7 @@
         if (!state.selectedEmpId) {
           renderProfile(null);
           renderSummary({});
+          renderAnnualSummary({});
           renderRows([]);
           return;
         }
@@ -309,8 +354,12 @@
       }
       if (!payload) return;
       state.availableMonths = payload.available_months || state.availableMonths;
+      if (adminMode && state.selectedEmpId && !payload.profile) {
+        window.IRMS?.notify?.("해당 사번을 근태 엑셀에서 찾지 못했습니다.", "warn");
+      }
       renderProfile(payload.profile);
       renderSummary(payload.summary);
+      renderAnnualSummary(payload.annual_summary);
       renderRows(payload.rows);
       updateMonthNav();
     } catch (error) {
@@ -318,6 +367,7 @@
       if (msg.includes("MONTH_FILE_NOT_FOUND")) {
         renderProfile(null);
         renderSummary({});
+        renderAnnualSummary({});
         renderRows([]);
         monthLabel.textContent = state.month + " (파일 없음)";
       } else if (msg.includes("FILE_LOCKED_RETRY")) {
@@ -335,7 +385,14 @@
     const nextIdx = idx - delta; // list sorted desc (recent first)
     if (nextIdx < 0 || nextIdx >= list.length) return;
     state.month = list[nextIdx];
-    loadView();
+    refreshView();
+  }
+
+  async function refreshView() {
+    if (adminMode) {
+      await loadEmployeesForAdmin();
+    }
+    await loadView();
   }
 
   monthPrev?.addEventListener("click", () => moveMonth(-1));
@@ -367,7 +424,27 @@
 
   empSelect?.addEventListener("change", () => {
     state.selectedEmpId = empSelect.value;
+    if (empDirectInput) empDirectInput.value = state.selectedEmpId;
     loadView();
+  });
+
+  function selectDirectEmployee() {
+    const empId = String(empDirectInput?.value || "").trim();
+    if (!empId) {
+      window.IRMS?.notify?.("조회할 사번을 입력해 주세요.", "warn");
+      return;
+    }
+    state.selectedEmpId = empId;
+    if (empSelect) empSelect.value = "";
+    loadView();
+  }
+
+  empDirectBtn?.addEventListener("click", selectDirectEmployee);
+  empDirectInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectDirectEmployee();
+    }
   });
 
   function initResetBanner() {
@@ -388,9 +465,6 @@
 
   (async function init() {
     initResetBanner();
-    if (adminMode) {
-      await loadEmployeesForAdmin();
-    }
-    await loadView();
+    await refreshView();
   })();
 })();

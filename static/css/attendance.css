@@ -229,6 +229,29 @@
   color: #0f766e;
 }
 
+.att-alert-card {
+  position: relative;
+  overflow: hidden;
+  border-top: 4px solid #f59e0b;
+}
+
+.att-alert-card::before {
+  content: "";
+  position: absolute;
+  inset: 4px 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, #f59e0b, #dc2626);
+  opacity: 0.35;
+}
+
+.att-alert-card h3 {
+  color: #b45309;
+}
+
+.att-alert-card .att-kv li strong {
+  color: #b45309;
+}
+
 .att-annual-card {
   position: relative;
   overflow: hidden;
