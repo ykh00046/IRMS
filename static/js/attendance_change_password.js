@@ -27,11 +27,19 @@
     return text || "비밀번호 변경에 실패했습니다.";
   }
 
+  function csrfToken() {
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
   async function postJson(path, body) {
     const response = await fetch(path, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrftoken": csrfToken(),
+      },
       body: JSON.stringify(body || {}),
     });
     if (!response.ok) {

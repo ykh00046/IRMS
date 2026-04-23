@@ -74,11 +74,19 @@
     return response.json();
   }
 
+  function csrfToken() {
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
   async function apiPost(path, body) {
     const response = await fetch(path, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrftoken": csrfToken(),
+      },
       body: JSON.stringify(body || {}),
     });
     if (!response.ok) {
