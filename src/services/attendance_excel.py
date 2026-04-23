@@ -37,6 +37,16 @@ FILENAME_REGEX = re.compile(r"^monthly_attendance_(\d{4}-\d{2})\.xlsx$")
 ANNUAL_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "반차", "유급", "공가")
 HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 
+# 부분 휴가가 출/퇴근 기준 시각을 이동시키는 시간(시간 단위, 주간 9-18시 기준).
+# 반차는 근무 4시간 + 점심 1시간을 덜어내므로 baseline 이 5시간 이동하고,
+# 반반차는 2시간짜리라 점심과 겹치지 않아 2시간만 이동한다. 반반차가 반차의
+# 부분 문자열이므로 탐지 시에는 반드시 "반반차"를 먼저 검사해야 한다.
+#
+# 검증 (주간 기준):
+#   반차   오전 → 09:00 + 5h = 14:00 출근,  오후 → 18:00 - 5h = 13:00 퇴근
+#   반반차 오전 → 09:00 + 2h = 11:00 출근,  오후 → 18:00 - 2h = 16:00 퇴근
+PARTIAL_LEAVE_SHIFT_HOURS = (("반반차", 2), ("반차", 5))
+
 # Baseline (출근, 퇴근) per shift_time, expressed in minutes-from-midnight.
 # 퇴근 baseline이 1440 이상이면 익일 표기(ERP는 19:00 → 다음 날 07:00 근무를
 # 19:00 → 31:00으로 기록함). 빈 shift_time은 교대조의 비번 날을 뜻하므로
@@ -46,6 +56,11 @@ SHIFT_BASELINES = {
     "2교대(주간)": (7 * 60,  19 * 60),   # 07:00 ~ 19:00
     "2교대(야간)": (19 * 60, 31 * 60),   # 19:00 ~ 익일 07:00 (ERP 표기 31:00)
 }
+
+# Full-day leaves that exclude a row from anomaly detection entirely.
+# (반차/반반차는 이 목록에 들어가지 않는다 — baseline이 이동할 뿐 여전히
+# 감지 대상.)
+FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "유급", "공가")
 
 COL_DATE = 0
 COL_WEEKDAY = 1
@@ -199,6 +214,66 @@ def _hhmm_to_minutes(text: str | None) -> int | None:
         return None
 
 
+def _is_full_day_leave(day_type: str, note: str) -> bool:
+    """감지 대상에서 아예 제외할 '하루 전체 휴가' 판정.
+
+    반차/반반차는 여기 포함되지 않는다. 하루 중 일부만 빠지는 휴가는
+    baseline 만 이동시키고 감지는 계속 수행한다.
+    """
+    text = f"{day_type or ''} {note or ''}"
+    return any(keyword in text for keyword in FULL_DAY_LEAVE_KEYWORDS)
+
+
+def _partial_leave_shift(day_type: str, note: str) -> tuple[str, str, int] | None:
+    """반차·반반차 이동량(분)과 오전/오후 구분을 반환.
+
+    반환 형식: ``(leave_kind, half, shift_minutes)``
+      - leave_kind: "반차" 또는 "반반차"
+      - half: "오전" / "오후" / "unknown"
+      - shift_minutes: 해당 근무형태의 baseline을 이동시킬 분 단위
+
+    해당 행에 부분 휴가 키워드가 없으면 ``None`` 반환. 반반차는 반차의
+    부분 문자열이므로 반반차 먼저 검사한다.
+    """
+    text = f"{day_type or ''} {note or ''}"
+    for keyword, hours in PARTIAL_LEAVE_SHIFT_HOURS:
+        if keyword in text:
+            if "오전" in text:
+                half = "오전"
+            elif "오후" in text:
+                half = "오후"
+            else:
+                half = "unknown"
+            return keyword, half, hours * 60
+    return None
+
+
+def _compute_anomaly_baseline(
+    shift_time: str, day_type: str, note: str
+) -> tuple[int, int] | None:
+    """shift_time과 부분 휴가를 반영한 ``(출근분, 퇴근분)`` baseline을 반환.
+
+    shift_time이 알려진 근무형태가 아니면 ``None`` (감지 제외).
+    부분 휴가(반차/반반차)는 주간 시프트에만 적용한다. 2교대는 근무
+    구조가 달라 동일 규칙이 맞지 않으므로 일단 기본 baseline 그대로 쓴다.
+    """
+    baseline = SHIFT_BASELINES.get(shift_time)
+    if baseline is None:
+        return None
+    base_in, base_out = baseline
+
+    if shift_time == "주간":
+        leave = _partial_leave_shift(day_type, note)
+        if leave:
+            _kind, half, shift_minutes = leave
+            if half == "오전":
+                base_in += shift_minutes
+            elif half == "오후":
+                base_out -= shift_minutes
+            # half == "unknown" → 구분 모호. 보수적으로 기본 baseline 유지.
+    return base_in, base_out
+
+
 def detect_today_anomalies(
     year_month: str, target_date: str
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -213,8 +288,9 @@ def detect_today_anomalies(
     감지 규칙:
       - day_type == '평일'만 대상 (주간·2교대 모두 ERP가 근무일을
         '평일'로 기록). 토/일/주휴 등은 제외.
-      - 연차/반차/반반차/월차/휴가/공가 키워드가 day_type 또는
-        비고에 있으면 전체 감지 대상에서 제외 (이미 처리됨).
+      - 연차/월차/휴가/유급/공가 키워드가 day_type 또는 비고에 있으면
+        전체 감지 대상에서 제외. 반차/반반차는 제외가 아니라 baseline
+        만 이동(주간 한정)시켜 감지를 계속 수행한다.
       - shift_time이 ``SHIFT_BASELINES``에 없으면 감지 제외
         (빈 값 = 교대조 비번 날; 알 수 없는 근무형태).
 
@@ -244,11 +320,11 @@ def detect_today_anomalies(
                 day_type = row.day_type
             if row.day_type != "평일":
                 continue
-            if _is_annual_leave_row(row):
+            if _is_full_day_leave(row.day_type, row.note):
                 continue
 
             shift_time = rec.get("shift_time", "") or ""
-            baseline = SHIFT_BASELINES.get(shift_time)
+            baseline = _compute_anomaly_baseline(shift_time, row.day_type, row.note)
             if baseline is None:
                 # 빈 shift_time (교대조 비번날) 혹은 알 수 없는 근무형태
                 continue
