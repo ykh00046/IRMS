@@ -118,6 +118,10 @@
   font-size: 0.9rem;
 }
 
+.att-admin-picker[hidden] {
+  display: none !important;
+}
+
 .att-admin-picker {
   display: flex;
   align-items: center;
