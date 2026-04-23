@@ -123,11 +123,6 @@ def build_router() -> APIRouter:
         request: Request, month: str | None = Query(default=None, max_length=7)
     ) -> dict[str, Any]:
         context = require_view_context(request)
-        if context.password_reset_required and not context.admin_mode:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="PASSWORD_RESET_REQUIRED",
-            )
         if context.admin_mode and not context.emp_id:
             # Pure admin without own sa-beon session: cannot query /me.
             raise HTTPException(
@@ -135,6 +130,9 @@ def build_router() -> APIRouter:
             )
         payload = _load_attendance_response(_resolve_month(month), context.emp_id or "")
         payload["admin_mode"] = context.admin_mode
+        payload["password_reset_required"] = (
+            context.password_reset_required and bool(context.emp_id)
+        )
         return payload
 
     @router.get("/admin/employees")

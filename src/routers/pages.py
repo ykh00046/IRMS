@@ -126,14 +126,15 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         admin = is_admin_mode(request)
         if not emp_id and not admin:
             return RedirectResponse(url="/attendance/login", status_code=303)
-        if emp_id:
-            sess = request.session.get("att_user") or {}
-            if sess.get("password_reset_required"):
-                return RedirectResponse(url="/attendance/change-password", status_code=303)
+        sess = request.session.get("att_user") or {}
+        password_reset_required = bool(emp_id) and bool(
+            sess.get("password_reset_required")
+        )
         return _render(templates, request, "attendance.html", {
             "current_user": get_current_user(request, required=False),
             "emp_id": emp_id,
             "admin_mode": admin,
+            "password_reset_required": password_reset_required,
         })
 
     @router.get("/attendance/login", response_class=HTMLResponse)

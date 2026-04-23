@@ -35,6 +35,16 @@
     </header>
 
     <main class="att-shell">
+      {% if password_reset_required %}
+      <section class="att-warning-banner" id="att-reset-banner">
+        <span class="att-warning-icon" aria-hidden="true">⚠️</span>
+        <span class="att-warning-text">
+          초기 비밀번호(사번과 동일)를 사용 중입니다. 보안을 위해 변경해주세요.
+        </span>
+        <a href="/attendance/change-password" class="btn compact accent">비밀번호 변경</a>
+      </section>
+      {% endif %}
+
       <section class="att-profile">
         <div id="att-profile-display" class="att-profile-display">
           <span class="att-profile-name" id="att-profile-name">-</span>

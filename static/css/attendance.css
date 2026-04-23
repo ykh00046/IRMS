@@ -56,6 +56,29 @@
   gap: 1rem;
 }
 
+.att-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  color: #78350f;
+  font-size: 0.92rem;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.att-warning-banner .att-warning-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.att-warning-banner .att-warning-icon {
+  font-size: 1.1rem;
+}
+
 .att-profile {
   background: #fff;
   border: 1px solid var(--border-strong, #d7dbe3);
