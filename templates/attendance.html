@@ -52,8 +52,24 @@
           <span class="att-profile-meta" id="att-profile-meta"></span>
         </div>
         <div class="att-admin-picker" id="att-admin-picker" hidden>
-          <label for="att-emp-select" class="field-label">직원 선택</label>
-          <select id="att-emp-select"></select>
+          <div class="att-admin-field">
+            <label for="att-emp-select" class="filter-label">직원 선택</label>
+            <select id="att-emp-select" class="select"></select>
+          </div>
+          <div class="att-admin-field att-admin-direct">
+            <label for="att-emp-direct" class="filter-label">사번 직접 조회</label>
+            <div class="att-admin-direct-row">
+              <input
+                id="att-emp-direct"
+                type="search"
+                class="input"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="사번 입력"
+              />
+              <button id="att-emp-direct-btn" type="button" class="btn compact accent">조회</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -77,18 +93,36 @@
             <li><span>외출</span><strong id="att-outing">0회 · 0.0h</strong></li>
           </ul>
         </div>
-        <div class="att-summary-card">
-          <h3>평일 근무</h3>
-          <ul class="att-kv">
+        <div class="att-summary-card att-annual-card">
+          <h3>연간 누적 지각</h3>
+          <div class="att-big att-big-alert" id="att-year-late-count">0</div>
+          <div class="att-big-unit">
+            <span>회</span>
+            <strong id="att-year-late-hours">0.0h</strong>
+          </div>
+          <p class="att-card-note" id="att-year-late-scope">올해 누적</p>
+        </div>
+        <div class="att-summary-card att-annual-card">
+          <h3>연차 사용</h3>
+          <div class="att-big att-big-leave" id="att-year-leave-days">0</div>
+          <div class="att-big-unit">
+            <span>일</span>
+            <strong id="att-year-leave-count">0건</strong>
+          </div>
+          <p class="att-card-note" id="att-year-leave-scope">반차 0.5일 기준</p>
+        </div>
+        <div class="att-summary-card att-work-card">
+          <h3>평일 근무시간</h3>
+          <ul class="att-work-grid">
             <li><span>정상</span><strong id="att-wd-normal">0.0h</strong></li>
             <li><span>연장</span><strong id="att-wd-overtime">0.0h</strong></li>
             <li><span>야근</span><strong id="att-wd-night">0.0h</strong></li>
             <li><span>조출</span><strong id="att-wd-early">0.0h</strong></li>
           </ul>
         </div>
-        <div class="att-summary-card">
-          <h3>휴일 근무</h3>
-          <ul class="att-kv">
+        <div class="att-summary-card att-work-card att-work-card-holiday">
+          <h3>휴일 근무시간</h3>
+          <ul class="att-work-grid">
             <li><span>정상</span><strong id="att-hd-normal">0.0h</strong></li>
             <li><span>연장</span><strong id="att-hd-overtime">0.0h</strong></li>
             <li><span>야근</span><strong id="att-hd-night">0.0h</strong></li>

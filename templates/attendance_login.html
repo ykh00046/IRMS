@@ -12,52 +12,50 @@
     />
     <link rel="stylesheet" href="/static/css/common.css" />
     <link rel="stylesheet" href="/static/css/access.css" />
-    <link rel="stylesheet" href="/static/css/attendance.css" />
   </head>
   <body>
     <main class="access-shell">
       <section class="access-stage access-stage-split">
         <div class="access-hero">
-          <p class="eyebrow">Attendance</p>
-          <h1>내 근태 확인</h1>
+          <p class="eyebrow">Attendance Gate</p>
+          <h1>ATTENDANCE SIGN-IN</h1>
           <p class="access-subtitle">
-            사번을 입력해 이번 달 출퇴근·지각·연장 시간을 확인합니다.
-            초기 비밀번호는 사번과 동일하며, 첫 로그인 후 반드시 변경해주세요.
-          </p>
-          <p class="access-subtitle">
-            <a href="/" class="btn compact">← 처음 화면</a>
+            사번을 입력해 이번 달 출퇴근과 연장 시간을 확인합니다.
+            초기 비밀번호는 사번과 동일하며, 첫 로그인 후 변경을 권장합니다.
           </p>
         </div>
 
         <form id="att-login-form" class="access-form" autocomplete="off">
-          <label class="field">
-            <span class="field-label">사번</span>
-            <input
-              id="att-emp-id"
-              name="emp_id"
-              type="text"
-              inputmode="numeric"
-              autocomplete="username"
-              required
-              minlength="1"
-              maxlength="20"
-              placeholder="예) 171013"
-            />
-          </label>
-          <label class="field">
-            <span class="field-label">비밀번호</span>
-            <input
-              id="att-password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required
-              placeholder="초기값은 사번과 동일"
-            />
-          </label>
+          <label class="filter-label" for="att-emp-id">사번</label>
+          <input
+            id="att-emp-id"
+            name="emp_id"
+            type="text"
+            class="input"
+            inputmode="numeric"
+            autocomplete="username"
+            required
+            minlength="1"
+            maxlength="20"
+            placeholder="예) 171013"
+          />
+
+          <label class="filter-label" for="att-password">비밀번호</label>
+          <input
+            id="att-password"
+            name="password"
+            type="password"
+            class="input"
+            autocomplete="current-password"
+            required
+            placeholder="초기값은 사번과 동일"
+          />
+
+          <p id="att-login-error" class="login-error" hidden></p>
+
           <div class="access-actions">
-            <button type="submit" class="btn accent">로그인</button>
-            <span id="att-login-hint" class="field-hint" role="status" aria-live="polite"></span>
+            <a href="/" class="btn">처음으로</a>
+            <button id="att-login-submit" type="submit" class="btn accent">로그인</button>
           </div>
         </form>
       </section>

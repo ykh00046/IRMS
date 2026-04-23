@@ -4,12 +4,19 @@
   const form = document.getElementById("att-login-form");
   const empInput = document.getElementById("att-emp-id");
   const passwordInput = document.getElementById("att-password");
-  const hint = document.getElementById("att-login-hint");
+  const errorEl = document.getElementById("att-login-error");
   if (!form) return;
 
   function setHint(message, tone) {
-    hint.textContent = message || "";
-    hint.className = `field-hint${tone ? ` ${tone}` : ""}`;
+    if (!errorEl) return;
+    if (!message) {
+      errorEl.textContent = "";
+      errorEl.hidden = true;
+      return;
+    }
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+    errorEl.className = tone === "muted" ? "login-note" : "login-error";
   }
 
   function mapError(raw) {

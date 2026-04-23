@@ -5,13 +5,19 @@
   const currentInput = document.getElementById("att-current-password");
   const newInput = document.getElementById("att-new-password");
   const confirmInput = document.getElementById("att-new-password-confirm");
-  const hint = document.getElementById("att-change-hint");
+  const errorEl = document.getElementById("att-change-error");
   const logoutBtn = document.getElementById("att-change-logout");
 
   function setHint(message, tone) {
-    if (!hint) return;
-    hint.textContent = message || "";
-    hint.className = `field-hint${tone ? ` ${tone}` : ""}`;
+    if (!errorEl) return;
+    if (!message) {
+      errorEl.textContent = "";
+      errorEl.hidden = true;
+      return;
+    }
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+    errorEl.className = tone === "muted" ? "login-note" : "login-error";
   }
 
   function mapError(raw) {

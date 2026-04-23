@@ -125,16 +125,34 @@
 .att-admin-picker {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.att-admin-picker select {
+.att-admin-field {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.att-admin-direct-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.att-admin-picker select,
+.att-admin-picker input {
   min-width: 220px;
   padding: 0.45rem 0.6rem;
   border-radius: 10px;
   border: 1px solid var(--border-strong, #d7dbe3);
   background: #fff;
   font-family: inherit;
+}
+
+.att-admin-picker input {
+  min-width: 150px;
 }
 
 .att-month-nav {
@@ -158,7 +176,7 @@
 
 .att-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 0.9rem;
 }
 
@@ -191,6 +209,48 @@
   color: var(--text-secondary, #334155);
   font-size: 0.85rem;
   margin-top: 0.3rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.att-big-unit strong {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.att-big-alert {
+  color: #b45309;
+}
+
+.att-big-leave {
+  color: #0f766e;
+}
+
+.att-annual-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.att-annual-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, #0f766e, #b45309);
+}
+
+.att-card-note {
+  margin: 0.65rem 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.att-card-note.warn {
+  color: #b45309;
 }
 
 .att-kv {
@@ -222,6 +282,47 @@
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-weight: 700;
   color: #0f172a;
+}
+
+.att-work-card {
+  border-top: 4px solid #0284c7;
+}
+
+.att-work-card-holiday {
+  border-top-color: #dc2626;
+}
+
+.att-work-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.att-work-grid li {
+  min-width: 0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.45rem 0 0.5rem;
+}
+
+.att-work-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-bottom: 0.18rem;
+}
+
+.att-work-grid strong {
+  display: block;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 1.15rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+  overflow-wrap: anywhere;
 }
 
 .att-table-wrap {
@@ -447,19 +548,6 @@
   margin: 0.7rem 0 0;
 }
 
-.field-hint {
-  font-size: 0.85rem;
-  color: var(--text-secondary, #334155);
-}
-
-.field-hint.muted {
-  color: var(--text-tertiary, #64748b);
-}
-
-.field-hint.error {
-  color: #dc2626;
-}
-
 @media (max-width: 640px) {
   .att-header h1 {
     font-size: 1rem;
@@ -467,5 +555,22 @@
 
   .att-big {
     font-size: 2rem;
+  }
+
+  .att-profile {
+    align-items: stretch;
+  }
+
+  .att-profile-display,
+  .att-admin-picker,
+  .att-admin-field,
+  .att-admin-direct-row,
+  .att-admin-picker select,
+  .att-admin-picker input {
+    width: 100%;
+  }
+
+  .att-admin-direct-row {
+    align-items: stretch;
   }
 }
