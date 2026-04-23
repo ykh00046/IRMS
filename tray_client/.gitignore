@@ -1,0 +1,7 @@
+assets/
+build/irms_notice/
+build_output/
+dist/
+Output/
+__pycache__/
+*.pyc

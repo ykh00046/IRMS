@@ -11,6 +11,7 @@ from starlette_csrf import CSRFMiddleware
 
 from .config import BASE_DIR, IS_DEVELOPMENT, SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
 from .database import init_db, utc_now_text
+from .middleware.internal_only import InternalNetworkOnlyMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
 
@@ -42,7 +43,12 @@ def create_app() -> FastAPI:
             re.compile(r"^/api/auth/login$"),
             re.compile(r"^/api/auth/management-login$"),
             re.compile(r"^/api/auth/operator-login$"),
+            re.compile(r"^/api/public/notice/.*$"),
         ],
+    )
+    app.add_middleware(
+        InternalNetworkOnlyMiddleware,
+        protected_prefixes=("/api/public/notice",),
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
