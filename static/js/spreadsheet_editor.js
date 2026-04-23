@@ -592,7 +592,10 @@
       // Auto-create next version product in spreadsheet if name changed
       if (nextName !== currentName) {
         try {
-          const newProduct = await IRMS.ssCreateProduct({ name: nextName });
+          const newProduct = await IRMS.ssCreateProduct({
+            name: nextName,
+            recipeType: product?.recipeType || "solution",
+          });
           activeProductId = newProduct.id;
           await loadProducts();
         } catch (_e) {

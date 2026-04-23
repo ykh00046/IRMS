@@ -135,6 +135,37 @@ def build_router() -> APIRouter:
 
             target = serialize_admin_user(target_row)
 
+            if int(current_user["id"]) == int(user_id) and (
+                not body.is_active or body.access_level != current_user["access_level"]
+            ):
+                raise HTTPException(status_code=400, detail="CANNOT_CHANGE_SELF_ACCESS")
+
+            removes_admin = (
+                target["access_level"] == "admin"
+                and target["is_active"]
+                and (not body.is_active or body.access_level != "admin")
+            )
+            if removes_admin:
+                remaining_admins = connection.execute(
+                    "SELECT COUNT(*) AS c FROM users WHERE access_level = 'admin' AND is_active = 1 AND id != ?",
+                    (user_id,),
+                ).fetchone()
+                if int(remaining_admins["c"]) == 0:
+                    raise HTTPException(status_code=400, detail="LAST_ADMIN")
+
+            removes_privileged = (
+                target["access_level"] in ("manager", "admin")
+                and target["is_active"]
+                and (not body.is_active or body.access_level == "operator")
+            )
+            if removes_privileged:
+                remaining_privileged = connection.execute(
+                    "SELECT COUNT(*) AS c FROM users WHERE access_level IN ('manager', 'admin') AND is_active = 1 AND id != ?",
+                    (user_id,),
+                ).fetchone()
+                if int(remaining_privileged["c"]) == 0:
+                    raise HTTPException(status_code=400, detail="LAST_MANAGER")
+
             connection.execute(
                 """
                 UPDATE users
@@ -198,7 +229,7 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
 
             connection.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
+                "UPDATE users SET password_hash = ?, session_token = NULL WHERE id = ?",
                 (hash_password(body.password), user_id),
             )
             target_user = row_to_dict(target_row)
@@ -235,6 +266,14 @@ def build_router() -> APIRouter:
             target_user = row_to_dict(target_row)
 
             if target_user["access_level"] in ("manager", "admin"):
+                if target_user["access_level"] == "admin":
+                    remaining_admins = connection.execute(
+                        "SELECT COUNT(*) AS c FROM users WHERE access_level = 'admin' AND is_active = 1 AND id != ?",
+                        (user_id,),
+                    ).fetchone()
+                    if int(remaining_admins["c"]) == 0:
+                        raise HTTPException(status_code=400, detail="LAST_ADMIN")
+
                 remaining = connection.execute(
                     "SELECT COUNT(*) AS c FROM users WHERE access_level IN ('manager', 'admin') AND is_active = 1 AND id != ?",
                     (user_id,),

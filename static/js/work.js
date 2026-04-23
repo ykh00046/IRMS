@@ -419,7 +419,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     }
 
-    const stepKey = `${current.recipeId}:${current.materialId}`;
+    const stepKey = `${current.recipeId}:${current.recipeItemId || current.materialId}`;
     if (weighing.lastSpokenStepKey !== stepKey) {
       weighing.lastSpokenStepKey = stepKey;
       const spokenValue = String(current.targetValue || "").trim();
@@ -535,13 +535,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const stepResult = await IRMS.completeWeighingStep(
         current.recipeId,
-        current.materialId
+        current.materialId,
+        current.recipeItemId
       );
 
       weighing.queue.shift();
       weighing.doneCount += 1;
       weighing.lastCompleted = {
         recipeId: current.recipeId,
+        recipeItemId: current.recipeItemId,
         materialId: current.materialId,
         materialName: current.materialName,
         productName: current.productName,
@@ -582,7 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const target = weighing.lastCompleted;
-      await IRMS.undoWeighingStep(target.recipeId, target.materialId);
+      await IRMS.undoWeighingStep(target.recipeId, target.materialId, target.recipeItemId);
       weighing.lastCompleted = null;
       if (weighing.doneCount > 0) {
         weighing.doneCount -= 1;

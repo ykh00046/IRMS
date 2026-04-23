@@ -42,6 +42,7 @@ def build_router() -> APIRouter:
                 SELECT
                     r.id AS recipe_id, r.product_name, r.position,
                     r.ink_name, r.status AS recipe_status, r.created_at,
+                    ri.id AS recipe_item_id,
                     ri.material_id, m.name AS material_name,
                     m.unit_type, m.unit, m.color_group,
                     ri.value_weight, ri.value_text
@@ -57,7 +58,7 @@ def build_router() -> APIRouter:
                         WHEN 'yellow' THEN 4
                         ELSE 5
                     END,
-                    m.name ASC, r.created_at ASC, r.id ASC
+                    m.name ASC, r.created_at ASC, r.id ASC, ri.id ASC
                 """,
                 params,
             ).fetchall()
@@ -107,18 +108,37 @@ def build_router() -> APIRouter:
             if recipe_row["status"] not in {"pending", "in_progress"}:
                 raise HTTPException(status_code=409, detail="RECIPE_NOT_ACTIVE")
 
-            item_row = connection.execute(
-                """
-                SELECT ri.id, m.name AS material_name,
-                    ri.value_weight, ri.value_text
-                FROM recipe_items ri
-                JOIN materials m ON m.id = ri.material_id
-                WHERE ri.recipe_id = ? AND ri.material_id = ?
-                """,
-                (body.recipe_id, body.material_id),
-            ).fetchone()
+            if body.recipe_item_id is None and body.material_id is None:
+                raise HTTPException(status_code=400, detail="RECIPE_ITEM_REQUIRED")
+
+            if body.recipe_item_id is not None:
+                item_row = connection.execute(
+                    """
+                    SELECT ri.id, ri.material_id, ri.measured_at, m.name AS material_name,
+                        ri.value_weight, ri.value_text
+                    FROM recipe_items ri
+                    JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id = ? AND ri.id = ?
+                    """,
+                    (body.recipe_id, body.recipe_item_id),
+                ).fetchone()
+            else:
+                item_row = connection.execute(
+                    """
+                    SELECT ri.id, ri.material_id, ri.measured_at, m.name AS material_name,
+                        ri.value_weight, ri.value_text
+                    FROM recipe_items ri
+                    JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id = ? AND ri.material_id = ? AND ri.measured_at IS NULL
+                    ORDER BY ri.id ASC
+                    LIMIT 1
+                    """,
+                    (body.recipe_id, body.material_id),
+                ).fetchone()
             if not item_row:
                 raise HTTPException(status_code=404, detail="Recipe item not found")
+            if item_row["measured_at"]:
+                raise HTTPException(status_code=409, detail="STEP_ALREADY_COMPLETED")
 
             measured_at = utc_now_text()
 
@@ -137,9 +157,9 @@ def build_router() -> APIRouter:
                 """
                 UPDATE recipe_items
                 SET measured_at = ?, measured_by = ?
-                WHERE recipe_id = ? AND material_id = ? AND measured_at IS NULL
+                WHERE id = ? AND measured_at IS NULL
                 """,
-                (measured_at, measured_by, body.recipe_id, body.material_id),
+                (measured_at, measured_by, int(item_row["id"])),
             )
             if update_cursor.rowcount == 0:
                 raise HTTPException(status_code=409, detail="STEP_ALREADY_COMPLETED")
@@ -149,7 +169,7 @@ def build_router() -> APIRouter:
             if item_weight is not None:
                 stock_info = stock_service.deduct_for_measurement(
                     connection,
-                    material_id=body.material_id,
+                    material_id=int(item_row["material_id"]),
                     weight=float(item_weight),
                     recipe_id=body.recipe_id,
                     recipe_item_id=int(item_row["id"]),
@@ -182,11 +202,12 @@ def build_router() -> APIRouter:
                 action="weighing_step_completed",
                 actor=current_user,
                 target_type="recipe_item",
-                target_id=f"{body.recipe_id}:{body.material_id}",
+                target_id=str(item_row["id"]),
                 target_label=f"{recipe_label(recipe_payload)} · {item_payload['material_name']}",
                 details={
                     "recipe_id": body.recipe_id,
-                    "material_id": body.material_id,
+                    "recipe_item_id": int(item_row["id"]),
+                    "material_id": int(item_row["material_id"]),
                     "material_name": item_payload["material_name"],
                     "target_value": item_payload["target_value"],
                     "measured_by": measured_by,
@@ -199,7 +220,8 @@ def build_router() -> APIRouter:
 
         return {
             "recipe_id": body.recipe_id,
-            "material_id": body.material_id,
+            "recipe_item_id": int(item_row["id"]),
+            "material_id": int(item_row["material_id"]),
             "measured_at": measured_at,
             "remaining_in_recipe": remaining_in_recipe,
             "remaining_total": remaining_total,
@@ -222,15 +244,31 @@ def build_router() -> APIRouter:
             if recipe_row["status"] in {"completed", "canceled"}:
                 raise HTTPException(status_code=409, detail="RECIPE_ALREADY_CLOSED")
 
-            item_row = connection.execute(
-                """
-                SELECT ri.id, m.name AS material_name, ri.measured_at
-                FROM recipe_items ri
-                JOIN materials m ON m.id = ri.material_id
-                WHERE ri.recipe_id = ? AND ri.material_id = ?
-                """,
-                (body.recipe_id, body.material_id),
-            ).fetchone()
+            if body.recipe_item_id is None and body.material_id is None:
+                raise HTTPException(status_code=400, detail="RECIPE_ITEM_REQUIRED")
+
+            if body.recipe_item_id is not None:
+                item_row = connection.execute(
+                    """
+                    SELECT ri.id, ri.material_id, m.name AS material_name, ri.measured_at
+                    FROM recipe_items ri
+                    JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id = ? AND ri.id = ?
+                    """,
+                    (body.recipe_id, body.recipe_item_id),
+                ).fetchone()
+            else:
+                item_row = connection.execute(
+                    """
+                    SELECT ri.id, ri.material_id, m.name AS material_name, ri.measured_at
+                    FROM recipe_items ri
+                    JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id = ? AND ri.material_id = ? AND ri.measured_at IS NOT NULL
+                    ORDER BY ri.measured_at DESC, ri.id DESC
+                    LIMIT 1
+                    """,
+                    (body.recipe_id, body.material_id),
+                ).fetchone()
             if not item_row:
                 raise HTTPException(status_code=404, detail="Recipe item not found")
             if not item_row["measured_at"]:
@@ -243,9 +281,9 @@ def build_router() -> APIRouter:
                 """
                 UPDATE recipe_items
                 SET measured_at = NULL, measured_by = NULL
-                WHERE recipe_id = ? AND material_id = ?
+                WHERE id = ?
                 """,
-                (body.recipe_id, body.material_id),
+                (int(item_row["id"]),),
             )
 
             # If recipe was auto-set to in_progress and now has no other measured items,
@@ -267,11 +305,12 @@ def build_router() -> APIRouter:
                 action="weighing_step_undone",
                 actor=current_user,
                 target_type="recipe_item",
-                target_id=f"{body.recipe_id}:{body.material_id}",
+                target_id=str(item_row["id"]),
                 target_label=f"{recipe_label(row_to_dict(recipe_row))} · {item_row['material_name']}",
                 details={
                     "recipe_id": body.recipe_id,
-                    "material_id": body.material_id,
+                    "recipe_item_id": int(item_row["id"]),
+                    "material_id": int(item_row["material_id"]),
                     "material_name": item_row["material_name"],
                 },
             )
@@ -279,7 +318,8 @@ def build_router() -> APIRouter:
 
         return {
             "recipe_id": body.recipe_id,
-            "material_id": body.material_id,
+            "recipe_item_id": int(item_row["id"]),
+            "material_id": int(item_row["material_id"]),
             "undone": True,
         }
 

@@ -1,6 +1,9 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from itsdangerous import URLSafeSerializer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -12,6 +15,7 @@ from ..auth import (
     logout_user,
     require_access_level,
 )
+from ..config import IS_DEVELOPMENT, SESSION_SECRET
 from ..database import get_connection, write_audit_log
 from .models import LoginRequest, actor_name
 
@@ -19,9 +23,21 @@ from .models import LoginRequest, actor_name
 def build_router() -> APIRouter:
     router = APIRouter()
     limiter = Limiter(key_func=get_remote_address)
+    csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
+
+    def _refresh_csrf_cookie(response: Response) -> None:
+        response.set_cookie(
+            "csrftoken",
+            csrf_serializer.dumps(secrets.token_urlsafe(128)),
+            path="/",
+            secure=not IS_DEVELOPMENT,
+            httponly=False,
+            samesite="lax",
+        )
 
     def _do_login(
         request: Request,
+        response: Response,
         user: dict[str, Any],
         action: str,
         entry_point: str,
@@ -40,6 +56,7 @@ def build_router() -> APIRouter:
                 details={"entry_point": entry_point},
             )
             connection.commit()
+        _refresh_csrf_cookie(response)
         return {"user": user}
 
     def _authenticate_or_fail(
@@ -73,22 +90,23 @@ def build_router() -> APIRouter:
 
     @router.post("/auth/login")
     @limiter.limit("5/minute")
-    async def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
+    async def auth_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "legacy_login")
-        return _do_login(request, user, "auth_login", "legacy_login")
+        return _do_login(request, response, user, "auth_login", "legacy_login")
 
     @router.post("/auth/management-login")
     @limiter.limit("5/minute")
-    async def auth_management_login(request: Request, body: LoginRequest) -> dict[str, Any]:
+    async def auth_management_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "management_login", required_level="manager")
-        return _do_login(request, user, "management_login", "management_login")
+        return _do_login(request, response, user, "management_login", "management_login")
 
     @router.post("/auth/operator-login")
     @limiter.limit("5/minute")
-    async def auth_operator_login(request: Request, body: LoginRequest) -> dict[str, Any]:
+    async def auth_operator_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "operator_login")
         return _do_login(
             request,
+            response,
             user,
             "operator_select",
             "operator_login",

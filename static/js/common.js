@@ -38,8 +38,15 @@
 
     if (!response.ok) {
       let payload = null;
+      let detailText = "";
+      const contentType = response.headers.get("content-type") || "";
       try {
-        payload = await response.json();
+        if (!contentType.includes("application/json")) {
+          detailText = await response.text();
+          payload = { detail: detailText || response.statusText };
+        } else {
+          payload = await response.json();
+        }
       } catch (_error) {
         payload = { detail: response.statusText };
       }
@@ -48,8 +55,18 @@
         payload?.detail ||
         payload?.message ||
         `Request failed (${response.status})`;
+      const isCsrfFailure =
+        response.status === 403 &&
+        String(detail).toLowerCase().includes("csrf");
+      if (isCsrfFailure) {
+        document.cookie = "csrftoken=; Max-Age=0; path=/; SameSite=Lax";
+        if (typeof window !== "undefined") {
+          window.location.reload();
+        }
+      }
       if (
         (response.status === 401 || response.status === 403) &&
+        !isCsrfFailure &&
         typeof window !== "undefined" &&
         !window.location.pathname.startsWith("/management/login") &&
         !window.location.pathname.startsWith("/weighing/select") &&
@@ -515,6 +532,7 @@
       inkName: row.ink_name,
       recipeStatus: row.recipe_status,
       createdAt: row.created_at,
+      recipeItemId: row.recipe_item_id,
       materialId: row.material_id,
       materialName: row.material_name,
       unitType: row.unit_type,
@@ -539,23 +557,29 @@
     };
   }
 
-  async function completeWeighingStep(recipeId, materialId) {
+  async function completeWeighingStep(recipeId, materialId, recipeItemId) {
+    const body = { recipe_id: recipeId };
+    if (recipeItemId) {
+      body.recipe_item_id = recipeItemId;
+    } else {
+      body.material_id = materialId;
+    }
     return request("/weighing/step/complete", {
       method: "POST",
-      body: {
-        recipe_id: recipeId,
-        material_id: materialId,
-      },
+      body,
     });
   }
 
-  async function undoWeighingStep(recipeId, materialId) {
+  async function undoWeighingStep(recipeId, materialId, recipeItemId) {
+    const body = { recipe_id: recipeId };
+    if (recipeItemId) {
+      body.recipe_item_id = recipeItemId;
+    } else {
+      body.material_id = materialId;
+    }
     return request("/weighing/step/undo", {
       method: "POST",
-      body: {
-        recipe_id: recipeId,
-        material_id: materialId,
-      },
+      body,
     });
   }
 
@@ -801,6 +825,7 @@
         id: p.id,
         name: p.name,
         description: p.description,
+        recipeType: p.recipeType,
         columnCount: p.columnCount,
         rowCount: p.rowCount,
         updatedAt: p.updatedAt,

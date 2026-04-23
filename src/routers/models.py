@@ -29,12 +29,14 @@ class StatusUpdateRequest(BaseModel):
 
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
-    material_id: int = Field(gt=0)
+    material_id: int | None = Field(default=None, gt=0)
+    recipe_item_id: int | None = Field(default=None, gt=0)
 
 
 class WeighingStepUndoRequest(BaseModel):
     recipe_id: int = Field(gt=0)
-    material_id: int = Field(gt=0)
+    material_id: int | None = Field(default=None, gt=0)
+    recipe_item_id: int | None = Field(default=None, gt=0)
 
 
 class WeighingRecipeCompleteRequest(BaseModel):
