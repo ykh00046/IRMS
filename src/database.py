@@ -38,6 +38,7 @@ _ALLOWED_TABLES = frozenset({
     "ss_columns",
     "ss_rows",
     "ss_cells",
+    "attendance_users",
 })
 
 
@@ -220,7 +221,8 @@ def init_db() -> None:
                 role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
                 access_level TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                session_token TEXT
             );
 
             CREATE TABLE IF NOT EXISTS materials (
@@ -230,7 +232,9 @@ def init_db() -> None:
                 unit TEXT NOT NULL,
                 color_group TEXT NOT NULL CHECK (color_group IN ('black', 'red', 'blue', 'yellow', 'none')),
                 category TEXT,
-                is_active INTEGER NOT NULL DEFAULT 1
+                is_active INTEGER NOT NULL DEFAULT 1,
+                stock_quantity REAL NOT NULL DEFAULT 0,
+                stock_threshold REAL NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS material_aliases (
@@ -247,7 +251,15 @@ def init_db() -> None:
                 status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'canceled', 'draft')),
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                completed_at TEXT
+                completed_at TEXT,
+                note TEXT,
+                cancel_reason TEXT,
+                started_by TEXT,
+                started_at TEXT,
+                raw_input_hash TEXT,
+                raw_input_text TEXT,
+                revision_of INTEGER,
+                remark TEXT
             );
 
             CREATE TABLE IF NOT EXISTS recipe_items (
@@ -255,7 +267,9 @@ def init_db() -> None:
                 recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
                 material_id INTEGER NOT NULL REFERENCES materials(id),
                 value_weight REAL,
-                value_text TEXT
+                value_text TEXT,
+                measured_at TEXT,
+                measured_by TEXT
             );
 
             CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -312,11 +326,25 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_key, id DESC);
             CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
 
+            CREATE TABLE IF NOT EXISTS attendance_users (
+                emp_id TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                password_reset_required INTEGER NOT NULL DEFAULT 1,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until TEXT,
+                last_login_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_attendance_users_locked_until
+                ON attendance_users(locked_until);
+
             -- Spreadsheet editor tables
             CREATE TABLE IF NOT EXISTS ss_products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 description TEXT,
+                recipe_type TEXT NOT NULL DEFAULT 'solution',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );

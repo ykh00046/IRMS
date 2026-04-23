@@ -153,6 +153,38 @@
         <section class="panel">
           <div class="panel-head-row">
             <div>
+              <span class="kicker">근태 계정 관리</span>
+              <h3 class="panel-title">근태 사용자 비밀번호 초기화</h3>
+            </div>
+            <button id="att-users-refresh" type="button" class="btn">새로고침</button>
+          </div>
+          <p class="panel-subtitle">
+            근태 로그인 계정 목록입니다. 비밀번호를 잃어버린 직원이 있으면 사번으로 초기화할 수 있으며,
+            해당 직원은 다음 로그인 시 비밀번호를 새로 설정하게 됩니다.
+          </p>
+          <div class="table-wrap">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>사번</th>
+                  <th>비번 상태</th>
+                  <th>실패 횟수</th>
+                  <th>잠금 해제 시각</th>
+                  <th>최근 로그인</th>
+                  <th>생성일</th>
+                  <th>초기화</th>
+                </tr>
+              </thead>
+              <tbody id="att-users-body">
+                <tr><td colspan="7" style="text-align:center;color:#64748b">로딩 중...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head-row">
+            <div>
               <span class="kicker">시스템 관리</span>
               <h3 class="panel-title">대화방 관리</h3>
             </div>

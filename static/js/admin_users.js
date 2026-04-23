@@ -325,6 +325,9 @@
     } catch (error) {
       const messageMap = {
         USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
+        CANNOT_CHANGE_SELF_ACCESS: "본인 계정의 권한 또는 활성 상태는 직접 변경할 수 없습니다.",
+        LAST_ADMIN: "마지막 관리자 계정은 변경할 수 없습니다.",
+        LAST_MANAGER: "마지막 책임자 계정은 변경할 수 없습니다.",
       };
       IRMS.notify(`저장 실패: ${messageMap[error.message] || error.message}`, "error");
     } finally {
@@ -398,6 +401,7 @@
       const messageMap = {
         USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
         CANNOT_DELETE_SELF: "본인 계정은 삭제할 수 없습니다.",
+        LAST_ADMIN: "마지막 관리자 계정은 삭제할 수 없습니다.",
         LAST_MANAGER: "마지막 책임자 계정은 삭제할 수 없습니다.",
       };
       IRMS.notify(`삭제 실패: ${messageMap[error.message] || error.message}`, "error");
@@ -427,6 +431,95 @@
       }
     });
   }
+
+  // Attendance users
+  const attUsersBody = document.getElementById("att-users-body");
+  const attUsersRefresh = document.getElementById("att-users-refresh");
+
+  async function attendanceFetch(path, options) {
+    const opts = options || {};
+    const method = opts.method || "GET";
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : "";
+    const headers = opts.body
+      ? { "Content-Type": "application/json", "x-csrftoken": csrfToken }
+      : undefined;
+    const response = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const payload = await response.json();
+        detail = payload?.detail?.detail || payload?.detail || "";
+      } catch (_) {
+        detail = response.statusText;
+      }
+      throw new Error(String(detail));
+    }
+    return response.json();
+  }
+
+  function formatAttDate(text) {
+    if (!text) return "—";
+    return String(text).replace("T", " ").replace("Z", "");
+  }
+
+  async function loadAttendanceUsers() {
+    if (!attUsersBody) return;
+    attUsersBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b">로딩 중...</td></tr>';
+    try {
+      const data = await attendanceFetch("/api/attendance/admin/users");
+      const items = data.items || [];
+      if (!items.length) {
+        attUsersBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b">등록된 근태 계정이 없습니다.</td></tr>';
+        return;
+      }
+      attUsersBody.innerHTML = "";
+      items.forEach((item) => {
+        const tr = document.createElement("tr");
+        const resetTag = item.password_reset_required
+          ? '<span style="color:#b45309;font-weight:700">초기 상태</span>'
+          : '<span style="color:#166534">사용자 설정됨</span>';
+        tr.innerHTML = `
+          <td class="mono">${item.emp_id}</td>
+          <td>${resetTag}</td>
+          <td>${item.failed_attempts}</td>
+          <td>${formatAttDate(item.locked_until)}</td>
+          <td>${formatAttDate(item.last_login_at)}</td>
+          <td>${formatAttDate(item.created_at)}</td>
+          <td><button type="button" class="btn compact danger" data-emp-id="${item.emp_id}">사번으로 초기화</button></td>`;
+        attUsersBody.appendChild(tr);
+      });
+      attUsersBody.querySelectorAll("button[data-emp-id]").forEach((btn) => {
+        btn.addEventListener("click", async (event) => {
+          const empId = event.currentTarget.dataset.empId;
+          if (!empId) return;
+          if (!window.confirm(`사번 ${empId}의 비밀번호를 사번으로 초기화할까요?`)) return;
+          try {
+            event.currentTarget.disabled = true;
+            await attendanceFetch("/api/attendance/admin/reset-password", {
+              method: "POST",
+              body: { emp_id: empId },
+            });
+            IRMS.notify(`사번 ${empId} 비밀번호를 초기화했습니다.`, "success");
+            loadAttendanceUsers();
+          } catch (err) {
+            IRMS.notify(`초기화 실패: ${err.message}`, "error");
+            event.currentTarget.disabled = false;
+          }
+        });
+      });
+    } catch (err) {
+      attUsersBody.innerHTML = `<tr><td colspan="7" style="color:#dc2626;text-align:center">${err.message}</td></tr>`;
+    }
+  }
+
+  attUsersRefresh?.addEventListener("click", loadAttendanceUsers);
+  loadAttendanceUsers();
 
   refreshDashboard();
 });

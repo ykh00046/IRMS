@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IRMS · 근태 로그인</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/common.css" />
+    <link rel="stylesheet" href="/static/css/access.css" />
+    <link rel="stylesheet" href="/static/css/attendance.css" />
+  </head>
+  <body>
+    <main class="access-shell">
+      <section class="access-stage access-stage-split">
+        <div class="access-hero">
+          <p class="eyebrow">Attendance</p>
+          <h1>내 근태 확인</h1>
+          <p class="access-subtitle">
+            사번을 입력해 이번 달 출퇴근·지각·연장 시간을 확인합니다.
+            초기 비밀번호는 사번과 동일하며, 첫 로그인 후 반드시 변경해주세요.
+          </p>
+          <p class="access-subtitle">
+            <a href="/" class="btn compact">← 처음 화면</a>
+          </p>
+        </div>
+
+        <form id="att-login-form" class="access-form" autocomplete="off">
+          <label class="field">
+            <span class="field-label">사번</span>
+            <input
+              id="att-emp-id"
+              name="emp_id"
+              type="text"
+              inputmode="numeric"
+              autocomplete="username"
+              required
+              minlength="1"
+              maxlength="20"
+              placeholder="예) 171013"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">비밀번호</span>
+            <input
+              id="att-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              placeholder="초기값은 사번과 동일"
+            />
+          </label>
+          <div class="access-actions">
+            <button type="submit" class="btn accent">로그인</button>
+            <span id="att-login-hint" class="field-hint" role="status" aria-live="polite"></span>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/attendance_login.js"></script>
+  </body>
+</html>

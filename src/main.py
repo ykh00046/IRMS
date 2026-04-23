@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
             re.compile(r"^/api/auth/management-login$"),
             re.compile(r"^/api/auth/operator-login$"),
             re.compile(r"^/api/public/notice/.*$"),
+            re.compile(r"^/api/attendance/login$"),
         ],
     )
     app.add_middleware(

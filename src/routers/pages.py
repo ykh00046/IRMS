@@ -4,6 +4,10 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from ..attendance_auth import (
+    current_attendance_emp_id,
+    is_admin_mode,
+)
 from ..auth import get_current_user, has_access_level, list_users_by_access_levels
 from ..config import SEED_DEMO_DATA
 
@@ -115,6 +119,40 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/admin/users", response_class=HTMLResponse)
     async def admin_users_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "admin_users.html", "admin")
+
+    @router.get("/attendance", response_class=HTMLResponse)
+    async def attendance_page(request: Request) -> Response:
+        emp_id = current_attendance_emp_id(request)
+        admin = is_admin_mode(request)
+        if not emp_id and not admin:
+            return RedirectResponse(url="/attendance/login", status_code=303)
+        if emp_id:
+            sess = request.session.get("att_user") or {}
+            if sess.get("password_reset_required"):
+                return RedirectResponse(url="/attendance/change-password", status_code=303)
+        return _render(templates, request, "attendance.html", {
+            "current_user": get_current_user(request, required=False),
+            "emp_id": emp_id,
+            "admin_mode": admin,
+        })
+
+    @router.get("/attendance/login", response_class=HTMLResponse)
+    async def attendance_login_page(request: Request) -> Response:
+        if current_attendance_emp_id(request) or is_admin_mode(request):
+            return RedirectResponse(url="/attendance", status_code=303)
+        return _render(templates, request, "attendance_login.html", {
+            "current_user": get_current_user(request, required=False),
+        })
+
+    @router.get("/attendance/change-password", response_class=HTMLResponse)
+    async def attendance_change_password_page(request: Request) -> Response:
+        emp_id = current_attendance_emp_id(request)
+        if not emp_id:
+            return RedirectResponse(url="/attendance/login", status_code=303)
+        return _render(templates, request, "attendance_change_password.html", {
+            "current_user": get_current_user(request, required=False),
+            "emp_id": emp_id,
+        })
 
     @router.get("/work.html", response_class=HTMLResponse)
     async def work_page_alias(request: Request) -> Response:
