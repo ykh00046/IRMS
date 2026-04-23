@@ -9,3 +9,4 @@
 | recipe-version-history | 98% | 2026-04-15 | [Plan](recipe-version-history/plan.md), [Design](recipe-version-history/design.md), [Analysis](recipe-version-history/analysis.md), [Report](recipe-version-history/report.md) |
 | measurement-dashboard | 97% | 2026-04-15 | [Plan](measurement-dashboard/plan.md), [Design](measurement-dashboard/design.md), [Analysis](measurement-dashboard/analysis.md), [Report](measurement-dashboard/report.md) |
 | attendance-view | 96% | 2026-04-23 | [Plan](attendance-view/attendance-view.plan.md), [Design](attendance-view/attendance-view.design.md), [Analysis](attendance-view/attendance-view.analysis.md), [Report](attendance-view/attendance-view.report.md) |
+| attendance-alert | 98% | 2026-04-24 | [Plan](attendance-alert/attendance-alert.plan.md), [Design](attendance-alert/attendance-alert.design.md), [Analysis](attendance-alert/attendance-alert.analysis.md), [Report](attendance-alert/attendance-alert.report.md) |

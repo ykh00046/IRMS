@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-04-23T14:30:00.000Z",
+  "lastUpdated": "2026-04-24T00:15:00.000Z",
   "activeFeatures": [],
   "primaryFeature": null,
   "features": {
@@ -73,6 +73,41 @@
           "lastModified": "2026-04-23"
         }
       }
+    },
+    "attendance-alert": {
+      "phase": "archived",
+      "matchRate": 98,
+      "updatedAt": "2026-04-24",
+      "archivedTo": "docs/archive/2026-04/attendance-alert",
+      "archivedAt": "2026-04-24",
+      "documents": {
+        "plan": "docs/archive/2026-04/attendance-alert/attendance-alert.plan.md",
+        "design": "docs/archive/2026-04/attendance-alert/attendance-alert.design.md",
+        "analysis": "docs/archive/2026-04/attendance-alert/attendance-alert.analysis.md",
+        "report": "docs/archive/2026-04/attendance-alert/attendance-alert.report.md"
+      },
+      "status": {
+        "plan": {
+          "state": "completed",
+          "lastModified": "2026-04-24"
+        },
+        "design": {
+          "state": "completed",
+          "lastModified": "2026-04-24"
+        },
+        "do": {
+          "state": "completed",
+          "lastModified": "2026-04-24"
+        },
+        "analysis": {
+          "state": "completed",
+          "lastModified": "2026-04-24"
+        },
+        "report": {
+          "state": "completed",
+          "lastModified": "2026-04-24"
+        }
+      }
     }
   },
   "pipeline": {
@@ -83,7 +118,7 @@
   "session": {
     "startedAt": "2026-03-07T15:00:00.000Z",
     "onboardingCompleted": true,
-    "lastActivity": "2026-04-23T14:30:00.000Z"
+    "lastActivity": "2026-04-24T00:15:00.000Z"
   },
   "history": []
 }
