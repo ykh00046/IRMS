@@ -16,8 +16,8 @@ ASSETS = ROOT / "assets"
 SRC = ROOT / "src"
 
 a = Analysis(
-    [str(SRC / "main.py")],
-    pathex=[str(ROOT), str(SRC)],
+    [str(ROOT / "run.py")],
+    pathex=[str(ROOT)],
     datas=[
         (str(ASSETS / "icon.ico"), "assets"),
         (str(ASSETS / "ding.wav"), "assets"),
