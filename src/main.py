@@ -49,7 +49,10 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         InternalNetworkOnlyMiddleware,
-        protected_prefixes=("/api/public/notice",),
+        protected_prefixes=(
+            "/api/public/notice",
+            "/api/public/attendance-alerts",
+        ),
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))

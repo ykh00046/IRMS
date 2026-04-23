@@ -16,6 +16,7 @@ import pystray
 from PIL import Image
 from pystray import Menu, MenuItem
 
+from .attendance_alerts import AttendanceAlertPoller, today_iso
 from .config import Config, logs_dir
 from .logger import setup_logger
 from .poller import Poller
@@ -58,6 +59,12 @@ class TrayApp:
         )
         self._status = "대기 중"
         self._icon: pystray.Icon | None = None
+        self._alert_mute_date: str | None = None
+        self.alert_poller = AttendanceAlertPoller(
+            config=self.config,
+            icon_getter=lambda: self._icon,
+            is_enabled_getter=self._alerts_enabled_today,
+        )
 
     def run(self) -> None:
         self.logger.info(
@@ -67,6 +74,7 @@ class TrayApp:
         )
         self.tts.start()
         self.poller.start()
+        self.alert_poller.start()
 
         self._icon = pystray.Icon(
             "irms_notice",
@@ -78,8 +86,14 @@ class TrayApp:
             self._icon.run()
         finally:
             self.logger.info("shutting down")
+            self.alert_poller.stop()
             self.poller.stop()
             self.tts.stop()
+
+    def _alerts_enabled_today(self) -> bool:
+        if self._alert_mute_date is None:
+            return True
+        return self._alert_mute_date != today_iso()
 
     def _build_menu(self) -> Menu:
         return Menu(
@@ -88,7 +102,16 @@ class TrayApp:
                 lambda _item: "음소거 해제" if self.config.muted else "음소거",
                 self._toggle_mute,
             ),
+            MenuItem(
+                lambda _item: (
+                    "오늘 근태 알림 끄기"
+                    if self._alerts_enabled_today()
+                    else "오늘 근태 알림 켜기 (자정 자동 복귀)"
+                ),
+                self._toggle_alert_mute_today,
+            ),
             MenuItem("테스트 재생", self._test_play),
+            MenuItem("근태 알림 테스트", self._test_alert),
             MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
@@ -116,6 +139,19 @@ class TrayApp:
 
     def _test_play(self, _icon, _item) -> None:
         self.tts.enqueue_raw("테스트 공지입니다. 정상적으로 들리면 설치가 완료된 것입니다.")
+
+    def _toggle_alert_mute_today(self, _icon, _item) -> None:
+        if self._alerts_enabled_today():
+            self._alert_mute_date = today_iso()
+            self.logger.info("attendance alerts muted for %s", self._alert_mute_date)
+        else:
+            self._alert_mute_date = None
+            self.logger.info("attendance alerts re-enabled")
+        if self._icon is not None:
+            self._icon.update_menu()
+
+    def _test_alert(self, _icon, _item) -> None:
+        self.alert_poller.trigger_once()
 
     def _open_logs(self, _icon, _item) -> None:
         path = logs_dir()

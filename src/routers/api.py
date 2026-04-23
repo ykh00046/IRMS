@@ -7,6 +7,7 @@ from . import (
     auth_routes,
     chat_routes,
     dashboard_routes,
+    public_attendance_alert_routes,
     public_notice_routes,
     recipe_routes,
     spreadsheet_routes,
@@ -21,6 +22,7 @@ def build_router() -> APIRouter:
     admin_router = admin_routes.build_router()
     chat_router = chat_routes.build_router()
     public_notice_router = public_notice_routes.build_router()
+    public_attendance_alert_router = public_attendance_alert_routes.build_router()
     attendance_router = attendance_routes.build_router()
     recipe_op_router, recipe_mgr_router = recipe_routes.build_router()
     weighing_router = weighing_routes.build_router()
@@ -33,6 +35,7 @@ def build_router() -> APIRouter:
 
     router.include_router(public_router)
     router.include_router(public_notice_router)
+    router.include_router(public_attendance_alert_router)
     router.include_router(attendance_router)
     router.include_router(auth_me_router)
     router.include_router(recipe_op_router)
