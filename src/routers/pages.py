@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from ..attendance_auth import (
     current_attendance_emp_id,
     is_admin_mode,
+    logout_session as att_logout_session,
 )
 from ..auth import get_current_user, has_access_level, list_users_by_access_levels
 from ..config import SEED_DEMO_DATA
@@ -69,6 +70,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     async def entry_page(request: Request) -> Response:
+        # 처음 화면으로 돌아오면 항상 근태 세션을 비워서, 다음 사용자가
+        # 같은 PC에서 바로 열었을 때 이전 사용자의 근태가 노출되지 않게
+        # 한다. IRMS 관리자 세션은 별도 네임스페이스라 영향 없음.
+        att_logout_session(request)
         return _render(templates, request, "entry.html", {
             "current_user": get_current_user(request, required=False),
         })
