@@ -34,6 +34,8 @@ from openpyxl.utils.exceptions import InvalidFileException
 ATTENDANCE_DIR = Path(r"C:\ErpExcel")
 FILENAME_PATTERN = "monthly_attendance_{year_month}.xlsx"
 FILENAME_REGEX = re.compile(r"^monthly_attendance_(\d{4}-\d{2})\.xlsx$")
+ANNUAL_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "반차", "유급", "공가")
+HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 
 COL_DATE = 0
 COL_WEEKDAY = 1
@@ -135,7 +137,9 @@ class AttendanceSummary:
 @dataclass
 class AttendanceAnnualSummary:
     year: int
+    available_months_count: int = 0
     months_count: int = 0
+    skipped_months: list[str] = field(default_factory=list)
     late_count: int = 0
     late_total: float = 0.0
     annual_leave_count: int = 0
@@ -177,10 +181,16 @@ def detect_today_anomalies(
     return an empty list so the tray popup stays silent on non-working days.
 
     Detection rules per employee row on the weekday:
-      - check_in 없음           → "출근 누락"
-      - check_out 없음          → "퇴근 누락"
-      - late_hours > 0          → "지각 {:g}시간"
+      - check_in 없음           → "출근 누락"  (출근 기록이 들어오면 해소)
+      - check_out 없음          → "퇴근 누락"  (퇴근 기록이 들어오면 해소)
       - early_leave_hours > 0   → "조퇴 {:g}시간"
+
+    ``late_hours`` (지각) is intentionally NOT flagged: once a tardy
+    row is written it stays in the Excel for the rest of the day,
+    so alerting on it would create a popup that keeps repeating
+    every 30 minutes until midnight with no way for the worker to
+    resolve it. The main /attendance page still surfaces tardy
+    counts in the monthly summary.
 
     Raises ``MonthFileNotFound`` or ``FileLocked`` on I/O issues.
     """
@@ -209,8 +219,6 @@ def detect_today_anomalies(
                 issues.append("출근 누락")
             if not row.check_out:
                 issues.append("퇴근 누락")
-            if row.late_hours > 0:
-                issues.append(f"지각 {row.late_hours:g}시간")
             if row.early_leave_hours > 0:
                 issues.append(f"조퇴 {row.early_leave_hours:g}시간")
             if issues:
@@ -339,12 +347,12 @@ def _record_to_profile(rec: dict[str, Any]) -> AttendanceProfile:
 
 def _is_annual_leave_row(row: AttendanceRow) -> bool:
     text = f"{row.day_type} {row.note}".strip()
-    return any(keyword in text for keyword in ("연차", "월차", "휴가", "반차"))
+    return any(keyword in text for keyword in ANNUAL_LEAVE_KEYWORDS)
 
 
 def _annual_leave_days(row: AttendanceRow) -> float:
     text = f"{row.day_type} {row.note}"
-    if "반차" in text or "오전" in text or "오후" in text:
+    if any(keyword in text for keyword in HALF_DAY_LEAVE_KEYWORDS):
         return 0.5
     return 1.0
 
@@ -415,10 +423,10 @@ def employee_profile_from_any_month(emp_id: str) -> AttendanceProfile | None:
     return None
 
 
-def load_month_for_employee(
+def _load_month_rows_for_employee(
     year_month: str, emp_id: str
-) -> tuple[AttendanceProfile | None, list[AttendanceRow], AttendanceSummary]:
-    """Return (profile, rows, summary) for one employee in one month."""
+) -> tuple[AttendanceProfile | None, list[AttendanceRow]]:
+    """Return the rows present in one month without searching other months."""
     path = month_file_path(year_month)
     wb = _load_workbook(path)
     try:
@@ -435,6 +443,14 @@ def load_month_for_employee(
     finally:
         wb.close()
 
+    return profile, rows
+
+
+def load_month_for_employee(
+    year_month: str, emp_id: str
+) -> tuple[AttendanceProfile | None, list[AttendanceRow], AttendanceSummary]:
+    """Return (profile, rows, summary) for one employee in one month."""
+    profile, rows = _load_month_rows_for_employee(year_month, emp_id)
     if profile is None:
         profile = employee_profile_from_any_month(emp_id)
     summary = _summarize(rows)
@@ -445,15 +461,17 @@ def load_year_summary_for_employee(year: int, emp_id: str) -> AttendanceAnnualSu
     """Aggregate yearly late/annual-leave totals from available monthly files."""
     summary = AttendanceAnnualSummary(year=year)
     prefix = f"{year:04d}-"
-    for ym in available_months():
-        if not ym.startswith(prefix):
-            continue
+    year_months = [ym for ym in available_months() if ym.startswith(prefix)]
+    summary.available_months_count = len(year_months)
+    for ym in year_months:
         try:
-            _profile, rows, month_summary = load_month_for_employee(ym, emp_id)
+            _profile, rows = _load_month_rows_for_employee(ym, emp_id)
         except (MonthFileNotFound, FileLocked, FileFormatInvalid):
+            summary.skipped_months.append(ym)
             continue
         if not rows:
             continue
+        month_summary = _summarize(rows)
         summary.months_count += 1
         summary.late_count += month_summary.late_count
         summary.late_total += month_summary.late_total
