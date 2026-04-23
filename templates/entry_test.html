@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IRMS · Entry</title>
+    <title>IRMS · Test Entry</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,16 +14,16 @@
     <link rel="stylesheet" href="/static/css/access.css" />
   </head>
   <body>
-    <a href="/test" class="entry-test-corner" title="테스트 화면 (계량·관리)">test</a>
+    <a href="/" class="entry-test-corner" title="처음으로">← home</a>
 
     <main class="access-shell">
       <section class="access-stage">
         <div class="access-hero">
-          <p class="eyebrow">IRMS Entry Gate</p>
-          <h1>근태 확인</h1>
+          <p class="eyebrow">IRMS Test Gate</p>
+          <h1>계량 · 관리 화면</h1>
           <p class="access-subtitle">
-            사번으로 로그인해 이번 달 출퇴근과 연장 시간을 확인합니다.
-            초기 비밀번호는 사번과 동일합니다.
+            현재 메인 페이지에서 감춰진 계량·관리 화면 진입점입니다.
+            정식 운영 전 테스트 용도로만 사용합니다.
           </p>
         </div>
 
@@ -39,11 +39,18 @@
         {% endif %}
 
         <div class="access-grid">
-          <article class="access-card access-card-att">
-            <span class="access-chip">Attendance</span>
-            <h2>근태 확인</h2>
-            <p>사번으로 로그인해 이번 달 출퇴근과 연장 시간을 확인합니다. 초기 비밀번호는 사번입니다.</p>
-            <a href="/attendance" class="btn accent access-link">근태 보기</a>
+          <article class="access-card access-card-work">
+            <span class="access-chip">Factory Floor</span>
+            <h2>계량 시작</h2>
+            <p>담당자 목록에서 선택한 뒤 계량 대시보드로 이동합니다.</p>
+            <a href="/weighing/select" class="btn accent access-link">담당자 선택</a>
+          </article>
+
+          <article class="access-card access-card-mgmt">
+            <span class="access-chip">Control Room</span>
+            <h2>관리 화면</h2>
+            <p>책임자를 선택하고 비밀번호를 입력한 뒤 관리 화면과 인사이트로 이동합니다.</p>
+            <a href="/management/login" class="btn access-link">책임자 로그인</a>
           </article>
         </div>
       </section>

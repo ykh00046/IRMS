@@ -13,9 +13,17 @@ from ..config import SEED_DEMO_DATA
 
 
 def _safe_next(next_url: str | None, default: str) -> str:
-    if not next_url or not next_url.startswith("/"):
+    if not next_url:
         return default
-    return next_url
+    value = next_url.strip()
+    if (
+        not value.startswith("/")
+        or value.startswith("//")
+        or "\\" in value
+        or any(ord(ch) < 32 for ch in value)
+    ):
+        return default
+    return value
 
 
 def _build_context(request: Request, **extra) -> dict:
@@ -62,6 +70,12 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/", response_class=HTMLResponse)
     async def entry_page(request: Request) -> Response:
         return _render(templates, request, "entry.html", {
+            "current_user": get_current_user(request, required=False),
+        })
+
+    @router.get("/test", response_class=HTMLResponse)
+    async def entry_test_page(request: Request) -> Response:
+        return _render(templates, request, "entry_test.html", {
             "current_user": get_current_user(request, required=False),
         })
 
