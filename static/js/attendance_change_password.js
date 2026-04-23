@@ -70,6 +70,16 @@
         current_password: current,
         new_password: next,
       });
+      // Clear any dismissed-banner flag so the new state (no banner) is clean.
+      try {
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith("irms_att_reset_dismissed_")) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (_) {
+        /* ignore */
+      }
       setHint("변경 완료. 이동 중...", "muted");
       window.location.assign("/attendance");
     } catch (error) {

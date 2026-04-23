@@ -36,12 +36,13 @@
 
     <main class="att-shell">
       {% if password_reset_required %}
-      <section class="att-warning-banner" id="att-reset-banner">
+      <section class="att-warning-banner" id="att-reset-banner" data-emp-id="{{ emp_id or '' }}" hidden>
         <span class="att-warning-icon" aria-hidden="true">⚠️</span>
         <span class="att-warning-text">
           초기 비밀번호(사번과 동일)를 사용 중입니다. 보안을 위해 변경해주세요.
         </span>
         <a href="/attendance/change-password" class="btn compact accent">비밀번호 변경</a>
+        <button id="att-reset-banner-dismiss" type="button" class="att-warning-close" aria-label="닫기">×</button>
       </section>
       {% endif %}
 
@@ -102,23 +103,31 @@
           <table class="att-table" id="att-rows-table">
             <thead>
               <tr>
-                <th>일자</th>
-                <th>요일</th>
-                <th>구분</th>
-                <th>출근</th>
-                <th>퇴근</th>
-                <th>정상</th>
-                <th>연장</th>
-                <th>야근</th>
-                <th>조출</th>
-                <th>지각</th>
-                <th>조퇴</th>
-                <th>외출</th>
-                <th>비고</th>
+                <th rowspan="2">일자</th>
+                <th rowspan="2">요일</th>
+                <th rowspan="2">구분</th>
+                <th rowspan="2">출근</th>
+                <th rowspan="2">퇴근</th>
+                <th colspan="4" class="att-group-weekday">평일 근무</th>
+                <th colspan="4" class="att-group-holiday">휴일 근무</th>
+                <th rowspan="2">지각</th>
+                <th rowspan="2">조퇴</th>
+                <th rowspan="2">외출</th>
+                <th rowspan="2">비고</th>
+              </tr>
+              <tr>
+                <th class="att-group-weekday">정상</th>
+                <th class="att-group-weekday">연장</th>
+                <th class="att-group-weekday">야근</th>
+                <th class="att-group-weekday">조출</th>
+                <th class="att-group-holiday">정상</th>
+                <th class="att-group-holiday">연장</th>
+                <th class="att-group-holiday">야근</th>
+                <th class="att-group-holiday">조출</th>
               </tr>
             </thead>
             <tbody id="att-rows-body">
-              <tr class="att-empty-row"><td colspan="13">로딩 중...</td></tr>
+              <tr class="att-empty-row"><td colspan="17">로딩 중...</td></tr>
             </tbody>
           </table>
         </div>

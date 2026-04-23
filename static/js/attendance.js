@@ -165,33 +165,53 @@
     if (!rows || !rows.length) {
       const tr = document.createElement("tr");
       tr.className = "att-empty-row";
-      tr.innerHTML = '<td colspan="13">이 달은 표시할 근태 데이터가 없습니다.</td>';
+      tr.innerHTML = '<td colspan="17">이 달은 표시할 근태 데이터가 없습니다.</td>';
       tbody.appendChild(tr);
       return;
     }
     rows.forEach((row) => {
       const tr = document.createElement("tr");
-      const isHoliday = row.day_type && row.day_type !== "평일";
-      const cellClass = isHoliday ? "att-day-holiday" : "";
+      tr.className = rowClassName(row);
       const missIn = !row.check_in;
       const missOut = !row.check_out;
       const late = (row.late_hours || 0) > 0;
       tr.innerHTML = `
-        <td class="${cellClass}">${escape(row.date)}</td>
-        <td class="${cellClass}">${escape(row.weekday)}</td>
-        <td class="${cellClass}">${escape(row.day_type)}</td>
-        <td class="${cellClass} ${missIn ? "att-miss" : ""}">${escape(row.check_in || "—")}</td>
-        <td class="${cellClass} ${missOut ? "att-miss" : ""}">${escape(row.check_out || "—")}${row.next_day ? " ⏭" : ""}</td>
-        <td class="${cellClass}">${hoursCell(isHoliday ? row.holiday_normal : row.weekday_normal)}</td>
-        <td class="${cellClass}">${hoursCell(isHoliday ? row.holiday_overtime : row.weekday_overtime)}</td>
-        <td class="${cellClass}">${hoursCell(isHoliday ? row.holiday_night : row.weekday_night)}</td>
-        <td class="${cellClass}">${hoursCell(isHoliday ? row.holiday_early : row.weekday_early)}</td>
-        <td class="${cellClass} ${late ? "att-late" : ""}">${hoursCell(row.late_hours)}</td>
-        <td class="${cellClass}">${hoursCell(row.early_leave_hours)}</td>
-        <td class="${cellClass}">${hoursCell(row.outing_hours)}</td>
-        <td class="${cellClass}">${escape(row.note || "")}</td>`;
+        <td>${escape(row.date)}</td>
+        <td class="att-weekday-cell">${escape(row.weekday)}</td>
+        <td>${escape(row.day_type)}</td>
+        <td class="${missIn ? "att-miss" : ""}">${escape(row.check_in || "—")}</td>
+        <td class="${missOut ? "att-miss" : ""}">${escape(row.check_out || "—")}${row.next_day ? " ⏭" : ""}</td>
+        <td class="att-col-weekday">${hoursCell(row.weekday_normal)}</td>
+        <td class="att-col-weekday">${hoursCell(row.weekday_overtime)}</td>
+        <td class="att-col-weekday">${hoursCell(row.weekday_night)}</td>
+        <td class="att-col-weekday">${hoursCell(row.weekday_early)}</td>
+        <td class="att-col-holiday">${hoursCell(row.holiday_normal)}</td>
+        <td class="att-col-holiday">${hoursCell(row.holiday_overtime)}</td>
+        <td class="att-col-holiday">${hoursCell(row.holiday_night)}</td>
+        <td class="att-col-holiday">${hoursCell(row.holiday_early)}</td>
+        <td class="${late ? "att-late" : ""}">${hoursCell(row.late_hours)}</td>
+        <td>${hoursCell(row.early_leave_hours)}</td>
+        <td>${hoursCell(row.outing_hours)}</td>
+        <td class="att-note-cell">${escape(row.note || "")}</td>`;
       tbody.appendChild(tr);
     });
+  }
+
+  function rowClassName(row) {
+    const classes = [];
+    const weekday = (row.weekday || "").trim();
+    const dayType = (row.day_type || "").trim();
+    if (dayType && dayType !== "평일") {
+      // 토요일 / 일요일 / 휴일 etc. from the Excel classification
+      if (dayType.includes("토")) classes.push("att-day-saturday");
+      else if (dayType.includes("일")) classes.push("att-day-sunday");
+      else classes.push("att-day-holiday");
+    } else if (weekday === "토") {
+      classes.push("att-day-saturday");
+    } else if (weekday === "일") {
+      classes.push("att-day-sunday");
+    }
+    return classes.join(" ");
   }
 
   function escape(text) {
@@ -332,7 +352,24 @@
     loadView();
   });
 
+  function initResetBanner() {
+    const banner = document.getElementById("att-reset-banner");
+    const dismissBtn = document.getElementById("att-reset-banner-dismiss");
+    if (!banner) return;
+    const empId = banner.dataset.empId || "";
+    const storageKey = empId ? `irms_att_reset_dismissed_${empId}` : "";
+    const dismissed = storageKey && localStorage.getItem(storageKey) === "1";
+    if (!dismissed) {
+      banner.hidden = false;
+    }
+    dismissBtn?.addEventListener("click", () => {
+      banner.hidden = true;
+      if (storageKey) localStorage.setItem(storageKey, "1");
+    });
+  }
+
   (async function init() {
+    initResetBanner();
     if (adminMode) {
       await loadEmployeesForAdmin();
     }

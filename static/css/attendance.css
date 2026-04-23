@@ -79,6 +79,22 @@
   font-size: 1.1rem;
 }
 
+.att-warning-close {
+  background: transparent;
+  border: none;
+  color: #78350f;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.45rem;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.att-warning-close:hover {
+  background: rgba(120, 53, 15, 0.12);
+}
+
 .att-profile {
   background: #fff;
   border: 1px solid var(--border-strong, #d7dbe3);
@@ -235,22 +251,84 @@
   white-space: nowrap;
 }
 
-.att-table th {
-  background: #f1f4f9;
+.att-table thead tr:first-child th {
+  background: #e2e8f0;
   font-weight: 700;
   color: var(--text-secondary, #334155);
-  text-transform: none;
   font-size: 0.82rem;
   position: sticky;
   top: 0;
+  border-bottom: 1px solid #cbd5e1;
 }
 
-.att-table td.att-day-weekend {
-  background: #fafbff;
+.att-table thead tr:nth-child(2) th {
+  background: #f1f4f9;
+  font-weight: 600;
+  color: var(--text-secondary, #334155);
+  font-size: 0.78rem;
+  position: sticky;
+  top: 2.05rem;
+  border-bottom: 1px solid #cbd5e1;
 }
 
-.att-table td.att-day-holiday {
-  background: #fff5f2;
+.att-table th.att-group-weekday {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.att-table th.att-group-holiday {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.att-table td.att-col-weekday {
+  background: rgba(186, 230, 253, 0.18);
+}
+
+.att-table td.att-col-holiday {
+  background: rgba(254, 202, 202, 0.22);
+}
+
+/* Row tints override column tints for weekend/holiday days. */
+.att-table tr.att-day-saturday > td {
+  background: #eff6ff;
+}
+
+.att-table tr.att-day-saturday > td.att-col-weekday {
+  background: #dbeafe;
+}
+
+.att-table tr.att-day-saturday > td.att-col-holiday {
+  background: #bfdbfe;
+}
+
+.att-table tr.att-day-saturday > td:first-child,
+.att-table tr.att-day-saturday > td.att-weekday-cell {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.att-table tr.att-day-sunday > td,
+.att-table tr.att-day-holiday > td {
+  background: #fff1f2;
+}
+
+.att-table tr.att-day-sunday > td.att-col-weekday,
+.att-table tr.att-day-holiday > td.att-col-weekday {
+  background: #ffe4e6;
+}
+
+.att-table tr.att-day-sunday > td.att-col-holiday,
+.att-table tr.att-day-holiday > td.att-col-holiday {
+  background: #fecdd3;
+}
+
+.att-table tr.att-day-sunday > td:first-child,
+.att-table tr.att-day-sunday > td.att-weekday-cell,
+.att-table tr.att-day-holiday > td:first-child,
+.att-table tr.att-day-holiday > td.att-weekday-cell {
+  color: #b91c1c;
+  font-weight: 700;
 }
 
 .att-table td.att-miss {
@@ -261,6 +339,14 @@
 .att-table td.att-late {
   color: #b45309;
   font-weight: 700;
+}
+
+.att-table td.att-note-cell {
+  color: var(--text-secondary, #334155);
+  font-size: 0.82rem;
+  max-width: 180px;
+  white-space: normal;
+  text-align: left;
 }
 
 .att-empty-row td {
