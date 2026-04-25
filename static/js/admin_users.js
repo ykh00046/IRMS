@@ -40,6 +40,8 @@
       user_updated: "User Updated",
       user_password_reset: "Password Reset",
       user_deleted: "User Deleted",
+      attendance_viewed_by_admin: "Attendance Viewed",
+      attendance_password_reset: "Attendance Password Reset",
       recipe_status_updated: "Recipe Status",
       weighing_step_completed: "Weighing Step",
       recipe_weighing_completed: "Recipe Complete",
@@ -173,6 +175,12 @@
     }
     if (log.action === "user_password_reset") {
       return `${details.target_access_level || "-"} 계정 비밀번호 재설정`;
+    }
+    if (log.action === "attendance_viewed_by_admin") {
+      return `${details.month || "-"} 근태 조회`;
+    }
+    if (log.action === "attendance_password_reset") {
+      return "사번 비밀번호 초기화";
     }
     if (log.action === "management_login" || log.action === "operator_select" || log.action === "auth_login") {
       return details.entry_point || "session";

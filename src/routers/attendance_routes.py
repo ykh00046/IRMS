@@ -14,9 +14,11 @@ All attendance endpoints share a single router under ``/api/attendance``:
 
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from itsdangerous import URLSafeSerializer
 from pydantic import BaseModel, Field
 
 from .. import attendance_auth
@@ -30,6 +32,7 @@ from ..attendance_auth import (
     require_view_context,
     touch_session,
 )
+from ..config import IS_DEVELOPMENT, SESSION_SECRET
 from ..database import get_connection, write_audit_log
 from ..services import attendance_excel as excel_service
 
@@ -59,6 +62,9 @@ def _resolve_month(month: str | None) -> str:
 def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
     try:
         profile, rows, summary = excel_service.load_month_for_employee(year_month, emp_id)
+        annual_summary = excel_service.load_year_summary_for_employee(
+            int(year_month[:4]), emp_id
+        )
     except excel_service.MonthFileNotFound:
         raise HTTPException(status_code=404, detail="MONTH_FILE_NOT_FOUND")
     except excel_service.FileLocked:
@@ -70,6 +76,7 @@ def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
         "month": year_month,
         "profile": excel_service.serialize_profile(profile),
         "summary": excel_service.serialize_summary(summary),
+        "annual_summary": excel_service.serialize_annual_summary(annual_summary),
         "rows": excel_service.serialize_rows(rows),
         "available_months": excel_service.available_months(),
     }
@@ -77,18 +84,33 @@ def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
 
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/attendance", tags=["attendance"])
+    csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
+
+    def _refresh_csrf_cookie(response: Response) -> None:
+        response.set_cookie(
+            "csrftoken",
+            csrf_serializer.dumps(secrets.token_urlsafe(128)),
+            path="/",
+            secure=not IS_DEVELOPMENT,
+            httponly=False,
+            samesite="lax",
+        )
 
     @router.post("/login")
-    async def login(body: LoginRequest, request: Request) -> dict[str, Any]:
+    async def login(
+        body: LoginRequest, request: Request, response: Response
+    ) -> dict[str, Any]:
+        emp_id = body.emp_id.strip()
         try:
-            record = attendance_auth.authenticate(body.emp_id, body.password)
+            record = attendance_auth.authenticate(emp_id, body.password)
         except AttendanceAuthError as exc:
             raise exc.to_http() from exc
 
         reset_required = bool(record.get("password_reset_required"))
-        login_session(request, body.emp_id, reset_required)
+        login_session(request, emp_id, reset_required)
+        _refresh_csrf_cookie(response)
         return {
-            "emp_id": body.emp_id,
+            "emp_id": emp_id,
             "password_reset_required": reset_required,
         }
 
@@ -144,7 +166,7 @@ def build_router() -> APIRouter:
         try:
             items = excel_service.employee_list(year_month)
         except excel_service.MonthFileNotFound:
-            raise HTTPException(status_code=404, detail="MONTH_FILE_NOT_FOUND")
+            items = []
         except excel_service.FileLocked:
             raise HTTPException(status_code=503, detail="FILE_LOCKED_RETRY")
         return {
@@ -184,15 +206,25 @@ def build_router() -> APIRouter:
         body: ResetPasswordRequest, request: Request
     ) -> dict[str, str]:
         user = require_irms_manager(request)
-        attendance_auth.reset_password_to_empid(body.emp_id.strip())
+        emp_id = body.emp_id.strip()
+        try:
+            attendance_auth.reset_password_to_empid(emp_id)
+        except AttendanceAuthError as exc:
+            raise exc.to_http() from exc
+        profile = excel_service.employee_profile_from_any_month(emp_id)
+        target_label = (
+            f"{profile.name} (사번 {emp_id})"
+            if profile and profile.name
+            else f"사번 {emp_id}"
+        )
         with get_connection() as connection:
             write_audit_log(
                 connection,
                 action="attendance_password_reset",
                 actor=user,
                 target_type="attendance",
-                target_id=body.emp_id.strip(),
-                target_label=f"사번 {body.emp_id.strip()}",
+                target_id=emp_id,
+                target_label=target_label,
                 details={},
             )
             connection.commit()

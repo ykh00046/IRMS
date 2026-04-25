@@ -10,12 +10,16 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pyttsx3
 
 logger = logging.getLogger("irms_notice")
+
+CHIME_TO_TTS_DELAY_SECONDS = 0.2
+DEFAULT_TTS_QUEUE_SIZE = 20
 
 try:
     import winsound
@@ -50,10 +54,18 @@ def _pick_korean_voice(engine: Any) -> None:
 class TTSQueue:
     """Single-threaded speech + chime playback worker."""
 
-    def __init__(self, chime_path: Path, rate: int = 180, muted: bool = False):
+    def __init__(
+        self,
+        chime_path: Path,
+        rate: int = 180,
+        muted: bool = False,
+        volume: float = 1.0,
+        max_queue_size: int = DEFAULT_TTS_QUEUE_SIZE,
+    ):
         self._chime_path = chime_path
         self._rate = rate
-        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._volume = max(0.0, min(float(volume), 1.0))
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=max_queue_size)
         self._muted = muted
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, name="tts-worker", daemon=True)
@@ -63,7 +75,7 @@ class TTSQueue:
 
     def stop(self) -> None:
         self._stop_event.set()
-        self._queue.put(None)
+        self._force_enqueue_stop()
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
@@ -71,17 +83,50 @@ class TTSQueue:
         self._muted = muted
 
     def enqueue_message(self, msg: dict[str, Any]) -> None:
-        self._queue.put(msg)
+        self._enqueue(msg)
 
     def enqueue_raw(self, text: str) -> None:
         if text:
-            self._queue.put({"message_text": text, "created_by_display_name": ""})
+            self._enqueue({"message_text": text, "created_by_display_name": ""})
+
+    def _enqueue(self, item: dict[str, Any]) -> None:
+        try:
+            self._queue.put_nowait(item)
+            return
+        except queue.Full:
+            pass
+
+        try:
+            dropped = self._queue.get_nowait()
+            logger.warning(
+                "tts queue full; dropped oldest message id=%s",
+                dropped.get("id") if isinstance(dropped, dict) else None,
+            )
+        except queue.Empty:
+            pass
+
+        try:
+            self._queue.put_nowait(item)
+        except queue.Full:
+            logger.warning("tts queue full; dropped incoming message id=%s", item.get("id"))
+
+    def _force_enqueue_stop(self) -> None:
+        while True:
+            try:
+                self._queue.put_nowait(None)
+                return
+            except queue.Full:
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    return
 
     def _run(self) -> None:
         try:
             engine = pyttsx3.init("sapi5")
             _pick_korean_voice(engine)
             engine.setProperty("rate", self._rate)
+            engine.setProperty("volume", self._volume)
         except Exception as exc:  # noqa: BLE001
             logger.error("tts init failed: %s", exc)
             engine = None
@@ -96,7 +141,8 @@ class TTSQueue:
             if not text:
                 continue
             try:
-                self._play_chime()
+                if self._play_chime():
+                    time.sleep(CHIME_TO_TTS_DELAY_SECONDS)
                 if engine is None:
                     continue
                 engine.say(text)
@@ -104,13 +150,15 @@ class TTSQueue:
             except Exception as exc:  # noqa: BLE001
                 logger.error("tts playback failed: %s", exc)
 
-    def _play_chime(self) -> None:
+    def _play_chime(self) -> bool:
         if winsound is None or not self._chime_path.exists():
-            return
+            return False
         try:
             winsound.PlaySound(
                 str(self._chime_path),
                 winsound.SND_FILENAME | winsound.SND_ASYNC,
             )
+            return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("chime playback failed: %s", exc)
+            return False

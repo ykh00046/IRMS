@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..auth import ACCESS_LEVEL_LABEL
 from ..database import row_to_dict
@@ -60,10 +60,19 @@ class AdminUserPasswordResetRequest(BaseModel):
     password: str = Field(min_length=6, max_length=100)
 
 
+NOTICE_MESSAGE_MAX_LENGTH = 300
+
+
 class ChatMessageCreateRequest(BaseModel):
     room_key: Literal["notice", "mass_response", "liquid_ink_response", "sample_mass_production"]
     message_text: str = Field(min_length=1, max_length=1000)
     stage: Literal["registered", "in_progress", "completed"] | None = None
+
+    @model_validator(mode="after")
+    def validate_notice_message_length(self) -> "ChatMessageCreateRequest":
+        if self.room_key == "notice" and len(self.message_text.strip()) > NOTICE_MESSAGE_MAX_LENGTH:
+            raise ValueError(f"notice messages must be {NOTICE_MESSAGE_MAX_LENGTH} characters or fewer")
+        return self
 
 
 CHAT_STAGE_OPTIONS = ("registered", "in_progress", "completed")

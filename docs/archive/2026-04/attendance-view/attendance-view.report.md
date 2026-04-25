@@ -12,7 +12,7 @@
 
 ## 1. 요약
 
-근태 월별 엑셀 조회 기능(attendance-view)을 완성했습니다. 사번 기반 별도 인증 시스템, 월별 엑셀 파싱, 관리자 전체 조회 모드를 모두 구현 및 배포했습니다. 보안(bcrypt, 5회 잠금), 성능(매 요청 85KB 읽기), 사용자 편의성(초기 비밀번호 경고배너, 권한 캐시) 측면에서 설계와 구현이 일치합니다.
+근태 월별 엑셀 조회 기능(attendance-view)을 완성했습니다. 사번 기반 별도 인증 시스템, 월별 엑셀 파싱, 관리자 전체 조회 모드를 모두 구현 및 배포했습니다. 보안(PBKDF2-SHA256, 5회 잠금), 성능(매 요청 85KB 읽기), 사용자 편의성(초기 비밀번호 경고배너, 권한 캐시) 측면에서 설계와 구현이 일치합니다.
 
 | 항목 | 내용 |
 |------|------|
@@ -41,7 +41,7 @@
 
 | ID | 요구사항 | 상태 | 비고 |
 |----|---------|------|------|
-| FR-01 | 사번 기반 별도 인증 시스템 | ✅ Complete | bcrypt, 5회/5분 잠금 |
+| FR-01 | 사번 기반 별도 인증 시스템 | ✅ Complete | PBKDF2-SHA256, 5회/5분 잠금 |
 | FR-02 | 첫 로그인 자동 계정 생성 | ✅ Complete | 엑셀 존재 확인 후 생성 |
 | FR-03 | 월별 엑셀 파싱 및 조회 | ✅ Complete | read_only로 락 회피 |
 | FR-04 | 근태 요약 카드 (8개 시간 항목) | ✅ Complete | 평일/휴일 × 정상/연장/야근/조출 |
@@ -60,7 +60,7 @@
 | File Encoding | UTF-8 (Excel ↔ 한글) | Handled | ✅ |
 | Error Messages | 공지방 API 호환 (에러 코드) | Implemented | ✅ |
 | Audit Logging | admin/view, admin/reset-password 기록 | Enabled | ✅ |
-| Security | bcrypt hash, session isolation | Implemented | ✅ |
+| Security | PBKDF2-SHA256 hash, session isolation | Implemented | ✅ |
 
 ### 3.3 주요 산출물
 
@@ -94,7 +94,7 @@
 
 ### 5.1 비밀번호 정책 완화 (초기 비번 = 사번)
 
-**설계**: 첫 로그인 시 비번 변경 강제 → **강제 리다이렉트 제거**
+**설계**: 초기 비밀번호 사용 시 안내 배너 표시, 조회는 계속 허용
 
 **구현**: 
 - 초기 상태: `password_reset_required=1` → API는 flag 반환
@@ -234,8 +234,8 @@ CREATE INDEX IF NOT EXISTS idx_attendance_users_locked_until
 | 컬럼 | 타입 | 용도 |
 |------|------|------|
 | emp_id | TEXT PK | 사번 (ERP 6자리) |
-| password_hash | TEXT | bcrypt 해시 |
-| password_reset_required | INT | 1=첫 로그인 후 변경 필요, 0=변경 완료 |
+| password_hash | TEXT | PBKDF2-SHA256 해시 |
+| password_reset_required | INT | 1=초기 비밀번호 안내 필요, 0=사용자 변경 완료 |
 | failed_attempts | INT | 로그인 실패 횟수 (0~5) |
 | locked_until | TEXT ISO-8601 | 잠금 해제 시각, NULL=잠금 해제됨 |
 | last_login_at | TEXT ISO-8601 | 마지막 로그인 시각 |
@@ -408,23 +408,23 @@ Rows: 22개 (엑셀 행 수)
 |------|-----|
 | **Match Rate** | **96%** |
 | High / Medium Gap | **0건** |
-| Low Gap (문서 수준) | 3건 |
-| Info (선택적 문서화) | 2건 |
-| 권장 조치 | `pdca iterate` 불필요. 설계 문서만 소폭 수정하면 100% 일치. |
+| Low Gap (문서 수준) | 0건 |
+| Info (선택적 문서화) | 0건 |
+| 권장 조치 | 완료 처리 가능. |
 
-### Low 등급 Gap 3건
+### Low 등급 Gap 정리
 
 | # | 항목 | 조치 권장 |
 |---|------|-----------|
-| 1 | 설계 §4.1 bcrypt 명시 vs 실제는 PBKDF2-SHA256 | 설계 문서 정정 (기능 동등) |
-| 2 | `AttendanceProfile` dataclass가 설계(5)보다 3개 더 많음 (shift_group/job_type/gender) | 설계 §3.2 필드 추가 |
-| 3 | 비번 초기화 감사 로그 `target_label`에 성명 미포함 | 일관성을 위해 `{name} (사번 {emp_id})` 형식 통일 권장 (설계 미명시, strict-gap 아님) |
+| 1 | 설계 §4.1 해시 알고리즘 | PBKDF2-SHA256으로 정정 완료 |
+| 2 | `AttendanceProfile` dataclass 필드 | shift_group/job_type/gender 포함으로 문서 반영 완료 |
+| 3 | 비번 초기화 감사 로그 `target_label` | `{name} (사번 {emp_id})` 형식으로 구현 보완 완료 |
 
 ### Info (설계에 없지만 추가된 것)
 
-- `GET /api/attendance/session` — 세션 상태 폴링
-- `GET /api/attendance/admin/users` — 관리자 페이지의 근태 계정 목록
-- `PASSWORD_SAME_AS_EMPID` 에러 코드 — 비번을 사번과 동일하게 설정하지 못하도록 보안 강화
+- `GET /api/attendance/session` — 세션 상태 폴링, 설계 문서 반영 완료
+- `GET /api/attendance/admin/users` — 관리자 페이지의 근태 계정 목록, 설계 문서 반영 완료
+- `PASSWORD_SAME_AS_EMPID` 에러 코드 — 설계 문서 반영 완료
 
 ### Accepted Variances (Match Rate 감점 없음)
 
@@ -432,7 +432,7 @@ Rows: 22개 (엑셀 행 수)
 |------|------|
 | 비밀번호 강제 변경 → 경고 배너 (Option B) | 사용자 요청 반영, 테스트 편의성 |
 | 8개 시간 컬럼 상시 노출 + 구분 pill + zebra + ×1.5 주석 제거 | 현장 UX 피드백 반영 |
-| bcrypt → PBKDF2-SHA256 | 기존 `src/security.py` 재사용, 의존성 최소화 |
+| PBKDF2-SHA256 사용 | 기존 `src/security.py` 재사용, 의존성 최소화 |
 
 ---
 
@@ -451,7 +451,7 @@ Rows: 22개 (엑셀 행 수)
    - 구현 중 설계 참고 시간 단축 (회의 불필요)
 
 3. **보안 우려 사항 선제적 처리**
-   - bcrypt, 5회 잠금, CSRF 토큰, 세션 타임아웃 설계부터 반영
+   - PBKDF2-SHA256, 5회 잠금, CSRF 토큰, 세션 타임아웃 설계부터 반영
    - 구현 후 추가 보안 리뷰 불필요
 
 4. **현장 피드백 빠른 반영**

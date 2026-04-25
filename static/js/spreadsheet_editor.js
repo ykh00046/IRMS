@@ -472,7 +472,8 @@
       closeColumnModal();
       await loadSheet(activeProductId);
     } catch (err) {
-      IRMS.notify("컬럼 삭제 실패: " + err.message, "error");
+      const msg = err.message === "FIXED_COLUMN" ? "고정 컬럼은 삭제할 수 없습니다." : err.message;
+      IRMS.notify("컬럼 삭제 실패: " + msg, "error");
     }
   }
 

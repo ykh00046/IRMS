@@ -11,6 +11,7 @@
     in_progress: "진행중",
     completed: "완료",
   };
+  const NOTICE_MESSAGE_MAX_LENGTH = 300;
 
   /**
    * @param {object} config
@@ -197,12 +198,13 @@
         });
         if (incoming.length > 0 && afterId > 0) {
           IRMS.playChatSound();
-          var last = incoming[incoming.length - 1];
-          var speaker = last.createdByDisplayName || last.createdByUsername || "";
-          var text = speaker
-            ? speaker + "님: " + last.messageText
-            : last.messageText;
-          IRMS.speakText(text);
+          incoming.forEach(function (message) {
+            var speaker = message.createdByDisplayName || message.createdByUsername || "";
+            var text = speaker
+              ? speaker + ": " + message.messageText
+              : message.messageText;
+            IRMS.speakText(text);
+          });
         }
       }
 
@@ -259,10 +261,15 @@
         if (!room) return;
 
         const messageText = input?.value.trim() || "";
-        const stageVal = null;
+        const stageVal = room.stageRequired ? (stage?.value || null) : null;
 
         if (!messageText) {
           IRMS.notify("메시지를 입력하세요.", "error");
+          return;
+        }
+
+        if (room.key === "notice" && messageText.length > NOTICE_MESSAGE_MAX_LENGTH) {
+          IRMS.notify(`공지 메시지는 ${NOTICE_MESSAGE_MAX_LENGTH}자 이하로 입력하세요.`, "error");
           return;
         }
 

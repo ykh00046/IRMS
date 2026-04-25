@@ -6,6 +6,36 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  function safeNextUrl(value, fallback) {
+    const text = String(value || "").trim();
+    if (
+      !text.startsWith("/") ||
+      text.startsWith("//") ||
+      text.includes("\\") ||
+      /[\u0000-\u001f]/.test(text)
+    ) {
+      return fallback;
+    }
+    return text;
+  }
+
+  function detailToText(value) {
+    if (Array.isArray(value)) {
+      return value.map(detailToText).filter(Boolean).join("\n");
+    }
+    if (value && typeof value === "object") {
+      if (value.message) return String(value.message);
+      if (value.msg) return String(value.msg);
+      if (value.detail) return detailToText(value.detail);
+      try {
+        return JSON.stringify(value);
+      } catch (_error) {
+        return String(value);
+      }
+    }
+    return value === undefined || value === null ? "" : String(value);
+  }
+
   async function request(path, options) {
     const method = options?.method || "GET";
     const query = options?.query || null;
@@ -50,11 +80,15 @@
       } catch (_error) {
         payload = { detail: response.statusText };
       }
-      const detail =
-        payload?.detail?.message ||
-        payload?.detail ||
-        payload?.message ||
-        `Request failed (${response.status})`;
+      const detail = detailToText(
+        payload?.detail?.message !== undefined
+          ? payload.detail.message
+          : payload?.detail !== undefined
+            ? payload.detail
+            : payload?.message !== undefined
+              ? payload.message
+              : `Request failed (${response.status})`,
+      );
       const isCsrfFailure =
         response.status === 403 &&
         String(detail).toLowerCase().includes("csrf");
@@ -969,7 +1003,7 @@
       try {
         await opts.loginFn(username, password);
         const nextUrl = String(nextInput?.value || opts.defaultNext);
-        window.location.assign(nextUrl.startsWith("/") ? nextUrl : opts.defaultNext);
+        window.location.assign(safeNextUrl(nextUrl, opts.defaultNext));
       } catch (error) {
         setError(error.message === "INVALID_CREDENTIALS" ? opts.failMsg : error.message);
         if (submitBtn) submitBtn.disabled = false;
@@ -1034,6 +1068,30 @@
   document.addEventListener("click", resumeAudioCtx);
   document.addEventListener("keydown", resumeAudioCtx);
 
+  var speechQueue = [];
+  var speechActive = false;
+
+  function speakNextQueuedText() {
+    if (speechActive || !speechQueue.length || !window.speechSynthesis) return;
+    var cleaned = speechQueue.shift();
+    speechActive = true;
+    var utterance = new SpeechSynthesisUtterance(cleaned);
+    var finish = function () {
+      speechActive = false;
+      speakNextQueuedText();
+    };
+    utterance.lang = "ko-KR";
+    utterance.rate = 1.1;
+    utterance.volume = 0.9;
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch (_) {
+      finish();
+    }
+  }
+
   function speakText(text) {
     if (!window.speechSynthesis || !text) return;
     var cleaned = String(text)
@@ -1041,12 +1099,8 @@
       .replace(/\s+/g, " ")
       .trim();
     if (!cleaned) return;
-    try { window.speechSynthesis.cancel(); } catch (_) { /* ignore */ }
-    var utterance = new SpeechSynthesisUtterance(cleaned);
-    utterance.lang = "ko-KR";
-    utterance.rate = 1.1;
-    utterance.volume = 0.9;
-    window.speechSynthesis.speak(utterance);
+    speechQueue.push(cleaned);
+    speakNextQueuedText();
   }
 
   window.IRMS.playChatSound = playChatSound;

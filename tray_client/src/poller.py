@@ -20,6 +20,10 @@ logger = logging.getLogger("irms_notice")
 
 StatusCallback = Callable[[str], None]
 MessageHandler = Callable[[dict], None]
+STATUS_LABELS = {
+    "connected": "연결됨",
+    "offline": "오프라인",
+}
 
 
 class Poller:
@@ -50,8 +54,9 @@ class Poller:
         while not self._stop_event.is_set():
             try:
                 payload = self._poll_once()
+                self._handle_success(payload)
             except requests.RequestException as exc:
-                self._on_status("오프라인")
+                self._safe_status("offline")
                 logger.warning("poll failed: %s", exc)
                 self._stop_event.wait(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
@@ -62,27 +67,61 @@ class Poller:
                 backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
                 continue
 
-            self._on_status("연결됨")
             backoff = interval
-
-            if self._config.last_message_id == 0:
-                snap = int(payload.get("latest_id", 0))
-                if snap > 0:
-                    self._config.last_message_id = snap
-                    self._config.save()
-                    logger.info("initial sync: snapshot latest_id=%d", snap)
-            else:
-                for item in payload.get("items", []):
-                    try:
-                        self._on_message(item)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.exception("message handler failed: %s", exc)
-                    item_id = int(item.get("id", 0) or 0)
-                    if item_id > self._config.last_message_id:
-                        self._config.last_message_id = item_id
-                        self._config.save()
-
             self._stop_event.wait(interval)
+
+    def _handle_success(self, payload: dict) -> None:
+        self._safe_status("connected")
+
+        if self._config.last_message_id == 0:
+            snap = self._safe_int(payload.get("latest_id", 0))
+            if snap > 0:
+                self._config.last_message_id = snap
+                self._safe_save_config()
+                logger.info("initial sync: snapshot latest_id=%d", snap)
+            return
+
+        raw_items = payload.get("items", [])
+        if not isinstance(raw_items, list):
+            logger.warning("poll payload items was not a list: %r", raw_items)
+            return
+
+        for item in raw_items:
+            if not isinstance(item, dict):
+                logger.warning("poll payload item was not an object: %r", item)
+                continue
+
+            try:
+                self._on_message(item)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("message handler failed: %s", exc)
+
+            item_id = self._safe_int(item.get("id", 0), default=0)
+            if item_id <= 0:
+                logger.warning("poll payload item had invalid id: %r", item.get("id"))
+                continue
+            if item_id > self._config.last_message_id:
+                self._config.last_message_id = item_id
+                self._safe_save_config()
+
+    def _safe_status(self, status: str) -> None:
+        try:
+            self._on_status(STATUS_LABELS.get(status, status))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("status callback failed: %s", exc)
+
+    def _safe_save_config(self) -> None:
+        try:
+            self._config.save()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("config save failed: %s", exc)
+
+    @staticmethod
+    def _safe_int(value, default: int = 0) -> int:
+        try:
+            return int(value or default)
+        except (TypeError, ValueError):
+            return default
 
     def _poll_once(self) -> dict:
         url = f"{self._config.server_url.rstrip('/')}/api/public/notice/poll"

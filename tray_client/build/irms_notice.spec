@@ -31,7 +31,7 @@ a = Analysis(
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "unittest", "pydoc_data"],
+    excludes=["unittest", "pydoc_data"],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)

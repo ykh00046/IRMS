@@ -188,6 +188,32 @@
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
 }
 
+.att-summary-card-wide {
+  grid-column: span 2;
+}
+
+.att-alert-combo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 1px minmax(220px, 0.8fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.att-alert-combo-section {
+  min-width: 0;
+}
+
+.att-alert-combo-section-annual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.att-alert-combo-divider {
+  width: 1px;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.65), rgba(245, 158, 11, 0.15));
+}
+
 .att-summary-card h3 {
   font-size: 0.85rem;
   font-weight: 700;
@@ -265,6 +291,10 @@
   background: linear-gradient(90deg, #0f766e, #b45309);
 }
 
+.att-leave-card {
+  border-top: 4px solid #0f766e;
+}
+
 .att-card-note {
   margin: 0.65rem 0 0;
   color: #64748b;
@@ -274,6 +304,11 @@
 
 .att-card-note.warn {
   color: #b45309;
+}
+
+.att-card-note-strong {
+  color: #0f172a;
+  font-weight: 700;
 }
 
 .att-kv {
@@ -475,26 +510,76 @@
   font-weight: 700;
 }
 
-.att-table tr.att-day-sunday > td,
-.att-table tr.att-day-holiday > td {
+.att-table tr.att-day-sunday > td {
   background: #fff1f2 !important;
 }
 
-.att-table tr.att-day-sunday > td.att-col-weekday,
-.att-table tr.att-day-holiday > td.att-col-weekday {
+.att-table tr.att-day-sunday > td.att-col-weekday {
   background: #ffe4e6 !important;
 }
 
-.att-table tr.att-day-sunday > td.att-col-holiday,
-.att-table tr.att-day-holiday > td.att-col-holiday {
+.att-table tr.att-day-sunday > td.att-col-holiday {
   background: #fecdd3 !important;
 }
 
 .att-table tr.att-day-sunday > td.att-date-cell,
-.att-table tr.att-day-sunday > td.att-weekday-cell,
+.att-table tr.att-day-sunday > td.att-weekday-cell {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.att-table tr.att-day-rest > td {
+  background: #f8fafc !important;
+}
+
+.att-table tr.att-day-rest > td.att-col-weekday {
+  background: #eef2f7 !important;
+}
+
+.att-table tr.att-day-rest > td.att-col-holiday {
+  background: #e2e8f0 !important;
+}
+
+.att-table tr.att-day-rest > td.att-date-cell,
+.att-table tr.att-day-rest > td.att-weekday-cell {
+  color: #475569;
+  font-weight: 700;
+}
+
+.att-table tr.att-day-leave > td {
+  background: #f0fdf4 !important;
+}
+
+.att-table tr.att-day-leave > td.att-col-weekday {
+  background: #dcfce7 !important;
+}
+
+.att-table tr.att-day-leave > td.att-col-holiday {
+  background: #bbf7d0 !important;
+}
+
+.att-table tr.att-day-leave > td.att-date-cell,
+.att-table tr.att-day-leave > td.att-weekday-cell,
+.att-table tr.att-day-leave > td.att-code-cell {
+  color: #166534;
+  font-weight: 700;
+}
+
+.att-table tr.att-day-holiday > td {
+  background: #fff7ed !important;
+}
+
+.att-table tr.att-day-holiday > td.att-col-weekday {
+  background: #ffedd5 !important;
+}
+
+.att-table tr.att-day-holiday > td.att-col-holiday {
+  background: #fed7aa !important;
+}
+
 .att-table tr.att-day-holiday > td.att-date-cell,
 .att-table tr.att-day-holiday > td.att-weekday-cell {
-  color: #b91c1c;
+  color: #9a3412;
   font-weight: 700;
 }
 
@@ -549,6 +634,11 @@
   color: #7f1d1d;
 }
 
+.att-pill-rest {
+  background: #e2e8f0;
+  color: #475569;
+}
+
 .att-pill-holiday {
   background: #fed7aa;
   color: #7c2d12;
@@ -557,6 +647,77 @@
 .att-daytype-cell {
   padding-top: 0.35rem;
   padding-bottom: 0.35rem;
+}
+
+.att-date-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.22rem;
+}
+
+.att-issue-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid #fbbf24;
+}
+
+.att-table tr.att-row-issue > td {
+  background-image: linear-gradient(rgba(254, 243, 199, 0.55), rgba(254, 243, 199, 0.55));
+  box-shadow: inset 0 1px 0 rgba(245, 158, 11, 0.8), inset 0 -1px 0 rgba(245, 158, 11, 0.8);
+}
+
+.att-table tr.att-row-issue > td.att-date-cell {
+  box-shadow: inset 4px 0 0 #f59e0b, inset 0 1px 0 rgba(245, 158, 11, 0.8), inset 0 -1px 0 rgba(245, 158, 11, 0.8);
+}
+
+.att-table tr.att-row-issue > td.att-daytype-cell,
+.att-table tr.att-row-issue > td.att-code-cell,
+.att-table tr.att-row-issue > td.att-note-cell {
+  font-weight: 700;
+}
+
+.att-code-cell {
+  min-width: 5.8rem;
+}
+
+.att-code-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 8rem;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.att-code-pill-leave {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.att-code-pill-issue {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.att-code-empty {
+  color: #94a3b8;
+  font-size: 0.78rem;
 }
 
 .att-empty-row td {
@@ -595,5 +756,18 @@
 
   .att-admin-direct-row {
     align-items: stretch;
+  }
+
+  .att-summary-card-wide {
+    grid-column: span 1;
+  }
+
+  .att-alert-combo {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+
+  .att-alert-combo-divider {
+    display: none;
   }
 }

@@ -11,7 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/css/common.css" />
-    <link rel="stylesheet" href="/static/css/attendance.css" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260425-5" />
   </head>
   <body
     class="att-page"
@@ -20,7 +20,7 @@
   >
     <header class="att-header">
       <div class="att-header-left">
-        <a href="/" class="btn compact">← 처음</a>
+        <a href="/" class="btn compact">처음</a>
         <h1>근태 조회</h1>
       </div>
       <div class="att-header-right">
@@ -36,13 +36,25 @@
 
     <main class="att-shell">
       {% if password_reset_required %}
-      <section class="att-warning-banner" id="att-reset-banner" data-emp-id="{{ emp_id or '' }}" hidden>
-        <span class="att-warning-icon" aria-hidden="true">⚠️</span>
+      <section
+        class="att-warning-banner"
+        id="att-reset-banner"
+        data-emp-id="{{ emp_id or '' }}"
+        hidden
+      >
+        <span class="att-warning-icon" aria-hidden="true">⚠</span>
         <span class="att-warning-text">
           초기 비밀번호(사번과 동일)를 사용 중입니다. 보안을 위해 변경해주세요.
         </span>
         <a href="/attendance/change-password" class="btn compact accent">비밀번호 변경</a>
-        <button id="att-reset-banner-dismiss" type="button" class="att-warning-close" aria-label="닫기">×</button>
+        <button
+          id="att-reset-banner-dismiss"
+          type="button"
+          class="att-warning-close"
+          aria-label="닫기"
+        >
+          ×
+        </button>
       </section>
       {% endif %}
 
@@ -67,61 +79,74 @@
                 autocomplete="off"
                 placeholder="사번 입력"
               />
-              <button id="att-emp-direct-btn" type="button" class="btn compact accent">조회</button>
+              <button id="att-emp-direct-btn" type="button" class="btn compact accent">
+                조회
+              </button>
             </div>
           </div>
         </div>
       </section>
 
       <section class="att-month-nav">
-        <button id="att-month-prev" class="btn compact">◀</button>
-        <div class="att-month-label" id="att-month-label">—</div>
-        <button id="att-month-next" class="btn compact">▶</button>
+        <button id="att-month-prev" class="btn compact">이전</button>
+        <div class="att-month-label" id="att-month-label">-</div>
+        <button id="att-month-next" class="btn compact">다음</button>
       </section>
 
       <section class="att-summary" id="att-summary">
-        <div class="att-summary-card att-alert-card">
-          <h3>지각 · 조퇴 · 외출</h3>
-          <ul class="att-kv">
-            <li><span>지각</span><strong id="att-late">0회 · 0.0h</strong></li>
-            <li><span>조퇴</span><strong id="att-early-leave">0회 · 0.0h</strong></li>
-            <li><span>외출</span><strong id="att-outing">0회 · 0.0h</strong></li>
-          </ul>
-        </div>
-        <div class="att-summary-card att-annual-card">
-          <h3>연간 누적 지각</h3>
-          <div class="att-big att-big-alert" id="att-year-late-count">0</div>
-          <div class="att-big-unit">
-            <span>회</span>
-            <strong id="att-year-late-hours">0.0h</strong>
+        <div class="att-summary-card att-alert-card att-summary-card-wide">
+          <div class="att-alert-combo">
+            <section class="att-alert-combo-section">
+              <h3>이번 달 근태 이상</h3>
+              <ul class="att-kv">
+                <li><span>지각</span><strong id="att-late">0회 · 0.00h</strong></li>
+                <li><span>조퇴</span><strong id="att-early-leave">0회 · 0.00h</strong></li>
+                <li><span>외출</span><strong id="att-outing">0회 · 0.00h</strong></li>
+              </ul>
+            </section>
+            <div class="att-alert-combo-divider" aria-hidden="true"></div>
+            <section class="att-alert-combo-section att-alert-combo-section-annual">
+              <h3>올해 지각 누적</h3>
+              <div class="att-big att-big-alert" id="att-year-late-count">0</div>
+              <div class="att-big-unit">
+                <span>합계</span>
+                <strong id="att-year-late-hours">0.00h</strong>
+              </div>
+              <p class="att-card-note" id="att-year-late-scope">올해 누적</p>
+            </section>
           </div>
-          <p class="att-card-note" id="att-year-late-scope">올해 누적</p>
         </div>
-        <div class="att-summary-card att-annual-card">
-          <h3>연차 사용</h3>
-          <div class="att-big att-big-leave" id="att-year-leave-days">0</div>
+
+        <div class="att-summary-card att-annual-card att-leave-card">
+          <h3>연차 사용 합계</h3>
+          <div class="att-big att-big-leave" id="att-year-leave-days">0.00</div>
           <div class="att-big-unit">
-            <span>일</span>
-            <strong id="att-year-leave-count">0건</strong>
+            <span>합계</span>
+            <strong>일</strong>
           </div>
-          <p class="att-card-note" id="att-year-leave-scope">반차 0.5일 기준</p>
+          <p class="att-card-note" id="att-year-leave-scope">올해 누적</p>
+          <p class="att-card-note att-card-note-strong" id="att-year-leave-breakdown">
+            연차 0.00 · 반차 0.00 · 반반차 0.00
+          </p>
         </div>
+
         <div class="att-summary-card att-work-card">
           <h3>평일 근무시간</h3>
           <ul class="att-work-grid">
-            <li><span>정상</span><strong id="att-wd-normal">0.0h</strong></li>
-            <li><span>연장</span><strong id="att-wd-overtime">0.0h</strong></li>
-            <li><span>야근</span><strong id="att-wd-night">0.0h</strong></li>
-            <li><span>조출</span><strong id="att-wd-early">0.0h</strong></li>
+            <li><span>정상</span><strong id="att-wd-normal">0.00h</strong></li>
+            <li><span>연장</span><strong id="att-wd-overtime">0.00h</strong></li>
+            <li><span>야근</span><strong id="att-wd-night">0.00h</strong></li>
+            <li><span>조출</span><strong id="att-wd-early">0.00h</strong></li>
           </ul>
         </div>
+
         <div class="att-summary-card att-work-card att-work-card-holiday">
           <h3>휴일 근무시간</h3>
           <ul class="att-work-grid">
-            <li><span>정상</span><strong id="att-hd-normal">0.0h</strong></li>
-            <li><span>연장</span><strong id="att-hd-overtime">0.0h</strong></li>
-            <li><span>야근</span><strong id="att-hd-night">0.0h</strong></li>
-            <li><span>조출</span><strong id="att-hd-early">0.0h</strong></li>
+            <li><span>정상</span><strong id="att-hd-normal">0.00h</strong></li>
+            <li><span>연장</span><strong id="att-hd-overtime">0.00h</strong></li>
+            <li><span>야근</span><strong id="att-hd-night">0.00h</strong></li>
+            <li><span>조출</span><strong id="att-hd-early">0.00h</strong></li>
           </ul>
         </div>
       </section>
@@ -135,6 +160,7 @@
                 <th rowspan="2">일자</th>
                 <th rowspan="2">요일</th>
                 <th rowspan="2">구분</th>
+                <th rowspan="2">근태코드</th>
                 <th rowspan="2">출근</th>
                 <th rowspan="2">퇴근</th>
                 <th colspan="4" class="att-group-weekday att-col-first">평일 근무</th>
@@ -156,7 +182,9 @@
               </tr>
             </thead>
             <tbody id="att-rows-body">
-              <tr class="att-empty-row"><td colspan="17">로딩 중...</td></tr>
+              <tr class="att-empty-row">
+                <td colspan="18">로딩 중...</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -165,6 +193,6 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script src="/static/js/common.js"></script>
-    <script src="/static/js/attendance.js"></script>
+    <script src="/static/js/attendance.js?v=20260425-5"></script>
   </body>
 </html>

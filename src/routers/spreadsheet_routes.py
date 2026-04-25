@@ -414,6 +414,8 @@ def build_router() -> APIRouter:
             if not col:
                 raise HTTPException(status_code=404, detail="COLUMN_NOT_FOUND")
             product_id = col["product_id"]
+            if int(col["col_index"]) <= 2 or int(col["is_readonly"] or 0):
+                raise HTTPException(status_code=400, detail="FIXED_COLUMN")
             conn.execute("DELETE FROM ss_columns WHERE id = ?", (column_id,))
             conn.execute("UPDATE ss_products SET updated_at = ? WHERE id = ?", (now, product_id))
             conn.commit()

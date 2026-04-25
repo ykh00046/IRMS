@@ -33,7 +33,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 
 ATTENDANCE_DIR = Path(r"C:\ErpExcel")
 FILENAME_PATTERN = "monthly_attendance_{year_month}.xlsx"
-FILENAME_REGEX = re.compile(r"^monthly_attendance_(\d{4}-\d{2})\.xlsx$")
+FILENAME_REGEX = re.compile(r"^monthly_attendance(?:_.+)?_(\d{4}-\d{2})\.xlsx$")
 ANNUAL_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "반차", "유급", "공가")
 HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 
@@ -56,6 +56,9 @@ SHIFT_BASELINES = {
     "2교대(주간)": (7 * 60,  19 * 60),   # 07:00 ~ 19:00
     "2교대(야간)": (19 * 60, 31 * 60),   # 19:00 ~ 익일 07:00 (ERP 표기 31:00)
 }
+ALERT_WORKDAY_TYPES = ("평일", "평일2")
+DAY_SHIFT_SHORT_LUNCH_DAY_TYPE = "평일2"
+DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES = 30
 
 # Full-day leaves that exclude a row from anomaly detection entirely.
 # (반차/반반차는 이 목록에 들어가지 않는다 — baseline이 이동할 뿐 여전히
@@ -73,6 +76,7 @@ COL_JOB_TYPE = 10
 COL_DEPARTMENT = 11
 COL_SHIFT_GROUP = 12
 COL_SHIFT_TIME = 14
+COL_ATTENDANCE_CODE = 16
 COL_CHECK_IN = 17
 COL_CHECK_OUT = 18
 COL_NEXT_DAY = 19
@@ -126,6 +130,9 @@ class AttendanceRow:
     early_leave_hours: float
     outing_hours: float
     note: str
+    attendance_code: str = ""
+    issues: list[str] = field(default_factory=list)
+    has_issue: bool = False
 
 
 @dataclass
@@ -169,10 +176,49 @@ class AttendanceAnnualSummary:
     late_total: float = 0.0
     annual_leave_count: int = 0
     annual_leave_days: float = 0.0
+    annual_leave_full_days: float = 0.0
+    annual_leave_half_days: float = 0.0
+    annual_leave_quarter_days: float = 0.0
+
+
+def _canonical_month_file_path(year_month: str) -> Path:
+    return ATTENDANCE_DIR / FILENAME_PATTERN.format(year_month=year_month)
+
+
+def _year_month_from_filename(name: str) -> str | None:
+    match = FILENAME_REGEX.match(name)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def month_file_paths(year_month: str) -> list[Path]:
+    if not ATTENDANCE_DIR.exists():
+        return []
+    canonical_name = FILENAME_PATTERN.format(year_month=year_month)
+    matches = [
+        entry
+        for entry in ATTENDANCE_DIR.iterdir()
+        if _year_month_from_filename(entry.name) == year_month
+    ]
+    return sorted(
+        matches,
+        key=lambda entry: (0 if entry.name == canonical_name else 1, entry.name.lower()),
+    )
 
 
 def month_file_path(year_month: str) -> Path:
-    return ATTENDANCE_DIR / FILENAME_PATTERN.format(year_month=year_month)
+    paths = month_file_paths(year_month)
+    if paths:
+        return paths[0]
+    return _canonical_month_file_path(year_month)
+
+
+def _month_file_paths_or_raise(year_month: str) -> list[Path]:
+    paths = month_file_paths(year_month)
+    if paths:
+        return paths
+    raise MonthFileNotFound(str(_canonical_month_file_path(year_month)))
 
 
 def available_months() -> list[str]:
@@ -180,9 +226,9 @@ def available_months() -> list[str]:
         return []
     months: set[str] = set()
     for entry in ATTENDANCE_DIR.iterdir():
-        match = FILENAME_REGEX.match(entry.name)
-        if match:
-            months.add(match.group(1))
+        year_month = _year_month_from_filename(entry.name)
+        if year_month:
+            months.add(year_month)
     return sorted(months, reverse=True)
 
 
@@ -263,6 +309,8 @@ def _compute_anomaly_baseline(
     base_in, base_out = baseline
 
     if shift_time == "주간":
+        if day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
+            base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
         leave = _partial_leave_shift(day_type, note)
         if leave:
             _kind, half, shift_minutes = leave
@@ -272,6 +320,40 @@ def _compute_anomaly_baseline(
                 base_out -= shift_minutes
             # half == "unknown" → 구분 모호. 보수적으로 기본 baseline 유지.
     return base_in, base_out
+
+
+def _unprocessed_row_issues(row: AttendanceRow, shift_time: str) -> list[str]:
+    if str(row.attendance_code or "").strip():
+        return []
+    if row.day_type not in ALERT_WORKDAY_TYPES:
+        return []
+    if _is_full_day_leave(row.day_type, row.note):
+        return []
+
+    baseline = _compute_anomaly_baseline(shift_time, row.day_type, row.note)
+    if baseline is None:
+        return []
+    base_in, base_out = baseline
+
+    issues: list[str] = []
+    if not row.check_in:
+        issues.append("출근 누락")
+    if not row.check_out:
+        issues.append("퇴근 누락")
+
+    in_mins = _hhmm_to_minutes(row.check_in)
+    if in_mins is not None and in_mins > base_in and row.late_hours == 0:
+        issues.append("지각 미처리")
+
+    out_mins = _hhmm_to_minutes(row.check_out)
+    if out_mins is not None and out_mins < base_out and row.early_leave_hours == 0:
+        issues.append("조퇴 미처리")
+
+    return issues
+
+
+def _row_issue_labels(row: AttendanceRow, shift_time: str) -> list[str]:
+    return _unprocessed_row_issues(row, shift_time)
 
 
 def detect_today_anomalies(
@@ -286,8 +368,8 @@ def detect_today_anomalies(
     지각"으로 올라간다. 조퇴도 같은 원리.
 
     감지 규칙:
-      - day_type == '평일'만 대상 (주간·2교대 모두 ERP가 근무일을
-        '평일'로 기록). 토/일/주휴 등은 제외.
+      - day_type == '평일' 또는 '평일2'만 대상. '평일2'는 주간 기준
+        점심시간 30분 단축일로 17:30 퇴근을 정상 기준으로 본다.
       - 연차/월차/휴가/유급/공가 키워드가 day_type 또는 비고에 있으면
         전체 감지 대상에서 제외. 반차/반반차는 제외가 아니라 baseline
         만 이동(주간 한정)시켜 감지를 계속 수행한다.
@@ -303,69 +385,40 @@ def detect_today_anomalies(
     Raises ``MonthFileNotFound`` or ``FileLocked`` on I/O issues.
     """
 
-    path = month_file_path(year_month)
-    wb = _load_workbook(path)
-    try:
-        ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
-        day_type = ""
-        anomalies: list[dict[str, Any]] = []
-        for raw in _iter_data_rows(ws):
-            rec = _row_to_record(raw)
-            if not rec:
-                continue
+    day_type = ""
+    anomalies_by_emp: dict[str, dict[str, Any]] = {}
+    for path in _month_file_paths_or_raise(year_month):
+        for rec in _records_from_path(path):
             row: AttendanceRow = rec["row"]
             if row.date != target_date:
                 continue
             if not day_type:
                 day_type = row.day_type
-            if row.day_type != "평일":
+            if row.day_type not in ALERT_WORKDAY_TYPES:
                 continue
             if _is_full_day_leave(row.day_type, row.note):
                 continue
 
             shift_time = rec.get("shift_time", "") or ""
-            baseline = _compute_anomaly_baseline(shift_time, row.day_type, row.note)
-            if baseline is None:
-                # 빈 shift_time (교대조 비번날) 혹은 알 수 없는 근무형태
+            issues = _unprocessed_row_issues(row, shift_time)
+            if not issues:
                 continue
-            base_in, base_out = baseline
 
-            issues: list[str] = []
-            if not row.check_in:
-                issues.append("출근 누락")
-            if not row.check_out:
-                issues.append("퇴근 누락")
+            existing = anomalies_by_emp.get(rec["emp_id"])
+            if existing is None:
+                anomalies_by_emp[rec["emp_id"]] = {
+                    "emp_id": rec["emp_id"],
+                    "name": rec["name"],
+                    "department": rec["department"],
+                    "shift_time": shift_time,
+                    "issues": issues,
+                }
+                continue
+            for issue in issues:
+                if issue not in existing["issues"]:
+                    existing["issues"].append(issue)
 
-            in_mins = _hhmm_to_minutes(row.check_in)
-            if (
-                in_mins is not None
-                and in_mins > base_in
-                and row.late_hours == 0
-            ):
-                issues.append("지각 미처리")
-
-            out_mins = _hhmm_to_minutes(row.check_out)
-            if (
-                out_mins is not None
-                and out_mins < base_out
-                and row.early_leave_hours == 0
-            ):
-                issues.append("조퇴 미처리")
-
-            if issues:
-                anomalies.append(
-                    {
-                        "emp_id": rec["emp_id"],
-                        "name": rec["name"],
-                        "department": rec["department"],
-                        "shift_time": shift_time,
-                        "issues": issues,
-                    }
-                )
-    finally:
-        wb.close()
-
-    return day_type, anomalies
+    return day_type, list(anomalies_by_emp.values())
 
 
 def _cell_str(value: Any) -> str:
@@ -432,36 +485,66 @@ def _row_to_record(row: tuple[Any, ...]) -> dict[str, Any]:
     emp_id = _cell_str(_cell_at(row, COL_EMP_ID))
     if not emp_id:
         return {}
+    shift_time = _cell_str(_cell_at(row, COL_SHIFT_TIME))
+    row_data = AttendanceRow(
+        date=_cell_str(_cell_at(row, COL_DATE)),
+        weekday=_cell_str(_cell_at(row, COL_WEEKDAY)),
+        day_type=_cell_str(_cell_at(row, COL_DAY_TYPE)),
+        check_in=_cell_time(_cell_at(row, COL_CHECK_IN)),
+        check_out=_cell_time(_cell_at(row, COL_CHECK_OUT)),
+        next_day=bool(_cell_float(_cell_at(row, COL_NEXT_DAY))),
+        weekday_early=_cell_float(_cell_at(row, COL_WD_EARLY)),
+        weekday_normal=_cell_float(_cell_at(row, COL_WD_NORMAL)),
+        weekday_overtime=_cell_float(_cell_at(row, COL_WD_OVERTIME)),
+        weekday_night=_cell_float(_cell_at(row, COL_WD_NIGHT)),
+        holiday_early=_cell_float(_cell_at(row, COL_HD_EARLY)),
+        holiday_normal=_cell_float(_cell_at(row, COL_HD_NORMAL)),
+        holiday_overtime=_cell_float(_cell_at(row, COL_HD_OVERTIME)),
+        holiday_night=_cell_float(_cell_at(row, COL_HD_NIGHT)),
+        late_hours=_cell_float(_cell_at(row, COL_LATE)),
+        early_leave_hours=_cell_float(_cell_at(row, COL_EARLY_LEAVE)),
+        outing_hours=_cell_float(_cell_at(row, COL_OUTING)),
+        note=_cell_str(_cell_at(row, COL_NOTE)),
+        attendance_code=_cell_str(_cell_at(row, COL_ATTENDANCE_CODE)),
+    )
+    row_data.issues = _row_issue_labels(row_data, shift_time)
+    row_data.has_issue = bool(row_data.issues)
     return {
         "emp_id": emp_id,
         "name": _cell_str(_cell_at(row, COL_NAME)),
         "department": _cell_str(_cell_at(row, COL_DEPARTMENT)),
         "factory": _cell_str(_cell_at(row, COL_FACTORY)),
-        "shift_time": _cell_str(_cell_at(row, COL_SHIFT_TIME)),
+        "shift_time": shift_time,
         "shift_group": _cell_str(_cell_at(row, COL_SHIFT_GROUP)),
         "job_type": _cell_str(_cell_at(row, COL_JOB_TYPE)),
         "gender": _cell_str(_cell_at(row, COL_GENDER)),
-        "row": AttendanceRow(
-            date=_cell_str(_cell_at(row, COL_DATE)),
-            weekday=_cell_str(_cell_at(row, COL_WEEKDAY)),
-            day_type=_cell_str(_cell_at(row, COL_DAY_TYPE)),
-            check_in=_cell_time(_cell_at(row, COL_CHECK_IN)),
-            check_out=_cell_time(_cell_at(row, COL_CHECK_OUT)),
-            next_day=bool(_cell_float(_cell_at(row, COL_NEXT_DAY))),
-            weekday_early=_cell_float(_cell_at(row, COL_WD_EARLY)),
-            weekday_normal=_cell_float(_cell_at(row, COL_WD_NORMAL)),
-            weekday_overtime=_cell_float(_cell_at(row, COL_WD_OVERTIME)),
-            weekday_night=_cell_float(_cell_at(row, COL_WD_NIGHT)),
-            holiday_early=_cell_float(_cell_at(row, COL_HD_EARLY)),
-            holiday_normal=_cell_float(_cell_at(row, COL_HD_NORMAL)),
-            holiday_overtime=_cell_float(_cell_at(row, COL_HD_OVERTIME)),
-            holiday_night=_cell_float(_cell_at(row, COL_HD_NIGHT)),
-            late_hours=_cell_float(_cell_at(row, COL_LATE)),
-            early_leave_hours=_cell_float(_cell_at(row, COL_EARLY_LEAVE)),
-            outing_hours=_cell_float(_cell_at(row, COL_OUTING)),
-            note=_cell_str(_cell_at(row, COL_NOTE)),
-        ),
+        "row": row_data,
     }
+
+
+def _records_from_path(path: Path) -> list[dict[str, Any]]:
+    wb = _load_workbook(path)
+    try:
+        ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
+        records: list[dict[str, Any]] = []
+        for raw in _iter_data_rows(ws):
+            rec = _row_to_record(raw)
+            if rec:
+                records.append(rec)
+        return records
+    finally:
+        wb.close()
+
+
+def _attendance_row_key(row: AttendanceRow) -> tuple[Any, ...]:
+    data = asdict(row)
+    normalized: list[tuple[str, Any]] = []
+    for key, value in data.items():
+        if isinstance(value, list):
+            normalized.append((key, tuple(value)))
+        else:
+            normalized.append((key, value))
+    return tuple(normalized)
 
 
 def _record_to_profile(rec: dict[str, Any]) -> AttendanceProfile:
@@ -477,29 +560,34 @@ def _record_to_profile(rec: dict[str, Any]) -> AttendanceProfile:
     )
 
 
+def _annual_leave_text(row: AttendanceRow) -> str:
+    return f"{row.day_type} {row.attendance_code} {row.note}".strip()
+
+
 def _is_annual_leave_row(row: AttendanceRow) -> bool:
-    text = f"{row.day_type} {row.note}".strip()
+    text = _annual_leave_text(row)
     return any(keyword in text for keyword in ANNUAL_LEAVE_KEYWORDS)
 
 
-def _annual_leave_days(row: AttendanceRow) -> float:
-    text = f"{row.day_type} {row.note}"
+def _annual_leave_bucket(row: AttendanceRow) -> tuple[str, float]:
+    text = _annual_leave_text(row)
+    if "반반차" in text:
+        return "quarter", 0.25
     if any(keyword in text for keyword in HALF_DAY_LEAVE_KEYWORDS):
-        return 0.5
-    return 1.0
+        return "half", 0.5
+    return "full", 1.0
+
+
+def _annual_leave_days(row: AttendanceRow) -> float:
+    _bucket, days = _annual_leave_bucket(row)
+    return days
 
 
 def employee_list(year_month: str) -> list[dict[str, str]]:
     """Return distinct employees present in the given month's file."""
-    path = month_file_path(year_month)
-    wb = _load_workbook(path)
-    try:
-        ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
-        seen: dict[str, dict[str, str]] = {}
-        for row in _iter_data_rows(ws):
-            rec = _row_to_record(row)
-            if not rec:
-                continue
+    seen: dict[str, dict[str, str]] = {}
+    for path in _month_file_paths_or_raise(year_month):
+        for rec in _records_from_path(path):
             if rec["emp_id"] not in seen:
                 seen[rec["emp_id"]] = {
                     "emp_id": rec["emp_id"],
@@ -507,8 +595,6 @@ def employee_list(year_month: str) -> list[dict[str, str]]:
                     "department": rec["department"],
                     "factory": rec["factory"],
                 }
-    finally:
-        wb.close()
     return sorted(seen.values(), key=lambda x: (x["department"], x["name"], x["emp_id"]))
 
 
@@ -518,18 +604,14 @@ def employee_exists_in_any_month(emp_id: str) -> bool:
     if not emp_id:
         return False
     for ym in available_months():
-        path = month_file_path(ym)
-        try:
-            wb = _load_workbook(path)
-        except (MonthFileNotFound, FileLocked, FileFormatInvalid):
-            continue
-        try:
-            ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
-            for row in _iter_data_rows(ws):
-                if _cell_str(_cell_at(row, COL_EMP_ID)) == emp_id:
+        for path in month_file_paths(ym):
+            try:
+                records = _records_from_path(path)
+            except (MonthFileNotFound, FileLocked, FileFormatInvalid):
+                continue
+            for rec in records:
+                if rec["emp_id"] == emp_id:
                     return True
-        finally:
-            wb.close()
     return False
 
 
@@ -539,19 +621,14 @@ def employee_profile_from_any_month(emp_id: str) -> AttendanceProfile | None:
     if not emp_id:
         return None
     for ym in available_months():
-        path = month_file_path(ym)
-        try:
-            wb = _load_workbook(path)
-        except (MonthFileNotFound, FileLocked, FileFormatInvalid):
-            continue
-        try:
-            ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
-            for row in _iter_data_rows(ws):
-                rec = _row_to_record(row)
+        for path in month_file_paths(ym):
+            try:
+                records = _records_from_path(path)
+            except (MonthFileNotFound, FileLocked, FileFormatInvalid):
+                continue
+            for rec in records:
                 if rec and rec["emp_id"] == emp_id:
                     return _record_to_profile(rec)
-        finally:
-            wb.close()
     return None
 
 
@@ -559,22 +636,22 @@ def _load_month_rows_for_employee(
     year_month: str, emp_id: str
 ) -> tuple[AttendanceProfile | None, list[AttendanceRow]]:
     """Return the rows present in one month without searching other months."""
-    path = month_file_path(year_month)
-    wb = _load_workbook(path)
-    try:
-        ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
-        rows: list[AttendanceRow] = []
-        profile: AttendanceProfile | None = None
-        for raw in _iter_data_rows(ws):
-            rec = _row_to_record(raw)
-            if not rec or rec["emp_id"] != emp_id:
+    profile: AttendanceProfile | None = None
+    rows: list[AttendanceRow] = []
+    seen_rows: set[tuple[Any, ...]] = set()
+    for path in _month_file_paths_or_raise(year_month):
+        for rec in _records_from_path(path):
+            if rec["emp_id"] != emp_id:
                 continue
             if profile is None:
                 profile = _record_to_profile(rec)
-            rows.append(rec["row"])
-    finally:
-        wb.close()
-
+            row = rec["row"]
+            row_key = _attendance_row_key(row)
+            if row_key in seen_rows:
+                continue
+            seen_rows.add(row_key)
+            rows.append(row)
+    rows.sort(key=lambda row: (row.date, row.check_in or "", row.check_out or "", row.note))
     return profile, rows
 
 
@@ -609,8 +686,15 @@ def load_year_summary_for_employee(year: int, emp_id: str) -> AttendanceAnnualSu
         summary.late_total += month_summary.late_total
         for row in rows:
             if _is_annual_leave_row(row):
+                bucket, days = _annual_leave_bucket(row)
                 summary.annual_leave_count += 1
-                summary.annual_leave_days += _annual_leave_days(row)
+                summary.annual_leave_days += days
+                if bucket == "quarter":
+                    summary.annual_leave_quarter_days += days
+                elif bucket == "half":
+                    summary.annual_leave_half_days += days
+                else:
+                    summary.annual_leave_full_days += days
     return summary
 
 

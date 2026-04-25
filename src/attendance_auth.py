@@ -2,7 +2,8 @@
 
 This is a separate credential space from the main IRMS login:
 - Identity is the ERP employee number (사번), stored in ``attendance_users``.
-- First login uses the sa-beon as the initial password and forces a change.
+- First login uses the sa-beon as the initial password and shows a change
+  reminder; attendance lookup remains available.
 - Brute force guard: 5 failures within the counter window locks the account
   for 5 minutes.
 - Idle session timeout: 5 minutes of inactivity clears the session.
@@ -216,9 +217,17 @@ def change_password(emp_id: str, current_password: str, new_password: str) -> No
 
 
 def reset_password_to_empid(emp_id: str) -> None:
+    from .services.attendance_excel import employee_exists_in_any_month
+
+    emp_id = (emp_id or "").strip()
+    if not emp_id or not employee_exists_in_any_month(emp_id):
+        raise AttendanceAuthError(
+            code="EMP_NOT_IN_EXCEL", status_code=status.HTTP_404_NOT_FOUND
+        )
+
     record = _fetch(emp_id)
     if record is None:
-        ensure_account(emp_id)
+        _create(emp_id, emp_id, reset_required=1)
         return
     _set_password(emp_id, emp_id, reset_required=1)
 

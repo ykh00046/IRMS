@@ -1,8 +1,4 @@
-"""IRMS Notice tray application entrypoint.
-
-Stays resident in the Windows notification area, polls the IRMS server for
-new notice-room messages, and plays each new message aloud via TTS.
-"""
+"""IRMS Notice tray application entrypoint."""
 
 from __future__ import annotations
 
@@ -10,6 +6,7 @@ import os
 import subprocess
 import sys
 import threading
+import webbrowser
 from pathlib import Path
 
 import pystray
@@ -17,6 +14,7 @@ from PIL import Image
 from pystray import Menu, MenuItem
 
 from .attendance_alerts import AttendanceAlertPoller, today_iso
+from .attendance_popup import AttendanceAlertPopupManager
 from .config import Config, logs_dir
 from .logger import setup_logger
 from .poller import Poller
@@ -43,6 +41,16 @@ def load_icon_image() -> Image.Image:
     return Image.new("RGB", (64, 64), color=(30, 64, 175))
 
 
+def attendance_page_url(server_url: str) -> str:
+    """Return the attendance page URL rooted at the configured server."""
+    return f"{server_url.rstrip('/')}/attendance"
+
+
+def open_in_browser(url: str) -> None:
+    """Open a URL in the default browser."""
+    webbrowser.open_new_tab(url)
+
+
 class TrayApp:
     def __init__(self) -> None:
         self.logger = setup_logger()
@@ -51,6 +59,7 @@ class TrayApp:
             chime_path=asset_path("ding.wav"),
             rate=self.config.tts_rate,
             muted=self.config.muted,
+            volume=self.config.volume,
         )
         self.poller = Poller(
             config=self.config,
@@ -60,9 +69,13 @@ class TrayApp:
         self._status = "대기 중"
         self._icon: pystray.Icon | None = None
         self._alert_mute_date: str | None = None
+        self.alert_popup = AttendanceAlertPopupManager(
+            on_confirm=self._open_attendance,
+            on_dismiss_today=self._mute_alerts_for_today,
+        )
         self.alert_poller = AttendanceAlertPoller(
             config=self.config,
-            icon_getter=lambda: self._icon,
+            present_alert=self.alert_popup.show,
             is_enabled_getter=self._alerts_enabled_today,
         )
 
@@ -72,6 +85,7 @@ class TrayApp:
             self.config.server_url,
             self.config.poll_interval_seconds,
         )
+        self.alert_popup.start()
         self.tts.start()
         self.poller.start()
         self.alert_poller.start()
@@ -86,6 +100,7 @@ class TrayApp:
             self._icon.run()
         finally:
             self.logger.info("shutting down")
+            self.alert_popup.stop()
             self.alert_poller.stop()
             self.poller.stop()
             self.tts.stop()
@@ -106,12 +121,13 @@ class TrayApp:
                 lambda _item: (
                     "오늘 근태 알림 끄기"
                     if self._alerts_enabled_today()
-                    else "오늘 근태 알림 켜기 (자정 자동 복귀)"
+                    else "오늘 근태 알림 켜기 (자정 자동 복구)"
                 ),
                 self._toggle_alert_mute_today,
             ),
             MenuItem("테스트 재생", self._test_play),
             MenuItem("근태 알림 테스트", self._test_alert),
+            MenuItem("근태 확인 열기", self._open_attendance_menu),
             MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
@@ -138,20 +154,41 @@ class TrayApp:
             self._icon.update_menu()
 
     def _test_play(self, _icon, _item) -> None:
-        self.tts.enqueue_raw("테스트 공지입니다. 정상적으로 들리면 설치가 완료된 것입니다.")
+        self.tts.enqueue_raw(
+            "테스트 공지입니다. 정상적으로 소리와 음성 안내가 나오면 설정이 완료된 것입니다."
+        )
 
-    def _toggle_alert_mute_today(self, _icon, _item) -> None:
-        if self._alerts_enabled_today():
-            self._alert_mute_date = today_iso()
-            self.logger.info("attendance alerts muted for %s", self._alert_mute_date)
-        else:
-            self._alert_mute_date = None
-            self.logger.info("attendance alerts re-enabled")
+    def _mute_alerts_for_today(self) -> None:
+        self._alert_mute_date = today_iso()
+        self.logger.info("attendance alerts muted for %s", self._alert_mute_date)
         if self._icon is not None:
             self._icon.update_menu()
 
+    def _enable_alerts(self) -> None:
+        self._alert_mute_date = None
+        self.logger.info("attendance alerts re-enabled")
+        if self._icon is not None:
+            self._icon.update_menu()
+
+    def _toggle_alert_mute_today(self, _icon, _item) -> None:
+        if self._alerts_enabled_today():
+            self._mute_alerts_for_today()
+        else:
+            self._enable_alerts()
+
     def _test_alert(self, _icon, _item) -> None:
-        self.alert_poller.trigger_once()
+        self.alert_poller.show_test_notification()
+
+    def _open_attendance(self) -> None:
+        url = attendance_page_url(self.config.server_url)
+        try:
+            open_in_browser(url)
+            self.logger.info("attendance page opened: %s", url)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("open attendance failed: %s", exc)
+
+    def _open_attendance_menu(self, _icon, _item) -> None:
+        self._open_attendance()
 
     def _open_logs(self, _icon, _item) -> None:
         path = logs_dir()
@@ -166,6 +203,7 @@ class TrayApp:
     def _quit(self, icon, _item) -> None:
         def _stop() -> None:
             icon.stop()
+
         threading.Thread(target=_stop, daemon=True).start()
 
 
