@@ -14,7 +14,8 @@ from pathlib import Path
 
 APP_NAME = "IRMS-Notice"
 DEFAULT_SERVER_URL = "http://192.168.11.147:9000"
-DEFAULT_POLL_INTERVAL = 5
+DEFAULT_POLL_INTERVAL = 10
+LEGACY_DEFAULT_POLL_INTERVAL = 5
 MAX_BACKOFF_SECONDS = 60
 
 
@@ -65,7 +66,13 @@ class Config:
 
         allowed = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         cleaned = {k: v for k, v in raw.items() if k in allowed}
-        return cls(**cleaned)
+        config = cls(**cleaned)
+
+        if cleaned.get("poll_interval_seconds") == LEGACY_DEFAULT_POLL_INTERVAL:
+            config.poll_interval_seconds = DEFAULT_POLL_INTERVAL
+            config.save()
+
+        return config
 
     def save(self) -> None:
         path = config_path()

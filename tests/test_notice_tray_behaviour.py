@@ -1,4 +1,5 @@
 import queue
+import json
 import time
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 
 from src.routers.models import ChatMessageCreateRequest
 import tray_client.src.main as tray_main
+import tray_client.src.config as tray_config
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
 from tray_client.src.config import Config
 from tray_client.src.poller import Poller
@@ -106,6 +108,35 @@ class TTSQueueTests(unittest.TestCase):
 
 
 class PollerTests(unittest.TestCase):
+    def test_default_notice_poll_interval_is_ten_seconds(self) -> None:
+        self.assertEqual(Config().poll_interval_seconds, 10)
+
+    def test_config_load_migrates_legacy_notice_poll_interval_to_ten_seconds(self) -> None:
+        path = Path(__file__).resolve().parent / "_tmp_notice_config.json"
+        try:
+            path.write_text(
+                json.dumps(
+                    {
+                        "server_url": "http://192.168.11.147:9000",
+                        "poll_interval_seconds": 5,
+                        "muted": False,
+                        "last_message_id": 12,
+                        "tts_rate": 180,
+                        "volume": 1.0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(tray_config, "config_path", return_value=path):
+                config = Config.load()
+
+            self.assertEqual(config.poll_interval_seconds, 10)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["poll_interval_seconds"], 10)
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_status_tokens_are_displayed_in_korean(self) -> None:
         statuses: list[str] = []
         poller = Poller(

@@ -25,7 +25,7 @@
 │   └─ 거부: 외부망 → 403                                  │
 └─────────────────────────────────────────────────────────┘
               ▲
-              │ HTTP GET (5초 간격, exponential backoff)
+              │ HTTP GET (10초 간격, exponential backoff)
               │
 ┌─────────────┴───────────────────────────────────────────┐
 │ Tray Client (Windows Service-like, user session)        │
@@ -55,7 +55,7 @@
 
 ### 3.2 GET /api/public/notice/poll
 
-공지방 신규 메시지 조회. 트레이 앱이 5초마다 호출.
+공지방 신규 메시지 조회. 트레이 앱이 10초마다 호출.
 
 **Query Params:**
 | Param | Type | Default | Description |
@@ -143,7 +143,7 @@ tray_client/
 ```json
 {
   "server_url": "http://192.168.11.147:9000",
-  "poll_interval_seconds": 5,
+  "poll_interval_seconds": 10,
   "muted": false,
   "last_message_id": 0,
   "tts_voice": "ko-KR",
@@ -199,7 +199,7 @@ while not stop_event.is_set():
             config.last_message_id = item["id"]
             save_config(config)
         
-        current_backoff = BASE_INTERVAL  # 5초로 복귀
+        current_backoff = BASE_INTERVAL  # 10초로 복귀
         stop_event.wait(current_backoff)
     except (requests.ConnectionError, requests.Timeout):
         log("connection error, backing off")
@@ -356,14 +356,14 @@ echo Build complete: Output\IRMS-Notice-Setup-v1.0.exe
 **클라이언트 측 (수동):**
 1. 설치 → 트레이 아이콘 표시 확인
 2. 서버 다운 상태 → "오프라인" 표시, 복구 시 자동 재연결
-3. 공지 전송 → 5초 이내 효과음 + TTS 재생
+3. 공지 전송 → 10초 이내 효과음 + TTS 재생
 4. 음소거 토글 → 새 공지 무시 확인
 5. "테스트 재생" 메뉴 → 샘플 음성 재생
 6. 종료 → 트레이 아이콘 사라짐, 프로세스 종료
 7. PC 재부팅 → 자동 시작 확인
 
 **현장 통합:**
-1. 7대 PC 동시 설치 후 공지 1건 전송 → 7대 동시(±5초) 재생 확인
+1. 7대 PC 동시 설치 후 공지 1건 전송 → 7대 동시(±10초) 재생 확인
 2. 서버 재시작 중 공지 누락 여부 확인
 
 ## 9. Non-Goals (명시적 제외)
