@@ -87,7 +87,7 @@ def build_live_popup_payload(payload: dict[str, Any]) -> PopupPayload:
     return PopupPayload(
         title="근태 확인 필요",
         badge_text=f"{total}명" if total else "확인",
-        summary="오늘 확인이 필요한 인원이 있습니다.",
+        summary="이번 달 확인이 필요한 인원이 있습니다.",
         lines=_privacy_safe_lines(items, total),
         accent="live",
     )

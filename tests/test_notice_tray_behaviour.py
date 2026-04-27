@@ -2,6 +2,7 @@ import queue
 import json
 import time
 import unittest
+import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -191,6 +192,109 @@ class AttendanceAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(poller._interval, 60 * 60)
 
+    def test_schedule_slot_keys_follow_9_13_16(self) -> None:
+        poller = AttendanceAlertPoller(
+            config=Config(),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+        )
+
+        self.assertIsNone(poller._current_schedule_slot_key(dt.datetime(2026, 4, 26, 8, 59)))
+        self.assertEqual(
+            poller._current_schedule_slot_key(dt.datetime(2026, 4, 26, 9, 0)),
+            "2026-04-26T09",
+        )
+        self.assertEqual(
+            poller._current_schedule_slot_key(dt.datetime(2026, 4, 26, 14, 30)),
+            "2026-04-26T13",
+        )
+        self.assertEqual(
+            poller._current_schedule_slot_key(dt.datetime(2026, 4, 26, 16, 5)),
+            "2026-04-26T16",
+        )
+
+    def test_duplicate_signature_is_suppressed_within_same_slot_only(self) -> None:
+        presented: list[PopupPayload] = []
+        poller = AttendanceAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: True,
+        )
+        payload = {
+            "month": "2026-04",
+            "total": 1,
+            "items": [
+                {
+                    "emp_id": "171013",
+                    "name": "\uAE40\uBBFC\uD638",
+                    "department": "\uC0DD\uC0B01\uD300",
+                    "shift_time": "\uC8FC\uAC04",
+                    "issues": ["\uCD9C\uADFC \uB204\uB77D"],
+                }
+            ],
+        }
+
+        with patch.object(poller, "_poll_once", return_value=payload):
+            poller._poll_and_notify(slot_key="2026-04-26T09")
+            poller._poll_and_notify(slot_key="2026-04-26T09")
+            poller._poll_and_notify(slot_key="2026-04-26T13")
+
+        self.assertEqual(len(presented), 2)
+
+    def test_stale_slot_on_startup_marks_recent_slot_as_processed(self) -> None:
+        poller = AttendanceAlertPoller(
+            config=Config(),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+        )
+
+        # 09:35 → 09 슬롯 시작 후 35분 경과 → 스킬 대상
+        self.assertEqual(
+            poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 9, 35)),
+            "2026-04-26T09",
+        )
+        # 09:25 → 그레이스 내 → 팔린다
+        self.assertIsNone(
+            poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 9, 25))
+        )
+        # 08:00 → 안 띄는 시간
+        self.assertIsNone(
+            poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 8, 0))
+        )
+
+    def test_disabled_state_does_not_consume_slot(self) -> None:
+        presented: list[PopupPayload] = []
+        enabled_flag = {"value": False}
+        poller = AttendanceAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: enabled_flag["value"],
+        )
+        payload = {
+            "month": "2026-04",
+            "total": 1,
+            "items": [
+                {
+                    "emp_id": "171013",
+                    "name": "김민호",
+                    "department": "생산1팀",
+                    "shift_time": "주간",
+                    "issues": ["출근 누락"],
+                }
+            ],
+        }
+
+        with patch.object(poller, "_poll_once", return_value=payload):
+            # 비활성 상태: 폴링되지 않고 슬롯도 소비하지 않음
+            self.assertIsNone(poller._last_processed_slot)
+            self.assertEqual(len(presented), 0)
+
+            # 사용자가 다시 켜면 같은 슬롯에서도 팝업 발생
+            enabled_flag["value"] = True
+            poller._poll_and_notify(slot_key="2026-04-26T09")
+
+        self.assertEqual(len(presented), 1)
+
     def test_test_notification_uses_popup_payload(self) -> None:
         presented: list[PopupPayload] = []
         poller = AttendanceAlertPoller(
@@ -223,7 +327,7 @@ class AttendanceAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(payload.title, "근태 확인 필요")
         self.assertEqual(payload.badge_text, "5명")
-        self.assertEqual(payload.summary, "오늘 확인이 필요한 인원이 있습니다.")
+        self.assertEqual(payload.summary, "이번 달 확인이 필요한 인원이 있습니다.")
         self.assertEqual(
             payload.lines,
             [
@@ -265,7 +369,7 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(len(presented), 1)
         self.assertEqual(presented[0].title, "근태 확인 필요")
         self.assertEqual(presented[0].badge_text, "1명")
-        self.assertEqual(presented[0].summary, "오늘 확인이 필요한 인원이 있습니다.")
+        self.assertEqual(presented[0].summary, "이번 달 확인이 필요한 인원이 있습니다.")
         self.assertEqual(presented[0].lines[0], "김철수 인원 근태 확인")
 
 

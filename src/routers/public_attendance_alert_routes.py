@@ -1,7 +1,7 @@
 """Unauthenticated attendance-alert polling for the tray client.
 
-Each field PC's tray app polls ``/today`` every ~30 minutes; when the
-response has items, a silent Windows toast is raised. Access is
+Each field PC's tray app polls ``/month`` on the configured schedule;
+when the response has items, a silent popup is raised. Access is
 restricted to the internal LAN by the InternalNetworkOnlyMiddleware;
 no login is required because the endpoint is read-only and the data
 it returns is already visible via the main attendance page for anyone
@@ -38,6 +38,25 @@ def build_router() -> APIRouter:
         return {
             "date": target_date,
             "day_type": day_type,
+            "total": len(items),
+            "items": items,
+        }
+
+    @router.get("/month")
+    async def month() -> dict[str, Any]:
+        year_month = excel_service.current_year_month()
+        try:
+            items = excel_service.detect_month_anomalies(year_month)
+        except excel_service.MonthFileNotFound:
+            raise HTTPException(status_code=404, detail="MONTH_FILE_NOT_FOUND")
+        except excel_service.FileLocked:
+            raise HTTPException(status_code=503, detail="FILE_LOCKED_RETRY")
+        except excel_service.FileFormatInvalid:
+            raise HTTPException(status_code=500, detail="FILE_FORMAT_INVALID")
+
+        return {
+            "month": year_month,
+            "date": excel_service.current_date(),
             "total": len(items),
             "items": items,
         }

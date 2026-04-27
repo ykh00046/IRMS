@@ -356,6 +356,38 @@ def _row_issue_labels(row: AttendanceRow, shift_time: str) -> list[str]:
     return _unprocessed_row_issues(row, shift_time)
 
 
+def _merge_anomaly_record(
+    anomalies_by_emp: dict[str, dict[str, Any]],
+    rec: dict[str, Any],
+    issues: list[str],
+    *,
+    include_dates: bool = False,
+) -> None:
+    row: AttendanceRow = rec["row"]
+    existing = anomalies_by_emp.get(rec["emp_id"])
+    if existing is None:
+        item = {
+            "emp_id": rec["emp_id"],
+            "name": rec["name"],
+            "department": rec["department"],
+            "shift_time": rec.get("shift_time", "") or "",
+            "issues": list(issues),
+        }
+        if include_dates:
+            item["dates"] = [row.date]
+        anomalies_by_emp[rec["emp_id"]] = item
+        return
+
+    for issue in issues:
+        if issue not in existing["issues"]:
+            existing["issues"].append(issue)
+
+    if include_dates:
+        dates = existing.setdefault("dates", [])
+        if row.date not in dates:
+            dates.append(row.date)
+
+
 def detect_today_anomalies(
     year_month: str, target_date: str
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -404,21 +436,29 @@ def detect_today_anomalies(
             if not issues:
                 continue
 
-            existing = anomalies_by_emp.get(rec["emp_id"])
-            if existing is None:
-                anomalies_by_emp[rec["emp_id"]] = {
-                    "emp_id": rec["emp_id"],
-                    "name": rec["name"],
-                    "department": rec["department"],
-                    "shift_time": shift_time,
-                    "issues": issues,
-                }
-                continue
-            for issue in issues:
-                if issue not in existing["issues"]:
-                    existing["issues"].append(issue)
+            _merge_anomaly_record(anomalies_by_emp, rec, issues)
 
     return day_type, list(anomalies_by_emp.values())
+
+
+def detect_month_anomalies(year_month: str) -> list[dict[str, Any]]:
+    """Return unresolved anomalies for any date in the selected month."""
+
+    anomalies_by_emp: dict[str, dict[str, Any]] = {}
+    for path in _month_file_paths_or_raise(year_month):
+        for rec in _records_from_path(path):
+            row: AttendanceRow = rec["row"]
+            shift_time = rec.get("shift_time", "") or ""
+            issues = _unprocessed_row_issues(row, shift_time)
+            if not issues:
+                continue
+            _merge_anomaly_record(anomalies_by_emp, rec, issues, include_dates=True)
+
+    items = list(anomalies_by_emp.values())
+    for item in items:
+        if "dates" in item:
+            item["dates"] = sorted(item["dates"])
+    return items
 
 
 def _cell_str(value: Any) -> str:
