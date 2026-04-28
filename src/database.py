@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import logging
@@ -13,6 +13,12 @@ from .security import hash_password
 
 def utc_now_text() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def utc_cutoff_text(now_text: str, seconds: int) -> str:
+    """Return the ISO timestamp ``seconds`` before ``now_text``."""
+    now = datetime.fromisoformat(now_text.replace("Z", "+00:00"))
+    return (now - timedelta(seconds=seconds)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def get_connection() -> sqlite3.Connection:

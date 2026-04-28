@@ -85,7 +85,10 @@ class TTSQueueTests(unittest.TestCase):
             patch.object(
                 tts_module,
                 "time",
-                SimpleNamespace(sleep=lambda seconds: events.append(("sleep", seconds))),
+                SimpleNamespace(
+                    sleep=lambda seconds: events.append(("sleep", seconds)),
+                    monotonic=lambda: 0.0,
+                ),
                 create=True,
             ),
             patch.object(Path, "exists", return_value=True),
@@ -180,6 +183,91 @@ class PollerTests(unittest.TestCase):
 
         self.assertEqual(received, [{"id": "bad", "message_text": "hello"}])
         self.assertEqual(config.last_message_id, 1)
+
+    def test_initial_sync_replays_one_fresh_message_then_snapshots_latest_id(self) -> None:
+        config = Config(last_message_id=0)
+        received: list[dict] = []
+        poller = Poller(config=config, on_message=received.append)
+
+        poller._handle_success(
+            {
+                "latest_id": "12",
+                "items": [{"id": 9, "message_text": "긴급 공지", "created_by_display_name": "관리자"}],
+            }
+        )
+
+        # The fresh message should have been delivered to the TTS handler...
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0]["id"], 9)
+        # ...and the latest_id snapshot should still suppress older history.
+        self.assertEqual(config.last_message_id, 12)
+
+    def test_initial_sync_with_empty_payload_only_snapshots_latest_id(self) -> None:
+        config = Config(last_message_id=0)
+        received: list[dict] = []
+        poller = Poller(config=config, on_message=received.append)
+
+        poller._handle_success({"latest_id": "20", "items": []})
+
+        self.assertEqual(received, [])
+        self.assertEqual(config.last_message_id, 20)
+
+
+class TTSVoiceFallbackTests(unittest.TestCase):
+    def test_pick_korean_voice_logs_warning_when_none_match(self) -> None:
+        from tray_client.src.tts import _pick_korean_voice
+
+        class FakeEngine:
+            def __init__(self, voices):
+                self._voices = voices
+                self.selected_voice = None
+
+            def getProperty(self, name):
+                if name == "voices":
+                    return self._voices
+                return None
+
+            def setProperty(self, name, value):
+                if name == "voice":
+                    self.selected_voice = value
+
+        english_only = FakeEngine(
+            [SimpleNamespace(id="en-us-david", name="Microsoft David")]
+        )
+        with self.assertLogs("irms_notice", level="WARNING") as logs:
+            picked = _pick_korean_voice(english_only)
+
+        self.assertFalse(picked)
+        self.assertIsNone(english_only.selected_voice)
+        self.assertTrue(any("no korean SAPI voice" in line for line in logs.output))
+
+    def test_pick_korean_voice_selects_heami_when_present(self) -> None:
+        from tray_client.src.tts import _pick_korean_voice
+
+        class FakeEngine:
+            def __init__(self, voices):
+                self._voices = voices
+                self.selected_voice = None
+
+            def getProperty(self, name):
+                if name == "voices":
+                    return self._voices
+                return None
+
+            def setProperty(self, name, value):
+                if name == "voice":
+                    self.selected_voice = value
+
+        engine = FakeEngine(
+            [
+                SimpleNamespace(id="en-us-david", name="Microsoft David"),
+                SimpleNamespace(id="ko-kr-heami", name="Microsoft Heami - Korean"),
+            ]
+        )
+        picked = _pick_korean_voice(engine)
+
+        self.assertTrue(picked)
+        self.assertEqual(engine.selected_voice, "ko-kr-heami")
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):

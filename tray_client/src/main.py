@@ -119,9 +119,9 @@ class TrayApp:
             ),
             MenuItem(
                 lambda _item: (
-                    "오늘 근태 알림 끄기"
+                    "근태 알림 오늘만 끄기"
                     if self._alerts_enabled_today()
-                    else "오늘 근태 알림 켜기 (자정 자동 복구)"
+                    else "근태 알림 오늘만 켜기 (자정 자동 복귀)"
                 ),
                 self._toggle_alert_mute_today,
             ),

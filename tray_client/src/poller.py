@@ -72,25 +72,22 @@ class Poller:
 
     def _handle_success(self, payload: dict) -> None:
         self._safe_status("connected")
-
-        if self._config.last_message_id == 0:
-            snap = self._safe_int(payload.get("latest_id", 0))
-            if snap > 0:
-                self._config.last_message_id = snap
-                self._safe_save_config()
-                logger.info("initial sync: snapshot latest_id=%d", snap)
-            return
+        is_initial_sync = self._config.last_message_id == 0
 
         raw_items = payload.get("items", [])
         if not isinstance(raw_items, list):
             logger.warning("poll payload items was not a list: %r", raw_items)
-            return
+            raw_items = []
 
         for item in raw_items:
             if not isinstance(item, dict):
                 logger.warning("poll payload item was not an object: %r", item)
                 continue
 
+            # Note: a TTS handler exception or full-queue drop is logged but
+            # does not block last_message_id from advancing. The intent is
+            # to never re-deliver the same message id (no replay storms),
+            # at the cost of one missed playback when the queue is saturated.
             try:
                 self._on_message(item)
             except Exception as exc:  # noqa: BLE001
@@ -103,6 +100,20 @@ class Poller:
             if item_id > self._config.last_message_id:
                 self._config.last_message_id = item_id
                 self._safe_save_config()
+
+        if is_initial_sync:
+            # Server returns at most one fresh message on initial sync. After
+            # playing it (above), snapshot latest_id so older history stays
+            # suppressed even if its id is greater than the fresh one's.
+            snap = self._safe_int(payload.get("latest_id", 0))
+            if snap > self._config.last_message_id:
+                self._config.last_message_id = snap
+                self._safe_save_config()
+                logger.info(
+                    "initial sync: snapshot latest_id=%d (replayed=%d)",
+                    snap,
+                    len(raw_items),
+                )
 
     def _safe_status(self, status: str) -> None:
         try:

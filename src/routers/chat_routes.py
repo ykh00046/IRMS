@@ -1,23 +1,17 @@
-from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
-from ..database import get_connection, utc_now_text, write_audit_log
+from ..database import get_connection, utc_cutoff_text, utc_now_text, write_audit_log
 from .models import ChatMessageCreateRequest, actor_name, serialize_chat_message, serialize_chat_room
 
 NOTICE_POST_LIMIT_PER_USER = 5
 NOTICE_POST_WINDOW_SECONDS = 60
 
 
-def _utc_cutoff_text(now_text: str, seconds: int) -> str:
-    now = datetime.fromisoformat(now_text.replace("Z", "+00:00"))
-    return (now - timedelta(seconds=seconds)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def _enforce_notice_post_rate_limit(connection, user_id: int, now_text: str) -> None:
-    cutoff = _utc_cutoff_text(now_text, NOTICE_POST_WINDOW_SECONDS)
+    cutoff = utc_cutoff_text(now_text, NOTICE_POST_WINDOW_SECONDS)
     row = connection.execute(
         """
         SELECT COUNT(*) AS count

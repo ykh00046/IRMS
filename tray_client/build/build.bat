@@ -39,7 +39,7 @@ if errorlevel 1 goto :error
 echo.
 echo Build complete.
 echo   - EXE folder : dist\IRMS-Notice\
-echo   - Installer  : Output\IRMS-Notice-Setup-1.1.6.exe
+echo   - Installer  : Output\IRMS-Notice-Setup-1.1.7.exe
 exit /b 0
 
 :error
