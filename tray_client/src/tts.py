@@ -25,11 +25,6 @@ logger = logging.getLogger("irms_notice")
 CHIME_TO_TTS_DELAY_SECONDS = 0.2
 DEFAULT_TTS_QUEUE_SIZE = 20
 
-# Watchdog upper bound for a single message playback. 300-char Korean text
-# at rate=180 fits comfortably under 30s; anything longer signals SAPI hang.
-TTS_MAX_DURATION_SECONDS = 30
-WATCHDOG_TICK_SECONDS = 5
-
 try:
     import winsound
 except ImportError:  # pragma: no cover - runtime target is Windows only
@@ -92,10 +87,6 @@ class TTSQueue:
         self._muted = muted
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, name="tts-worker", daemon=True)
-        self._engine: Any = None
-        self._engine_lock = threading.Lock()
-        self._engine_needs_reinit = False
-        self._current_started_at: float | None = None
 
     def start(self) -> None:
         self._thread.start()
@@ -149,8 +140,21 @@ class TTSQueue:
                     return
 
     def _run(self) -> None:
-        self._init_engine()
-        threading.Thread(target=self._watchdog_loop, name="tts-watchdog", daemon=True).start()
+        # SAPI's COM apartment is bound to the thread that creates the engine.
+        # Keep init + every say/runAndWait on this single worker thread; do
+        # NOT touch the engine from any other thread (no watchdog, no stop()
+        # from menu callbacks). 1.1.7 tried to add a background watchdog and
+        # broke real-notice TTS on Heami, so we keep the engine local to
+        # this function as in v1.1.0.
+        try:
+            engine = pyttsx3.init("sapi5")
+            _pick_korean_voice(engine)
+            engine.setProperty("rate", self._rate)
+            engine.setProperty("volume", self._volume)
+            logger.info("tts worker ready (rate=%d, volume=%.2f)", self._rate, self._volume)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("tts init failed: %s", exc)
+            engine = None
 
         while not self._stop_event.is_set():
             item = self._queue.get()
@@ -161,65 +165,17 @@ class TTSQueue:
             text = _format_message(item)
             if not text:
                 continue
-
-            if self._engine_needs_reinit:
-                self._init_engine()
-            if self._engine is None:
-                continue
-
             try:
                 if self._play_chime():
                     time.sleep(CHIME_TO_TTS_DELAY_SECONDS)
-                self._current_started_at = time.monotonic()
-                self._engine.say(text)
-                self._engine.runAndWait()
+                if engine is None:
+                    continue
+                logger.info("tts: speaking [%d chars] %s", len(text), text[:40])
+                engine.say(text)
+                engine.runAndWait()
+                logger.info("tts: speech completed")
             except Exception as exc:  # noqa: BLE001
                 logger.error("tts playback failed: %s", exc)
-                # Mark for re-init so the next message gets a fresh engine.
-                # SAPI can wedge after one bad call; reusing the same engine
-                # tends to cascade failures.
-                self._engine_needs_reinit = True
-            finally:
-                self._current_started_at = None
-
-    def _init_engine(self) -> None:
-        with self._engine_lock:
-            try:
-                self._engine = pyttsx3.init("sapi5")
-                _pick_korean_voice(self._engine)
-                self._engine.setProperty("rate", self._rate)
-                self._engine.setProperty("volume", self._volume)
-                self._engine_needs_reinit = False
-            except Exception as exc:  # noqa: BLE001
-                logger.error("tts init failed: %s", exc)
-                self._engine = None
-                self._engine_needs_reinit = True
-
-    def _watchdog_loop(self) -> None:
-        # Polls the active TTS duration. If a single message exceeds
-        # TTS_MAX_DURATION_SECONDS (typical SAPI hang), call engine.stop()
-        # from this thread to unblock runAndWait() and force a re-init on
-        # the next message.
-        while not self._stop_event.is_set():
-            self._stop_event.wait(WATCHDOG_TICK_SECONDS)
-            started = self._current_started_at
-            if started is None:
-                continue
-            elapsed = time.monotonic() - started
-            if elapsed <= TTS_MAX_DURATION_SECONDS:
-                continue
-            logger.warning(
-                "tts playback exceeded %.0fs (elapsed=%.1fs); forcing engine stop",
-                TTS_MAX_DURATION_SECONDS,
-                elapsed,
-            )
-            with self._engine_lock:
-                if self._engine is not None:
-                    try:
-                        self._engine.stop()
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("tts engine stop failed: %s", exc)
-            self._engine_needs_reinit = True
 
     def _play_chime(self) -> bool:
         if winsound is None or not self._chime_path.exists():
