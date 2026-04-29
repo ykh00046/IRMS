@@ -3,10 +3,10 @@
 ; Build with Inno Setup 6+ after PyInstaller:
 ;   iscc build\installer.iss
 ;
-; Output: Output\IRMS-Notice-Setup-1.1.9.exe
+; Output: Output\IRMS-Notice-Setup-1.2.0.exe
 
 #define MyAppName "IRMS Notice"
-#define MyAppVersion "1.1.9"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "IRMS"
 #define MyAppExeName "IRMS-Notice.exe"
 

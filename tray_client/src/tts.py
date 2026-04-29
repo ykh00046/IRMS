@@ -1,8 +1,13 @@
 """Text-to-speech + chime playback queue.
 
-pyttsx3 is not thread-safe, so all utterances are serialized on a single
-worker thread. A short chime plays before each message so field workers
-hear the notification even with ambient machinery noise.
+Uses SAPI 5 via ``comtypes`` directly instead of ``pyttsx3``. PyInstaller
+bundles of pyttsx3 have a known issue where ``runAndWait()`` can return
+without actually waiting for the speech to finish (the Windows message
+pump on the worker thread fails to dispatch the EndStream event), so
+TTS becomes silently silent while logs claim success.
+
+Calling ``SAPI.SpVoice.Speak(text)`` directly blocks until playback is
+complete and is much more reliable inside a PyInstaller exe.
 """
 
 from __future__ import annotations
@@ -14,8 +19,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import pyttsx3
-
 logger = logging.getLogger("irms_notice")
 
 # Small buffer between the synchronous chime returning and TTS starting,
@@ -23,6 +26,20 @@ logger = logging.getLogger("irms_notice")
 # Empirically 100~200ms is enough on Windows 10/11.
 CHIME_TO_TTS_DELAY_SECONDS = 0.2
 DEFAULT_TTS_QUEUE_SIZE = 20
+
+# Default SAPI rate is 0 (range -10..10). pyttsx3 used a 100~250 wpm-ish
+# scale; map the existing config so users don't have to update config.json.
+_PYTTSX_DEFAULT_RATE = 200
+
+
+def _pyttsx_rate_to_sapi(pyttsx_rate: int) -> int:
+    return max(-10, min(10, int((pyttsx_rate - _PYTTSX_DEFAULT_RATE) / 20)))
+
+
+try:
+    import comtypes.client  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - runtime target is Windows only
+    comtypes = None  # type: ignore[assignment]
 
 try:
     import winsound
@@ -40,26 +57,30 @@ def _format_message(msg: dict[str, Any]) -> str:
     return text
 
 
-def _pick_korean_voice(engine: Any) -> bool:
-    """Select a Korean SAPI voice if available. Returns True on success.
-
-    On Windows hosts that lack Heami/Seoyeon, SAPI silently falls back to the
-    default English voice and Korean text is mispronounced. The caller logs
-    the failure so an operator can install a Korean voice.
-    """
+def _pick_korean_voice(voice_obj: Any) -> bool:
+    """Select a Korean SAPI voice if available. Returns True on success."""
     try:
-        voices = engine.getProperty("voices") or []
-    except Exception:  # noqa: BLE001 - SAPI can be flaky on some hosts
+        tokens = voice_obj.GetVoices()
+    except Exception:  # noqa: BLE001
         return False
     preferred_hints = ("ko", "korean", "heami", "seoyeon")
-    for voice in voices:
-        identifier = (getattr(voice, "id", "") or "").lower()
-        name = (getattr(voice, "name", "") or "").lower()
-        if any(hint in identifier or hint in name for hint in preferred_hints):
-            engine.setProperty("voice", voice.id)
-            logger.info("tts using korean voice: %s", getattr(voice, "name", voice.id))
+    available: list[str] = []
+    try:
+        token_count = tokens.Count
+    except Exception:  # noqa: BLE001
+        token_count = 0
+    for index in range(token_count):
+        token = tokens.Item(index)
+        try:
+            description = token.GetDescription() or ""
+        except Exception:  # noqa: BLE001
+            description = ""
+        available.append(description)
+        lowered = description.lower()
+        if any(hint in lowered for hint in preferred_hints):
+            voice_obj.Voice = token
+            logger.info("tts using korean voice: %s", description)
             return True
-    available = [getattr(v, "name", "") or getattr(v, "id", "") for v in voices]
     logger.warning(
         "tts: no korean SAPI voice found (heami/seoyeon). "
         "korean notices will sound wrong. installed voices: %s",
@@ -68,13 +89,24 @@ def _pick_korean_voice(engine: Any) -> bool:
     return False
 
 
+def _create_sapi_voice(rate: int, volume: float) -> Any:
+    """Create a SAPI.SpVoice configured for Korean notices."""
+    if comtypes is None:
+        raise RuntimeError("comtypes is unavailable (non-Windows runtime?)")
+    voice = comtypes.client.CreateObject("SAPI.SpVoice")
+    _pick_korean_voice(voice)
+    voice.Rate = _pyttsx_rate_to_sapi(rate)
+    voice.Volume = max(0, min(100, int(volume * 100)))
+    return voice
+
+
 class TTSQueue:
     """Single-threaded speech + chime playback worker."""
 
     def __init__(
         self,
         chime_path: Path,
-        rate: int = 180,
+        rate: int = _PYTTSX_DEFAULT_RATE,
         muted: bool = False,
         volume: float = 1.0,
         max_queue_size: int = DEFAULT_TTS_QUEUE_SIZE,
@@ -139,21 +171,20 @@ class TTSQueue:
                     return
 
     def _run(self) -> None:
-        # SAPI's COM apartment is bound to the thread that creates the engine.
-        # Keep init + every say/runAndWait on this single worker thread; do
-        # NOT touch the engine from any other thread (no watchdog, no stop()
-        # from menu callbacks). 1.1.7 tried to add a background watchdog and
-        # broke real-notice TTS on Heami, so we keep the engine local to
-        # this function as in v1.1.0.
+        # SAPI is bound to the COM apartment of the thread that creates the
+        # SpVoice object, so init + Speak must stay on this single worker
+        # thread. Do NOT touch the voice from any other thread.
         try:
-            engine = pyttsx3.init("sapi5")
-            _pick_korean_voice(engine)
-            engine.setProperty("rate", self._rate)
-            engine.setProperty("volume", self._volume)
-            logger.info("tts worker ready (rate=%d, volume=%.2f)", self._rate, self._volume)
+            voice = _create_sapi_voice(self._rate, self._volume)
+            logger.info(
+                "tts worker ready (rate=%d→sapi%d, volume=%.2f)",
+                self._rate,
+                _pyttsx_rate_to_sapi(self._rate),
+                self._volume,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.error("tts init failed: %s", exc)
-            engine = None
+            voice = None
 
         while not self._stop_event.is_set():
             item = self._queue.get()
@@ -167,20 +198,21 @@ class TTSQueue:
             try:
                 if self._play_chime():
                     time.sleep(CHIME_TO_TTS_DELAY_SECONDS)
-                if engine is None:
+                if voice is None:
                     continue
+                started_at = time.monotonic()
                 logger.info("tts: speaking [%d chars] %s", len(text), text[:40])
-                engine.say(text)
-                engine.runAndWait()
-                logger.info("tts: speech completed")
+                # Speak with SVSFDefault=0 - blocks until playback completes.
+                voice.Speak(text, 0)
+                duration = time.monotonic() - started_at
+                logger.info("tts: speech completed in %.2fs", duration)
             except Exception as exc:  # noqa: BLE001
                 logger.error("tts playback failed: %s", exc)
 
     def _play_chime(self) -> bool:
         # Synchronous playback (no SND_ASYNC) so the audio device is fully
-        # released before TTS runs. The async version raced with Heami SAPI
-        # whenever the chime tail was still playing - the result was an
-        # intermittent silent TTS while the chime always sounded fine.
+        # released before TTS runs. The async version raced SAPI whenever
+        # the chime tail was still rendering.
         if winsound is None or not self._chime_path.exists():
             return False
         try:

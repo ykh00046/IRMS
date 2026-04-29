@@ -54,33 +54,38 @@ class TTSQueueTests(unittest.TestCase):
 
         self.assertEqual(queued_ids, [2, 3])
 
-    def test_worker_sets_volume_and_waits_after_chime_before_speaking(self) -> None:
+    def test_worker_chime_then_sleep_then_speak_in_order(self) -> None:
         events: list[tuple] = []
 
-        class FakeEngine:
-            def getProperty(self, _name):
-                return []
+        class FakeVoice:
+            def __init__(self):
+                self.Voice = None
+                self.Rate = None
+                self.Volume = None
 
-            def setProperty(self, name, value):
-                events.append(("set", name, value))
+            def GetVoices(self):
+                class _Empty:
+                    Count = 0
+                    def Item(self, _i):
+                        raise IndexError
+                return _Empty()
 
-            def say(self, text):
-                events.append(("say", text))
-
-            def runAndWait(self):
-                events.append(("run",))
+            def Speak(self, text, flags):
+                events.append(("speak", text, flags))
 
         class FakeWinsound:
             SND_FILENAME = 1
-            SND_ASYNC = 2
 
             @staticmethod
             def PlaySound(path, flags):
                 events.append(("chime", path, flags))
 
-        fake_engine = FakeEngine()
+        fake_voice = FakeVoice()
+        fake_comtypes = SimpleNamespace(
+            client=SimpleNamespace(CreateObject=lambda _name: fake_voice),
+        )
         with (
-            patch("tray_client.src.tts.pyttsx3.init", return_value=fake_engine),
+            patch.object(tts_module, "comtypes", fake_comtypes),
             patch("tray_client.src.tts.winsound", FakeWinsound),
             patch.object(
                 tts_module,
@@ -98,16 +103,16 @@ class TTSQueueTests(unittest.TestCase):
             tts.enqueue_message({"message_text": "hello"})
 
             deadline = time.time() + 2
-            while ("run",) not in events and time.time() < deadline:
+            while not any(e[0] == "speak" for e in events) and time.time() < deadline:
                 time.sleep(0.01)
             tts.stop()
 
-        self.assertIn(("set", "volume", 0.4), events)
+        self.assertEqual(fake_voice.Volume, 40)
         chime_index = next(i for i, event in enumerate(events) if event[0] == "chime")
         sleep_index = next(i for i, event in enumerate(events) if event[0] == "sleep")
-        say_index = next(i for i, event in enumerate(events) if event[0] == "say")
+        speak_index = next(i for i, event in enumerate(events) if event[0] == "speak")
         self.assertLess(chime_index, sleep_index)
-        self.assertLess(sleep_index, say_index)
+        self.assertLess(sleep_index, speak_index)
         self.assertEqual(events[sleep_index][1], 0.2)
 
 
@@ -214,60 +219,60 @@ class PollerTests(unittest.TestCase):
 
 
 class TTSVoiceFallbackTests(unittest.TestCase):
+    @staticmethod
+    def _make_voice_object(descriptions: list[str]):
+        from tray_client.src.tts import _pick_korean_voice  # noqa: F401
+
+        class _Token:
+            def __init__(self, desc: str):
+                self._desc = desc
+
+            def GetDescription(self) -> str:
+                return self._desc
+
+        class _Tokens:
+            def __init__(self, descs: list[str]):
+                self._tokens = [_Token(d) for d in descs]
+                self.Count = len(self._tokens)
+
+            def Item(self, index: int):
+                return self._tokens[index]
+
+        class _Voice:
+            def __init__(self, descs: list[str]):
+                self._tokens = _Tokens(descs)
+                self.Voice = None
+
+            def GetVoices(self):
+                return self._tokens
+
+        return _Voice(descriptions)
+
     def test_pick_korean_voice_logs_warning_when_none_match(self) -> None:
         from tray_client.src.tts import _pick_korean_voice
 
-        class FakeEngine:
-            def __init__(self, voices):
-                self._voices = voices
-                self.selected_voice = None
-
-            def getProperty(self, name):
-                if name == "voices":
-                    return self._voices
-                return None
-
-            def setProperty(self, name, value):
-                if name == "voice":
-                    self.selected_voice = value
-
-        english_only = FakeEngine(
-            [SimpleNamespace(id="en-us-david", name="Microsoft David")]
-        )
+        english_only = self._make_voice_object(["Microsoft David Desktop - English (United States)"])
         with self.assertLogs("irms_notice", level="WARNING") as logs:
             picked = _pick_korean_voice(english_only)
 
         self.assertFalse(picked)
-        self.assertIsNone(english_only.selected_voice)
+        self.assertIsNone(english_only.Voice)
         self.assertTrue(any("no korean SAPI voice" in line for line in logs.output))
 
     def test_pick_korean_voice_selects_heami_when_present(self) -> None:
         from tray_client.src.tts import _pick_korean_voice
 
-        class FakeEngine:
-            def __init__(self, voices):
-                self._voices = voices
-                self.selected_voice = None
-
-            def getProperty(self, name):
-                if name == "voices":
-                    return self._voices
-                return None
-
-            def setProperty(self, name, value):
-                if name == "voice":
-                    self.selected_voice = value
-
-        engine = FakeEngine(
+        voice_obj = self._make_voice_object(
             [
-                SimpleNamespace(id="en-us-david", name="Microsoft David"),
-                SimpleNamespace(id="ko-kr-heami", name="Microsoft Heami - Korean"),
+                "Microsoft David Desktop - English (United States)",
+                "Microsoft Heami Desktop - Korean",
             ]
         )
-        picked = _pick_korean_voice(engine)
+        picked = _pick_korean_voice(voice_obj)
 
         self.assertTrue(picked)
-        self.assertEqual(engine.selected_voice, "ko-kr-heami")
+        self.assertIsNotNone(voice_obj.Voice)
+        self.assertIn("Heami", voice_obj.Voice.GetDescription())
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):
