@@ -23,7 +23,6 @@ a = Analysis(
         (str(ASSETS / "ding.wav"), "assets"),
     ],
     hiddenimports=[
-        "pyttsx3.drivers.sapi5",
         "pywintypes",
         "pythoncom",
         "win32com",

@@ -1,15 +1,18 @@
-# IRMS Notice Tray Client
+# IRMS Attendance Tray Client
 
-IRMS 공지방(`notice`) 메시지를 현장 PC에서 자동으로 음성(TTS)으로 재생하고,
 해당 월에 **미처리 근태 이상(출퇴근 누락, 지각, 조퇴)**이 남아 있으면
-정해진 시각(09:00, 13:00, 16:00)에 조용한 팝업으로 알려주는
-Windows 작업표시줄 상주 프로그램입니다.
+정해진 시각(09:00, 13:00, 16:00)에 조용한 팝업으로 알려주는 Windows
+작업표시줄 상주 프로그램입니다.
 
 - 대상 OS: Windows 10 / 11 (64bit)
 - 서버: 내부망 IRMS 호스팅 서버 (기본값 `http://192.168.11.147:9000`)
 - 배포 규모: 현장 PC 7대 (확장 가능)
 - 방향성: **수신 전용** (쓰기 불가, 로그인 없음, 내부망만 허용)
-- 현재 버전: **1.2.0** (pyttsx3 우회 → SAPI 직접 호출, PyInstaller 묵음 회귀 해결)
+- 현재 버전: **2.0.0** (공지 TTS 브로드캐스트 제거, 근태 알림만 수행)
+
+> 단체 공지 TTS 기능은 PyInstaller + SAPI 환경 편차로 안정적인 동작을 보장하기
+> 어려워 2.0.0에서 완전히 제거했습니다. 관리자가 IRMS 웹의 공지방에 글을
+> 남기는 기능 자체는 그대로 살아있어 기록·열람 용도로 사용 가능합니다.
 
 ---
 
@@ -17,7 +20,7 @@ Windows 작업표시줄 상주 프로그램입니다.
 
 ### 설치
 
-1. 관리자가 배포한 `IRMS-Notice-Setup-1.2.0.exe` 더블클릭
+1. 관리자가 배포한 `IRMS-Notice-Setup-2.0.0.exe` 더블클릭
 2. Windows가 "알 수 없는 게시자" 경고를 띄우면 **"추가 정보" → "실행"**
 3. 한국어 설치 마법사에서 **다음 → 다음 → 설치**
 4. "Windows 시작 시 자동 실행" 체크(기본)
@@ -27,22 +30,13 @@ Windows 작업표시줄 상주 프로그램입니다.
 
 | 트레이 우클릭 메뉴 | 설명 |
 |------------------|------|
-| 상태: 연결됨 / 대기 중 / 오프라인 | 현재 서버 연결 상태(클릭 불가, 정보용) |
-| 음소거 / 음소거 해제 | 이 PC만 공지 TTS를 끄기 (다른 PC에는 영향 없음) |
 | 근태 알림 오늘만 끄기 / 켜기 | 오늘 하루만 근태 이상 팝업을 안 보이게. **자정에 자동 복귀** |
-| 테스트 재생 | "테스트 공지입니다" 샘플 음성 재생 |
 | 근태 알림 테스트 | 테스트용 근태 팝업 1회 표시 |
+| 근태 확인 열기 | 기본 브라우저로 `/attendance` 페이지 열기 |
 | 로그 폴더 열기 | 문제 발생 시 로그 파일 위치로 이동 |
 | 종료 | 프로그램 완전 종료 (PC 재부팅 시 다시 실행됨) |
 
-### 공지를 받으면
-
-관리자가 IRMS 웹의 **전체 공지방**에 메시지를 올리면, 약 10초 이내에 전 PC에서 **"띵동" → "관리자님: 내용"** 순으로 자동 재생됩니다.
-
-- **새로 설치/재설치한 PC도** 직전 5분 이내에 올라간 공지는 한 번 재생합니다 (그보다 오래된 이력은 재생 안 함).
-- TTS 워커 단일 스레드: SAPI는 워커 스레드 위에서만 사용되며, 외부에서 절대 건드리지 않습니다 (SAPI COM 아파트먼트 보호).
-
-### 근태 이상 알림 (v1.1.6+)
+### 근태 이상 알림
 
 현재 월에 **미처리 출근·퇴근 누락, 지각, 조퇴**가 하나라도 남아 있으면
 매일 **09:00, 13:00, 16:00**에 조용한 근태 팝업이 뜹니다.
@@ -56,10 +50,8 @@ Windows 작업표시줄 상주 프로그램입니다.
 
 ### 자주 묻는 질문
 
-- **소리가 안 나요** → 우클릭 → 음소거 해제, PC 볼륨 확인, "테스트 재생" 메뉴 실행
-- **"오프라인"으로 표시돼요** → 서버 PC가 꺼져있거나 네트워크 장애. 자동으로 재접속을 시도합니다.
+- **팝업이 안 떠요** → "근태 알림 테스트"로 동작 확인. 정상이면 이상자 자체가 없는 것.
 - **아이콘이 안 보여요** → 작업표시줄 오른쪽의 ▲(숨겨진 아이콘) 클릭, 없으면 시작 메뉴에서 "IRMS Notice" 실행
-- **한국어 발음이 어색해요 / 영어처럼 들려요** → Windows에 한국어 음성(Heami / Seoyeon)이 없어 영어 엔진이 대신 읽는 상태. 트레이 → 로그 폴더 열기 → `tray.log`에 `no korean SAPI voice found` 메시지가 보이면 관리자에게 보고.
 
 ### 제거
 
@@ -84,15 +76,14 @@ build\build.bat
 
 산출물:
 - `tray_client\dist\IRMS-Notice\` — 실행 파일 폴더 (수동 복사용)
-- `tray_client\Output\IRMS-Notice-Setup-1.0.0.exe` — **배포용 설치 파일** (약 30MB)
+- `tray_client\build\Output\IRMS-Notice-Setup-2.0.0.exe` — **배포용 설치 파일**
 
 ### 2.2 현장 PC 7대 설치
 
-1. `IRMS-Notice-Setup-1.0.0.exe` 를 USB / 공유 폴더로 복사
-2. 각 PC에서 관리자 권한으로 실행 → 다음 → 다음 → 설치
+1. `IRMS-Notice-Setup-2.0.0.exe`를 USB / 공유 폴더로 복사
+2. 각 PC에서 더블클릭 → 다음 → 다음 → 설치 (이전 버전 위에 덮어쓰기)
 3. 설치 직후 자동 실행됨. 트레이 아이콘 확인
-4. 우클릭 → "테스트 재생"으로 스피커 동작 확인
-5. 관리자가 IRMS 공지방에 "설치 확인용 공지" 전송 → 전 PC에서 수신되는지 확인
+4. 우클릭 → "근태 알림 테스트"로 팝업 동작 확인
 
 ### 2.3 서버 주소 변경
 
@@ -111,17 +102,17 @@ build\build.bat
 ```
 tray_client/
 ├── src/
-│   ├── main.py          # pystray 기반 트레이 앱 진입점
-│   ├── poller.py        # /api/public/notice/poll 백그라운드 폴링
-│   ├── tts.py           # pyttsx3 + winsound (큐잉)
-│   ├── config.py        # %APPDATA% JSON 설정 파일
-│   ├── logger.py        # 일별 로테이팅 파일 로거
-│   └── assets_gen.py    # 아이콘/wav 런타임 생성
-├── assets/              # 빌드 시 자동 생성 (리포에 커밋 금지)
+│   ├── main.py             # pystray 기반 트레이 앱 진입점
+│   ├── attendance_alerts.py # /api/public/attendance-alerts/month 폴러 (슬롯 스케줄)
+│   ├── attendance_popup.py # 근태 이상 팝업 UI (Tkinter)
+│   ├── config.py           # %APPDATA% JSON 설정 (server_url만 보존)
+│   ├── logger.py           # 일별 로테이팅 파일 로거
+│   └── assets_gen.py       # 아이콘/wav 런타임 생성
+├── assets/                 # 빌드 시 자동 생성
 ├── build/
-│   ├── irms_notice.spec # PyInstaller 스펙
-│   ├── installer.iss    # Inno Setup 스크립트
-│   └── build.bat        # 원클릭 빌드
+│   ├── irms_notice.spec    # PyInstaller 스펙
+│   ├── installer.iss       # Inno Setup 스크립트
+│   └── build.bat           # 원클릭 빌드
 └── requirements.txt
 ```
 
@@ -133,14 +124,13 @@ python src\assets_gen.py
 python -m src.main
 ```
 
-서버가 로컬에 있으면 `%APPDATA%\IRMS-Notice\config.json` 의 `server_url` 을 `http://127.0.0.1:9000` 으로 변경.
+서버가 로컬에 있으면 `%APPDATA%\IRMS-Notice\config.json`의 `server_url`을 `http://127.0.0.1:9000`으로 변경.
 
 ### 3.3 서버 API (이 클라이언트가 의존)
 
 | Endpoint | 설명 |
 |----------|------|
-| `GET /api/public/notice/ping` | 헬스체크 |
-| `GET /api/public/notice/poll?after_id=X&limit=20` | `after_id` 이후 새 공지 메시지 |
+| `GET /api/public/attendance-alerts/month` | 이번 달 미처리 근태 이상 목록 |
 
 내부망 IP만 허용 (`127.0.0.1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). 외부 IP는 403.
 
@@ -150,36 +140,26 @@ python -m src.main
 
 ```json
 {
-  "server_url": "http://192.168.11.147:9000",
-  "poll_interval_seconds": 10,
-  "muted": false,
-  "last_message_id": 0,
-  "tts_rate": 180,
-  "volume": 1.0
+  "server_url": "http://192.168.11.147:9000"
 }
 ```
 
-- `last_message_id`: 최초 설치 시 0, 첫 폴링 때 서버의 현재 `latest_id`로 스냅샷. v1.1.7부터는 직전 5분 이내에 작성된 최신 공지 1건은 한 번 재생한 뒤 스냅샷
-- `poll_interval_seconds`: 최소 2초, 기본 10초
-- 네트워크 장애 시 자동 지수 백오프 (10초 → 20 → 40 → 60초 상한)
-- TTS 진단 로그: speak 시작/완료 시점이 `tray.log`에 기록됨 (`tts: speaking ... / tts: speech completed`)
+이전 버전(1.x)에서 사용하던 `muted`, `tts_rate`, `volume`, `last_message_id`, `poll_interval_seconds` 필드는 자동으로 무시됩니다 (config.json은 그대로 두면 됨).
 
 ### 3.5 로그
 
 `%APPDATA%\IRMS-Notice\logs\tray.log` (자정 기준 로테이션, 7일 보관)
 
 ```
-2026-04-23 14:00:01 | INFO  | starting IRMS Notice tray (server=http://192.168.11.147:9000, poll=10s)
-2026-04-23 14:00:03 | INFO  | initial sync: snapshot latest_id=42
-2026-04-23 14:05:12 | INFO  | notice received id=43 오늘 17시 설비 점검 예정입니다.
+2026-04-30 09:00:00 | INFO  | starting IRMS attendance tray (server=http://192.168.11.147:9000)
+2026-04-30 09:00:01 | INFO  | attendance popup raised: 근태 확인 필요 / 이번 달 확인이 필요한 인원이 있습니다.
 ```
 
 ### 3.6 알려진 제약
 
-- Windows 전용 (pyttsx3 SAPI5, winsound, pywin32 의존)
+- Windows 전용 (pystray, pywin32 의존)
 - 코드 서명 없음 → 설치 시 SmartScreen 경고 발생 가능
-- 단일 인스턴스 강제 기능 없음 (Windows 시작프로그램 등록으로 사실상 1회만 실행됨)
-- v1에서는 자동 업데이트 없음 — 새 버전 배포 시 수동 재설치
+- 자동 업데이트 없음 — 새 버전 배포 시 수동 재설치 (덮어쓰기)
 
 ---
 

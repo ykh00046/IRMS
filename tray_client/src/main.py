@@ -1,4 +1,12 @@
-"""IRMS Notice tray application entrypoint."""
+"""IRMS Notice tray application entrypoint.
+
+The tray client now exists solely to surface attendance-anomaly popups
+on field PCs and to give operators a one-click shortcut into the
+attendance page. Voice broadcasting (TTS) was removed in 2.0.0 because
+the SAPI/PyInstaller combination produced unreliable audio across the
+heterogeneous field PC fleet; admins still post notices via the web UI
+for record keeping.
+"""
 
 from __future__ import annotations
 
@@ -17,10 +25,8 @@ from .attendance_alerts import AttendanceAlertPoller, today_iso
 from .attendance_popup import AttendanceAlertPopupManager
 from .config import Config, logs_dir
 from .logger import setup_logger
-from .poller import Poller
-from .tts import TTSQueue
 
-APP_TITLE = "IRMS 공지 수신기"
+APP_TITLE = "IRMS 근태 알림"
 
 
 def asset_path(name: str) -> Path:
@@ -55,18 +61,6 @@ class TrayApp:
     def __init__(self) -> None:
         self.logger = setup_logger()
         self.config = Config.load()
-        self.tts = TTSQueue(
-            chime_path=asset_path("ding.wav"),
-            rate=self.config.tts_rate,
-            muted=self.config.muted,
-            volume=self.config.volume,
-        )
-        self.poller = Poller(
-            config=self.config,
-            on_message=self._on_message,
-            on_status=self._on_status,
-        )
-        self._status = "대기 중"
         self._icon: pystray.Icon | None = None
         self._alert_mute_date: str | None = None
         self.alert_popup = AttendanceAlertPopupManager(
@@ -81,13 +75,10 @@ class TrayApp:
 
     def run(self) -> None:
         self.logger.info(
-            "starting IRMS Notice tray (server=%s, poll=%ds)",
+            "starting IRMS attendance tray (server=%s)",
             self.config.server_url,
-            self.config.poll_interval_seconds,
         )
         self.alert_popup.start()
-        self.tts.start()
-        self.poller.start()
         self.alert_poller.start()
 
         self._icon = pystray.Icon(
@@ -102,8 +93,6 @@ class TrayApp:
             self.logger.info("shutting down")
             self.alert_popup.stop()
             self.alert_poller.stop()
-            self.poller.stop()
-            self.tts.stop()
 
     def _alerts_enabled_today(self) -> bool:
         if self._alert_mute_date is None:
@@ -112,11 +101,6 @@ class TrayApp:
 
     def _build_menu(self) -> Menu:
         return Menu(
-            MenuItem(lambda _item: f"상태: {self._status}", None, enabled=False),
-            MenuItem(
-                lambda _item: "음소거 해제" if self.config.muted else "음소거",
-                self._toggle_mute,
-            ),
             MenuItem(
                 lambda _item: (
                     "근태 알림 오늘만 끄기"
@@ -125,37 +109,11 @@ class TrayApp:
                 ),
                 self._toggle_alert_mute_today,
             ),
-            MenuItem("테스트 재생", self._test_play),
             MenuItem("근태 알림 테스트", self._test_alert),
             MenuItem("근태 확인 열기", self._open_attendance_menu),
             MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
-        )
-
-    def _on_message(self, msg: dict) -> None:
-        preview = (msg.get("message_text") or "").replace("\n", " ")[:60]
-        self.logger.info("notice received id=%s %s", msg.get("id"), preview)
-        self.tts.enqueue_message(msg)
-
-    def _on_status(self, status: str) -> None:
-        if status != self._status:
-            self.logger.info("status: %s", status)
-        self._status = status
-        if self._icon is not None:
-            self._icon.update_menu()
-
-    def _toggle_mute(self, _icon, _item) -> None:
-        self.config.muted = not self.config.muted
-        self.config.save()
-        self.tts.set_muted(self.config.muted)
-        self.logger.info("muted=%s", self.config.muted)
-        if self._icon is not None:
-            self._icon.update_menu()
-
-    def _test_play(self, _icon, _item) -> None:
-        self.tts.enqueue_raw(
-            "테스트 공지입니다. 정상적으로 소리와 음성 안내가 나오면 설정이 완료된 것입니다."
         )
 
     def _mute_alerts_for_today(self) -> None:

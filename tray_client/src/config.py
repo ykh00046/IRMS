@@ -1,22 +1,20 @@
 """Runtime configuration for the tray client.
 
-Stored as JSON in ``%APPDATA%\\IRMS-Notice\\config.json``. The file is created
-on first launch with default values and updated in place as the user toggles
-mute, a new message is received, etc.
+Stored as JSON in ``%APPDATA%\\IRMS-Notice\\config.json``. The 2.0.0
+release dropped TTS voice broadcasting, so the only thing the tray
+still needs to remember between restarts is which IRMS server to ping
+for attendance anomalies.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 APP_NAME = "IRMS-Notice"
 DEFAULT_SERVER_URL = "http://192.168.11.147:9000"
-DEFAULT_POLL_INTERVAL = 10
-LEGACY_DEFAULT_POLL_INTERVAL = 5
-MAX_BACKOFF_SECONDS = 60
 
 
 def app_data_dir() -> Path:
@@ -39,11 +37,6 @@ def config_path() -> Path:
 @dataclass
 class Config:
     server_url: str = DEFAULT_SERVER_URL
-    poll_interval_seconds: int = DEFAULT_POLL_INTERVAL
-    muted: bool = False
-    last_message_id: int = 0
-    tts_rate: int = 180
-    volume: float = 1.0
 
     @classmethod
     def load(cls) -> "Config":
@@ -64,15 +57,12 @@ class Config:
             config.save()
             return config
 
+        # Drop legacy fields (poll_interval_seconds, muted, last_message_id,
+        # tts_rate, volume) silently - they were used by the removed voice
+        # broadcaster and are no longer meaningful.
         allowed = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         cleaned = {k: v for k, v in raw.items() if k in allowed}
-        config = cls(**cleaned)
-
-        if cleaned.get("poll_interval_seconds") == LEGACY_DEFAULT_POLL_INTERVAL:
-            config.poll_interval_seconds = DEFAULT_POLL_INTERVAL
-            config.save()
-
-        return config
+        return cls(**cleaned)
 
     def save(self) -> None:
         path = config_path()

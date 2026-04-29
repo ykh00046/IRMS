@@ -43,14 +43,12 @@ def create_app() -> FastAPI:
             re.compile(r"^/api/auth/login$"),
             re.compile(r"^/api/auth/management-login$"),
             re.compile(r"^/api/auth/operator-login$"),
-            re.compile(r"^/api/public/notice/.*$"),
             re.compile(r"^/api/attendance/login$"),
         ],
     )
     app.add_middleware(
         InternalNetworkOnlyMiddleware,
         protected_prefixes=(
-            "/api/public/notice",
             "/api/public/attendance-alerts",
         ),
     )
