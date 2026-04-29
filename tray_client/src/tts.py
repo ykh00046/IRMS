@@ -18,10 +18,9 @@ import pyttsx3
 
 logger = logging.getLogger("irms_notice")
 
-# Chime is played asynchronously (SND_ASYNC) so the worker proceeds while
-# the WAV is still rendering. 0.2s gives the chime its audible "pluck"
-# before the voice starts; a longer chime sample would overlap and should
-# raise this constant. Tied to assets/ding.wav (~0.5s today).
+# Small buffer between the synchronous chime returning and TTS starting,
+# so the OS audio device finishes one transition before SAPI requests it.
+# Empirically 100~200ms is enough on Windows 10/11.
 CHIME_TO_TTS_DELAY_SECONDS = 0.2
 DEFAULT_TTS_QUEUE_SIZE = 20
 
@@ -178,12 +177,16 @@ class TTSQueue:
                 logger.error("tts playback failed: %s", exc)
 
     def _play_chime(self) -> bool:
+        # Synchronous playback (no SND_ASYNC) so the audio device is fully
+        # released before TTS runs. The async version raced with Heami SAPI
+        # whenever the chime tail was still playing - the result was an
+        # intermittent silent TTS while the chime always sounded fine.
         if winsound is None or not self._chime_path.exists():
             return False
         try:
             winsound.PlaySound(
                 str(self._chime_path),
-                winsound.SND_FILENAME | winsound.SND_ASYNC,
+                winsound.SND_FILENAME,
             )
             return True
         except Exception as exc:  # noqa: BLE001
