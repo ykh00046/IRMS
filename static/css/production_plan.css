@@ -1,0 +1,152 @@
+/* ── Production Plan Page ────────────────────────────────── */
+
+/* Ensure [hidden] always wins over display rules */
+.pp-upload-panel [hidden],
+.pp-match-panel[hidden],
+.pp-chemical-panel[hidden] { display: none !important; }
+
+/* Upload zone */
+.pp-upload-panel { max-width: 800px; }
+
+.pp-drop-zone {
+  border: 2px dashed var(--border, #444);
+  border-radius: 12px;
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.pp-drop-zone:hover,
+.pp-drop-zone.dragover {
+  border-color: var(--accent, #4e9af5);
+  background: rgba(78, 154, 245, 0.05);
+}
+.pp-drop-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+.pp-drop-text { font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0; }
+.pp-drop-sub  { font-size: 0.85rem; color: var(--muted, #888); }
+.pp-drop-sub kbd {
+  background: var(--surface2, #333);
+  border: 1px solid var(--border, #555);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.8rem;
+}
+
+/* Preview */
+.pp-preview { text-align: center; margin-top: 1rem; }
+.pp-preview img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #444);
+}
+.pp-preview-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+/* Progress */
+.pp-progress {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  justify-content: center;
+  padding: 2rem;
+  font-weight: 500;
+}
+.pp-spinner {
+  width: 24px; height: 24px;
+  border: 3px solid var(--border, #555);
+  border-top-color: var(--accent, #4e9af5);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Match panel */
+.pp-match-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pp-match-summary {
+  display: flex; gap: 1rem; font-size: 0.9rem;
+}
+.pp-match-summary .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+.badge-exact  { background: #1b5e20; color: #a5d6a7; }
+.badge-fuzzy  { background: #e65100; color: #ffcc80; }
+.badge-none   { background: #b71c1c; color: #ef9a9a; }
+
+/* Tabs */
+.pp-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border, #444);
+  margin-bottom: 1rem;
+}
+.pp-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--muted, #888);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.pp-tab-btn:hover { color: var(--text, #eee); }
+.pp-tab-btn.active {
+  color: var(--accent, #4e9af5);
+  border-bottom-color: var(--accent, #4e9af5);
+}
+
+/* Match table status icons */
+.status-exact  { color: #4caf50; }
+.status-fuzzy  { color: #ff9800; }
+.status-none   { color: #f44336; }
+.status-skip   { color: var(--muted, #666); }
+
+/* Match select dropdown */
+.pp-match-select {
+  background: var(--surface2, #2a2a2a);
+  color: var(--text, #eee);
+  border: 1px solid var(--border, #555);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  max-width: 240px;
+}
+
+/* Confirm bar */
+.pp-confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border, #333);
+}
+
+/* Empty state */
+.pp-empty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--muted, #888);
+}
+
+/* Chemical panel */
+.pp-chemical-panel { max-width: 600px; }

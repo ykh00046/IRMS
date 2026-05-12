@@ -1,20 +1,24 @@
 {
   "project": "IRMS",
-  "feature": "cloudflare-tunnel-access",
+  "feature": "split-large-files",
   "level": "dynamic",
-  "phase": "plan",
+  "phase": "do",
   "matchRate": 0,
-  "updatedAt": "2026-04-15",
+  "updatedAt": "2026-05-12",
   "activeFeatures": [
     "status-operator-view",
-    "cloudflare-tunnel-access"
+    "cloudflare-tunnel-access",
+    "split-large-files"
   ],
-  "documents": {},
+  "documents": {
+    "plan": "docs/01-plan/features/split-large-files.plan.md",
+    "design": "docs/02-design/features/split-large-files.design.md"
+  },
   "status": {},
   "sourceSkill": "pdca",
-  "sessionCount": 25,
+  "sessionCount": 28,
   "lastSession": {
-    "startedAt": "2026-04-27T07:11:05.782Z",
+    "startedAt": "2026-05-12T03:18:09.542Z",
     "platform": "claude",
     "level": "Dynamic"
   },

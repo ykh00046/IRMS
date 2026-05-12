@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from ..auth import get_current_user, require_access_level
 from ..database import get_connection, row_to_dict, utc_now_text, write_audit_log
 from ..services import stock_service
-from .recipe_routes import _format_display_value
+from ..services.recipe_helpers import format_display_value
 from .models import (
     WeighingRecipeCompleteRequest,
     WeighingStepRequest,
@@ -63,15 +63,13 @@ def build_router() -> APIRouter:
                 params,
             ).fetchall()
 
-        from .recipe_routes import _format_display_value
-
         items: list[dict[str, Any]] = []
         by_color = {"black": 0, "red": 0, "blue": 0, "yellow": 0, "none": 0}
         recipe_ids: set[int] = set()
 
         for index, row in enumerate(rows, start=1):
             payload = row_to_dict(row)
-            payload["target_value"] = _format_display_value(payload.get("value_weight"), payload.get("value_text"))
+            payload["target_value"] = format_display_value(payload.get("value_weight"), payload.get("value_text"))
             payload["sequence"] = index
             items.append(payload)
             recipe_ids.add(row["recipe_id"])
@@ -196,7 +194,7 @@ def build_router() -> APIRouter:
 
             recipe_payload = row_to_dict(recipe_row)
             item_payload = row_to_dict(item_row)
-            item_payload["target_value"] = _format_display_value(item_payload.get("value_weight"), item_payload.get("value_text"))
+            item_payload["target_value"] = format_display_value(item_payload.get("value_weight"), item_payload.get("value_text"))
             write_audit_log(
                 connection,
                 action="weighing_step_completed",

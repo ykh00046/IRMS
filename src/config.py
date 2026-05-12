@@ -35,3 +35,5 @@ if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
 
 if not SESSION_SECRET:
     SESSION_SECRET = secrets.token_hex(32)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

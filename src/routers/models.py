@@ -27,6 +27,25 @@ class StatusUpdateRequest(BaseModel):
     reason: str | None = None
 
 
+class StockAmountBody(BaseModel):
+    amount: float
+    note: str | None = None
+
+
+class StockAdjustBody(BaseModel):
+    new_quantity: float
+    note: str
+
+
+class StockDiscardBody(BaseModel):
+    amount: float
+    note: str
+
+
+class StockThresholdBody(BaseModel):
+    threshold: float
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

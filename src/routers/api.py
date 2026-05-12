@@ -7,9 +7,14 @@ from . import (
     auth_routes,
     chat_routes,
     dashboard_routes,
+    ocr_routes,
     public_attendance_alert_routes,
-    recipe_routes,
+    recipe_import_routes,
+    recipe_manager_routes,
+    recipe_operator_routes,
+    recipe_stats_routes,
     spreadsheet_routes,
+    stock_routes,
     weighing_routes,
 )
 
@@ -22,10 +27,15 @@ def build_router() -> APIRouter:
     chat_router = chat_routes.build_router()
     public_attendance_alert_router = public_attendance_alert_routes.build_router()
     attendance_router = attendance_routes.build_router()
-    recipe_op_router, recipe_mgr_router = recipe_routes.build_router()
+    recipe_op_router = recipe_operator_routes.build_router()
+    recipe_mgr_router = recipe_manager_routes.build_router()
+    stock_op_router, stock_mgr_router = stock_routes.build_router()
+    import_router = recipe_import_routes.build_router()
+    stats_router = recipe_stats_routes.build_router()
     weighing_router = weighing_routes.build_router()
     ss_router = spreadsheet_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
+    ocr_router = ocr_routes.build_router()
 
     @public_router.get("/health")
     async def health() -> dict[str, str]:
@@ -36,10 +46,15 @@ def build_router() -> APIRouter:
     router.include_router(attendance_router)
     router.include_router(auth_me_router)
     router.include_router(recipe_op_router)
+    router.include_router(stock_op_router)         # operator stock reads
     router.include_router(chat_router)
     router.include_router(weighing_router)
-    router.include_router(recipe_mgr_router)
+    router.include_router(recipe_mgr_router)       # manager recipe writes
+    router.include_router(stock_mgr_router)        # manager stock writes
+    router.include_router(import_router)
+    router.include_router(stats_router)
     router.include_router(admin_router)
     router.include_router(ss_router, prefix="/spreadsheet")
     router.include_router(dashboard_router)
+    router.include_router(ocr_router)
     return router
