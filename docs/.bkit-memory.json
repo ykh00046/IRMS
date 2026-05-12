@@ -1,19 +1,16 @@
 {
   "project": "IRMS",
-  "feature": "split-large-files",
+  "feature": "split-common-js",
   "level": "dynamic",
-  "phase": "do",
+  "phase": "plan",
   "matchRate": 0,
-  "updatedAt": "2026-05-12",
+  "updatedAt": "2026-05-13",
   "activeFeatures": [
     "status-operator-view",
     "cloudflare-tunnel-access",
-    "split-large-files"
+    "split-common-js"
   ],
-  "documents": {
-    "plan": "docs/01-plan/features/split-large-files.plan.md",
-    "design": "docs/02-design/features/split-large-files.design.md"
-  },
+  "documents": {},
   "status": {},
   "sourceSkill": "pdca",
   "sessionCount": 28,
@@ -23,9 +20,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "measurement-dashboard",
-    "matchRate": 97,
-    "archivedTo": "docs/archive/2026-04/measurement-dashboard",
-    "completedAt": "2026-04-15"
+    "feature": "split-large-files",
+    "matchRate": 99,
+    "archivedTo": "docs/archive/2026-05/split-large-files",
+    "completedAt": "2026-05-13"
   }
 }
