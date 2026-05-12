@@ -12,6 +12,9 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+# Auto-generated DB backups (kept locally, never pushed)
+backups/*.db
+
 # Temporary runtime/test data
 data/__tmp_*/
 data/audit_ui_test_db/

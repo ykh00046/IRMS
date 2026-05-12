@@ -1,0 +1,2 @@
+# DB backups are written here by update_and_run.bat (last 30 retained).
+# Files matching irms_*.db are ignored by .gitignore.

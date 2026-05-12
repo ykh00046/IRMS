@@ -15,8 +15,27 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 
-:: ── 1. Git Pull ──
-echo [1/3] Checking for updates...
+:: ── 1. Backup DB before pull ──
+echo [1/4] Backing up database...
+if exist "data\irms.db" (
+  if not exist "backups" mkdir "backups"
+  for /f "tokens=2 delims==" %%a in ('wmic OS Get localdatetime /value ^| findstr "="') do set "DT=%%a"
+  set "BACKUP_NAME=backups\irms_%DT:~0,8%_%DT:~8,6%.db"
+  copy /Y "data\irms.db" "%BACKUP_NAME%" >nul
+  if errorlevel 1 (
+    echo [WARN] DB backup failed, continuing anyway.
+  ) else (
+    echo [OK] Saved %BACKUP_NAME%
+  )
+  :: Keep only the 30 most recent backups
+  for /f "skip=30 delims=" %%f in ('dir /b /o-d "backups\irms_*.db" 2^>nul') do del "backups\%%f" >nul 2>&1
+) else (
+  echo [INFO] No existing DB to back up (first run).
+)
+echo.
+
+:: ── 2. Git Pull ──
+echo [2/4] Checking for updates...
 git pull origin main
 if errorlevel 1 (
   echo.
@@ -26,8 +45,8 @@ if errorlevel 1 (
 )
 echo.
 
-:: ── 2. Install dependencies ──
-echo [2/3] Installing dependencies...
+:: ── 3. Install dependencies ──
+echo [3/4] Installing dependencies...
 .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
 if errorlevel 1 (
   echo.
@@ -60,7 +79,7 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
 )
 if not defined LOCAL_IP set "LOCAL_IP=0.0.0.0"
 
-echo [3/3] Starting IRMS server...
+echo [4/4] Starting IRMS server...
 echo ============================================
 echo  Local:   http://127.0.0.1:9000
 echo  Network: http://%LOCAL_IP%:9000
