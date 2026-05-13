@@ -152,7 +152,7 @@
 |------|--------|
 | 포함 함수 | `pollNegativeStock` |
 | 진입 | 자동 시작 (DOMContentLoaded 시 setInterval 등록) |
-| 의존 | core.js, api-stock.js, ui.js |
+| 의존 | core.js, format.js(escapeHtml) — `request("/materials/stock")` 직접 호출이므로 api-stock.js 불필요 |
 | 예상 LOC | ~60 |
 
 ### 3.13 `static/js/common.js` 진입 래퍼 축소
@@ -259,7 +259,7 @@
 | 페이지 로드 시간 +12 스크립트 부담 | Low | High | HTTP/2 다중화로 실측 차이 미미 예상. 임계 시 후속 PDCA에서 단순 concat 빌드 스텝 도입 검토 (별건) |
 | 매퍼 함수가 API 호출 함수 안에서만 쓰이는데 모듈 분리로 `window.IRMS._mappers` 노출 필요 | Medium | High | 의도적 노출. `_mappers` 접두사로 내부용 명시 |
 | `bindLoginForm`이 `IRMS.login` 등을 사용 → 로드 순서가 핵심 | Medium | High | `ui.js`는 api-users.js 뒤에 로드. plan §3.14 표대로 강제 |
-| 폴링 setInterval이 분리 후 중복 시작 | Low | Low | `polling.js`에 `if (window.IRMS._pollingStarted) return;` 가드 |
+| 폴링 setInterval이 분리 후 중복 시작 | Low | Low | `polling.js`에 `if (window.IRMS._negStockPollingStarted) return; window.IRMS._negStockPollingStarted = true;` 가드 (design §3.12와 동일 심볼 사용) |
 
 ---
 

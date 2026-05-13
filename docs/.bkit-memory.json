@@ -2,7 +2,7 @@
   "project": "IRMS",
   "feature": "split-common-js",
   "level": "dynamic",
-  "phase": "plan",
+  "phase": "design",
   "matchRate": 0,
   "updatedAt": "2026-05-13",
   "activeFeatures": [
@@ -11,7 +11,8 @@
     "split-common-js"
   ],
   "documents": {
-    "plan": "docs/01-plan/features/split-common-js.plan.md"
+    "plan": "docs/01-plan/features/split-common-js.plan.md",
+    "design": "docs/02-design/features/split-common-js.design.md"
   },
   "status": {},
   "sourceSkill": "pdca",
