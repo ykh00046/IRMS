@@ -2,8 +2,23 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
+const COMMON_MODULES = [
+  "static/js/common/core.js",
+  "static/js/common/mappers.js",
+  "static/js/common/format.js",
+  "static/js/common/api-users.js",
+  "static/js/common/api-recipes.js",
+  "static/js/common/api-stock.js",
+  "static/js/common/api-chat.js",
+  "static/js/common/api-spreadsheet.js",
+  "static/js/common/api-stats.js",
+  "static/js/common/ui.js",
+  "static/js/common/audio.js",
+  "static/js/common/polling.js",
+  "static/js/common.js",
+];
+
 function loadCommonJs(overrides = {}) {
-  const code = fs.readFileSync("static/js/common.js", "utf8");
   const context = {
     console,
     clearInterval() {},
@@ -40,7 +55,10 @@ function loadCommonJs(overrides = {}) {
   context.window.window = context.window;
   context.window.document = context.document;
   context.IRMS = context.window.IRMS;
-  vm.runInNewContext(code, context, { filename: "static/js/common.js" });
+  for (const modulePath of COMMON_MODULES) {
+    const code = fs.readFileSync(modulePath, "utf8");
+    vm.runInNewContext(code, context, { filename: modulePath });
+  }
   return context;
 }
 

@@ -65,6 +65,19 @@
       <span class="neg-stock-icon">⚠</span>
       <span class="neg-stock-text"><span id="neg-stock-list"></span></span>
     </div>
+    <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->
+    <script src="/static/js/common/core.js"></script>
+    <script src="/static/js/common/mappers.js"></script>
+    <script src="/static/js/common/format.js"></script>
+    <script src="/static/js/common/api-users.js"></script>
+    <script src="/static/js/common/api-recipes.js"></script>
+    <script src="/static/js/common/api-stock.js"></script>
+    <script src="/static/js/common/api-chat.js"></script>
+    <script src="/static/js/common/api-spreadsheet.js"></script>
+    <script src="/static/js/common/api-stats.js"></script>
+    <script src="/static/js/common/ui.js"></script>
+    <script src="/static/js/common/audio.js"></script>
+    <script src="/static/js/common/polling.js"></script>
     <script src="/static/js/common.js"></script>
     {% block scripts %}{% endblock %}
   </body>
