@@ -10,7 +10,9 @@
     "cloudflare-tunnel-access",
     "split-common-js"
   ],
-  "documents": {},
+  "documents": {
+    "plan": "docs/01-plan/features/split-common-js.plan.md"
+  },
   "status": {},
   "sourceSkill": "pdca",
   "sessionCount": 28,
