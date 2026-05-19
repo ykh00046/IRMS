@@ -7,7 +7,6 @@ from . import (
     auth_routes,
     chat_routes,
     dashboard_routes,
-    ocr_routes,
     public_attendance_alert_routes,
     recipe_import_routes,
     recipe_manager_routes,
@@ -35,7 +34,6 @@ def build_router() -> APIRouter:
     weighing_router = weighing_routes.build_router()
     ss_router = spreadsheet_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
-    ocr_router = ocr_routes.build_router()
 
     @public_router.get("/health")
     async def health() -> dict[str, str]:
@@ -56,5 +54,4 @@ def build_router() -> APIRouter:
     router.include_router(admin_router)
     router.include_router(ss_router, prefix="/spreadsheet")
     router.include_router(dashboard_router)
-    router.include_router(ocr_router)
     return router

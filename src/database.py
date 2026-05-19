@@ -45,9 +45,6 @@ _ALLOWED_TABLES = frozenset({
     "ss_rows",
     "ss_cells",
     "attendance_users",
-    "production_plans",
-    "plan_schedules",
-    "plan_chemical_requests",
 })
 
 
@@ -388,47 +385,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_ss_columns_product ON ss_columns(product_id, col_index);
             CREATE INDEX IF NOT EXISTS idx_ss_rows_product ON ss_rows(product_id, row_index);
             CREATE INDEX IF NOT EXISTS idx_ss_cells_row ON ss_cells(row_id);
-
-            -- Production planning tables
-            CREATE TABLE IF NOT EXISTS production_plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_name TEXT NOT NULL,
-                week_start TEXT NOT NULL,
-                week_end TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'completed')),
-                created_by TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS plan_schedules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id INTEGER NOT NULL REFERENCES production_plans(id) ON DELETE CASCADE,
-                schedule_date TEXT NOT NULL,
-                machine_no INTEGER,
-                line_type TEXT,
-                shift TEXT,
-                brand TEXT,
-                ocr_product_name TEXT,
-                matched_product_name TEXT,
-                match_confidence REAL DEFAULT 0,
-                match_status TEXT NOT NULL DEFAULT 'pending' CHECK (match_status IN ('pending', 'confirmed', 'manual', 'new')),
-                ink_name TEXT,
-                UNIQUE(plan_id, schedule_date, machine_no, shift)
-            );
-
-            CREATE TABLE IF NOT EXISTS plan_chemical_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id INTEGER NOT NULL REFERENCES production_plans(id) ON DELETE CASCADE,
-                schedule_date TEXT NOT NULL,
-                chemical_name TEXT NOT NULL,
-                concentration TEXT,
-                qty_3f REAL DEFAULT 0,
-                qty_1f REAL DEFAULT 0
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_plan_schedules_plan ON plan_schedules(plan_id, schedule_date);
-            CREATE INDEX IF NOT EXISTS idx_plan_chemical_plan ON plan_chemical_requests(plan_id, schedule_date);
             """
         )
 

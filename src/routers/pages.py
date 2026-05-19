@@ -131,17 +131,6 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     async def status_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "status.html", "manager")
 
-    @router.get("/production-plan", response_class=HTMLResponse)
-    async def production_plan_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "production_plan.html", "manager")
-
-    @router.get("/ink-plan", response_class=HTMLResponse)
-    async def ink_plan_page(request: Request) -> Response:
-        """Standalone ink plan page — no login required."""
-        return _render(templates, request, "ink_plan.html", {
-            "current_user": get_current_user(request, required=False),
-        })
-
     @router.get("/base", response_class=HTMLResponse)
     async def base_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "base.html", "manager")
