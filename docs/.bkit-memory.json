@@ -2,7 +2,7 @@
   "project": "IRMS",
   "feature": "split-management-js",
   "level": "dynamic",
-  "phase": "plan",
+  "phase": "design",
   "matchRate": 0,
   "updatedAt": "2026-05-19",
   "activeFeatures": [
@@ -11,7 +11,8 @@
     "split-management-js"
   ],
   "documents": {
-    "plan": "docs/01-plan/features/split-management-js.plan.md"
+    "plan": "docs/01-plan/features/split-management-js.plan.md",
+    "design": "docs/02-design/features/split-management-js.design.md"
   },
   "status": {},
   "sourceSkill": "pdca",
