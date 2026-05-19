@@ -1,0 +1,159 @@
+/**
+ * import-validate module — Import tab: validate / register / clear flow.
+ *
+ * Split from static/js/management.js during the split-management-js
+ * PDCA cycle (2026-05). See docs/01-plan/features/split-management-js.plan.md.
+ *
+ * Factory: IRMS.management.createImportValidate(ctx)
+ * Returns: { syncRegisterState, markPreviewStale, renderIssues,
+ *            renderValidationMeta, handlePreview, handleRegister, handleClear }
+ *
+ * ctx dependencies:
+ *   dom:   previewBtn, registerBtn, previewMeta, errorList, warningList
+ *   state: currentPreview, confirmedRawText, previewIsStale,
+ *          pendingRevisionOf, suppressDirtyTracking, sheet
+ *   other: ctx.spreadsheet.getSpreadsheetDataAsText / .initSpreadsheet
+ */
+(function () {
+  "use strict";
+  const IRMS = (window.IRMS = window.IRMS || {});
+  IRMS.management = IRMS.management || {};
+
+  IRMS.management.createImportValidate = function (ctx) {
+    const { dom, state } = ctx;
+
+    function syncRegisterState() {
+      const canRegister =
+        Boolean(state.currentPreview) &&
+        !state.previewIsStale &&
+        state.currentPreview.errors.length === 0 &&
+        state.currentPreview.rows.length > 0 &&
+        state.confirmedRawText.trim().length > 0;
+      dom.registerBtn.disabled = !canRegister;
+    }
+
+    function markPreviewStale() {
+      if (state.suppressDirtyTracking || !state.currentPreview || state.previewIsStale) {
+        return;
+      }
+      state.previewIsStale = true;
+      syncRegisterState();
+      renderValidationMeta(state.currentPreview);
+      IRMS.notify("시트가 수정되어 검증이 무효화되었습니다. 다시 Validate 하세요.", "warn");
+    }
+
+    function renderIssues(list, target, emptyText) {
+      if (!list || !list.length) {
+        target.innerHTML = `<li class="muted">${emptyText}</li>`;
+        return;
+      }
+      target.innerHTML = list
+        .slice(0, 12)
+        .map(
+          (item) =>
+            `<li>L${item.level} · ${IRMS.escapeHtml(item.message)}${item.row ? ` (행 ${item.row})` : ""}</li>`,
+        )
+        .join("");
+    }
+
+    function renderValidationMeta(result) {
+      const rows = result?.rows || [];
+      const badges = [
+        `<span class="meta-badge meta-ok">Rows ${rows.length}</span>`,
+        `<span class="meta-badge meta-warn">Warn ${(result?.warnings || []).length}</span>`,
+        `<span class="meta-badge meta-error">Error ${(result?.errors || []).length}</span>`,
+      ];
+      if (state.previewIsStale) {
+        badges.push('<span class="meta-badge meta-warn">재검증 필요</span>');
+      }
+      dom.previewMeta.innerHTML = badges.join("");
+    }
+
+    async function handlePreview() {
+      const raw = ctx.spreadsheet.getSpreadsheetDataAsText();
+
+      if (!raw) {
+        IRMS.notify("데이터를 입력하거나 붙여넣은 후 Validate 하세요.", "warn");
+        return;
+      }
+
+      IRMS.btnLoading(dom.previewBtn, true);
+      try {
+        const result = await IRMS.previewImport(raw);
+        state.currentPreview = result;
+        state.confirmedRawText = raw;
+        state.previewIsStale = false;
+        renderValidationMeta(result);
+        renderIssues(result.errors, dom.errorList, "ERROR 없음");
+        renderIssues(result.warnings, dom.warningList, "WARN 없음");
+        syncRegisterState();
+
+        if (!result.errors.length && result.rows.length > 0) {
+          IRMS.notify(`검증 완료: ${result.rows.length}건 등록 가능`, "success");
+        }
+      } catch (error) {
+        IRMS.notify(`검증 실패: ${error.message}`, "error");
+      } finally {
+        IRMS.btnLoading(dom.previewBtn, false);
+      }
+    }
+
+    async function handleRegister() {
+      if (
+        !state.currentPreview ||
+        state.previewIsStale ||
+        state.currentPreview.errors.length > 0 ||
+        state.currentPreview.rows.length === 0 ||
+        !state.confirmedRawText.trim()
+      ) {
+        if (state.previewIsStale) {
+          IRMS.notify("검정본이 무효화되었습니다. 다시 Validate 후 등록하세요.", "warn");
+        }
+        return;
+      }
+
+      IRMS.btnLoading(dom.registerBtn, true);
+      try {
+        const result = await IRMS.importRecipes(state.confirmedRawText, "System Gate", state.pendingRevisionOf);
+        IRMS.notify(
+          `${result.created_count}건 레시피를 등록했습니다.`,
+          "success",
+        );
+
+        // Reset everything
+        handleClear();
+      } catch (error) {
+        IRMS.notify(`등록 실패: ${error.message}`, "error");
+      } finally {
+        IRMS.btnLoading(dom.registerBtn, false);
+      }
+    }
+
+    function handleClear() {
+      state.confirmedRawText = "";
+      state.previewIsStale = false;
+      state.pendingRevisionOf = null;
+      if (state.sheet) {
+        ctx.spreadsheet.initSpreadsheet(); // Reinitialize to clear
+      } else if (dom.rawInput) {
+        dom.rawInput.value = "";
+      }
+      state.currentPreview = null;
+      state.previewIsStale = false;
+      renderValidationMeta({ rows: [], warnings: [], errors: [] });
+      renderIssues([], dom.errorList, "ERROR 없음");
+      renderIssues([], dom.warningList, "WARN 없음");
+      syncRegisterState();
+    }
+
+    return {
+      syncRegisterState,
+      markPreviewStale,
+      renderIssues,
+      renderValidationMeta,
+      handlePreview,
+      handleRegister,
+      handleClear,
+    };
+  };
+})();
