@@ -1,19 +1,15 @@
 {
   "project": "IRMS",
-  "feature": "split-management-js",
+  "feature": null,
   "level": "dynamic",
-  "phase": "do",
-  "matchRate": 0,
+  "phase": "archived",
+  "matchRate": 99,
   "updatedAt": "2026-05-19",
   "activeFeatures": [
     "status-operator-view",
-    "cloudflare-tunnel-access",
-    "split-management-js"
+    "cloudflare-tunnel-access"
   ],
-  "documents": {
-    "plan": "docs/01-plan/features/split-management-js.plan.md",
-    "design": "docs/02-design/features/split-management-js.design.md"
-  },
+  "documents": {},
   "status": {},
   "sourceSkill": "pdca",
   "sessionCount": 29,
@@ -23,9 +19,9 @@
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "split-common-js",
+    "feature": "split-management-js",
     "matchRate": 99,
-    "archivedTo": "docs/archive/2026-05/split-common-js",
+    "archivedTo": "docs/archive/2026-05/split-management-js",
     "completedAt": "2026-05-19"
   }
 }

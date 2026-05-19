@@ -4,9 +4,7 @@
 
 ## Active
 
-| Feature | Phase | 문서 |
-|---------|-------|------|
-| split-management-js (Phase 3) | Plan | [Plan](01-plan/features/split-management-js.plan.md) |
+현재 진행 중인 피처가 없습니다. `/pdca plan [feature]`로 새 사이클을 시작하세요.
 
 ---
 
@@ -18,3 +16,4 @@
 | 2026-03 | irms-improvements (품질 개선) | 97.6% | [archive index](archive/2026-03/_INDEX.md) |
 | 2026-05 | split-large-files (Phase 1 — Python) | 99% | [archive index](archive/2026-05/_INDEX.md) |
 | 2026-05 | split-common-js (Phase 2 — JavaScript) | 99% | [archive index](archive/2026-05/_INDEX.md) |
+| 2026-05 | split-management-js (Phase 3 — JavaScript) | 99% | [archive index](archive/2026-05/_INDEX.md) |

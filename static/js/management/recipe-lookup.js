@@ -9,16 +9,12 @@
  * Returns: { loadProducts, setLookupSelection, handleLookup,
  *            copyToClipboard, handleLookupCopy, handleLookupClone }
  *
- * ctx dependencies:
- *   dom:   lookupProduct, productList, lookupBtn, lookupResult, lookupActions,
- *          lookupSelectedLabel, lookupCopyBtn, lookupCloneBtn, lookupHistoryBtn,
- *          spreadsheetContainer, rawInput, errorList, warningList
+ * ctx dependencies (see design §4.4):
+ *   dom:   lookup* refs, spreadsheetContainer, rawInput, errorList, warningList
  *   state: selectedRecipeId, pendingRevisionOf, currentPreview,
  *          previewIsStale, confirmedRawText, suppressDirtyTracking
- *   other: ctx.spreadsheet.{destroySpreadsheet,getSpreadsheetFactory,
- *          setRawInputMode,getActiveWorksheet}, ctx.importValidate.
- *          {renderValidationMeta,renderIssues,syncRegisterState},
- *          ctx.onDirty (inline jspreadsheet callbacks), ctx.switchToImportTab
+ *   other: ctx.spreadsheet.*, ctx.importValidate.*, ctx.onDirty,
+ *          ctx.switchToImportTab
  */
 (function () {
   "use strict";
