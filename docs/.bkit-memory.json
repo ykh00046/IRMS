@@ -1,31 +1,27 @@
 {
   "project": "IRMS",
-  "feature": "split-common-js",
+  "feature": null,
   "level": "dynamic",
-  "phase": "do",
-  "matchRate": 0,
-  "updatedAt": "2026-05-13",
+  "phase": "completed",
+  "matchRate": 99,
+  "updatedAt": "2026-05-19",
   "activeFeatures": [
     "status-operator-view",
-    "cloudflare-tunnel-access",
-    "split-common-js"
+    "cloudflare-tunnel-access"
   ],
-  "documents": {
-    "plan": "docs/01-plan/features/split-common-js.plan.md",
-    "design": "docs/02-design/features/split-common-js.design.md"
-  },
+  "documents": {},
   "status": {},
   "sourceSkill": "pdca",
-  "sessionCount": 28,
+  "sessionCount": 29,
   "lastSession": {
-    "startedAt": "2026-05-12T03:18:09.542Z",
+    "startedAt": "2026-05-19T01:59:38.899Z",
     "platform": "claude",
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "split-large-files",
+    "feature": "split-common-js",
     "matchRate": 99,
-    "archivedTo": "docs/archive/2026-05/split-large-files",
-    "completedAt": "2026-05-13"
+    "archivedTo": "docs/archive/2026-05/split-common-js",
+    "completedAt": "2026-05-19"
   }
 }

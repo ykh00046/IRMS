@@ -26,3 +26,7 @@ tmp_e2e_runtime/
 # Local editor state
 .idea/
 .vscode/
+
+# Secrets / environment variables (never push API keys)
+.env
+.env.*

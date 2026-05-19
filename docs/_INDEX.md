@@ -14,3 +14,5 @@
 |----|---------|------------|-------------|
 | 2026-03 | irms (PoC 1차) | 92% | [archive index](archive/2026-03/_INDEX.md) |
 | 2026-03 | irms-improvements (품질 개선) | 97.6% | [archive index](archive/2026-03/_INDEX.md) |
+| 2026-05 | split-large-files (Phase 1 — Python) | 99% | [archive index](archive/2026-05/_INDEX.md) |
+| 2026-05 | split-common-js (Phase 2 — JavaScript) | 99% | [archive index](archive/2026-05/_INDEX.md) |
