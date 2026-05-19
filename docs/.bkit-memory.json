@@ -1,15 +1,18 @@
 {
   "project": "IRMS",
-  "feature": null,
+  "feature": "split-management-js",
   "level": "dynamic",
-  "phase": "completed",
-  "matchRate": 99,
+  "phase": "plan",
+  "matchRate": 0,
   "updatedAt": "2026-05-19",
   "activeFeatures": [
     "status-operator-view",
-    "cloudflare-tunnel-access"
+    "cloudflare-tunnel-access",
+    "split-management-js"
   ],
-  "documents": {},
+  "documents": {
+    "plan": "docs/01-plan/features/split-management-js.plan.md"
+  },
   "status": {},
   "sourceSkill": "pdca",
   "sessionCount": 29,

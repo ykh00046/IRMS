@@ -4,7 +4,9 @@
 
 ## Active
 
-현재 진행 중인 피처가 없습니다. `/pdca plan [feature]`로 새 사이클을 시작하세요.
+| Feature | Phase | 문서 |
+|---------|-------|------|
+| split-management-js (Phase 3) | Plan | [Plan](01-plan/features/split-management-js.plan.md) |
 
 ---
 
