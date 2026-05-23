@@ -9,17 +9,17 @@ All attendance endpoints share a single router under ``/api/attendance``:
 - ``GET  /me?month=``        - Logged-in employee's own attendance.
 - ``GET  /admin/employees?month=`` - List employees for admin drop-down.
 - ``GET  /admin/view?emp_id=&month=`` - Admin views any employee.
-- ``POST /admin/reset-password`` - Admin resets password back to sa-beon.
+- ``POST /admin/reset-password`` - Admin resets password to a temporary value.
 """
 
 from __future__ import annotations
 
-import secrets
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from itsdangerous import URLSafeSerializer
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from .. import attendance_auth
 from ..attendance_auth import (
@@ -32,8 +32,8 @@ from ..attendance_auth import (
     require_view_context,
     touch_session,
 )
-from ..config import IS_DEVELOPMENT, SESSION_SECRET
 from ..database import get_connection, write_audit_log
+from ..security import refresh_csrf_cookie
 from ..services import attendance_excel as excel_service
 
 
@@ -84,19 +84,10 @@ def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
 
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/attendance", tags=["attendance"])
-    csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
-
-    def _refresh_csrf_cookie(response: Response) -> None:
-        response.set_cookie(
-            "csrftoken",
-            csrf_serializer.dumps(secrets.token_urlsafe(128)),
-            path="/",
-            secure=not IS_DEVELOPMENT,
-            httponly=False,
-            samesite="lax",
-        )
+    limiter = Limiter(key_func=get_remote_address)
 
     @router.post("/login")
+    @limiter.limit("5/minute")
     async def login(
         body: LoginRequest, request: Request, response: Response
     ) -> dict[str, Any]:
@@ -108,7 +99,7 @@ def build_router() -> APIRouter:
 
         reset_required = bool(record.get("password_reset_required"))
         login_session(request, emp_id, reset_required)
-        _refresh_csrf_cookie(response)
+        refresh_csrf_cookie(response)
         return {
             "emp_id": emp_id,
             "password_reset_required": reset_required,
@@ -204,11 +195,11 @@ def build_router() -> APIRouter:
     @router.post("/admin/reset-password")
     async def admin_reset_password(
         body: ResetPasswordRequest, request: Request
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         user = require_irms_manager(request)
         emp_id = body.emp_id.strip()
         try:
-            attendance_auth.reset_password_to_empid(emp_id)
+            temporary_password = attendance_auth.reset_password_to_temporary(emp_id)
         except AttendanceAuthError as exc:
             raise exc.to_http() from exc
         profile = excel_service.employee_profile_from_any_month(emp_id)
@@ -225,10 +216,14 @@ def build_router() -> APIRouter:
                 target_type="attendance",
                 target_id=emp_id,
                 target_label=target_label,
-                details={},
+                details={"temporary_password_issued": True},
             )
             connection.commit()
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "temporary_password": temporary_password,
+            "password_reset_required": True,
+        }
 
     @router.get("/admin/users")
     async def admin_users(request: Request) -> dict[str, Any]:

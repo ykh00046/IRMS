@@ -17,9 +17,34 @@ import threading
 import webbrowser
 from pathlib import Path
 
-import pystray
-from PIL import Image
-from pystray import Menu, MenuItem
+try:
+    from PIL import Image
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    Image = None  # type: ignore[assignment]
+    _PIL_IMPORT_ERROR = exc
+else:
+    _PIL_IMPORT_ERROR = None
+
+try:
+    import pystray
+    from pystray import Menu, MenuItem
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    pystray = None  # type: ignore[assignment]
+    _PYSTRAY_IMPORT_ERROR = exc
+
+    class Menu:  # type: ignore[no-redef]
+        SEPARATOR = object()
+
+        def __init__(self, *items):
+            self.items = items
+
+    class MenuItem:  # type: ignore[no-redef]
+        def __init__(self, text, action):
+            self.text = text
+            self.action = action
+
+else:
+    _PYSTRAY_IMPORT_ERROR = None
 
 from .attendance_alerts import AttendanceAlertPoller, today_iso
 from .attendance_popup import AttendanceAlertPopupManager
@@ -41,6 +66,11 @@ def asset_path(name: str) -> Path:
 
 
 def load_icon_image() -> Image.Image:
+    if Image is None:
+        raise RuntimeError(
+            "pillow is required to load the tray icon. "
+            "Install test dependencies with `pip install -r requirements-dev.txt`."
+        ) from _PIL_IMPORT_ERROR
     ico = asset_path("icon.ico")
     if ico.exists():
         return Image.open(ico)
@@ -74,6 +104,11 @@ class TrayApp:
         )
 
     def run(self) -> None:
+        if pystray is None:
+            raise RuntimeError(
+                "pystray is required to run the tray client. "
+                "Install test dependencies with `pip install -r requirements-dev.txt`."
+            ) from _PYSTRAY_IMPORT_ERROR
         self.logger.info(
             "starting IRMS attendance tray (server=%s)",
             self.config.server_url,

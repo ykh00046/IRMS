@@ -348,18 +348,18 @@
     const passwordInput = row.querySelector('[data-field="password"]');
     const password = String(passwordInput?.value || "");
 
-    if (password.length < 6) {
-      IRMS.notify("새 비밀번호는 6자 이상이어야 합니다.", "error");
+    if (password.length < 8) {
+      IRMS.notify("새 비밀번호는 8자 이상이어야 합니다.", "error");
       return;
     }
 
     button.disabled = true;
     try {
-      await IRMS.resetUserPassword(userId, password);
+      const result = await IRMS.resetUserPassword(userId, password);
       if (passwordInput) {
         passwordInput.value = "";
       }
-      IRMS.notify("비밀번호를 재설정했습니다.", "success");
+      IRMS.notify(result.password_expiration_notice || "비밀번호를 재설정했습니다.", "success");
       await loadAuditLogs();
     } catch (error) {
       IRMS.notify(`비밀번호 재설정 실패: ${error.message}`, "error");
@@ -499,21 +499,22 @@
           <td>${formatAttDate(item.locked_until)}</td>
           <td>${formatAttDate(item.last_login_at)}</td>
           <td>${formatAttDate(item.created_at)}</td>
-          <td><button type="button" class="btn compact danger" data-emp-id="${item.emp_id}">사번으로 초기화</button></td>`;
+          <td><button type="button" class="btn compact danger" data-emp-id="${item.emp_id}">임시 비밀번호 발급</button></td>`;
         attUsersBody.appendChild(tr);
       });
       attUsersBody.querySelectorAll("button[data-emp-id]").forEach((btn) => {
         btn.addEventListener("click", async (event) => {
           const empId = event.currentTarget.dataset.empId;
           if (!empId) return;
-          if (!window.confirm(`사번 ${empId}의 비밀번호를 사번으로 초기화할까요?`)) return;
+          if (!window.confirm(`사번 ${empId}의 임시 비밀번호를 발급할까요?`)) return;
           try {
             event.currentTarget.disabled = true;
-            await attendanceFetch("/api/attendance/admin/reset-password", {
+            const result = await attendanceFetch("/api/attendance/admin/reset-password", {
               method: "POST",
               body: { emp_id: empId },
             });
-            IRMS.notify(`사번 ${empId} 비밀번호를 초기화했습니다.`, "success");
+            window.prompt(`사번 ${empId} 임시 비밀번호`, result.temporary_password || "");
+            IRMS.notify(`사번 ${empId} 임시 비밀번호를 발급했습니다.`, "success");
             loadAttendanceUsers();
           } catch (err) {
             IRMS.notify(`초기화 실패: ${err.message}`, "error");

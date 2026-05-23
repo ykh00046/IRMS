@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
+from ..attendance_auth import AttendanceAuthError, validate_password_strength
 from ..database import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
 from ..security import hash_password
 from .models import (
@@ -12,6 +13,9 @@ from .models import (
     role_for_access_level,
     serialize_admin_user,
 )
+
+
+PASSWORD_EXPIRATION_NOTICE = "Reset passwords are temporary; require the user to change it at next sign-in."
 
 
 def build_router() -> APIRouter:
@@ -61,6 +65,10 @@ def build_router() -> APIRouter:
         username = body.username.strip()
         display_name = body.display_name.strip()
         now = utc_now_text()
+        try:
+            validate_password_strength(body.password, username)
+        except AttendanceAuthError as exc:
+            raise exc.to_http() from exc
 
         with get_connection() as connection:
             existing = connection.execute(
@@ -227,12 +235,16 @@ def build_router() -> APIRouter:
             ).fetchone()
             if not target_row:
                 raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+            target_user = row_to_dict(target_row)
+            try:
+                validate_password_strength(body.password, str(target_user["username"]))
+            except AttendanceAuthError as exc:
+                raise exc.to_http() from exc
 
             connection.execute(
                 "UPDATE users SET password_hash = ?, session_token = NULL WHERE id = ?",
                 (hash_password(body.password), user_id),
             )
-            target_user = row_to_dict(target_row)
             write_audit_log(
                 connection,
                 action="user_password_reset",
@@ -243,11 +255,12 @@ def build_router() -> APIRouter:
                 details={
                     "target_access_level": target_user["access_level"],
                     "target_is_active": bool(target_user["is_active"]),
+                    "password_expiration_notice": PASSWORD_EXPIRATION_NOTICE,
                 },
             )
             connection.commit()
 
-        return {"status": "ok"}
+        return {"status": "ok", "password_expiration_notice": PASSWORD_EXPIRATION_NOTICE}
 
     @router.delete("/admin/users/{user_id}")
     async def admin_delete_user(user_id: int, request: Request) -> dict[str, str]:

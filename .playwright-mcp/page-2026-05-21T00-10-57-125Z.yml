@@ -1,0 +1,142 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: 데이터 관리
+        - heading "관리" [level=1] [ref=e6]
+      - button "메뉴 열기" [ref=e7] [cursor=pointer]
+      - navigation "Main Navigation":
+        - link "홈" [ref=e11] [cursor=pointer]:
+          - /url: /
+        - link "계량" [ref=e12] [cursor=pointer]:
+          - /url: /weighing
+        - link "현황" [ref=e13] [cursor=pointer]:
+          - /url: /status
+        - link "관리" [ref=e14] [cursor=pointer]:
+          - /url: /management
+        - link "운영 대시" [ref=e15] [cursor=pointer]:
+          - /url: /dashboard
+        - link "재료 분석" [ref=e16] [cursor=pointer]:
+          - /url: /insight
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]: 책임자
+          - generic [ref=e20]: 강도윤
+          - generic [ref=e21]: "@220316"
+        - button "로그아웃" [ref=e22] [cursor=pointer]
+    - main [ref=e23]:
+      - navigation [ref=e24]:
+        - button "레시피 편집" [ref=e25] [cursor=pointer]
+        - button "레시피 등록" [ref=e26] [cursor=pointer]
+        - button "등록 이력" [active] [ref=e27] [cursor=pointer]
+        - button "레시피 조회" [ref=e28] [cursor=pointer]
+        - button "원재료 재고" [ref=e29] [cursor=pointer]
+      - text: ℹ
+      - generic [ref=e62]:
+        - heading "등록 이력" [level=3] [ref=e63]
+        - generic [ref=e64]:
+          - generic [ref=e65]:
+            - generic [ref=e66]: 상태
+            - combobox [ref=e67]:
+              - option "전체" [selected]
+              - option "대기"
+              - option "진행"
+              - option "완료"
+              - option "취소"
+          - generic [ref=e68]:
+            - generic [ref=e69]: 검색
+            - textbox "제품명 혹은 잉크명" [ref=e70]
+          - generic [ref=e71]:
+            - generic [ref=e72]: 시작일
+            - textbox [ref=e73]
+          - generic [ref=e74]:
+            - generic [ref=e75]: 종료일
+            - textbox [ref=e76]
+        - generic [ref=e77]:
+          - paragraph [ref=e78]: 상태 전체 기준으로 등록 이력을 표시 중입니다.
+          - button "필터 초기화" [ref=e80] [cursor=pointer]
+        - table [ref=e82]:
+          - rowgroup [ref=e83]:
+            - row "UUID 제품명 잉크명 상태 등록자 등록일시 항목수" [ref=e84]:
+              - columnheader "UUID" [ref=e85]
+              - columnheader "제품명" [ref=e86]
+              - columnheader "잉크명" [ref=e87]
+              - columnheader "상태" [ref=e88]
+              - columnheader "등록자" [ref=e89]
+              - columnheader "등록일시" [ref=e90]
+              - columnheader "항목수" [ref=e91]
+          - rowgroup [ref=e378]:
+            - row "2 제품B 잉크C 진행 작업자2 2026. 03. 06. 오전 10:20 2" [ref=e379] [cursor=pointer]:
+              - cell "2" [ref=e380]
+              - cell "제품B" [ref=e381]
+              - cell "잉크C" [ref=e382]
+              - cell "진행" [ref=e383]:
+                - generic [ref=e384]: 진행
+              - cell "작업자2" [ref=e385]
+              - cell "2026. 03. 06. 오전 10:20" [ref=e386]
+              - cell "2" [ref=e387]
+            - row "1 제품A 잉크B 대기 작업자1 2026. 03. 06. 오전 09:00 2" [ref=e388] [cursor=pointer]:
+              - cell "1" [ref=e389]
+              - cell "제품A" [ref=e390]
+              - cell "잉크B" [ref=e391]
+              - cell "대기" [ref=e392]:
+                - generic [ref=e393]: 대기
+              - cell "작업자1" [ref=e394]
+              - cell "2026. 03. 06. 오전 09:00" [ref=e395]
+              - cell "2" [ref=e396]
+            - row "3 제품C 잉크A 완료 작업자3 2026. 03. 05. 오전 11:00 3" [ref=e397] [cursor=pointer]:
+              - cell "3" [ref=e398]
+              - cell "제품C" [ref=e399]
+              - cell "잉크A" [ref=e400]
+              - cell "완료" [ref=e401]:
+                - generic [ref=e402]: 완료
+              - cell "작업자3" [ref=e403]
+              - cell "2026. 03. 05. 오전 11:00" [ref=e404]
+              - cell "3" [ref=e405]
+            - row "4 제품D 잉크D 완료 작업자1 2026. 03. 04. 오전 09:40 2" [ref=e406] [cursor=pointer]:
+              - cell "4" [ref=e407]
+              - cell "제품D" [ref=e408]
+              - cell "잉크D" [ref=e409]
+              - cell "완료" [ref=e410]:
+                - generic [ref=e411]: 완료
+              - cell "작업자1" [ref=e412]
+              - cell "2026. 03. 04. 오전 09:40" [ref=e413]
+              - cell "2" [ref=e414]
+            - row "5 제품E 잉크F 완료 작업자2 2026. 03. 02. 오전 08:15 3" [ref=e415] [cursor=pointer]:
+              - cell "5" [ref=e416]
+              - cell "제품E" [ref=e417]
+              - cell "잉크F" [ref=e418]
+              - cell "완료" [ref=e419]:
+                - generic [ref=e420]: 완료
+              - cell "작업자2" [ref=e421]
+              - cell "2026. 03. 02. 오전 08:15" [ref=e422]
+              - cell "3" [ref=e423]
+      - text: ⊘
+  - generic [ref=e112]:
+    - generic [ref=e113]:
+      - generic [ref=e114]:
+        - generic [ref=e115]: 공유 대화방
+        - heading "실시간 소통" [level=3] [ref=e116]
+      - generic [ref=e117]: 전체 공지방
+      - button "닫기" [ref=e125] [cursor=pointer]: ×
+    - generic [ref=e126]:
+      - button "전체 공지방" [ref=e424] [cursor=pointer]:
+        - generic [ref=e425]: 전체 공지방
+      - button "양산대응 현황" [ref=e426] [cursor=pointer]:
+        - generic [ref=e427]: 양산대응 현황
+      - button "액상잉크 대응 현황" [ref=e428] [cursor=pointer]:
+        - generic [ref=e429]: 액상잉크 대응 현황
+      - button "샘플시양산" [ref=e430] [cursor=pointer]:
+        - generic [ref=e431]: 샘플시양산
+    - generic [ref=e135]:
+      - strong [ref=e136]: 메시지가 없습니다.
+      - paragraph [ref=e137]: 첫 메시지를 입력하세요.
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e121]: 메시지
+        - textbox "메시지" [ref=e122]:
+          - /placeholder: "메시지를 입력하세요. (Shift+Enter: 줄바꿈)"
+      - button "전송" [ref=e124] [cursor=pointer]
+  - status
+  - button "메시지" [ref=e138] [cursor=pointer]:
+    - img [ref=e139]

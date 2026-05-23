@@ -25,7 +25,7 @@
     if (text.includes("CURRENT_PASSWORD_WRONG"))
       return "현재 비밀번호가 맞지 않습니다.";
     if (text.includes("PASSWORD_TOO_SHORT"))
-      return "새 비밀번호는 4자 이상이어야 합니다.";
+      return "새 비밀번호는 8자 이상이어야 합니다.";
     if (text.includes("PASSWORD_SAME_AS_EMPID"))
       return "새 비밀번호는 사번과 달라야 합니다.";
     if (text.includes("ATTENDANCE_LOGIN_REQUIRED"))

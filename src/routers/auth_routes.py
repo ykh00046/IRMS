@@ -1,9 +1,6 @@
 from typing import Any
 
-import secrets
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from itsdangerous import URLSafeSerializer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -15,25 +12,14 @@ from ..auth import (
     logout_user,
     require_access_level,
 )
-from ..config import IS_DEVELOPMENT, SESSION_SECRET
 from ..database import get_connection, write_audit_log
+from ..security import refresh_csrf_cookie
 from .models import LoginRequest, actor_name
 
 
 def build_router() -> APIRouter:
     router = APIRouter()
     limiter = Limiter(key_func=get_remote_address)
-    csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
-
-    def _refresh_csrf_cookie(response: Response) -> None:
-        response.set_cookie(
-            "csrftoken",
-            csrf_serializer.dumps(secrets.token_urlsafe(128)),
-            path="/",
-            secure=not IS_DEVELOPMENT,
-            httponly=False,
-            samesite="lax",
-        )
 
     def _do_login(
         request: Request,
@@ -56,7 +42,7 @@ def build_router() -> APIRouter:
                 details={"entry_point": entry_point},
             )
             connection.commit()
-        _refresh_csrf_cookie(response)
+        refresh_csrf_cookie(response)
         return {"user": user}
 
     def _authenticate_or_fail(

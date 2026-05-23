@@ -1,0 +1,33 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: Management Gate
+        - heading "MANAGER SIGN-IN" [level=1] [ref=e6]
+        - paragraph [ref=e7]: 매니저를 선택하고 비밀번호를 입력하면 기존 관리 화면과 인사이트 화면으로 진입합니다.
+        - generic [ref=e8]:
+          - strong [ref=e9]: 기본 계정
+          - code [ref=e10]: manager / manager123
+          - code [ref=e11]: manager2 / manager223
+      - generic [ref=e12]:
+        - generic [ref=e13]: 책임자
+        - combobox "책임자" [ref=e14]:
+          - option "강도윤 (@220316)" [selected]
+          - option "김규철 (@160501)"
+          - option "김성근 (@240212)"
+          - option "김지훈 (@160228)"
+          - option "김진우 (@130801)"
+          - option "김태균 (@250731)"
+          - option "문동식 (@190308)"
+          - option "민윤정 (@250411)"
+          - option "이광준 (@220314)"
+          - option "이시현 (@250612)"
+          - option "함지안 (@120206)"
+        - generic [ref=e15]: 비밀번호
+        - textbox "비밀번호" [ref=e16]:
+          - /placeholder: 비밀번호를 입력하세요
+        - generic [ref=e17]:
+          - link "처음으로" [ref=e18] [cursor=pointer]:
+            - /url: /
+          - button "관리 시작" [ref=e19] [cursor=pointer]
+  - status

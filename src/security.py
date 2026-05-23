@@ -39,3 +39,19 @@ def verify_password(password: str, encoded_password: str) -> bool:
         iterations,
     ).hex()
     return hmac.compare_digest(actual_digest, expected_digest)
+
+
+def refresh_csrf_cookie(response) -> None:
+    from itsdangerous import URLSafeSerializer
+
+    from .config import IS_DEVELOPMENT, SESSION_SECRET
+
+    serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
+    response.set_cookie(
+        "csrftoken",
+        serializer.dumps(secrets.token_urlsafe(128)),
+        path="/",
+        secure=not IS_DEVELOPMENT,
+        httponly=False,
+        samesite="lax",
+    )

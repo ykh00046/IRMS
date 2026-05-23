@@ -2,8 +2,8 @@
 
 This is a separate credential space from the main IRMS login:
 - Identity is the ERP employee number (사번), stored in ``attendance_users``.
-- First login uses the sa-beon as the initial password and shows a change
-  reminder; attendance lookup remains available.
+- Initial/reset credentials use a random temporary password and show a change
+  reminder; attendance lookup remains available after login.
 - Brute force guard: 5 failures within the counter window locks the account
   for 5 minutes.
 - Idle session timeout: 5 minutes of inactivity clears the session.
@@ -15,20 +15,22 @@ sa-beon gate and drop into "admin mode" where they can view any employee.
 from __future__ import annotations
 
 import datetime as _dt
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 
 from .auth import has_access_level
-from .database import get_connection, utc_now_text
+from .database import get_connection, utc_now_text, write_audit_log
 from .security import hash_password, verify_password
 
 SESSION_KEY = "att_user"
 IDLE_TIMEOUT_SECONDS = 5 * 60
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 5 * 60
-MIN_PASSWORD_LENGTH = 4
+MIN_PASSWORD_LENGTH = 8
+TEMP_PASSWORD_BYTES = 18
 
 
 @dataclass
@@ -59,6 +61,46 @@ def _parse_utc(text: str | None) -> _dt.datetime | None:
 
 def _format_utc(when: _dt.datetime) -> str:
     return when.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def generate_temporary_password() -> str:
+    return secrets.token_urlsafe(TEMP_PASSWORD_BYTES)
+
+
+def _is_repeated_digits(password: str) -> bool:
+    return password.isdigit() and len(set(password)) == 1
+
+
+def _is_sequential_digits(password: str) -> bool:
+    if not password.isdigit() or len(password) < 4:
+        return False
+    ascending = "01234567890123456789"
+    descending = "98765432109876543210"
+    return password in ascending or password in descending
+
+
+def validate_password_strength(password: str, emp_id: str | None = None) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise AttendanceAuthError(
+            code="PASSWORD_TOO_SHORT",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            extra={"min_length": MIN_PASSWORD_LENGTH},
+        )
+    if emp_id and password == emp_id:
+        raise AttendanceAuthError(
+            code="PASSWORD_SAME_AS_EMPID",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if _is_repeated_digits(password):
+        raise AttendanceAuthError(
+            code="PASSWORD_REPEATED_DIGITS",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if _is_sequential_digits(password):
+        raise AttendanceAuthError(
+            code="PASSWORD_SEQUENTIAL_DIGITS",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
 
 def _fetch(emp_id: str) -> dict[str, Any] | None:
@@ -111,6 +153,19 @@ def _update_on_success(emp_id: str) -> None:
         connection.commit()
 
 
+def _log_failed_login(emp_id: str, reason: str, **details: Any) -> None:
+    with get_connection() as connection:
+        write_audit_log(
+            connection,
+            action="attendance_login_failed",
+            target_type="attendance",
+            target_id=emp_id,
+            target_label=emp_id,
+            details={"employee_id": emp_id, "reason": reason, **details},
+        )
+        connection.commit()
+
+
 def _set_password(emp_id: str, password: str, reset_required: int) -> None:
     with get_connection() as connection:
         connection.execute(
@@ -130,7 +185,7 @@ def ensure_account(emp_id: str) -> dict[str, Any]:
     record = _fetch(emp_id)
     if record is not None:
         return record
-    _create(emp_id, emp_id, reset_required=1)
+    _create(emp_id, generate_temporary_password(), reset_required=1)
     record = _fetch(emp_id)
     assert record is not None
     return record
@@ -154,16 +209,18 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
     if record is None:
         # First ever login: sa-beon must exist in some month's Excel file.
         if not employee_exists_in_any_month(emp_id):
+            _log_failed_login(emp_id, "employee_not_in_excel")
             raise AttendanceAuthError(
                 code="EMP_NOT_IN_EXCEL", status_code=status.HTTP_404_NOT_FOUND
             )
-        _create(emp_id, emp_id, reset_required=1)
+        _create(emp_id, generate_temporary_password(), reset_required=1)
         record = _fetch(emp_id)
         assert record is not None
 
     locked_until = _parse_utc(record.get("locked_until"))
     now = _utc_now()
     if locked_until and locked_until > now:
+        _log_failed_login(emp_id, "locked", locked_until=_format_utc(locked_until))
         raise AttendanceAuthError(
             code="LOCKED",
             status_code=status.HTTP_423_LOCKED,
@@ -175,12 +232,23 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
         if attempts >= MAX_FAILED_ATTEMPTS:
             lock_until = now + _dt.timedelta(seconds=LOCKOUT_SECONDS)
             _update_failed(emp_id, 0, _format_utc(lock_until))
+            _log_failed_login(
+                emp_id,
+                "invalid_credentials_locked",
+                locked_until=_format_utc(lock_until),
+            )
             raise AttendanceAuthError(
                 code="LOCKED",
                 status_code=status.HTTP_423_LOCKED,
                 extra={"locked_until": _format_utc(lock_until)},
             )
         _update_failed(emp_id, attempts, None)
+        _log_failed_login(
+            emp_id,
+            "invalid_credentials",
+            failed_attempts=attempts,
+            remaining=MAX_FAILED_ATTEMPTS - attempts,
+        )
         raise AttendanceAuthError(
             code="INVALID_CREDENTIALS",
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -202,21 +270,11 @@ def change_password(emp_id: str, current_password: str, new_password: str) -> No
             code="CURRENT_PASSWORD_WRONG",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-    if len(new_password) < MIN_PASSWORD_LENGTH:
-        raise AttendanceAuthError(
-            code="PASSWORD_TOO_SHORT",
-            status_code=status.HTTP_400_BAD_REQUEST,
-            extra={"min_length": MIN_PASSWORD_LENGTH},
-        )
-    if new_password == emp_id:
-        raise AttendanceAuthError(
-            code="PASSWORD_SAME_AS_EMPID",
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
+    validate_password_strength(new_password, emp_id)
     _set_password(emp_id, new_password, reset_required=0)
 
 
-def reset_password_to_empid(emp_id: str) -> None:
+def reset_password_to_temporary(emp_id: str) -> str:
     from .services.attendance_excel import employee_exists_in_any_month
 
     emp_id = (emp_id or "").strip()
@@ -225,11 +283,17 @@ def reset_password_to_empid(emp_id: str) -> None:
             code="EMP_NOT_IN_EXCEL", status_code=status.HTTP_404_NOT_FOUND
         )
 
+    temporary_password = generate_temporary_password()
     record = _fetch(emp_id)
     if record is None:
-        _create(emp_id, emp_id, reset_required=1)
-        return
-    _set_password(emp_id, emp_id, reset_required=1)
+        _create(emp_id, temporary_password, reset_required=1)
+        return temporary_password
+    _set_password(emp_id, temporary_password, reset_required=1)
+    return temporary_password
+
+
+def reset_password_to_empid(emp_id: str) -> str:
+    return reset_password_to_temporary(emp_id)
 
 
 def login_session(request: Request, emp_id: str, password_reset_required: bool) -> None:

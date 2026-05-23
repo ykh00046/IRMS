@@ -28,8 +28,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-import openpyxl
-from openpyxl.utils.exceptions import InvalidFileException
+try:
+    import openpyxl
+    from openpyxl.utils.exceptions import InvalidFileException
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    openpyxl = None  # type: ignore[assignment]
+    InvalidFileException = Exception  # type: ignore[assignment,misc]
+    _OPENPYXL_IMPORT_ERROR = exc
+else:
+    _OPENPYXL_IMPORT_ERROR = None
 
 ATTENDANCE_DIR = Path(r"C:\ErpExcel")
 FILENAME_PATTERN = "monthly_attendance_{year_month}.xlsx"
@@ -502,6 +509,11 @@ def _cell_time(value: Any) -> str | None:
 def _load_workbook(path: Path):
     if not path.exists():
         raise MonthFileNotFound(str(path))
+    if openpyxl is None:
+        raise RuntimeError(
+            "openpyxl is required to load attendance Excel files. "
+            "Install test dependencies with `pip install -r requirements-dev.txt`."
+        ) from _OPENPYXL_IMPORT_ERROR
     try:
         return openpyxl.load_workbook(path, read_only=True, data_only=True)
     except PermissionError as exc:  # pragma: no cover - windows-specific
