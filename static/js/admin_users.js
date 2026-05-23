@@ -134,7 +134,7 @@
                   class="input row-password mono"
                   data-field="password"
                   maxlength="100"
-                  placeholder="새 비밀번호 (6자 이상)"
+                  placeholder="새 비밀번호 (8자 이상, 숫자 반복/연속 불가)"
                 />
                 <button type="button" class="btn accent" data-action="reset-password">비밀번호 재설정</button>
               </div>

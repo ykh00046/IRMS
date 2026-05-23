@@ -1,7 +1,6 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from ..auth import (
@@ -13,13 +12,13 @@ from ..auth import (
     require_access_level,
 )
 from ..database import get_connection, write_audit_log
+from ..limiter import limiter
 from ..security import refresh_csrf_cookie
 from .models import LoginRequest, actor_name
 
 
 def build_router() -> APIRouter:
     router = APIRouter()
-    limiter = Limiter(key_func=get_remote_address)
 
     def _do_login(
         request: Request,

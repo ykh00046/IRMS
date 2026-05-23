@@ -181,11 +181,16 @@ def _set_password(emp_id: str, password: str, reset_required: int) -> None:
 
 
 def ensure_account(emp_id: str) -> dict[str, Any]:
-    """Return (possibly auto-created) account row for sa-beon."""
+    """사번으로 계정을 조회하거나(없으면) 자동 생성한 행을 반환한다.
+
+    자동 생성 시 초기 비밀번호는 사번과 동일하게 설정한다. 사용자에게
+    임시 비밀번호를 전달할 방법이 없으므로 사번을 그대로 사용하고,
+    첫 로그인 직후 강제 변경을 유도한다.
+    """
     record = _fetch(emp_id)
     if record is not None:
         return record
-    _create(emp_id, generate_temporary_password(), reset_required=1)
+    _create(emp_id, emp_id, reset_required=1)
     record = _fetch(emp_id)
     assert record is not None
     return record
@@ -207,13 +212,16 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
 
     record = _fetch(emp_id)
     if record is None:
-        # First ever login: sa-beon must exist in some month's Excel file.
+        # 첫 로그인: 사번이 어느 월의 Excel에 존재해야 자동 가입.
         if not employee_exists_in_any_month(emp_id):
             _log_failed_login(emp_id, "employee_not_in_excel")
             raise AttendanceAuthError(
                 code="EMP_NOT_IN_EXCEL", status_code=status.HTTP_404_NOT_FOUND
             )
-        _create(emp_id, generate_temporary_password(), reset_required=1)
+        # 초기 비밀번호는 사번 자체. 사용자에게 별도 전달이 불가능하므로
+        # 사번을 그대로 초기값으로 쓰고, password_reset_required=1 로
+        # 첫 로그인 직후 변경을 강제한다.
+        _create(emp_id, emp_id, reset_required=1)
         record = _fetch(emp_id)
         assert record is not None
 

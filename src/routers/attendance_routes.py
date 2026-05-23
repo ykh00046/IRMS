@@ -18,10 +18,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from .. import attendance_auth
+from ..limiter import limiter
 from ..attendance_auth import (
     AttendanceAuthError,
     current_attendance_emp_id,
@@ -84,7 +83,6 @@ def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
 
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/attendance", tags=["attendance"])
-    limiter = Limiter(key_func=get_remote_address)
 
     @router.post("/login")
     @limiter.limit("5/minute")
@@ -111,6 +109,7 @@ def build_router() -> APIRouter:
         return {"status": "ok"}
 
     @router.post("/change-password")
+    @limiter.limit("5/minute")
     async def change_password(
         body: ChangePasswordRequest, request: Request
     ) -> dict[str, str]:

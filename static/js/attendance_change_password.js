@@ -30,6 +30,10 @@
       return "새 비밀번호는 사번과 달라야 합니다.";
     if (text.includes("ATTENDANCE_LOGIN_REQUIRED"))
       return "세션이 만료되었습니다. 다시 로그인해주세요.";
+    if (text.includes("PASSWORD_REPEATED_DIGITS"))
+      return "반복되는 숫자는 사용할 수 없습니다.";
+    if (text.includes("PASSWORD_SEQUENTIAL_DIGITS"))
+      return "연속된 숫자는 사용할 수 없습니다.";
     return text || "비밀번호 변경에 실패했습니다.";
   }
 

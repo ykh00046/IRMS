@@ -15,7 +15,7 @@ from .models import (
 )
 
 
-PASSWORD_EXPIRATION_NOTICE = "Reset passwords are temporary; require the user to change it at next sign-in."
+PASSWORD_EXPIRATION_NOTICE = "초기화된 비밀번호는 임시 비밀번호입니다. 다음 로그인 시 반드시 변경해주세요."
 
 
 def build_router() -> APIRouter:

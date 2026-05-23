@@ -3,20 +3,17 @@ import re
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.sessions import SessionMiddleware
 from starlette_csrf import CSRFMiddleware
 
 from .config import BASE_DIR, IS_DEVELOPMENT, SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
 from .database import init_db, utc_now_text
+from .limiter import limiter
 from .middleware.internal_only import InternalNetworkOnlyMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
-
-
-limiter = Limiter(key_func=get_remote_address)
 
 
 def create_app() -> FastAPI:

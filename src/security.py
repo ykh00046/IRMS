@@ -2,9 +2,15 @@ import hashlib
 import hmac
 import secrets
 
+from itsdangerous import URLSafeSerializer
 
-PASSWORD_ALGORITHM = "pbkdf2_sha256"
-PASSWORD_ITERATIONS = 200_000
+from .config import IS_DEVELOPMENT, SESSION_SECRET
+
+PASSWORD_ALGORITHM="***"
+PASSWORD_ITERATIONS=***
+
+# 모듈 로드 시 한 번만 생성 (매 호출마다 재생성 방지)
+_csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
 
 
 def hash_password(password: str) -> str:
@@ -42,14 +48,9 @@ def verify_password(password: str, encoded_password: str) -> bool:
 
 
 def refresh_csrf_cookie(response) -> None:
-    from itsdangerous import URLSafeSerializer
-
-    from .config import IS_DEVELOPMENT, SESSION_SECRET
-
-    serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")
     response.set_cookie(
         "csrftoken",
-        serializer.dumps(secrets.token_urlsafe(128)),
+        _csrf_serializer.dumps(secrets.token_urlsafe(32)),
         path="/",
         secure=not IS_DEVELOPMENT,
         httponly=False,
