@@ -30,3 +30,7 @@ tmp_e2e_runtime/
 # Secrets / environment variables (never push API keys)
 .env
 .env.*
+
+# Cloudflare Tunnel local secrets (real config + credentials)
+cloudflared/config.yml
+cloudflared/*.json

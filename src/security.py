@@ -6,8 +6,8 @@ from itsdangerous import URLSafeSerializer
 
 from .config import IS_DEVELOPMENT, SESSION_SECRET
 
-PASSWORD_ALGORITHM="***"
-PASSWORD_ITERATIONS=***
+PASSWORD_ALGORITHM = "pbkdf2_sha256"
+PASSWORD_ITERATIONS = 200_000
 
 # 모듈 로드 시 한 번만 생성 (매 호출마다 재생성 방지)
 _csrf_serializer = URLSafeSerializer(SESSION_SECRET, "csrftoken")

@@ -4,7 +4,9 @@
 
 ## Active
 
-현재 진행 중인 피처가 없습니다. `/pdca plan [feature]`로 새 사이클을 시작하세요.
+| Feature | Match Rate | Phase | 문서 |
+|---------|:----------:|-------|------|
+| cloudflare-tunnel (외부 접속 + 보안 헤더 강화) | 98% | Report 완료, 운영자 sign-off 대기 | [Plan](01-plan/features/cloudflare-tunnel.plan.md) · [Design](02-design/features/cloudflare-tunnel.design.md) · [Analysis](03-analysis/features/cloudflare-tunnel.analysis.md) · [Report](04-report/features/cloudflare-tunnel.report.md) |
 
 ---
 

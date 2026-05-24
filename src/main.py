@@ -12,6 +12,7 @@ from .config import BASE_DIR, IS_DEVELOPMENT, SESSION_COOKIE_NAME, SESSION_MAX_A
 from .database import init_db, utc_now_text
 from .limiter import limiter
 from .middleware.internal_only import InternalNetworkOnlyMiddleware
+from .middleware.security_headers import SecurityHeadersMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
 
@@ -51,6 +52,10 @@ def create_app() -> FastAPI:
         protected_prefixes=(
             "/api/public/attendance-alerts",
         ),
+    )
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        is_production=not IS_DEVELOPMENT,
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))

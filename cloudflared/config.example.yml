@@ -1,0 +1,23 @@
+# cloudflared/config.example.yml
+# Copy to cloudflared/config.yml and replace placeholders.
+# DO NOT commit the real config.yml — it is gitignored.
+
+tunnel: <TUNNEL_UUID>
+credentials-file: C:\Users\<USER>\.cloudflared\<TUNNEL_UUID>.json
+
+ingress:
+  # Primary route: external HTTPS -> local IRMS (uvicorn on port 9000)
+  - hostname: irms.<your-domain>.<tld>
+    service: http://127.0.0.1:9000
+    originRequest:
+      # Allow slow first-request cold starts (uvicorn worker boot)
+      connectTimeout: 30s
+      # Backend is plain HTTP on loopback; TLS verification is moot
+      noTLSVerify: true
+
+  # Catch-all: cloudflared requires a terminal rule
+  - service: http_status:404
+
+# Default health-check origin host (cloudflared Edge -> origin)
+originRequest:
+  httpHostHeader: irms.<your-domain>.<tld>
