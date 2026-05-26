@@ -4,7 +4,7 @@
   "level": "dynamic",
   "phase": "archived",
   "matchRate": 99,
-  "updatedAt": "2026-05-19",
+  "updatedAt": "2026-05-27",
   "activeFeatures": [
     "status-operator-view",
     "cloudflare-tunnel-access"
@@ -12,16 +12,16 @@
   "documents": {},
   "status": {},
   "sourceSkill": "pdca",
-  "sessionCount": 33,
+  "sessionCount": 36,
   "lastSession": {
-    "startedAt": "2026-05-24T12:50:29.526Z",
+    "startedAt": "2026-05-26T23:04:28.347Z",
     "platform": "claude",
     "level": "Dynamic"
   },
   "previousCycle": {
-    "feature": "split-management-js",
+    "feature": "split-work-js",
     "matchRate": 99,
-    "archivedTo": "docs/archive/2026-05/split-management-js",
-    "completedAt": "2026-05-19"
+    "archivedTo": "docs/archive/2026-05/split-work-js",
+    "completedAt": "2026-05-27"
   }
 }

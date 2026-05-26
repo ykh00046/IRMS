@@ -145,5 +145,12 @@
 
 {% block scripts %}
     <script src="/static/js/chat.js"></script>
-    <script src="/static/js/work.js"></script>
+    <!-- work modules (factory registration only — order among modules is irrelevant) -->
+    <script src="/static/js/work/stock-banner.js"></script>
+    <script src="/static/js/work/recipe-table.js"></script>
+    <script src="/static/js/work/import-notifications.js"></script>
+    <script src="/static/js/work/weighing-render.js"></script>
+    <script src="/static/js/work/weighing-actions.js"></script>
+    <script src="/static/js/work/idle-logout.js"></script>
+    <script src="/static/js/work.js"></script>  <!-- controller last -->
 {% endblock %}
