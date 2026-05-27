@@ -72,9 +72,9 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":9000 .*LISTENING"') d
 
 :: ── 3. Start server ──
 set "LOCAL_IP="
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
   for /f "tokens=1" %%b in ("%%a") do (
-    echo %%b | findstr /b "192.168. 10." >nul && if not defined LOCAL_IP set "LOCAL_IP=%%b"
+    if not defined LOCAL_IP set "LOCAL_IP=%%b"
   )
 )
 if not defined LOCAL_IP set "LOCAL_IP=0.0.0.0"
