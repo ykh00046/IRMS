@@ -170,6 +170,36 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
 
         self.assertEqual(items, [])
 
+    def test_unknown_half_quarter_leave_infers_afternoon_from_checkout(self) -> None:
+        row = _row(attendance_code="반반차", check_in="08:30", check_out="16:01")
+        record = _record(row, emp_id="240910", name="박효빈")
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-05")
+
+        self.assertEqual(items, [])
+
+    def test_partial_leave_processed_early_leave_time_is_not_anomaly_when_checkout_matches(self) -> None:
+        row = _row(
+            attendance_code="반차",
+            date="2026-05-27",
+            check_in="08:42",
+            check_out="13:00",
+        )
+        row.early_leave_hours = 4.0
+        record = _record(row, emp_id="240910", name="박효빈")
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-05")
+
+        self.assertEqual(items, [])
+
     def test_today_checkout_missing_waits_until_checkout_baseline_passes(self) -> None:
         today = attendance_excel.current_date()
         record = _record(_row(date=today, check_in="09:00", check_out=None))

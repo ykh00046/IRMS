@@ -293,6 +293,8 @@ def _is_full_day_leave(day_type: str, note: str, attendance_code: str = "") -> b
     baseline 만 이동시키고 감지는 계속 수행한다.
     """
     text = f"{day_type or ''} {note or ''} {attendance_code or ''}"
+    if any(keyword in text for keyword, _hours in PARTIAL_LEAVE_SHIFT_HOURS):
+        return False
     return any(keyword in text for keyword in FULL_DAY_LEAVE_KEYWORDS)
 
 
@@ -348,6 +350,52 @@ def _compute_anomaly_baseline(
                 base_out -= shift_minutes
             # half == "unknown" → 구분 모호. 보수적으로 기본 baseline 유지.
     return base_in, base_out
+
+
+def _infer_partial_leave_half(
+    row: AttendanceRow,
+    base_in: int,
+    base_out: int,
+    shift_minutes: int,
+) -> str:
+    in_mins = _hhmm_to_minutes(row.check_in)
+    out_mins = _hhmm_to_minutes(row.check_out)
+    morning_in = base_in + shift_minutes
+    afternoon_out = base_out - shift_minutes
+
+    if in_mins is not None and in_mins >= morning_in:
+        return "오전"
+    if out_mins is not None and out_mins <= afternoon_out + ALERT_GRACE_MINUTES:
+        return "오후"
+    return "unknown"
+
+
+def _compute_row_anomaly_baseline(
+    row: AttendanceRow,
+    shift_time: str,
+) -> tuple[int, int] | None:
+    baseline = SHIFT_BASELINES.get(shift_time)
+    if baseline is None:
+        return None
+    base_in, base_out = baseline
+
+    if shift_time == "주간":
+        if row.day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
+            base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
+        leave = _partial_leave_shift(row.day_type, row.note, row.attendance_code)
+        if leave:
+            _kind, half, shift_minutes = leave
+            if half == "unknown":
+                half = _infer_partial_leave_half(row, base_in, base_out, shift_minutes)
+            if half == "오전":
+                base_in += shift_minutes
+            elif half == "오후":
+                base_out -= shift_minutes
+    return base_in, base_out
+
+
+def _has_partial_leave(row: AttendanceRow) -> bool:
+    return _partial_leave_shift(row.day_type, row.note, row.attendance_code) is not None
 
 
 def _row_is_future(row: AttendanceRow, reference: _dt.datetime) -> bool:
@@ -408,15 +456,16 @@ def _unprocessed_row_issues(
         return []
 
     issues = _attendance_code_issues(row)
-    baseline = _compute_anomaly_baseline(
-        shift_time, row.day_type, row.note, row.attendance_code
-    )
+    baseline = _compute_row_anomaly_baseline(row, shift_time)
     if baseline is None:
         return issues
     base_in, base_out = baseline
+    has_partial_leave = _has_partial_leave(row)
 
     if row.late_hours > 0:
-        _append_issue(issues, f"지각 {_format_hours(row.late_hours)}시간")
+        in_mins = _hhmm_to_minutes(row.check_in)
+        if not (has_partial_leave and in_mins is not None and in_mins <= base_in):
+            _append_issue(issues, f"지각 {_format_hours(row.late_hours)}시간")
     elif not row.check_in and _baseline_has_passed(row, base_in, reference):
         _append_issue(issues, "출근 누락")
     else:
@@ -425,7 +474,9 @@ def _unprocessed_row_issues(
             _append_issue(issues, "지각 미처리")
 
     if row.early_leave_hours > 0:
-        _append_issue(issues, f"조퇴 {_format_hours(row.early_leave_hours)}시간")
+        out_mins = _hhmm_to_minutes(row.check_out)
+        if not (has_partial_leave and out_mins is not None and out_mins >= base_out):
+            _append_issue(issues, f"조퇴 {_format_hours(row.early_leave_hours)}시간")
     elif not row.check_out and _baseline_has_passed(row, base_out, reference):
         _append_issue(issues, "퇴근 누락")
     else:
