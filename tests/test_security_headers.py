@@ -124,3 +124,22 @@ def test_attendance_alerts_require_tray_token_even_from_loopback(monkeypatch):
         headers={"X-IRMS-Tray-Token": "test-tray-token"},
     )
     assert response.status_code == 404
+
+
+def test_attendance_alerts_do_not_require_tray_token_by_default(monkeypatch):
+    monkeypatch.setenv("IRMS_ENV", "production")
+    monkeypatch.setenv("IRMS_REQUIRE_SESSION_SECRET", "false")
+    monkeypatch.setenv("IRMS_SESSION_SECRET", "0" * 64)
+    monkeypatch.setenv("IRMS_SEED_DEMO_DATA", "false")
+    monkeypatch.delenv("IRMS_REQUIRE_TRAY_API_TOKEN", raising=False)
+    monkeypatch.delenv("IRMS_TRAY_API_TOKEN", raising=False)
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+
+    client = TestClient(mainmod.app, client=("127.0.0.1", 50000))
+    response = client.get("/api/public/attendance-alerts/anything")
+    assert response.status_code == 404
