@@ -66,11 +66,12 @@ SHIFT_BASELINES = {
 ALERT_WORKDAY_TYPES = ("평일", "평일2")
 DAY_SHIFT_SHORT_LUNCH_DAY_TYPE = "평일2"
 DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES = 30
+ALERT_GRACE_MINUTES = 15
 
 # Full-day leaves that exclude a row from anomaly detection entirely.
 # (반차/반반차는 이 목록에 들어가지 않는다 — baseline이 이동할 뿐 여전히
 # 감지 대상.)
-FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "유급", "공가")
+FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "유급", "공가", "훈련", "예비군", "교육")
 
 COL_DATE = 0
 COL_WEEKDAY = 1
@@ -267,17 +268,35 @@ def _hhmm_to_minutes(text: str | None) -> int | None:
         return None
 
 
-def _is_full_day_leave(day_type: str, note: str) -> bool:
+def _alert_reference_datetime() -> _dt.datetime:
+    return _dt.datetime.now()
+
+
+def alert_year_month() -> str:
+    current = current_year_month()
+    if month_file_paths(current):
+        return current
+    months = available_months()
+    return months[0] if months else current
+
+
+def _format_hours(value: float) -> str:
+    return f"{value:g}"
+
+
+def _is_full_day_leave(day_type: str, note: str, attendance_code: str = "") -> bool:
     """감지 대상에서 아예 제외할 '하루 전체 휴가' 판정.
 
     반차/반반차는 여기 포함되지 않는다. 하루 중 일부만 빠지는 휴가는
     baseline 만 이동시키고 감지는 계속 수행한다.
     """
-    text = f"{day_type or ''} {note or ''}"
+    text = f"{day_type or ''} {note or ''} {attendance_code or ''}"
     return any(keyword in text for keyword in FULL_DAY_LEAVE_KEYWORDS)
 
 
-def _partial_leave_shift(day_type: str, note: str) -> tuple[str, str, int] | None:
+def _partial_leave_shift(
+    day_type: str, note: str, attendance_code: str = ""
+) -> tuple[str, str, int] | None:
     """반차·반반차 이동량(분)과 오전/오후 구분을 반환.
 
     반환 형식: ``(leave_kind, half, shift_minutes)``
@@ -288,7 +307,7 @@ def _partial_leave_shift(day_type: str, note: str) -> tuple[str, str, int] | Non
     해당 행에 부분 휴가 키워드가 없으면 ``None`` 반환. 반반차는 반차의
     부분 문자열이므로 반반차 먼저 검사한다.
     """
-    text = f"{day_type or ''} {note or ''}"
+    text = f"{day_type or ''} {note or ''} {attendance_code or ''}"
     for keyword, hours in PARTIAL_LEAVE_SHIFT_HOURS:
         if keyword in text:
             if "오전" in text:
@@ -302,7 +321,7 @@ def _partial_leave_shift(day_type: str, note: str) -> tuple[str, str, int] | Non
 
 
 def _compute_anomaly_baseline(
-    shift_time: str, day_type: str, note: str
+    shift_time: str, day_type: str, note: str, attendance_code: str = ""
 ) -> tuple[int, int] | None:
     """shift_time과 부분 휴가를 반영한 ``(출근분, 퇴근분)`` baseline을 반환.
 
@@ -318,7 +337,7 @@ def _compute_anomaly_baseline(
     if shift_time == "주간":
         if day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
             base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
-        leave = _partial_leave_shift(day_type, note)
+        leave = _partial_leave_shift(day_type, note, attendance_code)
         if leave:
             _kind, half, shift_minutes = leave
             if half == "오전":
@@ -329,38 +348,127 @@ def _compute_anomaly_baseline(
     return base_in, base_out
 
 
-def _unprocessed_row_issues(row: AttendanceRow, shift_time: str) -> list[str]:
-    if str(row.attendance_code or "").strip():
+def _row_is_future(row: AttendanceRow, reference: _dt.datetime) -> bool:
+    try:
+        row_date = _dt.date.fromisoformat(row.date)
+    except ValueError:
+        return False
+    return row_date > reference.date()
+
+
+def _baseline_has_passed(row: AttendanceRow, baseline_minutes: int, reference: _dt.datetime) -> bool:
+    try:
+        row_date = _dt.date.fromisoformat(row.date)
+    except ValueError:
+        return True
+    if row_date < reference.date():
+        return True
+    if row_date > reference.date():
+        return False
+    reference_minutes = reference.hour * 60 + reference.minute
+    return reference_minutes >= baseline_minutes + ALERT_GRACE_MINUTES
+
+
+def _unprocessed_row_issues(
+    row: AttendanceRow,
+    shift_time: str,
+    *,
+    reference: _dt.datetime | None = None,
+) -> list[str]:
+    reference = reference or _alert_reference_datetime()
+    if _row_is_future(row, reference):
         return []
     if row.day_type not in ALERT_WORKDAY_TYPES:
         return []
-    if _is_full_day_leave(row.day_type, row.note):
+    if _is_full_day_leave(row.day_type, row.note, row.attendance_code):
         return []
 
-    baseline = _compute_anomaly_baseline(shift_time, row.day_type, row.note)
+    baseline = _compute_anomaly_baseline(
+        shift_time, row.day_type, row.note, row.attendance_code
+    )
     if baseline is None:
         return []
     base_in, base_out = baseline
 
     issues: list[str] = []
-    if not row.check_in:
+
+    if row.late_hours > 0:
+        issues.append(f"지각 {_format_hours(row.late_hours)}시간")
+    elif not row.check_in and _baseline_has_passed(row, base_in, reference):
         issues.append("출근 누락")
-    if not row.check_out:
+    else:
+        in_mins = _hhmm_to_minutes(row.check_in)
+        if in_mins is not None and in_mins > base_in:
+            issues.append("지각 미처리")
+
+    if row.early_leave_hours > 0:
+        issues.append(f"조퇴 {_format_hours(row.early_leave_hours)}시간")
+    elif not row.check_out and _baseline_has_passed(row, base_out, reference):
         issues.append("퇴근 누락")
-
-    in_mins = _hhmm_to_minutes(row.check_in)
-    if in_mins is not None and in_mins > base_in and row.late_hours == 0:
-        issues.append("지각 미처리")
-
-    out_mins = _hhmm_to_minutes(row.check_out)
-    if out_mins is not None and out_mins < base_out and row.early_leave_hours == 0:
-        issues.append("조퇴 미처리")
+    else:
+        out_mins = _hhmm_to_minutes(row.check_out)
+        if out_mins is not None and out_mins < base_out:
+            issues.append("조퇴 미처리")
 
     return issues
 
 
 def _row_issue_labels(row: AttendanceRow, shift_time: str) -> list[str]:
     return _unprocessed_row_issues(row, shift_time)
+
+
+def _display_date(date_text: str) -> str:
+    try:
+        return _dt.date.fromisoformat(date_text).strftime("%m-%d")
+    except ValueError:
+        return date_text
+
+
+def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str]:
+    joined = " / ".join(issues)
+    has_check_in_missing = "\uCD9C\uADFC \uB204\uB77D" in issues
+    has_check_out_missing = "\uD1F4\uADFC \uB204\uB77D" in issues
+
+    if has_check_in_missing and has_check_out_missing:
+        return "1", "\uCD9C/\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
+    if has_check_in_missing:
+        return "2", "\uCD9C\uADFC \uBBF8\uD0C0\uAC01"
+    if has_check_out_missing:
+        return "3", "\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
+
+    if any(issue.startswith("\uC9C0\uAC01 ") for issue in issues):
+        return "4", "\uC9C0\uAC01"
+    if any(issue.startswith("\uC870\uD1F4 ") for issue in issues):
+        return "4", "\uC870\uD1F4"
+
+    has_unprocessed_late_or_leave = any(
+        "\uBBF8\uCC98\uB9AC" in issue for issue in issues
+    )
+    if has_unprocessed_late_or_leave:
+        basis = f"{row.day_type} {row.note} {row.attendance_code}"
+        if "\uBC18\uBC18\uCC28" in basis:
+            return "6", "\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D(\uBC18\uBC18\uCC28/\uC870\uD1F4 \uC608\uC0C1)"
+        if "\uBC18\uCC28" in basis or "\uC870\uD1F4" in joined:
+            return "5", "\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D(\uBC18\uCC28/\uC870\uD1F4 \uC608\uC0C1)"
+        return "0", "\uAE30\uD0C0"
+
+    return "0", "\uAE30\uD0C0"
+
+
+def _anomaly_detail(row: AttendanceRow, issues: list[str]) -> dict[str, Any]:
+    code, content = _row_alert_category(row, issues)
+    extra_content = " / ".join(issues)
+    if extra_content == content:
+        extra_content = ""
+    return {
+        "date": row.date,
+        "display_date": _display_date(row.date),
+        "code": code,
+        "content": content,
+        "extra_content": extra_content,
+        "status": "",
+        "issues": list(issues),
+    }
 
 
 def _merge_anomaly_record(
@@ -371,6 +479,7 @@ def _merge_anomaly_record(
     include_dates: bool = False,
 ) -> None:
     row: AttendanceRow = rec["row"]
+    detail = _anomaly_detail(row, issues) if include_dates else None
     existing = anomalies_by_emp.get(rec["emp_id"])
     if existing is None:
         item = {
@@ -382,6 +491,7 @@ def _merge_anomaly_record(
         }
         if include_dates:
             item["dates"] = [row.date]
+            item["details"] = [detail]
         anomalies_by_emp[rec["emp_id"]] = item
         return
 
@@ -393,18 +503,30 @@ def _merge_anomaly_record(
         dates = existing.setdefault("dates", [])
         if row.date not in dates:
             dates.append(row.date)
+        details = existing.setdefault("details", [])
+        if detail is not None:
+            detail_key = (detail["date"], detail["code"], detail["content"], detail["extra_content"])
+            existing_keys = {
+                (
+                    existing_detail.get("date"),
+                    existing_detail.get("code"),
+                    existing_detail.get("content"),
+                    existing_detail.get("extra_content"),
+                )
+                for existing_detail in details
+            }
+            if detail_key not in existing_keys:
+                details.append(detail)
 
 
 def detect_today_anomalies(
     year_month: str, target_date: str
 ) -> tuple[str, list[dict[str, Any]]]:
-    """``target_date``의 미처리 근태 이상을 감지해 반환.
+    """``target_date``의 근태 이상을 감지해 반환.
 
-    알림은 **이상 현상 자체**가 아니라 **이상한데 관리자가 아직 처리하지
-    못한 상태**에 뜬다. 즉 ``late_hours > 0`` 같은 값은 ERP/관리자가
-    지각으로 이미 인지·기록한 상태이므로 감지 대상이 아니며, 반대로
-    ``late_hours == 0`` 인데 실제 출근 시각이 기준보다 늦으면 "미처리
-    지각"으로 올라간다. 조퇴도 같은 원리.
+    알림은 이미 ERP에 산출된 지각/조퇴 시간과, 아직 코드/시간 값으로
+    정리되지 않았지만 기준 시각을 벗어난 미처리 이상을 함께 보여준다.
+    연차/휴가/훈련처럼 하루 전체 부재로 승인된 행은 제외한다.
 
     감지 규칙:
       - day_type == '평일' 또는 '평일2'만 대상. '평일2'는 주간 기준
@@ -416,8 +538,10 @@ def detect_today_anomalies(
         (빈 값 = 교대조 비번 날; 알 수 없는 근무형태).
 
     이상 항목:
-      - check_in 없음   → "출근 누락"
-      - check_out 없음  → "퇴근 누락"
+      - late_hours > 0       → "지각 N시간"
+      - early_leave_hours > 0 → "조퇴 N시간"
+      - 기준 출근+grace 이후 check_in 없음 → "출근 누락"
+      - 기준 퇴근+grace 이후 check_out 없음 → "퇴근 누락"
       - check_in 시각 > 기준 출근  AND late_hours == 0        → "지각 미처리"
       - check_out 시각 < 기준 퇴근 AND early_leave_hours == 0 → "조퇴 미처리"
 
@@ -426,6 +550,7 @@ def detect_today_anomalies(
 
     day_type = ""
     anomalies_by_emp: dict[str, dict[str, Any]] = {}
+    reference = _alert_reference_datetime()
     for path in _month_file_paths_or_raise(year_month):
         for rec in _records_from_path(path):
             row: AttendanceRow = rec["row"]
@@ -435,11 +560,11 @@ def detect_today_anomalies(
                 day_type = row.day_type
             if row.day_type not in ALERT_WORKDAY_TYPES:
                 continue
-            if _is_full_day_leave(row.day_type, row.note):
+            if _is_full_day_leave(row.day_type, row.note, row.attendance_code):
                 continue
 
             shift_time = rec.get("shift_time", "") or ""
-            issues = _unprocessed_row_issues(row, shift_time)
+            issues = _unprocessed_row_issues(row, shift_time, reference=reference)
             if not issues:
                 continue
 
@@ -449,14 +574,15 @@ def detect_today_anomalies(
 
 
 def detect_month_anomalies(year_month: str) -> list[dict[str, Any]]:
-    """Return unresolved anomalies for any date in the selected month."""
+    """Return attendance anomalies for the selected month up to the current time."""
 
     anomalies_by_emp: dict[str, dict[str, Any]] = {}
+    reference = _alert_reference_datetime()
     for path in _month_file_paths_or_raise(year_month):
         for rec in _records_from_path(path):
             row: AttendanceRow = rec["row"]
             shift_time = rec.get("shift_time", "") or ""
-            issues = _unprocessed_row_issues(row, shift_time)
+            issues = _unprocessed_row_issues(row, shift_time, reference=reference)
             if not issues:
                 continue
             _merge_anomaly_record(anomalies_by_emp, rec, issues, include_dates=True)
@@ -465,6 +591,15 @@ def detect_month_anomalies(year_month: str) -> list[dict[str, Any]]:
     for item in items:
         if "dates" in item:
             item["dates"] = sorted(item["dates"])
+        if "details" in item:
+            item["details"] = sorted(
+                item["details"],
+                key=lambda detail: (
+                    str(detail.get("date", "")),
+                    str(detail.get("code", "")),
+                    str(detail.get("content", "")),
+                ),
+            )
     return items
 
 

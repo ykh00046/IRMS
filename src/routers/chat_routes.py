@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
-from ..database import get_connection, utc_cutoff_text, utc_now_text, write_audit_log
+from ..db import get_connection, utc_cutoff_text, utc_now_text, write_audit_log
 from .models import ChatMessageCreateRequest, actor_name, serialize_chat_message, serialize_chat_room
 
 NOTICE_POST_LIMIT_PER_USER = 5

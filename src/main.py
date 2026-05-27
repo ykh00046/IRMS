@@ -8,8 +8,16 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 from starlette_csrf import CSRFMiddleware
 
-from .config import BASE_DIR, IS_DEVELOPMENT, SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
-from .database import init_db, utc_now_text
+from .config import (
+    BASE_DIR,
+    IS_DEVELOPMENT,
+    REQUIRE_TRAY_API_TOKEN,
+    SESSION_COOKIE_NAME,
+    SESSION_MAX_AGE,
+    SESSION_SECRET,
+    TRAY_API_TOKEN,
+)
+from .db import init_db, utc_now_text
 from .limiter import limiter
 from .middleware.internal_only import InternalNetworkOnlyMiddleware
 from .middleware.security_headers import SecurityHeadersMiddleware
@@ -52,6 +60,8 @@ def create_app() -> FastAPI:
         protected_prefixes=(
             "/api/public/attendance-alerts",
         ),
+        api_token=TRAY_API_TOKEN,
+        require_api_token=REQUIRE_TRAY_API_TOKEN,
     )
     app.add_middleware(
         SecurityHeadersMiddleware,

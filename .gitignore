@@ -16,6 +16,7 @@ data/*.db-wal
 backups/*.db
 
 # Temporary runtime/test data
+.tmp-tests/
 data/__tmp_*/
 data/audit_ui_test_db/
 tmp_*/

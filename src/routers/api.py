@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from ..database import utc_now_text
+from ..db import utc_now_text
 from . import (
     admin_routes,
     attendance_routes,

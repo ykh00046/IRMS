@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
-from ..database import (
+from ..db import (
     get_connection,
     list_audit_logs,
     row_to_dict,

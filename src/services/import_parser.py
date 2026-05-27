@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Any
 
-from ..database import normalize_token
+from ..db import normalize_token
 from .cell_value_parser import parse_cell
 
 

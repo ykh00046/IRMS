@@ -60,17 +60,18 @@ class AttendanceExcelRowDetailsTests(unittest.TestCase):
             ["\uC9C0\uAC01 \uBBF8\uCC98\uB9AC", "\uC870\uD1F4 \uBBF8\uCC98\uB9AC"],
         )
 
-    def test_row_to_record_with_attendance_code_is_not_marked_as_issue(self) -> None:
+    def test_row_to_record_with_late_code_reports_processed_late(self) -> None:
         raw = _make_raw_row()
         raw[attendance_excel.COL_CHECK_IN] = "09:40"
         raw[attendance_excel.COL_CHECK_OUT] = "17:20"
         raw[attendance_excel.COL_ATTENDANCE_CODE] = "\uC9C0\uAC01"
+        raw[attendance_excel.COL_LATE] = 0.5
 
         record = attendance_excel._row_to_record(tuple(raw))
         row = record["row"]
 
-        self.assertFalse(row.has_issue)
-        self.assertEqual(row.issues, [])
+        self.assertTrue(row.has_issue)
+        self.assertIn("\uC9C0\uAC01 0.5\uC2DC\uAC04", row.issues)
 
 
 if __name__ == "__main__":

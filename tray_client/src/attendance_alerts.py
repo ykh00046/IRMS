@@ -187,7 +187,11 @@ class AttendanceAlertPoller:
 
     def _poll_once(self) -> dict[str, Any] | None:
         url = f"{self._config.server_url.rstrip('/')}/api/public/attendance-alerts/month"
-        resp = self._session.get(url, timeout=10)
+        headers = {}
+        token = getattr(self._config, "tray_api_token", "")
+        if token:
+            headers["X-IRMS-Tray-Token"] = token
+        resp = self._session.get(url, headers=headers or None, timeout=10)
         if resp.status_code == 404:
             logger.debug(
                 "attendance alerts: 404 month file not ready (%s) - skipping slot",

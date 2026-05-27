@@ -161,32 +161,57 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(presented[0].summary, "팝업 표시와 버튼 동작을 확인하세요.")
         self.assertEqual(presented[0].lines[0], "홍길동 인원 근태 확인")
 
-    def test_live_popup_payload_shows_three_names_and_remaining_count(self) -> None:
+    def test_live_popup_payload_builds_table_rows_and_remaining_count(self) -> None:
         payload = build_live_popup_payload(
             {
                 "total": 5,
                 "items": [
-                    {"name": "김철수"},
-                    {"name": "이영희"},
-                    {"name": "박민수"},
-                    {"name": "최하늘"},
-                    {"name": "정다은"},
+                    {
+                        "emp_id": "240910",
+                        "name": "박효빈",
+                        "department": "원료생산팀",
+                        "details": [
+                            {
+                                "display_date": "05-04",
+                                "code": "1",
+                                "content": "출/퇴근 미타각",
+                                "extra_content": "출근 누락 / 퇴근 누락",
+                            }
+                        ],
+                    },
+                    {
+                        "emp_id": "101001",
+                        "name": "최기자",
+                        "department": "원료생산팀",
+                        "details": [
+                            {
+                                "display_date": "05-05",
+                                "code": "0",
+                                "content": "기타",
+                                "extra_content": "근무 시간 확인 필요",
+                            }
+                        ],
+                    },
+                    {"name": "박종휘", "details": [{"display_date": "05-06"}]},
+                    {"name": "김성근", "details": [{"display_date": "05-10"}]},
+                    {"name": "이시현", "details": [{"display_date": "05-11"}]},
+                    {"name": "김세민", "details": [{"display_date": "05-12"}]},
+                    {"name": "정윤규", "details": [{"display_date": "05-13"}]},
+                    {"name": "한가람", "details": [{"display_date": "05-14"}]},
+                    {"name": "최선미", "details": [{"display_date": "05-15"}]},
                 ],
             }
         )
 
         self.assertEqual(payload.title, "근태 확인 필요")
-        self.assertEqual(payload.badge_text, "5명")
-        self.assertEqual(payload.summary, "이번 달 확인이 필요한 인원이 있습니다.")
-        self.assertEqual(
-            payload.lines,
-            [
-                "김철수 인원 근태 확인",
-                "이영희 인원 근태 확인",
-                "박민수 인원 근태 확인",
-                "외 2명",
-            ],
-        )
+        self.assertEqual(payload.badge_text, "9건")
+        self.assertEqual(payload.summary, "이번 달 시급직 근태 특이사항을 확인해주세요.")
+        self.assertEqual(len(payload.table_rows), 8)
+        self.assertEqual(payload.lines, ["외 1건 추가"])
+        self.assertEqual(payload.table_rows[0]["emp_id"], "240910")
+        self.assertEqual(payload.table_rows[0]["date"], "05-04")
+        self.assertEqual(payload.table_rows[0]["code"], "1")
+        self.assertEqual(payload.table_rows[1]["content"], "기타")
 
     def test_live_popup_payload_uses_privacy_safe_copy(self) -> None:
         presented: list[PopupPayload] = []
@@ -218,9 +243,10 @@ class AttendanceAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(len(presented), 1)
         self.assertEqual(presented[0].title, "근태 확인 필요")
-        self.assertEqual(presented[0].badge_text, "1명")
-        self.assertEqual(presented[0].summary, "이번 달 확인이 필요한 인원이 있습니다.")
-        self.assertEqual(presented[0].lines[0], "김철수 인원 근태 확인")
+        self.assertEqual(presented[0].badge_text, "1건")
+        self.assertEqual(presented[0].summary, "이번 달 시급직 근태 특이사항을 확인해주세요.")
+        self.assertEqual(presented[0].table_rows[0]["emp_id"], "171013")
+        self.assertIn("지각 미처리", presented[0].table_rows[0]["content"])
 
 
 class TrayAttendanceNavigationTests(unittest.TestCase):

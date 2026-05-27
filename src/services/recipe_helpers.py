@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ..database import row_to_dict
+from ..db import row_to_dict
 
 
 def format_display_value(weight, text) -> str:

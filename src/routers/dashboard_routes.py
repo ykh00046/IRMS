@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
-from ..database import get_connection, row_to_dict
+from ..db import get_connection, row_to_dict
 
 
 def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str, str, str]:

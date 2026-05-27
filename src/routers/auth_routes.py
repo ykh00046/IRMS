@@ -11,7 +11,7 @@ from ..auth import (
     logout_user,
     require_access_level,
 )
-from ..database import get_connection, write_audit_log
+from ..db import get_connection, write_audit_log
 from ..limiter import limiter
 from ..security import refresh_csrf_cookie
 from .models import LoginRequest, actor_name

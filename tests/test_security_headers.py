@@ -97,3 +97,30 @@ def test_internal_network_only_blocks_external_through_testclient(monkeypatch):
     assert response.status_code == 403
     body = response.json()
     assert body == {"detail": "INTERNAL_NETWORK_ONLY"}
+
+
+def test_attendance_alerts_require_tray_token_even_from_loopback(monkeypatch):
+    """Tunnel origin traffic can appear as 127.0.0.1, so token must win in production."""
+    monkeypatch.setenv("IRMS_ENV", "production")
+    monkeypatch.setenv("IRMS_REQUIRE_SESSION_SECRET", "false")
+    monkeypatch.setenv("IRMS_SESSION_SECRET", "0" * 64)
+    monkeypatch.setenv("IRMS_SEED_DEMO_DATA", "false")
+    monkeypatch.setenv("IRMS_REQUIRE_TRAY_API_TOKEN", "true")
+    monkeypatch.setenv("IRMS_TRAY_API_TOKEN", "test-tray-token")
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+
+    client = TestClient(mainmod.app, client=("127.0.0.1", 50000))
+    response = client.get("/api/public/attendance-alerts/anything")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "TRAY_TOKEN_REQUIRED"}
+
+    response = client.get(
+        "/api/public/attendance-alerts/anything",
+        headers={"X-IRMS-Tray-Token": "test-tray-token"},
+    )
+    assert response.status_code == 404

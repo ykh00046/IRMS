@@ -26,7 +26,7 @@ if str(ROOT) not in sys.path:
 
 from openpyxl import load_workbook  # noqa: E402
 
-from src.database import get_connection, init_db, utc_now_text, write_audit_log  # noqa: E402
+from src.db import get_connection, init_db, utc_now_text, write_audit_log  # noqa: E402
 from src.services.cell_value_parser import parse_cell  # noqa: E402
 from src.services.material_resolver import (  # noqa: E402
     normalize_material_name,

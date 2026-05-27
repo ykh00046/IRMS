@@ -29,3 +29,11 @@ jobs:
           IRMS_ENV: test
           IRMS_SESSION_SECRET: ci-only-not-a-real-secret
         run: pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run JavaScript tests
+        run: node --test tests/js/*.test.js

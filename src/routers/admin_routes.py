@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
 from ..attendance_auth import AttendanceAuthError, validate_password_strength
-from ..database import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
+from ..db import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
 from ..security import hash_password
 from .models import (
     AdminUserCreateRequest,
@@ -294,7 +294,10 @@ def build_router() -> APIRouter:
                 if int(remaining["c"]) == 0:
                     raise HTTPException(status_code=400, detail="LAST_MANAGER")
 
-            connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            connection.execute(
+                "UPDATE users SET is_active = 0, session_token = NULL WHERE id = ?",
+                (user_id,),
+            )
             write_audit_log(
                 connection,
                 action="user_deleted",

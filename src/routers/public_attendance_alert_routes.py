@@ -44,7 +44,7 @@ def build_router() -> APIRouter:
 
     @router.get("/month")
     async def month() -> dict[str, Any]:
-        year_month = excel_service.current_year_month()
+        year_month = excel_service.alert_year_month()
         try:
             items = excel_service.detect_month_anomalies(year_month)
         except excel_service.MonthFileNotFound:

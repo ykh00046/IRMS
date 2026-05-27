@@ -1,4 +1,5 @@
 import unittest
+import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -59,9 +60,9 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
             _record(
                 _row(
                     date="2026-04-25",
-                    attendance_code="\uC9C0\uAC01",
-                    check_in="09:40",
-                    check_out="17:20",
+                    attendance_code="\uC5F0\uCC28",
+                    check_in=None,
+                    check_out=None,
                 ),
                 emp_id="220903",
                 name="\uAE40\uC138\uBBFC",
@@ -77,6 +78,9 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["emp_id"], "171013")
         self.assertEqual(items[0]["dates"], ["2026-04-23"])
+        self.assertEqual(items[0]["details"][0]["display_date"], "04-23")
+        self.assertEqual(items[0]["details"][0]["code"], "1")
+        self.assertEqual(items[0]["details"][0]["content"], "출/퇴근 미타각")
         self.assertIn("\uCD9C\uADFC \uB204\uB77D", items[0]["issues"])
 
     def test_detect_month_anomalies_merges_dates_and_dedupes_issues(self) -> None:
@@ -106,17 +110,23 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         self.assertEqual(item["emp_id"], "171013")
         self.assertEqual(item["dates"], ["2026-04-21", "2026-04-23", "2026-04-25"])
         self.assertEqual(
+            [detail["display_date"] for detail in item["details"]],
+            ["04-21", "04-23", "04-25"],
+        )
+        self.assertEqual(
             sorted(item["issues"]),
             sorted(["출근 누락", "퇴근 누락"]),
         )
 
-    def test_detect_today_anomalies_skips_rows_with_attendance_code(self) -> None:
+    def test_detect_today_anomalies_reports_processed_late_rows(self) -> None:
         fake_workbook = SimpleNamespace(
             sheetnames=[],
             active=object(),
             close=lambda: None,
         )
-        record = _record(_row(attendance_code="\uC9C0\uAC01"))
+        row = _row(attendance_code="\uC9C0\uAC01")
+        row.late_hours = 0.5
+        record = _record(row)
 
         with (
             patch.object(attendance_excel, "_load_workbook", return_value=fake_workbook),
@@ -128,7 +138,64 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
             )
 
         self.assertEqual(day_type, "\uD3C9\uC77C")
+        self.assertEqual(len(items), 1)
+        self.assertIn("\uC9C0\uAC01 0.5\uC2DC\uAC04", items[0]["issues"])
+
+    def test_detect_today_anomalies_skips_full_day_leave_code(self) -> None:
+        record = _record(_row(attendance_code="\uC5F0\uCC28", check_in=None, check_out=None))
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            _day_type, items = attendance_excel.detect_today_anomalies(
+                "2026-04", "2026-04-24"
+            )
+
         self.assertEqual(items, [])
+
+    def test_detect_today_anomalies_skips_training_absence(self) -> None:
+        record = _record(
+            _row(attendance_code="\uD6C8\uB828", check_in=None, check_out=None)
+        )
+        record["row"].note = "\uC608\uBE44\uAD70_8\uC2DC\uAC04"
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            _day_type, items = attendance_excel.detect_today_anomalies(
+                "2026-04", "2026-04-24"
+            )
+
+        self.assertEqual(items, [])
+
+    def test_today_checkout_missing_waits_until_checkout_baseline_passes(self) -> None:
+        today = attendance_excel.current_date()
+        record = _record(_row(date=today, check_in="09:00", check_out=None))
+
+        with (
+            patch.object(
+                attendance_excel,
+                "_alert_reference_datetime",
+                return_value=dt.datetime.fromisoformat(f"{today}T16:00:00"),
+            ),
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            _day_type, items = attendance_excel.detect_today_anomalies(
+                today[:7], today
+            )
+
+        self.assertEqual(items, [])
+
+    def test_alert_year_month_falls_back_to_latest_available_file(self) -> None:
+        with (
+            patch.object(attendance_excel, "current_year_month", return_value="2026-05"),
+            patch.object(attendance_excel, "month_file_paths", return_value=[]),
+            patch.object(attendance_excel, "available_months", return_value=["2026-04", "2026-03"]),
+        ):
+            self.assertEqual(attendance_excel.alert_year_month(), "2026-04")
 
 
 if __name__ == "__main__":

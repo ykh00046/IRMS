@@ -37,6 +37,7 @@ def config_path() -> Path:
 @dataclass
 class Config:
     server_url: str = DEFAULT_SERVER_URL
+    tray_api_token: str = ""
 
     @classmethod
     def load(cls) -> "Config":

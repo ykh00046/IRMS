@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from ..database import utc_now_text
+from ..db import utc_now_text
 
 VALID_REASONS = {"measurement", "restock", "adjust", "discard"}
 

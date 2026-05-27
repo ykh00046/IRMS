@@ -3,7 +3,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from src.database import utc_now_text
+from src.db import utc_now_text
 from src.routers.chat_routes import (
     NOTICE_POST_LIMIT_PER_USER,
     _enforce_notice_post_rate_limit,

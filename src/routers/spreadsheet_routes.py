@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..auth import require_access_level
-from ..database import get_connection, utc_now_text
+from ..db import get_connection, utc_now_text
 from .spreadsheet_formulas import evaluate_row, is_formula
 
 

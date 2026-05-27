@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 
-from .database import get_connection
+from .db import get_connection
 from .security import verify_password
 
 ACCESS_LEVEL_RANK = {

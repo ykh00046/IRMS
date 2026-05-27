@@ -3,7 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ..auth import ACCESS_LEVEL_LABEL
-from ..database import row_to_dict
+from ..db import row_to_dict
 
 
 class LoginRequest(BaseModel):

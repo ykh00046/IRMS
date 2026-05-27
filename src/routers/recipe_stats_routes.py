@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from ..auth import require_access_level
-from ..database import get_connection, row_to_dict
+from ..db import get_connection, row_to_dict
 
 
 def build_router() -> APIRouter:

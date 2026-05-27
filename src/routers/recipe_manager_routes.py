@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
-from ..database import get_connection, row_to_dict, write_audit_log
+from ..db import get_connection, row_to_dict, write_audit_log
 from ..services.recipe_helpers import fetch_recipe_items
 
 

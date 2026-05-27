@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 try:
@@ -17,7 +17,8 @@ except Exception:  # pragma: no cover - platform/import guard
 logger = logging.getLogger("irms_notice")
 
 POPUP_MAX_NAMES = 3
-POPUP_WIDTH = 380
+POPUP_MAX_ROWS = 8
+POPUP_WIDTH = 980
 POPUP_MARGIN_X = 24
 POPUP_MARGIN_Y = 24
 QUEUE_POLL_MS = 100
@@ -27,6 +28,9 @@ PANEL_BORDER = "#d7dee8"
 PANEL_TEXT = "#0f172a"
 PANEL_MUTED = "#64748b"
 LINE_TEXT = "#111827"
+TABLE_HEADER_BG = "#e8edf5"
+TABLE_BORDER = "#cbd5e1"
+TABLE_ROW_ALT = "#f8fafc"
 BUTTON_SUBTLE_BG = "#f8fafc"
 BUTTON_SUBTLE_FG = "#334155"
 BUTTON_MUTED_FG = "#64748b"
@@ -57,6 +61,7 @@ class PopupPayload:
     badge_text: str
     summary: str
     lines: list[str]
+    table_rows: list[dict[str, str]] = field(default_factory=list)
     accent: str = "live"
 
 
@@ -81,14 +86,61 @@ def _privacy_safe_lines(items: list[dict[str, Any]], total: int) -> list[str]:
     return lines
 
 
+def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in items:
+        details = list(item.get("details") or [])
+        if not details:
+            rows.append(
+                {
+                    "emp_id": str(item.get("emp_id") or ""),
+                    "name": _display_name(item),
+                    "department": str(item.get("department") or ""),
+                    "date": ", ".join(str(date) for date in item.get("dates") or []),
+                    "code": "",
+                    "content": " / ".join(str(issue) for issue in item.get("issues") or []),
+                    "extra_content": "",
+                    "status": "",
+                }
+            )
+            continue
+
+        for detail in details:
+            rows.append(
+                {
+                    "emp_id": str(item.get("emp_id") or ""),
+                    "name": _display_name(item),
+                    "department": str(item.get("department") or ""),
+                    "date": str(
+                        detail.get("display_date")
+                        or str(detail.get("date") or "")[-5:]
+                    ),
+                    "code": str(detail.get("code") or ""),
+                    "content": str(detail.get("content") or ""),
+                    "extra_content": str(detail.get("extra_content") or ""),
+                    "status": str(detail.get("status") or ""),
+                }
+            )
+    return rows
+
+
 def build_live_popup_payload(payload: dict[str, Any]) -> PopupPayload:
     items = list(payload.get("items") or [])
     total = max(int(payload.get("total") or len(items)), len(items))
+    table_rows = _detail_rows(items)
+    row_total = max(len(table_rows), total)
+    overflow = max(0, row_total - POPUP_MAX_ROWS)
+    lines: list[str] = []
+    if overflow > 0:
+        lines.append(f"외 {overflow}건 추가")
+    elif not table_rows:
+        lines = _privacy_safe_lines(items, total)
     return PopupPayload(
         title="근태 확인 필요",
-        badge_text=f"{total}명" if total else "확인",
-        summary="이번 달 확인이 필요한 인원이 있습니다.",
-        lines=_privacy_safe_lines(items, total),
+        badge_text=f"{row_total}건" if row_total else "확인",
+        summary="이번 달 시급직 근태 특이사항을 확인해주세요.",
+        lines=lines,
+        table_rows=table_rows[:POPUP_MAX_ROWS],
         accent="live",
     )
 
@@ -349,6 +401,61 @@ class AttendanceAlertPopupManager:
                 activeforeground=accent["primary_fg"],
             )
 
+    def _render_table(self, payload: PopupPayload) -> None:
+        assert tk is not None
+        if self._lines_frame is None:
+            return
+
+        columns = [
+            ("emp_id", "사번", 8, "center"),
+            ("name", "성명", 8, "center"),
+            ("department", "부서", 14, "w"),
+            ("date", "일자", 7, "center"),
+            ("code", "코", 4, "center"),
+            ("content", "내용", 24, "w"),
+            ("extra_content", "추가 내용", 34, "w"),
+            ("status", "처리 상황", 24, "w"),
+        ]
+
+        table = tk.Frame(
+            self._lines_frame,
+            bg=TABLE_BORDER,
+            highlightthickness=1,
+            highlightbackground=TABLE_BORDER,
+        )
+        table.pack(fill="x")
+
+        for index, (_key, label, width, anchor) in enumerate(columns):
+            table.grid_columnconfigure(index, weight=1 if index in (5, 6, 7) else 0)
+            tk.Label(
+                table,
+                text=label,
+                bg=TABLE_HEADER_BG,
+                fg=PANEL_TEXT,
+                font=("Malgun Gothic", 8, "bold"),
+                width=width,
+                padx=5,
+                pady=5,
+                anchor=anchor,
+            ).grid(row=0, column=index, sticky="nsew", padx=(0, 1), pady=(0, 1))
+
+        for row_index, row_data in enumerate(payload.table_rows, start=1):
+            bg = PANEL_BG if row_index % 2 else TABLE_ROW_ALT
+            for column_index, (key, _label, width, anchor) in enumerate(columns):
+                tk.Label(
+                    table,
+                    text=row_data.get(key, ""),
+                    bg=bg,
+                    fg=LINE_TEXT,
+                    font=("Malgun Gothic", 8),
+                    width=width,
+                    padx=5,
+                    pady=5,
+                    anchor=anchor,
+                    justify="left" if anchor == "w" else "center",
+                    wraplength=260 if key in ("extra_content", "status") else 180,
+                ).grid(row=row_index, column=column_index, sticky="nsew", padx=(0, 1), pady=(0, 1))
+
     def _render_lines(self, payload: PopupPayload) -> None:
         assert tk is not None
         if self._lines_frame is None:
@@ -356,6 +463,9 @@ class AttendanceAlertPopupManager:
 
         for child in self._lines_frame.winfo_children():
             child.destroy()
+
+        if payload.table_rows:
+            self._render_table(payload)
 
         for line in payload.lines:
             row = tk.Frame(self._lines_frame, bg=PANEL_BG)

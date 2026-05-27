@@ -31,7 +31,7 @@ from ..attendance_auth import (
     require_view_context,
     touch_session,
 )
-from ..database import get_connection, write_audit_log
+from ..db import get_connection, write_audit_log
 from ..security import refresh_csrf_cookie
 from ..services import attendance_excel as excel_service
 

@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
-from ..database import get_connection, row_to_dict, utc_now_text, write_audit_log
+from ..db import get_connection, row_to_dict, utc_now_text, write_audit_log
 from ..services import stock_service
 from ..services.recipe_helpers import format_display_value
 from .models import (
