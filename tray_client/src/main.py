@@ -144,8 +144,8 @@ class TrayApp:
                 ),
                 self._toggle_alert_mute_today,
             ),
-            MenuItem("근태 알림 테스트", self._test_alert),
-            MenuItem("근태 확인 열기", self._open_attendance_menu),
+            MenuItem("근태 이상 확인", self._show_attendance_anomalies),
+            MenuItem("근태 이상 보기", self._open_attendance_menu),
             MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
@@ -169,8 +169,9 @@ class TrayApp:
         else:
             self._enable_alerts()
 
-    def _test_alert(self, _icon, _item) -> None:
-        self.alert_poller.show_test_notification()
+    def _show_attendance_anomalies(self, _icon, _item) -> None:
+        self.logger.info("manual attendance anomaly check requested")
+        self.alert_poller.trigger_once()
 
     def _open_attendance(self) -> None:
         url = attendance_page_url(self.config.server_url)

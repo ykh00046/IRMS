@@ -145,7 +145,7 @@ class AttendanceAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(len(presented), 1)
 
-    def test_test_notification_uses_popup_payload(self) -> None:
+    def test_manual_check_uses_live_popup_payload(self) -> None:
         presented: list[PopupPayload] = []
         poller = AttendanceAlertPoller(
             config=Config(),
@@ -153,13 +153,34 @@ class AttendanceAlertPollerTests(unittest.TestCase):
             is_enabled_getter=lambda: True,
         )
 
-        poller.show_test_notification()
+        with patch.object(
+            poller,
+            "_poll_once",
+            return_value={
+                "month": "2026-05",
+                "total": 1,
+                "items": [
+                    {
+                        "emp_id": "260445",
+                        "name": "박종휘",
+                        "department": "원료생산팀",
+                        "details": [
+                            {
+                                "display_date": "05-06",
+                                "code": "1",
+                                "content": "출/퇴근 미타각",
+                            }
+                        ],
+                    }
+                ],
+            },
+        ):
+            poller._poll_and_notify(force=True)
 
         self.assertEqual(len(presented), 1)
-        self.assertEqual(presented[0].title, "근태 알림 테스트")
-        self.assertEqual(presented[0].badge_text, "TEST")
-        self.assertEqual(presented[0].summary, "팝업 표시와 버튼 동작을 확인하세요.")
-        self.assertEqual(presented[0].lines[0], "홍길동 인원 근태 확인")
+        self.assertEqual(presented[0].title, "근태 확인 필요")
+        self.assertEqual(presented[0].badge_text, "1건")
+        self.assertEqual(presented[0].table_rows[0]["emp_id"], "260445")
 
     def test_live_popup_payload_builds_table_rows_and_remaining_count(self) -> None:
         payload = build_live_popup_payload(
@@ -256,12 +277,12 @@ class TrayAttendanceNavigationTests(unittest.TestCase):
             "http://192.168.11.147:9000/attendance",
         )
 
-    def test_test_alert_only_shows_popup(self) -> None:
+    def test_attendance_anomaly_menu_triggers_real_poll(self) -> None:
         events: list[str] = []
 
         class FakeAlertPoller:
-            def show_test_notification(self) -> None:
-                events.append("popup")
+            def trigger_once(self) -> None:
+                events.append("poll")
 
         app = tray_main.TrayApp.__new__(tray_main.TrayApp)
         app.config = Config(server_url="http://192.168.11.147:9000/")
@@ -275,9 +296,19 @@ class TrayAttendanceNavigationTests(unittest.TestCase):
             "tray_client.src.main.open_in_browser",
             side_effect=lambda url: events.append(url),
         ):
-            app._test_alert(None, None)
+            app._show_attendance_anomalies(None, None)
 
-        self.assertEqual(events, ["popup"])
+        self.assertEqual(events, ["poll"])
+
+    def test_today_mute_reenables_after_midnight(self) -> None:
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app._alert_mute_date = "2026-05-27"
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
+            self.assertFalse(app._alerts_enabled_today())
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-28"):
+            self.assertTrue(app._alerts_enabled_today())
 
     def test_open_attendance_uses_browser(self) -> None:
         opened: list[str] = []
