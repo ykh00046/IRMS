@@ -73,6 +73,19 @@ class AttendanceExcelRowDetailsTests(unittest.TestCase):
         self.assertTrue(row.has_issue)
         self.assertIn("\uC9C0\uAC01 0.5\uC2DC\uAC04", row.issues)
 
+    def test_row_to_record_with_missing_punch_code_reports_issue_without_shift_baseline(self) -> None:
+        raw = _make_raw_row()
+        raw[attendance_excel.COL_SHIFT_TIME] = ""
+        raw[attendance_excel.COL_CHECK_IN] = None
+        raw[attendance_excel.COL_CHECK_OUT] = None
+        raw[attendance_excel.COL_ATTENDANCE_CODE] = "\uCD9C/\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
+
+        record = attendance_excel._row_to_record(tuple(raw))
+        row = record["row"]
+
+        self.assertTrue(row.has_issue)
+        self.assertEqual(row.issues, ["\uCD9C\uADFC \uB204\uB77D", "\uD1F4\uADFC \uB204\uB77D"])
+
 
 if __name__ == "__main__":
     unittest.main()

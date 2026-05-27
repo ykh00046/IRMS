@@ -80,7 +80,7 @@
   function isIssueText(text) {
     const value = String(text || "").trim();
     if (!value) return false;
-    return /(?:지각|조퇴|외출|누락)/.test(value);
+    return /(?:지각|조퇴|외출|누락|미타각)/.test(value);
   }
 
   function isLeaveRow(row) {

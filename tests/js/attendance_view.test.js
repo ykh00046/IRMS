@@ -199,6 +199,10 @@ async function testAttendanceCodeAndIssueMarkerAreRenderable() {
     /att-code-pill-leave/
   );
   assert.match(
+    hooks.attendanceCodeCell({ attendance_code: "\uCD9C\/\uD1F4\uADFC \uBBF8\uD0C0\uAC01" }),
+    /att-code-pill-issue/
+  );
+  assert.match(
     hooks.dateCell({
       date: "2026-04-24",
       has_issue: true,

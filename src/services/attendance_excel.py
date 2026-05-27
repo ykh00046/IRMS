@@ -72,6 +72,7 @@ ALERT_GRACE_MINUTES = 15
 # (반차/반반차는 이 목록에 들어가지 않는다 — baseline이 이동할 뿐 여전히
 # 감지 대상.)
 FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "유급", "공가", "훈련", "예비군", "교육")
+ATTENDANCE_ISSUE_CODE_KEYWORDS = ("미타각", "누락")
 
 COL_DATE = 0
 COL_WEEKDAY = 1
@@ -369,6 +370,28 @@ def _baseline_has_passed(row: AttendanceRow, baseline_minutes: int, reference: _
     return reference_minutes >= baseline_minutes + ALERT_GRACE_MINUTES
 
 
+def _append_issue(issues: list[str], issue: str) -> None:
+    if issue not in issues:
+        issues.append(issue)
+
+
+def _attendance_code_issues(row: AttendanceRow) -> list[str]:
+    code = str(row.attendance_code or "").strip()
+    if not code:
+        return []
+    if not any(keyword in code for keyword in ATTENDANCE_ISSUE_CODE_KEYWORDS):
+        return []
+
+    issues: list[str] = []
+    if "출" in code:
+        _append_issue(issues, "출근 누락")
+    if "퇴" in code:
+        _append_issue(issues, "퇴근 누락")
+    if not issues:
+        _append_issue(issues, f"근태코드 확인: {code}")
+    return issues
+
+
 def _unprocessed_row_issues(
     row: AttendanceRow,
     shift_time: str,
@@ -383,32 +406,31 @@ def _unprocessed_row_issues(
     if _is_full_day_leave(row.day_type, row.note, row.attendance_code):
         return []
 
+    issues = _attendance_code_issues(row)
     baseline = _compute_anomaly_baseline(
         shift_time, row.day_type, row.note, row.attendance_code
     )
     if baseline is None:
-        return []
+        return issues
     base_in, base_out = baseline
 
-    issues: list[str] = []
-
     if row.late_hours > 0:
-        issues.append(f"지각 {_format_hours(row.late_hours)}시간")
+        _append_issue(issues, f"지각 {_format_hours(row.late_hours)}시간")
     elif not row.check_in and _baseline_has_passed(row, base_in, reference):
-        issues.append("출근 누락")
+        _append_issue(issues, "출근 누락")
     else:
         in_mins = _hhmm_to_minutes(row.check_in)
         if in_mins is not None and in_mins > base_in:
-            issues.append("지각 미처리")
+            _append_issue(issues, "지각 미처리")
 
     if row.early_leave_hours > 0:
-        issues.append(f"조퇴 {_format_hours(row.early_leave_hours)}시간")
+        _append_issue(issues, f"조퇴 {_format_hours(row.early_leave_hours)}시간")
     elif not row.check_out and _baseline_has_passed(row, base_out, reference):
-        issues.append("퇴근 누락")
+        _append_issue(issues, "퇴근 누락")
     else:
         out_mins = _hhmm_to_minutes(row.check_out)
         if out_mins is not None and out_mins < base_out:
-            issues.append("조퇴 미처리")
+            _append_issue(issues, "조퇴 미처리")
 
     return issues
 
