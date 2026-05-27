@@ -45,6 +45,15 @@ class AttendanceExcelRowDetailsTests(unittest.TestCase):
         self.assertFalse(record["row"].has_issue)
         self.assertEqual(record["row"].issues, [])
 
+    def test_row_to_record_detects_shifted_day_type_column(self) -> None:
+        raw = _make_raw_row()
+        raw[attendance_excel.COL_DAY_TYPE] = "\uC815\uADDC\uC9C1"
+        raw[attendance_excel.COL_DAY_TYPE + 1] = "\uD3C9\uC77C"
+
+        record = attendance_excel._row_to_record(tuple(raw))
+
+        self.assertEqual(record["row"].day_type, "\uD3C9\uC77C")
+
     def test_row_to_record_only_marks_unprocessed_issues(self) -> None:
         raw = _make_raw_row()
         raw[attendance_excel.COL_CHECK_IN] = "09:40"

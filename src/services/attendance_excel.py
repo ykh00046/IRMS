@@ -64,6 +64,7 @@ SHIFT_BASELINES = {
     "2교대(야간)": (19 * 60, 31 * 60),   # 19:00 ~ 익일 07:00 (ERP 표기 31:00)
 }
 ALERT_WORKDAY_TYPES = ("평일", "평일2")
+DAY_TYPE_VALUES = ("평일", "평일2", "주휴", "무휴", "유휴")
 DAY_SHIFT_SHORT_LUNCH_DAY_TYPE = "평일2"
 DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES = 30
 ALERT_GRACE_MINUTES = 15
@@ -663,6 +664,16 @@ def _cell_time(value: Any) -> str | None:
     return text or None
 
 
+def _cell_day_type(row: tuple[Any, ...]) -> str:
+    primary = _cell_str(_cell_at(row, COL_DAY_TYPE))
+    if primary in DAY_TYPE_VALUES:
+        return primary
+    shifted = _cell_str(_cell_at(row, COL_DAY_TYPE + 1))
+    if shifted in DAY_TYPE_VALUES:
+        return shifted
+    return primary or shifted
+
+
 def _load_workbook(path: Path):
     if not path.exists():
         raise MonthFileNotFound(str(path))
@@ -698,7 +709,7 @@ def _row_to_record(row: tuple[Any, ...]) -> dict[str, Any]:
     row_data = AttendanceRow(
         date=_cell_str(_cell_at(row, COL_DATE)),
         weekday=_cell_str(_cell_at(row, COL_WEEKDAY)),
-        day_type=_cell_str(_cell_at(row, COL_DAY_TYPE)),
+        day_type=_cell_day_type(row),
         check_in=_cell_time(_cell_at(row, COL_CHECK_IN)),
         check_out=_cell_time(_cell_at(row, COL_CHECK_OUT)),
         next_day=bool(_cell_float(_cell_at(row, COL_NEXT_DAY))),
