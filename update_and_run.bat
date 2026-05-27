@@ -9,75 +9,59 @@ echo ============================================
 echo.
 
 :: ── 0. Check setup ──
-if not exist ".venv\Scripts\python.exe" (
-  echo [ERROR] Setup not completed. Run setup_server.bat first.
-  pause
-  exit /b 1
-)
+if exist ".venv\Scripts\python.exe" goto setup_ok
+echo [ERROR] Setup not completed. Run setup_server.bat first.
+pause
+exit /b 1
+:setup_ok
 
 :: ── 1. Backup DB before pull ──
 echo [1/4] Backing up database...
-if exist "data\irms.db" (
-  if not exist "backups" mkdir "backups"
-  for /f "tokens=2 delims==" %%a in ('wmic OS Get localdatetime /value ^| findstr "="') do set "DT=%%a"
-  set "BACKUP_NAME=backups\irms_%DT:~0,8%_%DT:~8,6%.db"
-  copy /Y "data\irms.db" "%BACKUP_NAME%" >nul
-  if errorlevel 1 (
-    echo [WARN] DB backup failed, continuing anyway.
-  ) else (
-    echo [OK] Saved %BACKUP_NAME%
-  )
-  :: Keep only the 30 most recent backups
-  for /f "skip=30 delims=" %%f in ('dir /b /o-d "backups\irms_*.db" 2^>nul') do del "backups\%%f" >nul 2>&1
-) else (
-  echo [INFO] No existing DB to back up (first run).
-)
+if exist "data\irms.db" goto backup_db
+echo [INFO] No existing DB to back up (first run).
+goto after_backup
+:backup_db
+if not exist "backups" mkdir "backups"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ts=Get-Date -Format 'yyyyMMdd_HHmmss'; $dest='backups\irms_' + $ts + '.db'; Copy-Item -LiteralPath 'data\irms.db' -Destination $dest -Force; Write-Host ('[OK] Saved ' + $dest)"
+if errorlevel 1 echo [WARN] DB backup failed, continuing anyway.
+:after_backup
 echo.
 
 :: ── 2. Git Pull ──
 echo [2/4] Checking for updates...
 git pull origin main
-if errorlevel 1 (
-  echo.
-  echo [ERROR] Git pull failed. Check network or credentials.
-  pause
-  exit /b 1
-)
+if not errorlevel 1 goto git_ok
+echo.
+echo [ERROR] Git pull failed. Check network or credentials.
+pause
+exit /b 1
+:git_ok
 echo.
 
 :: ── 3. Install dependencies ──
 echo [3/4] Installing dependencies...
 .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
-if errorlevel 1 (
-  echo.
-  echo [ERROR] pip install failed.
-  pause
-  exit /b 1
-)
+if not errorlevel 1 goto pip_ok
+echo.
+echo [ERROR] pip install failed.
+pause
+exit /b 1
+:pip_ok
 echo.
 
 :: ── 2.5. Check .env ──
-if not exist ".env" (
+if exist ".env" goto env_ok
   echo [WARN] .env file not found. Running with development defaults.
   echo        For production, copy .env.example to .env and set IRMS_ENV=production
   echo        and a unique IRMS_SESSION_SECRET.
   echo.
-)
+:env_ok
 
 :: ── 2.7. Free port 9000 if already in use ──
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:":9000 .*LISTENING"') do (
-  echo [INFO] Port 9000 is in use by PID %%p. Terminating...
-  taskkill /PID %%p /F >nul 2>&1
-)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=Get-NetTCPConnection -LocalPort 9000 -State Listen -ErrorAction SilentlyContinue; foreach($p in $ports){ Write-Host ('[INFO] Port 9000 is in use by PID ' + $p.OwningProcess + '. Terminating...'); Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
 :: ── 3. Start server ──
-set "LOCAL_IP="
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
-  for /f "tokens=1" %%b in ("%%a") do (
-    if not defined LOCAL_IP set "LOCAL_IP=%%b"
-  )
-)
-if not defined LOCAL_IP set "LOCAL_IP=0.0.0.0"
+set "LOCAL_IP=0.0.0.0"
 
 echo [4/4] Starting IRMS server...
 echo ============================================
