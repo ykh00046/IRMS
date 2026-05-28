@@ -38,12 +38,18 @@ def _row(
     )
 
 
-def _record(row: AttendanceRow, *, emp_id: str = "171013", name: str = "\uD14C\uC2A4\uD2B8") -> dict:
+def _record(
+    row: AttendanceRow,
+    *,
+    emp_id: str = "171013",
+    name: str = "\uD14C\uC2A4\uD2B8",
+    shift_time: str = "\uC8FC\uAC04",
+) -> dict:
     return {
         "emp_id": emp_id,
         "name": name,
         "department": "\uC0DD\uC0B0",
-        "shift_time": "\uC8FC\uAC04",
+        "shift_time": shift_time,
         "row": row,
     }
 
@@ -191,6 +197,28 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         )
         row.early_leave_hours = 4.0
         record = _record(row, emp_id="240910", name="박효빈")
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-05")
+
+        self.assertEqual(items, [])
+
+    def test_two_shift_day_half_leave_infers_afternoon_from_checkout(self) -> None:
+        row = _row(
+            attendance_code="반차",
+            date="2026-05-11",
+            check_in="06:48",
+            check_out="11:07",
+        )
+        record = _record(
+            row,
+            emp_id="250612",
+            name="이시현",
+            shift_time="2교대(주간)",
+        )
 
         with (
             patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),

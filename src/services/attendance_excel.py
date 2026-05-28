@@ -53,6 +53,11 @@ HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 #   반차   오전 → 09:00 + 5h = 14:00 출근,  오후 → 18:00 - 5h = 13:00 퇴근
 #   반반차 오전 → 09:00 + 2h = 11:00 출근,  오후 → 18:00 - 2h = 16:00 퇴근
 PARTIAL_LEAVE_SHIFT_HOURS = (("반반차", 2), ("반차", 5))
+PARTIAL_LEAVE_SHIFT_HOURS_BY_SHIFT = {
+    "주간": {"반반차": 2, "반차": 5},
+    "2교대(주간)": {"반반차": 2, "반차": 8},
+    "2교대(야간)": {"반반차": 2, "반차": 8},
+}
 
 # Baseline (출근, 퇴근) per shift_time, expressed in minutes-from-midnight.
 # 퇴근 baseline이 1440 이상이면 익일 표기(ERP는 19:00 → 다음 날 07:00 근무를
@@ -352,6 +357,17 @@ def _compute_anomaly_baseline(
     return base_in, base_out
 
 
+def _partial_leave_shift_minutes(
+    shift_time: str,
+    leave_kind: str,
+    default_minutes: int,
+) -> int:
+    hours_by_kind = PARTIAL_LEAVE_SHIFT_HOURS_BY_SHIFT.get(shift_time)
+    if not hours_by_kind:
+        return default_minutes
+    return int(hours_by_kind.get(leave_kind, default_minutes // 60)) * 60
+
+
 def _infer_partial_leave_half(
     row: AttendanceRow,
     base_in: int,
@@ -379,12 +395,15 @@ def _compute_row_anomaly_baseline(
         return None
     base_in, base_out = baseline
 
-    if shift_time == "주간":
+    if shift_time in PARTIAL_LEAVE_SHIFT_HOURS_BY_SHIFT:
         if row.day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
             base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
         leave = _partial_leave_shift(row.day_type, row.note, row.attendance_code)
         if leave:
-            _kind, half, shift_minutes = leave
+            leave_kind, half, default_shift_minutes = leave
+            shift_minutes = _partial_leave_shift_minutes(
+                shift_time, leave_kind, default_shift_minutes
+            )
             if half == "unknown":
                 half = _infer_partial_leave_half(row, base_in, base_out, shift_minutes)
             if half == "오전":
