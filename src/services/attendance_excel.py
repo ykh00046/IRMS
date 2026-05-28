@@ -413,10 +413,6 @@ def _compute_row_anomaly_baseline(
     return base_in, base_out
 
 
-def _has_partial_leave(row: AttendanceRow) -> bool:
-    return _partial_leave_shift(row.day_type, row.note, row.attendance_code) is not None
-
-
 def _row_is_future(row: AttendanceRow, reference: _dt.datetime) -> bool:
     try:
         row_date = _dt.date.fromisoformat(row.date)
@@ -460,6 +456,29 @@ def _attendance_code_issues(row: AttendanceRow) -> list[str]:
     return issues
 
 
+def _deduction_code_mismatch_issues(row: AttendanceRow) -> list[str]:
+    code = str(row.attendance_code or "")
+    has_deduction = (
+        row.late_hours > 0
+        or row.early_leave_hours > 0
+        or row.outing_hours > 0
+    )
+    if not has_deduction:
+        return []
+
+    if any(keyword in code for keyword in ANNUAL_LEAVE_KEYWORDS):
+        return ["공제시간 불일치"]
+
+    issues: list[str] = []
+    if row.late_hours > 0 and "지각" not in code:
+        _append_issue(issues, "근태코드 누락(지각)")
+    if row.early_leave_hours > 0 and "조퇴" not in code:
+        _append_issue(issues, "근태코드 누락(조퇴)")
+    if row.outing_hours > 0 and "외출" not in code:
+        _append_issue(issues, "근태코드 누락(외출)")
+    return issues
+
+
 def _unprocessed_row_issues(
     row: AttendanceRow,
     shift_time: str,
@@ -471,34 +490,29 @@ def _unprocessed_row_issues(
         return []
     if row.day_type not in ALERT_WORKDAY_TYPES:
         return []
-    if _is_full_day_leave(row.day_type, row.note, row.attendance_code):
-        return []
 
     issues = _attendance_code_issues(row)
+    for issue in _deduction_code_mismatch_issues(row):
+        _append_issue(issues, issue)
+
+    if _is_full_day_leave(row.day_type, row.note, row.attendance_code):
+        return issues
+
     baseline = _compute_row_anomaly_baseline(row, shift_time)
     if baseline is None:
         return issues
     base_in, base_out = baseline
-    has_partial_leave = _has_partial_leave(row)
 
-    if row.late_hours > 0:
-        in_mins = _hhmm_to_minutes(row.check_in)
-        if not (has_partial_leave and in_mins is not None and in_mins <= base_in):
-            _append_issue(issues, f"지각 {_format_hours(row.late_hours)}시간")
-    elif not row.check_in and _baseline_has_passed(row, base_in, reference):
+    if row.late_hours <= 0 and not row.check_in and _baseline_has_passed(row, base_in, reference):
         _append_issue(issues, "출근 누락")
-    else:
+    elif row.late_hours <= 0:
         in_mins = _hhmm_to_minutes(row.check_in)
         if in_mins is not None and in_mins > base_in:
             _append_issue(issues, "지각 미처리")
 
-    if row.early_leave_hours > 0:
-        out_mins = _hhmm_to_minutes(row.check_out)
-        if not (has_partial_leave and out_mins is not None and out_mins >= base_out):
-            _append_issue(issues, f"조퇴 {_format_hours(row.early_leave_hours)}시간")
-    elif not row.check_out and _baseline_has_passed(row, base_out, reference):
+    if row.early_leave_hours <= 0 and not row.check_out and _baseline_has_passed(row, base_out, reference):
         _append_issue(issues, "퇴근 누락")
-    else:
+    elif row.early_leave_hours <= 0:
         out_mins = _hhmm_to_minutes(row.check_out)
         if out_mins is not None and out_mins < base_out:
             _append_issue(issues, "조퇴 미처리")
@@ -529,6 +543,14 @@ def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str
     if has_check_out_missing:
         return "3", "\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
 
+    has_code_deduction_mismatch = any(
+        issue.startswith("\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D")
+        or issue == "\uACF5\uC81C\uC2DC\uAC04 \uBD88\uC77C\uCE58"
+        for issue in issues
+    )
+    if has_code_deduction_mismatch:
+        return "0", "\uADFC\uD0DC \uC774\uC0C1"
+
     if any(issue.startswith("\uC9C0\uAC01 ") for issue in issues):
         return "4", "\uADFC\uD0DC \uC774\uC0C1"
     if any(issue.startswith("\uC870\uD1F4 ") for issue in issues):
@@ -549,16 +571,7 @@ def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str
 
 
 def _hide_detail_issue_text(content: str, issues: list[str]) -> bool:
-    if content != "\uADFC\uD0DC \uC774\uC0C1":
-        return False
-    return all(
-        (
-            issue.startswith("\uC9C0\uAC01 ")
-            or issue.startswith("\uC870\uD1F4 ")
-        )
-        and "\uBBF8\uCC98\uB9AC" not in issue
-        for issue in issues
-    )
+    return content == "\uADFC\uD0DC \uC774\uC0C1"
 
 
 def _anomaly_detail(row: AttendanceRow, issues: list[str]) -> dict[str, Any]:
@@ -644,8 +657,9 @@ def detect_today_anomalies(
         (빈 값 = 교대조 비번 날; 알 수 없는 근무형태).
 
     이상 항목:
-      - late_hours > 0       → "지각 N시간"
-      - early_leave_hours > 0 → "조퇴 N시간"
+      - 공제시간의 지각/조퇴/외출 값은 같은 근태코드가 있을 때만 정상
+      - 반차/반반차/연차 등 휴가 코드에 지각/조퇴/외출 공제시간이 있으면
+        "공제시간 불일치"
       - 기준 출근+grace 이후 check_in 없음 → "출근 누락"
       - 기준 퇴근+grace 이후 check_out 없음 → "퇴근 누락"
       - check_in 시각 > 기준 출근  AND late_hours == 0        → "지각 미처리"

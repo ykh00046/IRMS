@@ -124,13 +124,13 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
             sorted(["출근 누락", "퇴근 누락"]),
         )
 
-    def test_detect_today_anomalies_reports_processed_late_rows(self) -> None:
+    def test_detect_today_anomalies_ignores_matched_processed_late_rows(self) -> None:
         fake_workbook = SimpleNamespace(
             sheetnames=[],
             active=object(),
             close=lambda: None,
         )
-        row = _row(attendance_code="\uC9C0\uAC01")
+        row = _row(attendance_code="\uC9C0\uAC01", check_out="18:00")
         row.late_hours = 0.5
         record = _record(row)
 
@@ -144,11 +144,10 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
             )
 
         self.assertEqual(day_type, "\uD3C9\uC77C")
-        self.assertEqual(len(items), 1)
-        self.assertIn("\uC9C0\uAC01 0.5\uC2DC\uAC04", items[0]["issues"])
+        self.assertEqual(items, [])
 
-    def test_month_anomaly_detail_hides_processed_late_reason_text(self) -> None:
-        row = _row(attendance_code="지각", date="2026-05-21", check_in="07:39", check_out="19:10")
+    def test_month_anomaly_reports_late_deduction_without_late_code(self) -> None:
+        row = _row(attendance_code="", date="2026-05-21", check_in="07:39", check_out="19:10")
         row.late_hours = 0.75
         record = _record(row, emp_id="260445", name="박종휘", shift_time="2교대(주간)")
 
@@ -160,7 +159,7 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
 
         self.assertEqual(items[0]["details"][0]["content"], "근태 이상")
         self.assertEqual(items[0]["details"][0]["extra_content"], "")
-        self.assertIn("지각 0.75시간", items[0]["issues"])
+        self.assertIn("근태코드 누락(지각)", items[0]["issues"])
 
     def test_detect_today_anomalies_skips_full_day_leave_code(self) -> None:
         record = _record(_row(attendance_code="\uC5F0\uCC28", check_in=None, check_out=None))
@@ -203,7 +202,7 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
 
         self.assertEqual(items, [])
 
-    def test_partial_leave_processed_early_leave_time_is_not_anomaly_when_checkout_matches(self) -> None:
+    def test_partial_leave_with_early_leave_deduction_is_anomaly(self) -> None:
         row = _row(
             attendance_code="반차",
             date="2026-05-27",
@@ -219,7 +218,27 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
-        self.assertEqual(items, [])
+        self.assertEqual(items[0]["details"][0]["content"], "근태 이상")
+        self.assertIn("공제시간 불일치", items[0]["issues"])
+
+    def test_full_day_leave_with_deduction_time_is_anomaly(self) -> None:
+        row = _row(
+            attendance_code="연차",
+            date="2026-05-27",
+            check_in=None,
+            check_out=None,
+        )
+        row.late_hours = 0.5
+        record = _record(row, emp_id="260445", name="박종휘")
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-05")
+
+        self.assertEqual(items[0]["details"][0]["content"], "근태 이상")
+        self.assertIn("공제시간 불일치", items[0]["issues"])
 
     def test_two_shift_day_half_leave_infers_afternoon_from_checkout(self) -> None:
         row = _row(
