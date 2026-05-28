@@ -530,9 +530,9 @@ def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str
         return "3", "\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
 
     if any(issue.startswith("\uC9C0\uAC01 ") for issue in issues):
-        return "4", "\uC9C0\uAC01"
+        return "4", "\uADFC\uD0DC \uC774\uC0C1"
     if any(issue.startswith("\uC870\uD1F4 ") for issue in issues):
-        return "4", "\uC870\uD1F4"
+        return "4", "\uADFC\uD0DC \uC774\uC0C1"
 
     has_unprocessed_late_or_leave = any(
         "\uBBF8\uCC98\uB9AC" in issue for issue in issues
@@ -548,10 +548,23 @@ def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str
     return "0", "\uAE30\uD0C0"
 
 
+def _hide_detail_issue_text(content: str, issues: list[str]) -> bool:
+    if content != "\uADFC\uD0DC \uC774\uC0C1":
+        return False
+    return all(
+        (
+            issue.startswith("\uC9C0\uAC01 ")
+            or issue.startswith("\uC870\uD1F4 ")
+        )
+        and "\uBBF8\uCC98\uB9AC" not in issue
+        for issue in issues
+    )
+
+
 def _anomaly_detail(row: AttendanceRow, issues: list[str]) -> dict[str, Any]:
     code, content = _row_alert_category(row, issues)
     extra_content = " / ".join(issues)
-    if extra_content == content:
+    if extra_content == content or _hide_detail_issue_text(content, issues):
         extra_content = ""
     return {
         "date": row.date,

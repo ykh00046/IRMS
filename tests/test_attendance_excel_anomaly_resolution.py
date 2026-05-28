@@ -147,6 +147,21 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertIn("\uC9C0\uAC01 0.5\uC2DC\uAC04", items[0]["issues"])
 
+    def test_month_anomaly_detail_hides_processed_late_reason_text(self) -> None:
+        row = _row(attendance_code="지각", date="2026-05-21", check_in="07:39", check_out="19:10")
+        row.late_hours = 0.75
+        record = _record(row, emp_id="260445", name="박종휘", shift_time="2교대(주간)")
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-05")
+
+        self.assertEqual(items[0]["details"][0]["content"], "근태 이상")
+        self.assertEqual(items[0]["details"][0]["extra_content"], "")
+        self.assertIn("지각 0.75시간", items[0]["issues"])
+
     def test_detect_today_anomalies_skips_full_day_leave_code(self) -> None:
         record = _record(_row(attendance_code="\uC5F0\uCC28", check_in=None, check_out=None))
 
