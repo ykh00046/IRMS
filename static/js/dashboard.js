@@ -204,6 +204,46 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  // 발주 임박 알림 (forecast-dashboard-alert) — 읽기 전용 GET, 자체 30일 창 사용.
+  // 권한/오류 시 조용히 숨김 유지(노이즈 제로).
+  const ALERT_STATUS_LABEL = { urgent: "긴급", soon: "임박" };
+  async function loadForecastAlert() {
+    const card = document.getElementById("forecast-alert");
+    if (!card) return;
+    let data;
+    try {
+      const res = await fetch("/api/dashboard/forecast-alert", { credentials: "same-origin" });
+      if (!res.ok) return;
+      data = await res.json();
+    } catch {
+      return;
+    }
+    if (!data.reorder_recommended) {
+      card.hidden = true;
+      return;
+    }
+    const summaryEl = document.getElementById("forecast-alert-summary");
+    const bodyEl = document.getElementById("forecast-alert-body");
+    summaryEl.textContent =
+      `발주 권장 ${data.reorder_recommended}건 (긴급 ${data.urgent}, 임박 ${data.soon})` +
+      (data.shown < data.reorder_recommended ? ` · 상위 ${data.shown}건 표시` : "");
+    bodyEl.innerHTML = data.items
+      .map((it) => {
+        const cls = it.status === "urgent" ? "stock-negative" : "stock-low";
+        const days = it.days_remaining === null ? "-" : it.days_remaining.toLocaleString();
+        return `
+          <tr>
+            <td>${IRMS.escapeHtml(it.name)}</td>
+            <td><span class="stock-status ${cls}">${ALERT_STATUS_LABEL[it.status] || it.status}</span></td>
+            <td class="num">${days}</td>
+            <td>${IRMS.escapeHtml(it.predicted_stockout_date || "-")}</td>
+            <td class="num">${(it.recommended_order_qty || 0).toLocaleString()}</td>
+          </tr>`;
+      })
+      .join("");
+    card.hidden = false;
+  }
+
   async function openMaterialDrill(materialId, materialName) {
     const range = getCurrentRange();
     try {
@@ -277,4 +317,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   restoreRange();
   loadAll();
+  loadForecastAlert();
 });

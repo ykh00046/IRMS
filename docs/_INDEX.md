@@ -6,6 +6,7 @@
 
 | Feature | Match Rate | Phase | 문서 |
 |---------|:----------:|-------|------|
+| forecast-dashboard-alert (운영 대시 발주 임박 알림) | ~99% | PDCA 완료 (71/71), 브라우저 스모크 검증 | [Plan](01-plan/features/forecast-dashboard-alert.plan.md) · [Design](02-design/features/forecast-dashboard-alert.design.md) · [Analysis](03-analysis/features/forecast-dashboard-alert.analysis.md) · [Report](04-report/features/forecast-dashboard-alert.report.md) |
 | material-forecast (자재 소모량 예측·발주 추천) | ~99% | PDCA 완료, 운영자 파라미터 설정 대기 | [Plan](01-plan/features/material-forecast.plan.md) · [Design](02-design/features/material-forecast.design.md) · [Analysis](03-analysis/features/material-forecast.analysis.md) · [Report](04-report/features/material-forecast.report.md) |
 | cloudflare-tunnel (외부 접속 + 보안 헤더 강화) | 98% | Report 완료, 운영자 sign-off 대기 | [Plan](01-plan/features/cloudflare-tunnel.plan.md) · [Design](02-design/features/cloudflare-tunnel.design.md) · [Analysis](03-analysis/features/cloudflare-tunnel.analysis.md) · [Report](04-report/features/cloudflare-tunnel.report.md) |
 

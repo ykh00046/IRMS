@@ -27,6 +27,28 @@
           </div>
         </section>
 
+        <section id="forecast-alert" class="panel" hidden>
+          <div class="forecast-alert-head">
+            <h3 class="panel-title">⚠ 발주 임박</h3>
+            <a class="btn btn-sm" href="/management#forecast">소모예측·발주 상세 →</a>
+          </div>
+          <p id="forecast-alert-summary" class="muted small"></p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>자재</th>
+                  <th>상태</th>
+                  <th class="num">잔여일</th>
+                  <th>소진예상</th>
+                  <th class="num">권장발주 (g)</th>
+                </tr>
+              </thead>
+              <tbody id="forecast-alert-body"></tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="dashboard-cards">
           <div class="metric-card">
             <div class="metric-label">완료 레시피</div>

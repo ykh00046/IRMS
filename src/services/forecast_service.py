@@ -186,6 +186,46 @@ def compute_forecast(
     }
 
 
+def forecast_alert(
+    connection: sqlite3.Connection,
+    *,
+    window_days: int = DEFAULT_WINDOW_DAYS,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """발주 임박(urgent+soon) 자재만 추려 대시보드 알림용으로 압축.
+
+    :func:`compute_forecast` 의 summary/items 를 재사용한다. items 는 이미
+    urgent → soon → ok → no_data, days_remaining 오름차순으로 정렬되어 있으므로
+    urgent/soon 필터 후 앞에서 ``limit`` 개를 취하면 가장 임박한 자재가 위에 온다.
+
+    Design: docs/02-design/features/forecast-dashboard-alert.design.md §2
+    """
+    full = compute_forecast(connection, window_days=window_days)
+    summary = full["summary"]
+    reorder = [
+        {
+            "material_id": it["material_id"],
+            "name": it["name"],
+            "category": it["category"],
+            "unit": it["unit"],
+            "status": it["status"],
+            "days_remaining": it["days_remaining"],
+            "predicted_stockout_date": it["predicted_stockout_date"],
+            "recommended_order_qty": it["recommended_order_qty"],
+        }
+        for it in full["items"]
+        if it["status"] in ("urgent", "soon")
+    ]
+    return {
+        "window_days": window_days,
+        "reorder_recommended": summary["reorder_recommended"],
+        "urgent": summary["urgent"],
+        "soon": summary["soon"],
+        "shown": min(limit, len(reorder)),
+        "items": reorder[:limit],
+    }
+
+
 def set_forecast_params(
     connection: sqlite3.Connection,
     material_id: int,

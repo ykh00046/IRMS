@@ -122,6 +122,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_logs_item_measurement "
         "ON material_stock_logs(recipe_item_id) WHERE reason = 'measurement'"
     )
+    # forecast-dashboard-alert: 소비 집계는 material_id 조건 없이
+    # reason='measurement' AND created_at>=cutoff 로 스캔하므로 (material_id,created_at)
+    # 인덱스를 못 탄다. (reason, created_at)로 forecast 소비쿼리를 직접 지원.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stock_logs_reason_created "
+        "ON material_stock_logs(reason, created_at)"
+    )
 
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):

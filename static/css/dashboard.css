@@ -53,3 +53,21 @@
 .chart-wrap canvas { max-height: 300px; }
 .dashboard-operators-panel .table-wrap { max-height: 300px; overflow-y: auto; }
 .small { font-size: 12px; margin-top: 6px; }
+
+/* forecast-dashboard-alert: 발주 임박 카드 */
+#forecast-alert { border-left: 4px solid #ef4444; margin-bottom: 18px; }
+.forecast-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* management.css의 상태 배지 규칙을 대시보드에서도 재사용(이 페이지엔 미로드) */
+.stock-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.stock-low { background: #fef3c7; color: #92400e; }
+.stock-negative { background: #fecaca; color: #991b1b; }
