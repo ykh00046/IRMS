@@ -70,7 +70,7 @@ def evaluate_cell(
     try:
         result = _eval_node(tree.body, row_values)
         return _fmt(result)
-    except Exception:
+    except (ValueError, TypeError, ZeroDivisionError, KeyError, IndexError):
         return ERR
 
 
@@ -165,7 +165,7 @@ def _rewrite_expression(expr: str, row_values: dict[int, float]) -> str | None:
         result = _rewrite_functions(expr, row_values)
         result = _CELL_REF_RE.sub(lambda m: f"__c{_col_letter_to_index(m.group(1))}", result)
         return result
-    except Exception:
+    except (ValueError, TypeError, re.error):
         return None
 
 

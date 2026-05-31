@@ -35,3 +35,15 @@ tmp_e2e_runtime/
 # Cloudflare Tunnel local secrets (real config + credentials)
 cloudflared/config.yml
 cloudflared/*.json
+
+# bkit runtime
+.bkit/
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# WSL backup
+.venv-wsl-backup-*/
+
+# Misc
+*.png

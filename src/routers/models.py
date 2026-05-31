@@ -46,6 +46,11 @@ class StockThresholdBody(BaseModel):
     threshold: float
 
 
+class ForecastParamsBody(BaseModel):
+    lead_time_days: float = Field(ge=0)
+    reorder_cycle_days: float = Field(ge=0)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

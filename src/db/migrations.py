@@ -94,6 +94,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # material-stock-tracking: 원재료 재고 추적
     ensure_column(connection, "materials", "stock_quantity", "REAL NOT NULL DEFAULT 0")
     ensure_column(connection, "materials", "stock_threshold", "REAL NOT NULL DEFAULT 0")
+    # material-forecast: 소모량 예측·발주 추천 (0 = 전역 기본값 사용)
+    ensure_column(connection, "materials", "lead_time_days", "REAL NOT NULL DEFAULT 0")
+    ensure_column(connection, "materials", "reorder_cycle_days", "REAL NOT NULL DEFAULT 0")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS material_stock_logs (

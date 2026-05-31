@@ -6,6 +6,7 @@
 
 | Feature | Match Rate | Phase | 문서 |
 |---------|:----------:|-------|------|
+| material-forecast (자재 소모량 예측·발주 추천) | ~99% | PDCA 완료, 운영자 파라미터 설정 대기 | [Plan](01-plan/features/material-forecast.plan.md) · [Design](02-design/features/material-forecast.design.md) · [Analysis](03-analysis/features/material-forecast.analysis.md) · [Report](04-report/features/material-forecast.report.md) |
 | cloudflare-tunnel (외부 접속 + 보안 헤더 강화) | 98% | Report 완료, 운영자 sign-off 대기 | [Plan](01-plan/features/cloudflare-tunnel.plan.md) · [Design](02-design/features/cloudflare-tunnel.design.md) · [Analysis](03-analysis/features/cloudflare-tunnel.analysis.md) · [Report](04-report/features/cloudflare-tunnel.report.md) |
 
 ---

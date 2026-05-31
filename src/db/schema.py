@@ -33,7 +33,9 @@ def init_db() -> None:
                 category TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 stock_quantity REAL NOT NULL DEFAULT 0,
-                stock_threshold REAL NOT NULL DEFAULT 0
+                stock_threshold REAL NOT NULL DEFAULT 0,
+                lead_time_days REAL NOT NULL DEFAULT 0,
+                reorder_cycle_days REAL NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS material_aliases (
