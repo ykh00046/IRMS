@@ -47,3 +47,7 @@ cloudflared/*.json
 
 # Misc
 *.png
+.pytest-tmp/
+.pytest_tmp/
+.tmp-tests/
+.coverage
