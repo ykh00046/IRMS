@@ -86,7 +86,7 @@ def build_router() -> APIRouter:
 
     @router.post("/login")
     @limiter.limit("5/minute")
-    async def login(
+    def login(
         body: LoginRequest, request: Request, response: Response
     ) -> dict[str, Any]:
         emp_id = body.emp_id.strip()
@@ -104,13 +104,13 @@ def build_router() -> APIRouter:
         }
 
     @router.post("/logout")
-    async def logout(request: Request) -> dict[str, str]:
+    def logout(request: Request) -> dict[str, str]:
         logout_session(request)
         return {"status": "ok"}
 
     @router.post("/change-password")
     @limiter.limit("5/minute")
-    async def change_password(
+    def change_password(
         body: ChangePasswordRequest, request: Request
     ) -> dict[str, str]:
         emp_id = current_attendance_emp_id(request)
@@ -131,7 +131,7 @@ def build_router() -> APIRouter:
         return {"status": "ok"}
 
     @router.get("/me")
-    async def me(
+    def me(
         request: Request, month: str | None = Query(default=None, max_length=7)
     ) -> dict[str, Any]:
         context = require_view_context(request)
@@ -148,7 +148,7 @@ def build_router() -> APIRouter:
         return payload
 
     @router.get("/admin/employees")
-    async def admin_employees(
+    def admin_employees(
         request: Request, month: str | None = Query(default=None, max_length=7)
     ) -> dict[str, Any]:
         require_irms_manager(request)
@@ -166,7 +166,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/admin/view")
-    async def admin_view(
+    def admin_view(
         request: Request,
         emp_id: str = Query(..., min_length=1, max_length=20),
         month: str | None = Query(default=None, max_length=7),
@@ -192,7 +192,7 @@ def build_router() -> APIRouter:
         return payload
 
     @router.post("/admin/reset-password")
-    async def admin_reset_password(
+    def admin_reset_password(
         body: ResetPasswordRequest, request: Request
     ) -> dict[str, Any]:
         user = require_irms_manager(request)
@@ -225,7 +225,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/admin/users")
-    async def admin_users(request: Request) -> dict[str, Any]:
+    def admin_users(request: Request) -> dict[str, Any]:
         require_irms_manager(request)
         with get_connection() as connection:
             rows = connection.execute(
@@ -250,7 +250,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.get("/session")
-    async def session_status(request: Request) -> dict[str, Any]:
+    def session_status(request: Request) -> dict[str, Any]:
         emp_id = current_attendance_emp_id(request)
         admin = is_admin_mode(request)
         if emp_id:

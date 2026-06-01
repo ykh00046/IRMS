@@ -39,7 +39,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
 
     @router.get("/chat/rooms")
-    async def list_chat_rooms() -> dict[str, Any]:
+    def list_chat_rooms() -> dict[str, Any]:
         with get_connection() as connection:
             rows = connection.execute(
                 """
@@ -63,7 +63,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.get("/chat/messages")
-    async def list_chat_messages(
+    def list_chat_messages(
         room_key: str = Query(..., min_length=1),
         limit: int = Query(default=60, ge=1, le=200),
         after_id: int = Query(default=0, ge=0),
@@ -127,7 +127,7 @@ def build_router() -> APIRouter:
         }
 
     @router.post("/chat/messages")
-    async def create_chat_message(
+    def create_chat_message(
         body: ChatMessageCreateRequest,
         request: Request,
     ) -> dict[str, Any]:
@@ -200,7 +200,7 @@ def build_router() -> APIRouter:
         return {"room": room, "message": serialize_chat_message(row)}
 
     @router.delete("/chat/messages")
-    async def clear_all_chat_messages(request: Request) -> dict[str, Any]:
+    def clear_all_chat_messages(request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         from ..auth import has_access_level
         if not has_access_level(current_user, "admin"):

@@ -21,7 +21,7 @@ def build_router() -> APIRouter:
     router = APIRouter(prefix="/public/attendance-alerts", tags=["public-attendance-alerts"])
 
     @router.get("/today")
-    async def today() -> dict[str, Any]:
+    def today() -> dict[str, Any]:
         year_month = excel_service.current_year_month()
         target_date = excel_service.current_date()
         try:
@@ -43,7 +43,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/month")
-    async def month() -> dict[str, Any]:
+    def month() -> dict[str, Any]:
         year_month = excel_service.alert_year_month()
         try:
             items = excel_service.detect_month_anomalies(year_month)

@@ -32,14 +32,14 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.get("/forecast/materials")
-    async def forecast_materials(
+    def forecast_materials(
         window_days: int = Query(forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365),
     ) -> dict[str, Any]:
         with get_connection() as connection:
             return forecast_service.compute_forecast(connection, window_days=window_days)
 
     @router.get("/forecast/export")
-    async def forecast_export(
+    def forecast_export(
         window_days: int = Query(forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365),
         only_reorder: bool = False,
     ) -> StreamingResponse:
@@ -84,7 +84,7 @@ def build_router() -> APIRouter:
         )
 
     @router.patch("/materials/{material_id}/forecast-params")
-    async def material_forecast_params(
+    def material_forecast_params(
         material_id: int, body: ForecastParamsBody, request: Request
     ) -> dict[str, Any]:
         current_user = get_current_user(request)

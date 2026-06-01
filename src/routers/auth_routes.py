@@ -75,19 +75,19 @@ def build_router() -> APIRouter:
 
     @router.post("/auth/login")
     @limiter.limit("5/minute")
-    async def auth_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
+    def auth_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "legacy_login")
         return _do_login(request, response, user, "auth_login", "legacy_login")
 
     @router.post("/auth/management-login")
     @limiter.limit("5/minute")
-    async def auth_management_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
+    def auth_management_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "management_login", required_level="manager")
         return _do_login(request, response, user, "management_login", "management_login")
 
     @router.post("/auth/operator-login")
     @limiter.limit("5/minute")
-    async def auth_operator_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
+    def auth_operator_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
         user = _authenticate_or_fail(request, body, "operator_login")
         return _do_login(
             request,
@@ -99,7 +99,7 @@ def build_router() -> APIRouter:
         )
 
     @router.post("/auth/logout")
-    async def auth_logout(request: Request) -> dict[str, str]:
+    def auth_logout(request: Request) -> dict[str, str]:
         current_user = get_current_user(request, required=False)
         if current_user:
             with get_connection() as connection:
@@ -118,7 +118,7 @@ def build_router() -> APIRouter:
     auth_router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
 
     @auth_router.get("/auth/me")
-    async def auth_me(request: Request) -> dict[str, Any]:
+    def auth_me(request: Request) -> dict[str, Any]:
         return {"user": get_current_user(request)}
 
     return router, auth_router

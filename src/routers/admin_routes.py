@@ -22,7 +22,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("admin"))])
 
     @router.get("/admin/users")
-    async def admin_list_users() -> dict[str, Any]:
+    def admin_list_users() -> dict[str, Any]:
         with get_connection() as connection:
             rows = connection.execute(
                 """
@@ -50,7 +50,7 @@ def build_router() -> APIRouter:
         return {"items": items, "summary": summary, "total": len(items)}
 
     @router.get("/admin/audit-logs")
-    async def admin_list_audit_logs(
+    def admin_list_audit_logs(
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
         action: str | None = None,
@@ -60,7 +60,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.post("/admin/users")
-    async def admin_create_user(body: AdminUserCreateRequest, request: Request) -> dict[str, Any]:
+    def admin_create_user(body: AdminUserCreateRequest, request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         username = body.username.strip()
         display_name = body.display_name.strip()
@@ -120,7 +120,7 @@ def build_router() -> APIRouter:
         return {"user": created_user}
 
     @router.patch("/admin/users/{user_id}")
-    async def admin_update_user(
+    def admin_update_user(
         user_id: int,
         body: AdminUserUpdateRequest,
         request: Request,
@@ -222,7 +222,7 @@ def build_router() -> APIRouter:
         return {"user": updated_user}
 
     @router.post("/admin/users/{user_id}/password")
-    async def admin_reset_user_password(
+    def admin_reset_user_password(
         user_id: int,
         body: AdminUserPasswordResetRequest,
         request: Request,
@@ -263,7 +263,7 @@ def build_router() -> APIRouter:
         return {"status": "ok", "password_expiration_notice": PASSWORD_EXPIRATION_NOTICE}
 
     @router.delete("/admin/users/{user_id}")
-    async def admin_delete_user(user_id: int, request: Request) -> dict[str, str]:
+    def admin_delete_user(user_id: int, request: Request) -> dict[str, str]:
         current_user = get_current_user(request)
         if int(current_user["id"]) == int(user_id):
             raise HTTPException(status_code=400, detail="CANNOT_DELETE_SELF")

@@ -46,7 +46,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
 
     @router.get("/notifications/recipe-imports")
-    async def recipe_import_notifications(
+    def recipe_import_notifications(
         after_id: int = Query(default=0, ge=0),
         limit: int = Query(default=10, ge=1, le=100),
         latest: bool = Query(default=False),
@@ -64,7 +64,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items), "latest_id": latest_id}
 
     @router.get("/materials")
-    async def list_materials() -> dict[str, Any]:
+    def list_materials() -> dict[str, Any]:
         with get_connection() as connection:
             rows = connection.execute(
                 """
@@ -100,7 +100,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.get("/recipes/products")
-    async def list_products() -> dict[str, Any]:
+    def list_products() -> dict[str, Any]:
         with get_connection() as connection:
             rows = connection.execute(
                 "SELECT DISTINCT product_name FROM recipes ORDER BY product_name ASC"
@@ -109,7 +109,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.get("/recipes/by-product")
-    async def recipes_by_product(
+    def recipes_by_product(
         product_name: str = Query(..., min_length=1, max_length=200),
         limit: int = Query(default=50, ge=1, le=200),
     ) -> dict[str, Any]:
@@ -147,7 +147,7 @@ def build_router() -> APIRouter:
         return {"product_name": product_name, "items": items, "total": len(items)}
 
     @router.get("/recipes/{recipe_id}/detail")
-    async def recipe_detail(recipe_id: int) -> dict[str, Any]:
+    def recipe_detail(recipe_id: int) -> dict[str, Any]:
         with get_connection() as connection:
             recipe_row = connection.execute(
                 """
@@ -190,7 +190,7 @@ def build_router() -> APIRouter:
         return recipe
 
     @router.get("/recipes/{recipe_id}/history")
-    async def recipe_history(recipe_id: int) -> dict[str, Any]:
+    def recipe_history(recipe_id: int) -> dict[str, Any]:
         with get_connection() as connection:
             exists = connection.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
             if not exists:
@@ -223,7 +223,7 @@ def build_router() -> APIRouter:
         return {"root_id": root_id, "current_id": current_id, "items": items}
 
     @router.get("/recipes/history/compare")
-    async def recipe_history_compare(ids: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:
+    def recipe_history_compare(ids: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:
         try:
             id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
         except ValueError:
@@ -334,7 +334,7 @@ def build_router() -> APIRouter:
         return {"versions": versions, "materials": materials_payload}
 
     @router.get("/recipes")
-    async def list_recipes(
+    def list_recipes(
         status: str | None = None,
         search: str | None = Query(None, max_length=100),
         date_from: date | None = None,
@@ -393,7 +393,7 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.patch("/recipes/{recipe_id}/status")
-    async def update_recipe_status(
+    def update_recipe_status(
         recipe_id: int,
         body: StatusUpdateRequest,
         request: Request,

@@ -19,7 +19,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
 
     @router.get("/weighing/queue")
-    async def get_weighing_queue(
+    def get_weighing_queue(
         color_group: str | None = Query(default=None),
     ) -> dict[str, Any]:
         allowed_groups = {"all", "black", "red", "blue", "yellow", "none"}
@@ -90,7 +90,7 @@ def build_router() -> APIRouter:
         }
 
     @router.post("/weighing/step/complete")
-    async def complete_weighing_step(
+    def complete_weighing_step(
         body: WeighingStepRequest,
         request: Request,
     ) -> dict[str, Any]:
@@ -227,7 +227,7 @@ def build_router() -> APIRouter:
         }
 
     @router.post("/weighing/step/undo")
-    async def undo_weighing_step(
+    def undo_weighing_step(
         body: WeighingStepUndoRequest,
         request: Request,
     ) -> dict[str, Any]:
@@ -322,7 +322,7 @@ def build_router() -> APIRouter:
         }
 
     @router.post("/weighing/recipe/reset")
-    async def reset_weighing_recipe(
+    def reset_weighing_recipe(
         body: WeighingRecipeCompleteRequest,
         request: Request,
     ) -> dict[str, Any]:
@@ -371,7 +371,7 @@ def build_router() -> APIRouter:
         return {"recipe_id": body.recipe_id, "status": "pending", "reset_items": len(measured_items)}
 
     @router.post("/weighing/recipe/complete")
-    async def complete_weighing_recipe(
+    def complete_weighing_recipe(
         body: WeighingRecipeCompleteRequest,
         request: Request,
     ) -> dict[str, Any]:

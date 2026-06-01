@@ -38,7 +38,7 @@ def build_router() -> APIRouter:
     dashboard_router = dashboard_routes.build_router()
 
     @public_router.get("/health")
-    async def health() -> dict[str, str]:
+    def health() -> dict[str, str]:
         return {"status": "ok", "time": utc_now_text()}
 
     router.include_router(public_router)

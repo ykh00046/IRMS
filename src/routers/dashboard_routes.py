@@ -48,7 +48,7 @@ def build_router() -> APIRouter:
     )
 
     @router.get("/forecast-alert")
-    async def dashboard_forecast_alert(
+    def dashboard_forecast_alert(
         window_days: int = Query(
             forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365
         ),
@@ -63,7 +63,7 @@ def build_router() -> APIRouter:
             )
 
     @router.get("/summary")
-    async def dashboard_summary(
+    def dashboard_summary(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
     ) -> dict[str, Any]:
@@ -119,7 +119,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/materials")
-    async def dashboard_materials(
+    def dashboard_materials(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
         limit: int = Query(default=10, ge=1, le=100),
@@ -157,7 +157,7 @@ def build_router() -> APIRouter:
         return {"range": _range_dict(from_date, to_date), "items": items}
 
     @router.get("/materials/{material_id}/recipes")
-    async def dashboard_material_recipes(
+    def dashboard_material_recipes(
         material_id: int,
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -207,7 +207,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/throughput")
-    async def dashboard_throughput(
+    def dashboard_throughput(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
     ) -> dict[str, Any]:
@@ -275,7 +275,7 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/trend")
-    async def dashboard_trend(
+    def dashboard_trend(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
     ) -> dict[str, Any]:
@@ -317,7 +317,7 @@ def build_router() -> APIRouter:
         return {"range": _range_dict(from_date, to_date), "points": points}
 
     @router.get("/operators")
-    async def dashboard_operators(
+    def dashboard_operators(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
     ) -> dict[str, Any]:

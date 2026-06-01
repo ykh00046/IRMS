@@ -27,7 +27,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.get("/stats/consumption")
-    async def stats_consumption(
+    def stats_consumption(
         date_from: date = Query(...),
         date_to: date = Query(...),
         color_group: str | None = None,
@@ -92,13 +92,13 @@ def build_router() -> APIRouter:
         }
 
     @router.get("/stats/export")
-    async def stats_export(
+    def stats_export(
         date_from: date = Query(...),
         date_to: date = Query(...),
         color_group: str | None = None,
         category: str | None = None,
     ) -> StreamingResponse:
-        response = await stats_consumption(date_from, date_to, color_group, category)
+        response = stats_consumption(date_from, date_to, color_group, category)
         rows = response["items"]
 
         fieldnames = ["material_name", "color_group", "category", "unit_type", "unit", "total_weight", "total_count", "recipe_count"]

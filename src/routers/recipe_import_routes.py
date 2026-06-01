@@ -27,13 +27,13 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.post("/recipes/import/preview")
-    async def import_preview(body: ImportRequest) -> dict[str, Any]:
+    def import_preview(body: ImportRequest) -> dict[str, Any]:
         with get_connection() as connection:
             result = parse_import_text(connection, body.raw_text)
         return result
 
     @router.post("/recipes/import")
-    async def import_recipes(
+    def import_recipes(
         body: ImportRequest,
         request: Request,
     ) -> dict[str, Any]:

@@ -37,20 +37,20 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     manager_router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @operator_router.get("/materials/stock")
-    async def get_material_stock() -> dict[str, Any]:
+    def get_material_stock() -> dict[str, Any]:
         with get_connection() as connection:
             items = stock_service.list_stock(connection)
         return {"items": items, "total": len(items)}
 
     @operator_router.get("/materials/{material_id}/stock-log")
-    async def get_material_stock_log(material_id: int, limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
+    def get_material_stock_log(material_id: int, limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
         with get_connection() as connection:
             ensure_material(connection, material_id)
             logs = stock_service.list_logs(connection, material_id, limit=limit)
         return {"items": logs, "total": len(logs)}
 
     @manager_router.post("/materials/{material_id}/stock/restock")
-    async def material_stock_restock(material_id: int, body: StockAmountBody, request: Request) -> dict[str, Any]:
+    def material_stock_restock(material_id: int, body: StockAmountBody, request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         with get_connection() as connection:
             material = ensure_material(connection, material_id)
@@ -77,7 +77,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return result
 
     @manager_router.post("/materials/{material_id}/stock/adjust")
-    async def material_stock_adjust(material_id: int, body: StockAdjustBody, request: Request) -> dict[str, Any]:
+    def material_stock_adjust(material_id: int, body: StockAdjustBody, request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         with get_connection() as connection:
             material = ensure_material(connection, material_id)
@@ -104,7 +104,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return result
 
     @manager_router.post("/materials/{material_id}/stock/discard")
-    async def material_stock_discard(material_id: int, body: StockDiscardBody, request: Request) -> dict[str, Any]:
+    def material_stock_discard(material_id: int, body: StockDiscardBody, request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         with get_connection() as connection:
             material = ensure_material(connection, material_id)
@@ -131,7 +131,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return result
 
     @manager_router.patch("/materials/{material_id}/stock-threshold")
-    async def material_stock_threshold(material_id: int, body: StockThresholdBody, request: Request) -> dict[str, Any]:
+    def material_stock_threshold(material_id: int, body: StockThresholdBody, request: Request) -> dict[str, Any]:
         current_user = get_current_user(request)
         with get_connection() as connection:
             material = ensure_material(connection, material_id)

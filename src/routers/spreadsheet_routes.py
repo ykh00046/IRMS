@@ -168,7 +168,7 @@ def build_router() -> APIRouter:
     # ── Products ────────────────────────────────────────
 
     @router.get("/products")
-    async def list_products() -> dict[str, Any]:
+    def list_products() -> dict[str, Any]:
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM ss_products ORDER BY name"
@@ -193,7 +193,7 @@ def build_router() -> APIRouter:
             return {"items": items}
 
     @router.post("/products", status_code=201)
-    async def create_product(body: ProductCreate) -> dict[str, Any]:
+    def create_product(body: ProductCreate) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             existing = conn.execute(
@@ -248,7 +248,7 @@ def build_router() -> APIRouter:
             }
 
     @router.patch("/products/{product_id}")
-    async def update_product(product_id: int, body: ProductUpdate) -> dict[str, Any]:
+    def update_product(product_id: int, body: ProductUpdate) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             product = _require_product(conn, product_id)
@@ -293,7 +293,7 @@ def build_router() -> APIRouter:
             return {"id": product_id, "name": new_name, "description": new_desc, "recipeType": new_type, "updatedAt": now}
 
     @router.delete("/products/{product_id}")
-    async def delete_product(product_id: int) -> dict[str, Any]:
+    def delete_product(product_id: int) -> dict[str, Any]:
         with get_connection() as conn:
             _require_product(conn, product_id)
             conn.execute("DELETE FROM ss_products WHERE id = ?", (product_id,))
@@ -303,7 +303,7 @@ def build_router() -> APIRouter:
     # ── Sheet load/save ─────────────────────────────────
 
     @router.get("/products/{product_id}/sheet")
-    async def load_sheet(product_id: int) -> dict[str, Any]:
+    def load_sheet(product_id: int) -> dict[str, Any]:
         with get_connection() as conn:
             product = _require_product(conn, product_id)
             columns = _load_columns(conn, product_id)
@@ -320,7 +320,7 @@ def build_router() -> APIRouter:
             }
 
     @router.post("/products/{product_id}/save")
-    async def save_sheet(product_id: int, body: SheetSave) -> dict[str, Any]:
+    def save_sheet(product_id: int, body: SheetSave) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             _require_product(conn, product_id)
@@ -375,7 +375,7 @@ def build_router() -> APIRouter:
     # ── Columns ─────────────────────────────────────────
 
     @router.post("/products/{product_id}/columns", status_code=201)
-    async def add_column(product_id: int, body: ColumnCreate) -> dict[str, Any]:
+    def add_column(product_id: int, body: ColumnCreate) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             _require_product(conn, product_id)
@@ -407,7 +407,7 @@ def build_router() -> APIRouter:
             }
 
     @router.delete("/columns/{column_id}")
-    async def delete_column(column_id: int) -> dict[str, Any]:
+    def delete_column(column_id: int) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             col = conn.execute("SELECT * FROM ss_columns WHERE id = ?", (column_id,)).fetchone()
@@ -424,7 +424,7 @@ def build_router() -> APIRouter:
     # ── Rows ────────────────────────────────────────────
 
     @router.post("/products/{product_id}/rows", status_code=201)
-    async def add_row(product_id: int) -> dict[str, Any]:
+    def add_row(product_id: int) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             _require_product(conn, product_id)
@@ -442,7 +442,7 @@ def build_router() -> APIRouter:
             return {"id": cursor.lastrowid, "rowIndex": next_idx}
 
     @router.delete("/rows/{row_id}")
-    async def delete_row(row_id: int) -> dict[str, Any]:
+    def delete_row(row_id: int) -> dict[str, Any]:
         now = utc_now_text()
         with get_connection() as conn:
             row = conn.execute("SELECT * FROM ss_rows WHERE id = ?", (row_id,)).fetchone()

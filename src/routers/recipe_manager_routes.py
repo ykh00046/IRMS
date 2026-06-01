@@ -26,7 +26,7 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.delete("/recipes/{recipe_id}")
-    async def delete_recipe(recipe_id: int, request: Request) -> dict[str, str]:
+    def delete_recipe(recipe_id: int, request: Request) -> dict[str, str]:
         current_user = get_current_user(request)
         with get_connection() as connection:
             row = connection.execute(
@@ -58,7 +58,7 @@ def build_router() -> APIRouter:
         return {"status": "ok"}
 
     @router.get("/recipes/progress")
-    async def recipe_progress(
+    def recipe_progress(
         status_filter: str = Query(default="active"),
     ) -> dict[str, Any]:
         allowed_filters = {"active", "all", "pending", "in_progress", "completed", "canceled"}
@@ -152,7 +152,7 @@ def build_router() -> APIRouter:
         return {"status_filter": normalized_filter, "summary": summary, "items": items}
 
     @router.get("/recipes/operator-progress")
-    async def operator_progress() -> dict[str, Any]:
+    def operator_progress() -> dict[str, Any]:
         today = datetime.now(timezone.utc).date()
         day_start = f"{today}T00:00:00Z"
         day_end = f"{today + timedelta(days=1)}T00:00:00Z"
