@@ -15,6 +15,7 @@ Endpoints:
 
 import csv
 import io
+import sqlite3
 from datetime import date
 from typing import Any
 
@@ -22,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user, require_access_level
-from ..db import get_connection, write_audit_log
+from ..db import get_db, write_audit_log
 from ..services import forecast_service
 from ..services.recipe_helpers import ensure_material
 from .models import ForecastParamsBody
@@ -33,18 +34,18 @@ def build_router() -> APIRouter:
 
     @router.get("/forecast/materials")
     def forecast_materials(
+        connection: sqlite3.Connection = Depends(get_db),
         window_days: int = Query(forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365),
     ) -> dict[str, Any]:
-        with get_connection() as connection:
-            return forecast_service.compute_forecast(connection, window_days=window_days)
+        return forecast_service.compute_forecast(connection, window_days=window_days)
 
     @router.get("/forecast/export")
     def forecast_export(
+        connection: sqlite3.Connection = Depends(get_db),
         window_days: int = Query(forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365),
         only_reorder: bool = False,
     ) -> StreamingResponse:
-        with get_connection() as connection:
-            result = forecast_service.compute_forecast(connection, window_days=window_days)
+        result = forecast_service.compute_forecast(connection, window_days=window_days)
 
         items = result["items"]
         if only_reorder:
@@ -85,33 +86,35 @@ def build_router() -> APIRouter:
 
     @router.patch("/materials/{material_id}/forecast-params")
     def material_forecast_params(
-        material_id: int, body: ForecastParamsBody, request: Request
+        material_id: int,
+        body: ForecastParamsBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         current_user = get_current_user(request)
-        with get_connection() as connection:
-            material = ensure_material(connection, material_id)
-            try:
-                forecast_service.set_forecast_params(
-                    connection,
-                    material_id,
-                    lead_time_days=body.lead_time_days,
-                    reorder_cycle_days=body.reorder_cycle_days,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
-            write_audit_log(
+        material = ensure_material(connection, material_id)
+        try:
+            forecast_service.set_forecast_params(
                 connection,
-                action="material_forecast_params_set",
-                actor=current_user,
-                target_type="material",
-                target_id=str(material_id),
-                target_label=material["name"],
-                details={
-                    "lead_time_days": body.lead_time_days,
-                    "reorder_cycle_days": body.reorder_cycle_days,
-                },
+                material_id,
+                lead_time_days=body.lead_time_days,
+                reorder_cycle_days=body.reorder_cycle_days,
             )
-            connection.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        write_audit_log(
+            connection,
+            action="material_forecast_params_set",
+            actor=current_user,
+            target_type="material",
+            target_id=str(material_id),
+            target_label=material["name"],
+            details={
+                "lead_time_days": body.lead_time_days,
+                "reorder_cycle_days": body.reorder_cycle_days,
+            },
+        )
+        connection.commit()
         return {
             "material_id": material_id,
             "lead_time_days": body.lead_time_days,

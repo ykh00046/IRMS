@@ -244,6 +244,51 @@ document.addEventListener("DOMContentLoaded", () => {
     card.hidden = false;
   }
 
+  // 유통기한 임박 알림 (lot-expiry-tracking) — 읽기 전용 GET, 0건이면 미노출.
+  const EXPIRY_STATE_LABEL = { expired: "만료", expiring_soon: "임박" };
+  function ddayLabel(n) {
+    if (n === null || n === undefined) return "-";
+    if (n < 0) return `D+${-n}`;
+    if (n === 0) return "D-day";
+    return `D-${n}`;
+  }
+  async function loadExpiryAlert() {
+    const card = document.getElementById("expiry-alert");
+    if (!card) return;
+    let data;
+    try {
+      const res = await fetch("/api/dashboard/expiry-alert", { credentials: "same-origin" });
+      if (!res.ok) return;
+      data = await res.json();
+    } catch {
+      return;
+    }
+    if (!data.total_alert) {
+      card.hidden = true;
+      return;
+    }
+    const summaryEl = document.getElementById("expiry-alert-summary");
+    const bodyEl = document.getElementById("expiry-alert-body");
+    summaryEl.textContent =
+      `유통기한 주의 ${data.total_alert}건 (만료 ${data.expired}, 임박 ${data.expiring_soon})` +
+      (data.shown < data.total_alert ? ` · 상위 ${data.shown}건 표시` : "");
+    bodyEl.innerHTML = data.items
+      .map((it) => {
+        const cls = it.expiry_state === "expired" ? "stock-negative" : "stock-low";
+        return `
+          <tr>
+            <td>${IRMS.escapeHtml(it.material_name)}</td>
+            <td>${IRMS.escapeHtml(it.lot_no || "-")}</td>
+            <td><span class="stock-status ${cls}">${EXPIRY_STATE_LABEL[it.expiry_state] || it.expiry_state}</span></td>
+            <td>${IRMS.escapeHtml(it.expiry_date || "-")}</td>
+            <td class="num">${ddayLabel(it.days_until)}</td>
+            <td class="num">${(it.remaining_quantity || 0).toLocaleString()}</td>
+          </tr>`;
+      })
+      .join("");
+    card.hidden = false;
+  }
+
   async function openMaterialDrill(materialId, materialName) {
     const range = getCurrentRange();
     try {
@@ -318,4 +363,5 @@ document.addEventListener("DOMContentLoaded", () => {
   restoreRange();
   loadAll();
   loadForecastAlert();
+  loadExpiryAlert();
 });

@@ -51,6 +51,51 @@ class ForecastParamsBody(BaseModel):
     reorder_cycle_days: float = Field(ge=0)
 
 
+class LotCreateBody(BaseModel):
+    lot_no: str | None = Field(default=None, max_length=100)
+    quantity: float = Field(gt=0)
+    received_at: str | None = None
+    expiry_date: str | None = None
+    note: str | None = None
+
+
+class LotConsumeBody(BaseModel):
+    amount: float = Field(gt=0)
+    note: str | None = None
+
+
+class LotDiscardBody(BaseModel):
+    note: str = Field(min_length=1)
+
+
+class OrderCreateBody(BaseModel):
+    window_days: int = Field(default=30, ge=7, le=365)
+
+
+class OrderItemEditBody(BaseModel):
+    id: int = Field(gt=0)
+    order_qty: float = Field(ge=0)
+    note: str | None = None
+
+
+class OrderUpdateBody(BaseModel):
+    note: str | None = None
+    items: list[OrderItemEditBody] = Field(default_factory=list)
+
+
+class ReceiptLineBody(BaseModel):
+    order_item_id: int = Field(gt=0)
+    received_qty: float = Field(ge=0)
+    lot_no: str | None = Field(default=None, max_length=100)
+    expiry_date: str | None = None
+    note: str | None = None
+
+
+class ReceiptCreateBody(BaseModel):
+    note: str | None = None
+    lines: list[ReceiptLineBody] = Field(default_factory=list)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

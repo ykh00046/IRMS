@@ -19,6 +19,11 @@ _ALLOWED_TABLES = frozenset({
     "ss_rows",
     "ss_cells",
     "attendance_users",
+    "purchase_orders",
+    "purchase_order_items",
+    "material_lots",
+    "po_receipts",
+    "po_receipt_items",
 })
 
 
@@ -128,6 +133,139 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_stock_logs_reason_created "
         "ON material_stock_logs(reason, created_at)"
+    )
+
+    # order-sheet-erp: 발주서 (forecast 스냅샷) + ERP 전송 상태
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_no TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'sent', 'failed', 'cancelled')),
+            window_days INTEGER NOT NULL,
+            note TEXT,
+            item_count INTEGER NOT NULL DEFAULT 0,
+            total_qty REAL NOT NULL DEFAULT 0,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            sent_at TEXT,
+            sent_by TEXT,
+            erp_mode TEXT,
+            erp_status_code INTEGER,
+            erp_response TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS purchase_order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+            material_id INTEGER NOT NULL,
+            material_name TEXT NOT NULL,
+            category TEXT,
+            unit TEXT NOT NULL DEFAULT 'g',
+            stock_quantity REAL,
+            avg_daily REAL,
+            days_remaining REAL,
+            predicted_stockout_date TEXT,
+            urgency_status TEXT,
+            recommended_qty REAL NOT NULL,
+            order_qty REAL NOT NULL,
+            note TEXT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_po_items_order ON purchase_order_items(order_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_po_status_created "
+        "ON purchase_orders(status, created_at DESC)"
+    )
+
+    # lot-expiry-tracking: 입고 LOT별 유통기한 추적 (재고 차감 경로와 독립)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_lots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL REFERENCES materials(id),
+            lot_no TEXT,
+            received_quantity REAL NOT NULL,
+            remaining_quantity REAL NOT NULL,
+            received_at TEXT NOT NULL,
+            expiry_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'depleted', 'discarded')),
+            note TEXT,
+            actor_id INTEGER,
+            actor_name TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_material_lots_material "
+        "ON material_lots(material_id, status)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_material_lots_expiry "
+        "ON material_lots(expiry_date) WHERE status = 'active'"
+    )
+
+    # purchase-order-receiving: 발주 입고·검수 (발주 sent → LOT + 재고 동시 반영)
+    # 입고 진행 축은 ERP 전송 status(draft/sent/...)와 직교한 receipt_status 로 분리.
+    ensure_column(
+        connection,
+        "purchase_orders",
+        "receipt_status",
+        "TEXT NOT NULL DEFAULT 'pending'",
+    )
+    ensure_column(
+        connection,
+        "purchase_order_items",
+        "received_qty",
+        "REAL NOT NULL DEFAULT 0",
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS po_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_no TEXT NOT NULL UNIQUE,
+            order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+            note TEXT,
+            item_count INTEGER NOT NULL DEFAULT 0,
+            total_qty REAL NOT NULL DEFAULT 0,
+            received_by TEXT NOT NULL,
+            received_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS po_receipt_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL REFERENCES po_receipts(id) ON DELETE CASCADE,
+            order_item_id INTEGER NOT NULL REFERENCES purchase_order_items(id),
+            material_id INTEGER NOT NULL,
+            material_name TEXT NOT NULL,
+            received_qty REAL NOT NULL,
+            lot_no TEXT,
+            expiry_date TEXT,
+            lot_id INTEGER,
+            stock_log_id INTEGER,
+            note TEXT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_po_receipts_order ON po_receipts(order_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_po_receipt_items_receipt "
+        "ON po_receipt_items(receipt_id)"
     )
 
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환

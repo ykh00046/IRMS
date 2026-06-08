@@ -11,7 +11,7 @@
 """
 
 from .audit import list_audit_logs, write_audit_log
-from .connection import get_connection
+from .connection import get_connection, get_db
 from .migrations import (
     apply_schema_migrations,
     ensure_column,
@@ -28,6 +28,7 @@ __all__ = [
     "apply_schema_migrations",
     "ensure_column",
     "get_connection",
+    "get_db",
     "has_migration",
     "in_clause",
     "init_db",
