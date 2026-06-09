@@ -106,10 +106,10 @@ class AttendanceExcelMultiSourceTests(unittest.TestCase):
         def load_workbook(path: Path):
             return FakeWorkbook(path.stem)
 
-        def iter_rows(token):
+        def iter_rows(token, colmap=None):
             return [(token,)]
 
-        def row_to_record(raw):
+        def row_to_record(raw, colmap=None):
             return records[raw[0]]
 
         with (
@@ -147,10 +147,10 @@ class AttendanceExcelMultiSourceTests(unittest.TestCase):
         def load_workbook(path: Path):
             return FakeWorkbook(path.stem)
 
-        def iter_rows(token):
+        def iter_rows(token, colmap=None):
             return [(token,)]
 
-        def row_to_record(raw):
+        def row_to_record(raw, colmap=None):
             return records[raw[0]]
 
         with (

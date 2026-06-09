@@ -77,7 +77,9 @@ ALERT_GRACE_MINUTES = 15
 # Full-day leaves that exclude a row from anomaly detection entirely.
 # (반차/반반차는 이 목록에 들어가지 않는다 — baseline이 이동할 뿐 여전히
 # 감지 대상.)
-FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "유급", "공가", "훈련", "예비군", "교육")
+# "휴직"은 육아휴직·병가휴직 등 장기 전일 부재를 포괄한다. 휴직 기간에는
+# 출근/퇴근 기록이 없는 것이 정상이므로 "출근 누락" 등으로 잡으면 안 된다.
+FULL_DAY_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "휴직", "유급", "공가", "훈련", "예비군", "교육")
 ATTENDANCE_ISSUE_CODE_KEYWORDS = ("미타각", "누락")
 
 COL_DATE = 0
@@ -107,6 +109,72 @@ COL_LATE = 29
 COL_EARLY_LEAVE = 30
 COL_OUTING = 31
 COL_NOTE = 33
+
+# 위 COL_* 상수는 2026-05 까지의 ERP 내보내기 열 순서를 기준으로 한다.
+# 2026-06 부터 ERP가 신원/근무정보 블록(성명·근무타임·부서명 등)의 열 순서를
+# 바꿔 내보내기 시작했다. 고정 인덱스로 읽으면 이름이 '근무공장' 값으로,
+# 근무타임이 엉뚱한 값으로 잡혀 근태 이상 감지가 무력화된다. 그래서 실제
+# 파일을 읽을 때는 헤더 행에서 열 위치를 자동으로 찾고(_make_column_map),
+# 헤더를 못 찾으면 아래 기본값으로 폴백한다. (단위 테스트는 헤더 없이 위치
+# 기반으로 행을 만들어 _row_to_record 에 직접 넘기므로 이 기본값을 쓴다.)
+DEFAULT_COLUMNS: dict[str, int] = {
+    "date": COL_DATE,
+    "weekday": COL_WEEKDAY,
+    "day_type": COL_DAY_TYPE,
+    "emp_id": COL_EMP_ID,
+    "gender": COL_GENDER,
+    "factory": COL_FACTORY,
+    "name": COL_NAME,
+    "job_type": COL_JOB_TYPE,
+    "department": COL_DEPARTMENT,
+    "shift_group": COL_SHIFT_GROUP,
+    "shift_time": COL_SHIFT_TIME,
+    "attendance_code": COL_ATTENDANCE_CODE,
+    "check_in": COL_CHECK_IN,
+    "check_out": COL_CHECK_OUT,
+    "next_day": COL_NEXT_DAY,
+    "weekday_early": COL_WD_EARLY,
+    "weekday_normal": COL_WD_NORMAL,
+    "weekday_overtime": COL_WD_OVERTIME,
+    "weekday_night": COL_WD_NIGHT,
+    "holiday_early": COL_HD_EARLY,
+    "holiday_normal": COL_HD_NORMAL,
+    "holiday_overtime": COL_HD_OVERTIME,
+    "holiday_night": COL_HD_NIGHT,
+    "late": COL_LATE,
+    "early_leave": COL_EARLY_LEAVE,
+    "outing": COL_OUTING,
+    "note": COL_NOTE,
+}
+
+# 헤더 행1(세부 명칭)에서 바로 매핑되는 단순 컬럼.
+_HEADER_SIMPLE_FIELDS = {
+    "근무일자": "date",
+    "요일": "weekday",
+    "구분": "day_type",
+    "사번": "emp_id",
+    "성명": "name",
+    "남여": "gender",
+    "근무공장": "factory",
+    "근무직구분": "job_type",
+    "부서명": "department",
+    "근무조구분": "shift_group",
+    "근무타임": "shift_time",
+    "근태코드": "attendance_code",
+    "출근": "check_in",
+    "퇴근": "check_out",
+    "익일": "next_day",
+    "지각시간": "late",
+    "조퇴시간": "early_leave",
+    "외출시간": "outing",
+}
+# 평일/휴일 근무시간 그룹은 '조출/정상/연장/야근' 세부 명칭이 두 번 나오므로
+# 그룹 헤더(행0: 평일근무시간/휴일근무시간)로 구분한다.
+_HEADER_WORKHOUR_SUFFIX = {"조출": "early", "정상": "normal", "연장": "overtime", "야근": "night"}
+# 헤더 자동 매핑을 신뢰하려면 최소한 이 필드들이 모두 잡혀야 한다.
+_HEADER_REQUIRED_FIELDS = frozenset(
+    {"date", "emp_id", "name", "attendance_code", "check_in", "check_out", "shift_time", "day_type"}
+)
 
 
 class AttendanceError(Exception):
@@ -761,11 +829,63 @@ def _cell_time(value: Any) -> str | None:
     return text or None
 
 
-def _cell_day_type(row: tuple[Any, ...]) -> str:
-    primary = _cell_str(_cell_at(row, COL_DAY_TYPE))
+def _make_column_map(
+    header_group: tuple[Any, ...] | None,
+    header_sub: tuple[Any, ...] | None,
+) -> dict[str, int]:
+    """헤더 두 행(그룹 행0 + 세부 행1)에서 논리 필드 → 열 인덱스 맵을 만든다.
+
+    헤더에서 필수 필드를 모두 찾지 못하면 ``DEFAULT_COLUMNS`` 를 그대로
+    돌려준다(구버전 레이아웃·헤더 없는 입력에 대한 안전한 폴백).
+    """
+    if not header_sub:
+        return dict(DEFAULT_COLUMNS)
+
+    group = list(header_group or ())
+    sub = list(header_sub)
+
+    # 병합된 그룹 헤더(평일근무시간/휴일근무시간 등)를 오른쪽으로 채운다.
+    filled_group: list[str] = []
+    last = ""
+    for cell in group:
+        text = _cell_str(cell)
+        if text:
+            last = text
+        filled_group.append(last)
+
+    detected: dict[str, int] = {}
+    width = max(len(sub), len(filled_group))
+    for idx in range(width):
+        sub_name = _cell_str(sub[idx]) if idx < len(sub) else ""
+        grp_name = filled_group[idx] if idx < len(filled_group) else ""
+
+        field = _HEADER_SIMPLE_FIELDS.get(sub_name)
+        if field and field not in detected:
+            detected[field] = idx
+            continue
+
+        if sub_name in _HEADER_WORKHOUR_SUFFIX:
+            prefix = "weekday" if "평일" in grp_name else "holiday" if "휴일" in grp_name else ""
+            if prefix:
+                key = f"{prefix}_{_HEADER_WORKHOUR_SUFFIX[sub_name]}"
+                detected.setdefault(key, idx)
+            continue
+
+        # 비고는 세부 행이 비어 있고 그룹 행에만 '비고'로 존재한다.
+        if not sub_name and "비고" in grp_name and "note" not in detected:
+            detected["note"] = idx
+
+    if not _HEADER_REQUIRED_FIELDS.issubset(detected):
+        return dict(DEFAULT_COLUMNS)
+    return {**DEFAULT_COLUMNS, **detected}
+
+
+def _cell_day_type(row: tuple[Any, ...], colmap: dict[str, int]) -> str:
+    day_type_idx = colmap["day_type"]
+    primary = _cell_str(_cell_at(row, day_type_idx))
     if primary in DAY_TYPE_VALUES:
         return primary
-    shifted = _cell_str(_cell_at(row, COL_DAY_TYPE + 1))
+    shifted = _cell_str(_cell_at(row, day_type_idx + 1))
     if shifted in DAY_TYPE_VALUES:
         return shifted
     return primary or shifted
@@ -787,65 +907,85 @@ def _load_workbook(path: Path):
         raise FileFormatInvalid(str(path)) from exc
 
 
-def _iter_data_rows(ws):
+def _iter_data_rows(ws, colmap: dict[str, int] | None = None):
+    date_idx = (colmap or DEFAULT_COLUMNS)["date"]
+    emp_idx = (colmap or DEFAULT_COLUMNS)["emp_id"]
     for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
         if row_idx < 2:
             continue
         if not row:
             continue
-        if _cell_at(row, COL_DATE) is None and _cell_at(row, COL_EMP_ID) is None:
+        if _cell_at(row, date_idx) is None and _cell_at(row, emp_idx) is None:
             continue
         yield row
 
 
-def _row_to_record(row: tuple[Any, ...]) -> dict[str, Any]:
-    emp_id = _cell_str(_cell_at(row, COL_EMP_ID))
+def _row_to_record(
+    row: tuple[Any, ...], colmap: dict[str, int] | None = None
+) -> dict[str, Any]:
+    cols = colmap or DEFAULT_COLUMNS
+    emp_id = _cell_str(_cell_at(row, cols["emp_id"]))
     if not emp_id:
         return {}
-    shift_time = _cell_str(_cell_at(row, COL_SHIFT_TIME))
+    shift_time = _cell_str(_cell_at(row, cols["shift_time"]))
     row_data = AttendanceRow(
-        date=_cell_str(_cell_at(row, COL_DATE)),
-        weekday=_cell_str(_cell_at(row, COL_WEEKDAY)),
-        day_type=_cell_day_type(row),
-        check_in=_cell_time(_cell_at(row, COL_CHECK_IN)),
-        check_out=_cell_time(_cell_at(row, COL_CHECK_OUT)),
-        next_day=bool(_cell_float(_cell_at(row, COL_NEXT_DAY))),
-        weekday_early=_cell_float(_cell_at(row, COL_WD_EARLY)),
-        weekday_normal=_cell_float(_cell_at(row, COL_WD_NORMAL)),
-        weekday_overtime=_cell_float(_cell_at(row, COL_WD_OVERTIME)),
-        weekday_night=_cell_float(_cell_at(row, COL_WD_NIGHT)),
-        holiday_early=_cell_float(_cell_at(row, COL_HD_EARLY)),
-        holiday_normal=_cell_float(_cell_at(row, COL_HD_NORMAL)),
-        holiday_overtime=_cell_float(_cell_at(row, COL_HD_OVERTIME)),
-        holiday_night=_cell_float(_cell_at(row, COL_HD_NIGHT)),
-        late_hours=_cell_float(_cell_at(row, COL_LATE)),
-        early_leave_hours=_cell_float(_cell_at(row, COL_EARLY_LEAVE)),
-        outing_hours=_cell_float(_cell_at(row, COL_OUTING)),
-        note=_cell_str(_cell_at(row, COL_NOTE)),
-        attendance_code=_cell_str(_cell_at(row, COL_ATTENDANCE_CODE)),
+        date=_cell_str(_cell_at(row, cols["date"])),
+        weekday=_cell_str(_cell_at(row, cols["weekday"])),
+        day_type=_cell_day_type(row, cols),
+        check_in=_cell_time(_cell_at(row, cols["check_in"])),
+        check_out=_cell_time(_cell_at(row, cols["check_out"])),
+        next_day=bool(_cell_float(_cell_at(row, cols["next_day"]))),
+        weekday_early=_cell_float(_cell_at(row, cols["weekday_early"])),
+        weekday_normal=_cell_float(_cell_at(row, cols["weekday_normal"])),
+        weekday_overtime=_cell_float(_cell_at(row, cols["weekday_overtime"])),
+        weekday_night=_cell_float(_cell_at(row, cols["weekday_night"])),
+        holiday_early=_cell_float(_cell_at(row, cols["holiday_early"])),
+        holiday_normal=_cell_float(_cell_at(row, cols["holiday_normal"])),
+        holiday_overtime=_cell_float(_cell_at(row, cols["holiday_overtime"])),
+        holiday_night=_cell_float(_cell_at(row, cols["holiday_night"])),
+        late_hours=_cell_float(_cell_at(row, cols["late"])),
+        early_leave_hours=_cell_float(_cell_at(row, cols["early_leave"])),
+        outing_hours=_cell_float(_cell_at(row, cols["outing"])),
+        note=_cell_str(_cell_at(row, cols["note"])),
+        attendance_code=_cell_str(_cell_at(row, cols["attendance_code"])),
     )
     row_data.issues = _row_issue_labels(row_data, shift_time)
     row_data.has_issue = bool(row_data.issues)
     return {
         "emp_id": emp_id,
-        "name": _cell_str(_cell_at(row, COL_NAME)),
-        "department": _cell_str(_cell_at(row, COL_DEPARTMENT)),
-        "factory": _cell_str(_cell_at(row, COL_FACTORY)),
+        "name": _cell_str(_cell_at(row, cols["name"])),
+        "department": _cell_str(_cell_at(row, cols["department"])),
+        "factory": _cell_str(_cell_at(row, cols["factory"])),
         "shift_time": shift_time,
-        "shift_group": _cell_str(_cell_at(row, COL_SHIFT_GROUP)),
-        "job_type": _cell_str(_cell_at(row, COL_JOB_TYPE)),
-        "gender": _cell_str(_cell_at(row, COL_GENDER)),
+        "shift_group": _cell_str(_cell_at(row, cols["shift_group"])),
+        "job_type": _cell_str(_cell_at(row, cols["job_type"])),
+        "gender": _cell_str(_cell_at(row, cols["gender"])),
         "row": row_data,
     }
+
+
+def _column_map_from_ws(ws) -> dict[str, int]:
+    """워크시트의 헤더 두 행으로 열 맵을 만든다.
+
+    헤더를 읽을 수 없으면(예: 헤더가 없는 입력) ``DEFAULT_COLUMNS`` 폴백.
+    """
+    try:
+        header_rows = list(ws.iter_rows(values_only=True, max_row=2))
+    except (AttributeError, TypeError):
+        return dict(DEFAULT_COLUMNS)
+    if len(header_rows) < 2:
+        return dict(DEFAULT_COLUMNS)
+    return _make_column_map(header_rows[0], header_rows[1])
 
 
 def _records_from_path(path: Path) -> list[dict[str, Any]]:
     wb = _load_workbook(path)
     try:
         ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
+        colmap = _column_map_from_ws(ws)
         records: list[dict[str, Any]] = []
-        for raw in _iter_data_rows(ws):
-            rec = _row_to_record(raw)
+        for raw in _iter_data_rows(ws, colmap):
+            rec = _row_to_record(raw, colmap)
             if rec:
                 records.append(rec)
         return records
