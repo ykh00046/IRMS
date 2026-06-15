@@ -89,6 +89,31 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         self.assertEqual(items[0]["details"][0]["content"], "출/퇴근 미타각")
         self.assertIn("\uCD9C\uADFC \uB204\uB77D", items[0]["issues"])
 
+    def test_detect_month_anomalies_excludes_coded_absence(self) -> None:
+        # \uADFC\uD0DC\uCF54\uB4DC\uC5D0 "\uACB0\uADFC"\uC774 \uBA85\uC2DC\uB41C \uC804\uC77C \uBD80\uC7AC\uB294 \uCD9C\uADFC/\uD1F4\uADFC\uC774 \uBE44\uC5B4 \uC788\uC5B4\uB3C4
+        # \uC774\uBBF8 \uCC98\uB9AC\uB41C \uAC83\uC774\uBBC0\uB85C \uBBF8\uD0C0\uAC01 \uC774\uC0C1\uC73C\uB85C \uC7A1\uC73C\uBA74 \uC548 \uB41C\uB2E4. (\uAE40\uD0DC\uADE0 6\uC6D4 \uC0AC\uB840)
+        records = [
+            _record(
+                _row(
+                    date="2026-06-08",
+                    attendance_code="\uACB0\uADFC",  # \uACB0\uADFC
+                    check_in=None,
+                    check_out=None,
+                ),
+                emp_id="250731",
+                name="\uAE40\uD0DC\uADE0",  # \uAE40\uD0DC\uADE0
+                shift_time="2\uAD50\uB300(\uC8FC\uAC04)",  # 2\uAD50\uB300(\uC8FC\uAC04)
+            ),
+        ]
+
+        with (
+            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel, "_records_from_path", return_value=records),
+        ):
+            items = attendance_excel.detect_month_anomalies("2026-06")
+
+        self.assertEqual(items, [])
+
     def test_detect_month_anomalies_merges_dates_and_dedupes_issues(self) -> None:
         records = [
             _record(
