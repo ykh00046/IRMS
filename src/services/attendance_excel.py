@@ -55,18 +55,37 @@ HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
 PARTIAL_LEAVE_SHIFT_HOURS = (("반반차", 2), ("반차", 5))
 PARTIAL_LEAVE_SHIFT_HOURS_BY_SHIFT = {
     "주간": {"반반차": 2, "반차": 5},
-    "2교대(주간)": {"반반차": 2, "반차": 8},
-    "2교대(야간)": {"반반차": 2, "반차": 8},
 }
 
+# 2교대 부분 휴가 규칙 (주간/야간 공통, 2026-06-17 현장 확인).
+# 정규 근무 8시간 안에 휴식 45분(30분 + 채워야 하는 15분)이 포함되어,
+# 잔업 없이 풀근무하면 출근 + 8h45m 에 퇴근한다(주간 15:45, 야간 27:45 = 익일 03:45).
+# 휴식은 정규 근무 후반부(주간 13:00 이후)에 있어, 6시간 이하만 일하고
+# 나가는 오후 반차/반반차에는 휴식이 붙지 않는다. 따라서:
+#   - 오전(늦게 출근): 출근 = 출근기준 + 휴가량
+#   - 오후(일찍 퇴근): 퇴근 = 출근기준 + (정규 8h − 휴가량)   ← 휴식 미포함
+# 휴가량은 반차 4h / 반반차 2h (주간과 달리 점심 보정 없음).
+#
+# 검증 (2교대 주간, 출근 07:00):
+#   반차   오전 → 07:00 + 4h = 11:00 출근,  오후 → 07:00 + (8−4)h = 11:00 퇴근
+#   반반차 오전 → 07:00 + 2h = 09:00 출근,  오후 → 07:00 + (8−2)h = 13:00 퇴근
+SHIFT2_SHIFT_TIMES = ("2교대(주간)", "2교대(야간)")
+SHIFT2_REGULAR_WORK_MINUTES = 8 * 60   # 정규 근무(휴식 제외)
+SHIFT2_BREAK_MINUTES = 45              # 정규 근무 중 휴식(30+15분) → 풀근무 시에만 퇴근에 가산
+SHIFT2_PARTIAL_LEAVE_MINUTES = {"반차": 4 * 60, "반반차": 2 * 60}
+
 # Baseline (출근, 퇴근) per shift_time, expressed in minutes-from-midnight.
-# 퇴근 baseline이 1440 이상이면 익일 표기(ERP는 19:00 → 다음 날 07:00 근무를
-# 19:00 → 31:00으로 기록함). 빈 shift_time은 교대조의 비번 날을 뜻하므로
-# anomaly 감지 대상에서 제외된다.
+# 퇴근 baseline이 1440 이상이면 익일 표기(ERP는 야간 퇴근을 24+ 시각으로 기록).
+# 빈 shift_time은 교대조의 비번 날을 뜻하므로 anomaly 감지 대상에서 제외된다.
+#
+# 2교대 퇴근 기준은 "잔업 없이 정규 8시간 근무를 마친 시각"(출근 + 8h45m).
+# 잔업은 선택이고 정규 근무를 채우면 근태 의무가 끝나므로, 잔업 끝(주간 19:00 /
+# 야간 31:00)이 아니라 정규 퇴근(15:45 / 27:45)을 기준으로 둔다. 면제일 신호가
+# ERP에 없어 19:00 기준이면 잔업 미실시 정상 퇴근이 전부 오탐이 되기 때문.
 SHIFT_BASELINES = {
-    "주간":        (9 * 60,  18 * 60),   # 09:00 ~ 18:00 (평일만)
-    "2교대(주간)": (7 * 60,  19 * 60),   # 07:00 ~ 19:00
-    "2교대(야간)": (19 * 60, 31 * 60),   # 19:00 ~ 익일 07:00 (ERP 표기 31:00)
+    "주간":        (9 * 60,  18 * 60),                                                   # 09:00 ~ 18:00 (평일만)
+    "2교대(주간)": (7 * 60,  7 * 60 + SHIFT2_REGULAR_WORK_MINUTES + SHIFT2_BREAK_MINUTES),   # 07:00 ~ 15:45 (정규 퇴근)
+    "2교대(야간)": (19 * 60, 19 * 60 + SHIFT2_REGULAR_WORK_MINUTES + SHIFT2_BREAK_MINUTES),  # 19:00 ~ 27:45 (익일 03:45, 정규)
 }
 ALERT_WORKDAY_TYPES = ("평일", "평일2")
 DAY_TYPE_VALUES = ("평일", "평일2", "주휴", "무휴", "유휴")
@@ -456,6 +475,27 @@ def _infer_partial_leave_half(
     return "unknown"
 
 
+def _infer_shift2_partial_half(
+    row: AttendanceRow,
+    base_in: int,
+    off_minutes: int,
+) -> str:
+    """2교대 반차/반반차의 오전/오후 구분을 출퇴근 기록으로 추론.
+
+    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦고, 오후 사용이면
+    퇴근이 ``base_in + (정규 8h − 휴가량)`` 이전으로 빠르다.
+    """
+    in_mins = _hhmm_to_minutes(row.check_in)
+    out_mins = _hhmm_to_minutes(row.check_out)
+    morning_in = base_in + off_minutes
+    afternoon_out = base_in + (SHIFT2_REGULAR_WORK_MINUTES - off_minutes)
+    if in_mins is not None and in_mins >= morning_in:
+        return "오전"
+    if out_mins is not None and out_mins <= afternoon_out + ALERT_GRACE_MINUTES:
+        return "오후"
+    return "unknown"
+
+
 def _compute_row_anomaly_baseline(
     row: AttendanceRow,
     shift_time: str,
@@ -465,10 +505,26 @@ def _compute_row_anomaly_baseline(
         return None
     base_in, base_out = baseline
 
+    leave = _partial_leave_shift(row.day_type, row.note, row.attendance_code)
+
+    if shift_time in SHIFT2_SHIFT_TIMES:
+        # 2교대: 정규 8h(휴식 0.5h 포함) 모델. 잔업 구간은 휴가 대상이 아니므로
+        # 오후 퇴근은 출근기준 + (정규 8h − 휴가량)으로 계산(휴식 미포함).
+        if leave:
+            leave_kind, half, _default = leave
+            off = SHIFT2_PARTIAL_LEAVE_MINUTES.get(leave_kind, 0)
+            if half == "unknown":
+                half = _infer_shift2_partial_half(row, base_in, off)
+            if half == "오전":
+                base_in += off
+            elif half == "오후":
+                base_out = base_in + (SHIFT2_REGULAR_WORK_MINUTES - off)
+        return base_in, base_out
+
+    # 주간(09-18): 점심 1h 포함 대칭 모델.
     if shift_time in PARTIAL_LEAVE_SHIFT_HOURS_BY_SHIFT:
         if row.day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
             base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
-        leave = _partial_leave_shift(row.day_type, row.note, row.attendance_code)
         if leave:
             leave_kind, half, default_shift_minutes = leave
             shift_minutes = _partial_leave_shift_minutes(
