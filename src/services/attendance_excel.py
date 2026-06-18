@@ -463,14 +463,19 @@ def _infer_partial_leave_half(
     base_out: int,
     shift_minutes: int,
 ) -> str:
+    """반차/반반차의 오전/오후 구분을 출퇴근 기록으로 추론(주간).
+
+    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦다. 오후 사용이면
+    정시 출근하고 정규 퇴근(``base_out``)보다 일찍 나간다 — 휴가량을 덜
+    쓰고 늦게 나가도 '정규 퇴근 이전 퇴근'이면 오후 신호로 본다.
+    """
     in_mins = _hhmm_to_minutes(row.check_in)
     out_mins = _hhmm_to_minutes(row.check_out)
     morning_in = base_in + shift_minutes
-    afternoon_out = base_out - shift_minutes
 
     if in_mins is not None and in_mins >= morning_in:
         return "오전"
-    if out_mins is not None and out_mins <= afternoon_out + ALERT_GRACE_MINUTES:
+    if out_mins is not None and out_mins < base_out:
         return "오후"
     return "unknown"
 
@@ -478,20 +483,22 @@ def _infer_partial_leave_half(
 def _infer_shift2_partial_half(
     row: AttendanceRow,
     base_in: int,
+    base_out: int,
     off_minutes: int,
 ) -> str:
     """2교대 반차/반반차의 오전/오후 구분을 출퇴근 기록으로 추론.
 
-    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦고, 오후 사용이면
-    퇴근이 ``base_in + (정규 8h − 휴가량)`` 이전으로 빠르다.
+    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦다. 오후 사용이면
+    정시 출근하고 정규 퇴근(``base_out``)보다 일찍 나간다. 모델상 기대
+    퇴근(출근+(8h−휴가량))까지 채우지 않고 잔업을 일부 더 하고 나가면
+    그 시각보다 늦을 수 있으므로, '정규 퇴근 이전 퇴근'을 오후 신호로 본다.
     """
     in_mins = _hhmm_to_minutes(row.check_in)
     out_mins = _hhmm_to_minutes(row.check_out)
     morning_in = base_in + off_minutes
-    afternoon_out = base_in + (SHIFT2_REGULAR_WORK_MINUTES - off_minutes)
     if in_mins is not None and in_mins >= morning_in:
         return "오전"
-    if out_mins is not None and out_mins <= afternoon_out + ALERT_GRACE_MINUTES:
+    if out_mins is not None and out_mins < base_out:
         return "오후"
     return "unknown"
 
@@ -514,7 +521,7 @@ def _compute_row_anomaly_baseline(
             leave_kind, half, _default = leave
             off = SHIFT2_PARTIAL_LEAVE_MINUTES.get(leave_kind, 0)
             if half == "unknown":
-                half = _infer_shift2_partial_half(row, base_in, off)
+                half = _infer_shift2_partial_half(row, base_in, base_out, off)
             if half == "오전":
                 base_in += off
             elif half == "오후":

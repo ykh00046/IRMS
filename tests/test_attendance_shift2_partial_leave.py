@@ -94,6 +94,25 @@ class Shift2PartialLeaveTests(unittest.TestCase):
         )
         self.assertEqual(base_out, _hm(11))
 
+    def test_afternoon_leave_inferred_when_overtime_partially_worked(self) -> None:
+        """정시 출근 + 정규 퇴근(15:45) 이전 퇴근이면, 모델상 기대 퇴근(13:00)
+        보다 늦더라도 오후 반반차로 추론해 조퇴 오탐을 내지 않는다.
+
+        (2026-06-16 현장 사례: 반반차 표기 없음, 06:55 출근 / 14:42 퇴근)
+        """
+        row = _row(attendance_code="반반차")
+        row.check_in = "06:55"
+        row.check_out = "14:42"
+        base_in, base_out = attendance_excel._compute_row_anomaly_baseline(
+            row, "2교대(주간)"
+        )
+        self.assertEqual((base_in, base_out), (_hm(7), _hm(13)))
+        # 14:42 > 기대 퇴근 13:00 → 조퇴 미처리 없음
+        self.assertNotIn(
+            "조퇴 미처리",
+            attendance_excel._unprocessed_row_issues(row, "2교대(주간)"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
