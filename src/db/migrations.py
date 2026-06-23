@@ -26,6 +26,8 @@ _ALLOWED_TABLES = frozenset({
     "po_receipt_items",
     "viscosity_products",
     "viscosity_readings",
+    "blend_records",
+    "blend_details",
 })
 
 
@@ -322,6 +324,70 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
                 (code, name, now),
             )
         record_migration(connection, "seed_viscosity_products")
+
+    # blend-overhaul: 배합 실적(잉크 계량 재구축) — DHR Generator 이식
+    # 레시피(절대중량)→비율 환산→이론량/실제량/자재LOT/작업자/저울 기록. product_lot 자동생성.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_lot TEXT NOT NULL,
+            recipe_id INTEGER REFERENCES recipes(id),
+            product_name TEXT NOT NULL,
+            ink_name TEXT,
+            position TEXT,
+            worker TEXT NOT NULL,
+            work_date TEXT NOT NULL,
+            work_time TEXT,
+            total_amount REAL NOT NULL,
+            scale TEXT,
+            status TEXT NOT NULL DEFAULT 'completed'
+                CHECK (status IN ('draft', 'completed', 'canceled')),
+            note TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blend_record_id INTEGER NOT NULL
+                REFERENCES blend_records(id) ON DELETE CASCADE,
+            material_id INTEGER REFERENCES materials(id),
+            material_code TEXT,
+            material_name TEXT NOT NULL,
+            material_lot TEXT,
+            ratio REAL,
+            theory_amount REAL,
+            actual_amount REAL,
+            sequence_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_date "
+        "ON blend_records(work_date DESC)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_lot ON blend_records(product_lot)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_recipe ON blend_records(recipe_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_details_record "
+        "ON blend_details(blend_record_id, sequence_order)"
+    )
+    # 점도 ↔ 배합 기록 연계 (선택). lot_no/material_lot 매칭과 별개로 직접 FK.
+    ensure_column(connection, "viscosity_readings", "blend_record_id", "INTEGER")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_visc_readings_blend "
+        "ON viscosity_readings(blend_record_id) WHERE blend_record_id IS NOT NULL"
+    )
 
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):

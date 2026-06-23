@@ -144,6 +144,31 @@ class ViscosityProductUpdateBody(BaseModel):
         return self
 
 
+class BlendDetailBody(BaseModel):
+    material_id: int | None = None
+    material_code: str | None = Field(default=None, max_length=100)
+    material_name: str = Field(min_length=1, max_length=200)
+    material_lot: str | None = Field(default=None, max_length=100)
+    ratio: float | None = Field(default=None, ge=0, le=100)
+    theory_amount: float | None = Field(default=None, ge=0)
+    actual_amount: float | None = Field(default=None, ge=0)
+    sequence_order: int | None = Field(default=None, ge=0)
+
+
+class BlendCreateBody(BaseModel):
+    recipe_id: int | None = Field(default=None, gt=0)
+    product_name: str = Field(min_length=1, max_length=200)
+    ink_name: str | None = Field(default=None, max_length=200)
+    position: str | None = Field(default=None, max_length=200)
+    worker: str = Field(min_length=1, max_length=100)
+    work_date: str = Field(min_length=8, max_length=10)
+    work_time: str | None = Field(default=None, max_length=8)
+    total_amount: float = Field(gt=0, le=10_000_000)
+    scale: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=1000)
+    details: list[BlendDetailBody] = Field(default_factory=list)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

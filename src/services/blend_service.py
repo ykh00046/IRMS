@@ -1,0 +1,342 @@
+"""배합 실적(잉크 계량 재구축) 서비스 — DHR Generator 이식.
+
+IRMS 레시피(절대중량 g)를 비율(%)로 환산해 임의 배치 총량에 맞는 이론 계량량을
+산출하고, 작업자가 실제 계량량·자재 LOT·작업자·저울을 입력해 배합 실적(blend_record)
+으로 저장한다. product_lot 은 {제품명}{YYMMDD}{순번:02d} 로 자동 생성.
+
+Design: docs/02-design/features/blend-overhaul.design.md
+원본:  C:/X/Program-estimation/v3 (models/data_manager.py, lot_utils.py, excel_exporter.py)
+
+NOTE: 1차 증분은 기록 중심이다. 자동 재고 차감은 기존 계량(weighing)과의 이중 차감을
+방지하기 위해 후속 단계에서 통합한다.
+"""
+
+import sqlite3
+from typing import Any
+
+
+# ── 비율/이론량 환산 ────────────────────────────────────────────
+def compute_ratios(weights: list[float]) -> list[float]:
+    """절대중량 리스트 → 비율(%) 리스트. 합이 0이면 모두 0."""
+    total = sum(w or 0 for w in weights)
+    if total <= 0:
+        return [0.0 for _ in weights]
+    return [round((w or 0) / total * 100, 4) for w in weights]
+
+
+def scale_theory(weights: list[float], total_amount: float) -> list[float]:
+    """레시피 절대중량을 배치 총량에 맞춰 비례 배분한 이론 계량량."""
+    base_total = sum(w or 0 for w in weights)
+    if base_total <= 0:
+        return [0.0 for _ in weights]
+    return [round((w or 0) / base_total * total_amount, 3) for w in weights]
+
+
+# ── 레시피 → 배합 입력용 환산 ──────────────────────────────────
+def get_recipe_for_blend(
+    connection: sqlite3.Connection, recipe_id: int, total_amount: float | None = None
+) -> dict[str, Any] | None:
+    """레시피와 자재 목록을 비율·이론량과 함께 반환 (배합 입력 화면용).
+
+    total_amount 미지정 시 레시피 절대중량 합계를 기본 배치 총량으로 사용.
+    """
+    recipe = connection.execute(
+        "SELECT id, product_name, position, ink_name, status FROM recipes WHERE id = ?",
+        (recipe_id,),
+    ).fetchone()
+    if not recipe:
+        return None
+
+    rows = connection.execute(
+        """
+        SELECT ri.id AS recipe_item_id, ri.material_id, ri.value_weight, ri.value_text,
+               m.name AS material_name, m.category AS material_code, m.unit AS unit
+        FROM recipe_items ri
+        JOIN materials m ON m.id = ri.material_id
+        WHERE ri.recipe_id = ?
+        ORDER BY ri.id
+        """,
+        (recipe_id,),
+    ).fetchall()
+
+    weights = [float(r["value_weight"] or 0) for r in rows]
+    base_total = sum(weights)
+    total = float(total_amount) if total_amount and total_amount > 0 else base_total
+    ratios = compute_ratios(weights)
+    theory = scale_theory(weights, total)
+
+    items = []
+    for idx, r in enumerate(rows):
+        items.append({
+            "recipe_item_id": int(r["recipe_item_id"]),
+            "material_id": int(r["material_id"]),
+            "material_name": r["material_name"],
+            "material_code": r["material_code"],
+            "unit": r["unit"],
+            "value_weight": weights[idx],
+            "ratio": ratios[idx],
+            "theory_amount": theory[idx],
+            "sequence_order": idx + 1,
+        })
+    return {
+        "recipe": {
+            "id": int(recipe["id"]),
+            "product_name": recipe["product_name"],
+            "position": recipe["position"],
+            "ink_name": recipe["ink_name"],
+            "status": recipe["status"],
+        },
+        "base_total": round(base_total, 3),
+        "total_amount": round(total, 3),
+        "items": items,
+    }
+
+
+def list_blend_recipes(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+    """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외)."""
+    rows = connection.execute(
+        """
+        SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+               COUNT(ri.id) AS item_count,
+               COALESCE(SUM(ri.value_weight), 0) AS total_weight
+        FROM recipes r
+        LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+        WHERE r.status NOT IN ('canceled', 'draft')
+        GROUP BY r.id
+        HAVING item_count > 0
+        ORDER BY r.created_at DESC, r.id DESC
+        """
+    ).fetchall()
+    return [
+        {
+            "id": int(r["id"]),
+            "product_name": r["product_name"],
+            "position": r["position"],
+            "ink_name": r["ink_name"],
+            "status": r["status"],
+            "item_count": int(r["item_count"]),
+            "total_weight": round(float(r["total_weight"]), 3),
+        }
+        for r in rows
+    ]
+
+
+# ── product_lot 생성 ────────────────────────────────────────────
+def generate_product_lot(
+    connection: sqlite3.Connection, product_name: str, work_date: str
+) -> str:
+    """{제품명}{YYMMDD}{순번:02d}. 같은 날 같은 제품의 기존 최대 순번+1."""
+    digits = "".join(ch for ch in work_date if ch.isdigit())
+    yymmdd = digits[2:8] if len(digits) >= 8 else digits[-6:]
+    base = f"{product_name.strip()}{yymmdd}"
+    rows = connection.execute(
+        "SELECT product_lot FROM blend_records WHERE product_lot LIKE ? ESCAPE '\\'",
+        (base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
+    ).fetchall()
+    max_seq = 0
+    for r in rows:
+        suffix = str(r["product_lot"])[len(base):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f"{base}{max_seq + 1:02d}"
+
+
+# ── 배합 기록 생성/조회 ─────────────────────────────────────────
+def create_blend_record(
+    connection: sqlite3.Connection,
+    *,
+    recipe_id: int | None,
+    product_name: str,
+    ink_name: str | None,
+    position: str | None,
+    worker: str,
+    work_date: str,
+    work_time: str | None,
+    total_amount: float,
+    scale: str | None,
+    note: str | None,
+    details: list[dict[str, Any]],
+    created_by: str | None,
+    created_at: str,
+) -> int:
+    """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성."""
+    product_lot = generate_product_lot(connection, product_name, work_date)
+    cur = connection.execute(
+        """
+        INSERT INTO blend_records
+            (product_lot, recipe_id, product_name, ink_name, position, worker,
+             work_date, work_time, total_amount, scale, status, note,
+             created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)
+        """,
+        (
+            product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
+            work_date, work_time, float(total_amount), scale,
+            (note or "").strip() or None, created_by, created_at, created_at,
+        ),
+    )
+    record_id = int(cur.lastrowid)
+
+    for idx, d in enumerate(details):
+        connection.execute(
+            """
+            INSERT INTO blend_details
+                (blend_record_id, material_id, material_code, material_name,
+                 material_lot, ratio, theory_amount, actual_amount, sequence_order, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                d.get("material_id"),
+                (d.get("material_code") or None),
+                str(d.get("material_name") or "").strip(),
+                (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                _opt_num(d.get("ratio")),
+                _opt_num(d.get("theory_amount")),
+                _opt_num(d.get("actual_amount")),
+                int(d.get("sequence_order") or (idx + 1)),
+                created_at,
+            ),
+        )
+    return record_id
+
+
+def _opt_num(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
+               work_date, work_time, total_amount, scale, status, note,
+               created_by, created_at, updated_at
+        FROM blend_records WHERE id = ?
+        """,
+        (record_id,),
+    ).fetchone()
+    if not row:
+        return None
+    details = connection.execute(
+        """
+        SELECT id, material_id, material_code, material_name, material_lot,
+               ratio, theory_amount, actual_amount, sequence_order
+        FROM blend_details
+        WHERE blend_record_id = ?
+        ORDER BY sequence_order, id
+        """,
+        (record_id,),
+    ).fetchall()
+    record = _serialize_record(row)
+    record["details"] = [_serialize_detail(d) for d in details]
+    record["variance"] = _variance_summary(record["details"])
+    return record
+
+
+def list_blend_records(
+    connection: sqlite3.Connection,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    worker: str | None = None,
+    search: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    clauses = ["status != 'canceled'"]
+    params: list[Any] = []
+    if start_date:
+        clauses.append("work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        clauses.append("work_date <= ?")
+        params.append(end_date)
+    if worker:
+        clauses.append("worker = ?")
+        params.append(worker)
+    if search:
+        clauses.append("(product_lot LIKE ? OR product_name LIKE ? OR ink_name LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    where = " AND ".join(clauses)
+    params.append(int(limit))
+    rows = connection.execute(
+        f"""
+        SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
+               work_date, work_time, total_amount, scale, status, note, created_at
+        FROM blend_records
+        WHERE {where}
+        ORDER BY work_date DESC, id DESC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    return [_serialize_record(r) for r in rows]
+
+
+def list_workers(connection: sqlite3.Connection) -> list[str]:
+    rows = connection.execute(
+        "SELECT DISTINCT worker FROM blend_records WHERE worker IS NOT NULL ORDER BY worker"
+    ).fetchall()
+    return [r["worker"] for r in rows if r["worker"]]
+
+
+def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
+    keys = row.keys()
+    out = {
+        "id": int(row["id"]),
+        "product_lot": row["product_lot"],
+        "recipe_id": row["recipe_id"],
+        "product_name": row["product_name"],
+        "ink_name": row["ink_name"],
+        "position": row["position"],
+        "worker": row["worker"],
+        "work_date": row["work_date"],
+        "work_time": row["work_time"],
+        "total_amount": float(row["total_amount"]) if row["total_amount"] is not None else None,
+        "scale": row["scale"],
+        "status": row["status"],
+        "note": row["note"],
+        "created_at": row["created_at"] if "created_at" in keys else None,
+    }
+    return out
+
+
+def _serialize_detail(row: sqlite3.Row) -> dict[str, Any]:
+    theory = row["theory_amount"]
+    actual = row["actual_amount"]
+    variance = None
+    variance_pct = None
+    if theory is not None and actual is not None:
+        variance = round(actual - theory, 3)
+        if theory:
+            variance_pct = round((actual - theory) / theory * 100, 2)
+    return {
+        "id": int(row["id"]),
+        "material_id": row["material_id"],
+        "material_code": row["material_code"],
+        "material_name": row["material_name"],
+        "material_lot": row["material_lot"],
+        "ratio": row["ratio"],
+        "theory_amount": theory,
+        "actual_amount": actual,
+        "variance": variance,
+        "variance_pct": variance_pct,
+        "sequence_order": int(row["sequence_order"]),
+    }
+
+
+def _variance_summary(details: list[dict[str, Any]]) -> dict[str, Any]:
+    theory_total = sum(d["theory_amount"] or 0 for d in details)
+    actual_total = sum(d["actual_amount"] or 0 for d in details)
+    abs_var = sum(abs(d["variance"]) for d in details if d["variance"] is not None)
+    return {
+        "theory_total": round(theory_total, 3),
+        "actual_total": round(actual_total, 3),
+        "net_variance": round(actual_total - theory_total, 3),
+        "abs_variance": round(abs_var, 3),
+    }
