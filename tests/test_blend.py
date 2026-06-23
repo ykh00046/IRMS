@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 
 from src.services import blend_service as bs
+from src.services import viscosity_service as vs
 
 
 def _make_db() -> sqlite3.Connection:
@@ -44,6 +45,16 @@ def _make_db() -> sqlite3.Connection:
             material_code TEXT, material_name TEXT NOT NULL, material_lot TEXT,
             ratio REAL, theory_amount REAL, actual_amount REAL,
             sequence_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+        );
+        CREATE TABLE viscosity_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,
+            target REAL, lower_limit REAL, upper_limit REAL, sigma_k REAL DEFAULT 3,
+            is_active INTEGER DEFAULT 1, created_at TEXT
+        );
+        CREATE TABLE viscosity_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, lot_no TEXT,
+            viscosity REAL, measured_date TEXT, memo TEXT, recipe_material TEXT,
+            material_lot TEXT, created_by TEXT, created_at TEXT, blend_record_id INTEGER
         );
         """
     )
@@ -155,6 +166,36 @@ def test_list_blend_records_filters():
     ranged = bs.list_blend_records(conn, start_date="2026-06-24", end_date="2026-06-30")
     assert len(ranged) == 2
     assert len(bs.list_blend_records(conn, search="잉크A")) == 3
+
+
+# ── 점도 ↔ 배합 연계 ────────────────────────────────────────────
+def test_viscosity_linked_to_blend():
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    conn.execute(
+        "INSERT INTO viscosity_products (code, name, sigma_k, is_active, created_at) "
+        "VALUES ('잉크A', '잉크A', 3, 1, '2026-01-01')"
+    )
+    pid = conn.execute("SELECT id FROM viscosity_products").fetchone()["id"]
+    record_id = bs.create_blend_record(
+        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100, scale=None, note=None,
+        details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100, "material_lot": "L1"}],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    rec = bs.get_blend_record(conn, record_id)
+    vs.add_reading(
+        conn, product_id=pid, lot_no=rec["product_lot"], viscosity=49.2,
+        measured_date=rec["work_date"], memo=None, recipe_material="잉크A",
+        material_lot="L1", created_by="현장", created_at="2026-06-24T01:00:00Z",
+        blend_record_id=record_id,
+    )
+    linked = vs.list_readings_for_blend(conn, record_id)
+    assert len(linked) == 1
+    assert linked[0]["viscosity"] == 49.2
+    assert linked[0]["product_code"] == "잉크A"
+    # 연계 안 된 다른 배합엔 안 보임
+    assert vs.list_readings_for_blend(conn, 999) == []
 
 
 # ── 라우트 (무로그인 개방) ──────────────────────────────────────

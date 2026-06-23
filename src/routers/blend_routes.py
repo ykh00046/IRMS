@@ -23,8 +23,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
-from ..services import blend_service
-from .models import BlendCreateBody, actor_name
+from ..services import blend_service, viscosity_service
+from .models import BlendCreateBody, BlendViscosityBody, actor_name
 
 
 def build_router() -> APIRouter:
@@ -76,6 +76,55 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
+        return record
+
+    @router.post("/blend/records/{record_id}/viscosity")
+    def blend_add_viscosity(
+        record_id: int,
+        body: BlendViscosityBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        product = viscosity_service.get_product(connection, body.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="점도 제품을 찾을 수 없습니다.")
+        current_user = get_current_user(request, required=False)
+        actor = actor_name(current_user) if current_user else "현장"
+        first_lot = record["details"][0]["material_lot"] if record["details"] else None
+        try:
+            viscosity_service.add_reading(
+                connection,
+                product_id=body.product_id,
+                lot_no=record["product_lot"],
+                viscosity=body.viscosity,
+                measured_date=record["work_date"],
+                memo=body.memo,
+                recipe_material=record["product_name"],
+                material_lot=first_lot,
+                created_by=actor,
+                created_at=utc_now_text(),
+                blend_record_id=record_id,
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail=f"이미 등록된 점도(LOT {record['product_lot']})가 있습니다.",
+            )
+        write_audit_log(
+            connection,
+            action="blend_viscosity_link",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=record["product_lot"],
+            details={"product_code": product["code"], "viscosity": body.viscosity},
+        )
+        connection.commit()
+        record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
         return record
 
     @router.post("/blend/records")

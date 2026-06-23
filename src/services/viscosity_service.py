@@ -490,15 +490,19 @@ def add_reading(
     material_lot: str | None,
     created_by: str | None,
     created_at: str,
+    blend_record_id: int | None = None,
 ) -> int:
-    """점도 측정 1건 등록. measured_date 미지정 시 LOT 에서 추론, 실패 시 등록일."""
+    """점도 측정 1건 등록. measured_date 미지정 시 LOT 에서 추론, 실패 시 등록일.
+
+    blend_record_id 지정 시 해당 배합 실적과 연계된다([[blend-overhaul]]).
+    """
     resolved_date = measured_date or parse_lot_date(lot_no) or created_at[:10]
     cur = connection.execute(
         """
         INSERT INTO viscosity_readings
             (product_id, lot_no, viscosity, measured_date, memo,
-             recipe_material, material_lot, created_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             recipe_material, material_lot, created_by, created_at, blend_record_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             product_id,
@@ -510,6 +514,38 @@ def add_reading(
             (material_lot or "").strip() or None,
             created_by,
             created_at,
+            blend_record_id,
         ),
     )
     return int(cur.lastrowid)
+
+
+def list_readings_for_blend(
+    connection: sqlite3.Connection, blend_record_id: int
+) -> list[dict[str, Any]]:
+    """배합 실적에 연계된 점도 측정 목록 (제품 코드 포함)."""
+    rows = connection.execute(
+        """
+        SELECT r.id, r.viscosity, r.measured_date, r.memo, r.lot_no, r.created_by,
+               p.code AS product_code, p.name AS product_name, p.id AS product_id
+        FROM viscosity_readings r
+        JOIN viscosity_products p ON p.id = r.product_id
+        WHERE r.blend_record_id = ?
+        ORDER BY r.id DESC
+        """,
+        (blend_record_id,),
+    ).fetchall()
+    return [
+        {
+            "id": int(r["id"]),
+            "viscosity": float(r["viscosity"]),
+            "measured_date": r["measured_date"],
+            "memo": r["memo"],
+            "lot_no": r["lot_no"],
+            "product_id": int(r["product_id"]),
+            "product_code": r["product_code"],
+            "product_name": r["product_name"],
+            "created_by": r["created_by"],
+        }
+        for r in rows
+    ]

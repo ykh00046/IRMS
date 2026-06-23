@@ -169,6 +169,12 @@ class BlendCreateBody(BaseModel):
     details: list[BlendDetailBody] = Field(default_factory=list)
 
 
+class BlendViscosityBody(BaseModel):
+    product_id: int = Field(gt=0)
+    viscosity: float = Field(gt=0, le=100000)
+    memo: str | None = Field(default=None, max_length=1000)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

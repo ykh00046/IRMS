@@ -83,8 +83,17 @@
 .ss-modal-header h3 { margin: 0; font-size: 1rem; }
 .ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
+/* 점도 연계 블록 */
+.blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: 0.8rem; }
+.blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }
+.blend-visc-list li { margin: 0.15rem 0; }
+.blend-visc-form { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+.blend-visc-form .input { margin: 0; }
+.blend-visc-form select.input { width: auto; min-width: 6rem; }
+
 /* 인쇄: DHR 실적서만 출력 */
 @media print {
+  .no-print { display: none !important; }
   body * { visibility: hidden !important; }
   #blend-dhr, #blend-dhr * { visibility: visible !important; }
   #blend-dhr {
