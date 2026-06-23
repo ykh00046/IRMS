@@ -26,7 +26,13 @@ from fastapi.responses import StreamingResponse
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
 from ..services import blend_service, viscosity_service
-from .models import BlendApprovalBody, BlendCreateBody, BlendViscosityBody, actor_name
+from .models import (
+    BlendApprovalBody,
+    BlendBulkBody,
+    BlendCreateBody,
+    BlendViscosityBody,
+    actor_name,
+)
 
 
 def build_router() -> APIRouter:
@@ -318,6 +324,49 @@ def build_router() -> APIRouter:
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": disposition},
         )
+
+    @router.post("/blend/records/bulk")
+    def blend_create_bulk(
+        body: BlendBulkBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        if not body.entries:
+            raise HTTPException(status_code=400, detail="생성할 항목이 없습니다.")
+        current_user = get_current_user(request, required=False)
+        actor = actor_name(current_user) if current_user else "현장"
+        now = utc_now_text()
+        try:
+            ids = blend_service.create_bulk(
+                connection,
+                recipe_id=body.recipe_id,
+                worker=body.worker,
+                scale=body.scale,
+                entries=[e.model_dump() for e in body.entries],
+                created_by=actor,
+                created_at=now,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        if body.deduct_stock:
+            for rid in ids:
+                blend_service.deduct_blend_stock(
+                    connection, rid,
+                    actor_id=(current_user or {}).get("id"),
+                    actor_name=actor, created_at=now,
+                )
+        lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
+        write_audit_log(
+            connection,
+            action="blend_record_bulk_create",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=",".join(str(i) for i in ids),
+            target_label=f"{len(ids)}건",
+            details={"recipe_id": body.recipe_id, "count": len(ids)},
+        )
+        connection.commit()
+        return {"created": len(ids), "ids": ids, "product_lots": lots}
 
     @router.delete("/blend/records/{record_id}")
     def blend_cancel(

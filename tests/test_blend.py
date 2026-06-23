@@ -243,6 +243,27 @@ def test_viscosity_linked_to_blend():
     assert vs.list_readings_for_blend(conn, 999) == []
 
 
+def test_create_bulk():
+    conn = _make_db()
+    rid = _seed_recipe(conn, weights=(60, 40))
+    ids = bs.create_bulk(
+        conn, recipe_id=rid, worker="홍", scale="M-65",
+        entries=[
+            {"work_date": "2026-06-24", "total_amount": 100},
+            {"work_date": "2026-06-25", "total_amount": 200},
+        ],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    assert len(ids) == 2
+    r1 = bs.get_blend_record(conn, ids[0])
+    r2 = bs.get_blend_record(conn, ids[1])
+    assert r1["total_amount"] == 100 and r2["total_amount"] == 200
+    # 200g 배치의 첫 자재 이론량 = 60% × 200 = 120, actual=theory
+    assert r2["details"][0]["theory_amount"] == 120.0
+    assert r2["details"][0]["actual_amount"] == 120.0
+    assert r1["product_lot"] != r2["product_lot"]
+
+
 def test_material_lots_map():
     conn = _make_db()
     _seed_recipe(conn, weights=(60, 40))

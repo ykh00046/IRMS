@@ -210,6 +210,64 @@ def _opt_num(value: Any) -> float | None:
         return None
 
 
+def create_bulk(
+    connection: sqlite3.Connection,
+    *,
+    recipe_id: int,
+    worker: str,
+    scale: str | None,
+    entries: list[dict[str, Any]],
+    created_by: str | None,
+    created_at: str,
+    actual_equals_theory: bool = True,
+) -> list[int]:
+    """같은 레시피로 여러 (작업일, 총량) 배합 실적을 일괄 생성. record_id 리스트 반환.
+
+    각 항목은 레시피 비율로 이론량을 산출하고, actual_equals_theory 면 실제량=이론량으로
+    채운다(일괄 계획·문서용). 자재 LOT 은 비움.
+    """
+    base = get_recipe_for_blend(connection, recipe_id)
+    if not base:
+        raise ValueError("레시피를 찾을 수 없습니다.")
+    recipe = base["recipe"]
+    weights = [it["value_weight"] for it in base["items"]]
+    ids: list[int] = []
+    for entry in entries:
+        total = float(entry["total_amount"])
+        theory = scale_theory(weights, total)
+        details = []
+        for idx, it in enumerate(base["items"]):
+            th = theory[idx]
+            details.append({
+                "material_id": it["material_id"],
+                "material_name": it["material_name"],
+                "material_code": it["material_code"],
+                "ratio": it["ratio"],
+                "theory_amount": th,
+                "actual_amount": th if actual_equals_theory else None,
+                "material_lot": None,
+                "sequence_order": idx + 1,
+            })
+        rid = create_blend_record(
+            connection,
+            recipe_id=recipe_id,
+            product_name=recipe["product_name"],
+            ink_name=recipe["ink_name"],
+            position=recipe["position"],
+            worker=worker,
+            work_date=entry["work_date"],
+            work_time=entry.get("work_time"),
+            total_amount=total,
+            scale=scale,
+            note=entry.get("note"),
+            details=details,
+            created_by=created_by,
+            created_at=created_at,
+        )
+        ids.append(rid)
+    return ids
+
+
 def _blend_stock_note(record_id: int) -> str:
     return f"배합 #{record_id}"
 

@@ -181,6 +181,21 @@ class BlendApprovalBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class BlendBulkEntryBody(BaseModel):
+    work_date: str = Field(min_length=8, max_length=10)
+    total_amount: float = Field(gt=0, le=10_000_000)
+    work_time: str | None = Field(default=None, max_length=8)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class BlendBulkBody(BaseModel):
+    recipe_id: int = Field(gt=0)
+    worker: str = Field(min_length=1, max_length=100)
+    scale: str | None = Field(default=None, max_length=100)
+    deduct_stock: bool = False
+    entries: list[BlendBulkEntryBody] = Field(default_factory=list)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

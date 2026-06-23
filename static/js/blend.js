@@ -33,11 +33,65 @@
   // ── 모드 전환 ──────────────────────────────────────────────
   function setMode(mode) {
     $("blend-entry-mode").hidden = mode !== "entry";
+    $("blend-bulk-mode").hidden = mode !== "bulk";
     $("blend-records-mode").hidden = mode !== "records";
     $("blend-tabs").querySelectorAll("button").forEach((b) =>
       b.classList.toggle("active", b.dataset.mode === mode)
     );
     if (mode === "records") loadRecords();
+    if (mode === "bulk") initBulk();
+  }
+
+  // ── 일괄 생성 ──────────────────────────────────────────────
+  function initBulk() {
+    const sel = $("bulk-recipe");
+    if (sel.options.length === 0) {
+      sel.innerHTML = '<option value="">레시피 선택…</option>';
+      state.recipes.forEach((r) => {
+        const o = document.createElement("option");
+        o.value = String(r.id);
+        o.textContent = `${r.product_name}${r.ink_name ? " / " + r.ink_name : ""}`;
+        sel.appendChild(o);
+      });
+    }
+    if (!$("bulk-body").children.length) addBulkRow();
+  }
+
+  function addBulkRow() {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><input class="input bulk-date" type="date" value="${todayISO()}" /></td>` +
+      `<td class="num"><input class="input bulk-total" type="number" step="0.1" min="0" /></td>` +
+      `<td><button class="btn btn-sm bulk-del" type="button">삭제</button></td>`;
+    tr.querySelector(".bulk-del").addEventListener("click", () => tr.remove());
+    $("bulk-body").appendChild(tr);
+  }
+
+  async function createBulk() {
+    const err = $("bulk-error");
+    err.hidden = true;
+    const recipe_id = Number($("bulk-recipe").value);
+    const worker = $("bulk-worker").value.trim();
+    if (!recipe_id) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
+    if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
+    const entries = [];
+    $("bulk-body").querySelectorAll("tr").forEach((tr) => {
+      const d = tr.querySelector(".bulk-date").value;
+      const t = Number(tr.querySelector(".bulk-total").value);
+      if (d && t > 0) entries.push({ work_date: d, total_amount: t });
+    });
+    if (!entries.length) { err.textContent = "유효한 작업일·총량 행을 입력하세요."; err.hidden = false; return; }
+    try {
+      const res = await request("/blend/records/bulk", {
+        method: "POST",
+        body: { recipe_id, worker, scale: $("bulk-scale").value.trim() || null,
+                deduct_stock: $("bulk-deduct").checked, entries },
+      });
+      notify(`${res.created}건 일괄 생성 완료`, "success");
+      $("bulk-body").innerHTML = "";
+      addBulkRow();
+      setMode("records");
+    } catch (e) { err.textContent = e.message; err.hidden = false; }
   }
 
   // ── 배합 입력 ──────────────────────────────────────────────
@@ -386,6 +440,8 @@
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
     $("rec-apply").addEventListener("click", () => loadRecords().catch((e) => notify(e.message, "error")));
+    $("bulk-add-row").addEventListener("click", addBulkRow);
+    $("bulk-create").addEventListener("click", createBulk);
     $("blend-detail-close").addEventListener("click", () => { $("blend-detail-modal").hidden = true; });
     $("blend-detail-cancel").addEventListener("click", cancelDetail);
     $("blend-print").addEventListener("click", () => window.print());

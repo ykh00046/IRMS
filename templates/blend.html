@@ -12,6 +12,7 @@
         <section class="panel">
           <div class="blend-tabs" id="blend-tabs">
             <button class="btn btn-sm active" data-mode="entry" type="button">배합 입력</button>
+            <button class="btn btn-sm" data-mode="bulk" type="button">일괄 생성</button>
             <button class="btn btn-sm" data-mode="records" type="button">기록 조회</button>
           </div>
         </section>
@@ -93,6 +94,42 @@
               <textarea class="input" id="blend-note" rows="1" placeholder="비고 (선택)"></textarea>
               <p class="login-error" id="blend-error" hidden></p>
               <button class="btn accent" id="blend-save" type="button">배합 실적 저장</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- ===== 일괄 생성 ===== -->
+        <div id="blend-bulk-mode" hidden>
+          <section class="panel">
+            <div class="blend-form-grid">
+              <div class="blend-field">
+                <label class="filter-label" for="bulk-recipe">레시피</label>
+                <select class="input" id="bulk-recipe"></select>
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="bulk-worker">작업자</label>
+                <input class="input" id="bulk-worker" placeholder="이름" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="bulk-scale">저울</label>
+                <input class="input" id="bulk-scale" placeholder="예: M-65" />
+              </div>
+              <label class="visc-checkbox blend-field">
+                <input id="bulk-deduct" type="checkbox" /> 재고 차감
+              </label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="table-wrap">
+              <table class="blend-table">
+                <thead><tr><th>작업일자</th><th class="num">총 배합량(g)</th><th></th></tr></thead>
+                <tbody id="bulk-body"></tbody>
+              </table>
+            </div>
+            <div class="blend-actions">
+              <button class="btn" id="bulk-add-row" type="button">행 추가</button>
+              <p class="login-error" id="bulk-error" hidden></p>
+              <button class="btn accent" id="bulk-create" type="button">일괄 생성</button>
             </div>
           </section>
         </div>
