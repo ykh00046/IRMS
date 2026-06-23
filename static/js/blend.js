@@ -15,6 +15,33 @@
 
   const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {} };
 
+  // ── 전자서명 패드 (마우스/터치로 직접 그림) ──────────────────
+  function attachSignaturePad(canvas) {
+    if (!canvas || canvas._padAttached) return canvas && canvas._pad;
+    const ctx2 = canvas.getContext("2d");
+    ctx2.lineWidth = 2; ctx2.lineCap = "round"; ctx2.strokeStyle = "#111";
+    let drawing = false, dirty = false;
+    const pos = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      return { x: t.clientX - r.left, y: t.clientY - r.top };
+    };
+    const start = (e) => { drawing = true; const p = pos(e); ctx2.beginPath(); ctx2.moveTo(p.x, p.y); e.preventDefault(); };
+    const move = (e) => { if (!drawing) return; const p = pos(e); ctx2.lineTo(p.x, p.y); ctx2.stroke(); dirty = true; e.preventDefault(); };
+    const end = () => { drawing = false; };
+    canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", end);
+    canvas.addEventListener("touchstart", start); canvas.addEventListener("touchmove", move);
+    canvas.addEventListener("touchend", end);
+    const pad = {
+      clear() { ctx2.clearRect(0, 0, canvas.width, canvas.height); dirty = false; },
+      isEmpty() { return !dirty; },
+      dataUrl() { return dirty ? canvas.toDataURL("image/png") : null; },
+    };
+    canvas._padAttached = true; canvas._pad = pad;
+    return pad;
+  }
+
   function fmt(v, d) {
     if (v === null || v === undefined || v === "") return "-";
     return Number(v).toFixed(d === undefined ? 1 : d);
@@ -232,6 +259,7 @@
       total_amount: total,
       scale: $("blend-scale").value.trim() || null,
       note: $("blend-note").value.trim() || null,
+      worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,
         material_name: it.material_name,
@@ -248,6 +276,7 @@
       notify(`배합 실적 저장: ${rec.product_lot}`, "success");
       // 실제량/LOT 초기화 (연속 작업 편의)
       state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; });
+      if (state.workerPad) state.workerPad.clear();
       renderMatRows();
     } catch (e) {
       err.textContent = e.message;
@@ -331,9 +360,11 @@
     $("blend-detail-modal").hidden = false;
   }
 
-  function approvalCell(label, name, at) {
+  function approvalCell(label, name, at, sign) {
+    const img = sign ? `<img class="dhr-sign-img" src="${sign}" alt="서명" />` : "";
     return `<div class="dhr-sign">
       <div class="dhr-sign-role">${label}</div>
+      ${img}
       <div class="dhr-sign-name">${name || ""}</div>
       <div class="dhr-sign-at">${at ? at.slice(0, 16).replace("T", " ") : ""}</div>
     </div>`;
@@ -341,23 +372,34 @@
 
   function renderApprovalSection(rec) {
     return `<div class="dhr-approvals">
-        ${approvalCell("작성", rec.created_by, rec.created_at)}
-        ${approvalCell("검토", rec.reviewed_by, rec.reviewed_at)}
-        ${approvalCell("승인", rec.approved_by, rec.approved_at)}
+        ${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}
+        ${approvalCell("검토", rec.reviewed_by, rec.reviewed_at, rec.reviewed_sign)}
+        ${approvalCell("승인", rec.approved_by, rec.approved_at, rec.approved_sign)}
       </div>
       <div class="blend-approve-bar no-print">
         <input class="input" id="blend-approve-name" placeholder="결재자 이름" />
+        <div class="blend-sign-field">
+          <span class="filter-label">서명 (선택)</span>
+          <canvas id="blend-approve-sign" class="blend-sign-pad" width="240" height="70"></canvas>
+          <button class="btn btn-sm" id="blend-approve-sign-clear" type="button">지우기</button>
+        </div>
         <button class="btn btn-sm" id="blend-review-btn" type="button">검토 기록</button>
         <button class="btn btn-sm accent" id="blend-approve-btn" type="button">승인 기록</button>
       </div>`;
   }
 
   function bindApprovalSection(recordId) {
+    const pad = attachSignaturePad($("blend-approve-sign"));
+    const clr = $("blend-approve-sign-clear");
+    if (clr && pad) clr.addEventListener("click", () => pad.clear());
     const doApprove = async (role) => {
       const name = ($("blend-approve-name").value || "").trim();
       if (!name) { notify("결재자 이름을 입력하세요.", "warn"); return; }
       try {
-        await request(`/blend/records/${recordId}/approve`, { method: "POST", body: { role, name } });
+        await request(`/blend/records/${recordId}/approve`, {
+          method: "POST",
+          body: { role, name, signature: pad ? pad.dataUrl() : null },
+        });
         notify(role === "review" ? "검토 기록됨" : "승인 기록됨", "success");
         openDetail(recordId);
       } catch (e) { notify(e.message, "error"); }
@@ -439,6 +481,9 @@
     });
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
+    state.workerPad = attachSignaturePad($("blend-worker-sign"));
+    const wclr = $("blend-worker-sign-clear");
+    if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
     $("rec-apply").addEventListener("click", () => loadRecords().catch((e) => notify(e.message, "error")));
     $("bulk-add-row").addEventListener("click", addBulkRow);
     $("bulk-create").addEventListener("click", createBulk);

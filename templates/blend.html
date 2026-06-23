@@ -92,6 +92,11 @@
             </div>
             <div class="blend-actions">
               <textarea class="input" id="blend-note" rows="1" placeholder="비고 (선택)"></textarea>
+              <div class="blend-sign-field">
+                <span class="filter-label">작성자 서명 (선택)</span>
+                <canvas id="blend-worker-sign" class="blend-sign-pad" width="240" height="70"></canvas>
+                <button class="btn btn-sm" id="blend-worker-sign-clear" type="button">지우기</button>
+              </div>
               <p class="login-error" id="blend-error" hidden></p>
               <button class="btn accent" id="blend-save" type="button">배합 실적 저장</button>
             </div>

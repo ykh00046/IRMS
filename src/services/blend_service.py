@@ -158,6 +158,7 @@ def create_blend_record(
     details: list[dict[str, Any]],
     created_by: str | None,
     created_at: str,
+    worker_sign: str | None = None,
 ) -> int:
     """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성."""
     product_lot = generate_product_lot(connection, product_name, work_date)
@@ -166,13 +167,13 @@ def create_blend_record(
         INSERT INTO blend_records
             (product_lot, recipe_id, product_name, ink_name, position, worker,
              work_date, work_time, total_amount, scale, status, note,
-             created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)
+             worker_sign, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
         """,
         (
             product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
             work_date, work_time, float(total_amount), scale,
-            (note or "").strip() or None, created_by, created_at, created_at,
+            (note or "").strip() or None, worker_sign, created_by, created_at, created_at,
         ),
     )
     record_id = int(cur.lastrowid)
@@ -360,6 +361,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note,
                reviewed_by, reviewed_at, approved_by, approved_at,
+               worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at
         FROM blend_records WHERE id = ?
         """,
@@ -477,7 +479,8 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "note": row["note"],
         "created_at": row["created_at"] if "created_at" in keys else None,
     }
-    for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at"):
+    for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
+              "worker_sign", "reviewed_sign", "approved_sign"):
         out[f] = row[f] if f in keys else None
     return out
 

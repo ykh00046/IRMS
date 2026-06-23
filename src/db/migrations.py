@@ -387,6 +387,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "blend_records", "reviewed_at", "TEXT")
     ensure_column(connection, "blend_records", "approved_by", "TEXT")
     ensure_column(connection, "blend_records", "approved_at", "TEXT")
+    # 전자서명(결재자가 직접 그린 PNG data URL). 원본의 서명 이미지 위조와 달리 실서명.
+    ensure_column(connection, "blend_records", "worker_sign", "TEXT")
+    ensure_column(connection, "blend_records", "reviewed_sign", "TEXT")
+    ensure_column(connection, "blend_records", "approved_sign", "TEXT")
 
     # 점도 ↔ 배합 기록 연계 (선택). lot_no/material_lot 매칭과 별개로 직접 FK.
     ensure_column(connection, "viscosity_readings", "blend_record_id", "INTEGER")

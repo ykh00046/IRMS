@@ -83,6 +83,14 @@
 .ss-modal-header h3 { margin: 0; font-size: 1rem; }
 .ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
+/* 전자서명 패드 */
+.blend-sign-field { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.blend-sign-pad {
+  border: 1px dashed var(--border, #cbd5e1); border-radius: 6px;
+  background: #fff; touch-action: none; cursor: crosshair; width: 240px; height: 70px;
+}
+.dhr-sign-img { max-width: 100%; max-height: 44px; display: block; margin: 0.2rem auto; }
+
 /* 결재(작성/검토/승인) */
 .dhr-approvals {
   display: flex; gap: 0.6rem; margin-top: 1rem;

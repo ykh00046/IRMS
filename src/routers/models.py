@@ -167,7 +167,13 @@ class BlendCreateBody(BaseModel):
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
     deduct_stock: bool = True
+    worker_sign: str | None = Field(default=None, max_length=300_000)
     details: list[BlendDetailBody] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_worker_sign(self) -> "BlendCreateBody":
+        self.worker_sign = _validate_signature(self.worker_sign)
+        return self
 
 
 class BlendViscosityBody(BaseModel):
@@ -176,9 +182,26 @@ class BlendViscosityBody(BaseModel):
     memo: str | None = Field(default=None, max_length=1000)
 
 
+def _validate_signature(value: str | None) -> str | None:
+    """전자서명 data URL 검증: PNG base64 + 크기 상한(~220KB)."""
+    if value is None or value == "":
+        return None
+    if not value.startswith("data:image/png;base64,"):
+        raise ValueError("signature must be a PNG data URL")
+    if len(value) > 300_000:
+        raise ValueError("signature too large")
+    return value
+
+
 class BlendApprovalBody(BaseModel):
     role: Literal["review", "approve"]
     name: str = Field(min_length=1, max_length=100)
+    signature: str | None = Field(default=None, max_length=300_000)
+
+    @model_validator(mode="after")
+    def _check_sign(self) -> "BlendApprovalBody":
+        self.signature = _validate_signature(self.signature)
+        return self
 
 
 class BlendBulkEntryBody(BaseModel):

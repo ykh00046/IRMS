@@ -45,6 +45,7 @@ def _make_db() -> sqlite3.Connection:
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
             status TEXT NOT NULL DEFAULT 'completed', note TEXT,
             reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
+            worker_sign TEXT, reviewed_sign TEXT, approved_sign TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
         );
         CREATE TABLE blend_details (
@@ -180,6 +181,22 @@ def test_list_blend_records_filters():
     ranged = bs.list_blend_records(conn, start_date="2026-06-24", end_date="2026-06-30")
     assert len(ranged) == 2
     assert len(bs.list_blend_records(conn, search="잉크A")) == 3
+
+
+# ── 전자서명 저장 ───────────────────────────────────────────────
+def test_worker_signature_stored():
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    sign = "data:image/png;base64,iVBORw0KGgo="
+    record_id = bs.create_blend_record(
+        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100, scale=None, note=None,
+        details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100}],
+        created_by="현장", created_at="2026-06-24T00:00:00Z", worker_sign=sign,
+    )
+    rec = bs.get_blend_record(conn, record_id)
+    assert rec["worker_sign"] == sign
+    assert rec["reviewed_sign"] is None
 
 
 # ── 재고 자동차감 + 복원 ────────────────────────────────────────

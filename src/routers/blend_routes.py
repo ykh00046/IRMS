@@ -168,6 +168,7 @@ def build_router() -> APIRouter:
             details=[d.model_dump() for d in body.details],
             created_by=actor,
             created_at=utc_now_text(),
+            worker_sign=body.worker_sign,
         )
         deducted = 0
         if body.deduct_stock:
@@ -209,8 +210,8 @@ def build_router() -> APIRouter:
         now = utc_now_text()
         col = "reviewed" if body.role == "review" else "approved"
         connection.execute(
-            f"UPDATE blend_records SET {col}_by = ?, {col}_at = ?, updated_at = ? WHERE id = ?",
-            (body.name.strip(), now, now, record_id),
+            f"UPDATE blend_records SET {col}_by = ?, {col}_at = ?, {col}_sign = ?, updated_at = ? WHERE id = ?",
+            (body.name.strip(), now, body.signature, now, record_id),
         )
         write_audit_log(
             connection,
@@ -300,12 +301,26 @@ def build_router() -> APIRouter:
             ("검토", record.get("reviewed_by"), record.get("reviewed_at")),
             ("승인", record.get("approved_by"), record.get("approved_at")),
         ]
+        sign_imgs = [record.get("worker_sign"), record.get("reviewed_sign"), record.get("approved_sign")]
         for i, (label, name, at) in enumerate(signs):
             base_col = 2 + i * 2
             ws.cell(row=sign_row, column=base_col, value=label).font = bold
             at_txt = (at or "")[:16].replace("T", " ")
             ws.cell(row=sign_row, column=base_col + 1,
                     value=f"{name or ''} {at_txt}".strip())
+            # 전자서명 이미지 첨부 (있으면)
+            data_url = sign_imgs[i]
+            if data_url and data_url.startswith("data:image/png;base64,"):
+                try:
+                    import base64 as _b64
+                    from openpyxl.drawing.image import Image as XLImage
+                    raw = _b64.b64decode(data_url.split(",", 1)[1])
+                    img = XLImage(io.BytesIO(raw))
+                    img.width, img.height = 120, 48
+                    ws.row_dimensions[sign_row + 1].height = 40
+                    ws.add_image(img, f"{chr(64 + base_col + 1)}{sign_row + 1}")
+                except Exception:
+                    pass
         if record.get("note"):
             ws.cell(row=sign_row + 2, column=1, value=f"비고: {record['note']}")
 
