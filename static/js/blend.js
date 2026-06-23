@@ -333,6 +333,9 @@
     $("blend-detail-close").addEventListener("click", () => { $("blend-detail-modal").hidden = true; });
     $("blend-detail-cancel").addEventListener("click", cancelDetail);
     $("blend-print").addEventListener("click", () => window.print());
+    $("blend-excel").addEventListener("click", () => {
+      if (state.detailId) window.location.assign(`/api/blend/records/${state.detailId}/export`);
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
