@@ -487,6 +487,14 @@
     $("rec-apply").addEventListener("click", () => loadRecords().catch((e) => notify(e.message, "error")));
     $("bulk-add-row").addEventListener("click", addBulkRow);
     $("bulk-create").addEventListener("click", createBulk);
+    $("rec-export-all").addEventListener("click", () => {
+      const q = new URLSearchParams();
+      if ($("rec-from").value) q.set("start_date", $("rec-from").value);
+      if ($("rec-to").value) q.set("end_date", $("rec-to").value);
+      if ($("rec-worker").value) q.set("worker", $("rec-worker").value);
+      if ($("rec-search").value.trim()) q.set("search", $("rec-search").value.trim());
+      window.location.assign(`/api/blend/records/export-all?${q.toString()}`);
+    });
     $("blend-detail-close").addEventListener("click", () => { $("blend-detail-modal").hidden = true; });
     $("blend-detail-cancel").addEventListener("click", cancelDetail);
     $("blend-print").addEventListener("click", () => window.print());

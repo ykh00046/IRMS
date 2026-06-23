@@ -84,6 +84,48 @@ def build_router() -> APIRouter:
         )
         return {"items": items, "total": len(items)}
 
+    @router.get("/blend/records/export-all")
+    def blend_export_all(
+        start_date: str | None = None,
+        end_date: str | None = None,
+        worker: str | None = None,
+        search: str | None = None,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """전체(필터) 배합 기록을 한 시트로 — 데이터 백업·이관용."""
+        records = blend_service.list_blend_records(
+            connection, start_date=start_date, end_date=end_date,
+            worker=worker, search=search, limit=10000,
+        )
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "배합기록"
+        headers = ["작업일", "제품LOT", "제품", "잉크", "작업자", "총량(g)", "저울", "상태", "비고"]
+        ws.append(headers)
+        for c in range(1, len(headers) + 1):
+            ws.cell(row=1, column=c).font = Font(bold=True)
+        for r in records:
+            ws.append([
+                r["work_date"], r["product_lot"], r["product_name"], r.get("ink_name") or "",
+                r["worker"], r["total_amount"], r.get("scale") or "", r["status"], r.get("note") or "",
+            ])
+        widths = [12, 18, 16, 14, 10, 10, 10, 10, 24]
+        for col, w in enumerate(widths, start=1):
+            ws.column_dimensions[chr(64 + col)].width = w
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from datetime import date as _date
+        filename = f"blend-records-{_date.today().isoformat()}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @router.get("/blend/records/{record_id}")
     def blend_record_detail(
         record_id: int,
