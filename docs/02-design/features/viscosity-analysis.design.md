@@ -84,11 +84,29 @@ viscosity_readings(id, product_id FK, lot_no, viscosity, measured_date,
 
 nav 에 `점도` 링크(작업자 포함 전원 노출).
 
+### 3.3 연도별 기준 (제품별 + 연도별)
+
+같은 제품이라도 연도/공정에 따라 점도 대역이 크게 달라진다(예: N-TOP 2024 평균
+165.6·σ24.9 → 2025 144.7 → 2026 131.1). 전 연도를 합치면 σ가 과대해져 이상
+판정이 무의미해지므로 **기준(중심선/σ/이상)은 연도별로 계산**한다.
+
+- `analyze_product(year=)` / `_fetch_readings(year=)` 가 연도 표본만 사용.
+- `available_years()` 로 제품의 측정 연도 목록 제공.
+- 상세 API `?year=YYYY`(미지정=전체). granularity 에 `year` 추가 → 연도간 비교.
+- `overview` 카드는 제품별 **최신 연도** 기준으로 평균·이상수 계산.
+- 신규 입력 판정(`classify_value`)도 해당 측정의 **연도** 표본 기준.
+- 화면: 툴바 연도 셀렉터(기본=최신 연도, '전체(연도비교)' 옵션) + 기간 토글에 연도.
+
 ## 6. 엑셀 임포트
 
-`scripts/import_viscosity.py` — 시트→제품 코드 매핑, 4행부터 적재, LOT에서
-measured_date 추론, UNIQUE 제약으로 멱등. 운영 DB 적재는 서버와 동일한
-`IRMS_DATA_DIR` 로 실행. (PB 2건은 동일 LOT 재측정 → 첫 측정만 유지)
+`scripts/import_viscosity.py` — 시트 형태 자동 판별(3종) + 제품 자동 생성 + 다중 파일.
+- **long-LOT**: PB/SBCT/SCRA(합성 점도.xlsx). A=LOT B=점도 …
+- **wide-date**: 'TOP 점도' 시트(날짜×N-TOP/S-TOP/6-1 TOP/K-TOP). 연도 표기 없어 2026 가정.
+- **journal**: 합성일지.xlsx 연도시트(2024~2026). 일자·종류·점도·1차·2차·비고, 점도 있는 행만.
+날짜 기반은 lot_no='YYYY-MM-DD-NN'(제품·날짜 순번)로 결정적 생성 → 재임포트 멱등.
+운영 DB 적재는 서버와 동일한 `IRMS_DATA_DIR` 로 실행:
+`python scripts/import_viscosity.py "합성 점도.xlsx" "합성일지.xlsx"`
+(제품 ~12종: PB/SBCT/SCRA + N/S/K/6-1 TOP, S3-TOP, NUVBF, NUVBE, ECB, SBC. PB 2건은 동일 LOT 재측정 → 첫 측정만)
 
 ## 7. 테스트
 

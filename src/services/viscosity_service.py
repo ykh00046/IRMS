@@ -123,21 +123,43 @@ def _opt_float(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
-def _fetch_readings(connection: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:
+def _fetch_readings(
+    connection: sqlite3.Connection, product_id: int, year: int | None = None
+) -> list[sqlite3.Row]:
+    params: list[Any] = [product_id]
+    year_clause = ""
+    if year is not None:
+        # measured_date 는 'YYYY-MM-DD' (또는 NULL). 연도 필터 시 날짜 없는 측정은 제외.
+        year_clause = "AND substr(measured_date, 1, 4) = ?"
+        params.append(f"{year:04d}")
     return connection.execute(
-        """
+        f"""
         SELECT id, product_id, lot_no, viscosity, measured_date,
                memo, recipe_material, material_lot, created_by, created_at
         FROM viscosity_readings
-        WHERE product_id = ?
+        WHERE product_id = ? {year_clause}
         ORDER BY
             CASE WHEN measured_date IS NULL THEN 1 ELSE 0 END,
             measured_date ASC,
             lot_no ASC,
             id ASC
         """,
+        params,
+    ).fetchall()
+
+
+def available_years(connection: sqlite3.Connection, product_id: int) -> list[int]:
+    """제품에 측정 기록이 있는 연도 목록 (내림차순)."""
+    rows = connection.execute(
+        """
+        SELECT DISTINCT substr(measured_date, 1, 4) AS y
+        FROM viscosity_readings
+        WHERE product_id = ? AND measured_date IS NOT NULL
+        ORDER BY y DESC
+        """,
         (product_id,),
     ).fetchall()
+    return [int(r["y"]) for r in rows if r["y"] and str(r["y"]).isdigit()]
 
 
 def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, Any]:
@@ -265,6 +287,8 @@ def _period_key(date_str: str | None, granularity: str) -> str | None:
         return None
     if not 1 <= month <= 12:
         return None
+    if granularity == "year":
+        return f"{year:04d}"
     if granularity == "month":
         return f"{year:04d}-{month:02d}"
     return f"{year}-Q{(month - 1) // 3 + 1}"
@@ -334,13 +358,17 @@ def _period_alerts(periods: list[dict[str, Any]], control_std: float) -> list[di
 
 
 def classify_value(
-    connection: sqlite3.Connection, product: dict[str, Any], value: float
+    connection: sqlite3.Connection,
+    product: dict[str, Any],
+    value: float,
+    year: int | None = None,
 ) -> dict[str, Any]:
     """단일 값을 현재 제품 기준으로 판정 (신규 입력 즉시 경고용).
 
-    중심선/관리한계는 기존 측정 표본 + 제품 설정으로 산출한다(입력값 포함 전 기준).
+    중심선/관리한계는 같은 연도의 기존 측정 표본 + 제품 설정으로 산출한다
+    (입력값 포함 전 기준). year 미지정 시 전체 표본.
     """
-    rows = _fetch_readings(connection, product["id"])
+    rows = _fetch_readings(connection, product["id"], year)
     values = [float(r["viscosity"]) for r in rows]
     control = _control_limits(product, values)
     verdict = _classify(value, product, control)
@@ -353,9 +381,14 @@ def analyze_product(
     product: dict[str, Any],
     *,
     granularity: str = "quarter",
+    year: int | None = None,
 ) -> dict[str, Any]:
-    """제품 단위 전체 분석: 통계 + 관리한계 + 측정 시계열(이상 표기) + 이상/추세 + 기간 집계."""
-    rows = _fetch_readings(connection, product["id"])
+    """제품 단위 분석: 통계 + 관리한계 + 측정 시계열(이상 표기) + 이상/추세 + 기간 집계.
+
+    year 지정 시 해당 연도 표본만으로 기준(중심선/σ/이상)을 계산한다. 같은 제품이라도
+    연도/공정에 따라 점도 대역이 달라지므로 연도별 기준이 기본 분석 단위.
+    """
+    rows = _fetch_readings(connection, product["id"], year)
     values = [float(r["viscosity"]) for r in rows]
     control = _control_limits(product, values)
 
@@ -397,18 +430,26 @@ def analyze_product(
         "anomalies": list(reversed(anomalies)),  # 최신 이상 먼저
         "trends": trends,
         "granularity": granularity,
+        "year": year,
+        "available_years": available_years(connection, product["id"]),
         "periods": periods,
         "period_alerts": _period_alerts(periods, control["std"]),
     }
 
 
 def overview(connection: sqlite3.Connection) -> dict[str, Any]:
-    """전 제품 요약: 최근값/평균/이상 건수/마지막 상태 (대시보드/제품 카드용)."""
+    """전 제품 요약: 제품별 '최신 연도' 기준 최근값/평균/이상 건수/마지막 상태.
+
+    제품마다 연도별로 점도 대역이 다르므로, 전 연도를 한데 섞으면 평균·σ·이상수가
+    왜곡된다. 따라서 카드 요약은 각 제품의 가장 최근 연도 표본으로 계산한다.
+    """
     products = list_products(connection)
     items: list[dict[str, Any]] = []
     total_anomaly = 0
     for product in products:
-        analysis = analyze_product(connection, product)
+        years = available_years(connection, product["id"])
+        latest_year = years[0] if years else None
+        analysis = analyze_product(connection, product, year=latest_year)
         readings = analysis["readings"]
         last = readings[-1] if readings else None
         anomaly_count = analysis["counts"]["anomaly"]
@@ -419,6 +460,7 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
             "name": product["name"],
             "is_active": product["is_active"],
             "has_spec": product["has_spec"],
+            "year": latest_year,
             "count": analysis["stats"]["n"],
             "mean": analysis["stats"]["mean"],
             "std": analysis["stats"]["std"],

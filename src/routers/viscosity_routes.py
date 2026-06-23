@@ -66,13 +66,14 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     def viscosity_product_detail(
         product_id: int,
         granularity: str = "quarter",
+        year: int | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         product = _require_product(connection, product_id)
-        if granularity not in ("month", "quarter"):
+        if granularity not in ("month", "quarter", "year"):
             granularity = "quarter"
         return viscosity_service.analyze_product(
-            connection, product, granularity=granularity
+            connection, product, granularity=granularity, year=year
         )
 
     @op_router.post("/viscosity/readings")
@@ -83,8 +84,16 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     ) -> dict[str, Any]:
         current_user = get_current_user(request)
         product = _require_product(connection, body.product_id)
-        # 입력 전 표본 기준으로 판정 (이상값이 자기 자신을 평균에 섞어 둔감해지는 것 방지)
-        verdict = viscosity_service.classify_value(connection, product, body.viscosity)
+        # 입력 전 '같은 연도' 표본 기준으로 판정 (연도별 기준 + 자기 자신 평균 오염 방지)
+        resolved_date = (
+            body.measured_date
+            or viscosity_service.parse_lot_date(body.lot_no)
+            or utc_now_text()[:10]
+        )
+        reading_year = int(resolved_date[:4]) if resolved_date[:4].isdigit() else None
+        verdict = viscosity_service.classify_value(
+            connection, product, body.viscosity, year=reading_year
+        )
         try:
             reading_id = viscosity_service.add_reading(
                 connection,
@@ -113,10 +122,13 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             details={"viscosity": body.viscosity, "lot_no": body.lot_no},
         )
         connection.commit()
-        result = viscosity_service.analyze_product(connection, product)
+        result = viscosity_service.analyze_product(
+            connection, product, year=reading_year
+        )
         result["new_reading"] = {
             "lot_no": body.lot_no,
             "viscosity": body.viscosity,
+            "year": reading_year,
             "status": verdict["status"],
             "side": verdict["side"],
             "reasons": verdict["reasons"],

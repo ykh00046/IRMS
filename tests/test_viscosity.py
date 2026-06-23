@@ -273,6 +273,57 @@ def test_period_mean_shift_alert():
     assert shifts and shifts[0]["type"] == "mean_shift_up"
 
 
+# ── 연도별 기준 ─────────────────────────────────────────────────
+def _add_dated(conn, pid, lot, v, d):
+    vs.add_reading(
+        conn, product_id=pid, lot_no=lot, viscosity=v, measured_date=d,
+        memo=None, recipe_material=None, material_lot=None,
+        created_by="t", created_at="2026-06-23T00:00:00Z",
+    )
+
+
+def test_available_years_desc():
+    conn = _make_db()
+    p = _add_product(conn, "N-TOP")
+    _add_dated(conn, p["id"], "a", 165, "2024-03-04")
+    _add_dated(conn, p["id"], "b", 144, "2025-01-09")
+    _add_dated(conn, p["id"], "c", 131, "2026-05-04")
+    assert vs.available_years(conn, p["id"]) == [2026, 2025, 2024]
+
+
+def test_year_filtered_baseline():
+    """같은 제품이라도 연도별로 중심선/표본이 분리된다."""
+    conn = _make_db()
+    p = _add_product(conn, "N-TOP")
+    # 2024 대역 ~165, 2026 대역 ~131
+    for i, v in enumerate([160, 165, 170]):
+        _add_dated(conn, p["id"], f"24{i}", v, f"2024-03-0{i+1}")
+    for i, v in enumerate([130, 131, 132]):
+        _add_dated(conn, p["id"], f"26{i}", v, f"2026-05-0{i+1}")
+
+    a24 = vs.analyze_product(conn, p, year=2024)
+    a26 = vs.analyze_product(conn, p, year=2026)
+    assert a24["stats"]["n"] == 3 and a24["stats"]["mean"] == 165.0
+    assert a26["stats"]["n"] == 3 and a26["stats"]["mean"] == 131.0
+    assert a24["year"] == 2024 and a26["year"] == 2026
+    # 전체(year=None)는 두 대역을 합쳐 σ가 매우 커진다
+    allp = vs.analyze_product(conn, p)
+    assert allp["stats"]["n"] == 6
+    assert allp["stats"]["std"] > a24["stats"]["std"]
+
+
+def test_year_granularity_buckets():
+    conn = _make_db()
+    p = _add_product(conn, "SBCT")
+    _add_dated(conn, p["id"], "a", 200, "2024-03-04")
+    _add_dated(conn, p["id"], "b", 210, "2024-05-04")
+    _add_dated(conn, p["id"], "c", 198, "2025-01-09")
+    periods = vs.analyze_product(conn, p, granularity="year")["periods"]
+    assert [x["period"] for x in periods] == ["2024", "2025"]
+    assert periods[0]["mean"] == 205.0
+    assert periods[1]["mean_delta"] == -7.0  # 198 - 205
+
+
 # ── 신규 입력 즉시 판정 ─────────────────────────────────────────
 def test_classify_value_for_new_input():
     """입력 전 표본 기준으로 신규 값을 판정 (등록 즉시 경고용)."""

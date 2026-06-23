@@ -18,7 +18,7 @@
   const isManager = !!$("visc-settings-btn");
   const state = {
     products: [], currentId: null, analysis: null,
-    chart: null, periodChart: null, granularity: "quarter",
+    chart: null, periodChart: null, granularity: "quarter", year: null,
   };
 
   const TREND_LABEL = {
@@ -47,6 +47,8 @@
       state.currentId = state.products[0].id;
     }
     if (state.currentId) {
+      const cur = state.products.find((p) => p.id === state.currentId);
+      state.year = cur ? cur.year : null;  // 기본: 제품의 최신 연도
       await loadProduct(state.currentId);
     }
   }
@@ -67,6 +69,7 @@
       }
       btn.addEventListener("click", () => {
         state.currentId = p.id;
+        state.year = p.year;  // 제품 전환 시 그 제품의 최신 연도로
         renderTabs();
         loadProduct(p.id);
       });
@@ -76,14 +79,33 @@
 
   async function loadProduct(productId) {
     state.analysis = await request(`/viscosity/products/${productId}`, {
-      query: { granularity: state.granularity },
+      query: { granularity: state.granularity, year: state.year },
     });
+    renderYearSelect();
     renderCards();
     renderTrendBanner();
     renderPeriodAlerts();
     renderChart();
     renderPeriods();
     renderReadings();
+  }
+
+  function renderYearSelect() {
+    const sel = $("visc-year");
+    if (!sel) return;
+    const years = (state.analysis && state.analysis.available_years) || [];
+    sel.innerHTML = "";
+    years.forEach((y) => {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = `${y}년`;
+      sel.appendChild(opt);
+    });
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "전체(연도비교)";
+    sel.appendChild(all);
+    sel.value = state.year === null || state.year === undefined ? "" : String(state.year);
   }
 
   function renderCards() {
@@ -423,7 +445,10 @@
     try {
       state.analysis = await request("/viscosity/readings", { method: "POST", body });
       $("visc-form").reset();
+      // 응답은 새 측정의 연도 기준으로 옴 → 화면도 그 연도로 맞춤
+      state.year = state.analysis.year;
       warnNewReading(value);
+      renderYearSelect();
       renderCards();
       renderTrendBanner();
       renderPeriodAlerts();
@@ -531,6 +556,15 @@
   function bind() {
     $("visc-form").addEventListener("submit", submitReading);
     $("visc-refresh").addEventListener("click", () => loadOverview());
+
+    const yearSel = $("visc-year");
+    if (yearSel) {
+      yearSel.addEventListener("change", () => {
+        const v = yearSel.value;
+        state.year = v === "" ? null : Number(v);
+        if (state.currentId) loadProduct(state.currentId);
+      });
+    }
 
     const granToggle = $("visc-gran-toggle");
     if (granToggle) {

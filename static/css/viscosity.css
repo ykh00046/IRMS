@@ -46,7 +46,10 @@
 .visc-toolbar-actions {
   display: flex;
   gap: 0.4rem;
+  align-items: center;
 }
+
+.visc-year-select { width: auto; min-width: 8rem; }
 
 .visc-cards .metric-card.visc-card-anomaly .metric-value { color: #dc2626; }
 .visc-cards .metric-card.visc-card-warn .metric-value { color: #d97706; }
