@@ -126,6 +126,13 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "current_user": get_current_user(request, required=False),
         })
 
+    @router.get("/blend", response_class=HTMLResponse)
+    def blend_page(request: Request) -> Response:
+        # 배합 실적(잉크 계량 재구축) — 무로그인 개방
+        return _render(templates, request, "blend.html", {
+            "current_user": get_current_user(request, required=False),
+        })
+
     @router.get("/insight", response_class=HTMLResponse)
     def insight_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "insight.html", "manager")
@@ -192,6 +199,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/viscosity.html", response_class=HTMLResponse)
     def viscosity_page_alias(request: Request) -> Response:
         return RedirectResponse(url="/viscosity", status_code=303)
+
+    @router.get("/blend.html", response_class=HTMLResponse)
+    def blend_page_alias(request: Request) -> Response:
+        return RedirectResponse(url="/blend", status_code=303)
 
     @router.get("/insight.html", response_class=HTMLResponse)
     def insight_page_alias(request: Request) -> Response:
