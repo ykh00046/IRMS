@@ -19,7 +19,14 @@ def _make_db() -> sqlite3.Connection:
         CREATE TABLE materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, unit_type TEXT, unit TEXT DEFAULT 'g',
-            category TEXT, is_active INTEGER DEFAULT 1
+            category TEXT, is_active INTEGER DEFAULT 1,
+            stock_quantity REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE material_stock_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
+            delta REAL NOT NULL, balance_after REAL NOT NULL, reason TEXT NOT NULL,
+            actor_id INTEGER, actor_name TEXT, recipe_id INTEGER, recipe_item_id INTEGER,
+            note TEXT, created_at TEXT NOT NULL
         );
         CREATE TABLE recipes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +173,37 @@ def test_list_blend_records_filters():
     ranged = bs.list_blend_records(conn, start_date="2026-06-24", end_date="2026-06-30")
     assert len(ranged) == 2
     assert len(bs.list_blend_records(conn, search="잉크A")) == 3
+
+
+# ── 재고 자동차감 + 복원 ────────────────────────────────────────
+def test_blend_stock_deduct_and_reverse():
+    conn = _make_db()
+    rid = _seed_recipe(conn, weights=(60, 40))
+    conn.execute("UPDATE materials SET stock_quantity = 1000")
+    mat_ids = [r["id"] for r in conn.execute("SELECT id FROM materials ORDER BY id").fetchall()]
+    record_id = bs.create_blend_record(
+        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100, scale=None, note=None,
+        details=[
+            {"material_id": mat_ids[0], "material_name": "원료1", "theory_amount": 60, "actual_amount": 62},
+            {"material_id": mat_ids[1], "material_name": "원료2", "theory_amount": 40, "actual_amount": 40},
+        ],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    n = bs.deduct_blend_stock(conn, record_id, actor_id=None, actor_name="현장", created_at="2026-06-24T00:00:00Z")
+    assert n == 2
+    stock = {r["id"]: r["stock_quantity"] for r in conn.execute("SELECT id, stock_quantity FROM materials").fetchall()}
+    assert stock[mat_ids[0]] == 938.0  # 1000 - 62
+    assert stock[mat_ids[1]] == 960.0  # 1000 - 40
+    # 멱등: 재호출해도 추가 차감 없음
+    assert bs.deduct_blend_stock(conn, record_id, actor_id=None, actor_name="현장", created_at="x") == 0
+    # 복원
+    restored = bs.reverse_blend_stock(conn, record_id)
+    assert restored == 2
+    stock2 = {r["id"]: r["stock_quantity"] for r in conn.execute("SELECT id, stock_quantity FROM materials").fetchall()}
+    assert stock2[mat_ids[0]] == 1000.0
+    assert stock2[mat_ids[1]] == 1000.0
+    assert conn.execute("SELECT COUNT(*) c FROM material_stock_logs").fetchone()["c"] == 0
 
 
 # ── 점도 ↔ 배합 연계 ────────────────────────────────────────────

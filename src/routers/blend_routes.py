@@ -155,7 +155,16 @@ def build_router() -> APIRouter:
             created_by=actor,
             created_at=utc_now_text(),
         )
+        deducted = 0
+        if body.deduct_stock:
+            deducted = blend_service.deduct_blend_stock(
+                connection, record_id,
+                actor_id=(current_user or {}).get("id"),
+                actor_name=actor,
+                created_at=utc_now_text(),
+            )
         record = blend_service.get_blend_record(connection, record_id)
+        record["stock_deducted"] = deducted
         write_audit_log(
             connection,
             action="blend_record_create",
@@ -267,6 +276,7 @@ def build_router() -> APIRouter:
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
         current_user = get_current_user(request, required=False)
+        restored = blend_service.reverse_blend_stock(connection, record_id)
         connection.execute(
             "UPDATE blend_records SET status = 'canceled', updated_at = ? WHERE id = ?",
             (utc_now_text(), record_id),
@@ -280,6 +290,6 @@ def build_router() -> APIRouter:
             target_label=record["product_lot"],
         )
         connection.commit()
-        return {"canceled": record_id}
+        return {"canceled": record_id, "stock_restored": restored}
 
     return router

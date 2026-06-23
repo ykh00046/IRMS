@@ -166,6 +166,7 @@ class BlendCreateBody(BaseModel):
     total_amount: float = Field(gt=0, le=10_000_000)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
+    deduct_stock: bool = True
     details: list[BlendDetailBody] = Field(default_factory=list)
 
 
