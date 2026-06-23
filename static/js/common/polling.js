@@ -54,7 +54,11 @@
     }
   }
 
-  if (document.getElementById("negative-stock-banner")) {
+  // 로그인 사용자가 있을 때만 폴링한다. 무로그인 개방 페이지(/blend, /viscosity)에서
+  // /materials/stock(인증 필요) 호출이 401 → 로그인 리다이렉트되는 것을 방지.
+  const shell = document.querySelector(".site-shell");
+  const loggedIn = !!(shell && shell.dataset && shell.dataset.currentUsername);
+  if (loggedIn && document.getElementById("negative-stock-banner")) {
     IRMS._negStockPollingStarted = true;
     pollNegativeStock();
     setInterval(pollNegativeStock, 60000);
