@@ -1,0 +1,207 @@
+{% extends "_base_app.html" %}
+
+{% block title %}점도 분석{% endblock %}
+{% block eyebrow %}합성 점도 관리{% endblock %}
+{% block heading %}점도 등록 · 추세 · 이상 분석{% endblock %}
+
+{% block styles %}
+    <link rel="stylesheet" href="/static/css/viscosity.css" />
+{% endblock %}
+
+{% block content %}
+        <section class="panel">
+          <div class="visc-toolbar">
+            <div class="visc-product-tabs" id="visc-product-tabs"></div>
+            <div class="visc-toolbar-actions">
+              {% if current_user.access_level != "operator" %}
+              <button id="visc-settings-btn" class="btn btn-sm" type="button">제품 설정</button>
+              <button id="visc-export-btn" class="btn btn-sm" type="button">CSV 내보내기</button>
+              {% endif %}
+              <button id="visc-refresh" class="btn btn-sm" type="button">새로고침</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-cards visc-cards">
+          <div class="metric-card">
+            <div class="metric-label">측정 건수</div>
+            <div class="metric-value" id="visc-card-count">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">최근 점도</div>
+            <div class="metric-value" id="visc-card-latest">-</div>
+            <div class="metric-unit" id="visc-card-latest-date">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">평균 ± σ</div>
+            <div class="metric-value" id="visc-card-mean">-</div>
+            <div class="metric-unit">중심선</div>
+          </div>
+          <div class="metric-card visc-card-anomaly">
+            <div class="metric-label">이상 건수</div>
+            <div class="metric-value" id="visc-card-anomaly">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card visc-card-warn">
+            <div class="metric-label">경고 건수</div>
+            <div class="metric-value" id="visc-card-warn">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+        </section>
+
+        <section id="visc-trend-banner" class="visc-trend-banner" hidden>
+          <span class="visc-trend-icon">📈</span>
+          <span id="visc-trend-text"></span>
+        </section>
+
+        <section id="visc-period-alert" class="visc-trend-banner visc-period-alert" hidden>
+          <span class="visc-trend-icon">🔔</span>
+          <span id="visc-period-alert-text"></span>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="panel dashboard-chart-panel visc-chart-panel">
+            <div class="visc-panel-head">
+              <h3 class="panel-title">점도 추세 (관리한계 표시)</h3>
+              <span class="muted small" id="visc-control-summary"></span>
+            </div>
+            <div class="chart-wrap"><canvas id="visc-chart"></canvas></div>
+            <p class="muted small">빨강 점선 = 관리한계(±kσ/spec), 주황 점선 = 경고선(2σ), 초록 = 중심선.</p>
+          </div>
+
+          <div class="panel visc-form-panel">
+            <h3 class="panel-title">점도 등록</h3>
+            <form id="visc-form" class="visc-form" autocomplete="off">
+              <label class="filter-label" for="visc-lot">LOT</label>
+              <input class="input" id="visc-lot" name="lot_no" placeholder="예: 26062201" required />
+
+              <label class="filter-label" for="visc-value">점도 (g)</label>
+              <input class="input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required />
+
+              <label class="filter-label" for="visc-date">측정일 (선택 · 비우면 LOT에서 추론)</label>
+              <input class="input" id="visc-date" name="measured_date" type="date" />
+
+              <label class="filter-label" for="visc-recipe">레시피/원료 (선택)</label>
+              <input class="input" id="visc-recipe" name="recipe_material" placeholder="예: PMA" />
+
+              <label class="filter-label" for="visc-matlot">원료 LOT (선택)</label>
+              <input class="input" id="visc-matlot" name="material_lot" placeholder="예: P2243ZK2" />
+
+              <label class="filter-label" for="visc-memo">메모 (선택)</label>
+              <textarea class="input" id="visc-memo" name="memo" rows="2" placeholder="점도 변동 원인 등"></textarea>
+
+              <p class="login-error" id="visc-form-error" hidden></p>
+              <p class="visc-form-result" id="visc-form-result" hidden></p>
+              <button class="btn accent" id="visc-submit" type="submit">등록</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="visc-panel-head">
+            <h3 class="panel-title">기간별 추세 · 분석</h3>
+            <div class="visc-gran-toggle" id="visc-gran-toggle">
+              <button class="btn btn-sm active" data-gran="quarter" type="button">분기</button>
+              <button class="btn btn-sm" data-gran="month" type="button">월</button>
+            </div>
+          </div>
+          <div class="chart-wrap visc-period-chart"><canvas id="visc-period-chart"></canvas></div>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>기간</th>
+                  <th class="num">건수</th>
+                  <th class="num">평균</th>
+                  <th class="num">전기대비</th>
+                  <th class="num">σ</th>
+                  <th class="num">최소</th>
+                  <th class="num">최대</th>
+                  <th class="num">이상</th>
+                  <th class="num">경고</th>
+                </tr>
+              </thead>
+              <tbody id="visc-period-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">측정 이력</h3>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>LOT</th>
+                  <th class="num">점도</th>
+                  <th>상태</th>
+                  <th>레시피/원료</th>
+                  <th>원료 LOT</th>
+                  <th>메모</th>
+                  {% if current_user.access_level != "operator" %}<th></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody id="visc-readings-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        {% if current_user.access_level != "operator" %}
+        <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal">
+            <div class="ss-modal-header">
+              <h3 id="visc-settings-title">제품 설정</h3>
+              <button id="visc-settings-close" class="btn" type="button">닫기</button>
+            </div>
+            <div class="ss-modal-body">
+              <form id="visc-settings-form" class="visc-form" autocomplete="off">
+                <label class="filter-label" for="visc-set-name">제품명</label>
+                <input class="input" id="visc-set-name" required />
+
+                <label class="filter-label" for="visc-set-target">목표 점도 (선택 · 비우면 평균을 중심선으로)</label>
+                <input class="input" id="visc-set-target" type="number" step="0.1" min="0" />
+
+                <div class="visc-form-row">
+                  <div>
+                    <label class="filter-label" for="visc-set-lower">관리 하한 (선택)</label>
+                    <input class="input" id="visc-set-lower" type="number" step="0.1" min="0" />
+                  </div>
+                  <div>
+                    <label class="filter-label" for="visc-set-upper">관리 상한 (선택)</label>
+                    <input class="input" id="visc-set-upper" type="number" step="0.1" min="0" />
+                  </div>
+                </div>
+
+                <label class="filter-label" for="visc-set-sigma">통계 관리계수 k (기본 3)</label>
+                <input class="input" id="visc-set-sigma" type="number" step="0.5" min="1" max="6" value="3" />
+
+                <label class="visc-checkbox">
+                  <input id="visc-set-active" type="checkbox" checked /> 사용
+                </label>
+
+                <p class="login-error" id="visc-settings-error" hidden></p>
+                <button class="btn accent" id="visc-settings-save" type="submit">저장</button>
+              </form>
+
+              <hr class="visc-divider" />
+              <h4 class="panel-title">새 제품 추가</h4>
+              <form id="visc-new-form" class="visc-form" autocomplete="off">
+                <label class="filter-label" for="visc-new-code">코드 (영문/숫자)</label>
+                <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._-]+" required />
+                <label class="filter-label" for="visc-new-name">제품명</label>
+                <input class="input" id="visc-new-name" required />
+                <p class="login-error" id="visc-new-error" hidden></p>
+                <button class="btn" id="visc-new-save" type="submit">제품 추가</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/vendor/chartjs/chart.umd.min.js"></script>
+    <script src="/static/js/viscosity.js"></script>
+{% endblock %}

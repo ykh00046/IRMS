@@ -1,0 +1,187 @@
+/* viscosity.css — 점도 등록·추세·이상 분석 화면 */
+
+.visc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.visc-product-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.visc-tab {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.visc-tab.active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: var(--accent, #2563eb);
+}
+
+.visc-tab .visc-tab-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.2rem;
+  text-align: center;
+}
+
+.visc-toolbar-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.visc-cards .metric-card.visc-card-anomaly .metric-value { color: #dc2626; }
+.visc-cards .metric-card.visc-card-warn .metric-value { color: #d97706; }
+
+.visc-trend-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 0.9rem;
+}
+
+.visc-trend-banner[hidden] { display: none; }
+
+/* 기간 알림 배너 (이상 급증/평균 이동) — 빨강 강조 */
+.visc-period-alert {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+/* 신규 입력 즉시 경고/이상 결과 라인 */
+.visc-form-result {
+  margin: 0.2rem 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.visc-form-result[hidden] { display: none; }
+.visc-form-result.anomaly { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.visc-form-result.warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+
+.visc-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.visc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.visc-form .input { margin-bottom: 0.4rem; }
+
+.visc-form-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.visc-form-row > div { flex: 1; }
+
+.visc-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin: 0.3rem 0;
+}
+
+.visc-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
+
+/* 기간별 분석 토글 + 전기대비 */
+.visc-gran-toggle { display: flex; gap: 0.3rem; }
+.visc-gran-toggle .btn.active {
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border-color: var(--accent, #2563eb);
+}
+.visc-period-chart { height: 220px; }
+.visc-delta-up { color: #dc2626; font-weight: 600; }
+.visc-delta-down { color: #2563eb; font-weight: 600; }
+.visc-delta-flat { color: var(--muted, #6b7280); }
+
+/* 측정 이력 테이블 상태 배지 */
+.visc-status {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.visc-status.normal { background: #dcfce7; color: #166534; }
+.visc-status.warn { background: #fef3c7; color: #92400e; }
+.visc-status.anomaly { background: #fee2e2; color: #991b1b; }
+
+.visc-table tr.row-anomaly { background: rgba(220, 38, 38, 0.06); }
+.visc-table tr.row-warn { background: rgba(217, 119, 6, 0.05); }
+
+.visc-del-btn {
+  border: none;
+  background: transparent;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+/* 모달 (페이지 자립용 — 공용 ss-modal 스타일 복제) */
+.ss-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.ss-modal-overlay[hidden] { display: none !important; }
+.ss-modal {
+  background: var(--bg, #fff);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: min(520px, 92vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+.ss-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.ss-modal-header h3 { margin: 0; font-size: 1rem; }
+.ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }

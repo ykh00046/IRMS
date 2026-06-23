@@ -96,6 +96,54 @@ class ReceiptCreateBody(BaseModel):
     lines: list[ReceiptLineBody] = Field(default_factory=list)
 
 
+class ViscosityReadingBody(BaseModel):
+    product_id: int = Field(gt=0)
+    lot_no: str = Field(min_length=1, max_length=100)
+    viscosity: float = Field(gt=0, le=100000)
+    measured_date: str | None = Field(default=None, max_length=10)
+    memo: str | None = Field(default=None, max_length=1000)
+    recipe_material: str | None = Field(default=None, max_length=200)
+    material_lot: str | None = Field(default=None, max_length=100)
+
+
+class ViscosityProductCreateBody(BaseModel):
+    code: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    name: str = Field(min_length=1, max_length=100)
+    target: float | None = Field(default=None, gt=0, le=100000)
+    lower_limit: float | None = Field(default=None, ge=0, le=100000)
+    upper_limit: float | None = Field(default=None, gt=0, le=100000)
+    sigma_k: float = Field(default=3, ge=1, le=6)
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> "ViscosityProductCreateBody":
+        if (
+            self.lower_limit is not None
+            and self.upper_limit is not None
+            and self.lower_limit >= self.upper_limit
+        ):
+            raise ValueError("lower_limit must be less than upper_limit")
+        return self
+
+
+class ViscosityProductUpdateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    target: float | None = Field(default=None, gt=0, le=100000)
+    lower_limit: float | None = Field(default=None, ge=0, le=100000)
+    upper_limit: float | None = Field(default=None, gt=0, le=100000)
+    sigma_k: float = Field(default=3, ge=1, le=6)
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> "ViscosityProductUpdateBody":
+        if (
+            self.lower_limit is not None
+            and self.upper_limit is not None
+            and self.lower_limit >= self.upper_limit
+        ):
+            raise ValueError("lower_limit must be less than upper_limit")
+        return self
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

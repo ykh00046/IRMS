@@ -24,6 +24,8 @@ _ALLOWED_TABLES = frozenset({
     "material_lots",
     "po_receipts",
     "po_receipt_items",
+    "viscosity_products",
+    "viscosity_readings",
 })
 
 
@@ -267,6 +269,59 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_po_receipt_items_receipt "
         "ON po_receipt_items(receipt_id)"
     )
+
+    # viscosity-analysis: 합성 점도 LOT별 측정 + 추세·이상 분석
+    # 제품군마다 정상 점도 대역이 완전히 다르므로(PB~49, SBCT~204, SCRA~90)
+    # 관리한계(spec)·sigma_k 는 제품(viscosity_products) 단위로 보관한다.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS viscosity_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            target REAL,
+            lower_limit REAL,
+            upper_limit REAL,
+            sigma_k REAL NOT NULL DEFAULT 3,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS viscosity_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL REFERENCES viscosity_products(id) ON DELETE CASCADE,
+            lot_no TEXT NOT NULL,
+            viscosity REAL NOT NULL,
+            measured_date TEXT,
+            memo TEXT,
+            recipe_material TEXT,
+            material_lot TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_visc_readings_product_date "
+        "ON viscosity_readings(product_id, measured_date)"
+    )
+    # 한 LOT = 한 점도. 중복 등록 차단 + 엑셀 재임포트 멱등성 보장.
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_visc_readings_product_lot "
+        "ON viscosity_readings(product_id, lot_no)"
+    )
+    if not has_migration(connection, "seed_viscosity_products"):
+        now = utc_now_text()
+        for code, name in (("PB", "PB"), ("SBCT", "SBCT"), ("SCRA", "SCRA")):
+            connection.execute(
+                "INSERT OR IGNORE INTO viscosity_products (code, name, sigma_k, is_active, created_at) "
+                "VALUES (?, ?, 3, 1, ?)",
+                (code, name, now),
+            )
+        record_migration(connection, "seed_viscosity_products")
 
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):

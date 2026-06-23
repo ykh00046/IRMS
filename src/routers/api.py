@@ -18,6 +18,7 @@ from . import (
     recipe_stats_routes,
     spreadsheet_routes,
     stock_routes,
+    viscosity_routes,
     weighing_routes,
 )
 
@@ -40,6 +41,7 @@ def build_router() -> APIRouter:
     order_router = order_routes.build_router()
     receiving_router = receiving_routes.build_router()
     weighing_router = weighing_routes.build_router()
+    viscosity_op_router, viscosity_mgr_router = viscosity_routes.build_router()
     ss_router = spreadsheet_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
 
@@ -64,6 +66,8 @@ def build_router() -> APIRouter:
     router.include_router(lot_mgr_router)           # manager LOT writes + export
     router.include_router(order_router)             # manager purchase orders + ERP
     router.include_router(receiving_router)         # manager PO receiving (LOT + stock)
+    router.include_router(viscosity_op_router)       # operator viscosity reads + register
+    router.include_router(viscosity_mgr_router)      # manager viscosity product settings
     router.include_router(admin_router)
     router.include_router(ss_router, prefix="/spreadsheet")
     router.include_router(dashboard_router)

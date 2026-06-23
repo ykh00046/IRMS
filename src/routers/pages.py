@@ -119,6 +119,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def management_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "management.html", "manager")
 
+    @router.get("/viscosity", response_class=HTMLResponse)
+    def viscosity_page(request: Request) -> Response:
+        return _protected_page_response(request, templates, "viscosity.html", "operator")
+
     @router.get("/insight", response_class=HTMLResponse)
     def insight_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "insight.html", "manager")
@@ -181,6 +185,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/management.html", response_class=HTMLResponse)
     def management_page_alias(request: Request) -> Response:
         return RedirectResponse(url="/management", status_code=303)
+
+    @router.get("/viscosity.html", response_class=HTMLResponse)
+    def viscosity_page_alias(request: Request) -> Response:
+        return RedirectResponse(url="/viscosity", status_code=303)
 
     @router.get("/insight.html", response_class=HTMLResponse)
     def insight_page_alias(request: Request) -> Response:
