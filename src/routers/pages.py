@@ -121,7 +121,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/viscosity", response_class=HTMLResponse)
     def viscosity_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "viscosity.html", "operator")
+        # 로그인 없이 누구나 진입 (사내 공용 단말 운영 편의)
+        return _render(templates, request, "viscosity.html", {
+            "current_user": get_current_user(request, required=False),
+        })
 
     @router.get("/insight", response_class=HTMLResponse)
     def insight_page(request: Request) -> Response:

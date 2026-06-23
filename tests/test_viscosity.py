@@ -352,7 +352,8 @@ def test_overview_aggregates_anomaly_count():
 
 
 # ── 라우트 인증 ─────────────────────────────────────────────────
-def test_viscosity_route_requires_auth():
+def test_viscosity_route_is_public():
+    """점도 조회는 로그인 없이 접근 가능(사내 공용 단말 운영 편의)."""
     import importlib
 
     import src.config as cfg
@@ -363,7 +364,25 @@ def test_viscosity_route_requires_auth():
     from fastapi.testclient import TestClient
 
     client = TestClient(mainmod.app)
-    assert client.get("/api/viscosity/overview").status_code in (401, 403)
-    assert client.post("/api/viscosity/readings", json={
-        "product_id": 1, "lot_no": "X", "viscosity": 1.0,
-    }).status_code in (401, 403)
+    res = client.get("/api/viscosity/overview")
+    assert res.status_code == 200
+    # 마이그레이션 시드 제품(PB/SBCT/SCRA)이 비로그인으로도 보인다
+    codes = {it["code"] for it in res.json()["items"]}
+    assert {"PB", "SBCT", "SCRA"} <= codes
+
+
+def test_viscosity_page_open_without_login():
+    """/viscosity 페이지가 로그인 리다이렉트 없이 200 으로 열린다."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    res = client.get("/viscosity")
+    assert res.status_code == 200
+    assert "visc-chart" in res.text

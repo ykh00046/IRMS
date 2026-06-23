@@ -15,10 +15,8 @@
             <div class="visc-toolbar-actions">
               <label class="filter-label" for="visc-year">연도</label>
               <select class="input visc-year-select" id="visc-year"></select>
-              {% if current_user.access_level != "operator" %}
               <button id="visc-settings-btn" class="btn btn-sm" type="button">제품 설정</button>
               <button id="visc-export-btn" class="btn btn-sm" type="button">CSV 내보내기</button>
-              {% endif %}
               <button id="visc-refresh" class="btn btn-sm" type="button">새로고침</button>
             </div>
           </div>
@@ -143,7 +141,7 @@
                   <th>레시피/원료</th>
                   <th>원료 LOT</th>
                   <th>메모</th>
-                  {% if current_user.access_level != "operator" %}<th></th>{% endif %}
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="visc-readings-body"></tbody>
@@ -151,7 +149,6 @@
           </div>
         </section>
 
-        {% if current_user.access_level != "operator" %}
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal">
             <div class="ss-modal-header">
@@ -201,7 +198,6 @@
             </div>
           </div>
         </div>
-        {% endif %}
 {% endblock %}
 
 {% block scripts %}

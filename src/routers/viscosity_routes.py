@@ -1,21 +1,21 @@
 """합성 점도 등록·추세·이상 분석 라우트.
 
-권한 분리:
-- 등록·조회 : operator (작업자) 이상. 현장에서 LOT별 점도를 직접 입력.
-- 제품 설정 : manager (관리자). 관리 상/하한·sigma_k·제품 추가/수정, 측정 삭제, export.
+접근: 로그인 없이 누구나 열람·등록·설정 가능(사내 공용 단말 운영 편의). 등록/변경
+시 로그인 사용자가 있으면 그 이름으로, 없으면 '현장' 으로 created_by/audit 에 기록.
+(op_router/mgr_router 둘 다 무인증 — 코드 구조 유지를 위해 두 라우터로 분리만 유지)
 
 Plan:   docs/01-plan/features/viscosity-analysis.plan.md
 Design: docs/02-design/features/viscosity-analysis.design.md
 
-Endpoints:
-    GET    /viscosity/overview                  (operator)
-    GET    /viscosity/products                  (operator)
-    GET    /viscosity/products/{id}             (operator)  분석 포함
-    POST   /viscosity/readings                  (operator)
-    POST   /viscosity/products                  (manager)
-    PATCH  /viscosity/products/{id}             (manager)
-    DELETE /viscosity/readings/{id}             (manager)
-    GET    /viscosity/products/{id}/export      (manager)  CSV
+Endpoints (모두 무인증):
+    GET    /viscosity/overview
+    GET    /viscosity/products
+    GET    /viscosity/products/{id}             분석 포함
+    POST   /viscosity/readings
+    POST   /viscosity/products
+    PATCH  /viscosity/products/{id}
+    DELETE /viscosity/readings/{id}
+    GET    /viscosity/products/{id}/export      CSV
 """
 
 import csv
@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth import get_current_user, require_access_level
+from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
 from ..services import viscosity_service
 from .models import (
@@ -46,10 +46,12 @@ def _require_product(connection: sqlite3.Connection, product_id: int) -> dict[st
 
 
 def build_router() -> tuple[APIRouter, APIRouter]:
-    op_router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
-    mgr_router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
+    # 점도 화면은 로그인 없이 누구나 열람·등록·설정 가능(사내 공용 단말 운영 편의).
+    # 등록/변경 시 로그인 사용자가 있으면 그 이름으로, 없으면 '현장' 으로 기록.
+    op_router = APIRouter()
+    mgr_router = APIRouter()
 
-    # ---- operator: 조회 + 등록 -------------------------------------------
+    # ---- 조회 + 등록 -----------------------------------------------------
     @op_router.get("/viscosity/overview")
     def viscosity_overview(
         connection: sqlite3.Connection = Depends(get_db),
@@ -82,7 +84,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
+        current_user = get_current_user(request, required=False)
         product = _require_product(connection, body.product_id)
         # 입력 전 '같은 연도' 표본 기준으로 판정 (연도별 기준 + 자기 자신 평균 오염 방지)
         resolved_date = (
@@ -104,7 +106,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 memo=body.memo,
                 recipe_material=body.recipe_material,
                 material_lot=body.material_lot,
-                created_by=actor_name(current_user),
+                created_by=actor_name(current_user) if current_user else "현장",
                 created_at=utc_now_text(),
             )
         except sqlite3.IntegrityError:
@@ -142,7 +144,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
+        current_user = get_current_user(request, required=False)
         if viscosity_service.get_product_by_code(connection, body.code):
             raise HTTPException(status_code=409, detail=f"이미 존재하는 코드입니다: {body.code}")
         cur = connection.execute(
@@ -181,7 +183,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
+        current_user = get_current_user(request, required=False)
         product = _require_product(connection, product_id)
         connection.execute(
             """
@@ -224,7 +226,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
+        current_user = get_current_user(request, required=False)
         row = connection.execute(
             "SELECT id, product_id, lot_no FROM viscosity_readings WHERE id = ?",
             (reading_id,),
