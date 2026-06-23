@@ -51,6 +51,14 @@ def build_router() -> APIRouter:
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
 
+    @router.get("/blend/material-lots")
+    def blend_material_lots(
+        material_ids: str = "",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        ids = [int(x) for x in material_ids.split(",") if x.strip().isdigit()]
+        return {"map": blend_service.list_material_lots_map(connection, ids)}
+
     @router.get("/blend/records")
     def blend_records(
         start_date: str | None = None,

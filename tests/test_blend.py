@@ -54,6 +54,12 @@ def _make_db() -> sqlite3.Connection:
             ratio REAL, theory_amount REAL, actual_amount REAL,
             sequence_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
         );
+        CREATE TABLE material_lots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
+            lot_no TEXT, received_quantity REAL, remaining_quantity REAL,
+            received_at TEXT, expiry_date TEXT, status TEXT DEFAULT 'active',
+            note TEXT, actor_id INTEGER, actor_name TEXT, created_at TEXT
+        );
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,
             target REAL, lower_limit REAL, upper_limit REAL, sigma_k REAL DEFAULT 3,
@@ -235,6 +241,21 @@ def test_viscosity_linked_to_blend():
     assert linked[0]["product_code"] == "잉크A"
     # 연계 안 된 다른 배합엔 안 보임
     assert vs.list_readings_for_blend(conn, 999) == []
+
+
+def test_material_lots_map():
+    conn = _make_db()
+    _seed_recipe(conn, weights=(60, 40))
+    mids = [r["id"] for r in conn.execute("SELECT id FROM materials ORDER BY id").fetchall()]
+    conn.execute(
+        "INSERT INTO material_lots (material_id, lot_no, received_quantity, remaining_quantity, status, expiry_date, created_at) "
+        "VALUES (?, 'A-001', 100, 50, 'active', '2026-12-31', 'x')", (mids[0],))
+    conn.execute(
+        "INSERT INTO material_lots (material_id, lot_no, received_quantity, remaining_quantity, status, created_at) "
+        "VALUES (?, 'A-OLD', 100, 0, 'active', 'x')", (mids[0],))  # 잔량0 → 제외
+    m = bs.list_material_lots_map(conn, mids)
+    assert [l["lot_no"] for l in m[mids[0]]] == ["A-001"]
+    assert m[mids[1]] == []
 
 
 # ── 라우트 (무로그인 개방) ──────────────────────────────────────

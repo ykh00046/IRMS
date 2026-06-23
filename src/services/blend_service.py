@@ -365,6 +365,35 @@ def list_blend_records(
     return [_serialize_record(r) for r in rows]
 
 
+def list_material_lots_map(
+    connection: sqlite3.Connection, material_ids: list[int]
+) -> dict[int, list[dict[str, Any]]]:
+    """자재별 보유 LOT 추천 목록 (active·잔량>0). 원본 OUT.xlsx 조회의 웹 대체."""
+    result: dict[int, list[dict[str, Any]]] = {mid: [] for mid in material_ids}
+    if not material_ids:
+        return result
+    placeholders = ",".join("?" for _ in material_ids)
+    rows = connection.execute(
+        f"""
+        SELECT material_id, lot_no, remaining_quantity, expiry_date
+        FROM material_lots
+        WHERE material_id IN ({placeholders})
+          AND status = 'active' AND remaining_quantity > 0 AND lot_no IS NOT NULL
+        ORDER BY
+            CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
+            expiry_date ASC, id ASC
+        """,
+        material_ids,
+    ).fetchall()
+    for r in rows:
+        result.setdefault(int(r["material_id"]), []).append({
+            "lot_no": r["lot_no"],
+            "remaining_quantity": float(r["remaining_quantity"]),
+            "expiry_date": r["expiry_date"],
+        })
+    return result
+
+
 def list_workers(connection: sqlite3.Connection) -> list[str]:
     rows = connection.execute(
         "SELECT DISTINCT worker FROM blend_records WHERE worker IS NOT NULL ORDER BY worker"

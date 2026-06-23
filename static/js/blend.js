@@ -13,7 +13,7 @@
   const notify = IRMS.notify || function (m) { console.log(m); };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [] };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {} };
 
   function fmt(v, d) {
     if (v === null || v === undefined || v === "") return "-";
@@ -68,6 +68,15 @@
     state.current = data;
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
     if (!(totalRaw > 0)) $("blend-total").value = data.total_amount;
+    // 자재별 보유 LOT 추천 로드 (있으면 datalist 제공)
+    state.lotMap = {};
+    const ids = state.items.map((it) => it.material_id).filter(Boolean);
+    if (ids.length) {
+      try {
+        const res = await request("/blend/material-lots", { query: { material_ids: ids.join(",") } });
+        state.lotMap = res.map || {};
+      } catch (_e) { /* optional */ }
+    }
     renderMatRows();
     updateLotPreview();
   }
@@ -95,7 +104,7 @@
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
         `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${it.actual_amount}" /></td>` +
-        `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" /></td>` +
+        `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" list="lots-${idx}" />${lotDatalist(idx, it)}</td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
@@ -111,6 +120,15 @@
       el.addEventListener("input", () => { state.items[Number(el.dataset.idx)].material_lot = el.value; })
     );
     updateTotals();
+  }
+
+  function lotDatalist(idx, item) {
+    const lots = (state.lotMap && state.lotMap[item.material_id]) || [];
+    if (!lots.length) return "";
+    const opts = lots.map((l) =>
+      `<option value="${l.lot_no}">잔량 ${fmt(l.remaining_quantity)}${l.expiry_date ? " · ~" + l.expiry_date : ""}</option>`
+    ).join("");
+    return `<datalist id="lots-${idx}">${opts}</datalist>`;
   }
 
   function updateRowVar(i) {
