@@ -301,6 +301,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         """
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note,
+               reviewed_by, reviewed_at, approved_by, approved_at,
                created_by, created_at, updated_at
         FROM blend_records WHERE id = ?
         """,
@@ -389,6 +390,8 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "note": row["note"],
         "created_at": row["created_at"] if "created_at" in keys else None,
     }
+    for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at"):
+        out[f] = row[f] if f in keys else None
     return out
 
 

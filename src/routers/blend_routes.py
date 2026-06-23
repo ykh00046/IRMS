@@ -26,7 +26,7 @@ from fastapi.responses import StreamingResponse
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
 from ..services import blend_service, viscosity_service
-from .models import BlendCreateBody, BlendViscosityBody, actor_name
+from .models import BlendApprovalBody, BlendCreateBody, BlendViscosityBody, actor_name
 
 
 def build_router() -> APIRouter:
@@ -181,6 +181,37 @@ def build_router() -> APIRouter:
         connection.commit()
         return record
 
+    @router.post("/blend/records/{record_id}/approve")
+    def blend_approve(
+        record_id: int,
+        body: BlendApprovalBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        current_user = get_current_user(request, required=False)
+        now = utc_now_text()
+        col = "reviewed" if body.role == "review" else "approved"
+        connection.execute(
+            f"UPDATE blend_records SET {col}_by = ?, {col}_at = ?, updated_at = ? WHERE id = ?",
+            (body.name.strip(), now, now, record_id),
+        )
+        write_audit_log(
+            connection,
+            action=f"blend_record_{body.role}",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=record["product_lot"],
+            details={"name": body.name},
+        )
+        connection.commit()
+        result = blend_service.get_blend_record(connection, record_id)
+        result["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
+        return result
+
     @router.get("/blend/records/{record_id}/export")
     def blend_export(
         record_id: int,
@@ -247,8 +278,22 @@ def build_router() -> APIRouter:
         widths = [5, 22, 16, 10, 12, 12, 10]
         for col, w in enumerate(widths, start=1):
             ws.column_dimensions[chr(64 + col)].width = w
+        # 결재(작성/검토/승인)
+        sign_row = r + 2
+        ws.cell(row=sign_row, column=1, value="결재").font = bold
+        signs = [
+            ("작성", record.get("created_by"), record.get("created_at")),
+            ("검토", record.get("reviewed_by"), record.get("reviewed_at")),
+            ("승인", record.get("approved_by"), record.get("approved_at")),
+        ]
+        for i, (label, name, at) in enumerate(signs):
+            base_col = 2 + i * 2
+            ws.cell(row=sign_row, column=base_col, value=label).font = bold
+            at_txt = (at or "")[:16].replace("T", " ")
+            ws.cell(row=sign_row, column=base_col + 1,
+                    value=f"{name or ''} {at_txt}".strip())
         if record.get("note"):
-            ws.cell(row=r + 2, column=1, value=f"비고: {record['note']}")
+            ws.cell(row=sign_row + 2, column=1, value=f"비고: {record['note']}")
 
         buf = io.BytesIO()
         wb.save(buf)

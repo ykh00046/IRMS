@@ -83,6 +83,20 @@
 .ss-modal-header h3 { margin: 0; font-size: 1rem; }
 .ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
+/* 결재(작성/검토/승인) */
+.dhr-approvals {
+  display: flex; gap: 0.6rem; margin-top: 1rem;
+}
+.dhr-sign {
+  flex: 1; border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
+  min-height: 64px; padding: 0.4rem 0.6rem; text-align: center;
+}
+.dhr-sign-role { font-size: 0.75rem; color: var(--muted, #6b7280); }
+.dhr-sign-name { font-weight: 700; font-size: 1.05rem; margin-top: 0.4rem; }
+.dhr-sign-at { font-size: 0.7rem; color: var(--muted, #6b7280); margin-top: 0.2rem; }
+.blend-approve-bar { display: flex; gap: 0.4rem; margin-top: 0.6rem; align-items: center; }
+.blend-approve-bar .input { margin: 0; max-width: 12rem; }
+
 /* 점도 연계 블록 */
 .blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: 0.8rem; }
 .blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }

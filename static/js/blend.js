@@ -252,9 +252,47 @@
         <tfoot><tr><td colspan="3">합계</td><td class="num">${fmt(v.theory_total)}</td><td class="num">${fmt(v.actual_total)}</td><td class="num">${(v.net_variance > 0 ? "+" : "") + fmt(v.net_variance, 2)}</td><td></td></tr></tfoot>
       </table></div>
       ${rec.note ? `<p class="dhr-note">비고: ${rec.note}</p>` : ""}
+      ${renderApprovalSection(rec)}
       ${renderViscositySection(rec)}`;
+    bindApprovalSection(id);
     bindViscositySection(id);
     $("blend-detail-modal").hidden = false;
+  }
+
+  function approvalCell(label, name, at) {
+    return `<div class="dhr-sign">
+      <div class="dhr-sign-role">${label}</div>
+      <div class="dhr-sign-name">${name || ""}</div>
+      <div class="dhr-sign-at">${at ? at.slice(0, 16).replace("T", " ") : ""}</div>
+    </div>`;
+  }
+
+  function renderApprovalSection(rec) {
+    return `<div class="dhr-approvals">
+        ${approvalCell("작성", rec.created_by, rec.created_at)}
+        ${approvalCell("검토", rec.reviewed_by, rec.reviewed_at)}
+        ${approvalCell("승인", rec.approved_by, rec.approved_at)}
+      </div>
+      <div class="blend-approve-bar no-print">
+        <input class="input" id="blend-approve-name" placeholder="결재자 이름" />
+        <button class="btn btn-sm" id="blend-review-btn" type="button">검토 기록</button>
+        <button class="btn btn-sm accent" id="blend-approve-btn" type="button">승인 기록</button>
+      </div>`;
+  }
+
+  function bindApprovalSection(recordId) {
+    const doApprove = async (role) => {
+      const name = ($("blend-approve-name").value || "").trim();
+      if (!name) { notify("결재자 이름을 입력하세요.", "warn"); return; }
+      try {
+        await request(`/blend/records/${recordId}/approve`, { method: "POST", body: { role, name } });
+        notify(role === "review" ? "검토 기록됨" : "승인 기록됨", "success");
+        openDetail(recordId);
+      } catch (e) { notify(e.message, "error"); }
+    };
+    const rb = $("blend-review-btn"), ab = $("blend-approve-btn");
+    if (rb) rb.addEventListener("click", () => doApprove("review"));
+    if (ab) ab.addEventListener("click", () => doApprove("approve"));
   }
 
   function renderViscositySection(rec) {

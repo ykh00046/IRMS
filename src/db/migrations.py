@@ -382,6 +382,12 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_blend_details_record "
         "ON blend_details(blend_record_id, sequence_order)"
     )
+    # blend 결재 기록 (작성/검토/승인 — 이름+시각). 원본의 서명 이미지 위조 대체.
+    ensure_column(connection, "blend_records", "reviewed_by", "TEXT")
+    ensure_column(connection, "blend_records", "reviewed_at", "TEXT")
+    ensure_column(connection, "blend_records", "approved_by", "TEXT")
+    ensure_column(connection, "blend_records", "approved_at", "TEXT")
+
     # 점도 ↔ 배합 기록 연계 (선택). lot_no/material_lot 매칭과 별개로 직접 FK.
     ensure_column(connection, "viscosity_readings", "blend_record_id", "INTEGER")
     connection.execute(

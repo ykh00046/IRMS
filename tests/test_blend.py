@@ -44,6 +44,7 @@ def _make_db() -> sqlite3.Connection:
             ink_name TEXT, position TEXT, worker TEXT NOT NULL, work_date TEXT NOT NULL,
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
             status TEXT NOT NULL DEFAULT 'completed', note TEXT,
+            reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
         );
         CREATE TABLE blend_details (

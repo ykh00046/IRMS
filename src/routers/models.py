@@ -176,6 +176,11 @@ class BlendViscosityBody(BaseModel):
     memo: str | None = Field(default=None, max_length=1000)
 
 
+class BlendApprovalBody(BaseModel):
+    role: Literal["review", "approve"]
+    name: str = Field(min_length=1, max_length=100)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)
