@@ -492,7 +492,7 @@
     renderTabs();
   }
 
-  // ---- 관리자: 제품 설정 모달 ----------------------------------------
+  // ---- 관리자: 반제품 설정 모달 ----------------------------------------
   function currentProduct() {
     return state.analysis ? state.analysis.product : null;
   }
@@ -500,7 +500,7 @@
   function openSettings() {
     const p = currentProduct();
     if (!p) return;
-    $("visc-settings-title").textContent = `제품 설정 · ${p.code}`;
+    $("visc-settings-title").textContent = `반제품 설정 · ${p.code}`;
     $("visc-set-name").value = p.name;
     $("visc-set-target").value = p.target ?? "";
     $("visc-set-lower").value = p.lower_limit ?? "";
@@ -535,7 +535,7 @@
     try {
       await request(`/viscosity/products/${state.currentId}`, { method: "PATCH", body });
       $("visc-settings-modal").hidden = true;
-      notify("제품 설정이 저장되었습니다.", "success");
+      notify("반제품 설정이 저장되었습니다.", "success");
       await loadOverview();
     } catch (e) {
       err.textContent = e.message;
@@ -554,7 +554,7 @@
     try {
       const created = await request("/viscosity/products", { method: "POST", body });
       $("visc-new-form").reset();
-      notify(`제품 추가됨: ${created.code}`, "success");
+      notify(`반제품 추가됨: ${created.code}`, "success");
       state.currentId = created.id;
       $("visc-settings-modal").hidden = true;
       await loadOverview();

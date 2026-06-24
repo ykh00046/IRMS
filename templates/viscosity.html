@@ -18,7 +18,7 @@
             <div class="visc-toolbar-actions">
               <label class="filter-label" for="visc-year">연도</label>
               <select class="input visc-year-select" id="visc-year"></select>
-              <button id="visc-settings-btn" class="btn btn-sm" type="button">제품 설정</button>
+              <button id="visc-settings-btn" class="btn btn-sm" type="button">반제품 설정</button>
               <button id="visc-export-btn" class="btn btn-sm" type="button">CSV 내보내기</button>
               <button id="visc-refresh" class="btn btn-sm" type="button">새로고침</button>
             </div>
@@ -157,12 +157,12 @@
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal">
             <div class="ss-modal-header">
-              <h3 id="visc-settings-title">제품 설정</h3>
+              <h3 id="visc-settings-title">반제품 설정</h3>
               <button id="visc-settings-close" class="btn" type="button">닫기</button>
             </div>
             <div class="ss-modal-body">
               <form id="visc-settings-form" class="visc-form" autocomplete="off">
-                <label class="filter-label" for="visc-set-name">제품명</label>
+                <label class="filter-label" for="visc-set-name">반제품명</label>
                 <input class="input" id="visc-set-name" required />
 
                 <label class="filter-label" for="visc-set-target">목표 점도 (선택 · 비우면 평균을 중심선으로)</label>
@@ -203,14 +203,14 @@
               </form>
 
               <hr class="visc-divider" />
-              <h4 class="panel-title">새 제품 추가</h4>
+              <h4 class="panel-title">새 반제품 추가</h4>
               <form id="visc-new-form" class="visc-form" autocomplete="off">
                 <label class="filter-label" for="visc-new-code">코드 (영문/숫자)</label>
                 <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._-]+" required />
-                <label class="filter-label" for="visc-new-name">제품명</label>
+                <label class="filter-label" for="visc-new-name">반제품명</label>
                 <input class="input" id="visc-new-name" required />
                 <p class="login-error" id="visc-new-error" hidden></p>
-                <button class="btn" id="visc-new-save" type="submit">제품 추가</button>
+                <button class="btn" id="visc-new-save" type="submit">반제품 추가</button>
               </form>
             </div>
           </div>
