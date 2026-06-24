@@ -162,10 +162,9 @@ def build_router() -> APIRouter:
             if update_cursor.rowcount == 0:
                 raise HTTPException(status_code=409, detail="STEP_ALREADY_COMPLETED")
 
-            stock_info = None
             item_weight = body.actual_weight if body.actual_weight is not None else item_row["value_weight"]
             if item_weight is not None:
-                stock_info = stock_service.deduct_for_measurement(
+                stock_service.deduct_for_measurement(
                     connection,
                     material_id=int(item_row["material_id"]),
                     weight=float(item_weight),

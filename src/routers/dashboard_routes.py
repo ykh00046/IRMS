@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
-from ..db import get_connection, row_to_dict
+from ..db import get_connection
 from ..services import forecast_service, lot_service, variance_service
 
 
