@@ -419,6 +419,21 @@
 
   createForm?.addEventListener("submit", handleCreate);
   refreshBtn?.addEventListener("click", loadUsers);
+
+  const deactivateOthersBtn = document.getElementById("deactivate-others-btn");
+  deactivateOthersBtn?.addEventListener("click", async () => {
+    if (!window.confirm(
+      "admin 을 제외한 모든 로그인 계정을 비활성화할까요?\n" +
+      "(작업자는 이름 입력으로 사용합니다. 필요 시 사용자 목록에서 되돌릴 수 있습니다.)"
+    )) return;
+    try {
+      const result = await IRMS._core.request("/admin/deactivate-others", { method: "POST", body: {} });
+      IRMS.notify(`${result.deactivated}개 계정을 비활성화했습니다.`, "success");
+      loadUsers();
+    } catch (error) {
+      IRMS.notify(`비활성화 실패: ${error.message}`, "error");
+    }
+  });
   auditRefreshBtn?.addEventListener("click", loadAuditLogs);
   auditActionFilter?.addEventListener("change", loadAuditLogs);
   auditLimitFilter?.addEventListener("change", loadAuditLogs);

@@ -108,7 +108,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "current_user": current_user,
             "next_url": next_url,
             "show_demo_credentials": SEED_DEMO_DATA,
-            "managers": list_users_by_access_levels("manager"),
+            "managers": list_users_by_access_levels("manager", "admin"),
         })
 
     @router.get("/weighing", response_class=HTMLResponse)

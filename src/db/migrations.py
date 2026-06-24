@@ -423,6 +423,27 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             )
         record_migration(connection, "prefill_workers_from_users")
 
+    # auth-simplify: 단일 관리자 계정(admin/admin) 보장. 비번은 관리 화면에서 변경 가능.
+    # 기존 계정 비활성화는 자동이 아니라 admin 이 화면에서 1회 수행(되돌릴 수 있게).
+    if not has_migration(connection, "ensure_single_admin"):
+        from ..security import hash_password
+        existing = connection.execute(
+            "SELECT id FROM users WHERE username = 'admin'"
+        ).fetchone()
+        if existing:
+            connection.execute(
+                "UPDATE users SET role = 'admin', access_level = 'admin', is_active = 1 "
+                "WHERE username = 'admin'"
+            )
+        else:
+            connection.execute(
+                "INSERT INTO users (username, password_hash, display_name, role, "
+                "access_level, is_active, created_at) "
+                "VALUES ('admin', ?, '관리자', 'admin', 'admin', 1, ?)",
+                (hash_password("admin"), utc_now_text()),
+            )
+        record_migration(connection, "ensure_single_admin")
+
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):
         connection.execute(

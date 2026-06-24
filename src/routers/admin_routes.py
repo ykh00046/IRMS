@@ -49,6 +49,29 @@ def build_router() -> APIRouter:
         }
         return {"items": items, "summary": summary, "total": len(items)}
 
+    @router.post("/admin/deactivate-others")
+    def admin_deactivate_others(request: Request) -> dict[str, Any]:
+        """admin 을 제외한 모든 로그인 계정을 비활성화(작업자는 이름 입력으로 운영).
+
+        삭제가 아니라 비활성화이므로 필요 시 사용자 관리에서 되돌릴 수 있다.
+        """
+        current_user = get_current_user(request)
+        with get_connection() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET is_active = 0, session_token = NULL "
+                "WHERE username != 'admin' AND is_active = 1"
+            )
+            count = cursor.rowcount
+            write_audit_log(
+                connection,
+                action="admin_deactivate_others",
+                actor=current_user,
+                target_type="users",
+                details={"count": count},
+            )
+            connection.commit()
+        return {"deactivated": count}
+
     @router.get("/admin/audit-logs")
     def admin_list_audit_logs(
         limit: int = Query(default=100, ge=1, le=500),
