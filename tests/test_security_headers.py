@@ -9,6 +9,9 @@ so the protected prefix returns 403).
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 
@@ -38,6 +41,8 @@ def _reload_app(monkeypatch, env_value: str | None):
     monkeypatch.setenv("IRMS_REQUIRE_SESSION_SECRET", "false")
     monkeypatch.setenv("IRMS_SESSION_SECRET", "0" * 64)
     monkeypatch.setenv("IRMS_SEED_DEMO_DATA", "false")
+    if env_value == "production":
+        monkeypatch.setenv("IRMS_TRAY_API_TOKEN", "test-tray-token")
 
     import src.config as cfg
     import src.main as mainmod
@@ -126,20 +131,27 @@ def test_attendance_alerts_require_tray_token_even_from_loopback(monkeypatch):
     assert response.status_code == 404
 
 
-def test_attendance_alerts_do_not_require_tray_token_by_default(monkeypatch):
-    monkeypatch.setenv("IRMS_ENV", "production")
-    monkeypatch.setenv("IRMS_REQUIRE_SESSION_SECRET", "false")
-    monkeypatch.setenv("IRMS_SESSION_SECRET", "0" * 64)
-    monkeypatch.setenv("IRMS_SEED_DEMO_DATA", "false")
-    monkeypatch.delenv("IRMS_REQUIRE_TRAY_API_TOKEN", raising=False)
-    monkeypatch.delenv("IRMS_TRAY_API_TOKEN", raising=False)
+def test_production_requires_tray_token_by_default():
+    env = os.environ.copy()
+    env.update(
+        {
+            "IRMS_ENV": "production",
+            "IRMS_REQUIRE_SESSION_SECRET": "false",
+            "IRMS_SESSION_SECRET": "0" * 64,
+            "IRMS_SEED_DEMO_DATA": "false",
+        }
+    )
+    env.pop("IRMS_REQUIRE_TRAY_API_TOKEN", None)
+    env.pop("IRMS_TRAY_API_TOKEN", None)
 
-    import src.config as cfg
-    import src.main as mainmod
+    result = subprocess.run(
+        [sys.executable, "-c", "import src.config"],
+        cwd=os.getcwd(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    importlib.reload(cfg)
-    importlib.reload(mainmod)
-
-    client = TestClient(mainmod.app, client=("127.0.0.1", 50000))
-    response = client.get("/api/public/attendance-alerts/anything")
-    assert response.status_code == 404
+    assert result.returncode != 0
+    assert "IRMS_TRAY_API_TOKEN must be set" in result.stderr

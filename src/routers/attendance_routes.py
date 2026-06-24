@@ -2,8 +2,8 @@
 
 All attendance endpoints share a single router under ``/api/attendance``:
 
-- ``POST /login``            - Sa-beon + password. Auto-creates the account
-                               on first sight if sa-beon exists in Excel.
+- ``POST /login``            - Sa-beon + manager-issued password. Accounts are
+                               provisioned through the admin reset endpoint.
 - ``POST /change-password``  - Current + new password.
 - ``POST /logout``           - Clear the attendance session.
 - ``GET  /me?month=``        - Logged-in employee's own attendance.
