@@ -106,45 +106,8 @@
 
 {% endblock %}
 
-{% block chat_float %}
-    <aside class="panel chat-panel chat-float">
-      <div class="chat-head">
-        <div>
-          <span class="kicker">현황 대화</span>
-          <h3 class="panel-title">현황 메시지</h3>
-        </div>
-        <span id="status-chat-room-meta" class="chat-room-meta">Room</span>
-      </div>
-      <div class="chat-tabs" id="status-chat-room-tabs"></div>
-      <div class="chat-stream" id="status-chat-messages"></div>
-      <form id="status-chat-form" class="chat-form">
-        <div id="status-chat-stage-group" class="form-group">
-          <label class="filter-label" for="status-chat-stage">단계</label>
-          <select id="status-chat-stage" class="select">
-            <option value="registered">등록</option>
-            <option value="in_progress">진행중</option>
-            <option value="completed">완료</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="filter-label" for="status-chat-input">메시지</label>
-          <textarea
-            id="status-chat-input"
-            class="textarea chat-textarea"
-            rows="2"
-            maxlength="1000"
-            placeholder="현황이나 요청 사항을 남기세요. (Shift+Enter: 줄바꿈)"
-          ></textarea>
-        </div>
-        <div class="button-row chat-actions">
-          <button id="status-chat-send" type="submit" class="btn accent">메시지 등록</button>
-        </div>
-      </form>
-    </aside>
-{% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/chat.js"></script>
     <script src="/static/js/status.js"></script>
     <script>
       (() => {

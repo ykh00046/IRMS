@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from src.routers.models import ChatMessageCreateRequest
 import tray_client.src.main as tray_main
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
 from tray_client.src.config import Config
@@ -13,20 +12,6 @@ from tray_client.src.attendance_popup import (
     PopupPayload,
     build_live_popup_payload,
 )
-
-
-class NoticeMessageValidationTests(unittest.TestCase):
-    def test_notice_messages_have_a_shorter_tts_safe_limit(self) -> None:
-        with self.assertRaises(ValidationError):
-            ChatMessageCreateRequest(room_key="notice", message_text="x" * 301)
-
-    def test_workflow_messages_keep_existing_limit(self) -> None:
-        request = ChatMessageCreateRequest(
-            room_key="mass_response",
-            message_text="x" * 1000,
-        )
-
-        self.assertEqual(len(request.message_text), 1000)
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):

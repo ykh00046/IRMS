@@ -7,14 +7,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const lastUpdatedNode = document.getElementById("status-last-updated");
   const board = document.getElementById("status-board");
   const importFeed = document.getElementById("status-import-feed");
-  const roomTabs = document.getElementById("status-chat-room-tabs");
-  const roomMeta = document.getElementById("status-chat-room-meta");
-  const chatMessages = document.getElementById("status-chat-messages");
-  const chatForm = document.getElementById("status-chat-form");
-  const chatStageGroup = document.getElementById("status-chat-stage-group");
-  const chatStage = document.getElementById("status-chat-stage");
-  const chatInput = document.getElementById("status-chat-input");
-  const chatSend = document.getElementById("status-chat-send");
 
   const summaryNodes = {
     activeRecipes: document.getElementById("status-active-recipes"),
@@ -37,26 +29,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     timerId: null,
     importBaselineId: Number(window.localStorage.getItem("irms_last_recipe_import_id") || 0),
   };
-
-  const chatState = {
-    currentUsername: shell?.dataset.currentUsername || "",
-    selectedRoomKey: window.localStorage.getItem("irms_chat_room") || "notice",
-    rooms: [],
-    latestByRoom: {},
-    timerId: null,
-  };
-
-  const chat = IRMS.createChat({
-    prefix: "chat",
-    stageLabels: stageLabels,
-    elements: {
-      roomTabs: roomTabs,
-      chatMessages: chatMessages,
-      chatStageGroup: chatStageGroup,
-      roomMeta: roomMeta,
-    },
-    state: chatState,
-  });
 
   const statusFilterKey = "irms_status_filter";
 
@@ -508,14 +480,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
 
-  chat.bindForm({ form: chatForm, input: chatInput, stage: chatStage, send: chatSend });
-
   async function refreshWorkspace() {
     await checkImportAlerts();
     await Promise.all([
       loadStatusBoard(),
       loadOperatorProgress(),
-      chat.refresh({ silent: true }),
     ]);
   }
 
@@ -544,7 +513,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         await Promise.all([
           loadStatusBoard(),
           loadOperatorProgress(),
-          chat.refresh({ replace: true }),
         ]);
       } finally {
         IRMS.btnLoading(refreshButton, false);
@@ -563,20 +531,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  chat.bindRoomTabs(roomTabs);
-
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible") {
       await refreshWorkspace();
     }
   });
 
-  await chat.loadRooms();
   updateFilterSummary();
   await Promise.all([
     loadStatusBoard(),
     loadOperatorProgress(),
-    chat.loadMessages({ replace: true }),
   ]);
   startAutoRefresh();
 });

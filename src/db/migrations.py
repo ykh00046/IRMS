@@ -12,8 +12,6 @@ _ALLOWED_TABLES = frozenset({
     "recipe_items",
     "schema_migrations",
     "audit_logs",
-    "chat_rooms",
-    "chat_messages",
     "ss_products",
     "ss_columns",
     "ss_rows",

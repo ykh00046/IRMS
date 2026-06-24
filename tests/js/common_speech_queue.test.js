@@ -9,7 +9,6 @@ const COMMON_MODULES = [
   "static/js/common/api-users.js",
   "static/js/common/api-recipes.js",
   "static/js/common/api-stock.js",
-  "static/js/common/api-chat.js",
   "static/js/common/api-spreadsheet.js",
   "static/js/common/api-stats.js",
   "static/js/common/ui.js",
@@ -99,9 +98,9 @@ async function testRequestTurnsValidationArrayIntoReadableError() {
 
   await assert.rejects(
     () =>
-      context.window.IRMS.postChatMessage({
-        roomKey: "notice",
-        messageText: "x".repeat(301),
+      context.window.IRMS._core.request("/_validation_error_probe", {
+        method: "POST",
+        body: { message_text: "x".repeat(301) },
       }),
     /notice messages must be 300 characters or fewer/,
   );

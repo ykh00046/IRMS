@@ -93,25 +93,6 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS chat_rooms (
-                key TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                scope TEXT NOT NULL CHECK (scope IN ('notice', 'workflow')),
-                sort_order INTEGER NOT NULL DEFAULT 0,
-                is_active INTEGER NOT NULL DEFAULT 1
-            );
-
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                room_key TEXT NOT NULL REFERENCES chat_rooms(key) ON DELETE CASCADE,
-                message_text TEXT NOT NULL,
-                stage TEXT CHECK (stage IN ('registered', 'in_progress', 'completed')),
-                created_by_user_id INTEGER REFERENCES users(id),
-                created_by_username TEXT NOT NULL,
-                created_by_display_name TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
             CREATE INDEX IF NOT EXISTS idx_recipes_status ON recipes(status);
             CREATE INDEX IF NOT EXISTS idx_recipes_created_at ON recipes(created_at);
             CREATE INDEX IF NOT EXISTS idx_recipes_raw_hash ON recipes(raw_input_hash) WHERE raw_input_hash IS NOT NULL;
@@ -124,9 +105,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit_logs(actor_user_id);
-            CREATE INDEX IF NOT EXISTS idx_chat_rooms_sort_order ON chat_rooms(sort_order, is_active);
-            CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_key, id DESC);
-            CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
 
             CREATE TABLE IF NOT EXISTS attendance_users (
                 emp_id TEXT PRIMARY KEY,
@@ -259,9 +237,8 @@ def init_db() -> None:
             if APP_ENV == "production":
                 raise RuntimeError("IRMS_SEED_DEMO_DATA must not be enabled in production.")
             logger.warning("SEED_DEMO_DATA is enabled — inserting demo data with default passwords.")
-            from .seeds import seed_users, seed_chat_rooms, seed_materials, seed_recipes, seed_workers
+            from .seeds import seed_users, seed_materials, seed_recipes, seed_workers
             seed_users(connection)
             seed_workers(connection)
-            seed_chat_rooms(connection)
             seed_materials(connection)
             seed_recipes(connection)

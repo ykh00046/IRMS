@@ -26,14 +26,6 @@ document.addEventListener("DOMContentLoaded", () => {
     historyTo: document.getElementById("history-to"),
     historySummary: document.getElementById("management-history-summary"),
     historyResetBtn: document.getElementById("management-history-reset"),
-    roomMeta: document.getElementById("management-chat-room-meta"),
-    roomTabs: document.getElementById("management-chat-room-tabs"),
-    chatMessages: document.getElementById("management-chat-messages"),
-    chatForm: document.getElementById("management-chat-form"),
-    chatStageGroup: document.getElementById("management-chat-stage-group"),
-    chatStage: document.getElementById("management-chat-stage"),
-    chatInput: document.getElementById("management-chat-input"),
-    chatSend: document.getElementById("management-chat-send"),
     tabBtns: document.querySelectorAll(".mgmt-tab"),
     tabPanels: document.querySelectorAll(".tab-panel"),
     lookupProduct: document.getElementById("lookup-product"),
@@ -125,40 +117,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
   const versionCompare = IRMS.management.createVersionCompare(ctx);
 
-  // ── Chat (existing IRMS.createChat factory) ──
-  const chatState = {
-    currentUsername: dom.shell?.dataset.currentUsername || "",
-    selectedRoomKey: window.localStorage.getItem("irms_chat_room") || "notice",
-    rooms: [],
-    latestByRoom: {},
-    sending: false,
-    timerId: null,
-  };
-
-  const chatModule = IRMS.createChat({
-    prefix: "chat",
-    stageLabels,
-    elements: {
-      roomTabs: dom.roomTabs,
-      chatMessages: dom.chatMessages,
-      chatStageGroup: dom.chatStageGroup,
-      roomMeta: dom.roomMeta,
-    },
-    state: chatState,
-  });
-
-  function refreshChatPanel(options) { return chatModule.refresh(options); }
-  function startChatPolling() { chatModule.startPolling(3000); }
-
   async function loadMaterials() {
     ctx.state.materials = await IRMS.getMaterials();
   }
 
   // ── Event bindings ──
   dom.previewBtn.addEventListener("click", importValidate.handlePreview);
-
-  chatModule.bindRoomTabs(dom.roomTabs);
-  chatModule.bindForm({ form: dom.chatForm, input: dom.chatInput, stage: dom.chatStage, send: dom.chatSend });
 
   dom.registerBtn.addEventListener("click", importValidate.handleRegister);
   dom.clearBtn.addEventListener("click", importValidate.handleClear);
@@ -223,12 +187,6 @@ document.addEventListener("DOMContentLoaded", () => {
     dom.compareModalClose.addEventListener("click", () => { dom.compareModal.hidden = true; });
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      refreshChatPanel({ replace: false, silent: true });
-    }
-  });
-
   // ── Init sequence ──
   (async () => {
     try {
@@ -241,10 +199,8 @@ document.addEventListener("DOMContentLoaded", () => {
       importValidate.syncRegisterState();
       await Promise.all([
         recipeHistory.renderHistory(),
-        refreshChatPanel({ replace: true, silent: true }),
         recipeLookup.loadProducts(),
       ]);
-      startChatPolling();
     } catch (error) {
       IRMS.notify(`초기화 실패: ${error.message}`, "error");
     }

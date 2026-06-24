@@ -663,39 +663,10 @@
 
 {% endblock %}
 
-{% block chat_float %}
-    <section class="panel chat-panel chat-float">
-      <div class="chat-head">
-        <div>
-          <span class="kicker">공유 대화방</span>
-          <h3 class="panel-title">실시간 소통</h3>
-        </div>
-        <span id="management-chat-room-meta" class="chat-room-meta">대화방</span>
-      </div>
-      <div class="chat-tabs" id="management-chat-room-tabs"></div>
-      <div class="chat-stream" id="management-chat-messages"></div>
-      <form id="management-chat-form" class="chat-form">
-        <div class="filter-group">
-          <label class="filter-label" for="management-chat-input">메시지</label>
-          <textarea
-            id="management-chat-input"
-            class="textarea chat-textarea"
-            rows="2"
-            maxlength="1000"
-            placeholder="메시지를 입력하세요. (Shift+Enter: 줄바꿈)"
-          ></textarea>
-        </div>
-        <div class="button-row chat-actions">
-          <button id="management-chat-send" type="submit" class="btn accent">전송</button>
-        </div>
-      </form>
-    </section>
-{% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/jsuites/jsuites.min.js"></script>
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js"></script>
-    <script src="/static/js/chat.js"></script>
     <script src="/static/js/spreadsheet_editor.js"></script>
     <!-- management modules: 5 factories (order-free) → controller last -->
     <script src="/static/js/management/spreadsheet-editor.js"></script>

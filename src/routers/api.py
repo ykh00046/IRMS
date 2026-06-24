@@ -6,7 +6,6 @@ from . import (
     attendance_routes,
     auth_routes,
     blend_routes,
-    chat_routes,
     dashboard_routes,
     forecast_routes,
     lot_routes,
@@ -30,7 +29,6 @@ def build_router() -> APIRouter:
 
     public_router, auth_me_router = auth_routes.build_router()
     admin_router = admin_routes.build_router()
-    chat_router = chat_routes.build_router()
     public_attendance_alert_router = public_attendance_alert_routes.build_router()
     attendance_router = attendance_routes.build_router()
     recipe_op_router = recipe_operator_routes.build_router()
@@ -59,7 +57,6 @@ def build_router() -> APIRouter:
     router.include_router(auth_me_router)
     router.include_router(recipe_op_router)
     router.include_router(stock_op_router)         # operator stock reads
-    router.include_router(chat_router)
     router.include_router(weighing_router)
     router.include_router(recipe_mgr_router)       # manager recipe writes
     router.include_router(stock_mgr_router)        # manager stock writes

@@ -64,41 +64,6 @@ def seed_users(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
-def seed_chat_rooms(connection: sqlite3.Connection) -> None:
-    seeds = [
-        ("notice", "전체 공지방", "notice", 10),
-        ("mass_response", "양산대응 현황", "workflow", 20),
-        ("liquid_ink_response", "액상잉크 대응 현황", "workflow", 30),
-        ("sample_mass_production", "샘플시양산", "workflow", 40),
-    ]
-
-    for room_key, name, scope, sort_order in seeds:
-        existing = connection.execute(
-            "SELECT key FROM chat_rooms WHERE key = ?",
-            (room_key,),
-        ).fetchone()
-        if existing:
-            connection.execute(
-                """
-                UPDATE chat_rooms
-                SET name = ?, scope = ?, sort_order = ?, is_active = 1
-                WHERE key = ?
-                """,
-                (name, scope, sort_order, room_key),
-            )
-            continue
-
-        connection.execute(
-            """
-            INSERT INTO chat_rooms (key, name, scope, sort_order, is_active)
-            VALUES (?, ?, ?, ?, 1)
-            """,
-            (room_key, name, scope, sort_order),
-        )
-
-    connection.commit()
-
-
 def seed_materials(connection: sqlite3.Connection) -> None:
     material_count = connection.execute("SELECT COUNT(*) FROM materials").fetchone()[0]
     if material_count > 0:

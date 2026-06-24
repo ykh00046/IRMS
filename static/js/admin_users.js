@@ -438,23 +438,6 @@
   auditActionFilter?.addEventListener("change", loadAuditLogs);
   auditLimitFilter?.addEventListener("change", loadAuditLogs);
 
-  // Chat reset
-  const chatResetBtn = document.getElementById("chat-reset-btn");
-  if (chatResetBtn) {
-    chatResetBtn.addEventListener("click", async () => {
-      if (!window.confirm("모든 대화방의 메시지를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
-      try {
-        chatResetBtn.disabled = true;
-        const data = await IRMS.clearChatMessages();
-        IRMS.notify(`대화방을 초기화했습니다. (${data.deleted_count}건 삭제)`, "success");
-      } catch (err) {
-        IRMS.notify(`초기화 실패: ${err.message}`, "error");
-      } finally {
-        chatResetBtn.disabled = false;
-      }
-    });
-  }
-
   // Attendance users
   const attUsersBody = document.getElementById("att-users-body");
   const attUsersRefresh = document.getElementById("att-users-refresh");
