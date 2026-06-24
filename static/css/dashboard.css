@@ -8,7 +8,7 @@
 }
 .dashboard-presets { display: flex; gap: 6px; }
 .preset-btn { min-width: 60px; }
-.preset-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.preset-btn.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 .dashboard-custom-range {
   display: flex;
   gap: 6px;

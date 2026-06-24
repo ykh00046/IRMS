@@ -22,7 +22,7 @@
   align-items: flex-end;
 }
 
-.blend-cards .metric-card.blend-card-var .metric-value { color: #2563eb; }
+.blend-cards .metric-card.blend-card-var .metric-value { color: var(--brand); }
 .blend-lot { font-family: "JetBrains Mono", monospace; font-size: 0.95rem; }
 
 /* 배합 테이블 */
@@ -39,7 +39,7 @@
 .blend-row:hover { background: rgba(37, 99, 235, 0.06); }
 
 .var-up { color: #dc2626; font-weight: 600; }
-.var-down { color: #2563eb; font-weight: 600; }
+.var-down { color: var(--brand); font-weight: 600; }
 
 .blend-actions {
   display: flex;

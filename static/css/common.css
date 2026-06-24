@@ -20,6 +20,9 @@
   --surface: #ffffff;
   --line: #e7ebf2;
   --line-strong: #d6dce7;
+  /* 레거시 페이지 CSS 별칭 — 과거 var(--accent/--primary, #2563eb)가 파란색으로 폴백되던 것을 브랜드 네이비로 정렬 */
+  --accent: #1b4079;
+  --primary: #1b4079;
 
   /* Text Colors — 네이비 잉크 */
   --text-primary: #15233f;

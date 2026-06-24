@@ -133,7 +133,7 @@
 }
 .visc-period-chart { height: 220px; }
 .visc-delta-up { color: #dc2626; font-weight: 600; }
-.visc-delta-down { color: #2563eb; font-weight: 600; }
+.visc-delta-down { color: var(--brand); font-weight: 600; }
 .visc-delta-flat { color: var(--muted, #6b7280); }
 
 /* 측정 이력 테이블 상태 배지 */
