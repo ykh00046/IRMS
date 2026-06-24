@@ -78,8 +78,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
 
     ensure_column(connection, "recipe_items", "measured_at", "TEXT")
     ensure_column(connection, "recipe_items", "measured_by", "TEXT")
+    ensure_column(connection, "recipe_items", "actual_weight", "REAL")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_items_measured_at ON recipe_items(measured_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_recipe_items_actual_weight "
+        "ON recipe_items(actual_weight) WHERE actual_weight IS NOT NULL"
     )
     standardize_recipe_units_to_grams(connection)
 

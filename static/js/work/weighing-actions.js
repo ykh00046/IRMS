@@ -1,14 +1,7 @@
 /**
- * weighing-actions module — 계량 모드 진입/종료, 큐 조회, 진행/되돌림.
- * Split from static/js/work.js (split-work-js, 2026-05).
+ * Weighing panel actions.
  *
  * Factory: IRMS.work.createWeighingActions(ctx)
- * Returns: { open, close, loadQueue, advance, undo, isOpen }
- * ctx deps:
- *   - ctx.dom.{weighingMode, weighingModeLabel, liquidColorPicker}
- *   - ctx.state.weighing
- *   - ctx.weighingRender (lazy: render/syncControls/resetProgress)
- *   - ctx.onRefreshTable (lazy: () => Promise<void>)
  */
 (function () {
   "use strict";
@@ -45,12 +38,12 @@
 
         if (notifySummary) {
           IRMS.notify(
-            `계량 큐 ${payload.summary.totalSteps}건 / 레시피 ${payload.summary.recipeCount}건`,
-            "info"
+            `Weighing queue ${payload.summary.totalSteps} steps / ${payload.summary.recipeCount} recipes`,
+            "info",
           );
         }
       } catch (error) {
-        IRMS.notify(`계량 큐 조회 실패: ${error.message}`, "error");
+        IRMS.notify(`Failed to load weighing queue: ${error.message}`, "error");
       } finally {
         weighing.loading = false;
         if (weighing.open) {
@@ -86,6 +79,16 @@
       document.body.style.overflow = "";
     }
 
+    function readActualWeight() {
+      const raw = dom.weighingActualWeight ? dom.weighingActualWeight.value.trim() : "";
+      if (raw === "") return null;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error("Actual weight must be zero or greater.");
+      }
+      return value;
+    }
+
     async function advance() {
       if (!weighing.open || weighing.loading || weighing.advancing) {
         return;
@@ -100,8 +103,8 @@
           await IRMS.completeWeighingRecipe(pendingRecipe.recipeId);
           weighing.pendingRecipeCompletion = null;
           IRMS.notify(
-            `${pendingRecipe.productName} (${pendingRecipe.inkName}) 완료 처리되었습니다.`,
-            "success"
+            `${pendingRecipe.productName} (${pendingRecipe.inkName}) completed.`,
+            "success",
           );
           if (typeof ctx.onRefreshTable === "function") {
             await ctx.onRefreshTable();
@@ -113,14 +116,23 @@
 
         const current = weighing.queue[0];
         if (!current) {
-          IRMS.notify("남은 계량 항목이 없습니다.", "info");
+          IRMS.notify("No weighing steps remain.", "info");
+          return;
+        }
+
+        let actualWeight = null;
+        try {
+          actualWeight = readActualWeight();
+        } catch (error) {
+          IRMS.notify(error.message, "warn");
           return;
         }
 
         const stepResult = await IRMS.completeWeighingStep(
           current.recipeId,
           current.materialId,
-          current.recipeItemId
+          current.recipeItemId,
+          actualWeight,
         );
 
         weighing.queue.shift();
@@ -134,14 +146,18 @@
           inkName: current.inkName,
         };
 
+        if (dom.weighingActualWeight) {
+          dom.weighingActualWeight.value = "";
+        }
+
         if (stepResult.ready_for_recipe_completion) {
           weighing.pendingRecipeCompletion = current;
           IRMS.notify(
-            `${current.productName} 계량 스텝 완료. Enter/Space로 레시피 완료를 확정하세요.`,
-            "info"
+            `${current.productName} weighing steps complete. Press Enter/Space to complete recipe.`,
+            "info",
           );
         } else {
-          IRMS.notify(`${current.materialName} 계량 완료`, "success");
+          IRMS.notify(`${current.materialName} weighing completed`, "success");
         }
 
         if (typeof ctx.onRefreshTable === "function") {
@@ -149,7 +165,7 @@
         }
         ctx.weighingRender.render();
       } catch (error) {
-        IRMS.notify(`계량 처리 실패: ${error.message}`, "error");
+        IRMS.notify(`Failed to complete weighing step: ${error.message}`, "error");
       } finally {
         weighing.advancing = false;
         ctx.weighingRender.syncControls();
@@ -161,7 +177,7 @@
         return;
       }
       if (!weighing.lastCompleted) {
-        IRMS.notify("되돌릴 수 있는 스텝이 없습니다.", "info");
+        IRMS.notify("No completed step to undo.", "info");
         return;
       }
 
@@ -176,14 +192,14 @@
           weighing.doneCount -= 1;
         }
         weighing.pendingRecipeCompletion = null;
-        IRMS.notify(`${target.materialName} 되돌림 완료`, "success");
+        IRMS.notify(`${target.materialName} undo completed`, "success");
         await loadQueue();
         if (typeof ctx.onRefreshTable === "function") {
           await ctx.onRefreshTable();
         }
         ctx.weighingRender.render();
       } catch (error) {
-        IRMS.notify(`되돌리기 실패: ${error.message}`, "error");
+        IRMS.notify(`Failed to undo weighing step: ${error.message}`, "error");
       } finally {
         weighing.undoing = false;
         ctx.weighingRender.syncControls();

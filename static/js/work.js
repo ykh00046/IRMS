@@ -46,6 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
     weighingTargetValue: document.getElementById("weighing-target-value"),
     weighingActionHint: document.getElementById("weighing-action-hint"),
     weighingNextValue: document.getElementById("weighing-next-value"),
+    weighingActualWeight: document.getElementById("weighing-actual-weight"),
     weighingPowderBtn: document.getElementById("weighing-powder-btn"),
     weighingLiquidBtn: document.getElementById("weighing-liquid-btn"),
     liquidColorPicker: document.getElementById("liquid-color-picker"),

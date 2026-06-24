@@ -69,6 +69,7 @@ def init_db() -> None:
                 material_id INTEGER NOT NULL REFERENCES materials(id),
                 value_weight REAL,
                 value_text TEXT,
+                actual_weight REAL,
                 measured_at TEXT,
                 measured_by TEXT
             );

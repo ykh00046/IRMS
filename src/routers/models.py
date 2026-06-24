@@ -232,6 +232,7 @@ class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)
     recipe_item_id: int | None = Field(default=None, gt=0)
+    actual_weight: float | None = Field(default=None, ge=0)
 
 
 class WeighingStepUndoRequest(BaseModel):

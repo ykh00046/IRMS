@@ -42,6 +42,7 @@ def fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict
             m.color_group,
             ri.value_weight,
             ri.value_text,
+            ri.actual_weight,
             ri.measured_at,
             ri.measured_by
         FROM recipe_items ri

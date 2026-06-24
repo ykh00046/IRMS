@@ -45,7 +45,7 @@ def build_router() -> APIRouter:
                     ri.id AS recipe_item_id,
                     ri.material_id, m.name AS material_name,
                     m.unit_type, m.unit, m.color_group,
-                    ri.value_weight, ri.value_text
+                    ri.value_weight, ri.value_text, ri.actual_weight
                 FROM recipes r
                 JOIN recipe_items ri ON ri.recipe_id = r.id
                 JOIN materials m ON m.id = ri.material_id
@@ -113,7 +113,7 @@ def build_router() -> APIRouter:
                 item_row = connection.execute(
                     """
                     SELECT ri.id, ri.material_id, ri.measured_at, m.name AS material_name,
-                        ri.value_weight, ri.value_text
+                        ri.value_weight, ri.value_text, ri.actual_weight
                     FROM recipe_items ri
                     JOIN materials m ON m.id = ri.material_id
                     WHERE ri.recipe_id = ? AND ri.id = ?
@@ -124,7 +124,7 @@ def build_router() -> APIRouter:
                 item_row = connection.execute(
                     """
                     SELECT ri.id, ri.material_id, ri.measured_at, m.name AS material_name,
-                        ri.value_weight, ri.value_text
+                        ri.value_weight, ri.value_text, ri.actual_weight
                     FROM recipe_items ri
                     JOIN materials m ON m.id = ri.material_id
                     WHERE ri.recipe_id = ? AND ri.material_id = ? AND ri.measured_at IS NULL
@@ -154,16 +154,16 @@ def build_router() -> APIRouter:
             update_cursor = connection.execute(
                 """
                 UPDATE recipe_items
-                SET measured_at = ?, measured_by = ?
+                SET measured_at = ?, measured_by = ?, actual_weight = ?
                 WHERE id = ? AND measured_at IS NULL
                 """,
-                (measured_at, measured_by, int(item_row["id"])),
+                (measured_at, measured_by, body.actual_weight, int(item_row["id"])),
             )
             if update_cursor.rowcount == 0:
                 raise HTTPException(status_code=409, detail="STEP_ALREADY_COMPLETED")
 
             stock_info = None
-            item_weight = item_row["value_weight"]
+            item_weight = body.actual_weight if body.actual_weight is not None else item_row["value_weight"]
             if item_weight is not None:
                 stock_info = stock_service.deduct_for_measurement(
                     connection,
@@ -194,6 +194,7 @@ def build_router() -> APIRouter:
 
             recipe_payload = row_to_dict(recipe_row)
             item_payload = row_to_dict(item_row)
+            item_payload["actual_weight"] = body.actual_weight
             item_payload["target_value"] = format_display_value(item_payload.get("value_weight"), item_payload.get("value_text"))
             write_audit_log(
                 connection,
@@ -208,6 +209,7 @@ def build_router() -> APIRouter:
                     "material_id": int(item_row["material_id"]),
                     "material_name": item_payload["material_name"],
                     "target_value": item_payload["target_value"],
+                    "actual_weight": body.actual_weight,
                     "measured_by": measured_by,
                     "measured_at": measured_at,
                     "remaining_in_recipe": remaining_in_recipe,
@@ -221,6 +223,7 @@ def build_router() -> APIRouter:
             "recipe_item_id": int(item_row["id"]),
             "material_id": int(item_row["material_id"]),
             "measured_at": measured_at,
+            "actual_weight": body.actual_weight,
             "remaining_in_recipe": remaining_in_recipe,
             "remaining_total": remaining_total,
             "ready_for_recipe_completion": remaining_in_recipe == 0,
@@ -278,7 +281,7 @@ def build_router() -> APIRouter:
             connection.execute(
                 """
                 UPDATE recipe_items
-                SET measured_at = NULL, measured_by = NULL
+                SET measured_at = NULL, measured_by = NULL, actual_weight = NULL
                 WHERE id = ?
                 """,
                 (int(item_row["id"]),),
@@ -348,7 +351,7 @@ def build_router() -> APIRouter:
 
             # Clear all measurements
             connection.execute(
-                "UPDATE recipe_items SET measured_at = NULL, measured_by = NULL WHERE recipe_id = ?",
+                "UPDATE recipe_items SET measured_at = NULL, measured_by = NULL, actual_weight = NULL WHERE recipe_id = ?",
                 (body.recipe_id,),
             )
             # Revert recipe to pending

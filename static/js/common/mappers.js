@@ -155,6 +155,8 @@
       unit: row.unit,
       colorGroup: row.color_group || "none",
       targetValue: row.target_value,
+      targetWeight: row.value_weight === null || row.value_weight === undefined ? null : Number(row.value_weight),
+      actualWeight: row.actual_weight === null || row.actual_weight === undefined ? null : Number(row.actual_weight),
     };
   }
 

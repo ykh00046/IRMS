@@ -507,6 +507,12 @@
   margin-top: 0.2rem;
 }
 
+.weighing-actual-input {
+  width: min(220px, 100%);
+  margin-top: 0.35rem;
+  font-family: var(--font-mono);
+}
+
 .weighing-action-hint {
   background: var(--bg-surface-200);
   border: 1px dashed var(--border-strong);

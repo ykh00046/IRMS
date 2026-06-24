@@ -39,12 +39,15 @@
     };
   }
 
-  async function completeWeighingStep(recipeId, materialId, recipeItemId) {
+  async function completeWeighingStep(recipeId, materialId, recipeItemId, actualWeight) {
     const body = { recipe_id: recipeId };
     if (recipeItemId) {
       body.recipe_item_id = recipeItemId;
     } else {
       body.material_id = materialId;
+    }
+    if (actualWeight !== null && actualWeight !== undefined && actualWeight !== "") {
+      body.actual_weight = Number(actualWeight);
     }
     return request("/weighing/step/complete", {
       method: "POST",
