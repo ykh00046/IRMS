@@ -587,5 +587,55 @@
     load().then(refreshPreview);
   })();
 
+  // ── Google Sheets 백업 (선택, google_sheets_backup 이식) ──
+  (function initSheetsBackup() {
+    const req = IRMS._core && IRMS._core.request;
+    const urlEl = document.getElementById("sheets-url");
+    const credsEl = document.getElementById("sheets-creds");
+    const enabledEl = document.getElementById("sheets-enabled");
+    const statusEl = document.getElementById("sheets-status");
+    if (!req || !urlEl) return;
+
+    function renderStatus(s) {
+      const parts = [
+        s.gspread_available ? "gspread 설치됨" : "⚠ gspread 미설치 (pip install gspread google-auth)",
+        s.configured ? "설정 완료" : "설정 미완료",
+        s.enabled ? "활성화" : "비활성화",
+      ];
+      statusEl.textContent = parts.join("  ·  ");
+      statusEl.style.color = s.gspread_available && s.configured && s.enabled
+        ? "var(--success, #166534)" : "var(--text-secondary)";
+    }
+    async function load() {
+      try {
+        const s = await req("/admin/sheets-config");
+        urlEl.value = s.spreadsheet_url || "";
+        credsEl.value = s.credentials_file || "";
+        enabledEl.checked = !!s.enabled;
+        renderStatus(s);
+      } catch (e) { IRMS.notify(`Sheets 설정 로드 실패: ${e.message}`, "error"); }
+    }
+    document.getElementById("sheets-save")?.addEventListener("click", async () => {
+      try {
+        const s = await req("/admin/sheets-config", {
+          method: "PUT",
+          body: { spreadsheet_url: urlEl.value, credentials_file: credsEl.value, enabled: enabledEl.checked },
+        });
+        renderStatus(s);
+        IRMS.notify("Google Sheets 설정을 저장했습니다.", "success");
+      } catch (e) { IRMS.notify(`저장 실패: ${e.message}`, "error"); }
+    });
+    document.getElementById("sheets-backup-now")?.addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      try {
+        const r = await req("/admin/sheets-backup", { method: "POST", body: {} });
+        IRMS.notify(r.message || (r.ok ? "백업 완료" : "백업 실패"), r.ok ? "success" : "error");
+      } catch (e) { IRMS.notify(`백업 실패: ${e.message}`, "error"); }
+      finally { btn.disabled = false; }
+    });
+    load();
+  })();
+
   refreshDashboard();
 });

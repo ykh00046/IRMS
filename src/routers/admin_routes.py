@@ -8,7 +8,7 @@ from ..auth import get_current_user, require_access_level
 from ..attendance_auth import AttendanceAuthError, validate_password_strength
 from ..db import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
 from ..security import hash_password
-from ..services import dhr_pdf, signature_config
+from ..services import blend_service, dhr_pdf, sheets_backup, signature_config
 from .models import (
     AdminUserCreateRequest,
     AdminUserPasswordResetRequest,
@@ -370,5 +370,46 @@ def build_router() -> APIRouter:
         """현재 설정으로 합성한 샘플 배합일지 미리보기 PNG."""
         png = dhr_pdf.build_signature_preview_png(worker)
         return StreamingResponse(io.BytesIO(png), media_type="image/png")
+
+    @router.get("/admin/sheets-config")
+    def admin_get_sheets_config() -> dict[str, Any]:
+        """Google Sheets 백업 설정·상태."""
+        return sheets_backup.status()
+
+    @router.put("/admin/sheets-config")
+    def admin_save_sheets_config(body: dict[str, Any], request: Request) -> dict[str, Any]:
+        current_user = get_current_user(request)
+        sheets_backup.save_config(body or {})
+        with get_connection() as connection:
+            write_audit_log(
+                connection,
+                action="sheets_config_updated",
+                actor=current_user,
+                target_type="sheets_config",
+                target_label="Google Sheets 백업 설정",
+                details=sheets_backup.status(),
+            )
+            connection.commit()
+        return sheets_backup.status()
+
+    @router.post("/admin/sheets-backup")
+    def admin_sheets_backup(request: Request) -> dict[str, Any]:
+        """전체 배합 기록을 Google Sheets에 백업."""
+        current_user = get_current_user(request)
+        with get_connection() as connection:
+            recs = blend_service.list_blend_records(connection, limit=10000)
+            full = [blend_service.get_blend_record(connection, r["id"]) for r in recs]
+        ok, message = sheets_backup.push_records([r for r in full if r])
+        with get_connection() as connection:
+            write_audit_log(
+                connection,
+                action="sheets_backup_run",
+                actor=current_user,
+                target_type="sheets_backup",
+                target_label="Google Sheets 백업 실행",
+                details={"ok": ok, "message": message, "records": len(full)},
+            )
+            connection.commit()
+        return {"ok": ok, "message": message}
 
     return router
