@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
+from . import signature_config
 from .signature_processor import ImageProcessor
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
@@ -155,28 +156,30 @@ def apply_scan_effects(image: Image.Image, params: dict | None = None) -> Image.
     return proc
 
 
-def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes:
-    """배합 기록 → 서명 합성 + 스캔효과가 적용된 원료배합일지 PDF 바이트.
+def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Image:
+    """원료배합일지 양식 렌더 → 서명 합성 → (선택)스캔효과 → PIL 이미지.
 
     작성자(record['worker'])의 서명 샘플({worker}_charge_*.png)이 있으면 합성,
     검토/승인은 공용 review/approve 샘플로 합성. 샘플이 없는 역할은 건너뜀.
+    합성 파라미터·스캔효과는 signature_config(관리자 튜닝)에서 읽는다.
     """
     base_img, positions = render_form_image(record)
+    sc = signature_config.load()
 
     config = {
         "upsample_factor": 4,
         "target_width": 150,
         "target_height": 60,
         "dpi": 200,
-        "gaussian_blur_sigma": 0.7,
+        "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
         "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
-        "pressure_noise_strength": 0.08,
+        "pressure_noise_strength": sc["pressure_noise_strength"],
         "mesh_warp": {"grid_size": 3, "jitter_amount": 2},
-        "ink_alpha_factor": 1.3,
-        "signature_brightness_factor": 1.15,
-        "final_contrast_factor": 1.2,
-        "randomization": {"rotation_angle": 6, "offset_x": 3, "offset_y": 5,
-                          "scale_min": 0.85, "scale_max": 0.95},
+        "ink_alpha_factor": sc["ink_alpha_factor"],
+        "signature_brightness_factor": sc["signature_brightness_factor"],
+        "final_contrast_factor": sc["final_contrast_factor"],
+        "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 3, "offset_y": 5,
+                          "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
         "include": {"charge": True, "review": True, "approve": True},
         "positions": positions,
     }
@@ -191,8 +194,46 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes
         result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
 
     if scan:
-        result = apply_scan_effects(result)
+        result = apply_scan_effects(result, {
+            "noise_range": int(sc["scan_noise_range"]),
+            "blur_radius": sc["scan_blur_radius"],
+            "contrast_factor": sc["scan_contrast"],
+            "brightness_factor": sc["scan_brightness"],
+        })
+    return result.convert("RGB")
 
+
+def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes:
+    """배합 기록 → 서명 합성 + 스캔효과 원료배합일지 PDF 바이트."""
+    img = render_signed_dhr(record, scan=scan)
     buf = io.BytesIO()
-    result.convert("RGB").save(buf, format="PDF", resolution=200.0)
+    img.save(buf, format="PDF", resolution=200.0)
     return buf.getvalue()
+
+
+def build_preview_png(record: dict[str, Any], *, scan: bool = True) -> bytes:
+    """서명 설정 미리보기용 — 샘플 배합일지 PNG 바이트."""
+    img = render_signed_dhr(record, scan=scan)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+_PREVIEW_RECORD = {
+    "product_lot": "MISC-PREVIEW", "worker": "김도현", "work_date": "2026-06-25",
+    "work_time": "10:30", "scale": "M-65", "total_amount": 1000,
+    "details": [
+        {"material_name": "HEMA 모노머", "material_lot": "MN-101", "ratio": 71.43,
+         "theory_amount": 714.3, "actual_amount": 714.5},
+        {"material_name": "NVP", "material_lot": "MN-102", "ratio": 28.57,
+         "theory_amount": 285.7, "actual_amount": 285.5},
+    ],
+}
+
+
+def build_signature_preview_png(worker: str | None = None) -> bytes:
+    """현재 서명 설정으로 합성한 샘플 미리보기 PNG."""
+    rec = dict(_PREVIEW_RECORD)
+    if worker:
+        rec["worker"] = worker
+    return build_preview_png(rec)

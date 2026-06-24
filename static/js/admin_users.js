@@ -528,5 +528,64 @@
   attUsersRefresh?.addEventListener("click", loadAttendanceUsers);
   loadAttendanceUsers();
 
+  // ── 배합일지 서명 합성 설정 (signature_qa_tool 이식) ──
+  (function initSignatureConfig() {
+    const grid = document.getElementById("sig-config-grid");
+    const preview = document.getElementById("sig-preview");
+    const req = IRMS._core && IRMS._core.request;
+    if (!grid || !req) return;
+    const LABELS = {
+      gaussian_blur_sigma: "가우시안 블러", pressure_noise_strength: "펜압 노이즈",
+      ink_alpha_factor: "잉크 진하기", signature_brightness_factor: "서명 밝기",
+      final_contrast_factor: "최종 대비", rotation_angle: "회전 각도(°)",
+      scale_min: "최소 크기", scale_max: "최대 크기",
+      scan_noise_range: "스캔 노이즈", scan_blur_radius: "스캔 블러",
+      scan_contrast: "스캔 대비", scan_brightness: "스캔 밝기",
+    };
+    let defaults = {};
+
+    function refreshPreview() {
+      if (preview) preview.src = `/api/admin/signature-preview?t=${Date.now()}`;
+    }
+    function render(cfg, ranges) {
+      grid.innerHTML = Object.keys(LABELS).map((k) => {
+        const r = ranges[k] || [0, 10];
+        return `<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
+          <span>${LABELS[k]}</span>
+          <input type="number" data-key="${k}" value="${cfg[k]}" step="0.05" min="${r[0]}" max="${r[1]}" class="input" />
+        </label>`;
+      }).join("");
+    }
+    function collect() {
+      const out = {};
+      grid.querySelectorAll("input[data-key]").forEach((el) => { out[el.dataset.key] = Number(el.value); });
+      return out;
+    }
+    async function load() {
+      try {
+        const data = await req("/admin/signature-config");
+        defaults = data.defaults || {};
+        render(data.config, data.ranges || {});
+      } catch (e) { IRMS.notify(`서명 설정 로드 실패: ${e.message}`, "error"); }
+    }
+    document.getElementById("sig-config-save")?.addEventListener("click", async () => {
+      try {
+        await req("/admin/signature-config", { method: "PUT", body: collect() });
+        IRMS.notify("서명 설정을 저장했습니다.", "success");
+        refreshPreview();
+      } catch (e) { IRMS.notify(`저장 실패: ${e.message}`, "error"); }
+    });
+    document.getElementById("sig-config-reset")?.addEventListener("click", async () => {
+      try {
+        await req("/admin/signature-config", { method: "PUT", body: defaults });
+        await load();
+        IRMS.notify("기본값으로 되돌렸습니다.", "success");
+        refreshPreview();
+      } catch (e) { IRMS.notify(`초기화 실패: ${e.message}`, "error"); }
+    });
+    document.getElementById("sig-preview-refresh")?.addEventListener("click", refreshPreview);
+    load().then(refreshPreview);
+  })();
+
   refreshDashboard();
 });

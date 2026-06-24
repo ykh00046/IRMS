@@ -1,11 +1,14 @@
+import io
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user, require_access_level
 from ..attendance_auth import AttendanceAuthError, validate_password_strength
 from ..db import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
 from ..security import hash_password
+from ..services import dhr_pdf, signature_config
 from .models import (
     AdminUserCreateRequest,
     AdminUserPasswordResetRequest,
@@ -336,5 +339,36 @@ def build_router() -> APIRouter:
             connection.commit()
 
         return {"status": "ok"}
+
+    @router.get("/admin/signature-config")
+    def admin_get_signature_config() -> dict[str, Any]:
+        """배합일지 서명 합성·스캔 파라미터(관리자 튜닝)."""
+        return {
+            "config": signature_config.load(),
+            "defaults": signature_config.DEFAULTS,
+            "ranges": {k: list(v) for k, v in signature_config.RANGES.items()},
+        }
+
+    @router.put("/admin/signature-config")
+    def admin_save_signature_config(body: dict[str, Any], request: Request) -> dict[str, Any]:
+        current_user = get_current_user(request)
+        cfg = signature_config.save(body or {})
+        with get_connection() as connection:
+            write_audit_log(
+                connection,
+                action="signature_config_updated",
+                actor=current_user,
+                target_type="signature_config",
+                target_label="배합일지 서명 설정",
+                details=cfg,
+            )
+            connection.commit()
+        return {"config": cfg}
+
+    @router.get("/admin/signature-preview")
+    def admin_signature_preview(worker: str | None = Query(default=None)) -> StreamingResponse:
+        """현재 설정으로 합성한 샘플 배합일지 미리보기 PNG."""
+        png = dhr_pdf.build_signature_preview_png(worker)
+        return StreamingResponse(io.BytesIO(png), media_type="image/png")
 
     return router

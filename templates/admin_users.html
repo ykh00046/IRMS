@@ -187,8 +187,23 @@
           </div>
         </section>
 
+        <section class="panel">
+          <span class="kicker">배합일지</span>
+          <h3 class="panel-title">서명 합성 설정</h3>
+          <p class="panel-subtitle">
+            배합일지 PDF의 서명 자연스러움과 스캔 질감을 조정합니다. 저장 후 미리보기로 확인하세요.
+          </p>
+          <div id="sig-config-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.7rem"></div>
+          <div class="button-row" style="margin-top:0.9rem">
+            <button id="sig-config-save" class="btn accent" type="button">저장</button>
+            <button id="sig-config-reset" class="btn" type="button">기본값으로</button>
+            <button id="sig-preview-refresh" class="btn" type="button">미리보기 새로고침</button>
+          </div>
+          <img id="sig-preview" alt="서명 미리보기" style="max-width:100%;margin-top:0.9rem;border:1px solid var(--line);border-radius:8px" />
+        </section>
+
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260624a"></script>
+    <script src="/static/js/admin_users.js?v=20260625a"></script>
 {% endblock %}
