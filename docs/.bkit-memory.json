@@ -1,14 +1,14 @@
 {
-  "sessionCount": 18,
+  "sessionCount": 36,
   "lastSession": {
-    "startedAt": "2026-06-06T00:00:00.000Z",
-    "platform": "claude",
+    "startedAt": "2026-06-23T06:14:25.475Z",
+    "platform": "gemini",
     "level": "Dynamic"
   },
   "lastFeature": {
-    "name": "purchase-order-receiving",
+    "name": "attendance-public-api-hardening",
     "phase": "completed",
-    "matchRate": 99,
-    "completedAt": "2026-06-06"
+    "matchRate": 100,
+    "completedAt": "2026-06-18"
   }
 }
