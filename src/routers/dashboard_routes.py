@@ -1,11 +1,13 @@
+import io
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from ..auth import require_access_level
 from ..db import get_connection
-from ..services import forecast_service, lot_service, variance_service
+from ..services import dashboard_export, forecast_service, lot_service, variance_service
 
 
 def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str, str, str]:
@@ -46,6 +48,28 @@ def build_router() -> APIRouter:
         prefix="/dashboard",
         dependencies=[Depends(require_access_level("manager"))],
     )
+
+    @router.get("/export")
+    def dashboard_export_excel(
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None),
+    ) -> StreamingResponse:
+        """운영 대시보드 보고서 Excel(요약·자재 TOP·작업자)."""
+        from_date, to_date, from_ts, to_ts = _parse_range(from_, to)
+        with get_connection() as connection:
+            xlsx = dashboard_export.build_dashboard_excel(
+                connection, from_date=from_date, to_date=to_date, from_ts=from_ts, to_ts=to_ts,
+            )
+        from urllib.parse import quote
+        utf8_name = quote(f"대시보드보고서_{from_date}_{to_date}.xlsx")
+        disposition = (
+            f"attachment; filename=\"dashboard-{from_date}.xlsx\"; filename*=UTF-8''{utf8_name}"
+        )
+        return StreamingResponse(
+            io.BytesIO(xlsx),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": disposition},
+        )
 
     @router.get("/forecast-alert")
     def dashboard_forecast_alert(

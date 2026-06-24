@@ -447,6 +447,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadAll();
   });
   refreshBtn.addEventListener("click", loadAll);
+  const exportBtn = document.getElementById("dash-export");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      window.location.assign(`/api/dashboard/export?${qs(getCurrentRange())}`);
+    });
+  }
   materialModalClose.addEventListener("click", () => {
     materialModal.hidden = true;
   });
