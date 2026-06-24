@@ -48,7 +48,7 @@
         dom.historyModalTitle.textContent = `버전 이력 (${items.length}개)`;
       }
       if (!items.length) {
-        dom.versionHistoryBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">이력이 없습니다.</div></td></tr>';
+        dom.versionHistoryBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">이력이 없습니다.</div></td></tr>';
         return;
       }
       dom.versionHistoryBody.innerHTML = items
@@ -58,6 +58,7 @@
               <td><input type="checkbox" class="version-check" value="${it.id}" /></td>
               <td><strong>${IRMS.escapeHtml(it.version_label)}</strong>${it.is_current ? ' <span class="status-chip status-completed">현재 사용</span>' : ""}</td>
               <td>${IRMS.formatDateTime(it.created_at)}</td>
+              <td>${IRMS.escapeHtml(it.effective_from || "-")}</td>
               <td>${IRMS.escapeHtml(it.created_by || "-")}</td>
               <td class="num">${it.item_count}</td>
               <td><span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span></td>

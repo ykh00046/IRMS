@@ -93,7 +93,8 @@ def fetch_chain(connection, root_id: int) -> list[dict[str, Any]]:
             WHERE r.revision_of = c.id AND c.depth < 100
         )
         SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-               r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
+               r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
+               r.effective_from
         FROM recipes r
         WHERE r.id IN (SELECT id FROM chain)
         ORDER BY r.created_at ASC, r.id ASC

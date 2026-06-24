@@ -36,6 +36,8 @@
                 hidden
               ></textarea>
               <div class="button-row">
+                <label class="filter-label" for="register-effective-from" style="margin:0 0.3rem 0 0">사용 시작일</label>
+                <input id="register-effective-from" type="date" class="input" style="width:auto" title="비우면 등록일로 기록됩니다" />
                 <button id="preview-btn" class="btn accent">Validate</button>
                 <button id="register-btn" class="btn success" disabled>Register</button>
                 <button id="clear-btn" class="btn">Clear</button>
@@ -250,6 +252,7 @@
                       <th style="width:40px"></th>
                       <th>버전</th>
                       <th>등록일시</th>
+                      <th>사용 시작일</th>
                       <th>등록자</th>
                       <th class="num">항목수</th>
                       <th>상태</th>

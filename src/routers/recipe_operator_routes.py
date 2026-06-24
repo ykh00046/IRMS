@@ -112,14 +112,22 @@ def build_router() -> APIRouter:
     def recipes_by_product(
         product_name: str = Query(..., min_length=1, max_length=200),
         limit: int = Query(default=50, ge=1, le=200),
+        current_only: bool = Query(default=True),
     ) -> dict[str, Any]:
+        # current_only(기본): 옛 버전(다른 리비전의 부모) 숨기고 각 체인의 현재 버전(tip)만.
+        revision_filter = (
+            "AND r.id NOT IN (SELECT revision_of FROM recipes WHERE revision_of IS NOT NULL)"
+            if current_only
+            else ""
+        )
         with get_connection() as connection:
             recipe_rows = connection.execute(
-                """
+                f"""
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
+                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
+                       r.effective_from
                 FROM recipes r
-                WHERE r.product_name = ?
+                WHERE r.product_name = ? {revision_filter}
                 ORDER BY r.created_at DESC, r.id DESC
                 LIMIT ?
                 """,
@@ -152,7 +160,8 @@ def build_router() -> APIRouter:
             recipe_row = connection.execute(
                 """
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark
+                       r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
+                       r.effective_from
                 FROM recipes r
                 WHERE r.id = ?
                 """,
@@ -214,6 +223,7 @@ def build_router() -> APIRouter:
                 "status": rec["status"],
                 "created_by": rec["created_by"],
                 "created_at": rec["created_at"],
+                "effective_from": rec.get("effective_from"),
                 "remark": rec.get("remark"),
                 "revision_of": rec.get("revision_of"),
                 "item_count": len(item_map.get(rec["id"], [])),

@@ -145,13 +145,16 @@
     return mapPreview(payload);
   }
 
-  async function importRecipes(rawText, createdBy, revisionOf) {
+  async function importRecipes(rawText, createdBy, revisionOf, effectiveFrom) {
     const body = {
       raw_text: rawText,
       created_by: createdBy || "책임자",
     };
     if (revisionOf != null) {
       body.revision_of = revisionOf;
+    }
+    if (effectiveFrom) {
+      body.effective_from = effectiveFrom;
     }
     return request("/recipes/import", {
       method: "POST",

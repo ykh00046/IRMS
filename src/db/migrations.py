@@ -94,6 +94,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "raw_input_hash", "TEXT")
     ensure_column(connection, "recipes", "raw_input_text", "TEXT")
     ensure_column(connection, "recipes", "revision_of", "INTEGER")
+    # 레시피(버전)별 "사용 시작일" — 미지정 시 등록일로 갈음(등록 시 채움).
+    ensure_column(connection, "recipes", "effective_from", "TEXT")
 
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")

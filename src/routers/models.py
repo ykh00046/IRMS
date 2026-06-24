@@ -20,6 +20,7 @@ class ImportRequest(BaseModel):
     created_by: str = Field(default="책임자")
     revision_of: int | None = None
     force: bool = False
+    effective_from: str | None = Field(default=None, max_length=10)  # 사용 시작일(YYYY-MM-DD), 미지정 시 등록일
 
 
 class StatusUpdateRequest(BaseModel):

@@ -46,6 +46,7 @@ def build_router() -> APIRouter:
 
             created_ids = []
             now = utc_now_text()
+            effective_from = (body.effective_from or "").strip() or now[:10]
             raw_hash = hashlib.sha256(body.raw_text.encode()).hexdigest()
 
             if not body.force and body.revision_of is None:
@@ -71,8 +72,8 @@ def build_router() -> APIRouter:
                     """
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
-                        raw_input_hash, raw_input_text, revision_of, remark
-                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?, ?)
+                        raw_input_hash, raw_input_text, revision_of, remark, effective_from
+                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -84,6 +85,7 @@ def build_router() -> APIRouter:
                         body.raw_text,
                         body.revision_of,
                         parsed_row.get("remark"),
+                        effective_from,
                     ),
                 )
                 recipe_id = cursor.lastrowid
