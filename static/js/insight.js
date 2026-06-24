@@ -127,7 +127,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rows = (data.items || []).filter((row) => row.unitType === "count");
     if (!rows.length) {
       countBody.innerHTML =
-        '<tr><td colspan="6"><div class="empty-state">집계할 count 데이터가 없습니다.</div></td></tr>';
+        '<tr><td colspan="6"><div class="empty-state">집계할 횟수 데이터가 없습니다.</div></td></tr>';
       return;
     }
 
