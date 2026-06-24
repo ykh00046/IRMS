@@ -36,6 +36,7 @@
 .metric-label { font-size: 13px; color: #64748b; font-weight: 500; }
 .metric-value { font-size: 32px; font-weight: 700; color: #0f172a; line-height: 1.1; }
 .metric-unit { font-size: 12px; color: #94a3b8; }
+.metric-value[id="card-variance-total"] { color: #b91c1c; }
 
 .dashboard-grid {
   display: grid;

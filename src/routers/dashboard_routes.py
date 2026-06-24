@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
 from ..db import get_connection, row_to_dict
-from ..services import forecast_service, lot_service
+from ..services import forecast_service, lot_service, variance_service
 
 
 def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str, str, str]:
@@ -210,6 +210,52 @@ def build_router() -> APIRouter:
             }
             for r in rows
         ]
+        return {
+            "range": _range_dict(from_date, to_date),
+            "material_id": int(mat_row["id"]),
+            "material_name": mat_row["name"],
+            "recipes": recipes,
+        }
+
+    @router.get("/variance/summary")
+    def dashboard_variance_summary(
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        from_date, to_date, from_ts, to_ts = _parse_range(from_, to)
+        with get_connection() as connection:
+            summary = variance_service.variance_summary(connection, from_ts, to_ts)
+        return {"range": _range_dict(from_date, to_date), **summary}
+
+    @router.get("/variance/materials")
+    def dashboard_variance_materials(
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None),
+        limit: int = Query(default=10, ge=1, le=100),
+    ) -> dict[str, Any]:
+        from_date, to_date, from_ts, to_ts = _parse_range(from_, to)
+        with get_connection() as connection:
+            items = variance_service.top_material_variances(
+                connection, from_ts, to_ts, limit=limit
+            )
+        return {"range": _range_dict(from_date, to_date), "items": items}
+
+    @router.get("/variance/materials/{material_id}/recipes")
+    def dashboard_material_variance_recipes(
+        material_id: int,
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        from_date, to_date, from_ts, to_ts = _parse_range(from_, to)
+        with get_connection() as connection:
+            mat_row = connection.execute(
+                "SELECT id, name FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not mat_row:
+                raise HTTPException(status_code=404, detail="MATERIAL_NOT_FOUND")
+            recipes = variance_service.material_variance_recipes(
+                connection, material_id, from_ts, to_ts
+            )
         return {
             "range": _range_dict(from_date, to_date),
             "material_id": int(mat_row["id"]),

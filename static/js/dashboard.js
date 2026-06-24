@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const cardMeasurement = document.getElementById("card-measurement");
   const cardWeight = document.getElementById("card-weight");
   const cardThroughput = document.getElementById("card-throughput");
+  const cardActualCoverage = document.getElementById("card-actual-coverage");
+  const cardVarianceTotal = document.getElementById("card-variance-total");
 
   const operatorsBody = document.getElementById("operators-body");
   const materialModal = document.getElementById("material-modal");
@@ -16,21 +18,31 @@ document.addEventListener("DOMContentLoaded", () => {
   const materialModalBody = document.getElementById("material-modal-body");
   const materialModalClose = document.getElementById("material-modal-close");
 
+  const varianceModal = document.getElementById("variance-modal");
+  const varianceModalTitle = document.getElementById("variance-modal-title");
+  const varianceModalBody = document.getElementById("variance-modal-body");
+  const varianceModalClose = document.getElementById("variance-modal-close");
+
   const trendCanvas = document.getElementById("chart-trend");
   const materialsCanvas = document.getElementById("chart-materials");
   const throughputCanvas = document.getElementById("chart-throughput");
+  const varianceCanvas = document.getElementById("chart-variance");
 
   let trendChart = null;
   let materialsChart = null;
   let throughputChart = null;
+  let varianceChart = null;
   let currentMaterials = [];
+  let currentVariances = [];
 
   const PREF_KEY = "irms_dashboard_range";
+  const ALERT_STATUS_LABEL = { urgent: "긴급", soon: "임박" };
+  const EXPIRY_STATE_LABEL = { expired: "만료", expiring_soon: "임박" };
 
   function todayISO() {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
+    return new Date().toISOString().slice(0, 10);
   }
+
   function addDaysISO(days) {
     const d = new Date();
     d.setDate(d.getDate() + days);
@@ -38,7 +50,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setPresetActive(preset) {
-    presetBtns.forEach((b) => b.classList.toggle("active", b.dataset.preset === preset));
+    presetBtns.forEach((button) => {
+      button.classList.toggle("active", button.dataset.preset === preset);
+    });
   }
 
   function computeRangeFromPreset(preset) {
@@ -64,7 +78,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function qs(range) {
-    return `from=${range.from}&to=${range.to}`;
+    return `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`;
+  }
+
+  function fmtNumber(value, digits = 0) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+    return Number(value).toLocaleString(undefined, {
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    });
+  }
+
+  function fmtPct(value) {
+    return value === null || value === undefined ? "-" : Number(value).toFixed(1);
   }
 
   async function loadAll() {
@@ -72,18 +98,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const main = document.querySelector("main.page-grid") || document.body;
     IRMS.showLoading(main);
     try {
-      const [summary, trend, materials, throughput, operators] = await Promise.all([
-        fetchJSON(`/api/dashboard/summary?${qs(range)}`),
-        fetchJSON(`/api/dashboard/trend?${qs(range)}`),
-        fetchJSON(`/api/dashboard/materials?${qs(range)}&limit=10`),
-        fetchJSON(`/api/dashboard/throughput?${qs(range)}`),
-        fetchJSON(`/api/dashboard/operators?${qs(range)}`),
-      ]);
-      renderSummary(summary);
+      const [summary, trend, materials, throughput, operators, varianceSummary, variances] =
+        await Promise.all([
+          fetchJSON(`/api/dashboard/summary?${qs(range)}`),
+          fetchJSON(`/api/dashboard/trend?${qs(range)}`),
+          fetchJSON(`/api/dashboard/materials?${qs(range)}&limit=10`),
+          fetchJSON(`/api/dashboard/throughput?${qs(range)}`),
+          fetchJSON(`/api/dashboard/operators?${qs(range)}`),
+          fetchJSON(`/api/dashboard/variance/summary?${qs(range)}`),
+          fetchJSON(`/api/dashboard/variance/materials?${qs(range)}&limit=10`),
+        ]);
+      renderSummary(summary, varianceSummary);
       renderTrend(trend);
       renderMaterials(materials);
       renderThroughput(throughput);
       renderOperators(operators);
+      renderVarianceSummary(varianceSummary);
+      renderVariances(variances);
     } catch (error) {
       IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
     } finally {
@@ -91,17 +122,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderSummary(data) {
-    cardCompleted.textContent = (data.completed_recipe_count || 0).toLocaleString();
-    cardMeasurement.textContent = (data.measurement_count || 0).toLocaleString();
-    cardWeight.textContent = (data.total_weight_g || 0).toLocaleString();
-    cardThroughput.textContent = (data.throughput_per_hour || 0).toFixed(1);
+  function renderSummary(data, variance) {
+    cardCompleted.textContent = fmtNumber(data.completed_recipe_count);
+    cardMeasurement.textContent = fmtNumber(data.measurement_count);
+    cardWeight.textContent = fmtNumber(data.total_weight_g, 2);
+    cardThroughput.textContent = fmtNumber(data.throughput_per_hour, 1);
+    cardActualCoverage.textContent = fmtPct(variance.coverage_pct);
+    cardVarianceTotal.textContent = fmtNumber(variance.deviation_total_g, 2);
   }
 
   function renderTrend(data) {
-    const labels = data.points.map((p) => p.date.slice(5));
-    const counts = data.points.map((p) => p.completed_count);
-    const weights = data.points.map((p) => p.total_weight_g);
+    const labels = data.points.map((point) => point.date.slice(5));
+    const counts = data.points.map((point) => point.completed_count);
+    const weights = data.points.map((point) => point.total_weight_g);
     if (trendChart) trendChart.destroy();
     trendChart = new Chart(trendCanvas, {
       type: "line",
@@ -117,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
             tension: 0.25,
           },
           {
-            label: "총 사용량(g)",
+            label: "목표 사용량 (g)",
             data: weights,
             borderColor: "#f59e0b",
             backgroundColor: "rgba(245, 158, 11, 0.15)",
@@ -131,8 +164,13 @@ document.addEventListener("DOMContentLoaded", () => {
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         scales: {
-          y: { type: "linear", position: "left", beginAtZero: true, title: { display: true, text: "건" } },
-          y1: { type: "linear", position: "right", beginAtZero: true, title: { display: true, text: "g" }, grid: { drawOnChartArea: false } },
+          y: { type: "linear", position: "left", beginAtZero: true },
+          y1: {
+            type: "linear",
+            position: "right",
+            beginAtZero: true,
+            grid: { drawOnChartArea: false },
+          },
         },
       },
     });
@@ -140,14 +178,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderMaterials(data) {
     currentMaterials = data.items || [];
-    const labels = currentMaterials.map((m) => m.material_name);
-    const values = currentMaterials.map((m) => m.total_weight_g);
+    const labels = currentMaterials.map((item) => item.material_name);
+    const values = currentMaterials.map((item) => item.total_weight_g);
     if (materialsChart) materialsChart.destroy();
     materialsChart = new Chart(materialsCanvas, {
       type: "bar",
       data: {
         labels,
-        datasets: [{ label: "사용량(g)", data: values, backgroundColor: "#16a34a" }],
+        datasets: [{ label: "사용량 (g)", data: values, backgroundColor: "#16a34a" }],
       },
       options: {
         indexAxis: "y",
@@ -157,17 +195,16 @@ document.addEventListener("DOMContentLoaded", () => {
         scales: { x: { beginAtZero: true } },
         onClick: (evt, elements) => {
           if (!elements.length) return;
-          const idx = elements[0].index;
-          const mat = currentMaterials[idx];
-          if (mat) openMaterialDrill(mat.material_id, mat.material_name);
+          const item = currentMaterials[elements[0].index];
+          if (item) openMaterialDrill(item.material_id, item.material_name);
         },
       },
     });
   }
 
   function renderThroughput(data) {
-    const labels = (data.by_day || []).map((d) => d.date.slice(5));
-    const values = (data.by_day || []).map((d) => d.throughput_per_hour);
+    const labels = (data.by_day || []).map((point) => point.date.slice(5));
+    const values = (data.by_day || []).map((point) => point.throughput_per_hour);
     if (throughputChart) throughputChart.destroy();
     throughputChart = new Chart(throughputCanvas, {
       type: "bar",
@@ -195,98 +232,119 @@ document.addEventListener("DOMContentLoaded", () => {
         (op) => `
           <tr>
             <td>${IRMS.escapeHtml(op.operator)}</td>
-            <td class="num">${op.measurement_count.toLocaleString()}</td>
-            <td class="num">${op.total_weight_g.toLocaleString()}</td>
-            <td class="num">${op.completed_recipe_count.toLocaleString()}</td>
+            <td class="num">${fmtNumber(op.measurement_count)}</td>
+            <td class="num">${fmtNumber(op.total_weight_g, 2)}</td>
+            <td class="num">${fmtNumber(op.completed_recipe_count)}</td>
           </tr>
         `,
       )
       .join("");
   }
 
-  // 발주 임박 알림 (forecast-dashboard-alert) — 읽기 전용 GET, 자체 30일 창 사용.
-  // 권한/오류 시 조용히 숨김 유지(노이즈 제로).
-  const ALERT_STATUS_LABEL = { urgent: "긴급", soon: "임박" };
+  function renderVarianceSummary(data) {
+    document.getElementById("variance-measured-count").textContent = fmtNumber(data.measured_count);
+    document.getElementById("variance-actual-count").textContent = fmtNumber(data.actual_count);
+    document.getElementById("variance-target-total").textContent = fmtNumber(data.target_total_g, 2);
+    document.getElementById("variance-actual-total").textContent = fmtNumber(data.actual_total_g, 2);
+    document.getElementById("variance-abs-total").textContent = fmtNumber(data.absolute_deviation_total_g, 2);
+  }
+
+  function renderVariances(data) {
+    currentVariances = data.items || [];
+    const labels = currentVariances.map((item) => item.material_name);
+    const values = currentVariances.map((item) => item.absolute_deviation_g);
+    if (varianceChart) varianceChart.destroy();
+    varianceChart = new Chart(varianceCanvas, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label: "|편차| (g)", data: values, backgroundColor: "#dc2626" }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } },
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const item = currentVariances[elements[0].index];
+          if (item) openVarianceDrill(item.material_id, item.material_name);
+        },
+      },
+    });
+  }
+
   async function loadForecastAlert() {
     const card = document.getElementById("forecast-alert");
     if (!card) return;
-    let data;
     try {
       const res = await fetch("/api/dashboard/forecast-alert", { credentials: "same-origin" });
       if (!res.ok) return;
-      data = await res.json();
+      const data = await res.json();
+      if (!data.reorder_recommended) {
+        card.hidden = true;
+        return;
+      }
+      document.getElementById("forecast-alert-summary").textContent =
+        `발주 권장 ${data.reorder_recommended}건 (긴급 ${data.urgent}, 임박 ${data.soon})`;
+      document.getElementById("forecast-alert-body").innerHTML = data.items
+        .map((item) => {
+          const cls = item.status === "urgent" ? "stock-negative" : "stock-low";
+          return `
+            <tr>
+              <td>${IRMS.escapeHtml(item.name)}</td>
+              <td><span class="stock-status ${cls}">${ALERT_STATUS_LABEL[item.status] || item.status}</span></td>
+              <td class="num">${item.days_remaining ?? "-"}</td>
+              <td>${IRMS.escapeHtml(item.predicted_stockout_date || "-")}</td>
+              <td class="num">${fmtNumber(item.recommended_order_qty, 2)}</td>
+            </tr>`;
+        })
+        .join("");
+      card.hidden = false;
     } catch {
-      return;
-    }
-    if (!data.reorder_recommended) {
       card.hidden = true;
-      return;
     }
-    const summaryEl = document.getElementById("forecast-alert-summary");
-    const bodyEl = document.getElementById("forecast-alert-body");
-    summaryEl.textContent =
-      `발주 권장 ${data.reorder_recommended}건 (긴급 ${data.urgent}, 임박 ${data.soon})` +
-      (data.shown < data.reorder_recommended ? ` · 상위 ${data.shown}건 표시` : "");
-    bodyEl.innerHTML = data.items
-      .map((it) => {
-        const cls = it.status === "urgent" ? "stock-negative" : "stock-low";
-        const days = it.days_remaining === null ? "-" : it.days_remaining.toLocaleString();
-        return `
-          <tr>
-            <td>${IRMS.escapeHtml(it.name)}</td>
-            <td><span class="stock-status ${cls}">${ALERT_STATUS_LABEL[it.status] || it.status}</span></td>
-            <td class="num">${days}</td>
-            <td>${IRMS.escapeHtml(it.predicted_stockout_date || "-")}</td>
-            <td class="num">${(it.recommended_order_qty || 0).toLocaleString()}</td>
-          </tr>`;
-      })
-      .join("");
-    card.hidden = false;
   }
 
-  // 유통기한 임박 알림 (lot-expiry-tracking) — 읽기 전용 GET, 0건이면 미노출.
-  const EXPIRY_STATE_LABEL = { expired: "만료", expiring_soon: "임박" };
   function ddayLabel(n) {
     if (n === null || n === undefined) return "-";
     if (n < 0) return `D+${-n}`;
     if (n === 0) return "D-day";
     return `D-${n}`;
   }
+
   async function loadExpiryAlert() {
     const card = document.getElementById("expiry-alert");
     if (!card) return;
-    let data;
     try {
       const res = await fetch("/api/dashboard/expiry-alert", { credentials: "same-origin" });
       if (!res.ok) return;
-      data = await res.json();
+      const data = await res.json();
+      if (!data.total_alert) {
+        card.hidden = true;
+        return;
+      }
+      document.getElementById("expiry-alert-summary").textContent =
+        `유통기한 주의 ${data.total_alert}건 (만료 ${data.expired}, 임박 ${data.expiring_soon})`;
+      document.getElementById("expiry-alert-body").innerHTML = data.items
+        .map((item) => {
+          const cls = item.expiry_state === "expired" ? "stock-negative" : "stock-low";
+          return `
+            <tr>
+              <td>${IRMS.escapeHtml(item.material_name)}</td>
+              <td>${IRMS.escapeHtml(item.lot_no || "-")}</td>
+              <td><span class="stock-status ${cls}">${EXPIRY_STATE_LABEL[item.expiry_state] || item.expiry_state}</span></td>
+              <td>${IRMS.escapeHtml(item.expiry_date || "-")}</td>
+              <td class="num">${ddayLabel(item.days_until)}</td>
+              <td class="num">${fmtNumber(item.remaining_quantity, 2)}</td>
+            </tr>`;
+        })
+        .join("");
+      card.hidden = false;
     } catch {
-      return;
-    }
-    if (!data.total_alert) {
       card.hidden = true;
-      return;
     }
-    const summaryEl = document.getElementById("expiry-alert-summary");
-    const bodyEl = document.getElementById("expiry-alert-body");
-    summaryEl.textContent =
-      `유통기한 주의 ${data.total_alert}건 (만료 ${data.expired}, 임박 ${data.expiring_soon})` +
-      (data.shown < data.total_alert ? ` · 상위 ${data.shown}건 표시` : "");
-    bodyEl.innerHTML = data.items
-      .map((it) => {
-        const cls = it.expiry_state === "expired" ? "stock-negative" : "stock-low";
-        return `
-          <tr>
-            <td>${IRMS.escapeHtml(it.material_name)}</td>
-            <td>${IRMS.escapeHtml(it.lot_no || "-")}</td>
-            <td><span class="stock-status ${cls}">${EXPIRY_STATE_LABEL[it.expiry_state] || it.expiry_state}</span></td>
-            <td>${IRMS.escapeHtml(it.expiry_date || "-")}</td>
-            <td class="num">${ddayLabel(it.days_until)}</td>
-            <td class="num">${(it.remaining_quantity || 0).toLocaleString()}</td>
-          </tr>`;
-      })
-      .join("");
-    card.hidden = false;
   }
 
   async function openMaterialDrill(materialId, materialName) {
@@ -295,32 +353,81 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await fetchJSON(`/api/dashboard/materials/${materialId}/recipes?${qs(range)}`);
       materialModalTitle.textContent = `${materialName} · 상세`;
       const recipes = data.recipes || [];
-      if (!recipes.length) {
-        materialModalBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">해당 기간 데이터 없음</div></td></tr>';
-      } else {
-        materialModalBody.innerHTML = recipes
-          .map(
-            (r) => `
-              <tr>
-                <td>${IRMS.escapeHtml(r.product_name || "-")}</td>
-                <td>${IRMS.escapeHtml(r.ink_name || "-")}</td>
-                <td class="num">${r.weight_g.toLocaleString()}</td>
-                <td>${IRMS.escapeHtml(r.measured_by)}</td>
-                <td>${IRMS.formatDateTime(r.measured_at)}</td>
-              </tr>
-            `,
-          )
-          .join("");
-      }
+      materialModalBody.innerHTML = recipes.length
+        ? recipes
+            .map(
+              (recipe) => `
+                <tr>
+                  <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
+                  <td>${IRMS.escapeHtml(recipe.ink_name || "-")}</td>
+                  <td class="num">${fmtNumber(recipe.weight_g, 2)}</td>
+                  <td>${IRMS.escapeHtml(recipe.measured_by)}</td>
+                  <td>${IRMS.formatDateTime(recipe.measured_at)}</td>
+                </tr>
+              `,
+            )
+            .join("")
+        : '<tr><td colspan="5"><div class="empty-state">데이터 없음</div></td></tr>';
       materialModal.hidden = false;
     } catch (error) {
       IRMS.notify(`재료 상세 조회 실패: ${error.message}`, "error");
     }
   }
 
-  presetBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const preset = btn.dataset.preset;
+  async function openVarianceDrill(materialId, materialName) {
+    const range = getCurrentRange();
+    try {
+      const data = await fetchJSON(`/api/dashboard/variance/materials/${materialId}/recipes?${qs(range)}`);
+      varianceModalTitle.textContent = `${materialName} · 편차 상세`;
+      const recipes = data.recipes || [];
+      varianceModalBody.innerHTML = recipes.length
+        ? recipes
+            .map(
+              (recipe) => `
+                <tr>
+                  <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
+                  <td>${IRMS.escapeHtml(recipe.ink_name || "-")}</td>
+                  <td class="num">${fmtNumber(recipe.target_weight_g, 2)}</td>
+                  <td class="num">${fmtNumber(recipe.actual_weight_g, 2)}</td>
+                  <td class="num">${fmtNumber(recipe.deviation_g, 2)}</td>
+                  <td class="num">${recipe.deviation_pct === null ? "-" : fmtNumber(recipe.deviation_pct, 2)}</td>
+                  <td>${IRMS.escapeHtml(recipe.measured_by)}</td>
+                  <td>${IRMS.formatDateTime(recipe.measured_at)}</td>
+                </tr>
+              `,
+            )
+            .join("")
+        : '<tr><td colspan="8"><div class="empty-state">실측 데이터 없음</div></td></tr>';
+      varianceModal.hidden = false;
+    } catch (error) {
+      IRMS.notify(`편차 상세 조회 실패: ${error.message}`, "error");
+    }
+  }
+
+  function persistRange(range) {
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify(range));
+    } catch {}
+  }
+
+  function restoreRange() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "null");
+      if (saved && saved.from && saved.to) {
+        fromInput.value = saved.from;
+        toInput.value = saved.to;
+        setPresetActive(null);
+        return;
+      }
+    } catch {}
+    const range = computeRangeFromPreset("7d");
+    fromInput.value = range.from;
+    toInput.value = range.to;
+  }
+
+  presetBtns.forEach((button) => {
+    button.addEventListener("click", () => {
+      const preset = button.dataset.preset;
       setPresetActive(preset);
       const range = computeRangeFromPreset(preset);
       fromInput.value = range.from;
@@ -340,25 +447,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadAll();
   });
   refreshBtn.addEventListener("click", loadAll);
-  materialModalClose.addEventListener("click", () => { materialModal.hidden = true; });
-
-  function persistRange(range) {
-    try { localStorage.setItem(PREF_KEY, JSON.stringify(range)); } catch {}
-  }
-  function restoreRange() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "null");
-      if (saved && saved.from && saved.to) {
-        fromInput.value = saved.from;
-        toInput.value = saved.to;
-        setPresetActive(null);
-        return;
-      }
-    } catch {}
-    const range = computeRangeFromPreset("7d");
-    fromInput.value = range.from;
-    toInput.value = range.to;
-  }
+  materialModalClose.addEventListener("click", () => {
+    materialModal.hidden = true;
+  });
+  varianceModalClose.addEventListener("click", () => {
+    varianceModal.hidden = true;
+  });
 
   restoreRange();
   loadAll();
