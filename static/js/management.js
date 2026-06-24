@@ -10,7 +10,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   // ── DOM references → ctx.dom ──
   const dom = {
-    shell: document.querySelector(".site-shell"),
+    shell: document.querySelector(".app-shell"),
     spreadsheetContainer: document.getElementById("spreadsheet"),
     rawInput: document.getElementById("raw-input"),
     previewBtn: document.getElementById("preview-btn"),

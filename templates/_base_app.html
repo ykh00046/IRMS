@@ -12,54 +12,95 @@
     {% block styles %}{% endblock %}
   </head>
   <body>
-    <div class="site-shell" data-current-username="{{ current_user.username }}">
-      <header class="site-header">
-        <div class="brand-block">
-          <p class="eyebrow">{% block eyebrow %}{% endblock %}</p>
-          <h1>{% block heading %}{% endblock %}</h1>
-        </div>
+    <div class="app-shell" data-current-username="{{ current_user.username }}">
+      <aside class="app-sidebar" id="app-sidebar">
+        <a href="/" class="sidebar-brand">
+          <span class="brand-logo">IR</span>
+          <span class="brand-text">
+            <span class="brand-name">IRMS</span>
+            <span class="brand-sub">반제품 제조 관리</span>
+          </span>
+        </a>
 
-        <button id="nav-toggle" type="button" class="nav-toggle" aria-label="메뉴 열기" aria-expanded="false">
-          <span class="nav-toggle-bar"></span>
-          <span class="nav-toggle-bar"></span>
-          <span class="nav-toggle-bar"></span>
-        </button>
+        <nav class="sidebar-nav" aria-label="주 메뉴">
+          <div class="nav-section">
+            <p class="nav-section-label">현장 작업</p>
+            <a href="/" class="side-link{{ ' active' if request.url.path == '/' else '' }}">
+              <span class="side-ico" aria-hidden="true">⌂</span><span>작업 홈</span>
+            </a>
+            <a href="/blend" class="side-link{{ ' active' if request.url.path == '/blend' else '' }}">
+              <span class="side-ico" aria-hidden="true">◎</span><span>배합 (반제품 제조)</span>
+            </a>
+            <a href="/viscosity" class="side-link{{ ' active' if request.url.path == '/viscosity' else '' }}">
+              <span class="side-ico" aria-hidden="true">◖</span><span>점도 측정</span>
+            </a>
+          </div>
 
-        <nav class="top-nav" aria-label="Main Navigation">
-          {# 현장(비로그인): 배합·점도·근태만. 관리 메뉴는 로그인(admin) 시에만 노출 #}
-          <a href="/" class="nav-link{{ ' active' if request.url.path == '/' else '' }}">홈</a>
-          <a href="/blend" class="nav-link{{ ' active' if request.url.path == '/blend' else '' }}">배합·계량</a>
-          <a href="/viscosity" class="nav-link{{ ' active' if request.url.path == '/viscosity' else '' }}">점도</a>
           {% if current_user %}
-          <a href="/status" class="nav-link{{ ' active' if request.url.path == '/status' else '' }}">현황</a>
-          <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">관리</a>
-          <a href="/dashboard" class="nav-link{{ ' active' if request.url.path == '/dashboard' else '' }}">운영 대시</a>
-          <a href="/insight" class="nav-link{{ ' active' if request.url.path == '/insight' else '' }}">재료 분석</a>
+          <div class="nav-section">
+            <p class="nav-section-label">운영 관리</p>
+            <a href="/status" class="side-link{{ ' active' if request.url.path == '/status' else '' }}">
+              <span class="side-ico" aria-hidden="true">▤</span><span>배합 기록</span>
+            </a>
+            <a href="/management" class="side-link{{ ' active' if request.url.path == '/management' else '' }}">
+              <span class="side-ico" aria-hidden="true">≣</span><span>레시피 현황</span>
+            </a>
+            <a href="/dashboard" class="side-link{{ ' active' if request.url.path == '/dashboard' else '' }}">
+              <span class="side-ico" aria-hidden="true">◫</span><span>제조 대시보드</span>
+            </a>
+            <a href="/insight" class="side-link{{ ' active' if request.url.path == '/insight' else '' }}">
+              <span class="side-ico" aria-hidden="true">⌕</span><span>배합 자재 분석</span>
+            </a>
+          </div>
+
           {% if current_user.access_level == "admin" %}
-          <a href="/admin/users" class="nav-link{{ ' active' if request.url.path == '/admin/users' else '' }}">사용자</a>
+          <div class="nav-section">
+            <p class="nav-section-label">시스템</p>
+            <a href="/admin/users" class="side-link{{ ' active' if request.url.path == '/admin/users' else '' }}">
+              <span class="side-ico" aria-hidden="true">⚇</span><span>사용자 관리</span>
+            </a>
+          </div>
           {% endif %}
           {% endif %}
         </nav>
 
         {% if current_user %}
-        <div class="session-card">
-          <div class="session-info">
-            <span class="session-role">{{ current_user.role_label }}</span>
-            <span class="session-user">{{ current_user.display_name }}</span>
-            <span class="session-id">@{{ current_user.username }}</span>
-          </div>
-          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
-        </div>
-        {% else %}
-        <div class="session-card">
-          <a href="/management/login" class="btn compact">관리자 로그인</a>
+        <div class="sidebar-user">
+          <span class="sidebar-user-avatar">{{ current_user.display_name[:1] }}</span>
+          <span class="sidebar-user-info">
+            <span class="sidebar-user-name">{{ current_user.display_name }}</span>
+            <span class="sidebar-user-role">{{ current_user.role_label }} · @{{ current_user.username }}</span>
+          </span>
         </div>
         {% endif %}
-      </header>
+      </aside>
 
-      <main class="page-grid {% block main_class %}{% endblock %}">
-        {% block content %}{% endblock %}
-      </main>
+      <div class="app-backdrop" id="app-backdrop" hidden></div>
+
+      <div class="app-main-wrap">
+        <header class="app-topbar">
+          <button id="nav-toggle" type="button" class="nav-toggle" aria-label="메뉴 열기" aria-expanded="false">
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+            <span class="nav-toggle-bar"></span>
+          </button>
+          <div class="topbar-title">
+            <p class="topbar-eyebrow">{% block eyebrow %}{% endblock %}</p>
+            <h1 class="topbar-heading">{% block heading %}{% endblock %}</h1>
+          </div>
+          <div class="topbar-actions">
+            {% if current_user %}
+            <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
+            {% else %}
+            <a href="/management/login" class="btn compact accent">관리자 로그인</a>
+            {% endif %}
+          </div>
+        </header>
+
+        <main class="app-content page-grid {% block main_class %}{% endblock %}">
+          {% block content %}{% endblock %}
+        </main>
+      </div>
     </div>
 
     {% block overlay %}{% endblock %}

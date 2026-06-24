@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", async () => {
-  const shell = document.querySelector(".site-shell");
+  const shell = document.querySelector(".app-shell");
   const filterSelect = document.getElementById("status-filter");
   const refreshButton = document.getElementById("status-refresh");
   const resetButton = document.getElementById("status-reset");

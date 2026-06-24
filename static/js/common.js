@@ -16,14 +16,21 @@
 
   const IRMS = window.IRMS = window.IRMS || {};
 
+  // Sidebar drawer toggle (mobile) — opens .app-sidebar with a backdrop.
   const navToggle = document.getElementById("nav-toggle");
-  const topNav = document.querySelector(".top-nav");
-  if (navToggle && topNav) {
-    navToggle.addEventListener("click", () => {
-      const isOpen = topNav.classList.toggle("open");
-      navToggle.classList.toggle("active", isOpen);
-      navToggle.setAttribute("aria-expanded", String(isOpen));
-    });
+  const sidebar = document.getElementById("app-sidebar");
+  const backdrop = document.getElementById("app-backdrop");
+  if (navToggle && sidebar) {
+    const setSidebar = (open) => {
+      sidebar.classList.toggle("open", open);
+      navToggle.classList.toggle("active", open);
+      navToggle.setAttribute("aria-expanded", String(open));
+      if (backdrop) backdrop.hidden = !open;
+    };
+    navToggle.addEventListener("click", () =>
+      setSidebar(!sidebar.classList.contains("open")),
+    );
+    if (backdrop) backdrop.addEventListener("click", () => setSidebar(false));
   }
 
   if (document.readyState === "loading") {
