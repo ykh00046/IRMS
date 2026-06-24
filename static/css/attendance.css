@@ -228,7 +228,7 @@
   line-height: 1;
   font-weight: 700;
   font-family: var(--font-mono, "JetBrains Mono", monospace);
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .att-big-unit {
@@ -244,7 +244,7 @@
 .att-big-unit strong {
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 0.95rem;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .att-big-alert {
@@ -297,7 +297,7 @@
 
 .att-card-note {
   margin: 0.65rem 0 0;
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 0.78rem;
   font-weight: 600;
 }
@@ -307,7 +307,7 @@
 }
 
 .att-card-note-strong {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
@@ -339,7 +339,7 @@
 .att-kv li strong {
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .att-work-card {
@@ -361,13 +361,13 @@
 
 .att-work-grid li {
   min-width: 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--line);
   padding: 0.45rem 0 0.5rem;
 }
 
 .att-work-grid span {
   display: block;
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 0.76rem;
   font-weight: 700;
   margin-bottom: 0.18rem;
@@ -379,7 +379,7 @@
   font-size: 1.15rem;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  color: #0f172a;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
@@ -423,20 +423,20 @@
 }
 
 .att-zero {
-  color: #cbd5e1;
+  color: var(--line-strong);
   font-weight: 400;
 }
 
 /* Group header row (평일 근무 / 휴일 근무). */
 .att-table thead tr:first-child th {
-  background: #e2e8f0;
+  background: var(--line);
   font-weight: 700;
   color: var(--text-secondary, #334155);
   font-size: 0.82rem;
   position: sticky;
   top: 0;
   z-index: 2;
-  border-bottom: 1px solid #cbd5e1;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 /* Sub-header row (정상/연장/야근/조출). */
@@ -448,7 +448,7 @@
   position: sticky;
   top: 2.05rem;
   z-index: 1;
-  border-bottom: 1px solid #cbd5e1;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .att-table th.att-group-weekday {
@@ -477,7 +477,7 @@
 .att-table td.att-col-first,
 .att-table th.att-col-first,
 .att-table td.att-col-adjust-first {
-  border-left: 2px solid #94a3b8;
+  border-left: 2px solid var(--text-tertiary);
 }
 
 /* Zebra stripes (only on plain rows — weekend/holiday rows own color). */
@@ -506,7 +506,7 @@
 
 .att-table tr.att-day-saturday > td.att-date-cell,
 .att-table tr.att-day-saturday > td.att-weekday-cell {
-  color: #1d4ed8;
+  color: var(--brand);
   font-weight: 700;
 }
 
@@ -537,12 +537,12 @@
 }
 
 .att-table tr.att-day-rest > td.att-col-holiday {
-  background: #e2e8f0 !important;
+  background: var(--line) !important;
 }
 
 .att-table tr.att-day-rest > td.att-date-cell,
 .att-table tr.att-day-rest > td.att-weekday-cell {
-  color: #475569;
+  color: var(--text-secondary);
   font-weight: 700;
 }
 
@@ -620,8 +620,8 @@
 }
 
 .att-pill-weekday {
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--line);
+  color: var(--text-secondary);
 }
 
 .att-pill-saturday {
@@ -635,8 +635,8 @@
 }
 
 .att-pill-rest {
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--line);
+  color: var(--text-secondary);
 }
 
 .att-pill-holiday {
@@ -716,7 +716,7 @@
 }
 
 .att-code-empty {
-  color: #94a3b8;
+  color: var(--text-tertiary);
   font-size: 0.78rem;
 }
 
@@ -785,16 +785,16 @@
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #475569;
+  color: var(--text-secondary);
   background: #f1f5f9;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--line-strong);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   cursor: pointer;
   user-select: none;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 #att-session-badge:hover {
-  background: #e2e8f0;
+  background: var(--line);
 }
 #att-session-badge.is-warning {
   color: #b45309;
