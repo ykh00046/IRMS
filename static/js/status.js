@@ -122,6 +122,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("status-detail-close").addEventListener("click", () => {
     $("status-detail-modal").hidden = true;
   });
+  $("status-pdf").addEventListener("click", () => {
+    if (detailId) window.open(`/api/blend/records/${detailId}/pdf`, "_blank");
+  });
   $("status-print").addEventListener("click", () => window.print());
   $("status-excel").addEventListener("click", () => {
     if (detailId) window.location.assign(`/api/blend/records/${detailId}/export`);

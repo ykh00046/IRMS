@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
-from ..services import blend_service, dhr_excel, viscosity_service
+from ..services import blend_service, dhr_excel, dhr_pdf, viscosity_service
 from .models import (
     BlendApprovalBody,
     BlendBulkBody,
@@ -290,6 +290,27 @@ def build_router() -> APIRouter:
         return StreamingResponse(
             buf,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": disposition},
+        )
+
+    @router.get("/blend/records/{record_id}/pdf")
+    def blend_pdf(
+        record_id: int,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """배합일지 스캔효과 PDF(서명 합성 포함)."""
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record)
+        from urllib.parse import quote
+        utf8_name = quote(f"원료배합일지-{record['product_lot']}.pdf")
+        disposition = (
+            f"attachment; filename=\"blend-{record_id}.pdf\"; filename*=UTF-8''{utf8_name}"
+        )
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
             headers={"Content-Disposition": disposition},
         )
 
