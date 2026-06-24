@@ -14,7 +14,7 @@ from ..auth import (
 from ..db import get_connection, write_audit_log
 from ..limiter import limiter
 from ..security import refresh_csrf_cookie
-from .models import LoginRequest, actor_name
+from .models import LoginRequest
 
 
 def build_router() -> APIRouter:

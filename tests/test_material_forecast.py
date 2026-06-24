@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from src.db import utc_now_text
 from src.services import forecast_service
 
 

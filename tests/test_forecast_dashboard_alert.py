@@ -95,7 +95,7 @@ def test_alert_empty_when_no_reorder():
     conn = _make_db()
     ok = _add_material(conn, "ok", stock=100000.0)
     _consume_30d(conn, ok, 5.0)
-    none = _add_material(conn, "none", stock=50.0)  # no_data
+    _add_material(conn, "none", stock=50.0)  # no_data (seeded for side effect)
 
     alert = forecast_service.forecast_alert(conn, window_days=30)
     assert alert["reorder_recommended"] == 0

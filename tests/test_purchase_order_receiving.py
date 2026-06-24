@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from src.services import lot_service, receiving_service, stock_service
+from src.services import lot_service, receiving_service
 
 
 # ── 실제 런타임 스키마와 일치하는 in-memory DB ────────────────────────────────

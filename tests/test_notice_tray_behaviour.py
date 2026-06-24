@@ -1,7 +1,5 @@
-import json
 import unittest
 import datetime as dt
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -9,7 +7,6 @@ from pydantic import ValidationError
 
 from src.routers.models import ChatMessageCreateRequest
 import tray_client.src.main as tray_main
-import tray_client.src.config as tray_config
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
 from tray_client.src.config import Config
 from tray_client.src.attendance_popup import (

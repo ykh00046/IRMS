@@ -292,7 +292,7 @@ def test_material_lots_map():
         "INSERT INTO material_lots (material_id, lot_no, received_quantity, remaining_quantity, status, created_at) "
         "VALUES (?, 'A-OLD', 100, 0, 'active', 'x')", (mids[0],))  # 잔량0 → 제외
     m = bs.list_material_lots_map(conn, mids)
-    assert [l["lot_no"] for l in m[mids[0]]] == ["A-001"]
+    assert [lot["lot_no"] for lot in m[mids[0]]] == ["A-001"]
     assert m[mids[1]] == []
 
 

@@ -206,7 +206,7 @@ def import_workbook(path: Path, dry_run: bool, created_by: str) -> int:
         for w in warnings:
             print(w)
 
-        print(f"\n=== Summary ===")
+        print("\n=== Summary ===")
         print(f"  Recipes: {total_recipes}")
         print(f"  Items:   {total_items}")
         print(f"  Mode:    {'DRY-RUN' if dry_run else 'COMMIT'}")
