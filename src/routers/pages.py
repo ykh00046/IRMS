@@ -143,6 +143,10 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def status_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "status.html", "manager")
 
+    @router.get("/stock", response_class=HTMLResponse)
+    def stock_page(request: Request) -> Response:
+        return _protected_page_response(request, templates, "stock.html", "manager")
+
     @router.get("/base", response_class=HTMLResponse)
     def base_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "base.html", "manager")

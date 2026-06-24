@@ -1,0 +1,105 @@
+/* 재고·발주·LOT 페이지 (/stock) */
+
+.stock-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1000px) {
+  .stock-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.stock-table thead th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  padding: 6px 10px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.stock-table tbody td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-primary);
+}
+
+.stock-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stock-table .num {
+  text-align: right;
+}
+
+.stock-table .mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.stock-table .muted {
+  color: var(--text-tertiary);
+}
+
+.stock-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 26px 10px;
+}
+
+.stock-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stock-chip-ok {
+  color: var(--status-success);
+  background: var(--status-success-bg);
+}
+
+.stock-chip-warn {
+  color: var(--status-warning);
+  background: var(--status-warning-bg);
+}
+
+.stock-chip-danger {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+}
+
+.stock-chip-muted {
+  color: var(--text-tertiary);
+  background: var(--bg-surface-300);
+}
+
+.stock-note {
+  margin-top: 0.85rem;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.stock-note a {
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.stock-note a:hover {
+  text-decoration: underline;
+}
