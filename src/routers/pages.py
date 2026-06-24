@@ -91,11 +91,8 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/weighing/select", response_class=HTMLResponse)
     def weighing_select_page(request: Request, next: str | None = None) -> Response:
-        return _render(templates, request, "weighing_select.html", {
-            "current_user": get_current_user(request, required=False),
-            "next_url": _safe_next(next, "/weighing"),
-            "operators": list_users_by_access_levels("operator", "manager"),
-        })
+        # auth-simplify: 작업자 비번 로그인 폐지 → 이름 기반 계량은 /blend 가 담당.
+        return RedirectResponse(url="/blend", status_code=303)
 
     @router.get("/management/login", response_class=HTMLResponse)
     def management_login_page(request: Request, next: str | None = None) -> Response:
@@ -113,7 +110,8 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/weighing", response_class=HTMLResponse)
     def work_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "work.html", "operator")
+        # auth-simplify: 구 계량 화면 폐지 → 이름 기반 계량/배합은 /blend 로 통일.
+        return RedirectResponse(url="/blend", status_code=303)
 
     @router.get("/management", response_class=HTMLResponse)
     def management_page(request: Request) -> Response:
