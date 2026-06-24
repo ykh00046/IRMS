@@ -6,35 +6,44 @@
    ========================================================================= */
 
 :root {
-  /* Surface & Background Colors */
-  --bg-base: #ffffff;
-  --bg-surface-100: #f8f9fa;
-  --bg-surface-200: #f1f3f5;
-  --bg-surface-300: #e9ecef;
+  /* Surface & Background — 시안(IRMS.dc) 이식: 라이트 블루그레이 페이지 + 화이트 서피스 */
+  --bg-page: #f1f4f9;          /* 페이지 배경(body) */
+  --bg-base: #ffffff;          /* 입력/필드 배경 */
+  --bg-surface-100: #ffffff;   /* 헤더·패널·카드(화이트) */
+  --bg-surface-200: #fafbfd;
+  --bg-surface-300: #eef2f8;
+  /* 디자인 시스템 별칭(시안 토큰명) */
+  --brand: #1b4079;
+  --brand-strong: #143160;
+  --brand-mid: #2c5d9b;
+  --brand-soft: #eaf1fb;
+  --surface: #ffffff;
+  --line: #e7ebf2;
+  --line-strong: #d6dce7;
 
-  /* Text Colors */
-  --text-primary: #1a1a2e;
-  --text-secondary: #495057;
-  --text-tertiary: #868e96;
+  /* Text Colors — 네이비 잉크 */
+  --text-primary: #15233f;
+  --text-secondary: #56627b;
+  --text-tertiary: #8c97ad;
 
-  /* Accent Colors — Slate · Orange · Blue */
-  --accent-primary: #334155;
-  --accent-primary-hover: #1e293b;
-  --accent-primary-light: rgba(51, 65, 85, 0.10);
-  --accent-secondary: #f97316;
-  --accent-secondary-hover: #ea580c;
-  --accent-secondary-light: rgba(249, 115, 22, 0.12);
-  --accent-tertiary: #3b82f6;
-  --accent-tertiary-light: rgba(59, 130, 246, 0.12);
+  /* Accent — 브랜드 네이비 · 오렌지 */
+  --accent-primary: #1b4079;
+  --accent-primary-hover: #143160;
+  --accent-primary-light: rgba(27, 64, 121, 0.10);
+  --accent-secondary: #f47c26;
+  --accent-secondary-hover: #df6a16;
+  --accent-secondary-light: rgba(244, 124, 38, 0.12);
+  --accent-tertiary: #2c5d9b;
+  --accent-tertiary-light: rgba(44, 93, 155, 0.12);
 
-  --status-success: #059669;
-  --status-success-bg: rgba(5, 150, 105, 0.1);
-  --status-warning: #ea580c;
-  --status-warning-bg: rgba(234, 88, 12, 0.1);
-  --status-error: #dc2626;
-  --status-error-bg: rgba(220, 38, 38, 0.1);
-  --status-info: #2563eb;
-  --status-info-bg: rgba(37, 99, 235, 0.1);
+  --status-success: #1e9d6b;
+  --status-success-bg: #e6f6ee;
+  --status-warning: #c98212;
+  --status-warning-bg: #fbf1df;
+  --status-error: #d8453f;
+  --status-error-bg: #fbeae9;
+  --status-info: #2c5d9b;
+  --status-info-bg: rgba(44, 93, 155, 0.1);
 
   /* Ink Colors (domain-specific — actual ink pigments) */
   --ink-black: #27272a;
@@ -42,22 +51,22 @@
   --ink-blue: #2563eb;
   --ink-yellow: #d97706;
 
-  /* Borders & Dividers */
-  --border-subtle: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.15);
-  --glow-primary: 0 0 12px rgba(51, 65, 85, 0.15);
-  --glow-secondary: 0 0 20px rgba(249, 115, 22, 0.2);
+  /* Borders & Dividers — 시안 라인 */
+  --border-subtle: #e7ebf2;
+  --border-strong: #d6dce7;
+  --glow-primary: 0 0 12px rgba(27, 64, 121, 0.15);
+  --glow-secondary: 0 0 20px rgba(244, 124, 38, 0.2);
 
   /* Spacing & Layout */
-  --radius-sm: 6px;
+  --radius-sm: 8px;
   --radius-md: 10px;
-  --radius-lg: 16px;
+  --radius-lg: 14px;
   --radius-full: 9999px;
 
-  /* Typography */
+  /* Typography — Pretendard 우선 */
   --font-sans:
-    "IBM Plex Sans KR", "Pretendard", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Helvetica, Arial, sans-serif;
+    "Pretendard", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Malgun Gothic", "Noto Sans KR", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
@@ -80,7 +89,7 @@ body {
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--bg-base);
+  background-color: var(--bg-page);
   color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -381,18 +390,20 @@ body {
   padding: 0.6rem 1.2rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-primary);
-  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   font-family: inherit;
+  font-weight: 600;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-surface-200);
-  border-color: var(--text-secondary);
+  background: var(--brand-soft);
+  border-color: var(--brand-mid);
+  color: var(--brand);
 }
 
 .btn:disabled {
