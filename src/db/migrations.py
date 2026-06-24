@@ -28,6 +28,7 @@ _ALLOWED_TABLES = frozenset({
     "viscosity_readings",
     "blend_records",
     "blend_details",
+    "workers",
 })
 
 
@@ -398,6 +399,29 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_visc_readings_blend "
         "ON viscosity_readings(blend_record_id) WHERE blend_record_id IS NOT NULL"
     )
+
+    # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    # 기존 사용자 이름을 작업자 명단에 1회 프리필 (로그인 계정과 별개로 선택 편의)
+    if not has_migration(connection, "prefill_workers_from_users"):
+        now = utc_now_text()
+        for row in connection.execute(
+            "SELECT DISTINCT display_name FROM users WHERE display_name IS NOT NULL AND TRIM(display_name) != ''"
+        ).fetchall():
+            connection.execute(
+                "INSERT OR IGNORE INTO workers (name, is_active, created_at) VALUES (?, 1, ?)",
+                (row["display_name"].strip(), now),
+            )
+        record_migration(connection, "prefill_workers_from_users")
 
     # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
     if not has_migration(connection, "formula_columns_to_numeric"):

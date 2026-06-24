@@ -219,6 +219,15 @@ class BlendBulkBody(BaseModel):
     entries: list[BlendBulkEntryBody] = Field(default_factory=list)
 
 
+class WorkerCreateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class WorkerUpdateBody(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

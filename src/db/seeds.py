@@ -4,6 +4,19 @@ from ..security import hash_password
 from .time_utils import utc_now_text
 
 
+def seed_workers(connection: sqlite3.Connection) -> None:
+    """사용자 이름을 작업자 명단(workers)에 동기화 (시드 이후 호출). 멱등."""
+    now = utc_now_text()
+    for row in connection.execute(
+        "SELECT DISTINCT display_name FROM users "
+        "WHERE display_name IS NOT NULL AND TRIM(display_name) != ''"
+    ).fetchall():
+        connection.execute(
+            "INSERT OR IGNORE INTO workers (name, is_active, created_at) VALUES (?, 1, ?)",
+            (row["display_name"].strip(), now),
+        )
+
+
 def seed_users(connection: sqlite3.Connection) -> None:
     seeds = [
         # 책임자

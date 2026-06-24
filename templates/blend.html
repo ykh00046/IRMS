@@ -31,7 +31,7 @@
               </div>
               <div class="blend-field">
                 <label class="filter-label" for="blend-worker">작업자</label>
-                <input class="input" id="blend-worker" placeholder="이름" />
+                <input class="input" id="blend-worker" placeholder="이름" list="worker-names" autocomplete="off" />
               </div>
               <div class="blend-field">
                 <label class="filter-label" for="blend-date">작업일자</label>
@@ -113,7 +113,7 @@
               </div>
               <div class="blend-field">
                 <label class="filter-label" for="bulk-worker">작업자</label>
-                <input class="input" id="bulk-worker" placeholder="이름" />
+                <input class="input" id="bulk-worker" placeholder="이름" list="worker-names" autocomplete="off" />
               </div>
               <div class="blend-field">
                 <label class="filter-label" for="bulk-scale">저울</label>
@@ -182,6 +182,8 @@
             </div>
           </section>
         </div>
+
+        <datalist id="worker-names"></datalist>
 
         <!-- ===== 상세(DHR) 모달 ===== -->
         <div id="blend-detail-modal" class="ss-modal-overlay" hidden>

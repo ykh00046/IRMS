@@ -258,8 +258,9 @@ def init_db() -> None:
             if APP_ENV == "production":
                 raise RuntimeError("IRMS_SEED_DEMO_DATA must not be enabled in production.")
             logger.warning("SEED_DEMO_DATA is enabled — inserting demo data with default passwords.")
-            from .seeds import seed_users, seed_chat_rooms, seed_materials, seed_recipes
+            from .seeds import seed_users, seed_chat_rooms, seed_materials, seed_recipes, seed_workers
             seed_users(connection)
+            seed_workers(connection)
             seed_chat_rooms(connection)
             seed_materials(connection)
             seed_recipes(connection)

@@ -13,7 +13,31 @@
   const notify = IRMS.notify || function (m) { console.log(m); };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {} };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [] };
+
+  async function loadWorkerNames() {
+    try {
+      const data = await request("/workers");
+      state.workers = (data.items || []).map((w) => w.name);
+      const dl = $("worker-names");
+      if (dl) dl.innerHTML = state.workers.map((n) => `<option value="${n}"></option>`).join("");
+    } catch (_e) { /* optional */ }
+  }
+
+  // 처음 보는 이름이면 등록 확인. 등록 거부 시 false 반환(저장 중단).
+  async function ensureWorker(name) {
+    const clean = (name || "").trim();
+    if (!clean) return false;
+    if (state.workers.includes(clean)) return true;
+    if (!window.confirm(`처음 보는 이름입니다: "${clean}"\n작업자로 등록할까요?`)) return false;
+    try {
+      await request("/workers", { method: "POST", body: { name: clean } });
+      state.workers.push(clean);
+      const dl = $("worker-names");
+      if (dl) dl.insertAdjacentHTML("beforeend", `<option value="${clean}"></option>`);
+      return true;
+    } catch (e) { notify(`작업자 등록 실패: ${e.message}`, "error"); return false; }
+  }
 
   // ── 전자서명 패드 (마우스/터치로 직접 그림) ──────────────────
   function attachSignaturePad(canvas) {
@@ -101,6 +125,7 @@
     const worker = $("bulk-worker").value.trim();
     if (!recipe_id) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
+    if (!(await ensureWorker(worker))) return;
     const entries = [];
     $("bulk-body").querySelectorAll("tr").forEach((tr) => {
       const d = tr.querySelector(".bulk-date").value;
@@ -248,6 +273,7 @@
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
+    if (!(await ensureWorker(worker))) return;
     const body = {
       recipe_id: state.current.recipe.id,
       product_name: state.current.recipe.product_name,
@@ -510,6 +536,7 @@
     bind();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkers();
+    loadWorkerNames();
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});
