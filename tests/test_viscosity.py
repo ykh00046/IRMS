@@ -26,6 +26,8 @@ def _make_db() -> sqlite3.Connection:
             lower_limit REAL,
             upper_limit REAL,
             sigma_k REAL NOT NULL DEFAULT 3,
+            rpm REAL,
+            temperature REAL,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         );

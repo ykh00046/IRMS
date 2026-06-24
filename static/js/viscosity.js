@@ -54,27 +54,27 @@
   }
 
   function renderTabs() {
-    const wrap = $("visc-product-tabs");
-    wrap.innerHTML = "";
+    // 상단 품목 토글 대신 단일 드롭다운으로 한 제품만 본다.
+    const sel = $("visc-product-select");
+    if (!sel) return;
+    sel.innerHTML = "";
     state.products.forEach((p) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "visc-tab" + (p.id === state.currentId ? " active" : "");
-      btn.textContent = p.code;
-      if (p.anomaly_count > 0) {
-        const badge = document.createElement("span");
-        badge.className = "visc-tab-badge";
-        badge.textContent = p.anomaly_count;
-        btn.appendChild(badge);
-      }
-      btn.addEventListener("click", () => {
-        state.currentId = p.id;
-        state.year = p.year;  // 제품 전환 시 그 제품의 최신 연도로
-        renderTabs();
-        loadProduct(p.id);
-      });
-      wrap.appendChild(btn);
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent =
+        p.anomaly_count > 0
+          ? `${p.code} · ${p.name} (이상 ${p.anomaly_count})`
+          : `${p.code} · ${p.name}`;
+      if (p.id === state.currentId) opt.selected = true;
+      sel.appendChild(opt);
     });
+    sel.onchange = () => {
+      const p = state.products.find((x) => x.id === Number(sel.value));
+      if (!p) return;
+      state.currentId = p.id;
+      state.year = p.year; // 제품 전환 시 그 제품의 최신 연도로
+      loadProduct(p.id);
+    };
   }
 
   async function loadProduct(productId) {
@@ -88,6 +88,16 @@
     renderChart();
     renderPeriods();
     renderReadings();
+    renderCondition();
+  }
+
+  function renderCondition() {
+    const el = $("visc-cond");
+    if (!el || !state.analysis) return;
+    const p = state.analysis.product;
+    const rpm = p.rpm != null ? `${p.rpm} rpm` : "rpm 미설정";
+    const temp = p.temperature != null ? `${p.temperature}°C` : "온도 미설정";
+    el.textContent = `측정 조건 · ${rpm} · ${temp}`;
   }
 
   function renderYearSelect() {
@@ -145,18 +155,20 @@
   function renderChart() {
     const a = state.analysis;
     const s = a.stats;
-    const labels = a.readings.map((r) => r.measured_date || r.lot_no);
-    const values = a.readings.map((r) => r.viscosity);
-    const pointColors = a.readings.map((r) =>
-      r.status === "anomaly" ? "#dc2626" : r.status === "warn" ? "#d97706" : "#2563eb"
+    // 그래프는 최근 30개만 표시(전체는 아래 측정 이력에서 확인).
+    const chartReadings = a.readings.slice(-30);
+    const labels = chartReadings.map((r) => r.measured_date || r.lot_no);
+    const values = chartReadings.map((r) => r.viscosity);
+    const pointColors = chartReadings.map((r) =>
+      r.status === "anomaly" ? "#dc2626" : r.status === "warn" ? "#d97706" : "#1b4079"
     );
 
-    const flat = (v) => (v === null ? null : a.readings.map(() => v));
+    const flat = (v) => (v === null ? null : chartReadings.map(() => v));
     const datasets = [
       {
         label: "점도",
         data: values,
-        borderColor: "#2563eb",
+        borderColor: "#1b4079",
         backgroundColor: pointColors,
         pointBackgroundColor: pointColors,
         pointRadius: 4,
@@ -199,7 +211,7 @@
             callbacks: {
               afterBody: (items) => {
                 const idx = items[0].dataIndex;
-                const r = a.readings[idx];
+                const r = chartReadings[idx];
                 const parts = [];
                 if (r.status !== "normal") parts.push(`상태: ${STATUS_LABEL[r.status]}`);
                 if (r.memo) parts.push(`메모: ${r.memo}`);
@@ -494,6 +506,8 @@
     $("visc-set-lower").value = p.lower_limit ?? "";
     $("visc-set-upper").value = p.upper_limit ?? "";
     $("visc-set-sigma").value = p.sigma_k;
+    $("visc-set-rpm").value = p.rpm ?? "";
+    $("visc-set-temp").value = p.temperature ?? "";
     $("visc-set-active").checked = p.is_active;
     $("visc-settings-error").hidden = true;
     $("visc-settings-modal").hidden = false;
@@ -514,6 +528,8 @@
       lower_limit: numOrNull("visc-set-lower"),
       upper_limit: numOrNull("visc-set-upper"),
       sigma_k: Number($("visc-set-sigma").value),
+      rpm: numOrNull("visc-set-rpm"),
+      temperature: numOrNull("visc-set-temp"),
       is_active: $("visc-set-active").checked,
     };
     try {

@@ -403,6 +403,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "ON viscosity_readings(blend_record_id) WHERE blend_record_id IS NOT NULL"
     )
 
+    # 점도 측정 조건(반제품마다 1회 세팅, 매 측정마다 재입력하지 않음): rpm + 온도(°C)
+    ensure_column(connection, "viscosity_products", "rpm", "REAL")
+    ensure_column(connection, "viscosity_products", "temperature", "REAL")
+
     # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
     connection.execute(
         """

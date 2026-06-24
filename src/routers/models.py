@@ -131,6 +131,8 @@ class ViscosityProductUpdateBody(BaseModel):
     lower_limit: float | None = Field(default=None, ge=0, le=100000)
     upper_limit: float | None = Field(default=None, gt=0, le=100000)
     sigma_k: float = Field(default=3, ge=1, le=6)
+    rpm: float | None = Field(default=None, ge=0, le=100000)
+    temperature: float | None = Field(default=None, ge=-50, le=300)
     is_active: bool = True
 
     @model_validator(mode="after")

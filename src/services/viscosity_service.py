@@ -71,7 +71,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
     where = "WHERE is_active = 1" if active_only else ""
     rows = connection.execute(
         f"""
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
         FROM viscosity_products
         {where}
         ORDER BY is_active DESC, code ASC
@@ -83,7 +83,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
 def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
         FROM viscosity_products
         WHERE id = ?
         """,
@@ -95,7 +95,7 @@ def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, An
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
         FROM viscosity_products
         WHERE code = ?
         """,
@@ -113,6 +113,8 @@ def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
         "lower_limit": _opt_float(row["lower_limit"]),
         "upper_limit": _opt_float(row["upper_limit"]),
         "sigma_k": float(row["sigma_k"]),
+        "rpm": _opt_float(row["rpm"]),
+        "temperature": _opt_float(row["temperature"]),
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "has_spec": row["lower_limit"] is not None or row["upper_limit"] is not None,
