@@ -11,19 +11,16 @@
     <link rel="stylesheet" href="/static/css/common.css" />
     <link rel="stylesheet" href="/static/css/access.css" />
   </head>
-  <body>
-    <main class="access-shell">
-      <section class="access-stage access-stage-split">
-        <div class="access-hero">
-          <p class="eyebrow">Attendance Gate</p>
-          <h1>ATTENDANCE SIGN-IN</h1>
-          <p class="access-subtitle">
-            사번을 입력해 이번 달 출퇴근과 연장 시간을 확인합니다.
-            최초 로그인용 임시 비밀번호는 관리자에게 발급받으세요. 로그인 후 변경이 필요합니다.
-          </p>
+  <body class="launch-body">
+    <main class="login-stage">
+      <form id="att-login-form" class="login-card" autocomplete="off">
+        <div class="login-head">
+          <span class="brand-logo login-logo">IR</span>
+          <h1 class="login-title">근태 확인</h1>
+          <p class="login-subtitle">사번으로 로그인해 월별 근태를 조회합니다</p>
         </div>
 
-        <form id="att-login-form" class="access-form" autocomplete="off">
+        <div class="login-field">
           <label class="filter-label" for="att-emp-id">사번</label>
           <input
             id="att-emp-id"
@@ -37,7 +34,9 @@
             maxlength="20"
             placeholder="예) 171013"
           />
+        </div>
 
+        <div class="login-field">
           <label class="filter-label" for="att-password">비밀번호</label>
           <input
             id="att-password"
@@ -48,15 +47,16 @@
             required
             placeholder="초기값은 사번과 동일"
           />
+        </div>
 
-          <p id="att-login-error" class="login-error" hidden></p>
+        <p id="att-login-error" class="login-error" hidden></p>
 
-          <div class="access-actions">
-            <a href="/" class="btn">처음으로</a>
-            <button id="att-login-submit" type="submit" class="btn accent">로그인</button>
-          </div>
-        </form>
-      </section>
+        <button id="att-login-submit" type="submit" class="btn accent login-submit">로그인</button>
+
+        <p class="login-demo">최초 임시 비밀번호는 관리자에게 발급받으세요 · 로그인 후 변경 필요</p>
+
+        <a href="/" class="login-back">← 처음으로</a>
+      </form>
     </main>
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>

@@ -371,6 +371,12 @@
   color: var(--text-secondary);
 }
 
+.login-actions-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
 .login-back {
   text-align: center;
   font-size: 13px;
