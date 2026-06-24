@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IRMS · Entry</title>
+    <title>IRMS · 통합 제조 · 근태 관리</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
@@ -11,55 +11,56 @@
     <link rel="stylesheet" href="/static/css/common.css" />
     <link rel="stylesheet" href="/static/css/access.css" />
   </head>
-  <body>
+  <body class="launch-body">
     <a href="/test" class="entry-test-corner" title="테스트 화면 (계량·관리)">test</a>
 
-    <main class="access-shell">
-      <section class="access-stage">
-        <div class="access-hero">
-          <p class="eyebrow">IRMS Entry Gate</p>
-          <h1>근태 확인</h1>
-          <p class="access-subtitle">
-            사번으로 로그인해 이번 달 출퇴근과 연장 시간을 확인합니다.
-            최초 로그인용 임시 비밀번호는 관리자에게 발급받으세요.
-          </p>
-        </div>
+    <main class="launch-stage">
+      <header class="launch-head">
+        <span class="brand-logo launch-logo">IR</span>
+        <h1 class="launch-title">IRMS</h1>
+        <p class="launch-sub">통합 제조 · 근태 관리 시스템</p>
+        <p class="launch-date" id="launch-date"></p>
+      </header>
 
+      <div class="launch-grid">
+        <a href="/attendance" class="launch-tile">
+          <span class="launch-tile-ico launch-tile-ico-att" aria-hidden="true">🗓</span>
+          <span class="launch-tile-title">근태 확인</span>
+          <span class="launch-tile-desc">출퇴근 · 근무시간 · 지각 · 연차 등<br />월별 근태 현황을 조회합니다</span>
+          <span class="launch-tile-go">바로가기 <span aria-hidden="true">→</span></span>
+        </a>
+        <a href="/blend" class="launch-tile launch-tile-accent">
+          <span class="launch-tile-ico launch-tile-ico-mfg" aria-hidden="true">◎</span>
+          <span class="launch-tile-title">반제품 제조 관리</span>
+          <span class="launch-tile-desc">배합 · 점도 · 레시피 · DHR 등<br />반제품 제조 전반을 관리합니다</span>
+          <span class="launch-tile-go launch-tile-go-accent">바로가기 <span aria-hidden="true">→</span></span>
+        </a>
+      </div>
+
+      <footer class="launch-foot">
         {% if current_user %}
-        <div class="session-card access-session">
-          <div class="session-info">
-            <span class="session-role">{{ current_user.role_label }}</span>
-            <span class="session-user">{{ current_user.display_name }}</span>
-            <span class="session-id">@{{ current_user.username }}</span>
-          </div>
-          <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
-        </div>
+        <span>{{ current_user.display_name }} · {{ current_user.role_label }} · @{{ current_user.username }}</span>
+        <button id="logout-btn" type="button" class="btn compact launch-logout">로그아웃</button>
+        {% else %}
+        <a href="/management/login" class="launch-foot-link">관리자 로그인</a>
         {% endif %}
-
-        <div class="access-grid">
-          <article class="access-card access-card-att">
-            <span class="access-chip">Attendance</span>
-            <h2>근태 확인</h2>
-            <p>사번과 관리자 발급 임시 비밀번호로 로그인해 이번 달 출퇴근과 연장 시간을 확인합니다.</p>
-            <a href="/attendance" class="btn accent access-link">근태 보기</a>
-          </article>
-          <article class="access-card access-card-visc">
-            <span class="access-chip">Viscosity</span>
-            <h2>점도 관리</h2>
-            <p>합성 점도 등록·추세·이상 분석 화면입니다. 작업자 로그인이 필요합니다.</p>
-            <a href="/viscosity" class="btn accent access-link">점도 보기</a>
-          </article>
-          <article class="access-card access-card-blend">
-            <span class="access-chip">Blend</span>
-            <h2>배합 실적</h2>
-            <p>레시피 기반 배합 입력(이론/실제·자재LOT)과 기록 조회·실적서 출력.</p>
-            <a href="/blend" class="btn accent access-link">배합 보기</a>
-          </article>
-        </div>
-      </section>
+      </footer>
     </main>
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
+    <script>
+      (function () {
+        var el = document.getElementById("launch-date");
+        if (el) {
+          el.textContent = new Date().toLocaleDateString("ko-KR", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            weekday: "long",
+          });
+        }
+      })();
+    </script>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->
     <script src="/static/js/common/core.js"></script>
     <script src="/static/js/common/mappers.js"></script>

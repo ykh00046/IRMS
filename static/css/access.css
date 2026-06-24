@@ -139,6 +139,167 @@
   width: fit-content;
 }
 
+/* =========================================================================
+   런처 (entry.html) — 시안 IRMS.dc 네이비 게이트
+   ========================================================================= */
+
+.launch-body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% -10%, #2b569a 0%, transparent 55%),
+    linear-gradient(165deg, #1b4079 0%, #12305c 55%, #0e2547 100%);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.5rem;
+}
+
+.launch-stage {
+  width: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.launch-head {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.launch-logo {
+  width: 54px;
+  height: 54px;
+  border-radius: 15px;
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.launch-title {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.launch-sub {
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.launch-date {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.launch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.launch-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px 22px 20px;
+  background: var(--surface, #fff);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(8, 20, 45, 0.35);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.launch-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 52px rgba(8, 20, 45, 0.45);
+}
+
+.launch-tile-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  margin-bottom: 8px;
+  background: var(--brand-soft, #eaf1fb);
+  color: var(--brand, #1b4079);
+}
+
+.launch-tile-ico-mfg {
+  background: var(--accent-soft, #fef1e6);
+  color: var(--accent-secondary, #f47c26);
+}
+
+.launch-tile-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.launch-tile-desc {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.launch-tile-go {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand, #1b4079);
+}
+
+.launch-tile-go-accent {
+  color: var(--accent-secondary-hover, #df6a16);
+}
+
+.launch-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.launch-foot-link {
+  color: rgba(255, 255, 255, 0.82);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.launch-foot-link:hover {
+  color: #fff;
+}
+
+.launch-logout {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.launch-logout:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+@media (max-width: 560px) {
+  .launch-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .entry-test-corner {
   position: fixed;
   top: 0.85rem;
