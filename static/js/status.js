@@ -69,7 +69,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function normalizePosition(position) {
-    return (position || "UNASSIGNED").trim() || "UNASSIGNED";
+    return (position || "미배정").trim() || "미배정";
   }
 
   function comparePosition(left, right) {
@@ -176,8 +176,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!recipe.nextItem) {
       return `
         <div class="status-next-target">
-          <strong class="status-next-material">All steps completed</strong>
-          <span class="status-next-meta">Recipe can be completed now.</span>
+          <strong class="status-next-material">모든 단계 완료</strong>
+          <span class="status-next-meta">이제 레시피를 완료할 수 있습니다.</span>
         </div>
       `;
     }
@@ -186,7 +186,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return `
       <div class="status-next-target">
         <strong class="status-next-material">${IRMS.escapeHtml(recipe.nextItem.materialName)}</strong>
-        <span class="status-next-meta">Target ${IRMS.escapeHtml(IRMS.formatValue(recipe.nextItem.targetValue))}${unitText}</span>
+        <span class="status-next-meta">목표 ${IRMS.escapeHtml(IRMS.formatValue(recipe.nextItem.targetValue))}${unitText}</span>
         <span class="status-next-meta">Color ${IRMS.escapeHtml(recipe.nextItem.colorGroup || "none")}</span>
       </div>
     `;
@@ -194,7 +194,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function renderLastCompleted(recipe) {
     if (!recipe.lastCompletedItem) {
-      return '<span class="status-last-empty">No weighing step completed yet.</span>';
+      return '<span class="status-last-empty">완료된 계량 단계가 없습니다.</span>';
     }
 
     return `
@@ -215,7 +215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       contextChips.push(`Started ${IRMS.formatDateTime(recipe.startedAt)}`);
     }
     if (recipe.completedAt) {
-      contextChips.push(`Completed ${IRMS.formatDateTime(recipe.completedAt)}`);
+      contextChips.push(`완료 ${IRMS.formatDateTime(recipe.completedAt)}`);
     }
 
     return `
@@ -230,7 +230,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         <div class="status-progress-block">
           <div class="status-progress-meta">
-            <span>${IRMS.escapeHtml(IRMS.formatValue(recipe.completedSteps))} / ${IRMS.escapeHtml(IRMS.formatValue(recipe.totalSteps))} steps</span>
+            <span>${IRMS.escapeHtml(IRMS.formatValue(recipe.completedSteps))} / ${IRMS.escapeHtml(IRMS.formatValue(recipe.totalSteps))} 단계</span>
             <strong>${IRMS.escapeHtml(IRMS.formatValue(recipe.progressPct))}%</strong>
           </div>
           <div class="status-progress-track" aria-hidden="true">
@@ -240,32 +240,32 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         <div class="status-metrics">
           <div class="status-metric">
-            <span class="status-metric-label">Remaining</span>
+            <span class="status-metric-label">남은 단계</span>
             <strong class="status-metric-value">${IRMS.escapeHtml(IRMS.formatValue(recipe.remainingSteps))}</strong>
           </div>
           <div class="status-metric">
-            <span class="status-metric-label">Created By</span>
+            <span class="status-metric-label">작성자</span>
             <strong class="status-metric-value">${IRMS.escapeHtml(recipe.createdBy || "-")}</strong>
           </div>
           <div class="status-metric">
-            <span class="status-metric-label">Created At</span>
+            <span class="status-metric-label">작성 시각</span>
             <strong class="status-metric-value">${IRMS.escapeHtml(IRMS.formatDateTime(recipe.createdAt))}</strong>
           </div>
         </div>
 
         <div class="status-detail-grid">
           <section class="status-detail-card">
-            <span class="status-detail-label">Next Weighing Step</span>
+            <span class="status-detail-label">다음 계량 단계</span>
             ${renderNextItem(recipe)}
           </section>
           <section class="status-detail-card">
-            <span class="status-detail-label">Last Completed Step</span>
+            <span class="status-detail-label">마지막 완료 단계</span>
             ${renderLastCompleted(recipe)}
           </section>
         </div>
 
         <section class="status-detail-card">
-          <span class="status-detail-label">Remaining Materials</span>
+          <span class="status-detail-label">남은 자재</span>
           ${renderRemainingMaterials(recipe.remainingMaterials || [])}
         </section>
 
