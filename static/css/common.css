@@ -23,6 +23,9 @@
   /* 레거시 페이지 CSS 별칭 — 과거 var(--accent/--primary, #2563eb)가 파란색으로 폴백되던 것을 브랜드 네이비로 정렬 */
   --accent: #1b4079;
   --primary: #1b4079;
+  /* 미정의로 회색 폴백되던 별칭(서명 패드·DHR 결재·점도·스프레드시트 보더/뮤트 텍스트) */
+  --border: #d6dce7;
+  --muted: #8c97ad;
 
   /* Text Colors — 네이비 잉크 */
   --text-primary: #15233f;
