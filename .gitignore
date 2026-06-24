@@ -51,3 +51,4 @@ cloudflared/*.json
 .pytest_tmp/
 .tmp-tests/
 .coverage
+.gstack/
