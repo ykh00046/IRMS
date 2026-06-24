@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
-from ..services import blend_service, viscosity_service
+from ..services import blend_service, dhr_excel, viscosity_service
 from .models import (
     BlendApprovalBody,
     BlendBulkBody,
@@ -277,102 +277,13 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Border, Font, Side
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "배합실적서"
-        bold = Font(bold=True)
-        thin = Side(style="thin", color="CCCCCC")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        ws["A1"] = "배합 실적서"
-        ws["A1"].font = Font(bold=True, size=14)
-        ws.merge_cells("A1:G1")
-        ws["A1"].alignment = Alignment(horizontal="center")
-
-        meta = [
-            ("제품 LOT", record["product_lot"], "제품", f"{record['product_name']}"
-             + (f" / {record['ink_name']}" if record.get("ink_name") else "")),
-            ("작업자", record["worker"], "작업일시",
-             f"{record['work_date']} {record.get('work_time') or ''}".strip()),
-            ("총 배합량(g)", record["total_amount"], "저울", record.get("scale") or "-"),
-        ]
-        row = 3
-        for k1, v1, k2, v2 in meta:
-            ws.cell(row=row, column=1, value=k1).font = bold
-            ws.cell(row=row, column=2, value=v1)
-            ws.cell(row=row, column=4, value=k2).font = bold
-            ws.cell(row=row, column=5, value=v2)
-            row += 1
-
-        header_row = row + 1
-        headers = ["#", "품목", "자재 LOT", "비율(%)", "이론량(g)", "실제량(g)", "편차(g)"]
-        for col, h in enumerate(headers, start=1):
-            cell = ws.cell(row=header_row, column=col, value=h)
-            cell.font = bold
-            cell.border = border
-            cell.alignment = Alignment(horizontal="center")
-
-        r = header_row + 1
-        for i, d in enumerate(record["details"], start=1):
-            values = [
-                i, d["material_name"], d.get("material_lot") or "",
-                d.get("ratio"), d.get("theory_amount"), d.get("actual_amount"), d.get("variance"),
-            ]
-            for col, val in enumerate(values, start=1):
-                cell = ws.cell(row=r, column=col, value=val)
-                cell.border = border
-            r += 1
-
-        v = record.get("variance", {})
-        ws.cell(row=r, column=1, value="합계").font = bold
-        ws.cell(row=r, column=5, value=v.get("theory_total")).font = bold
-        ws.cell(row=r, column=6, value=v.get("actual_total")).font = bold
-        ws.cell(row=r, column=7, value=v.get("net_variance")).font = bold
-
-        widths = [5, 22, 16, 10, 12, 12, 10]
-        for col, w in enumerate(widths, start=1):
-            ws.column_dimensions[chr(64 + col)].width = w
-        # 결재(작성/검토/승인)
-        sign_row = r + 2
-        ws.cell(row=sign_row, column=1, value="결재").font = bold
-        signs = [
-            ("작성", record.get("created_by"), record.get("created_at")),
-            ("검토", record.get("reviewed_by"), record.get("reviewed_at")),
-            ("승인", record.get("approved_by"), record.get("approved_at")),
-        ]
-        sign_imgs = [record.get("worker_sign"), record.get("reviewed_sign"), record.get("approved_sign")]
-        for i, (label, name, at) in enumerate(signs):
-            base_col = 2 + i * 2
-            ws.cell(row=sign_row, column=base_col, value=label).font = bold
-            at_txt = (at or "")[:16].replace("T", " ")
-            ws.cell(row=sign_row, column=base_col + 1,
-                    value=f"{name or ''} {at_txt}".strip())
-            # 전자서명 이미지 첨부 (있으면)
-            data_url = sign_imgs[i]
-            if data_url and data_url.startswith("data:image/png;base64,"):
-                try:
-                    import base64 as _b64
-                    from openpyxl.drawing.image import Image as XLImage
-                    raw = _b64.b64decode(data_url.split(",", 1)[1])
-                    img = XLImage(io.BytesIO(raw))
-                    img.width, img.height = 120, 48
-                    ws.row_dimensions[sign_row + 1].height = 40
-                    ws.add_image(img, f"{chr(64 + base_col + 1)}{sign_row + 1}")
-                except Exception:
-                    pass
-        if record.get("note"):
-            ws.cell(row=sign_row + 2, column=1, value=f"비고: {record['note']}")
-
-        buf = io.BytesIO()
-        wb.save(buf)
+        xlsx_bytes = dhr_excel.build_official_dhr_xlsx(record)
+        buf = io.BytesIO(xlsx_bytes)
         buf.seek(0)
         # 한글 product_lot 대응: ASCII 폴백 + RFC 5987 filename* (UTF-8)
         from urllib.parse import quote
         ascii_name = f"blend-{record_id}.xlsx"
-        utf8_name = quote(f"배합실적서-{record['product_lot']}.xlsx")
+        utf8_name = quote(f"원료배합일지-{record['product_lot']}.xlsx")
         disposition = (
             f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
         )
