@@ -1,8 +1,8 @@
 {% extends "_base_app.html" %}
 
-{% block title %}Operations Dashboard{% endblock %}
-{% block eyebrow %}Operations overview{% endblock %}
-{% block heading %}Operations Dashboard{% endblock %}
+{% block title %}운영 대시보드{% endblock %}
+{% block eyebrow %}운영 현황{% endblock %}
+{% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/dashboard.css" />
@@ -12,36 +12,36 @@
         <section class="panel dashboard-filter-panel">
           <div class="dashboard-filter-row">
             <div class="dashboard-presets">
-              <button class="btn preset-btn" data-preset="today" type="button">Today</button>
-              <button class="btn preset-btn active" data-preset="7d" type="button">7d</button>
-              <button class="btn preset-btn" data-preset="30d" type="button">30d</button>
+              <button class="btn preset-btn" data-preset="today" type="button">오늘</button>
+              <button class="btn preset-btn active" data-preset="7d" type="button">7일</button>
+              <button class="btn preset-btn" data-preset="30d" type="button">30일</button>
             </div>
             <div class="dashboard-custom-range">
-              <label class="filter-label">From</label>
+              <label class="filter-label">시작</label>
               <input id="dash-from" type="date" class="input" />
-              <label class="filter-label">To</label>
+              <label class="filter-label">종료</label>
               <input id="dash-to" type="date" class="input" />
-              <button id="dash-apply" class="btn accent" type="button">Apply</button>
+              <button id="dash-apply" class="btn accent" type="button">적용</button>
             </div>
-            <button id="dash-refresh" class="btn" type="button">Refresh</button>
+            <button id="dash-refresh" class="btn" type="button">새로고침</button>
           </div>
         </section>
 
         <section id="forecast-alert" class="panel" hidden>
           <div class="forecast-alert-head">
-            <h3 class="panel-title">Reorder alert</h3>
-            <a class="btn btn-sm" href="/management#forecast">Forecast details</a>
+            <h3 class="panel-title">발주 임박 알림</h3>
+            <a class="btn btn-sm" href="/management#forecast">예측 상세</a>
           </div>
           <p id="forecast-alert-summary" class="muted small"></p>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Material</th>
-                  <th>Status</th>
-                  <th class="num">Days</th>
-                  <th>Stockout</th>
-                  <th class="num">Recommended (g)</th>
+                  <th>자재</th>
+                  <th>상태</th>
+                  <th class="num">잔여일</th>
+                  <th>소진 예정</th>
+                  <th class="num">추천량(g)</th>
                 </tr>
               </thead>
               <tbody id="forecast-alert-body"></tbody>
@@ -51,20 +51,20 @@
 
         <section id="expiry-alert" class="panel" hidden>
           <div class="forecast-alert-head">
-            <h3 class="panel-title">LOT expiry alert</h3>
-            <a class="btn btn-sm" href="/management#lots">LOT details</a>
+            <h3 class="panel-title">LOT 만료 알림</h3>
+            <a class="btn btn-sm" href="/management#lots">LOT 상세</a>
           </div>
           <p id="expiry-alert-summary" class="muted small"></p>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Material</th>
+                  <th>자재</th>
                   <th>LOT</th>
-                  <th>Status</th>
-                  <th>Expiry</th>
+                  <th>상태</th>
+                  <th>만료일</th>
                   <th class="num">D-day</th>
-                  <th class="num">Remaining (g)</th>
+                  <th class="num">잔여량(g)</th>
                 </tr>
               </thead>
               <tbody id="expiry-alert-body"></tbody>
@@ -74,32 +74,32 @@
 
         <section class="dashboard-cards">
           <div class="metric-card">
-            <div class="metric-label">Completed recipes</div>
+            <div class="metric-label">완료 레시피</div>
             <div class="metric-value" id="card-completed">-</div>
-            <div class="metric-unit">count</div>
+            <div class="metric-unit">건</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Measured steps</div>
+            <div class="metric-label">계량 단계</div>
             <div class="metric-value" id="card-measurement">-</div>
-            <div class="metric-unit">steps</div>
+            <div class="metric-unit">단계</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Target usage</div>
+            <div class="metric-label">목표 사용량</div>
             <div class="metric-value" id="card-weight">-</div>
             <div class="metric-unit">g</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Throughput</div>
+            <div class="metric-label">처리량</div>
             <div class="metric-value" id="card-throughput">-</div>
-            <div class="metric-unit">steps/hour</div>
+            <div class="metric-unit">단계/시간</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Actual coverage</div>
+            <div class="metric-label">실측 반영률</div>
             <div class="metric-value" id="card-actual-coverage">-</div>
             <div class="metric-unit">%</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Net variance</div>
+            <div class="metric-label">순편차</div>
             <div class="metric-value" id="card-variance-total">-</div>
             <div class="metric-unit">g</div>
           </div>
@@ -107,31 +107,31 @@
 
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">Daily trend</h3>
+            <h3 class="panel-title">일별 추이</h3>
             <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
           </div>
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">Material usage TOP 10</h3>
+            <h3 class="panel-title">자재 사용 TOP 10</h3>
             <div class="chart-wrap"><canvas id="chart-materials"></canvas></div>
-            <p class="muted small">Click a bar to inspect material usage detail.</p>
+            <p class="muted small">막대를 클릭하면 자재 사용 상세를 봅니다.</p>
           </div>
         </section>
 
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">Daily throughput</h3>
+            <h3 class="panel-title">일별 처리량</h3>
             <div class="chart-wrap"><canvas id="chart-throughput"></canvas></div>
           </div>
           <div class="panel dashboard-operators-panel">
-            <h3 class="panel-title">Operator performance</h3>
+            <h3 class="panel-title">작업자 성과</h3>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Operator</th>
-                    <th class="num">Steps</th>
-                    <th class="num">Target usage (g)</th>
-                    <th class="num">Completed recipes</th>
+                    <th>작업자</th>
+                    <th class="num">단계</th>
+                    <th class="num">목표 사용량(g)</th>
+                    <th class="num">완료 레시피</th>
                   </tr>
                 </thead>
                 <tbody id="operators-body"></tbody>
@@ -142,20 +142,20 @@
 
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">Actual vs target variance TOP 10</h3>
+            <h3 class="panel-title">실제·목표 편차 TOP 10</h3>
             <div class="chart-wrap"><canvas id="chart-variance"></canvas></div>
-            <p class="muted small">Click a bar to inspect recipe-level variance.</p>
+            <p class="muted small">막대를 클릭하면 레시피별 편차를 봅니다.</p>
           </div>
           <div class="panel dashboard-operators-panel">
-            <h3 class="panel-title">Variance summary</h3>
+            <h3 class="panel-title">편차 요약</h3>
             <div class="table-wrap">
               <table>
                 <tbody>
-                  <tr><th>Measured steps</th><td class="num" id="variance-measured-count">-</td></tr>
-                  <tr><th>Actual captured</th><td class="num" id="variance-actual-count">-</td></tr>
-                  <tr><th>Target total (g)</th><td class="num" id="variance-target-total">-</td></tr>
-                  <tr><th>Actual total (g)</th><td class="num" id="variance-actual-total">-</td></tr>
-                  <tr><th>Abs variance (g)</th><td class="num" id="variance-abs-total">-</td></tr>
+                  <tr><th>계량 단계</th><td class="num" id="variance-measured-count">-</td></tr>
+                  <tr><th>실측 입력</th><td class="num" id="variance-actual-count">-</td></tr>
+                  <tr><th>목표 합계(g)</th><td class="num" id="variance-target-total">-</td></tr>
+                  <tr><th>실제 합계(g)</th><td class="num" id="variance-actual-total">-</td></tr>
+                  <tr><th>절대 편차(g)</th><td class="num" id="variance-abs-total">-</td></tr>
                 </tbody>
               </table>
             </div>
@@ -165,19 +165,19 @@
         <div id="material-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal ss-modal-wide">
             <div class="ss-modal-header">
-              <h3 id="material-modal-title">Material detail</h3>
-              <button id="material-modal-close" class="btn" type="button">Close</button>
+              <h3 id="material-modal-title">자재 상세</h3>
+              <button id="material-modal-close" class="btn" type="button">닫기</button>
             </div>
             <div class="ss-modal-body">
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Product</th>
-                      <th>Ink</th>
-                      <th class="num">Target usage (g)</th>
-                      <th>Operator</th>
-                      <th>Measured at</th>
+                      <th>제품</th>
+                      <th>잉크</th>
+                      <th class="num">목표 사용량(g)</th>
+                      <th>작업자</th>
+                      <th>측정시각</th>
                     </tr>
                   </thead>
                   <tbody id="material-modal-body"></tbody>
@@ -190,22 +190,22 @@
         <div id="variance-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal ss-modal-wide">
             <div class="ss-modal-header">
-              <h3 id="variance-modal-title">Variance detail</h3>
-              <button id="variance-modal-close" class="btn" type="button">Close</button>
+              <h3 id="variance-modal-title">편차 상세</h3>
+              <button id="variance-modal-close" class="btn" type="button">닫기</button>
             </div>
             <div class="ss-modal-body">
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Product</th>
-                      <th>Ink</th>
-                      <th class="num">Target (g)</th>
-                      <th class="num">Actual (g)</th>
-                      <th class="num">Variance (g)</th>
-                      <th class="num">Variance (%)</th>
-                      <th>Operator</th>
-                      <th>Measured at</th>
+                      <th>제품</th>
+                      <th>잉크</th>
+                      <th class="num">목표(g)</th>
+                      <th class="num">실제(g)</th>
+                      <th class="num">편차(g)</th>
+                      <th class="num">편차(%)</th>
+                      <th>작업자</th>
+                      <th>측정시각</th>
                     </tr>
                   </thead>
                   <tbody id="variance-modal-body"></tbody>
