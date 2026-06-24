@@ -225,6 +225,34 @@
     body.querySelectorAll(".blend-lot").forEach((el) =>
       el.addEventListener("input", () => { state.items[Number(el.dataset.idx)].material_lot = el.value; })
     );
+    // 키보드 흐름: 실제량 Enter → 같은 행 LOT, LOT Enter → 다음 품목 실제량(마지막이면 저장)
+    const focusField = (selector) => {
+      const t = body.querySelector(selector);
+      if (!t) return false;
+      t.focus();
+      if (typeof t.select === "function") {
+        try { t.select(); } catch (_e) { /* number input select 미지원 무시 */ }
+      }
+      return true;
+    };
+    body.querySelectorAll(".blend-actual").forEach((el) =>
+      el.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        focusField(`.blend-lot[data-idx="${el.dataset.idx}"]`);
+      })
+    );
+    body.querySelectorAll(".blend-lot").forEach((el) =>
+      el.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        const next = Number(el.dataset.idx) + 1;
+        if (!focusField(`.blend-actual[data-idx="${next}"]`)) {
+          const save = document.getElementById("blend-save");
+          if (save) save.focus();
+        }
+      })
+    );
     updateTotals();
   }
 
