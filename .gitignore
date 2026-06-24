@@ -52,3 +52,7 @@ cloudflared/*.json
 .tmp-tests/
 .coverage
 .gstack/
+
+# 서명 합성 필수 자산(*.png 무시 예외)
+!src/resources/signature/
+!src/resources/signature/*.png
