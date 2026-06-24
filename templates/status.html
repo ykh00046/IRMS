@@ -1,139 +1,72 @@
 {% extends "_base_app.html" %}
 
-{% block title %}현황{% endblock %}
+{% block title %}배합 기록{% endblock %}
 {% block eyebrow %}운영 관리{% endblock %}
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/status.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260624a" />
 {% endblock %}
-
-{% block main_class %}status-grid-shell{% endblock %}
 
 {% block content %}
-        <div id="status-stock-banner" class="stock-banner" hidden></div>
-        <section class="panel status-hero">
-          <div>
-            <span class="kicker">통합 현황</span>
-            <h2 class="panel-title">어디서 어떤 배합이 진행 중인지 한 화면에서 확인</h2>
-            <p class="panel-subtitle">
-              위치별 진행 상태, 다음 배합 대상, 남은 원재료, 최근 계량 담당자를 자동 갱신으로 보여줍니다.
-            </p>
-          </div>
-          <div class="status-live-box">
-            <span class="status-live-dot"></span>
-            <span>Auto Refresh 10s</span>
-            <strong id="status-last-updated">-</strong>
-          </div>
-        </section>
-
-        <section class="status-summary-grid">
-          <article class="panel status-summary-card">
-            <span class="summary-label">전체 레시피</span>
-            <strong id="status-active-recipes" class="summary-value">0</strong>
-          </article>
-          <article class="panel status-summary-card">
-            <span class="summary-label">진행중</span>
-            <strong id="status-in-progress" class="summary-value">0</strong>
-          </article>
-          <article class="panel status-summary-card">
-            <span class="summary-label">대기</span>
-            <strong id="status-pending" class="summary-value">0</strong>
-          </article>
-          <article class="panel status-summary-card">
-            <span class="summary-label">잔여 항목</span>
-            <strong id="status-remaining-steps" class="summary-value">0</strong>
-          </article>
-          <article class="panel status-summary-card">
-            <span class="summary-label">미배치 위치</span>
-            <strong id="status-open-positions" class="summary-value">0</strong>
-          </article>
-        </section>
-
-        <section class="panel status-toolbar-panel">
-          <div class="status-toolbar">
-            <div class="form-group status-filter-group">
-              <label class="filter-label" for="status-filter">상태 필터</label>
-              <select id="status-filter" class="select">
-                <option value="active">활성 전체</option>
-                <option value="in_progress">진행중만</option>
-                <option value="pending">대기만</option>
-                <option value="completed">완료만</option>
-                <option value="canceled">취소만</option>
-                <option value="all">전체</option>
-              </select>
+        <section class="panel">
+          <div class="blend-filter-row">
+            <div class="blend-field">
+              <label class="filter-label" for="status-rec-from">시작일</label>
+              <input class="input" id="status-rec-from" type="date" />
             </div>
-            <div class="button-row status-toolbar-actions">
-              <button id="status-refresh" type="button" class="btn accent">새로고침</button>
-              <button id="status-reset" type="button" class="btn">필터 초기화</button>
+            <div class="blend-field">
+              <label class="filter-label" for="status-rec-to">종료일</label>
+              <input class="input" id="status-rec-to" type="date" />
             </div>
+            <div class="blend-field">
+              <label class="filter-label" for="status-rec-worker">작업자</label>
+              <select class="input" id="status-rec-worker"><option value="">전체</option></select>
+            </div>
+            <div class="blend-field blend-field-grow">
+              <label class="filter-label" for="status-rec-search">검색 (LOT/제품)</label>
+              <input class="input" id="status-rec-search" placeholder="검색어" />
+            </div>
+            <button class="btn accent" id="status-rec-apply" type="button">조회</button>
+            <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
           </div>
-          <p id="status-filter-summary" class="filter-summary">활성 레시피 전체를 표시 중입니다.</p>
         </section>
 
-        <section class="panel status-operator-panel" id="operatorProgressSection">
-          <div class="status-section-head">
-            <div>
-              <span class="kicker">담당자 진행</span>
-              <h3 class="panel-title">담당자 현황</h3>
-            </div>
-            <span class="status-section-note">당일 담당자 <strong id="operatorCount">0</strong>명</span>
+        <section class="panel">
+          <div class="table-wrap">
+            <table class="blend-table">
+              <thead>
+                <tr>
+                  <th>작업일</th>
+                  <th>제품 LOT</th>
+                  <th>제품</th>
+                  <th>작업자</th>
+                  <th class="num">총량(g)</th>
+                  <th>저울</th>
+                </tr>
+              </thead>
+              <tbody id="status-rec-body">
+                <tr><td colspan="6" class="muted">불러오는 중…</td></tr>
+              </tbody>
+            </table>
           </div>
-          <div class="operator-grid" id="operatorGrid"></div>
         </section>
 
-        <section class="panel status-import-panel">
-          <div class="status-section-head">
-            <div>
-              <span class="kicker">최근 등록</span>
-              <h3 class="panel-title">최근 등록 레시피</h3>
+        <div id="status-detail-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal ss-modal-wide" id="status-dhr">
+            <div class="ss-modal-header">
+              <h3 id="status-detail-title">배합 실적서</h3>
+              <div class="blend-detail-actions">
+                <button id="status-print" class="btn btn-sm" type="button">인쇄</button>
+                <button id="status-excel" class="btn btn-sm" type="button">Excel</button>
+                <button id="status-detail-close" class="btn btn-sm" type="button">닫기</button>
+              </div>
             </div>
-            <span class="status-section-note">최근 6건 기준</span>
+            <div class="ss-modal-body" id="status-detail-body"></div>
           </div>
-          <div class="status-import-feed" id="status-import-feed"></div>
-        </section>
-
-        <section class="panel status-board-panel">
-          <div class="status-section-head">
-            <div>
-              <span class="kicker">위치 현황</span>
-              <h3 class="panel-title">위치별 배합 진행 현황</h3>
-            </div>
-            <span class="status-section-note">Position lane 기준으로 자동 정렬</span>
-          </div>
-          <section class="status-board" id="status-board"></section>
-        </section>
-
+        </div>
 {% endblock %}
-
 
 {% block scripts %}
     <script src="/static/js/status.js?v=20260624a"></script>
-    <script>
-      (() => {
-        const banner = document.getElementById("status-stock-banner");
-        if (!banner) return;
-        async function refresh() {
-          try {
-            const res = await fetch("/api/materials/stock");
-            if (!res.ok) return;
-            const data = await res.json();
-            const alerts = (data.items || []).filter((m) => m.status !== "ok");
-            if (!alerts.length) {
-              banner.hidden = true;
-              return;
-            }
-            const neg = alerts.filter((m) => m.status === "negative").length;
-            const low = alerts.filter((m) => m.status === "low").length;
-            const parts = [];
-            if (neg) parts.push(`음수 재고 ${neg}개`);
-            if (low) parts.push(`임계치 미달 ${low}개`);
-            banner.textContent = `⚠ 재고 주의: ${parts.join(", ")} - 책임자에게 알려주세요`;
-            banner.hidden = false;
-          } catch (_) {}
-        }
-        refresh();
-        setInterval(refresh, 30000);
-      })();
-    </script>
 {% endblock %}
