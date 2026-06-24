@@ -19,9 +19,32 @@
 }
 
 .att-header h1 {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   font-weight: 700;
   margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.att-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+.att-title-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.att-eyebrow {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-secondary-hover, #df6a16);
 }
 
 .att-header-left,
@@ -252,22 +275,7 @@
 }
 
 .att-big-leave {
-  color: #0f766e;
-}
-
-.att-alert-card {
-  position: relative;
-  overflow: hidden;
-  border-top: 4px solid #f59e0b;
-}
-
-.att-alert-card::before {
-  content: "";
-  position: absolute;
-  inset: 4px 0 auto 0;
-  height: 1px;
-  background: linear-gradient(90deg, #f59e0b, #dc2626);
-  opacity: 0.35;
+  color: var(--brand);
 }
 
 .att-alert-card h3 {
@@ -276,23 +284,6 @@
 
 .att-alert-card .att-kv li strong {
   color: #b45309;
-}
-
-.att-annual-card {
-  position: relative;
-  overflow: hidden;
-}
-
-.att-annual-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  background: linear-gradient(90deg, #0f766e, #b45309);
-}
-
-.att-leave-card {
-  border-top: 4px solid #0f766e;
 }
 
 .att-card-note {
@@ -342,13 +333,6 @@
   color: var(--text-primary);
 }
 
-.att-work-card {
-  border-top: 4px solid #0284c7;
-}
-
-.att-work-card-holiday {
-  border-top-color: #dc2626;
-}
 
 .att-work-grid {
   list-style: none;

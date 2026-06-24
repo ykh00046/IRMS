@@ -18,10 +18,11 @@
   >
     <header class="att-header">
       <div class="att-header-left">
-        <a href="/" class="btn compact">처음</a>
-        <a href="/viscosity" class="btn compact accent">점도</a>
-        <a href="/blend" class="btn compact accent">배합</a>
-        <h1>근태 조회</h1>
+        <span class="brand-logo att-logo">IR</span>
+        <div class="att-title-block">
+          <p class="att-eyebrow">ATTENDANCE</p>
+          <h1>근태 조회</h1>
+        </div>
       </div>
       <div class="att-header-right">
         {% if admin_mode and not emp_id %}
@@ -29,8 +30,11 @@
         {% elif admin_mode %}
           <span class="att-badge att-badge-admin">관리자 + 본인 로그인</span>
         {% endif %}
+        <a href="/viscosity" class="btn compact accent">점도</a>
+        <a href="/blend" class="btn compact accent">배합</a>
         <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
         <button id="att-logout-btn" class="btn compact">로그아웃</button>
+        <a href="/" class="btn compact">처음</a>
       </div>
     </header>
 
