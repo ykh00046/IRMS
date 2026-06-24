@@ -28,11 +28,11 @@
         </button>
 
         <nav class="top-nav" aria-label="Main Navigation">
+          {# 현장(비로그인): 배합·점도·근태만. 관리 메뉴는 로그인(admin) 시에만 노출 #}
           <a href="/" class="nav-link{{ ' active' if request.url.path == '/' else '' }}">홈</a>
-          <a href="/weighing" class="nav-link{{ ' active' if request.url.path == '/weighing' else '' }}">계량</a>
+          <a href="/blend" class="nav-link{{ ' active' if request.url.path == '/blend' else '' }}">배합·계량</a>
           <a href="/viscosity" class="nav-link{{ ' active' if request.url.path == '/viscosity' else '' }}">점도</a>
-          <a href="/blend" class="nav-link{{ ' active' if request.url.path == '/blend' else '' }}">배합</a>
-          {% if current_user.access_level != "operator" %}
+          {% if current_user %}
           <a href="/status" class="nav-link{{ ' active' if request.url.path == '/status' else '' }}">현황</a>
           <a href="/management" class="nav-link{{ ' active' if request.url.path == '/management' else '' }}">관리</a>
           <a href="/dashboard" class="nav-link{{ ' active' if request.url.path == '/dashboard' else '' }}">운영 대시</a>
@@ -43,6 +43,7 @@
           {% endif %}
         </nav>
 
+        {% if current_user %}
         <div class="session-card">
           <div class="session-info">
             <span class="session-role">{{ current_user.role_label }}</span>
@@ -51,6 +52,11 @@
           </div>
           <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
         </div>
+        {% else %}
+        <div class="session-card">
+          <a href="/management/login" class="btn compact">관리자 로그인</a>
+        </div>
+        {% endif %}
       </header>
 
       <main class="page-grid {% block main_class %}{% endblock %}">
