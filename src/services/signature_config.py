@@ -19,11 +19,11 @@ DEFAULTS: dict[str, float] = {
     "rotation_angle": 6.0,
     "scale_min": 0.85,
     "scale_max": 0.95,
-    # 스캔 효과
-    "scan_noise_range": 18.0,
-    "scan_blur_radius": 0.3,
-    "scan_contrast": 1.25,
-    "scan_brightness": 1.05,
+    # 스캔 효과 (원본 운영값 — 복사/스캔 느낌)
+    "scan_noise_range": 12.0,
+    "scan_blur_radius": 1.1,
+    "scan_contrast": 1.4,
+    "scan_brightness": 1.0,
 }
 
 # 입력 검증 범위 (signature_qa_tool 슬라이더 범위 참고)

@@ -184,10 +184,10 @@ def render_form_image(record: dict[str, Any]) -> tuple[Image.Image, dict[str, li
 def apply_scan_effects(image: Image.Image, params: dict | None = None) -> Image.Image:
     """스캔 효과: 블러 + 노이즈 + 대비 + 밝기 (원본 _apply_scan_effects 이식)."""
     p = params or {}
-    blur = p.get("blur_radius", 0.3)
-    noise = p.get("noise_range", 18)
-    contrast = p.get("contrast_factor", 1.25)
-    brightness = p.get("brightness_factor", 1.05)
+    blur = p.get("blur_radius", 1.1)
+    noise = p.get("noise_range", 12)
+    contrast = p.get("contrast_factor", 1.4)
+    brightness = p.get("brightness_factor", 1.0)
 
     proc = image.convert("RGB").filter(ImageFilter.GaussianBlur(radius=blur))
     arr = np.array(proc)
