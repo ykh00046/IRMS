@@ -53,6 +53,28 @@ def test_build_pdf_unknown_worker_no_charge_sample(monkeypatch):
     assert pdf[:5] == b"%PDF-"
 
 
+def test_worker_sign_override_uses_canvas(tmp_path):
+    # 작업자 캔버스 서명(worker_sign)이 담당칸 override 로 잡히고 파란 잉크로 통일되는지
+    import base64
+    import io as _io
+
+    buf = _io.BytesIO()
+    Image.new("RGBA", (240, 70), (0, 0, 0, 0)).save(buf, "PNG")
+    # 실제로 획이 있어야 유효 → 한 픽셀이라도 불투명하게
+    canvas = Image.new("RGBA", (240, 70), (0, 0, 0, 0))
+    canvas.putpixel((10, 10), (17, 17, 17, 255))
+    b = _io.BytesIO()
+    canvas.save(b, "PNG")
+    rec = _rec()
+    rec["worker_sign"] = "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+    ov = dhr_pdf._worker_sign_override(rec, "김도현", str(tmp_path))
+    assert ov.get("김도현_charge")  # 담당칸이 캔버스 서명으로 지정됨
+
+
+def test_worker_sign_override_empty_without_sign(tmp_path):
+    assert dhr_pdf._worker_sign_override(_rec(), "김도현", str(tmp_path)) == {}
+
+
 def test_exact_path_when_available():
     # Excel + PyMuPDF 가용 환경에서만 정확 경로(Excel→PDF) 검증
     if not dhr_pdf.exact_available():

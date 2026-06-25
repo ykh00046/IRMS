@@ -241,10 +241,15 @@ class ImageProcessor:
         paste_y = base_y + offset_y_rand - (rotated_sig.height - scaled_h) // 2
         return rotated_sig, paste_x, paste_y
 
-    def create_signed_image(self, base_image_path, output_path, selected_worker, debug_path=None):
+    def create_signed_image(self, base_image_path, output_path, selected_worker, debug_path=None,
+                            overrides=None):
         """
         Creates a high-realism signed image by applying a sophisticated processing pipeline.
+
+        overrides: {base_name: image_path} 로 특정 역할의 서명 원본을 직접 지정(예: 담당칸에
+        작업자의 캔버스 서명을 넣어 합성과 동일한 잉크 효과로 처리). 지정 없으면 샘플 랜덤.
         """
+        overrides = overrides or {}
         try:
             if debug_path:
                 os.makedirs(debug_path, exist_ok=True)
@@ -271,7 +276,7 @@ class ImageProcessor:
                 signatures_info.append(("approve", pos[0], pos[1]))
 
             for base_name, base_x, base_y in signatures_info:
-                sig_path = self._get_random_signature_path(base_name, session_id)
+                sig_path = overrides.get(base_name) or self._get_random_signature_path(base_name, session_id)
                 if not sig_path:
                     logger.warning(f"Signature file not found for base '{base_name}'")
                     continue

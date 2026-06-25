@@ -36,6 +36,7 @@ _excel_lock = threading.Lock()
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
 _SIG_DIR = os.path.join(_RES, "signature")
+_INK_RGB = (56, 57, 138)  # 실제 서명 샘플의 파란 펜 잉크색(캔버스 서명 색 통일용)
 _FONT_CANDIDATES = [
     "C:/Windows/Fonts/malgun.ttf",
     "C:/Windows/Fonts/malgunbd.ttf",
@@ -298,12 +299,38 @@ def _stamp_config(sc: dict) -> dict:
     }
 
 
-def _build_signed_stamp(worker: str, sc: dict, out_path: str) -> str | None:
+def _worker_sign_override(record: dict[str, Any], worker: str, tmp_dir: str) -> dict[str, str]:
+    """작업자 캔버스 서명(worker_sign data URL)을 PNG로 저장해 담당칸 override 반환.
+
+    담당(charge)은 작업자가 직접 그린 캔버스 서명을 합성과 동일한 잉크 효과로 처리한다.
+    검토/승인은 기존대로 샘플 합성. 서명이 없거나 손상되면 빈 dict(→샘플 폴백).
+    """
+    data_url = record.get("worker_sign")
+    if not (worker and isinstance(data_url, str) and "base64," in data_url):
+        return {}
+    try:
+        import base64
+        raw = base64.b64decode(data_url.split("base64,", 1)[1])
+        with Image.open(io.BytesIO(raw)) as im:
+            rgba = im.convert("RGBA")
+        # 샘플과 동일한 파란 펜 잉크색으로 통일(획=알파는 보존) — 색 차이로 티나지 않게
+        alpha = rgba.split()[3]
+        recolored = Image.new("RGBA", rgba.size, (_INK_RGB[0], _INK_RGB[1], _INK_RGB[2], 0))
+        recolored.putalpha(alpha)
+        path = os.path.join(tmp_dir, "worker_sign.png")
+        recolored.save(path)
+        return {f"{worker}_charge": path}
+    except Exception:
+        return {}
+
+
+def _build_signed_stamp(worker: str, sc: dict, out_path: str,
+                        overrides: dict[str, str] | None = None) -> str | None:
     """결재 도장(image.jpeg)에 담당/검토/승인 서명을 합성. 성공 시 경로 반환."""
     if not os.path.exists(_STAMP_TEMPLATE):
         return None
     proc = ImageProcessor(resources_path=signature_samples.samples_dir(), config=_stamp_config(sc))
-    ok, _msg = proc.create_signed_image(_STAMP_TEMPLATE, out_path, worker)
+    ok, _msg = proc.create_signed_image(_STAMP_TEMPLATE, out_path, worker, overrides=overrides)
     return out_path if ok and os.path.exists(out_path) else None
 
 
@@ -318,7 +345,8 @@ def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200) -> Image.
     sc = signature_config.load()
     worker = str(record.get("worker") or "").strip()
     with tempfile.TemporaryDirectory() as tmp:
-        stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"))
+        overrides = _worker_sign_override(record, worker, tmp)
+        stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"), overrides)
         xlsx = dhr_excel.build_official_dhr_xlsx(record, signature_image_path=stamp_path)
         pdf_bytes = _excel_to_pdf_bytes(xlsx)
     if not pdf_bytes:
@@ -365,7 +393,8 @@ def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Ima
             base_path = os.path.join(tmp, "base.png")
             signed_path = os.path.join(tmp, "signed.png")
             base_img.save(base_path)
-            ok, _msg = processor.create_signed_image(base_path, signed_path, worker)
+            overrides = _worker_sign_override(record, worker, tmp)
+            ok, _msg = processor.create_signed_image(base_path, signed_path, worker, overrides=overrides)
             result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
 
     if scan:
