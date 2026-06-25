@@ -267,13 +267,14 @@ def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200):
     d = ImageDraw.Draw(img)
     m = int(w * 0.04)
     cw = int(w * 0.095)
-    ch = int(h * 0.052)
-    label_h = int(ch * 0.33)
+    ch = int(h * 0.060)
+    label_h = int(ch * 0.30)
     bx = w - m - cw * 3
     by = int(h * 0.022)
     f = _font(int(w * 0.014))
-    sig_w = int(cw * 0.92)
-    sig_h = int((ch - label_h) * 0.9)
+    sign_area = ch - label_h
+    sig_w = int(cw * 0.84)
+    sig_h = int(sign_area * 0.60)
     positions: dict[str, list[int]] = {}
     for i, (label, key) in enumerate([("담당", "charge"), ("검토", "review"), ("승인", "approve")]):
         x0 = bx + i * cw
@@ -281,7 +282,8 @@ def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200):
         d.rectangle([x0, by, x0 + cw, by + label_h], outline=(0, 0, 0), width=2)
         lw = d.textlength(label, font=f)
         d.text((x0 + (cw - lw) / 2, by + int(label_h * 0.15)), label, fill=(0, 0, 0), font=f)
-        positions[key] = [x0 + (cw - sig_w) // 2, by + label_h + ((ch - label_h) - sig_h) // 2]
+        # 서명을 라벨 아래 서명영역 중앙으로 — 위로 떠 보이지 않게 약간 아래 배치
+        positions[key] = [x0 + (cw - sig_w) // 2, by + label_h + int(sign_area * 0.30)]
     return img, positions, sig_w, sig_h
 
 

@@ -69,6 +69,11 @@ def build_official_dhr_xlsx(record: dict[str, Any], *, include_work_time: bool =
 
     end_row = start + max(len(details), 1) - 1
 
+    # 데이터 이후 빈 행 삭제 — 양식 24행 중 채운 만큼만 남김 (원본 _delete_empty_rows)
+    for row_num in range(ws.max_row, end_row, -1):
+        if all(ws.cell(row=row_num, column=col).value in (None, "") for col in range(1, 8)):
+            ws.delete_rows(row_num, 1)
+
     # 제품 LOT(A)·배합량100g(B)을 데이터 행 전체에 걸쳐 병합 (원본 동작)
     if end_row > start:
         ws.merge_cells(f"A{start}:A{end_row}")
@@ -76,12 +81,15 @@ def build_official_dhr_xlsx(record: dict[str, Any], *, include_work_time: bool =
     ws[f"A{start}"].alignment = _CENTER
     ws[f"B{start}"].alignment = _CENTER
 
-    # 데이터 영역 테두리·정렬 (양식 기본 행 범위를 벗어나도 적용)
+    # 데이터 영역 테두리·정렬
     for row in range(start, end_row + 1):
         for col in range(1, 8):
             cell = ws.cell(row=row, column=col)
             cell.border = _BORDER
             cell.alignment = _CENTER
+
+    # 인쇄 영역을 채운 표까지로 축소 (빈 공간 제거)
+    ws.print_area = f"A1:G{end_row}"
 
     buf = io.BytesIO()
     wb.save(buf)
