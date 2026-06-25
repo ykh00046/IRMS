@@ -33,6 +33,8 @@ except ImportError:
     _WIN32_OK = False
 
 _excel_lock = threading.Lock()
+_RENDER_DPI = 300  # Excel→이미지 렌더 해상도(인쇄 선명도). 200→300 으로 상향.
+_A4_WIDTH_IN = 8.27  # A4 세로 폭 210mm
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
 _SIG_DIR = os.path.join(_RES, "signature")
@@ -182,13 +184,17 @@ def render_form_image(record: dict[str, Any]) -> tuple[Image.Image, dict[str, li
     return img, positions
 
 
+_PAPER_RGB = (247, 244, 238)  # 스캔 종이톤(은은한 미색) — 흰 여백도 스캔 종이처럼
+
+
 def apply_scan_effects(image: Image.Image, params: dict | None = None) -> Image.Image:
-    """스캔 효과: 블러 + 노이즈 + 대비 + 밝기 (원본 _apply_scan_effects 이식)."""
+    """스캔 효과: 블러 + 노이즈 + 대비 + 밝기 + 종이톤 (원본 _apply_scan_effects 확장)."""
     p = params or {}
     blur = p.get("blur_radius", 1.1)
     noise = p.get("noise_range", 12)
     contrast = p.get("contrast_factor", 1.4)
     brightness = p.get("brightness_factor", 1.0)
+    tone = p.get("paper_tone", 0.0)
 
     proc = image.convert("RGB").filter(ImageFilter.GaussianBlur(radius=blur))
     arr = np.array(proc)
@@ -197,6 +203,10 @@ def apply_scan_effects(image: Image.Image, params: dict | None = None) -> Image.
     proc = Image.fromarray(arr)
     proc = ImageEnhance.Contrast(proc).enhance(contrast)
     proc = ImageEnhance.Brightness(proc).enhance(brightness)
+    # 종이톤 — 흰 여백이 '복사 안 된 흰 영역'으로 보이지 않도록 전체를 은은한 미색으로
+    if tone > 0:
+        paper = Image.new("RGB", proc.size, _PAPER_RGB)
+        proc = Image.blend(proc, paper, min(max(tone, 0.0), 1.0))
     return proc
 
 
@@ -334,7 +344,7 @@ def _build_signed_stamp(worker: str, sc: dict, out_path: str,
     return out_path if ok and os.path.exists(out_path) else None
 
 
-def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200) -> Image.Image | None:
+def render_exact_form_image(record: dict[str, Any], *, dpi: int = _RENDER_DPI) -> Image.Image | None:
     """공식 양식 xlsx(결재 도장 G2 삽입) → Excel→PDF → 이미지(픽셀 일치).
 
     원본과 동일: 결재 도장(image.jpeg)에 서명 합성 → 양식 G2 셀에 삽입 → Excel 렌더.
@@ -403,6 +413,7 @@ def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Ima
             "blur_radius": sc["scan_blur_radius"],
             "contrast_factor": sc["scan_contrast"],
             "brightness_factor": sc["scan_brightness"],
+            "paper_tone": sc.get("scan_paper_tone", 0.0),
         })
     return result.convert("RGB")
 
@@ -411,7 +422,9 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes
     """배합 기록 → 서명 합성 + 스캔효과 원료배합일지 PDF 바이트."""
     img = render_signed_dhr(record, scan=scan)
     buf = io.BytesIO()
-    img.save(buf, format="PDF", resolution=200.0)
+    # 이미지 폭으로 해상도 산출 → A4 한 장에 정확히 맞춤(고해상도여도 페이지 크기 유지)
+    resolution = round(img.width / _A4_WIDTH_IN, 1)
+    img.save(buf, format="PDF", resolution=resolution)
     return buf.getvalue()
 
 

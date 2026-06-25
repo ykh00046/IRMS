@@ -24,6 +24,7 @@ DEFAULTS: dict[str, float] = {
     "scan_blur_radius": 1.1,
     "scan_contrast": 1.4,
     "scan_brightness": 1.0,
+    "scan_paper_tone": 0.07,  # 종이톤 강도(흰 여백을 스캔 종이처럼) 0=없음
 }
 
 # 입력 검증 범위 (signature_qa_tool 슬라이더 범위 참고)
@@ -40,6 +41,7 @@ RANGES: dict[str, tuple[float, float]] = {
     "scan_blur_radius": (0.0, 3.0),
     "scan_contrast": (0.5, 2.0),
     "scan_brightness": (0.5, 2.0),
+    "scan_paper_tone": (0.0, 0.3),
 }
 
 

@@ -541,6 +541,7 @@
       scale_min: "최소 크기", scale_max: "최대 크기",
       scan_noise_range: "스캔 노이즈", scan_blur_radius: "스캔 블러",
       scan_contrast: "스캔 대비", scan_brightness: "스캔 밝기",
+      scan_paper_tone: "종이톤(여백)",
     };
     let defaults = {};
 

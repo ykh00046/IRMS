@@ -55,6 +55,15 @@ def build_official_dhr_xlsx(
     ws = wb.active
     m = CELL_MAPPING
 
+    # 인쇄 여백 축소 + 가로 가운데 — 흰 테두리(여백) 최소화
+    try:
+        ws.page_margins.left = ws.page_margins.right = 0.25
+        ws.page_margins.top = ws.page_margins.bottom = 0.3
+        ws.page_margins.header = ws.page_margins.footer = 0.2
+        ws.print_options.horizontalCentered = True
+    except Exception:
+        pass
+
     ws[m["date"]] = f"작업일: {record.get('work_date', '')}"
     ws[m["scale"]] = f"저울: {record.get('scale') or ''}"
     ws[m["worker"]] = f"작업자 : {record.get('worker', '')}"
