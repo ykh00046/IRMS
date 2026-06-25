@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from . import dhr_excel, signature_config
+from . import dhr_excel, signature_config, signature_samples
 from .signature_processor import ImageProcessor
 
 # 정확 경로 의존성(운영 PC: Excel + pywin32 + PyMuPDF). 없으면 PIL 폴백.
@@ -302,7 +302,7 @@ def _build_signed_stamp(worker: str, sc: dict, out_path: str) -> str | None:
     """결재 도장(image.jpeg)에 담당/검토/승인 서명을 합성. 성공 시 경로 반환."""
     if not os.path.exists(_STAMP_TEMPLATE):
         return None
-    proc = ImageProcessor(resources_path=_SIG_DIR, config=_stamp_config(sc))
+    proc = ImageProcessor(resources_path=signature_samples.samples_dir(), config=_stamp_config(sc))
     ok, _msg = proc.create_signed_image(_STAMP_TEMPLATE, out_path, worker)
     return out_path if ok and os.path.exists(out_path) else None
 
@@ -359,7 +359,7 @@ def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Ima
             "include": {"charge": True, "review": True, "approve": True},
             "positions": positions,
         }
-        processor = ImageProcessor(resources_path=_SIG_DIR, config=config)
+        processor = ImageProcessor(resources_path=signature_samples.samples_dir(), config=config)
         worker = str(record.get("worker") or "").strip()
         with tempfile.TemporaryDirectory() as tmp:
             base_path = os.path.join(tmp, "base.png")

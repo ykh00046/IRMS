@@ -8,7 +8,7 @@ from ..auth import get_current_user, require_access_level
 from ..attendance_auth import AttendanceAuthError, validate_password_strength
 from ..db import get_connection, list_audit_logs, row_to_dict, utc_now_text, write_audit_log
 from ..security import hash_password
-from ..services import blend_service, dhr_pdf, sheets_backup, signature_config
+from ..services import blend_service, dhr_pdf, sheets_backup, signature_config, signature_samples
 from .models import (
     AdminUserCreateRequest,
     AdminUserPasswordResetRequest,
@@ -370,6 +370,48 @@ def build_router() -> APIRouter:
         """현재 설정으로 합성한 샘플 배합일지 미리보기 PNG."""
         png = dhr_pdf.build_signature_preview_png(worker)
         return StreamingResponse(io.BytesIO(png), media_type="image/png")
+
+    @router.get("/admin/signature-samples")
+    def admin_list_signature_samples() -> dict[str, Any]:
+        """작업자 서명 샘플 목록(역할/작업자별)."""
+        return {"roles": signature_samples.ROLES, "items": signature_samples.list_samples()}
+
+    @router.post("/admin/signature-samples")
+    def admin_add_signature_sample(body: dict[str, Any], request: Request) -> dict[str, Any]:
+        import base64
+        current_user = get_current_user(request)
+        role = str(body.get("role") or "")
+        worker = str(body.get("worker") or "")
+        image = str(body.get("image_data") or "")
+        if "," in image:
+            image = image.split(",", 1)[1]
+        try:
+            data = base64.b64decode(image)
+            fname = signature_samples.add_sample(role, worker, data)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception:
+            raise HTTPException(status_code=400, detail="이미지 디코딩에 실패했습니다.")
+        with get_connection() as connection:
+            write_audit_log(
+                connection, action="signature_sample_added", actor=current_user,
+                target_type="signature_sample", target_label=fname,
+            )
+            connection.commit()
+        return {"ok": True, "filename": fname, "items": signature_samples.list_samples()}
+
+    @router.delete("/admin/signature-samples/{filename}")
+    def admin_delete_signature_sample(filename: str, request: Request) -> dict[str, Any]:
+        current_user = get_current_user(request)
+        if not signature_samples.delete_sample(filename):
+            raise HTTPException(status_code=404, detail="샘플을 찾을 수 없습니다.")
+        with get_connection() as connection:
+            write_audit_log(
+                connection, action="signature_sample_deleted", actor=current_user,
+                target_type="signature_sample", target_label=filename,
+            )
+            connection.commit()
+        return {"ok": True, "items": signature_samples.list_samples()}
 
     @router.get("/admin/sheets-config")
     def admin_get_sheets_config() -> dict[str, Any]:

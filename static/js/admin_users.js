@@ -587,6 +587,61 @@
     load().then(refreshPreview);
   })();
 
+  // ── 작업자 서명 샘플 관리 ──
+  (function initSignatureSamples() {
+    const req = IRMS._core && IRMS._core.request;
+    const listEl = document.getElementById("sig-sample-list");
+    const roleEl = document.getElementById("sig-sample-role");
+    const workerEl = document.getElementById("sig-sample-worker");
+    const workerWrap = document.getElementById("sig-sample-worker-wrap");
+    const fileEl = document.getElementById("sig-sample-file");
+    if (!req || !listEl) return;
+    const ROLE_KO = { charge: "담당", review: "검토", approve: "승인" };
+
+    function toggleWorker() { workerWrap.style.display = roleEl.value === "charge" ? "" : "none"; }
+    function render(items) {
+      if (!items || !items.length) { listEl.innerHTML = '<p class="panel-subtitle">샘플이 없습니다.</p>'; return; }
+      listEl.innerHTML = items.map((g) => {
+        const title = g.role === "charge" ? `담당 · ${g.worker}` : (ROLE_KO[g.role] || g.base);
+        const files = g.files.map((f) =>
+          `<span style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);border-radius:6px;padding:2px 6px;margin:2px;font-size:12px">${f}<button data-del="${f}" title="삭제" style="border:0;background:none;cursor:pointer;color:#dc2626;font-weight:700">×</button></span>`
+        ).join("");
+        return `<div style="margin-bottom:8px"><b>${title}</b> <span style="color:var(--text-secondary)">(${g.count})</span><div>${files}</div></div>`;
+      }).join("");
+      listEl.querySelectorAll("button[data-del]").forEach((b) => b.addEventListener("click", async () => {
+        if (!confirm(`${b.dataset.del} 샘플을 삭제할까요?`)) return;
+        try {
+          const r = await req(`/admin/signature-samples/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" });
+          render(r.items); IRMS.notify("샘플을 삭제했습니다.", "success");
+        } catch (e) { IRMS.notify(`삭제 실패: ${e.message}`, "error"); }
+      }));
+    }
+    async function load() {
+      try { const r = await req("/admin/signature-samples"); render(r.items); }
+      catch (e) { IRMS.notify(`샘플 로드 실패: ${e.message}`, "error"); }
+    }
+    roleEl.addEventListener("change", toggleWorker);
+    toggleWorker();
+    document.getElementById("sig-sample-upload").addEventListener("click", () => {
+      const file = fileEl.files && fileEl.files[0];
+      if (!file) { IRMS.notify("서명 이미지를 선택하세요.", "warn"); return; }
+      if (roleEl.value === "charge" && !workerEl.value.trim()) { IRMS.notify("작업자 이름을 입력하세요.", "warn"); return; }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const r = await req("/admin/signature-samples", {
+            method: "POST",
+            body: { role: roleEl.value, worker: workerEl.value.trim(), image_data: reader.result },
+          });
+          render(r.items); fileEl.value = "";
+          IRMS.notify(`업로드: ${r.filename}`, "success");
+        } catch (e) { IRMS.notify(`업로드 실패: ${e.message}`, "error"); }
+      };
+      reader.readAsDataURL(file);
+    });
+    load();
+  })();
+
   // ── Google Sheets 백업 (선택, google_sheets_backup 이식) ──
   (function initSheetsBackup() {
     const req = IRMS._core && IRMS._core.request;
