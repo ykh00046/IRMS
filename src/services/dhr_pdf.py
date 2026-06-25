@@ -204,47 +204,74 @@ def exact_available() -> bool:
     return _WIN32_OK and _FITZ_OK
 
 
-def _excel_to_pdf_bytes(xlsx_bytes: bytes) -> bytes | None:
-    """채워진 xlsx 를 Excel COM 으로 PDF 변환. 실패/미지원 시 None."""
-    if not _WIN32_OK:
-        return None
+_EXCEL_TIMEOUT = 90  # 초 — Excel COM 변환 최대 대기
+
+
+def _excel_convert(xlsx_bytes: bytes, out: dict) -> None:
+    """(작업 스레드) Excel COM 으로 xlsx→PDF. 결과를 out['pdf'] 에 담는다."""
     import pythoncom
     import win32com.client
-    with _excel_lock:
-        pythoncom.CoInitialize()
-        xl = None
-        wb = None
+    pythoncom.CoInitialize()
+    xl = None
+    wb = None
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.abspath(os.path.join(tmp, "dhr.xlsx"))
+            pdf = os.path.abspath(os.path.join(tmp, "dhr.pdf"))
+            with open(xlsx, "wb") as fh:
+                fh.write(xlsx_bytes)
+            xl = win32com.client.DispatchEx("Excel.Application")
+            # 대화상자/매크로/링크 갱신 등 멈춤 유발 요소 차단
+            xl.Visible = False
+            xl.DisplayAlerts = False
+            xl.ScreenUpdating = False
+            xl.EnableEvents = False
+            xl.AskToUpdateLinks = False
+            try:
+                xl.AlertBeforeOverwriting = False
+                xl.AutomationSecurity = 3  # msoAutomationSecurityForceDisable (매크로 차단)
+            except Exception:
+                pass
+            wb = xl.Workbooks.Open(xlsx, UpdateLinks=0, ReadOnly=True)
+            wb.ExportAsFixedFormat(0, pdf)  # 0 = xlTypePDF
+            wb.Close(False)
+            wb = None
+            xl.Quit()
+            xl = None
+            with open(pdf, "rb") as fh:
+                out["pdf"] = fh.read()
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = str(exc)
+    finally:
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                xlsx = os.path.abspath(os.path.join(tmp, "dhr.xlsx"))
-                pdf = os.path.abspath(os.path.join(tmp, "dhr.pdf"))
-                with open(xlsx, "wb") as fh:
-                    fh.write(xlsx_bytes)
-                xl = win32com.client.DispatchEx("Excel.Application")
-                xl.Visible = False
-                xl.DisplayAlerts = False
-                wb = xl.Workbooks.Open(xlsx)
-                wb.ExportAsFixedFormat(0, pdf)  # 0 = xlTypePDF
+            if wb is not None:
                 wb.Close(False)
-                wb = None
-                xl.Quit()
-                xl = None
-                with open(pdf, "rb") as fh:
-                    return fh.read()
         except Exception:
+            pass
+        try:
+            if xl is not None:
+                xl.Quit()
+        except Exception:
+            pass
+        pythoncom.CoUninitialize()
+
+
+def _excel_to_pdf_bytes(xlsx_bytes: bytes) -> bytes | None:
+    """채워진 xlsx 를 Excel COM 으로 PDF 변환. 실패/미지원/타임아웃 시 None(→PIL 폴백).
+
+    Excel 이 대화상자 등으로 멈춰도 서버가 정지하지 않도록 작업 스레드 + 타임아웃으로 보호.
+    """
+    if not _WIN32_OK:
+        return None
+    out: dict = {}
+    with _excel_lock:
+        worker = threading.Thread(target=_excel_convert, args=(xlsx_bytes, out), daemon=True)
+        worker.start()
+        worker.join(_EXCEL_TIMEOUT)
+        if worker.is_alive():
+            # 타임아웃 — Excel 이 멈춤. 폴백으로 진행(서버는 정상).
             return None
-        finally:
-            try:
-                if wb is not None:
-                    wb.Close(False)
-            except Exception:
-                pass
-            try:
-                if xl is not None:
-                    xl.Quit()
-            except Exception:
-                pass
-            pythoncom.CoUninitialize()
+    return out.get("pdf")
 
 
 _STAMP_TEMPLATE = os.path.join(_SIG_DIR, "image.jpeg")

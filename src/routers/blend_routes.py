@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user
 from ..db import get_db, utc_now_text, write_audit_log
-from ..services import blend_service, dhr_excel, dhr_pdf, viscosity_service
+from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, viscosity_service
 from .models import (
     BlendApprovalBody,
     BlendBulkBody,
@@ -302,7 +302,11 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record)
+        # 캐시(레코드·서명설정 변경 시 자동 무효화) → 없으면 생성 후 저장
+        pdf_bytes = dhr_cache.get(record)
+        if pdf_bytes is None:
+            pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record)
+            dhr_cache.put(record, pdf_bytes)
         from urllib.parse import quote
         utf8_name = quote(f"원료배합일지-{record['product_lot']}.pdf")
         disposition = (
