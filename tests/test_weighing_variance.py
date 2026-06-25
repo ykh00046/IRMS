@@ -207,8 +207,8 @@ def test_recipes_unknown_material_empty():
 
 # ── 라우트 권한 ──────────────────────────────────────────────────────────────
 
-def test_variance_routes_require_auth():
-    """V8 — 비인증 접근은 차단(manager scope)."""
+def test_variance_routes_open_without_login():
+    """배합 단일 신뢰 — 비로그인(현장)도 접근 가능(401/403 아님)."""
     import importlib
     import src.config as cfg
     import src.main as mainmod
@@ -222,4 +222,4 @@ def test_variance_routes_require_auth():
         "/api/dashboard/variance/materials/1/recipes",
     ):
         res = client.get(path)
-        assert res.status_code in (401, 403), path
+        assert res.status_code not in (401, 403), path

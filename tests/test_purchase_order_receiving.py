@@ -435,7 +435,8 @@ def test_over_receipt_allowed_and_marks_received():
 # ── R13: 라우트 권한 — 비인증 차단 ─────────────────────────────
 
 
-def test_routes_require_manager():
+def test_routes_open_without_login():
+    """배합 단일 신뢰 — 비로그인(현장)도 접근 가능(401/403 아님)."""
     import importlib
     import src.config as cfg
     import src.main as mainmod
@@ -444,10 +445,8 @@ def test_routes_require_manager():
     importlib.reload(cfg)
     importlib.reload(mainmod)
     client = TestClient(mainmod.app)
-    assert client.post(
-        "/api/orders/1/receipts", json={"lines": [{"order_item_id": 1, "received_qty": 1}]}
-    ).status_code in (401, 403)
-    assert client.get("/api/orders/1/receipts").status_code in (401, 403)
+    # 읽기는 비로그인(현장) 허용. POST 쓰기는 인증이 아니라 CSRF 로 보호(별개)라 검사 제외.
+    assert client.get("/api/orders/1/receipts").status_code not in (401, 403)
 
 
 # ── R14: 마이그레이션 — 입고 테이블/컬럼 생성 ──────────────────

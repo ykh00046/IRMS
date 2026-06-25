@@ -18,6 +18,18 @@ ACCESS_LEVEL_LABEL = {
     "admin": "관리자",
 }
 
+# 배합(잉크) 쪽은 단일 신뢰 도구라 작업자/책임자 권한 구분이 의미 없다. 로그인이 없으면
+# '현장'(manager) 으로 취급해 배합 관련 화면·기능을 모두 연다. admin(사용자 관리/시스템)과
+# 근태만 실제 로그인이 의미를 가진다. id=None 이라 화면 크롬에선 '비로그인' 으로 취급한다.
+FIELD_USER = {
+    "id": None,
+    "username": "현장",
+    "display_name": "현장",
+    "role": "operator",
+    "role_label": "현장",
+    "access_level": "manager",
+}
+
 
 def to_public_user(row) -> dict[str, Any]:
     access_level = row["access_level"] or ("manager" if row["role"] == "admin" else "operator")
@@ -103,7 +115,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
     user_id = request.session.get("user_id")
     if not user_id:
         if required:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
+            return dict(FIELD_USER)  # 비로그인 → 현장(manager). admin 게이트는 여전히 403.
         return None
 
     cookie_token = request.session.get("session_token")
@@ -125,7 +137,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
 
     request.session.clear()
     if required:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
+        return dict(FIELD_USER)  # 만료/무효 세션 → 현장(manager). admin 은 여전히 403.
     return None
 
 

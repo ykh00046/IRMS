@@ -185,8 +185,8 @@ def test_window_excludes_old_consumption():
 
 # ── Route-level permission test ──────────────────────────────────────────────
 
-def test_forecast_requires_authentication():
-    """T6 — 비인증/operator 접근은 차단(manager scope)."""
+def test_forecast_open_without_login():
+    """배합 단일 신뢰 — 비로그인(현장)도 접근 가능(401/403 아님)."""
     import importlib
     import src.config as cfg
     import src.main as mainmod
@@ -195,7 +195,7 @@ def test_forecast_requires_authentication():
     importlib.reload(mainmod)
     client = TestClient(mainmod.app)
     res = client.get("/api/forecast/materials")
-    assert res.status_code in (401, 403)
+    assert res.status_code not in (401, 403)
 
 
 def test_export_only_reorder_filters_rows(monkeypatch):

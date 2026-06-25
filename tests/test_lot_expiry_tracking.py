@@ -221,7 +221,8 @@ def test_expiry_alert_respects_limit():
 # ── L8: 라우트 권한 ────────────────────────────────────────────
 
 
-def test_lot_routes_require_auth():
+def test_lot_routes_open_without_login():
+    """배합 단일 신뢰 — 비로그인(현장)도 접근 가능(401/403 아님)."""
     import importlib
     import src.config as cfg
     import src.main as mainmod
@@ -229,9 +230,9 @@ def test_lot_routes_require_auth():
     importlib.reload(cfg)
     importlib.reload(mainmod)
     client = TestClient(mainmod.app)
-    assert client.get("/api/materials/lots").status_code in (401, 403)
-    assert client.get("/api/dashboard/expiry-alert").status_code in (401, 403)
-    assert client.post("/api/materials/1/lots", json={"quantity": 1}).status_code in (401, 403)
+    assert client.get("/api/materials/lots").status_code not in (401, 403)
+    assert client.get("/api/dashboard/expiry-alert").status_code not in (401, 403)
+    # POST 쓰기는 인증이 아니라 CSRF 로 보호(토큰 없으면 403) — 별개 보호라 여기선 검사하지 않음
 
 
 # ── L9: 마이그레이션 ───────────────────────────────────────────

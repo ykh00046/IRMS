@@ -54,8 +54,10 @@ def _protected_page_response(
 ) -> Response:
     current_user = get_current_user(request, required=False)
     if not current_user:
-        target = "/weighing/select" if required_level == "operator" else "/management/login"
-        return _entry_redirect(target, request)
+        # 배합 단일 신뢰: operator/manager 페이지는 로그인 없이 '현장'으로 접근. admin만 로그인.
+        if required_level == "admin":
+            return _entry_redirect("/management/login", request)
+        current_user = get_current_user(request, required=True)  # 현장(manager)
 
     if not has_access_level(current_user, required_level):
         return _entry_redirect("/management/login", request)
