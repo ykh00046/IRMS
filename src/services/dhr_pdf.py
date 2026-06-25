@@ -1,20 +1,38 @@
-"""배합일지 스캔효과 PDF — Program-estimation v3 PdfScanRenderer/ExcelWriter 이식(웹용).
+"""배합일지 스캔효과 PDF — Program-estimation v3 PdfScanRenderer/ExcelWriter 이식.
 
-원본은 Excel→(win32com)PDF→(PyMuPDF)이미지→스캔효과→PDF 였으나, 웹서버엔 Excel COM이
-없으므로 **PIL로 원료배합일지 양식 이미지를 직접 렌더** → 서명 합성(signature_processor)
-→ 스캔효과(블러/노이즈/대비/밝기) → PDF 저장. Pillow + numpy 만 의존.
+정확 경로(원본과 동일): 공식 양식 xlsx 를 채워 Excel(win32com)→PDF→(PyMuPDF)이미지 로
+렌더 → 서명 합성(signature_processor) → 스캔효과 → PDF. 공식 양식과 픽셀 단위로 일치.
+폴백 경로: Excel/win32com/PyMuPDF 가 없으면 PIL 로 양식을 재현(타 환경/개발용).
 """
 
 import io
 import os
 import tempfile
+import threading
 from typing import Any
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from . import signature_config
+from . import dhr_excel, signature_config
 from .signature_processor import ImageProcessor
+
+# 정확 경로 의존성(운영 PC: Excel + pywin32 + PyMuPDF). 없으면 PIL 폴백.
+try:
+    import fitz  # PyMuPDF
+    _FITZ_OK = True
+except ImportError:
+    fitz = None
+    _FITZ_OK = False
+
+try:
+    import pythoncom  # noqa: F401
+    import win32com.client  # noqa: F401
+    _WIN32_OK = True
+except ImportError:
+    _WIN32_OK = False
+
+_excel_lock = threading.Lock()
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
 _SIG_DIR = os.path.join(_RES, "signature")
@@ -48,6 +66,24 @@ def _num(v: Any) -> str:
         return str(int(f)) if f == int(f) else f"{f:.2f}"
     except (TypeError, ValueError):
         return str(v)
+
+
+_TEMPLATE_PATH = os.path.join(_RES, "dhr_template.xlsx")
+_footer_cache: str | None = None
+
+
+def _official_footer() -> str:
+    """공식 양식의 바닥글(양식번호)을 템플릿 페이지 설정에서 그대로 가져온다."""
+    global _footer_cache
+    if _footer_cache is None:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(_TEMPLATE_PATH)
+            seg = wb.active.HeaderFooter.oddFooter.center
+            _footer_cache = (seg.text or "").strip() if seg else ""
+        except Exception:
+            _footer_cache = "양식번호 : F706-4(Rev.1)"
+    return _footer_cache
 
 
 def render_form_image(record: dict[str, Any]) -> tuple[Image.Image, dict[str, list[int]]]:
@@ -135,6 +171,13 @@ def render_form_image(record: dict[str, Any]) -> tuple[Image.Image, dict[str, li
     bw = d.textlength(total100, font=f_cell)
     d.text((col_x[1] + (col_x[2] - col_x[1] - bw) / 2, merge_mid), total100, fill=black, font=f_cell)
 
+    # 바닥글: 양식번호(공식 양식 페이지 설정과 동일) — 페이지 하단 가운데
+    footer = _official_footer()
+    if footer:
+        f_footer = _font(20)
+        fw = d.textlength(footer, font=f_footer)
+        d.text(((_W - fw) / 2, _H - 72), footer, fill=black, font=f_footer)
+
     return img, positions
 
 
@@ -156,20 +199,112 @@ def apply_scan_effects(image: Image.Image, params: dict | None = None) -> Image.
     return proc
 
 
+def exact_available() -> bool:
+    """원본과 동일한 Excel→PDF 정확 경로 사용 가능 여부."""
+    return _WIN32_OK and _FITZ_OK
+
+
+def _excel_to_pdf_bytes(xlsx_bytes: bytes) -> bytes | None:
+    """채워진 xlsx 를 Excel COM 으로 PDF 변환. 실패/미지원 시 None."""
+    if not _WIN32_OK:
+        return None
+    import pythoncom
+    import win32com.client
+    with _excel_lock:
+        pythoncom.CoInitialize()
+        xl = None
+        wb = None
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                xlsx = os.path.abspath(os.path.join(tmp, "dhr.xlsx"))
+                pdf = os.path.abspath(os.path.join(tmp, "dhr.pdf"))
+                with open(xlsx, "wb") as fh:
+                    fh.write(xlsx_bytes)
+                xl = win32com.client.DispatchEx("Excel.Application")
+                xl.Visible = False
+                xl.DisplayAlerts = False
+                wb = xl.Workbooks.Open(xlsx)
+                wb.ExportAsFixedFormat(0, pdf)  # 0 = xlTypePDF
+                wb.Close(False)
+                wb = None
+                xl.Quit()
+                xl = None
+                with open(pdf, "rb") as fh:
+                    return fh.read()
+        except Exception:
+            return None
+        finally:
+            try:
+                if wb is not None:
+                    wb.Close(False)
+            except Exception:
+                pass
+            try:
+                if xl is not None:
+                    xl.Quit()
+            except Exception:
+                pass
+            pythoncom.CoUninitialize()
+
+
+def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200):
+    """공식 양식 xlsx → Excel→PDF → 이미지(픽셀 일치). + 결재 칸(담당/검토/승인) 오버레이.
+
+    (이미지, 서명위치) 반환. Excel/PyMuPDF 미지원 시 None.
+    """
+    if not exact_available():
+        return None
+    pdf_bytes = _excel_to_pdf_bytes(dhr_excel.build_official_dhr_xlsx(record))
+    if not pdf_bytes:
+        return None
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    pix = doc[0].get_pixmap(dpi=dpi)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    doc.close()
+
+    # 결재 칸을 우상단 여백에 오버레이(공식 양식엔 결재칸이 없어 서명을 올릴 위치 제공)
+    w, h = img.size
+    d = ImageDraw.Draw(img)
+    m = int(w * 0.04)
+    cw = int(w * 0.095)
+    ch = int(h * 0.052)
+    label_h = int(ch * 0.33)
+    bx = w - m - cw * 3
+    by = int(h * 0.022)
+    f = _font(int(w * 0.014))
+    sig_w = int(cw * 0.92)
+    sig_h = int((ch - label_h) * 0.9)
+    positions: dict[str, list[int]] = {}
+    for i, (label, key) in enumerate([("담당", "charge"), ("검토", "review"), ("승인", "approve")]):
+        x0 = bx + i * cw
+        d.rectangle([x0, by, x0 + cw, by + ch], outline=(0, 0, 0), width=2)
+        d.rectangle([x0, by, x0 + cw, by + label_h], outline=(0, 0, 0), width=2)
+        lw = d.textlength(label, font=f)
+        d.text((x0 + (cw - lw) / 2, by + int(label_h * 0.15)), label, fill=(0, 0, 0), font=f)
+        positions[key] = [x0 + (cw - sig_w) // 2, by + label_h + ((ch - label_h) - sig_h) // 2]
+    return img, positions, sig_w, sig_h
+
+
 def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Image:
     """원료배합일지 양식 렌더 → 서명 합성 → (선택)스캔효과 → PIL 이미지.
 
+    정확 경로(Excel→PDF) 우선, 없으면 PIL 재현으로 폴백.
     작성자(record['worker'])의 서명 샘플({worker}_charge_*.png)이 있으면 합성,
     검토/승인은 공용 review/approve 샘플로 합성. 샘플이 없는 역할은 건너뜀.
     합성 파라미터·스캔효과는 signature_config(관리자 튜닝)에서 읽는다.
     """
-    base_img, positions = render_form_image(record)
     sc = signature_config.load()
+    exact = render_exact_form_image(record)
+    if exact is not None:
+        base_img, positions, sig_w, sig_h = exact
+    else:
+        base_img, positions = render_form_image(record)
+        sig_w, sig_h = 150, 60
 
     config = {
         "upsample_factor": 4,
-        "target_width": 150,
-        "target_height": 60,
+        "target_width": sig_w,
+        "target_height": sig_h,
         "dpi": 200,
         "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
         "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
