@@ -39,11 +39,17 @@ _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _CENTER = Alignment(horizontal="center", vertical="center")
 
 
-def build_official_dhr_xlsx(record: dict[str, Any], *, include_work_time: bool = True) -> bytes:
+def build_official_dhr_xlsx(
+    record: dict[str, Any],
+    *,
+    include_work_time: bool = True,
+    signature_image_path: str | None = None,
+) -> bytes:
     """배합 기록 dict → 원료배합일지 공식 양식 xlsx 바이트.
 
     record: get_blend_record 반환(product_lot/worker/work_date/work_time/scale/
             total_amount/details[material_name,material_lot,ratio,theory_amount,actual_amount]).
+    signature_image_path: 결재 도장(image.jpeg+서명) 이미지를 G2 셀에 삽입(원본 ExcelWriter 동일).
     """
     wb = load_workbook(TEMPLATE_PATH)
     ws = wb.active
@@ -90,6 +96,15 @@ def build_official_dhr_xlsx(record: dict[str, Any], *, include_work_time: bool =
 
     # 인쇄 영역을 채운 표까지로 축소 (빈 공간 제거)
     ws.print_area = f"A1:G{end_row}"
+
+    # 결재 도장 이미지를 G2 셀에 삽입 (원본 ExcelWriter: 228x65, anchor G2)
+    if signature_image_path and os.path.exists(signature_image_path):
+        from openpyxl.drawing.image import Image as XLImage
+        stamp = XLImage(signature_image_path)
+        stamp.width = 228
+        stamp.height = 65
+        stamp.anchor = "G2"
+        ws.add_image(stamp)
 
     buf = io.BytesIO()
     wb.save(buf)

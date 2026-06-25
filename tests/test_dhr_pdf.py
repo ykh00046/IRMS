@@ -58,9 +58,7 @@ def test_exact_path_when_available():
     if not dhr_pdf.exact_available():
         import pytest
         pytest.skip("Excel/PyMuPDF 미지원 환경")
-    out = dhr_pdf.render_exact_form_image(_rec())
-    assert out is not None
-    img, positions, sig_w, sig_h = out
+    img = dhr_pdf.render_exact_form_image(_rec())
+    assert img is not None
+    assert isinstance(img, Image.Image)
     assert img.size[0] > 1000
-    assert set(positions) == {"charge", "review", "approve"}
-    assert sig_w > 0 and sig_h > 0

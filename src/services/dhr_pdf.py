@@ -247,88 +247,99 @@ def _excel_to_pdf_bytes(xlsx_bytes: bytes) -> bytes | None:
             pythoncom.CoUninitialize()
 
 
-def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200):
-    """공식 양식 xlsx → Excel→PDF → 이미지(픽셀 일치). + 결재 칸(담당/검토/승인) 오버레이.
+_STAMP_TEMPLATE = os.path.join(_SIG_DIR, "image.jpeg")
 
-    (이미지, 서명위치) 반환. Excel/PyMuPDF 미지원 시 None.
+
+def _stamp_config(sc: dict) -> dict:
+    """결재 도장(image.jpeg 350x100)용 ImageProcessor 설정 — 서명 위치는 원본 고정값."""
+    return {
+        "upsample_factor": 4,
+        "target_width": 70,
+        "target_height": 28,
+        "dpi": 300,
+        "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
+        "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
+        "pressure_noise_strength": sc["pressure_noise_strength"],
+        "mesh_warp": {"grid_size": 3, "jitter_amount": 1},
+        "ink_alpha_factor": sc["ink_alpha_factor"],
+        "signature_brightness_factor": sc["signature_brightness_factor"],
+        "final_contrast_factor": sc["final_contrast_factor"],
+        "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 1, "offset_y": 2,
+                          "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
+        "include": {"charge": True, "review": True, "approve": True},
+        "positions": {"charge": [160, 57], "review": [222, 54], "approve": [288, 53]},
+    }
+
+
+def _build_signed_stamp(worker: str, sc: dict, out_path: str) -> str | None:
+    """결재 도장(image.jpeg)에 담당/검토/승인 서명을 합성. 성공 시 경로 반환."""
+    if not os.path.exists(_STAMP_TEMPLATE):
+        return None
+    proc = ImageProcessor(resources_path=_SIG_DIR, config=_stamp_config(sc))
+    ok, _msg = proc.create_signed_image(_STAMP_TEMPLATE, out_path, worker)
+    return out_path if ok and os.path.exists(out_path) else None
+
+
+def render_exact_form_image(record: dict[str, Any], *, dpi: int = 200) -> Image.Image | None:
+    """공식 양식 xlsx(결재 도장 G2 삽입) → Excel→PDF → 이미지(픽셀 일치).
+
+    원본과 동일: 결재 도장(image.jpeg)에 서명 합성 → 양식 G2 셀에 삽입 → Excel 렌더.
+    Excel/PyMuPDF 미지원 시 None.
     """
     if not exact_available():
         return None
-    pdf_bytes = _excel_to_pdf_bytes(dhr_excel.build_official_dhr_xlsx(record))
+    sc = signature_config.load()
+    worker = str(record.get("worker") or "").strip()
+    with tempfile.TemporaryDirectory() as tmp:
+        stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"))
+        xlsx = dhr_excel.build_official_dhr_xlsx(record, signature_image_path=stamp_path)
+        pdf_bytes = _excel_to_pdf_bytes(xlsx)
     if not pdf_bytes:
         return None
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     pix = doc[0].get_pixmap(dpi=dpi)
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     doc.close()
-
-    # 결재 칸을 우상단 여백에 오버레이(공식 양식엔 결재칸이 없어 서명을 올릴 위치 제공)
-    w, h = img.size
-    d = ImageDraw.Draw(img)
-    m = int(w * 0.04)
-    cw = int(w * 0.095)
-    ch = int(h * 0.060)
-    label_h = int(ch * 0.30)
-    bx = w - m - cw * 3
-    by = int(h * 0.022)
-    f = _font(int(w * 0.014))
-    sign_area = ch - label_h
-    sig_w = int(cw * 0.84)
-    sig_h = int(sign_area * 0.60)
-    positions: dict[str, list[int]] = {}
-    for i, (label, key) in enumerate([("담당", "charge"), ("검토", "review"), ("승인", "approve")]):
-        x0 = bx + i * cw
-        d.rectangle([x0, by, x0 + cw, by + ch], outline=(0, 0, 0), width=2)
-        d.rectangle([x0, by, x0 + cw, by + label_h], outline=(0, 0, 0), width=2)
-        lw = d.textlength(label, font=f)
-        d.text((x0 + (cw - lw) / 2, by + int(label_h * 0.15)), label, fill=(0, 0, 0), font=f)
-        # 서명을 라벨 아래 서명영역 중앙으로 — 위로 떠 보이지 않게 약간 아래 배치
-        positions[key] = [x0 + (cw - sig_w) // 2, by + label_h + int(sign_area * 0.30)]
-    return img, positions, sig_w, sig_h
+    return img
 
 
 def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Image:
-    """원료배합일지 양식 렌더 → 서명 합성 → (선택)스캔효과 → PIL 이미지.
+    """원료배합일지 양식 + 결재 도장 서명 → (선택)스캔효과 → PIL 이미지.
 
-    정확 경로(Excel→PDF) 우선, 없으면 PIL 재현으로 폴백.
-    작성자(record['worker'])의 서명 샘플({worker}_charge_*.png)이 있으면 합성,
-    검토/승인은 공용 review/approve 샘플로 합성. 샘플이 없는 역할은 건너뜀.
-    합성 파라미터·스캔효과는 signature_config(관리자 튜닝)에서 읽는다.
+    정확 경로(Excel→PDF, 결재 도장 image.jpeg 를 G2 셀에 삽입) 우선. Excel 미지원 시
+    PIL 재현(우상단 결재칸 오버레이)으로 폴백. 합성 파라미터·스캔효과는 signature_config.
     """
     sc = signature_config.load()
-    exact = render_exact_form_image(record)
-    if exact is not None:
-        base_img, positions, sig_w, sig_h = exact
-    else:
+    result = render_exact_form_image(record)
+
+    if result is None:
+        # 폴백(PIL, 개발/타 환경): 양식 재현 + 결재칸 서명 오버레이
         base_img, positions = render_form_image(record)
-        sig_w, sig_h = 150, 60
-
-    config = {
-        "upsample_factor": 4,
-        "target_width": sig_w,
-        "target_height": sig_h,
-        "dpi": 200,
-        "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
-        "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
-        "pressure_noise_strength": sc["pressure_noise_strength"],
-        "mesh_warp": {"grid_size": 3, "jitter_amount": 2},
-        "ink_alpha_factor": sc["ink_alpha_factor"],
-        "signature_brightness_factor": sc["signature_brightness_factor"],
-        "final_contrast_factor": sc["final_contrast_factor"],
-        "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 3, "offset_y": 5,
-                          "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
-        "include": {"charge": True, "review": True, "approve": True},
-        "positions": positions,
-    }
-    processor = ImageProcessor(resources_path=_SIG_DIR, config=config)
-    worker = str(record.get("worker") or "").strip()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        base_path = os.path.join(tmp, "base.png")
-        signed_path = os.path.join(tmp, "signed.png")
-        base_img.save(base_path)
-        ok, _msg = processor.create_signed_image(base_path, signed_path, worker)
-        result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
+        config = {
+            "upsample_factor": 4,
+            "target_width": 150,
+            "target_height": 60,
+            "dpi": 200,
+            "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
+            "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
+            "pressure_noise_strength": sc["pressure_noise_strength"],
+            "mesh_warp": {"grid_size": 3, "jitter_amount": 2},
+            "ink_alpha_factor": sc["ink_alpha_factor"],
+            "signature_brightness_factor": sc["signature_brightness_factor"],
+            "final_contrast_factor": sc["final_contrast_factor"],
+            "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 3, "offset_y": 5,
+                              "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
+            "include": {"charge": True, "review": True, "approve": True},
+            "positions": positions,
+        }
+        processor = ImageProcessor(resources_path=_SIG_DIR, config=config)
+        worker = str(record.get("worker") or "").strip()
+        with tempfile.TemporaryDirectory() as tmp:
+            base_path = os.path.join(tmp, "base.png")
+            signed_path = os.path.join(tmp, "signed.png")
+            base_img.save(base_path)
+            ok, _msg = processor.create_signed_image(base_path, signed_path, worker)
+            result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
 
     if scan:
         result = apply_scan_effects(result, {
