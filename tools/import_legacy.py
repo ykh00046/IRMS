@@ -115,7 +115,8 @@ def _split_datetime(value) -> tuple[str, str]:
 
 
 def import_records_xlsx(
-    conn: sqlite3.Connection, xlsx_path: str, *, default_scale: str = "M-65"
+    conn: sqlite3.Connection, xlsx_path: str, *, default_scale: str = "M-65",
+    replace: bool = False,
 ) -> tuple[int, int]:
     """배합기록 xlsx(제품LOT·작업자·레시피·배합량·품목코드·품목명·배합비율·원재료LOT·
     이론계량·실제배합·작업일시) → blend_records + blend_details. 제품LOT로 묶는다."""
@@ -146,8 +147,22 @@ def import_records_xlsx(
 
     now = _now()
     created = skipped = 0
+
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
     for lot, grp in groups.items():
-        if conn.execute("SELECT 1 FROM blend_records WHERE product_lot = ?", (lot,)).fetchone():
+        existing = conn.execute(
+            "SELECT id FROM blend_records WHERE product_lot = ?", (lot,)
+        ).fetchone()
+        if existing and replace:
+            # 기존(잘못 적재된) 기록 덮어쓰기: 상세 → 기록 삭제 후 재삽입
+            conn.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (existing[0],))
+            conn.execute("DELETE FROM blend_records WHERE id = ?", (existing[0],))
+        elif existing:
             skipped += 1
             continue
         recipe_name = str(grp["recipe"] or "").strip()
@@ -157,10 +172,11 @@ def import_records_xlsx(
             "SELECT id FROM recipes WHERE product_name = ? AND revision_of IS NULL ORDER BY id LIMIT 1",
             (recipe_name,),
         ).fetchone()
-        try:
-            total = float(grp["total"])
-        except (TypeError, ValueError):
-            total = 0.0
+        details = grp["details"]
+        # 총 배합량 = 이론계량 합(없으면 실제배합 합). xlsx '총수량'(col4)은 배수일 뿐 총량 아님.
+        theory_sum = sum(_num(d[4]) or 0.0 for d in details)
+        actual_sum = sum(_num(d[5]) or 0.0 for d in details)
+        total = round(theory_sum or actual_sum or 0.0, 3)
         cur = conn.execute(
             "INSERT INTO blend_records (product_lot, recipe_id, product_name, ink_name, worker, "
             "work_date, work_time, total_amount, scale, status, created_by, created_at, updated_at) "
@@ -170,22 +186,19 @@ def import_records_xlsx(
              _IMPORT_ACTOR, created_at, created_at),
         )
         blend_id = int(cur.lastrowid)
-        for seq, (code, mname, ratio, mlot, theory, actual) in enumerate(grp["details"], start=1):
+        for seq, (code, mname, _ratio_raw, mlot, theory, actual) in enumerate(details, start=1):
             material_id = _resolve_material(conn, mname, code)
-
-            def _num(v):
-                try:
-                    return float(v)
-                except (TypeError, ValueError):
-                    return None
-
+            th = _num(theory)
+            ac = _num(actual)
+            # 비율(%) = 이론계량 / 총배합량 × 100 (xlsx '배합비율'은 %가 아니라 단위배합량)
+            ratio = round(th / total * 100, 4) if (th is not None and total) else None
             conn.execute(
                 "INSERT INTO blend_details (blend_record_id, material_id, material_code, "
                 "material_name, material_lot, ratio, theory_amount, actual_amount, "
                 "sequence_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (blend_id, material_id, (str(code).strip() if code else None),
                  str(mname or "").strip(), (str(mlot).strip() if mlot else None),
-                 _num(ratio), _num(theory), _num(actual), seq, created_at),
+                 ratio, th, ac, seq, created_at),
             )
         created += 1
     conn.commit()
@@ -247,6 +260,8 @@ def main() -> None:
     ap.add_argument("--recipes", help="레시피 xlsx 경로")
     ap.add_argument("--records", help="배합기록.xlsx 또는 mixing_records.db 경로(확장자 자동 인식)")
     ap.add_argument("--dhr", action="store_true", help="레시피를 DHR 전용으로 적재")
+    ap.add_argument("--replace", action="store_true",
+                    help="배합기록: 같은 제품LOT이 있으면 건너뛰지 않고 덮어쓰기(재적재용)")
     args = ap.parse_args()
     if not (args.recipes or args.records):
         ap.error("--recipes 또는 --records 중 하나 이상을 지정하세요.")
@@ -258,7 +273,7 @@ def main() -> None:
             print(f"{kind}: 생성 {c} · 중복 건너뜀 {s}")
         if args.records:
             if args.records.lower().endswith(".xlsx"):
-                c, s = import_records_xlsx(conn, args.records)
+                c, s = import_records_xlsx(conn, args.records, replace=args.replace)
             else:
                 c, s = import_records(conn, args.records)
             print(f"배합기록: 생성 {c} · 중복 건너뜀 {s}")
