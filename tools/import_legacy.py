@@ -1,7 +1,8 @@
 """구 잉크 데스크톱(Program-estimation) 데이터 → IRMS 이관 도구.
 
   - 레시피 xlsx(레시피·품목코드·품목명·배합비율, long 형식) → recipes + recipe_items
-  - mixing_records.db(mixing_records/mixing_details) → blend_records + blend_details
+  - 배합기록.xlsx(제품LOT·작업자·레시피·배합량·품목·배합비율·원재료LOT·이론/실제·작업일시)
+    또는 mixing_records.db → blend_records + blend_details (제품LOT로 묶음)
 
 자재는 이름/품목코드(alias)로 해석하고 없으면 생성한다. 중복(레시피명·product_lot)은 건너뛴다.
 대상 DB는 IRMS_DATA_DIR 의 운영 DB(get_connection). 운영 PC에서 실행한다.
@@ -102,6 +103,95 @@ def import_recipes(conn: sqlite3.Connection, xlsx_path: str, *, is_dhr: bool = F
     return created, skipped
 
 
+def _split_datetime(value) -> tuple[str, str]:
+    """'2025-06-25 09:35:49'(또는 datetime) → (work_date, work_time)."""
+    if value is None:
+        return "", ""
+    s = str(value).strip()
+    if " " in s:
+        d, t = s.split(" ", 1)
+        return d[:10], t.strip()[:8]
+    return s[:10], ""
+
+
+def import_records_xlsx(
+    conn: sqlite3.Connection, xlsx_path: str, *, default_scale: str = "M-65"
+) -> tuple[int, int]:
+    """배합기록 xlsx(제품LOT·작업자·레시피·배합량·품목코드·품목명·배합비율·원재료LOT·
+    이론계량·실제배합·작업일시) → blend_records + blend_details. 제품LOT로 묶는다."""
+    import openpyxl
+
+    ws = openpyxl.load_workbook(xlsx_path, data_only=True).active
+    groups: "OrderedDict[str, dict]" = OrderedDict()
+    for r in range(2, ws.max_row + 1):  # 1행은 헤더
+        lot = ws.cell(r, 1).value
+        if lot is None or str(lot).strip() == "":
+            continue
+        lot = str(lot).strip()
+        grp = groups.setdefault(lot, {
+            "worker": ws.cell(r, 2).value,
+            "recipe": ws.cell(r, 3).value,
+            "total": ws.cell(r, 4).value,
+            "dt": ws.cell(r, 11).value,
+            "details": [],
+        })
+        grp["details"].append((
+            ws.cell(r, 5).value,   # 품목코드
+            ws.cell(r, 6).value,   # 품목명
+            ws.cell(r, 7).value,   # 배합비율
+            ws.cell(r, 8).value,   # 원재료LOT
+            ws.cell(r, 9).value,   # 이론계량
+            ws.cell(r, 10).value,  # 실제배합
+        ))
+
+    now = _now()
+    created = skipped = 0
+    for lot, grp in groups.items():
+        if conn.execute("SELECT 1 FROM blend_records WHERE product_lot = ?", (lot,)).fetchone():
+            skipped += 1
+            continue
+        recipe_name = str(grp["recipe"] or "").strip()
+        work_date, work_time = _split_datetime(grp["dt"])
+        created_at = f"{work_date} {work_time}".strip() or now
+        recipe_row = conn.execute(
+            "SELECT id FROM recipes WHERE product_name = ? AND revision_of IS NULL ORDER BY id LIMIT 1",
+            (recipe_name,),
+        ).fetchone()
+        try:
+            total = float(grp["total"])
+        except (TypeError, ValueError):
+            total = 0.0
+        cur = conn.execute(
+            "INSERT INTO blend_records (product_lot, recipe_id, product_name, ink_name, worker, "
+            "work_date, work_time, total_amount, scale, status, created_by, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)",
+            (lot, recipe_row[0] if recipe_row else None, recipe_name, recipe_name,
+             str(grp["worker"] or "").strip(), work_date, work_time, total, default_scale,
+             _IMPORT_ACTOR, created_at, created_at),
+        )
+        blend_id = int(cur.lastrowid)
+        for seq, (code, mname, ratio, mlot, theory, actual) in enumerate(grp["details"], start=1):
+            material_id = _resolve_material(conn, mname, code)
+
+            def _num(v):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+
+            conn.execute(
+                "INSERT INTO blend_details (blend_record_id, material_id, material_code, "
+                "material_name, material_lot, ratio, theory_amount, actual_amount, "
+                "sequence_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (blend_id, material_id, (str(code).strip() if code else None),
+                 str(mname or "").strip(), (str(mlot).strip() if mlot else None),
+                 _num(ratio), _num(theory), _num(actual), seq, created_at),
+            )
+        created += 1
+    conn.commit()
+    return created, skipped
+
+
 def import_records(conn: sqlite3.Connection, db_path: str) -> tuple[int, int]:
     """mixing_records.db → blend_records + blend_details. (생성, 중복건너뜀) 반환."""
     src = sqlite3.connect(db_path)
@@ -155,7 +245,7 @@ def import_records(conn: sqlite3.Connection, db_path: str) -> tuple[int, int]:
 def main() -> None:
     ap = argparse.ArgumentParser(description="구 잉크 데스크톱 데이터 → IRMS 이관")
     ap.add_argument("--recipes", help="레시피 xlsx 경로")
-    ap.add_argument("--records", help="mixing_records.db 경로")
+    ap.add_argument("--records", help="배합기록.xlsx 또는 mixing_records.db 경로(확장자 자동 인식)")
     ap.add_argument("--dhr", action="store_true", help="레시피를 DHR 전용으로 적재")
     args = ap.parse_args()
     if not (args.recipes or args.records):
@@ -167,7 +257,10 @@ def main() -> None:
             kind = "DHR 전용 레시피" if args.dhr else "레시피"
             print(f"{kind}: 생성 {c} · 중복 건너뜀 {s}")
         if args.records:
-            c, s = import_records(conn, args.records)
+            if args.records.lower().endswith(".xlsx"):
+                c, s = import_records_xlsx(conn, args.records)
+            else:
+                c, s = import_records(conn, args.records)
             print(f"배합기록: 생성 {c} · 중복 건너뜀 {s}")
 
 
