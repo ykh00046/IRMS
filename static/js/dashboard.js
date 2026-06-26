@@ -359,7 +359,6 @@ document.addEventListener("DOMContentLoaded", () => {
               (recipe) => `
                 <tr>
                   <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
-                  <td>${IRMS.escapeHtml(recipe.ink_name || "-")}</td>
                   <td class="num">${fmtNumber(recipe.weight_g, 2)}</td>
                   <td>${IRMS.escapeHtml(recipe.measured_by)}</td>
                   <td>${IRMS.formatDateTime(recipe.measured_at)}</td>
@@ -386,7 +385,6 @@ document.addEventListener("DOMContentLoaded", () => {
               (recipe) => `
                 <tr>
                   <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
-                  <td>${IRMS.escapeHtml(recipe.ink_name || "-")}</td>
                   <td class="num">${fmtNumber(recipe.target_weight_g, 2)}</td>
                   <td class="num">${fmtNumber(recipe.actual_weight_g, 2)}</td>
                   <td class="num">${fmtNumber(recipe.deviation_g, 2)}</td>

@@ -536,7 +536,7 @@
     if (!grid || !req) return;
     const LABELS = {
       gaussian_blur_sigma: "가우시안 블러", pressure_noise_strength: "펜압 노이즈",
-      ink_alpha_factor: "잉크 진하기", signature_brightness_factor: "서명 밝기",
+      ink_alpha_factor: "서명 진하기", signature_brightness_factor: "서명 밝기",
       final_contrast_factor: "최종 대비", rotation_angle: "회전 각도(°)",
       scale_min: "최소 크기", scale_max: "최대 크기",
       scan_noise_range: "스캔 노이즈", scan_blur_radius: "스캔 블러",

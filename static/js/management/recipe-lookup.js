@@ -117,7 +117,6 @@
         const headerCells = [
           "<th>ID</th>",
           "<th>위치</th>",
-          "<th>잉크명</th>",
           ...allMaterials.map((m) => `<th>${IRMS.escapeHtml(m)}</th>`),
           "<th>상태</th>",
           "<th>등록일</th>",
@@ -143,7 +142,6 @@
             return `<tr data-recipe-id="${recipe.id}">
               <td>${recipe.id}</td>
               <td>${IRMS.escapeHtml(recipe.position || "-")}</td>
-              <td>${IRMS.escapeHtml(recipe.ink_name || "")}</td>
               ${materialCells}
               <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
               <td>${IRMS.formatDateTime(recipe.created_at)}</td>

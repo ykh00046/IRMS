@@ -95,7 +95,6 @@
               <tr class="history-row" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
                 <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}</td>
-                <td>${IRMS.escapeHtml(recipe.inkName)}</td>
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
