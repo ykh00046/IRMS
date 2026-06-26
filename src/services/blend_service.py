@@ -92,8 +92,11 @@ def get_recipe_for_blend(
     }
 
 
-def list_blend_recipes(connection: sqlite3.Connection) -> list[dict[str, Any]]:
-    """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외)."""
+def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> list[dict[str, Any]]:
+    """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외).
+
+    dhr=False(기본): 일반 레시피. dhr=True: DHR 전용 레시피(일괄 배합일지 생성용).
+    """
     rows = connection.execute(
         """
         SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
@@ -102,11 +105,12 @@ def list_blend_recipes(connection: sqlite3.Connection) -> list[dict[str, Any]]:
         FROM recipes r
         LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
         WHERE r.status NOT IN ('canceled', 'draft')
-          AND COALESCE(r.is_dhr, 0) = 0
+          AND COALESCE(r.is_dhr, 0) = ?
         GROUP BY r.id
         HAVING item_count > 0
         ORDER BY r.created_at DESC, r.id DESC
-        """
+        """,
+        (1 if dhr else 0,),
     ).fetchall()
     return [
         {

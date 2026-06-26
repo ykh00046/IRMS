@@ -95,17 +95,36 @@
 
   // ── 일괄 생성 ──────────────────────────────────────────────
   function initBulk() {
+    fillBulkRecipes();
+    if (!$("bulk-body").children.length) addBulkRow();
+    const dhrToggle = $("bulk-dhr");
+    if (dhrToggle && !dhrToggle._bound) {
+      dhrToggle._bound = true;
+      dhrToggle.addEventListener("change", fillBulkRecipes);
+    }
+  }
+
+  async function fillBulkRecipes() {
+    // DHR 전용 체크 시 DHR 전용 레시피, 아니면 일반 레시피 — 배합일지 2종류 소스 분리.
     const sel = $("bulk-recipe");
-    if (sel.options.length === 0) {
-      sel.innerHTML = '<option value="">레시피 선택…</option>';
-      state.recipes.forEach((r) => {
+    const dhr = $("bulk-dhr") && $("bulk-dhr").checked;
+    try {
+      const d = await request(`/blend/recipes${dhr ? "?dhr=1" : ""}`);
+      const items = d.items || [];
+      sel.innerHTML = "";
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = items.length ? "레시피 선택…" : (dhr ? "DHR 전용 레시피가 없습니다" : "레시피가 없습니다");
+      sel.appendChild(ph);
+      items.forEach((r) => {
         const o = document.createElement("option");
         o.value = String(r.id);
-        o.textContent = `${r.product_name}${r.ink_name ? " / " + r.ink_name : ""}`;
+        o.textContent = r.product_name;
         sel.appendChild(o);
       });
+    } catch (e) {
+      sel.innerHTML = '<option value="">로드 실패</option>';
     }
-    if (!$("bulk-body").children.length) addBulkRow();
   }
 
   function addBulkRow() {

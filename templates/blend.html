@@ -113,6 +113,9 @@
                 <label class="filter-label" for="bulk-recipe">레시피</label>
                 <select class="input" id="bulk-recipe"></select>
               </div>
+              <label class="visc-checkbox blend-field">
+                <input id="bulk-dhr" type="checkbox" /> DHR 전용 레시피
+              </label>
               <div class="blend-field">
                 <label class="filter-label" for="bulk-worker">작업자</label>
                 <input class="input" id="bulk-worker" placeholder="이름" list="worker-names" autocomplete="off" />
@@ -206,5 +209,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend.js?v=20260626c"></script>
+    <script src="/static/js/blend.js?v=20260626d"></script>
 {% endblock %}

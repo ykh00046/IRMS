@@ -39,8 +39,12 @@ def build_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/blend/recipes")
-    def blend_recipes(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
-        return {"items": blend_service.list_blend_recipes(connection)}
+    def blend_recipes(
+        dhr: bool = Query(default=False),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        # dhr=True: DHR 전용 레시피(일괄 배합일지 생성용). 기본은 일반 레시피.
+        return {"items": blend_service.list_blend_recipes(connection, dhr=dhr)}
 
     @router.get("/blend/recipes/{recipe_id}")
     def blend_recipe_detail(
