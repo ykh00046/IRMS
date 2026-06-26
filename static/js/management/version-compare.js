@@ -42,7 +42,7 @@
       const items = data.items || [];
       if (dom.historyModalSubtitle && items.length) {
         const first = items[0];
-        dom.historyModalSubtitle.textContent = `${first.product_name || ""} / ${first.position || "-"} / ${first.ink_name || ""}`;
+        dom.historyModalSubtitle.textContent = `${first.product_name || ""} / ${first.position || "-"}`;
       }
       if (dom.historyModalTitle) {
         dom.historyModalTitle.textContent = `버전 이력 (${items.length}개)`;

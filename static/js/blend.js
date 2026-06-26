@@ -170,7 +170,7 @@
     state.recipes.forEach((r) => {
       const o = document.createElement("option");
       o.value = String(r.id);
-      o.textContent = `${r.product_name}${r.ink_name ? " / " + r.ink_name : ""} (${r.item_count}종, ${fmt(r.total_weight)}g)`;
+      o.textContent = `${r.product_name} (${r.item_count}종, ${fmt(r.total_weight)}g)`;
       sel.appendChild(o);
     });
   }
@@ -237,6 +237,10 @@
         updateTotals();
       })
     );
+    // 편차는 발생하면 안 됨 — 실제량 입력 완료(blur) 시 이론량과 다르면 경고
+    body.querySelectorAll(".blend-actual").forEach((el) =>
+      el.addEventListener("change", () => warnIfVariance(Number(el.dataset.idx)))
+    );
     body.querySelectorAll(".blend-lot").forEach((el) =>
       el.addEventListener("input", () => { state.items[Number(el.dataset.idx)].material_lot = el.value; })
     );
@@ -291,6 +295,25 @@
     cell.className = "num blend-var " + (Math.abs(v) < 1e-9 ? "" : v > 0 ? "var-up" : "var-down");
   }
 
+  function rowVariance(it) {
+    if (!it || it.actual_amount === "" || it.theory_amount == null) return 0;
+    return Math.round((Number(it.actual_amount) - it.theory_amount) * 1000) / 1000;
+  }
+
+  function warnIfVariance(i) {
+    const it = state.items[i];
+    const v = rowVariance(it);
+    if (Math.abs(v) > 1e-9) {
+      notify(
+        `편차 발생: ${it.material_name} — 이론 ${fmt(it.theory_amount)} ≠ 실제 ${fmt(it.actual_amount)} `
+        + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}). 잘못된 값입니다.`,
+        "error",
+      );
+      return true;
+    }
+    return false;
+  }
+
   function updateTotals() {
     const theory = state.items.reduce((s, it) => s + (it.theory_amount || 0), 0);
     const actual = state.items.reduce((s, it) => s + (it.actual_amount === "" ? 0 : Number(it.actual_amount) || 0), 0);
@@ -316,6 +339,15 @@
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
+    // 편차는 발생하면 안 됨 — 실제량 ≠ 이론량인 품목이 있으면 저장 차단(잘못된 값)
+    const bad = state.items.filter((it) => Math.abs(rowVariance(it)) > 1e-9);
+    if (bad.length) {
+      const names = bad.map((it) => `${it.material_name}(${rowVariance(it) > 0 ? "+" : ""}${fmt(rowVariance(it), 2)})`).join(", ");
+      err.textContent = `편차가 있어 저장할 수 없습니다(잘못된 값): ${names}. 실제량을 이론량과 같게 입력하세요.`;
+      err.hidden = false;
+      notify("편차 발생 — 저장할 수 없습니다. 실제량을 이론량과 일치시키세요.", "error");
+      return;
+    }
     if (!(await ensureWorker(worker))) return;
     const body = {
       recipe_id: state.current.recipe.id,
@@ -386,7 +418,7 @@
       tr.className = "blend-row";
       tr.innerHTML =
         `<td>${r.work_date}</td><td>${r.product_lot}</td>` +
-        `<td>${r.product_name}${r.ink_name ? " / " + r.ink_name : ""}</td>` +
+        `<td>${r.product_name}</td>` +
         `<td>${r.worker}</td><td class="num">${fmt(r.total_amount)}</td><td>${r.scale || "-"}</td>`;
       tr.addEventListener("click", () => openDetail(r.id));
       body.appendChild(tr);
@@ -410,7 +442,7 @@
     $("blend-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${rec.product_lot}</b></div>
-        <div><span class="dhr-k">제품</span><b>${rec.product_name}${rec.ink_name ? " / " + rec.ink_name : ""}</b></div>
+        <div><span class="dhr-k">제품</span><b>${rec.product_name}</b></div>
         <div><span class="dhr-k">작업자</span><b>${rec.worker}</b></div>
         <div><span class="dhr-k">작업일시</span><b>${rec.work_date} ${rec.work_time || ""}</b></div>
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
