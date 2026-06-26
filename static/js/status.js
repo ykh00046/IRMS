@@ -44,22 +44,26 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await request("/blend/records", { query });
       const items = data.items || [];
       if (!items.length) {
-        body.innerHTML = '<tr><td colspan="6" class="muted">기록이 없습니다.</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
         return;
       }
       body.innerHTML = "";
+      const allChk = $("status-rec-all");
+      if (allChk) allChk.checked = false;
       items.forEach((r) => {
         const tr = document.createElement("tr");
         tr.className = "blend-row";
         tr.innerHTML =
+          `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
           `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}</td>` +
-          `<td>${esc(r.product_name)}${r.ink_name ? " / " + esc(r.ink_name) : ""}</td>` +
+          `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
+        tr.querySelector(".rec-chk").addEventListener("click", (e) => e.stopPropagation());
         body.appendChild(tr);
       });
     } catch (e) {
-      body.innerHTML = `<tr><td colspan="6" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
     }
   }
 
@@ -141,6 +145,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   $("status-rec-apply").addEventListener("click", loadRecords);
+  $("status-rec-all").addEventListener("change", (e) => {
+    document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = e.target.checked; });
+  });
+  $("status-rec-dhr-batch").addEventListener("click", () => {
+    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
+    if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
+    if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
+    window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}`, "_blank");
+  });
   $("status-rec-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadRecords();
   });

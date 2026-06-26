@@ -428,6 +428,17 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes
     return buf.getvalue()
 
 
+def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True) -> bytes:
+    """여러 배합 기록 → 한 PDF(기록당 1장). 기록 목록에서 선택/전체 일괄 출력용."""
+    images = [render_signed_dhr(r, scan=scan) for r in records if r]
+    if not images:
+        return b""
+    buf = io.BytesIO()
+    resolution = round(images[0].width / _A4_WIDTH_IN, 1)
+    images[0].save(buf, format="PDF", save_all=True, append_images=images[1:], resolution=resolution)
+    return buf.getvalue()
+
+
 def build_preview_png(record: dict[str, Any], *, scan: bool = True) -> bytes:
     """서명 설정 미리보기용 — 샘플 배합일지 PNG 바이트."""
     img = render_signed_dhr(record, scan=scan)

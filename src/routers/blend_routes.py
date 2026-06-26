@@ -130,6 +130,30 @@ def build_router() -> APIRouter:
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    @router.get("/blend/records/dhr-batch")
+    def blend_dhr_batch(
+        ids: str = Query(...),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """선택한(또는 전체) 배합 기록의 배합일지를 한 PDF로 일괄 출력(최대 200건)."""
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+        records = [
+            r for r in (blend_service.get_blend_record(connection, i) for i in id_list) if r
+        ]
+        if not records:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        pdf_bytes = dhr_pdf.build_batch_dhr_pdf(records)
+        from urllib.parse import quote
+        utf8_name = quote(f"배합일지-{len(records)}건.pdf")
+        disposition = (
+            f"attachment; filename=\"dhr-batch.pdf\"; filename*=UTF-8''{utf8_name}"
+        )
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": disposition},
+        )
+
     @router.get("/blend/records/{record_id}")
     def blend_record_detail(
         record_id: int,

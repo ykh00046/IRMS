@@ -28,6 +28,7 @@
               <input class="input" id="status-rec-search" placeholder="검색어" />
             </div>
             <button class="btn accent" id="status-rec-apply" type="button">조회</button>
+            <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
             <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
           </div>
         </section>
@@ -37,6 +38,7 @@
             <table class="blend-table">
               <thead>
                 <tr>
+                  <th class="chk-col"><input type="checkbox" id="status-rec-all" title="전체 선택" /></th>
                   <th>작업일</th>
                   <th>제품 LOT</th>
                   <th>제품</th>
@@ -46,7 +48,7 @@
                 </tr>
               </thead>
               <tbody id="status-rec-body">
-                <tr><td colspan="6" class="muted">불러오는 중…</td></tr>
+                <tr><td colspan="7" class="muted">불러오는 중…</td></tr>
               </tbody>
             </table>
           </div>
@@ -69,5 +71,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260626c"></script>
+    <script src="/static/js/status.js?v=20260626e"></script>
 {% endblock %}

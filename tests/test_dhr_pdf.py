@@ -75,6 +75,14 @@ def test_worker_sign_override_empty_without_sign(tmp_path):
     assert dhr_pdf._worker_sign_override(_rec(), "김도현", str(tmp_path)) == {}
 
 
+def test_batch_dhr_pdf_multipage(monkeypatch):
+    # 여러 기록 → 한 PDF(기록당 1장). PIL 폴백으로 결정적 검증.
+    monkeypatch.setattr(dhr_pdf, "exact_available", lambda: False)
+    pdf = dhr_pdf.build_batch_dhr_pdf([_rec(), _rec(worker="없는사람")])
+    assert pdf[:5] == b"%PDF-"
+    assert len(pdf) > 10000
+
+
 def test_exact_path_when_available():
     # Excel + PyMuPDF 가용 환경에서만 정확 경로(Excel→PDF) 검증
     if not dhr_pdf.exact_available():
