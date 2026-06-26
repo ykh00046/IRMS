@@ -102,6 +102,7 @@ def list_blend_recipes(connection: sqlite3.Connection) -> list[dict[str, Any]]:
         FROM recipes r
         LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
         WHERE r.status NOT IN ('canceled', 'draft')
+          AND COALESCE(r.is_dhr, 0) = 0
         GROUP BY r.id
         HAVING item_count > 0
         ORDER BY r.created_at DESC, r.id DESC

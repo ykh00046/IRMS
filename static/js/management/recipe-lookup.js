@@ -24,9 +24,13 @@
   IRMS.management.createRecipeLookup = function (ctx) {
     const { dom, state } = ctx;
 
+    function dhrMode() {
+      return !!(dom.lookupDhr && dom.lookupDhr.checked);
+    }
+
     async function loadProducts() {
       try {
-        const items = await IRMS.getProducts();
+        const items = await IRMS.getProducts(dhrMode());
         if (dom.productList) {
           dom.productList.innerHTML = items
             .map((name) => `<option value="${IRMS.escapeHtml(name)}">`)
@@ -49,7 +53,34 @@
       if (dom.lookupCopyBtn) dom.lookupCopyBtn.disabled = !recipeId;
       if (dom.lookupCloneBtn) dom.lookupCloneBtn.disabled = !recipeId;
       if (dom.lookupHistoryBtn) dom.lookupHistoryBtn.disabled = !recipeId;
+      if (dom.lookupDhrBtn) {
+        dom.lookupDhrBtn.disabled = !recipeId;
+        dom.lookupDhrBtn.textContent = dhrMode() ? "DHR 전용 해제" : "DHR 전용 지정";
+      }
       if (dom.lookupActions) dom.lookupActions.hidden = !recipeId;
+    }
+
+    async function handleSetDhr() {
+      if (!state.selectedRecipeId) return;
+      const target = !dhrMode(); // 일반 보기→지정(true), DHR 보기→해제(false)
+      try {
+        await IRMS.setRecipeDhr(state.selectedRecipeId, target);
+        IRMS.notify(target ? "DHR 전용으로 지정했습니다." : "DHR 전용을 해제했습니다.", "success");
+        await loadProducts();
+        await handleLookup(); // 현재 목록 갱신(이동된 레시피는 빠짐)
+      } catch (error) {
+        IRMS.notify(`DHR 지정 실패: ${error.message}`, "error");
+      }
+    }
+
+    async function handleDhrModeChange() {
+      await loadProducts();
+      if (dom.lookupProduct) dom.lookupProduct.value = "";
+      if (dom.lookupResult) {
+        dom.lookupResult.innerHTML =
+          '<p class="empty-state">제품명을 선택하면 해당 제품의 레시피가 표시됩니다.</p>';
+      }
+      setLookupSelection(null);
     }
 
     async function handleLookup() {
@@ -61,7 +92,7 @@
 
       IRMS.btnLoading(dom.lookupBtn, true);
       try {
-        const data = await IRMS.getRecipesByProduct(productName);
+        const data = await IRMS.getRecipesByProduct(productName, undefined, dhrMode());
         const recipes = data.items || [];
 
         if (!recipes.length) {
@@ -241,6 +272,8 @@
       loadProducts,
       setLookupSelection,
       handleLookup,
+      handleSetDhr,
+      handleDhrModeChange,
       copyToClipboard,
       handleLookupCopy,
       handleLookupClone,

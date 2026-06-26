@@ -96,6 +96,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "revision_of", "INTEGER")
     # 레시피(버전)별 "사용 시작일" — 미지정 시 등록일로 갈음(등록 시 채움).
     ensure_column(connection, "recipes", "effective_from", "TEXT")
+    # DHR 전용 레시피: 일반 레시피 조회·배합 선택에서 제외, DHR(배합일지) 전용으로만 사용.
+    ensure_column(connection, "recipes", "is_dhr", "INTEGER NOT NULL DEFAULT 0")
 
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")

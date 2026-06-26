@@ -100,10 +100,13 @@ def build_router() -> APIRouter:
         return {"items": items, "total": len(items)}
 
     @router.get("/recipes/products")
-    def list_products() -> dict[str, Any]:
+    def list_products(dhr: bool = Query(default=False)) -> dict[str, Any]:
+        # dhr=False(기본): 일반 레시피만. dhr=True: DHR 전용 레시피만(분리 조회).
         with get_connection() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT product_name FROM recipes ORDER BY product_name ASC"
+                "SELECT DISTINCT product_name FROM recipes "
+                "WHERE COALESCE(is_dhr, 0) = ? ORDER BY product_name ASC",
+                (1 if dhr else 0,),
             ).fetchall()
         items = [row["product_name"] for row in rows]
         return {"items": items, "total": len(items)}
@@ -113,6 +116,7 @@ def build_router() -> APIRouter:
         product_name: str = Query(..., min_length=1, max_length=200),
         limit: int = Query(default=50, ge=1, le=200),
         current_only: bool = Query(default=True),
+        dhr: bool = Query(default=False),
     ) -> dict[str, Any]:
         # current_only(기본): 옛 버전(다른 리비전의 부모) 숨기고 각 체인의 현재 버전(tip)만.
         revision_filter = (
@@ -120,14 +124,16 @@ def build_router() -> APIRouter:
             if current_only
             else ""
         )
+        # dhr=False(기본): 일반 레시피만. dhr=True: DHR 전용만 — 둘이 섞이지 않게 분리.
+        dhr_filter = "AND COALESCE(r.is_dhr, 0) = 1" if dhr else "AND COALESCE(r.is_dhr, 0) = 0"
         with get_connection() as connection:
             recipe_rows = connection.execute(
                 f"""
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
                        r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
-                       r.effective_from
+                       r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr
                 FROM recipes r
-                WHERE r.product_name = ? {revision_filter}
+                WHERE r.product_name = ? {revision_filter} {dhr_filter}
                 ORDER BY r.created_at DESC, r.id DESC
                 LIMIT ?
                 """,
@@ -153,6 +159,30 @@ def build_router() -> APIRouter:
             items.append(payload)
 
         return {"product_name": product_name, "items": items, "total": len(items)}
+
+    @router.patch("/recipes/{recipe_id}/dhr")
+    def set_recipe_dhr(
+        recipe_id: int,
+        body: dict[str, Any],
+        request: Request,
+    ) -> dict[str, Any]:
+        """레시피를 DHR 전용으로 지정/해제 — 일반 조회·배합 선택에서 제외(DHR 전용으로만 사용)."""
+        current_user = get_current_user(request)
+        is_dhr = 1 if body.get("is_dhr") else 0
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+            connection.execute("UPDATE recipes SET is_dhr = ? WHERE id = ?", (is_dhr, recipe_id))
+            write_audit_log(
+                connection, action="recipe_dhr_set", actor=current_user,
+                target_type="recipe", target_id=recipe_id,
+                target_label=str(row["product_name"]), details={"is_dhr": bool(is_dhr)},
+            )
+            connection.commit()
+        return {"id": recipe_id, "is_dhr": bool(is_dhr)}
 
     @router.get("/recipes/{recipe_id}/detail")
     def recipe_detail(recipe_id: int) -> dict[str, Any]:

@@ -162,16 +162,22 @@
     });
   }
 
-  async function getProducts() {
-    const payload = await request("/recipes/products");
+  async function getProducts(dhr) {
+    const query = dhr ? { dhr: 1 } : {};
+    const payload = await request("/recipes/products", { query });
     return payload.items || [];
   }
 
-  async function getRecipesByProduct(productName, limit) {
+  async function getRecipesByProduct(productName, limit, dhr) {
     const query = { product_name: productName };
     if (limit) query.limit = limit;
+    if (dhr) query.dhr = 1;
     const payload = await request("/recipes/by-product", { query });
     return payload;
+  }
+
+  async function setRecipeDhr(recipeId, isDhr) {
+    return request(`/recipes/${recipeId}/dhr`, { method: "PATCH", body: { is_dhr: !!isDhr } });
   }
 
   async function getRecipeDetail(recipeId) {
@@ -189,6 +195,7 @@
     importRecipes,
     getProducts,
     getRecipesByProduct,
+    setRecipeDhr,
     getRecipeDetail,
   });
 })();

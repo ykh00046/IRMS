@@ -59,8 +59,8 @@ def _resolve_material(conn: sqlite3.Connection, name: str | None, code: str | No
     return mid
 
 
-def import_recipes(conn: sqlite3.Connection, xlsx_path: str) -> tuple[int, int]:
-    """레시피 xlsx → recipes + recipe_items. (생성, 중복건너뜀) 반환."""
+def import_recipes(conn: sqlite3.Connection, xlsx_path: str, *, is_dhr: bool = False) -> tuple[int, int]:
+    """레시피 xlsx → recipes + recipe_items. is_dhr=True 면 DHR 전용으로 적재. (생성, 중복) 반환."""
     import openpyxl
 
     ws = openpyxl.load_workbook(xlsx_path, data_only=True).active
@@ -82,9 +82,9 @@ def import_recipes(conn: sqlite3.Connection, xlsx_path: str) -> tuple[int, int]:
             skipped += 1
             continue
         cur = conn.execute(
-            "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at, effective_from) "
-            "VALUES (?, ?, 'completed', ?, ?, ?)",
-            (product, product, _IMPORT_ACTOR, now, now[:10]),  # 옛 형식에 잉크명 없음 → 레시피명 사용
+            "INSERT INTO recipes (product_name, ink_name, status, is_dhr, created_by, created_at, effective_from) "
+            "VALUES (?, ?, 'completed', ?, ?, ?, ?)",
+            (product, product, 1 if is_dhr else 0, _IMPORT_ACTOR, now, now[:10]),  # 잉크명 없음→레시피명
         )
         recipe_id = int(cur.lastrowid)
         for code, mname, ratio in items:
@@ -156,14 +156,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="구 잉크 데스크톱 데이터 → IRMS 이관")
     ap.add_argument("--recipes", help="레시피 xlsx 경로")
     ap.add_argument("--records", help="mixing_records.db 경로")
+    ap.add_argument("--dhr", action="store_true", help="레시피를 DHR 전용으로 적재")
     args = ap.parse_args()
     if not (args.recipes or args.records):
         ap.error("--recipes 또는 --records 중 하나 이상을 지정하세요.")
     init_db()  # 스키마 보장(기존 운영 DB면 no-op)
     with get_connection() as conn:
         if args.recipes:
-            c, s = import_recipes(conn, args.recipes)
-            print(f"레시피: 생성 {c} · 중복 건너뜀 {s}")
+            c, s = import_recipes(conn, args.recipes, is_dhr=args.dhr)
+            kind = "DHR 전용 레시피" if args.dhr else "레시피"
+            print(f"{kind}: 생성 {c} · 중복 건너뜀 {s}")
         if args.records:
             c, s = import_records(conn, args.records)
             print(f"배합기록: 생성 {c} · 중복 건너뜀 {s}")

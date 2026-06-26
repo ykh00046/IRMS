@@ -37,6 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
     lookupCopyBtn: document.getElementById("lookup-copy-btn"),
     lookupCloneBtn: document.getElementById("lookup-clone-btn"),
     lookupHistoryBtn: document.getElementById("lookup-history-btn"),
+    lookupDhr: document.getElementById("lookup-dhr"),
+    lookupDhrBtn: document.getElementById("lookup-dhr-btn"),
     historyModal: document.getElementById("history-modal"),
     historyModalClose: document.getElementById("history-modal-close"),
     historyModalTitle: document.getElementById("history-modal-title"),
@@ -176,6 +178,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (dom.lookupHistoryBtn) {
     dom.lookupHistoryBtn.addEventListener("click", versionCompare.handleLookupHistory);
+  }
+  if (dom.lookupDhrBtn) {
+    dom.lookupDhrBtn.addEventListener("click", recipeLookup.handleSetDhr);
+  }
+  if (dom.lookupDhr) {
+    dom.lookupDhr.addEventListener("change", recipeLookup.handleDhrModeChange);
   }
   if (dom.historyModalClose) {
     dom.historyModalClose.addEventListener("click", () => { dom.historyModal.hidden = true; });

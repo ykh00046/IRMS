@@ -129,6 +129,9 @@
                 <datalist id="product-list"></datalist>
               </div>
               <button id="lookup-btn" class="btn accent">검색</button>
+              <label class="filter-label" style="display:flex;align-items:center;gap:5px;cursor:pointer">
+                <input type="checkbox" id="lookup-dhr" /> DHR 전용
+              </label>
             </div>
             <div id="lookup-result" class="lookup-result">
               <p class="empty-state">제품명을 선택하면 해당 제품의 레시피가 표시됩니다.</p>
@@ -137,6 +140,7 @@
               <span id="lookup-selected-label" class="muted">선택: 없음</span>
               <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
               <button id="lookup-history-btn" class="btn" disabled>버전 이력</button>
+              <button id="lookup-dhr-btn" class="btn" disabled>DHR 전용 지정/해제</button>
               <button id="lookup-clone-btn" class="btn accent" disabled>복제하여 등록</button>
             </div>
           </section>
@@ -298,7 +302,7 @@
     <script src="/static/js/management/spreadsheet-editor.js?v=20260624a"></script>
     <script src="/static/js/management/import-validate.js?v=20260624a"></script>
     <script src="/static/js/management/recipe-history.js?v=20260624a"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260624a"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260626a"></script>
     <script src="/static/js/management/version-compare.js?v=20260624a"></script>
-    <script src="/static/js/management.js?v=20260624a"></script>
+    <script src="/static/js/management.js?v=20260626a"></script>
 {% endblock %}
