@@ -1,6 +1,8 @@
-# IRMS (Ink Recipe Management System)
+# BRM (Blend & Recipe Management) — 배합·레시피 관리
 
-> 잉크 레시피 관리, 계량, 재고, 출입관리 기능을 갖춘 FastAPI 웹 애플리케이션
+> 배합·레시피 관리, 계량, 재고, 근태 기능을 갖춘 FastAPI 웹 애플리케이션.
+> (구 IRMS. 화면 브랜드는 BRM이지만 **내부 코드 식별자는 IRMS 유지** — `window.IRMS`
+>  네임스페이스, `IRMS_ENV`·`IRMS_DATA_DIR` 등 환경변수, 배치파일. 리네이밍 위험으로 보존.)
 
 ## Project Level
 **Level: Dynamic** (FastAPI 웹서버 + SQLite + Jinja2 템플릿 + 인증/세션 + Cloudflare Tunnel)
