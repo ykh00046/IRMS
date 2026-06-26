@@ -469,17 +469,14 @@
       ? `<ul class="blend-visc-list">${linked.map((v) =>
           `<li><b>${v.product_code}</b> ${fmt(v.viscosity)} <span class="muted small">${v.measured_date || ""}${v.created_by ? " · " + v.created_by : ""}</span></li>`
         ).join("")}</ul>`
-      : '<p class="muted small">연계된 점도 측정이 없습니다.</p>';
-    const opts = state.viscProducts.map((p) =>
-      `<option value="${p.id}">${p.code}</option>`).join("");
+      : '<p class="muted small">측정된 점도가 없습니다.</p>';
     return `<div class="blend-visc-block no-print">
-      <h4 class="panel-title">점도 연계</h4>
+      <h4 class="panel-title">점도 측정</h4>
       ${list}
       <div class="blend-visc-form">
-        <select class="input" id="blend-visc-product">${opts}</select>
-        <input class="input" id="blend-visc-value" type="number" step="0.1" min="0" placeholder="점도" />
+        <input class="input" id="blend-visc-value" type="number" step="0.1" min="0" placeholder="점도값" />
         <input class="input" id="blend-visc-memo" placeholder="메모(선택)" />
-        <button class="btn btn-sm accent" id="blend-visc-add" type="button">점도 등록</button>
+        <button class="btn btn-sm accent" id="blend-visc-add" type="button">점도 기록</button>
       </div>
       <p class="login-error" id="blend-visc-error" hidden></p>
     </div>`;
@@ -491,16 +488,14 @@
     btn.addEventListener("click", async () => {
       const err = $("blend-visc-error");
       err.hidden = true;
-      const product_id = Number($("blend-visc-product").value);
       const viscosity = Number($("blend-visc-value").value);
-      if (!product_id) { err.textContent = "점도 제품을 선택하세요."; err.hidden = false; return; }
-      if (!(viscosity > 0)) { err.textContent = "점도 값을 입력하세요."; err.hidden = false; return; }
+      if (!(viscosity > 0)) { err.textContent = "점도값을 입력하세요."; err.hidden = false; return; }
       try {
         await request(`/blend/records/${recordId}/viscosity`, {
           method: "POST",
-          body: { product_id, viscosity, memo: $("blend-visc-memo").value.trim() || null },
+          body: { viscosity, memo: $("blend-visc-memo").value.trim() || null },
         });
-        notify("점도가 연계 등록되었습니다.", "success");
+        notify("점도를 기록했습니다.", "success");
         openDetail(recordId);
       } catch (e) { err.textContent = e.message; err.hidden = false; }
     });

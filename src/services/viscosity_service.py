@@ -104,6 +104,27 @@ def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, 
     return _serialize_product(row) if row else None
 
 
+def ensure_product_by_code(
+    connection: sqlite3.Connection, code: str, name: str | None, created_at: str
+) -> dict[str, Any] | None:
+    """제품 코드로 점도 제품을 찾고, 없으면 생성(spec 미설정)해서 반환.
+
+    배합 기록에서 점도를 등록할 때 그 제품(레시피)명으로 점도 제품을 자동 확보한다.
+    추세/관리한계 spec(target/limit)은 관리자가 점도 설정에서 따로 채울 수 있다.
+    """
+    code = str(code or "").strip()
+    if not code:
+        return None
+    existing = get_product_by_code(connection, code)
+    if existing:
+        return existing
+    cur = connection.execute(
+        "INSERT INTO viscosity_products (code, name, is_active, created_at) VALUES (?, ?, 1, ?)",
+        (code, (name or code).strip(), created_at),
+    )
+    return get_product(connection, int(cur.lastrowid))
+
+
 def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": int(row["id"]),

@@ -406,6 +406,19 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_visc_readings_blend "
         "ON viscosity_readings(blend_record_id) WHERE blend_record_id IS NOT NULL"
     )
+    # 백필(멱등): 기존에 따로 넣은 점도값을 LOT(lot_no=product_lot)로 배합 기록에 연계.
+    connection.execute(
+        """
+        UPDATE viscosity_readings
+        SET blend_record_id = (
+            SELECT br.id FROM blend_records br
+            WHERE br.product_lot = viscosity_readings.lot_no
+            ORDER BY br.id LIMIT 1
+        )
+        WHERE blend_record_id IS NULL
+          AND lot_no IN (SELECT product_lot FROM blend_records)
+        """
+    )
 
     # 점도 측정 조건(반제품마다 1회 세팅, 매 측정마다 재입력하지 않음): rpm + 온도(°C)
     ensure_column(connection, "viscosity_products", "rpm", "REAL")

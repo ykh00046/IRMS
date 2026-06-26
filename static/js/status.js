@@ -87,14 +87,21 @@ document.addEventListener("DOMContentLoaded", () => {
           `<td>${esc(d.material_lot || "-")}</td></tr>`,
       )
       .join("");
-    const visc = (rec.viscosity || []).length
-      ? `<div class="blend-visc-block"><b>연계 점도</b><ul class="blend-visc-list">${rec.viscosity
+    const linkedVisc = (rec.viscosity || []).length
+      ? `<ul class="blend-visc-list">${rec.viscosity
           .map(
             (x) =>
               `<li><b>${esc(x.product_code)}</b> ${fmt(x.viscosity)} <span class="muted small">${esc(x.measured_date || "")}${x.created_by ? " · " + esc(x.created_by) : ""}</span></li>`,
           )
-          .join("")}</ul></div>`
-      : "";
+          .join("")}</ul>`
+      : '<p class="muted small">측정된 점도가 없습니다.</p>';
+    const visc = `<div class="blend-visc-block"><b>점도 측정</b>${linkedVisc}
+      <div class="blend-visc-form">
+        <input class="input" id="status-visc-value" type="number" step="0.1" min="0" placeholder="점도값" />
+        <input class="input" id="status-visc-memo" placeholder="메모(선택)" />
+        <button class="btn btn-sm accent" id="status-visc-add" type="button">점도 기록</button>
+      </div>
+      <p class="login-error" id="status-visc-error" hidden></p></div>`;
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
@@ -113,6 +120,24 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="dhr-approvals">${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}${approvalCell("검토", rec.reviewed_by, rec.reviewed_at, rec.reviewed_sign)}${approvalCell("승인", rec.approved_by, rec.approved_at, rec.approved_sign)}</div>
       ${visc}`;
     $("status-detail-modal").hidden = false;
+
+    const vbtn = $("status-visc-add");
+    if (vbtn) {
+      vbtn.addEventListener("click", async () => {
+        const err = $("status-visc-error");
+        err.hidden = true;
+        const viscosity = Number($("status-visc-value").value);
+        if (!(viscosity > 0)) { err.textContent = "점도값을 입력하세요."; err.hidden = false; return; }
+        try {
+          await request(`/blend/records/${id}/viscosity`, {
+            method: "POST",
+            body: { viscosity, memo: $("status-visc-memo").value.trim() || null },
+          });
+          IRMS.notify("점도를 기록했습니다.", "success");
+          openDetail(id);
+        } catch (e) { err.textContent = e.message; err.hidden = false; }
+      });
+    }
   }
 
   $("status-rec-apply").addEventListener("click", loadRecords);

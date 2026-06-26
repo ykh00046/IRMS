@@ -147,16 +147,20 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        product = viscosity_service.get_product(connection, body.product_id)
-        if not product:
-            raise HTTPException(status_code=404, detail="점도 제품을 찾을 수 없습니다.")
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
+        now = utc_now_text()
+        # 제품(레시피)명으로 점도 제품을 자동 확보 — 사용자는 점도 숫자만 입력.
+        product = viscosity_service.ensure_product_by_code(
+            connection, record["product_name"], record["product_name"], now
+        )
+        if not product:
+            raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
         first_lot = record["details"][0]["material_lot"] if record["details"] else None
         try:
             viscosity_service.add_reading(
                 connection,
-                product_id=body.product_id,
+                product_id=product["id"],
                 lot_no=record["product_lot"],
                 viscosity=body.viscosity,
                 measured_date=record["work_date"],
@@ -164,7 +168,7 @@ def build_router() -> APIRouter:
                 recipe_material=record["product_name"],
                 material_lot=first_lot,
                 created_by=actor,
-                created_at=utc_now_text(),
+                created_at=now,
                 blend_record_id=record_id,
             )
         except sqlite3.IntegrityError:

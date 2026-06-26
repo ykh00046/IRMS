@@ -180,7 +180,7 @@ class BlendCreateBody(BaseModel):
 
 
 class BlendViscosityBody(BaseModel):
-    product_id: int = Field(gt=0)
+    # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요.
     viscosity: float = Field(gt=0, le=100000)
     memo: str | None = Field(default=None, max_length=1000)
 
