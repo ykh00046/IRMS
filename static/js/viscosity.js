@@ -61,10 +61,8 @@
     state.products.forEach((p) => {
       const opt = document.createElement("option");
       opt.value = p.id;
-      opt.textContent =
-        p.anomaly_count > 0
-          ? `${p.code} · ${p.name} (이상 ${p.anomaly_count})`
-          : `${p.code} · ${p.name}`;
+      const nm = p.name && p.name !== p.code ? `${p.code} · ${p.name}` : p.code;
+      opt.textContent = p.anomaly_count > 0 ? `${nm} (이상 ${p.anomaly_count})` : nm;
       if (p.id === state.currentId) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -89,6 +87,7 @@
     renderPeriods();
     renderReadings();
     renderCondition();
+    loadBlendRecordsForProduct(state.analysis.product && state.analysis.product.code);
   }
 
   function renderCondition() {
@@ -153,6 +152,7 @@
   }
 
   function renderChart() {
+    if (!$("visc-chart")) return;  // 점도 추세 차트 제거됨 — 기간별 차트로 통합
     const a = state.analysis;
     const s = a.stats;
     // 그래프는 최근 30개만 표시(전체는 아래 측정 이력에서 확인).
@@ -438,35 +438,46 @@
     }
   }
 
+  // 등록은 배합 기록에 연계 — LOT·측정일은 기록에서 자동(수동 입력 없음)
+  async function loadBlendRecordsForProduct(code) {
+    const sel = $("visc-blend-record");
+    if (!sel) return;
+    sel.innerHTML = "";
+    if (!code) { sel.innerHTML = '<option value="">제품을 선택하세요</option>'; return; }
+    try {
+      const d = await request("/blend/records", { query: { search: code } });
+      const recs = (d.items || []).filter((r) => r.product_name === code);
+      if (!recs.length) {
+        sel.innerHTML = '<option value="">연계할 배합 기록이 없습니다</option>';
+        return;
+      }
+      recs.forEach((r) => {
+        const o = document.createElement("option");
+        o.value = String(r.id);
+        o.textContent = `${r.product_lot} · ${r.work_date || ""}`;
+        sel.appendChild(o);
+      });
+    } catch (_e) {
+      sel.innerHTML = '<option value="">불러오기 실패</option>';
+    }
+  }
+
   async function submitReading(event) {
     event.preventDefault();
     const err = $("visc-form-error");
     err.hidden = true;
-    if (!state.currentId) return;
-    const lotNo = $("visc-lot").value.trim();
+    const recId = $("visc-blend-record").value;
     const value = Number($("visc-value").value);
-    const body = {
-      product_id: state.currentId,
-      lot_no: lotNo,
-      viscosity: value,
-      measured_date: $("visc-date").value || null,
-      recipe_material: $("visc-recipe").value.trim() || null,
-      material_lot: $("visc-matlot").value.trim() || null,
-      memo: $("visc-memo").value.trim() || null,
-    };
+    if (!recId) { err.textContent = "배합 기록을 선택하세요."; err.hidden = false; return; }
+    if (!(value > 0)) { err.textContent = "점도값을 입력하세요."; err.hidden = false; return; }
     try {
-      state.analysis = await request("/viscosity/readings", { method: "POST", body });
+      await request(`/blend/records/${recId}/viscosity`, {
+        method: "POST",
+        body: { viscosity: value, memo: $("visc-memo").value.trim() || null },
+      });
       $("visc-form").reset();
-      // 응답은 새 측정의 연도 기준으로 옴 → 화면도 그 연도로 맞춤
-      state.year = state.analysis.year;
+      await loadProduct(state.currentId);  // 화면 새로고침(이력·차트·카드)
       warnNewReading(value);
-      renderYearSelect();
-      renderCards();
-      renderTrendBanner();
-      renderPeriodAlerts();
-      renderChart();
-      renderPeriods();
-      renderReadings();
       await refreshTabBadges();
     } catch (e) {
       err.textContent = e.message;
