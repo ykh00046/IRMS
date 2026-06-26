@@ -57,6 +57,15 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
         return result
 
+    @router.get("/blend/material-usage")
+    def blend_material_usage(
+        start_date: str = "",
+        end_date: str = "",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """배합 기록 기반 자재 사용 분석(기간별 자재별 실제/이론 사용량·건수)."""
+        return blend_service.material_usage(connection, start_date or None, end_date or None)
+
     @router.get("/blend/workers")
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
@@ -133,16 +142,20 @@ def build_router() -> APIRouter:
     @router.get("/blend/records/dhr-batch")
     def blend_dhr_batch(
         ids: str = Query(...),
+        sign: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
-        """선택한(또는 전체) 배합 기록의 배합일지를 한 PDF로 일괄 출력(최대 200건)."""
+        """선택한(또는 전체) 배합 기록의 배합일지를 한 PDF로 일괄 출력(최대 200건).
+
+        sign=True 면 서명 합성, 기본은 빈 결재칸(서명 없음).
+        """
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
         records = [
             r for r in (blend_service.get_blend_record(connection, i) for i in id_list) if r
         ]
         if not records:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        pdf_bytes = dhr_pdf.build_batch_dhr_pdf(records)
+        pdf_bytes = dhr_pdf.build_batch_dhr_pdf(records, sign=sign)
         from urllib.parse import quote
         utf8_name = quote(f"배합일지-{len(records)}건.pdf")
         disposition = (
@@ -328,17 +341,22 @@ def build_router() -> APIRouter:
     @router.get("/blend/records/{record_id}/pdf")
     def blend_pdf(
         record_id: int,
+        sign: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
-        """배합일지 스캔효과 PDF(서명 합성 포함)."""
+        """배합일지 PDF. 기본은 서명 없이(빈 결재칸), sign=True 면 서명 합성."""
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        # 캐시(레코드·서명설정 변경 시 자동 무효화) → 없으면 생성 후 저장
-        pdf_bytes = dhr_cache.get(record)
-        if pdf_bytes is None:
-            pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record)
-            dhr_cache.put(record, pdf_bytes)
+        if sign:
+            # 서명본은 캐시하지 않음(기본 비서명본만 캐시)
+            pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record, sign=True)
+        else:
+            # 캐시(레코드·서명설정 변경 시 자동 무효화) → 없으면 생성 후 저장
+            pdf_bytes = dhr_cache.get(record)
+            if pdf_bytes is None:
+                pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record, sign=False)
+                dhr_cache.put(record, pdf_bytes)
         from urllib.parse import quote
         utf8_name = quote(f"원료배합일지-{record['product_lot']}.pdf")
         disposition = (

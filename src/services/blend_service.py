@@ -92,6 +92,56 @@ def get_recipe_for_blend(
     }
 
 
+def material_usage(
+    connection: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """배합 기록 기반 자재 사용 분석. 기간 내 완료 기록의 자재별 실제/이론 사용량·건수."""
+    where = ["br.status = 'completed'"]
+    params: list[Any] = []
+    if start_date:
+        where.append("br.work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        where.append("br.work_date <= ?")
+        params.append(end_date)
+    wsql = " AND ".join(where)
+    rows = connection.execute(
+        f"""
+        SELECT bd.material_name AS material_name,
+               COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
+               COALESCE(SUM(bd.theory_amount), 0) AS total_theory,
+               COUNT(DISTINCT bd.blend_record_id) AS usage_count
+        FROM blend_details bd
+        JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE {wsql}
+        GROUP BY bd.material_name
+        ORDER BY total_actual DESC
+        """,
+        params,
+    ).fetchall()
+    items = [
+        {
+            "material_name": r["material_name"],
+            "total_actual": round(float(r["total_actual"]), 3),
+            "total_theory": round(float(r["total_theory"]), 3),
+            "usage_count": int(r["usage_count"]),
+        }
+        for r in rows
+    ]
+    rec_count = connection.execute(
+        f"SELECT COUNT(*) FROM blend_records br WHERE {wsql}", params
+    ).fetchone()[0]
+    total_weight = round(sum(i["total_actual"] for i in items), 3)
+    return {
+        "items": items,
+        "record_count": int(rec_count),
+        "total_weight": total_weight,
+        "material_count": len(items),
+    }
+
+
 def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> list[dict[str, Any]]:
     """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외).
 
