@@ -388,4 +388,4 @@ def test_viscosity_page_open_without_login():
     client = TestClient(mainmod.app)
     res = client.get("/viscosity")
     assert res.status_code == 200
-    assert "visc-chart" in res.text
+    assert "visc-period-chart" in res.text
