@@ -128,7 +128,14 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/blend", response_class=HTMLResponse)
     def blend_page(request: Request) -> Response:
-        # 배합 실적(잉크 계량 재구축) — 무로그인 개방
+        # 배합 입력 — 무로그인 개방
+        return _render(templates, request, "blend.html", {
+            "current_user": get_current_user(request, required=False),
+        })
+
+    @router.get("/blend/bulk", response_class=HTMLResponse)
+    def blend_bulk_page(request: Request) -> Response:
+        # 일괄 생성 — 같은 화면을 일괄 모드로(드문 도구). 무로그인 개방.
         return _render(templates, request, "blend.html", {
             "current_user": get_current_user(request, required=False),
         })

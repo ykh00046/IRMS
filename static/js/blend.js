@@ -83,13 +83,9 @@
 
   // ── 모드 전환 ──────────────────────────────────────────────
   function setMode(mode) {
+    // /blend = 배합 입력, /blend/bulk = 일괄 생성. 기록 조회는 '배합 기록'(/status) 메뉴로 일원화.
     $("blend-entry-mode").hidden = mode !== "entry";
     $("blend-bulk-mode").hidden = mode !== "bulk";
-    $("blend-records-mode").hidden = mode !== "records";
-    $("blend-tabs").querySelectorAll("button").forEach((b) =>
-      b.classList.toggle("active", b.dataset.mode === mode)
-    );
-    if (mode === "records") loadRecords();
     if (mode === "bulk") initBulk();
   }
 
@@ -158,10 +154,10 @@
         body: { recipe_id, worker, scale: $("bulk-scale").value.trim() || null,
                 deduct_stock: $("bulk-deduct").checked, entries },
       });
-      notify(`${res.created}건 일괄 생성 완료`, "success");
+      notify(`${res.created}건 일괄 생성 완료 — 배합 기록으로 이동합니다.`, "success");
       $("bulk-body").innerHTML = "";
       addBulkRow();
-      setMode("records");
+      setTimeout(() => window.location.assign("/status"), 800);
     } catch (e) { err.textContent = e.message; err.hidden = false; }
   }
 
@@ -532,9 +528,6 @@
   }
 
   function bind() {
-    $("blend-tabs").querySelectorAll("button").forEach((b) =>
-      b.addEventListener("click", () => setMode(b.dataset.mode))
-    );
     $("blend-recipe").addEventListener("change", () => onRecipeChange().catch((e) => notify(e.message, "error")));
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
@@ -579,6 +572,8 @@
     $("blend-date").value = todayISO();
     $("blend-time").value = nowTime();
     bind();
+    // 경로로 모드 결정: /blend/bulk = 일괄 생성, 그 외 = 배합 입력
+    setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkers();
     loadWorkerNames();
