@@ -12,6 +12,10 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+# 루트에 둔 옛 잉크 프로젝트(Program-estimation) 산출물 — 절대 커밋하지 않음
+/*.db
+/*.xlsx
+
 # Auto-generated DB backups (kept locally, never pushed)
 backups/*.db
 

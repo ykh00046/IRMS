@@ -21,7 +21,7 @@ from .migrations import (
 )
 from .queries import in_clause, normalize_token, row_to_dict
 from .schema import init_db
-from .seeds import seed_materials, seed_recipes, seed_users, seed_workers
+from .seeds import seed_users, seed_workers
 from .time_utils import utc_cutoff_text, utc_now_text
 
 __all__ = [
@@ -36,8 +36,6 @@ __all__ = [
     "normalize_token",
     "record_migration",
     "row_to_dict",
-    "seed_materials",
-    "seed_recipes",
     "seed_workers",
     "seed_users",
     "standardize_recipe_units_to_grams",
