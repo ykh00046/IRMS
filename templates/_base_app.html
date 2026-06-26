@@ -107,11 +107,7 @@
     {% block overlay %}{% endblock %}
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
-    <div id="negative-stock-banner" class="neg-stock-banner" hidden>
-      <span class="neg-stock-icon">⚠</span>
-      <span class="neg-stock-text"><span id="neg-stock-list"></span></span>
-    </div>
-    <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->
+    <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> bootstrap) -->
     <script src="/static/js/common/core.js?v=20260624a"></script>
     <script src="/static/js/common/mappers.js?v=20260624a"></script>
     <script src="/static/js/common/format.js?v=20260624a"></script>
@@ -122,7 +118,6 @@
     <script src="/static/js/common/api-stats.js?v=20260624a"></script>
     <script src="/static/js/common/ui.js?v=20260624a"></script>
     <script src="/static/js/common/audio.js?v=20260624a"></script>
-    <script src="/static/js/common/polling.js?v=20260624a"></script>
     <script src="/static/js/common.js?v=20260624a"></script>
     {% block scripts %}{% endblock %}
   </body>
