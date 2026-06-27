@@ -170,7 +170,7 @@
     state.recipes.forEach((r) => {
       const o = document.createElement("option");
       o.value = String(r.id);
-      o.textContent = `${r.product_name} (${r.item_count}종, ${fmt(r.total_weight)}g)`;
+      o.textContent = r.product_name;
       sel.appendChild(o);
     });
   }
@@ -188,7 +188,8 @@
     const data = await request(`/blend/recipes/${id}`, { query });
     state.current = data;
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
-    if (!(totalRaw > 0)) $("blend-total").value = data.total_amount;
+    // 총 배합량은 비워 둠(입력해야 하는 값임을 인지). 비어 있으면 이론량은 "-"로.
+    if (!(totalRaw > 0)) state.items.forEach((it) => { it.theory_amount = null; });
     // 자재별 보유 LOT 추천 로드 (있으면 datalist 제공)
     state.lotMap = {};
     const ids = state.items.map((it) => it.material_id).filter(Boolean);
@@ -200,6 +201,7 @@
     }
     renderMatRows();
     updateLotPreview();
+    updateInputGuide();
   }
 
   function recomputeTheory() {
@@ -207,6 +209,15 @@
     state.items.forEach((it) => {
       it.theory_amount = Math.round((it.ratio / 100) * total * 1000) / 1000;
     });
+  }
+
+  // 순차 입력 안내: 총 배합량(공백) 강조 → 입력되면 작업자 강조
+  function updateInputGuide() {
+    const total = $("blend-total");
+    const worker = $("blend-worker");
+    const totalReady = Number(total.value) > 0;
+    total.classList.toggle("needs-input", !totalReady);
+    worker.classList.toggle("needs-input", totalReady && !worker.value.trim());
   }
 
   function renderMatRows() {
@@ -221,10 +232,10 @@
       const tr = document.createElement("tr");
       tr.innerHTML =
         `<td>${idx + 1}</td>` +
-        `<td>${it.material_name}${it.material_code ? ` <span class="muted small">${it.material_code}</span>` : ""}</td>` +
+        `<td>${it.material_name}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
-        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${it.actual_amount}" /></td>` +
+        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${it.actual_amount}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
         `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" list="lots-${idx}" />${lotDatalist(idx, it)}</td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
@@ -564,14 +575,30 @@
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
       state.items.forEach((_, i) => updateRowVar(i));
-      // 이론량 셀 갱신
+      // 이론량 셀 + 실제량 입력칸 안내값 갱신
       document.querySelectorAll("#blend-mat-body tr").forEach((tr, i) => {
         const cell = tr.querySelector(".blend-theory");
         if (cell && state.items[i]) cell.textContent = fmt(state.items[i].theory_amount);
+        const act = tr.querySelector(".blend-actual");
+        if (act && state.items[i]) {
+          act.placeholder = state.items[i].theory_amount == null ? "" : fmt(state.items[i].theory_amount);
+        }
       });
       updateTotals();
       updateLotPreview();
+      updateInputGuide();
     });
+    $("blend-worker").addEventListener("input", updateInputGuide);
+    const extraToggle = $("blend-extra-toggle");
+    if (extraToggle) {
+      extraToggle.addEventListener("click", () => {
+        const box = $("blend-extra");
+        const open = box.hidden;
+        box.hidden = !open;
+        extraToggle.setAttribute("aria-expanded", String(open));
+        extraToggle.textContent = (open ? "▾" : "▸") + " 작업시간 · 저울 변경";
+      });
+    }
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
@@ -606,6 +633,7 @@
     bind();
     // 경로로 모드 결정: /blend/bulk = 일괄 생성, 그 외 = 배합 입력
     setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");
+    updateInputGuide();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkers();
     loadWorkerNames();

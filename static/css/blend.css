@@ -181,3 +181,21 @@
   .blend-detail-actions { display: none !important; }
   .ss-modal-overlay { position: static; background: none; }
 }
+
+/* ── 배합 입력 UX (2026-06-26) ───────────────────────── */
+/* 순차 입력 안내: 입력해야 하는 칸 강조 (총배합량 → 작업자) */
+.needs-input {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+}
+/* 작업시간·저울 접기 토글 */
+.blend-extra-toggle {
+  margin-top: 0.6rem; background: none; border: none; cursor: pointer;
+  color: #6b7280; font-size: 0.85rem; padding: 0.2rem 0;
+}
+.blend-extra-toggle:hover { color: #2563eb; }
+/* 이론량 강조 — 값을 잘 보고 실제량을 입력하도록 */
+.blend-table td.blend-theory { font-weight: 700; font-size: 1.05rem; color: #111827; }
+.blend-table td .blend-actual { font-weight: 600; }
+.blend-table td .blend-actual::placeholder { color: #9ca3af; font-weight: 400; }

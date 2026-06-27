@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260626a" />
 {% endblock %}
 
 {% block content %}
@@ -31,6 +31,9 @@
                   <label class="filter-label" for="blend-date">작업일자</label>
                   <input class="input" id="blend-date" type="date" />
                 </div>
+              </div>
+              <button class="blend-extra-toggle" id="blend-extra-toggle" type="button" aria-expanded="false">▸ 작업시간 · 저울 변경</button>
+              <div class="blend-form-grid" id="blend-extra" hidden>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-time">작업시간</label>
                   <input class="input" id="blend-time" type="time" step="1" />
@@ -201,5 +204,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend.js?v=20260626g"></script>
+    <script src="/static/js/blend.js?v=20260626h"></script>
 {% endblock %}

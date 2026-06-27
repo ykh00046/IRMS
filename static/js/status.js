@@ -152,7 +152,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
     if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
     if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
-    window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}`, "_blank");
+    const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
+    window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
   $("status-rec-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadRecords();
@@ -161,7 +162,9 @@ document.addEventListener("DOMContentLoaded", () => {
     $("status-detail-modal").hidden = true;
   });
   $("status-pdf").addEventListener("click", () => {
-    if (detailId) window.open(`/api/blend/records/${detailId}/pdf`, "_blank");
+    if (!detailId) return;
+    const sign = $("status-detail-sign") && $("status-detail-sign").checked ? "?sign=1" : "";
+    window.open(`/api/blend/records/${detailId}/pdf${sign}`, "_blank");
   });
   $("status-print").addEventListener("click", () => window.print());
   $("status-excel").addEventListener("click", () => {

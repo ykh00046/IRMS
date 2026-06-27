@@ -28,6 +28,7 @@
               <input class="input" id="status-rec-search" placeholder="검색어" />
             </div>
             <button class="btn accent" id="status-rec-apply" type="button">조회</button>
+            <label class="visc-checkbox"><input id="status-sign" type="checkbox" /> 서명 넣기</label>
             <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
             <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
           </div>
@@ -59,6 +60,7 @@
             <div class="ss-modal-header">
               <h3 id="status-detail-title">배합 실적서</h3>
               <div class="blend-detail-actions">
+                <label class="visc-checkbox"><input id="status-detail-sign" type="checkbox" /> 서명 넣기</label>
                 <button id="status-pdf" class="btn btn-sm accent" type="button">배합일지 PDF</button>
                 <button id="status-print" class="btn btn-sm" type="button">인쇄</button>
                 <button id="status-excel" class="btn btn-sm" type="button">Excel</button>
@@ -71,5 +73,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260626f"></script>
+    <script src="/static/js/status.js?v=20260626g"></script>
 {% endblock %}

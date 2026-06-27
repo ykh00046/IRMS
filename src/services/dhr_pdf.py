@@ -344,10 +344,12 @@ def _build_signed_stamp(worker: str, sc: dict, out_path: str,
     return out_path if ok and os.path.exists(out_path) else None
 
 
-def render_exact_form_image(record: dict[str, Any], *, dpi: int = _RENDER_DPI) -> Image.Image | None:
+def render_exact_form_image(
+    record: dict[str, Any], *, dpi: int = _RENDER_DPI, sign: bool = False
+) -> Image.Image | None:
     """공식 양식 xlsx(결재 도장 G2 삽입) → Excel→PDF → 이미지(픽셀 일치).
 
-    원본과 동일: 결재 도장(image.jpeg)에 서명 합성 → 양식 G2 셀에 삽입 → Excel 렌더.
+    sign=False(기본): 빈 결재칸(image.jpeg)만 삽입(서명 없음). sign=True: 서명 합성.
     Excel/PyMuPDF 미지원 시 None.
     """
     if not exact_available():
@@ -355,8 +357,11 @@ def render_exact_form_image(record: dict[str, Any], *, dpi: int = _RENDER_DPI) -
     sc = signature_config.load()
     worker = str(record.get("worker") or "").strip()
     with tempfile.TemporaryDirectory() as tmp:
-        overrides = _worker_sign_override(record, worker, tmp)
-        stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"), overrides)
+        if sign:
+            overrides = _worker_sign_override(record, worker, tmp)
+            stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"), overrides)
+        else:
+            stamp_path = _STAMP_TEMPLATE if os.path.exists(_STAMP_TEMPLATE) else None  # 빈 결재칸
         xlsx = dhr_excel.build_official_dhr_xlsx(record, signature_image_path=stamp_path)
         pdf_bytes = _excel_to_pdf_bytes(xlsx)
     if not pdf_bytes:
@@ -368,44 +373,47 @@ def render_exact_form_image(record: dict[str, Any], *, dpi: int = _RENDER_DPI) -
     return img
 
 
-def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Image:
-    """원료배합일지 양식 + 결재 도장 서명 → (선택)스캔효과 → PIL 이미지.
+def render_signed_dhr(record: dict[str, Any], *, scan: bool = True, sign: bool = False) -> Image.Image:
+    """원료배합일지 양식 → (선택)서명 → (선택)스캔효과 → PIL 이미지.
 
-    정확 경로(Excel→PDF, 결재 도장 image.jpeg 를 G2 셀에 삽입) 우선. Excel 미지원 시
-    PIL 재현(우상단 결재칸 오버레이)으로 폴백. 합성 파라미터·스캔효과는 signature_config.
+    sign=False(기본): 서명 없이 빈 결재칸. sign=True: 서명 합성.
+    정확 경로(Excel→PDF) 우선, Excel 미지원 시 PIL 재현으로 폴백.
     """
     sc = signature_config.load()
-    result = render_exact_form_image(record)
+    result = render_exact_form_image(record, sign=sign)
 
     if result is None:
-        # 폴백(PIL, 개발/타 환경): 양식 재현 + 결재칸 서명 오버레이
+        # 폴백(PIL, 개발/타 환경): 양식 재현 (+ sign=True 면 결재칸 서명 오버레이)
         base_img, positions = render_form_image(record)
-        config = {
-            "upsample_factor": 4,
-            "target_width": 150,
-            "target_height": 60,
-            "dpi": 200,
-            "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
-            "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
-            "pressure_noise_strength": sc["pressure_noise_strength"],
-            "mesh_warp": {"grid_size": 3, "jitter_amount": 2},
-            "ink_alpha_factor": sc["ink_alpha_factor"],
-            "signature_brightness_factor": sc["signature_brightness_factor"],
-            "final_contrast_factor": sc["final_contrast_factor"],
-            "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 3, "offset_y": 5,
-                              "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
-            "include": {"charge": True, "review": True, "approve": True},
-            "positions": positions,
-        }
-        processor = ImageProcessor(resources_path=signature_samples.samples_dir(), config=config)
-        worker = str(record.get("worker") or "").strip()
-        with tempfile.TemporaryDirectory() as tmp:
-            base_path = os.path.join(tmp, "base.png")
-            signed_path = os.path.join(tmp, "signed.png")
-            base_img.save(base_path)
-            overrides = _worker_sign_override(record, worker, tmp)
-            ok, _msg = processor.create_signed_image(base_path, signed_path, worker, overrides=overrides)
-            result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
+        if not sign:
+            result = base_img
+        else:
+            config = {
+                "upsample_factor": 4,
+                "target_width": 150,
+                "target_height": 60,
+                "dpi": 200,
+                "gaussian_blur_sigma": sc["gaussian_blur_sigma"],
+                "unsharp_mask": {"radius": 1.0, "percent": 120, "threshold": 2},
+                "pressure_noise_strength": sc["pressure_noise_strength"],
+                "mesh_warp": {"grid_size": 3, "jitter_amount": 2},
+                "ink_alpha_factor": sc["ink_alpha_factor"],
+                "signature_brightness_factor": sc["signature_brightness_factor"],
+                "final_contrast_factor": sc["final_contrast_factor"],
+                "randomization": {"rotation_angle": sc["rotation_angle"], "offset_x": 3, "offset_y": 5,
+                                  "scale_min": sc["scale_min"], "scale_max": sc["scale_max"]},
+                "include": {"charge": True, "review": True, "approve": True},
+                "positions": positions,
+            }
+            processor = ImageProcessor(resources_path=signature_samples.samples_dir(), config=config)
+            worker = str(record.get("worker") or "").strip()
+            with tempfile.TemporaryDirectory() as tmp:
+                base_path = os.path.join(tmp, "base.png")
+                signed_path = os.path.join(tmp, "signed.png")
+                base_img.save(base_path)
+                overrides = _worker_sign_override(record, worker, tmp)
+                ok, _msg = processor.create_signed_image(base_path, signed_path, worker, overrides=overrides)
+                result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
 
     if scan:
         result = apply_scan_effects(result, {
@@ -418,9 +426,9 @@ def render_signed_dhr(record: dict[str, Any], *, scan: bool = True) -> Image.Ima
     return result.convert("RGB")
 
 
-def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes:
-    """배합 기록 → 서명 합성 + 스캔효과 원료배합일지 PDF 바이트."""
-    img = render_signed_dhr(record, scan=scan)
+def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True, sign: bool = False) -> bytes:
+    """배합 기록 → 원료배합일지 PDF 바이트. sign=True 면 서명 합성(기본은 빈 결재칸)."""
+    img = render_signed_dhr(record, scan=scan, sign=sign)
     buf = io.BytesIO()
     # 이미지 폭으로 해상도 산출 → A4 한 장에 정확히 맞춤(고해상도여도 페이지 크기 유지)
     resolution = round(img.width / _A4_WIDTH_IN, 1)
@@ -428,9 +436,9 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True) -> bytes
     return buf.getvalue()
 
 
-def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True) -> bytes:
-    """여러 배합 기록 → 한 PDF(기록당 1장). 기록 목록에서 선택/전체 일괄 출력용."""
-    images = [render_signed_dhr(r, scan=scan) for r in records if r]
+def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True, sign: bool = False) -> bytes:
+    """여러 배합 기록 → 한 PDF(기록당 1장). sign=True 면 서명 합성(기본은 빈 결재칸)."""
+    images = [render_signed_dhr(r, scan=scan, sign=sign) for r in records if r]
     if not images:
         return b""
     buf = io.BytesIO()
@@ -440,8 +448,8 @@ def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True) -> 
 
 
 def build_preview_png(record: dict[str, Any], *, scan: bool = True) -> bytes:
-    """서명 설정 미리보기용 — 샘플 배합일지 PNG 바이트."""
-    img = render_signed_dhr(record, scan=scan)
+    """서명 설정 미리보기용 — 샘플 배합일지 PNG 바이트(서명 포함)."""
+    img = render_signed_dhr(record, scan=scan, sign=True)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()

@@ -15,7 +15,8 @@ _CACHE_DIR = config.DATA_DIR / "dhr_cache"
 
 
 def _marker(record: dict[str, Any]) -> str:
-    payload = {"record": record, "sig": signature_config.load()}
+    # v2: 기본 출력이 '서명 없음'으로 바뀜 → 기존(서명본) 캐시 무효화
+    payload = {"v": 2, "record": record, "sig": signature_config.load()}
     blob = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
