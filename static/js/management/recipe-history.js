@@ -49,7 +49,7 @@
         parts.push(`기간 ${from || "시작 미지정"} ~ ${to || "종료 미지정"}`);
       }
 
-      dom.historySummary.textContent = `${parts.join(" · ")} 기준으로 등록 이력을 표시 중입니다.`;
+      dom.historySummary.textContent = `${parts.join(" · ")} 기준으로 레시피 현황을 표시 중입니다.`;
     }
 
     function restoreHistoryFilters() {
@@ -85,7 +85,7 @@
 
         if (!rows.length) {
           dom.historyBody.innerHTML =
-            '<tr><td colspan="7"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
+            '<tr><td colspan="6"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
           return;
         }
 
@@ -131,7 +131,7 @@
 
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
-              detailRow.innerHTML = `<td colspan="7">
+              detailRow.innerHTML = `<td colspan="6">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">
@@ -140,9 +140,8 @@
                     ${detail.status === "pending" || detail.status === "in_progress"
                       ? `<button class="btn btn-sm history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
                       : ""}
-                    ${detail.status === "pending" || detail.status === "canceled"
-                      ? `<button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">삭제</button>`
-                      : ""}
+                    <button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">레시피 삭제</button>
+                    <button class="btn btn-sm danger history-delete-with-records-btn" data-recipe-id="${recipeId}">레시피+기록 삭제</button>
                   </div>
                 </div>
               </td>`;
@@ -179,18 +178,37 @@
                 });
               }
 
+              async function deleteRecipeFromHistory(deleteBlendRecords) {
+                const message = deleteBlendRecords
+                  ? "이 레시피와 연결된 배합 기록을 함께 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+                  : "이 레시피만 삭제하시겠습니까? 연결된 배합 기록은 남고 레시피 연결만 해제됩니다.";
+                if (!window.confirm(message)) return;
+                try {
+                  const result = await IRMS.deleteRecipe(recipeId, deleteBlendRecords);
+                  const linkedCount = Number(result.linked_record_count || 0);
+                  const suffix = linkedCount
+                    ? ` 연결 기록 ${linkedCount}건 ${deleteBlendRecords ? "삭제" : "보존"}`
+                    : "";
+                  IRMS.notify(`레시피를 삭제했습니다.${suffix}`, "success");
+                  renderHistory();
+                } catch (err) {
+                  IRMS.notify(`삭제 실패: ${err.message}`, "error");
+                }
+              }
+
               const deleteBtn = detailRow.querySelector(".history-delete-btn");
               if (deleteBtn) {
-                deleteBtn.addEventListener("click", async (e) => {
+                deleteBtn.addEventListener("click", (e) => {
                   e.stopPropagation();
-                  if (!window.confirm("이 레시피를 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
-                  try {
-                    await IRMS.deleteRecipe(recipeId);
-                    IRMS.notify("레시피를 삭제했습니다.", "success");
-                    renderHistory();
-                  } catch (err) {
-                    IRMS.notify(`삭제 실패: ${err.message}`, "error");
-                  }
+                  deleteRecipeFromHistory(false);
+                });
+              }
+
+              const deleteWithRecordsBtn = detailRow.querySelector(".history-delete-with-records-btn");
+              if (deleteWithRecordsBtn) {
+                deleteWithRecordsBtn.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  deleteRecipeFromHistory(true);
                 });
               }
             } catch (error) {

@@ -78,6 +78,19 @@ class TestParseImportText:
         weights = sorted(i["value_weight"] for i in row["items"])
         assert weights == [3.0, 12.5]
 
+    def test_semifinished_format_does_not_require_ink_fields(self):
+        conn = _make_db()
+        raw = "반제품명\tCyan\tYellow\t비고\n" "BASE-100\t12.5\t3\t초도"
+        result = parse_import_text(conn, raw)
+        assert result["status"] == "ok"
+        row = result["parsed_rows"][0]
+        assert row["product_name"] == "BASE-100"
+        assert row["position"] is None
+        assert row["ink_name"] is None
+        assert row["remark"] == "초도"
+        weights = sorted(i["value_weight"] for i in row["items"])
+        assert weights == [3.0, 12.5]
+
     def test_dash_cell_skipped(self):
         conn = _make_db()
         raw = "제품명\t위치\t잉크명\tCyan\tYellow\n" "P1\tA1\tBlue\t-\t3"
@@ -124,7 +137,6 @@ class TestParseImportText:
 
     def test_missing_required_field_errors(self):
         conn = _make_db()
-        # 잉크명 비어있는 행 → 필드 누락 에러(단, 위치는 있어 행은 처리 시도)
-        raw = "제품명\t위치\t잉크명\tCyan\n" "\tA1\t\t10"
+        raw = "반제품명\tCyan\n" "\t10"
         result = parse_import_text(conn, raw)
-        assert any("필드 누락" in e["message"] for e in result["errors"])
+        assert any("반제품명" in e["message"] for e in result["errors"])

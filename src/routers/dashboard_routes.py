@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth import require_access_level
 from ..db import get_connection
-from ..services import dashboard_export, forecast_service, lot_service, variance_service
+from ..services import dashboard_export, variance_service
 
 
 def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str, str, str]:
@@ -70,32 +70,6 @@ def build_router() -> APIRouter:
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": disposition},
         )
-
-    @router.get("/forecast-alert")
-    def dashboard_forecast_alert(
-        window_days: int = Query(
-            forecast_service.DEFAULT_WINDOW_DAYS, ge=7, le=365
-        ),
-    ) -> dict[str, Any]:
-        """발주 임박(긴급+임박) 자재를 대시보드 상단 알림용으로 요약.
-
-        Design: docs/02-design/features/forecast-dashboard-alert.design.md §3
-        """
-        with get_connection() as connection:
-            return forecast_service.forecast_alert(
-                connection, window_days=window_days
-            )
-
-    @router.get("/expiry-alert")
-    def dashboard_expiry_alert(
-        alert_days: int = Query(lot_service.DEFAULT_ALERT_DAYS, ge=1, le=365),
-    ) -> dict[str, Any]:
-        """만료/임박 LOT을 대시보드 상단 알림용으로 요약.
-
-        Design: docs/02-design/features/lot-expiry-tracking.design.md §5.3
-        """
-        with get_connection() as connection:
-            return lot_service.expiry_alert(connection, alert_days=alert_days)
 
     @router.get("/summary")
     def dashboard_summary(

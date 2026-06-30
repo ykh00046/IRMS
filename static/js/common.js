@@ -31,6 +31,15 @@
       setSidebar(!sidebar.classList.contains("open")),
     );
     if (backdrop) backdrop.addEventListener("click", () => setSidebar(false));
+    sidebar.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => setSidebar(false));
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && sidebar.classList.contains("open")) {
+        setSidebar(false);
+        navToggle.focus();
+      }
+    });
   }
 
   if (document.readyState === "loading") {

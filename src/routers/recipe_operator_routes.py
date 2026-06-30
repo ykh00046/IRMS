@@ -33,7 +33,6 @@ from ..db import (
     utc_now_text,
     write_audit_log,
 )
-from ..services import stock_service
 from ..services.recipe_helpers import (
     fetch_chain,
     fetch_recipe_items,
@@ -68,8 +67,7 @@ def build_router() -> APIRouter:
         with get_connection() as connection:
             rows = connection.execute(
                 """
-                SELECT id, name, unit_type, unit, color_group, category, is_active,
-                       stock_quantity, stock_threshold
+                SELECT id, name, unit_type, unit, color_group, category, is_active
                 FROM materials
                 WHERE is_active = 1
                 ORDER BY name
@@ -92,9 +90,6 @@ def build_router() -> APIRouter:
         for row in rows:
             payload = row_to_dict(row)
             payload["aliases"] = alias_map.get(row["id"], [])
-            qty = float(payload.get("stock_quantity") or 0)
-            thr = float(payload.get("stock_threshold") or 0)
-            payload["stock_status"] = stock_service.stock_status(qty, thr)
             items.append(payload)
 
         return {"items": items, "total": len(items)}
@@ -216,14 +211,13 @@ def build_router() -> APIRouter:
             for it in recipe_items
         ]
 
-        # Build TSV for clipboard copy / spreadsheet load
         material_names = [it["material_name"] for it in recipe_items]
-        header = ["제품명", "위치", "잉크명"] + material_names
+        header = ["반제품명"] + material_names + ["비고"]
         values = [
             recipe["product_name"] or "",
-            recipe["position"] or "",
-            recipe["ink_name"] or "",
-        ] + [str(it["target_value"]) if it["target_value"] is not None else "" for it in recipe_items]
+            *[str(it["target_value"]) if it["target_value"] is not None else "" for it in recipe_items],
+            recipe.get("remark") or "",
+        ]
         recipe["tsv"] = "\t".join(header) + "\n" + "\t".join(values)
 
         return recipe
@@ -387,9 +381,22 @@ def build_router() -> APIRouter:
             where_parts.append("r.status = ?")
             params.append(status)
         if search:
-            where_parts.append("(r.product_name LIKE ? OR r.ink_name LIKE ?)")
+            where_parts.append(
+                """
+                (
+                    r.product_name LIKE ?
+                    OR r.ink_name LIKE ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM recipe_items ri
+                        JOIN materials m ON m.id = ri.material_id
+                        WHERE ri.recipe_id = r.id AND m.name LIKE ?
+                    )
+                )
+                """
+            )
             token = f"%{search.strip()}%"
-            params.extend([token, token])
+            params.extend([token, token, token])
         if date_from:
             where_parts.append("date(r.created_at) >= ?")
             params.append(str(date_from))

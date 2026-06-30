@@ -78,7 +78,7 @@
       if (dom.lookupProduct) dom.lookupProduct.value = "";
       if (dom.lookupResult) {
         dom.lookupResult.innerHTML =
-          '<p class="empty-state">제품명을 선택하면 해당 제품의 레시피가 표시됩니다.</p>';
+          '<p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>';
       }
       setLookupSelection(null);
     }
@@ -86,7 +86,7 @@
     async function handleLookup() {
       const productName = dom.lookupProduct ? dom.lookupProduct.value.trim() : "";
       if (!productName) {
-        IRMS.notify("제품명을 입력해주세요.", "warn");
+        IRMS.notify("반제품명을 입력해주세요.", "warn");
         return;
       }
 
@@ -96,7 +96,7 @@
         const recipes = data.items || [];
 
         if (!recipes.length) {
-          dom.lookupResult.innerHTML = '<p class="empty-state">해당 제품의 레시피가 없습니다.</p>';
+          dom.lookupResult.innerHTML = '<p class="empty-state">해당 반제품의 레시피가 없습니다.</p>';
           setLookupSelection(null);
           return;
         }
@@ -116,8 +116,8 @@
         // Build pivot table
         const headerCells = [
           "<th>ID</th>",
-          "<th>위치</th>",
           ...allMaterials.map((m) => `<th>${IRMS.escapeHtml(m)}</th>`),
+          "<th>항목수</th>",
           "<th>상태</th>",
           "<th>등록일</th>",
           "<th>사용 시작일</th>",
@@ -141,8 +141,8 @@
 
             return `<tr data-recipe-id="${recipe.id}">
               <td>${recipe.id}</td>
-              <td>${IRMS.escapeHtml(recipe.position || "-")}</td>
               ${materialCells}
+              <td class="value-cell">${(recipe.items || []).length}</td>
               <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
               <td>${IRMS.formatDateTime(recipe.created_at)}</td>
               <td>${IRMS.escapeHtml(recipe.effective_from || "-")}</td>
@@ -256,11 +256,11 @@
         state.previewIsStale = false;
         state.confirmedRawText = "";
         ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
-        ctx.importValidate.renderIssues([], dom.errorList, "ERROR 없음");
-        ctx.importValidate.renderIssues([], dom.warningList, "WARN 없음");
+        ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
+        ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
         ctx.importValidate.syncRegisterState();
 
-        IRMS.notify(`레시피 #${state.selectedRecipeId}을 불러왔습니다. 수정 후 Validate → Register 하세요.`, "info");
+        IRMS.notify(`레시피 #${state.selectedRecipeId}을 등록 탭으로 불러왔습니다. 수정 후 검증하고 등록하세요.`, "info");
       } catch (error) {
         IRMS.notify(`복제 실패: ${error.message}`, "error");
       }

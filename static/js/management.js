@@ -121,6 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadMaterials() {
     ctx.state.materials = await IRMS.getMaterials();
+    spreadsheet.initSpreadsheet(ctx.state.materials);
   }
 
   // ── Event bindings ──
@@ -200,10 +201,9 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       recipeHistory.restoreHistoryFilters();
       recipeHistory.updateHistorySummary();
-      spreadsheet.initSpreadsheet();
       await loadMaterials();
-      importValidate.renderIssues([], dom.errorList, "ERROR 없음");
-      importValidate.renderIssues([], dom.warningList, "WARN 없음");
+      importValidate.renderIssues([], dom.errorList, "오류 없음");
+      importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
       importValidate.syncRegisterState();
       await Promise.all([
         recipeHistory.renderHistory(),

@@ -15,6 +15,11 @@
 
   const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [] };
 
+  function lockedWorkerName() {
+    const worker = $("blend-worker");
+    return worker ? worker.value.trim() : "";
+  }
+
   async function loadWorkerNames() {
     try {
       const data = await request("/workers");
@@ -93,6 +98,9 @@
   function initBulk() {
     fillBulkRecipes();
     if (!$("bulk-body").children.length) addBulkRow();
+    const bulkWorker = $("bulk-worker");
+    const worker = lockedWorkerName();
+    if (bulkWorker && worker) bulkWorker.value = worker;
     const dhrToggle = $("bulk-dhr");
     if (dhrToggle && !dhrToggle._bound) {
       dhrToggle._bound = true;
@@ -137,7 +145,7 @@
     const err = $("bulk-error");
     err.hidden = true;
     const recipe_id = Number($("bulk-recipe").value);
-    const worker = $("bulk-worker").value.trim();
+    const worker = lockedWorkerName() || $("bulk-worker").value.trim();
     if (!recipe_id) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(await ensureWorker(worker))) return;
@@ -152,7 +160,7 @@
       const res = await request("/blend/records/bulk", {
         method: "POST",
         body: { recipe_id, worker, scale: $("bulk-scale").value.trim() || null,
-                deduct_stock: $("bulk-deduct").checked, entries },
+                entries },
       });
       notify(`${res.created}건 일괄 생성 완료 — 배합 기록으로 이동합니다.`, "success");
       $("bulk-body").innerHTML = "";
@@ -190,15 +198,6 @@
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
     // 총 배합량은 비워 둠(입력해야 하는 값임을 인지). 비어 있으면 이론량은 "-"로.
     if (!(totalRaw > 0)) state.items.forEach((it) => { it.theory_amount = null; });
-    // 자재별 보유 LOT 추천 로드 (있으면 datalist 제공)
-    state.lotMap = {};
-    const ids = state.items.map((it) => it.material_id).filter(Boolean);
-    if (ids.length) {
-      try {
-        const res = await request("/blend/material-lots", { query: { material_ids: ids.join(",") } });
-        state.lotMap = res.map || {};
-      } catch (_e) { /* optional */ }
-    }
     renderMatRows();
     updateLotPreview();
     updateInputGuide();
@@ -236,7 +235,7 @@
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
         `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${it.actual_amount}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
-        `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" list="lots-${idx}" />${lotDatalist(idx, it)}</td>` +
+        `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
@@ -284,15 +283,6 @@
       })
     );
     updateTotals();
-  }
-
-  function lotDatalist(idx, item) {
-    const lots = (state.lotMap && state.lotMap[item.material_id]) || [];
-    if (!lots.length) return "";
-    const opts = lots.map((l) =>
-      `<option value="${l.lot_no}">잔량 ${fmt(l.remaining_quantity)}${l.expiry_date ? " · ~" + l.expiry_date : ""}</option>`
-    ).join("");
-    return `<datalist id="lots-${idx}">${opts}</datalist>`;
   }
 
   function updateRowVar(i) {
@@ -346,7 +336,7 @@
     const err = $("blend-error");
     err.hidden = true;
     if (!state.current) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
-    const worker = $("blend-worker").value.trim();
+    const worker = lockedWorkerName();
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
@@ -630,6 +620,7 @@
     if (!request) { console.error("IRMS core not loaded"); return; }
     $("blend-date").value = todayISO();
     $("blend-time").value = nowTime();
+    if ($("bulk-worker") && lockedWorkerName()) $("bulk-worker").value = lockedWorkerName();
     bind();
     // 경로로 모드 결정: /blend/bulk = 일괄 생성, 그 외 = 배합 입력
     setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");

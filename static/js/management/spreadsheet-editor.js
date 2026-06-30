@@ -75,7 +75,7 @@
     }
 
     // Initialize JSpreadsheet
-    function initSpreadsheet() {
+    function initSpreadsheet(materials) {
       state.suppressDirtyTracking = true;
       destroySpreadsheet();
 
@@ -96,14 +96,27 @@
 
       setRawInputMode(false);
 
-      // Create an empty 15x10 grid by default
-      const data = Array.from({ length: 15 }, () => Array(10).fill(""));
+      const materialNames = (materials || [])
+        .map((material) => material.name)
+        .filter(Boolean)
+        .slice(0, 8);
+      const header = ["반제품명", ...materialNames, "비고"];
+      const colCount = Math.max(10, header.length);
+      const data = Array.from({ length: 15 }, (_row, index) => {
+        const row = Array(colCount).fill("");
+        if (index === 0) {
+          header.forEach((value, colIndex) => {
+            row[colIndex] = value;
+          });
+        }
+        return row;
+      });
 
       spreadsheetFactory(dom.spreadsheetContainer, {
         worksheets: [
           {
             data,
-            minDimensions: [10, 15],
+            minDimensions: [colCount, 15],
             defaultColWidth: 80,
             tableOverflow: true,
             tableWidth: "100%",

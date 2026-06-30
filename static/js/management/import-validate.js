@@ -26,7 +26,7 @@
       const canRegister =
         Boolean(state.currentPreview) &&
         !state.previewIsStale &&
-        state.currentPreview.errors.length === 0 &&
+        (state.currentPreview.errors || []).length === 0 &&
         state.currentPreview.rows.length > 0 &&
         state.confirmedRawText.trim().length > 0;
       dom.registerBtn.disabled = !canRegister;
@@ -39,7 +39,7 @@
       state.previewIsStale = true;
       syncRegisterState();
       renderValidationMeta(state.currentPreview);
-      IRMS.notify("시트가 수정되어 검증이 무효화되었습니다. 다시 Validate 하세요.", "warn");
+      IRMS.notify("시트가 수정되어 검증이 무효화되었습니다. 다시 검증하세요.", "warn");
     }
 
     function renderIssues(list, target, emptyText) {
@@ -59,9 +59,9 @@
     function renderValidationMeta(result) {
       const rows = result?.rows || [];
       const badges = [
-        `<span class="meta-badge meta-ok">Rows ${rows.length}</span>`,
-        `<span class="meta-badge meta-warn">Warn ${(result?.warnings || []).length}</span>`,
-        `<span class="meta-badge meta-error">Error ${(result?.errors || []).length}</span>`,
+        `<span class="meta-badge meta-ok">등록 ${rows.length}건</span>`,
+        `<span class="meta-badge meta-warn">확인 ${(result?.warnings || []).length}건</span>`,
+        `<span class="meta-badge meta-error">오류 ${(result?.errors || []).length}건</span>`,
       ];
       if (state.previewIsStale) {
         badges.push('<span class="meta-badge meta-warn">재검증 필요</span>');
@@ -73,7 +73,7 @@
       const raw = ctx.spreadsheet.getSpreadsheetDataAsText();
 
       if (!raw) {
-        IRMS.notify("데이터를 입력하거나 붙여넣은 후 Validate 하세요.", "warn");
+        IRMS.notify("데이터를 입력하거나 붙여넣은 후 검증하세요.", "warn");
         return;
       }
 
@@ -84,8 +84,8 @@
         state.confirmedRawText = raw;
         state.previewIsStale = false;
         renderValidationMeta(result);
-        renderIssues(result.errors, dom.errorList, "ERROR 없음");
-        renderIssues(result.warnings, dom.warningList, "WARN 없음");
+        renderIssues(result.errors, dom.errorList, "오류 없음");
+        renderIssues(result.warnings, dom.warningList, "확인 사항 없음");
         syncRegisterState();
 
         if (!result.errors.length && result.rows.length > 0) {
@@ -107,7 +107,7 @@
         !state.confirmedRawText.trim()
       ) {
         if (state.previewIsStale) {
-          IRMS.notify("검정본이 무효화되었습니다. 다시 Validate 후 등록하세요.", "warn");
+          IRMS.notify("검증본이 무효화되었습니다. 다시 검증 후 등록하세요.", "warn");
         }
         return;
       }
@@ -122,7 +122,6 @@
           "success",
         );
 
-        // Reset everything
         handleClear();
       } catch (error) {
         IRMS.notify(`등록 실패: ${error.message}`, "error");
@@ -136,15 +135,15 @@
       state.previewIsStale = false;
       state.pendingRevisionOf = null;
       if (state.sheet) {
-        ctx.spreadsheet.initSpreadsheet(); // Reinitialize to clear
+        ctx.spreadsheet.initSpreadsheet(state.materials);
       } else if (dom.rawInput) {
         dom.rawInput.value = "";
       }
       state.currentPreview = null;
       state.previewIsStale = false;
       renderValidationMeta({ rows: [], warnings: [], errors: [] });
-      renderIssues([], dom.errorList, "ERROR 없음");
-      renderIssues([], dom.warningList, "WARN 없음");
+      renderIssues([], dom.errorList, "오류 없음");
+      renderIssues([], dom.warningList, "확인 사항 없음");
       syncRegisterState();
     }
 

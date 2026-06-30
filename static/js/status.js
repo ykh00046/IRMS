@@ -17,6 +17,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }[c]));
   let detailId = null;
 
+  async function deleteRecord(recordId) {
+    await request(`/blend/records/${recordId}`, {
+      method: "DELETE",
+      query: { hard: 1 },
+    });
+  }
+
   async function loadWorkers() {
     try {
       const data = await request("/blend/workers");
@@ -155,6 +162,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
     window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
+  $("status-rec-delete-selected").addEventListener("click", async () => {
+    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => Number(c.value));
+    if (!ids.length) { IRMS.notify("삭제할 기록을 선택하세요.", "warn"); return; }
+    if (!window.confirm(`선택한 배합 기록 ${ids.length}건을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+    try {
+      for (const id of ids) {
+        await deleteRecord(id);
+      }
+      IRMS.notify(`${ids.length}건을 삭제했습니다.`, "success");
+      await loadRecords();
+    } catch (e) {
+      IRMS.notify(`삭제 실패: ${e.message || e}`, "error");
+    }
+  });
   $("status-rec-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadRecords();
   });
@@ -169,6 +190,19 @@ document.addEventListener("DOMContentLoaded", () => {
   $("status-print").addEventListener("click", () => window.print());
   $("status-excel").addEventListener("click", () => {
     if (detailId) window.location.assign(`/api/blend/records/${detailId}/export`);
+  });
+  $("status-delete").addEventListener("click", async () => {
+    if (!detailId) return;
+    if (!window.confirm("이 배합 기록을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+    try {
+      await deleteRecord(detailId);
+      $("status-detail-modal").hidden = true;
+      detailId = null;
+      IRMS.notify("배합 기록을 삭제했습니다.", "success");
+      await loadRecords();
+    } catch (e) {
+      IRMS.notify(`삭제 실패: ${e.message || e}`, "error");
+    }
   });
   $("status-rec-export-all").addEventListener("click", () => {
     const q = new URLSearchParams();

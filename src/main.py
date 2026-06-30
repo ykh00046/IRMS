@@ -50,9 +50,11 @@ def create_app() -> FastAPI:
             re.compile(r"^/api/auth/management-login$"),
             re.compile(r"^/api/auth/operator-login$"),
             re.compile(r"^/api/attendance/login$"),
+            re.compile(r"^/api/blend/session/login$"),
             # sendBeacon cannot attach custom headers; logout is idempotent
             # so a forced-logout CSRF attack causes only minor inconvenience.
             re.compile(r"^/api/attendance/logout$"),
+            re.compile(r"^/api/blend/session/logout$"),
         ],
     )
     app.add_middleware(

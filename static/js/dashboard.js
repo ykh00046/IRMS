@@ -36,9 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentVariances = [];
 
   const PREF_KEY = "irms_dashboard_range";
-  const ALERT_STATUS_LABEL = { urgent: "긴급", soon: "임박" };
-  const EXPIRY_STATE_LABEL = { expired: "만료", expiring_soon: "임박" };
-
   function todayISO() {
     return new Date().toISOString().slice(0, 10);
   }
@@ -275,78 +272,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function loadForecastAlert() {
-    const card = document.getElementById("forecast-alert");
-    if (!card) return;
-    try {
-      const res = await fetch("/api/dashboard/forecast-alert", { credentials: "same-origin" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data.reorder_recommended) {
-        card.hidden = true;
-        return;
-      }
-      document.getElementById("forecast-alert-summary").textContent =
-        `발주 권장 ${data.reorder_recommended}건 (긴급 ${data.urgent}, 임박 ${data.soon})`;
-      document.getElementById("forecast-alert-body").innerHTML = data.items
-        .map((item) => {
-          const cls = item.status === "urgent" ? "stock-negative" : "stock-low";
-          return `
-            <tr>
-              <td>${IRMS.escapeHtml(item.name)}</td>
-              <td><span class="stock-status ${cls}">${ALERT_STATUS_LABEL[item.status] || item.status}</span></td>
-              <td class="num">${item.days_remaining ?? "-"}</td>
-              <td>${IRMS.escapeHtml(item.predicted_stockout_date || "-")}</td>
-              <td class="num">${fmtNumber(item.recommended_order_qty, 2)}</td>
-            </tr>`;
-        })
-        .join("");
-      card.hidden = false;
-    } catch {
-      card.hidden = true;
-    }
-  }
-
-  function ddayLabel(n) {
-    if (n === null || n === undefined) return "-";
-    if (n < 0) return `D+${-n}`;
-    if (n === 0) return "D-day";
-    return `D-${n}`;
-  }
-
-  async function loadExpiryAlert() {
-    const card = document.getElementById("expiry-alert");
-    if (!card) return;
-    try {
-      const res = await fetch("/api/dashboard/expiry-alert", { credentials: "same-origin" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data.total_alert) {
-        card.hidden = true;
-        return;
-      }
-      document.getElementById("expiry-alert-summary").textContent =
-        `유통기한 주의 ${data.total_alert}건 (만료 ${data.expired}, 임박 ${data.expiring_soon})`;
-      document.getElementById("expiry-alert-body").innerHTML = data.items
-        .map((item) => {
-          const cls = item.expiry_state === "expired" ? "stock-negative" : "stock-low";
-          return `
-            <tr>
-              <td>${IRMS.escapeHtml(item.material_name)}</td>
-              <td>${IRMS.escapeHtml(item.lot_no || "-")}</td>
-              <td><span class="stock-status ${cls}">${EXPIRY_STATE_LABEL[item.expiry_state] || item.expiry_state}</span></td>
-              <td>${IRMS.escapeHtml(item.expiry_date || "-")}</td>
-              <td class="num">${ddayLabel(item.days_until)}</td>
-              <td class="num">${fmtNumber(item.remaining_quantity, 2)}</td>
-            </tr>`;
-        })
-        .join("");
-      card.hidden = false;
-    } catch {
-      card.hidden = true;
-    }
-  }
-
   async function openMaterialDrill(materialId, materialName) {
     const range = getCurrentRange();
     try {
@@ -460,6 +385,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
   restoreRange();
   loadAll();
-  loadForecastAlert();
-  loadExpiryAlert();
 });

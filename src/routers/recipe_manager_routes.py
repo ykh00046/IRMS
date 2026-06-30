@@ -1,7 +1,7 @@
-"""Manager-scope recipe endpoints: delete + progress dashboards.
+"""Manager-scope recipe endpoints: deletion + progress dashboards.
 
-Provides 3 endpoints accessible to manager-level users for deleting recipes
-(only pending/canceled) and viewing aggregate progress/operator dashboards.
+Provides endpoints accessible to manager-level users for deleting recipes
+and viewing aggregate progress/operator dashboards.
 
 Split from src/routers/recipe_routes.py during the split-large-files
 PDCA cycle (2026-05).
@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, row_to_dict, write_audit_log
+from ..services import record_delete_service
 from ..services.recipe_helpers import fetch_recipe_items
 
 
@@ -26,36 +27,41 @@ def build_router() -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @router.delete("/recipes/{recipe_id}")
-    def delete_recipe(recipe_id: int, request: Request) -> dict[str, str]:
+    def delete_recipe(
+        recipe_id: int,
+        request: Request,
+        delete_blend_records: bool = Query(default=False),
+    ) -> dict[str, Any]:
         current_user = get_current_user(request)
         with get_connection() as connection:
-            row = connection.execute(
-                "SELECT id, product_name, ink_name, status, created_by FROM recipes WHERE id = ?",
-                (recipe_id,),
-            ).fetchone()
-            if not row:
+            result = record_delete_service.delete_recipe(
+                connection,
+                recipe_id,
+                delete_linked_records=delete_blend_records,
+            )
+            if result is None:
                 raise HTTPException(status_code=404, detail="RECIPE_NOT_FOUND")
 
-            if row["status"] not in ("pending", "canceled"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="CANNOT_DELETE_ACTIVE_RECIPE",
-                )
-
-            connection.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (recipe_id,))
-            connection.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
             write_audit_log(
                 connection,
                 action="recipe_deleted",
                 actor=current_user,
                 target_type="recipe",
-                target_id=recipe_id,
-                target_label=f"{row['product_name']} · {row['ink_name']}",
-                details={"status": row["status"], "created_by": row["created_by"]},
+                target_id=result.recipe_id,
+                target_label=result.product_name,
+                details={
+                    "linked_record_count": result.linked_record_count,
+                    "deleted_linked_records": result.deleted_linked_records,
+                },
             )
             connection.commit()
 
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "deleted_recipe_id": result.recipe_id,
+            "linked_record_count": result.linked_record_count,
+            "deleted_linked_records": result.deleted_linked_records,
+        }
 
     @router.get("/recipes/progress")
     def recipe_progress(

@@ -2,22 +2,20 @@
 
 {% block title %}관리{% endblock %}
 {% block eyebrow %}운영 관리{% endblock %}
-{% block heading %}레시피 관리{% endblock %}
+{% block heading %}레시피 현황{% endblock %}
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
     <link rel="stylesheet" href="/static/vendor/jspreadsheet/jspreadsheet.min.css?v=20260624a" type="text/css" />
     <link rel="stylesheet" href="/static/vendor/jsuites/jsuites.min.css?v=20260624a" type="text/css" />
-    <link rel="stylesheet" href="/static/css/management.css?v=20260624a" />
-    <link rel="stylesheet" href="/static/css/spreadsheet_editor.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260630c" />
 {% endblock %}
 
 {% block content %}
         <nav class="mgmt-tabs">
-          <button class="mgmt-tab active" data-tab="editor" type="button">레시피 편집</button>
+          <button class="mgmt-tab active" data-tab="history" type="button">레시피 현황</button>
           <button class="mgmt-tab" data-tab="import" type="button">레시피 등록</button>
-          <button class="mgmt-tab" data-tab="history" type="button">등록 이력</button>
-          <button class="mgmt-tab" data-tab="lookup" type="button">레시피 조회</button>
+          <button class="mgmt-tab" data-tab="lookup" type="button">버전 조회</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
@@ -25,7 +23,7 @@
           <section class="panel import-layout">
             <div class="input-section">
               <p class="import-helper">
-                엑셀 영역(헤더 포함)을 복사 → 아래 표에 Ctrl+V → Validate → Register
+                첫 열은 반제품명, 이후 열은 자재명으로 입력하세요. 비고 열은 선택 사항입니다.
               </p>
               <p class="mode-note">표준 단위: g 고정 · 계량은 Weighing 화면에서 진행</p>
               <div id="spreadsheet" class="spreadsheet-container"></div>
@@ -36,11 +34,11 @@
                 hidden
               ></textarea>
               <div class="button-row">
-                <label class="filter-label" for="register-effective-from" style="margin:0 0.3rem 0 0">사용 시작일</label>
-                <input id="register-effective-from" type="date" class="input" style="width:auto" title="비우면 등록일로 기록됩니다" />
-                <button id="preview-btn" class="btn accent">Validate</button>
-                <button id="register-btn" class="btn success" disabled>Register</button>
-                <button id="clear-btn" class="btn">Clear</button>
+                <label class="filter-label inline-label" for="register-effective-from">사용 시작일</label>
+                <input id="register-effective-from" type="date" class="input date-input" title="비우면 등록일로 기록됩니다" />
+                <button id="preview-btn" class="btn accent">검증</button>
+                <button id="register-btn" class="btn success" disabled>등록</button>
+                <button id="clear-btn" class="btn">초기화</button>
               </div>
             </div>
 
@@ -48,14 +46,14 @@
               <div id="preview-meta" class="preview-meta"></div>
               <article class="issue-panel error-panel">
                 <div class="issue-header">
-                  <span>Errors</span>
+                  <span>오류</span>
                   <span class="muted">(등록 불가)</span>
                 </div>
                 <ul id="error-list" class="issue-list"></ul>
               </article>
               <article class="issue-panel warn-panel">
                 <div class="issue-header">
-                  <span>Warnings</span>
+                  <span>확인 사항</span>
                   <span class="muted">(확인 필요)</span>
                 </div>
                 <ul id="warning-list" class="issue-list"></ul>
@@ -66,9 +64,9 @@
         </div>
 
         <!-- ── 등록 이력 ── -->
-        <div class="tab-panel" id="tab-history">
+        <div class="tab-panel active" id="tab-history">
           <section class="panel">
-            <h3 class="panel-title">등록 이력</h3>
+            <h3 class="panel-title">레시피 현황</h3>
             <div class="history-grid">
               <div class="filter-group">
                 <label class="filter-label">상태</label>
@@ -82,7 +80,7 @@
               </div>
               <div class="filter-group">
                 <label class="filter-label">검색</label>
-                <input id="history-search" class="input" placeholder="제품명" />
+                <input id="history-search" class="input" placeholder="반제품명 또는 자재명" />
               </div>
               <div class="filter-group">
                 <label class="filter-label">시작일</label>
@@ -94,7 +92,7 @@
               </div>
             </div>
             <div class="filter-bar">
-              <p id="management-history-summary" class="filter-summary">전체 등록 이력을 표시 중입니다.</p>
+              <p id="management-history-summary" class="filter-summary">전체 레시피 현황을 표시 중입니다.</p>
               <div class="button-row">
                 <button id="management-history-reset" type="button" class="btn">필터 초기화</button>
               </div>
@@ -104,7 +102,7 @@
                 <thead>
                   <tr>
                     <th>UUID</th>
-                    <th>제품명</th>
+                    <th>반제품명</th>
                     <th>상태</th>
                     <th>등록자</th>
                     <th>등록일시</th>
@@ -120,20 +118,20 @@
         <!-- ── 레시피 조회 ── -->
         <div class="tab-panel" id="tab-lookup">
           <section class="panel">
-            <h3 class="panel-title">레시피 조회</h3>
+            <h3 class="panel-title">버전 조회</h3>
             <div class="lookup-search">
               <div class="filter-group">
-                <label class="filter-label">제품명</label>
-                <input id="lookup-product" class="input" list="product-list" placeholder="제품명 입력 또는 선택" />
+                <label class="filter-label">반제품명</label>
+                <input id="lookup-product" class="input" list="product-list" placeholder="반제품명 입력 또는 선택" />
                 <datalist id="product-list"></datalist>
               </div>
               <button id="lookup-btn" class="btn accent">검색</button>
-              <label class="filter-label" style="display:flex;align-items:center;gap:5px;cursor:pointer">
+              <label class="filter-label checkbox-label">
                 <input type="checkbox" id="lookup-dhr" /> DHR 전용
               </label>
             </div>
             <div id="lookup-result" class="lookup-result">
-              <p class="empty-state">제품명을 선택하면 해당 제품의 레시피가 표시됩니다.</p>
+              <p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>
             </div>
             <div id="lookup-actions" class="button-row lookup-actions" hidden>
               <span id="lookup-selected-label" class="muted">선택: 없음</span>
@@ -143,100 +141,6 @@
               <button id="lookup-clone-btn" class="btn accent" disabled>복제하여 등록</button>
             </div>
           </section>
-        </div>
-
-        <!-- ── 레시피 편집 ── -->
-        <div class="tab-panel active" id="tab-editor">
-          <section class="panel ss-editor-layout">
-            <div class="ss-toolbar">
-              <div class="ss-product-tabs" id="ss-product-tabs"></div>
-              <button id="ss-add-product" class="btn ss-add-btn" type="button" title="제품 추가">+</button>
-            </div>
-
-            <div id="ss-empty-state" class="empty-state-block">
-              제품이 없습니다. [+] 버튼으로 제품을 추가하세요.
-            </div>
-
-            <div id="ss-sheet-area" hidden>
-              <div id="ss-spreadsheet" class="ss-spreadsheet-container"></div>
-              <div class="ss-actions">
-                <div class="ss-actions-left">
-                  <button id="ss-add-row" class="btn" type="button">행 추가</button>
-                  <button id="ss-del-row" class="btn" type="button">마지막 행 삭제</button>
-                  <button id="ss-manage-cols" class="btn" type="button">컬럼 관리</button>
-                </div>
-                <div class="ss-actions-right">
-                  <button id="ss-save" class="btn accent" type="button">저장</button>
-                  <button id="ss-register" class="btn success" type="button">레시피 등록</button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Product create/edit modal -->
-          <div id="ss-product-modal" class="ss-modal-overlay" hidden>
-            <div class="ss-modal">
-              <div class="ss-modal-header">
-                <h3 id="ss-product-modal-title">새 제품</h3>
-                <button id="ss-product-modal-close" class="btn" type="button">닫기</button>
-              </div>
-              <div class="ss-modal-body">
-                <div class="form-group">
-                  <label class="filter-label" for="ss-product-name">제품 이름</label>
-                  <input id="ss-product-name" class="input" maxlength="100" placeholder="예: Star Glow A" />
-                </div>
-                <div class="form-group">
-                  <label class="filter-label">레시피 종류</label>
-                  <div class="ss-type-choice">
-                    <label class="ss-type-option">
-                      <input type="radio" name="ss-recipe-type" value="solution" checked />
-                      <span class="ss-type-card">
-                        <strong>액상 (Solution)</strong>
-                        <small>PL 계열 · TOTAL / BINDER / 분산제 / 안료량 / APB / Glycerol 자동 수식</small>
-                      </span>
-                    </label>
-                    <label class="ss-type-option">
-                      <input type="radio" name="ss-recipe-type" value="powder" />
-                      <span class="ss-type-card">
-                        <strong>파우더 (Powder)</strong>
-                        <small>RAVEN / BLACK / RED / BLUE / YELLOW / WHITE / TTO-55(b) / GLYCEROL</small>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-                <p id="ss-product-modal-warn" class="muted small" hidden>
-                  종류를 변경하면 기본 컬럼 구성이 바뀝니다. 기존 데이터는 유지되지만 새 기본 컬럼이 추가됩니다.
-                </p>
-                <div class="button-row">
-                  <button id="ss-product-modal-save" class="btn accent" type="button">확인</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Column management modal -->
-          <div id="ss-col-modal" class="ss-modal-overlay" hidden>
-            <div class="ss-modal">
-              <div class="ss-modal-header">
-                <h3>컬럼 관리</h3>
-                <button id="ss-col-modal-close" class="btn" type="button">닫기</button>
-              </div>
-              <div class="ss-modal-body">
-                <div id="ss-col-list" class="ss-col-list"></div>
-                <div class="ss-col-add-form">
-                  <h4>컬럼 추가</h4>
-                  <div class="ss-col-add-row">
-                    <input id="ss-new-col-name" class="input" placeholder="컬럼 이름" maxlength="50" />
-                    <select id="ss-new-col-type" class="select">
-                      <option value="numeric">숫자</option>
-                      <option value="text">텍스트</option>
-                    </select>
-                    <button id="ss-add-col-btn" class="btn accent" type="button">추가</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- ── 버전 이력 모달 ── -->
@@ -252,7 +156,7 @@
                 <table class="history-table">
                   <thead>
                     <tr>
-                      <th style="width:40px"></th>
+                      <th class="check-col"></th>
                       <th>버전</th>
                       <th>등록일시</th>
                       <th>사용 시작일</th>
@@ -296,12 +200,11 @@
 {% block scripts %}
     <script src="/static/vendor/jsuites/jsuites.min.js?v=20260624a"></script>
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js?v=20260624a"></script>
-    <script src="/static/js/spreadsheet_editor.js?v=20260624a"></script>
     <!-- management modules: 5 factories (order-free) → controller last -->
-    <script src="/static/js/management/spreadsheet-editor.js?v=20260624a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260624a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260626b"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260626b"></script>
-    <script src="/static/js/management/version-compare.js?v=20260626b"></script>
-    <script src="/static/js/management.js?v=20260626a"></script>
+    <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
+    <script src="/static/js/management/import-validate.js?v=20260630a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260630a"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260630a"></script>
+    <script src="/static/js/management/version-compare.js?v=20260630a"></script>
+    <script src="/static/js/management.js?v=20260630a"></script>
 {% endblock %}

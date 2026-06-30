@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260630a" />
 {% endblock %}
 
 {% block content %}
@@ -31,6 +31,7 @@
             <label class="visc-checkbox"><input id="status-sign" type="checkbox" /> 서명 넣기</label>
             <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
             <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
+            <button class="btn danger" id="status-rec-delete-selected" type="button">선택 삭제</button>
           </div>
         </section>
 
@@ -64,6 +65,7 @@
                 <button id="status-pdf" class="btn btn-sm accent" type="button">배합일지 PDF</button>
                 <button id="status-print" class="btn btn-sm" type="button">인쇄</button>
                 <button id="status-excel" class="btn btn-sm" type="button">Excel</button>
+                <button id="status-delete" class="btn btn-sm danger" type="button">삭제</button>
                 <button id="status-detail-close" class="btn btn-sm" type="button">닫기</button>
               </div>
             </div>
@@ -73,5 +75,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260626g"></script>
+    <script src="/static/js/status.js?v=20260630a"></script>
 {% endblock %}

@@ -130,8 +130,11 @@
     return mapRecipe(payload);
   }
 
-  async function deleteRecipe(recipeId) {
-    return request(`/recipes/${recipeId}`, { method: "DELETE" });
+  async function deleteRecipe(recipeId, deleteBlendRecords) {
+    return request(`/recipes/${recipeId}`, {
+      method: "DELETE",
+      query: { delete_blend_records: deleteBlendRecords ? 1 : undefined },
+    });
   }
 
   async function previewImport(rawText, createdBy) {

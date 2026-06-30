@@ -169,7 +169,6 @@ class BlendCreateBody(BaseModel):
     total_amount: float = Field(gt=0, le=10_000_000)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
-    deduct_stock: bool = True
     worker_sign: str | None = Field(default=None, max_length=300_000)
     details: list[BlendDetailBody] = Field(default_factory=list)
 
@@ -218,7 +217,6 @@ class BlendBulkBody(BaseModel):
     recipe_id: int = Field(gt=0)
     worker: str = Field(min_length=1, max_length=100)
     scale: str | None = Field(default=None, max_length=100)
-    deduct_stock: bool = False
     entries: list[BlendBulkEntryBody] = Field(default_factory=list)
 
 
@@ -281,4 +279,4 @@ def serialize_admin_user(row: Any) -> dict[str, Any]:
 
 
 def recipe_label(row: dict[str, Any]) -> str:
-    return f"{row.get('product_name', '-')}/{row.get('ink_name', '-')}"
+    return str(row.get("product_name") or "-")

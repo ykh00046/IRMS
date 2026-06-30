@@ -10,6 +10,7 @@ from ..attendance_auth import (
     logout_session as att_logout_session,
 )
 from ..auth import get_current_user, has_access_level, list_users_by_access_levels
+from ..blend_session import current_blend_worker, logout_worker_session
 from ..config import SEED_DEMO_DATA
 
 
@@ -76,6 +77,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         # 같은 PC에서 바로 열었을 때 이전 사용자의 근태가 노출되지 않게
         # 한다. IRMS 관리자 세션은 별도 네임스페이스라 영향 없음.
         att_logout_session(request)
+        logout_worker_session(request)
         return _render(templates, request, "entry.html", {
             "current_user": get_current_user(request, required=False),
         })
@@ -128,16 +130,32 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/blend", response_class=HTMLResponse)
     def blend_page(request: Request) -> Response:
-        # 배합 입력 — 무로그인 개방
+        worker = current_blend_worker(request)
+        if not worker:
+            return _entry_redirect("/blend/login", request)
         return _render(templates, request, "blend.html", {
             "current_user": get_current_user(request, required=False),
+            "blend_worker": worker,
         })
 
     @router.get("/blend/bulk", response_class=HTMLResponse)
     def blend_bulk_page(request: Request) -> Response:
-        # 일괄 생성 — 같은 화면을 일괄 모드로(드문 도구). 무로그인 개방.
+        worker = current_blend_worker(request)
+        if not worker:
+            return _entry_redirect("/blend/login", request)
         return _render(templates, request, "blend.html", {
             "current_user": get_current_user(request, required=False),
+            "blend_worker": worker,
+        })
+
+    @router.get("/blend/login", response_class=HTMLResponse)
+    def blend_login_page(request: Request, next: str | None = None) -> Response:
+        next_url = _safe_next(next, "/blend")
+        if current_blend_worker(request):
+            return RedirectResponse(url=next_url, status_code=303)
+        return _render(templates, request, "blend_login.html", {
+            "current_user": get_current_user(request, required=False),
+            "next_url": next_url,
         })
 
     @router.get("/insight", response_class=HTMLResponse)
@@ -151,10 +169,6 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/status", response_class=HTMLResponse)
     def status_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "status.html", "manager")
-
-    @router.get("/stock", response_class=HTMLResponse)
-    def stock_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "stock.html", "manager")
 
     @router.get("/base", response_class=HTMLResponse)
     def base_page(request: Request) -> Response:

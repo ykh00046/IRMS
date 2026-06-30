@@ -199,37 +199,6 @@ def test_worker_signature_stored():
     assert rec["reviewed_sign"] is None
 
 
-# ── 재고 자동차감 + 복원 ────────────────────────────────────────
-def test_blend_stock_deduct_and_reverse():
-    conn = _make_db()
-    rid = _seed_recipe(conn, weights=(60, 40))
-    conn.execute("UPDATE materials SET stock_quantity = 1000")
-    mat_ids = [r["id"] for r in conn.execute("SELECT id FROM materials ORDER BY id").fetchall()]
-    record_id = bs.create_blend_record(
-        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
-        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100, scale=None, note=None,
-        details=[
-            {"material_id": mat_ids[0], "material_name": "원료1", "theory_amount": 60, "actual_amount": 62},
-            {"material_id": mat_ids[1], "material_name": "원료2", "theory_amount": 40, "actual_amount": 40},
-        ],
-        created_by="t", created_at="2026-06-24T00:00:00Z",
-    )
-    n = bs.deduct_blend_stock(conn, record_id, actor_id=None, actor_name="현장", created_at="2026-06-24T00:00:00Z")
-    assert n == 2
-    stock = {r["id"]: r["stock_quantity"] for r in conn.execute("SELECT id, stock_quantity FROM materials").fetchall()}
-    assert stock[mat_ids[0]] == 938.0  # 1000 - 62
-    assert stock[mat_ids[1]] == 960.0  # 1000 - 40
-    # 멱등: 재호출해도 추가 차감 없음
-    assert bs.deduct_blend_stock(conn, record_id, actor_id=None, actor_name="현장", created_at="x") == 0
-    # 복원
-    restored = bs.reverse_blend_stock(conn, record_id)
-    assert restored == 2
-    stock2 = {r["id"]: r["stock_quantity"] for r in conn.execute("SELECT id, stock_quantity FROM materials").fetchall()}
-    assert stock2[mat_ids[0]] == 1000.0
-    assert stock2[mat_ids[1]] == 1000.0
-    assert conn.execute("SELECT COUNT(*) c FROM material_stock_logs").fetchone()["c"] == 0
-
-
 # ── 점도 ↔ 배합 연계 ────────────────────────────────────────────
 def test_viscosity_linked_to_blend():
     conn = _make_db()
@@ -279,21 +248,6 @@ def test_create_bulk():
     assert r2["details"][0]["theory_amount"] == 120.0
     assert r2["details"][0]["actual_amount"] == 120.0
     assert r1["product_lot"] != r2["product_lot"]
-
-
-def test_material_lots_map():
-    conn = _make_db()
-    _seed_recipe(conn, weights=(60, 40))
-    mids = [r["id"] for r in conn.execute("SELECT id FROM materials ORDER BY id").fetchall()]
-    conn.execute(
-        "INSERT INTO material_lots (material_id, lot_no, received_quantity, remaining_quantity, status, expiry_date, created_at) "
-        "VALUES (?, 'A-001', 100, 50, 'active', '2026-12-31', 'x')", (mids[0],))
-    conn.execute(
-        "INSERT INTO material_lots (material_id, lot_no, received_quantity, remaining_quantity, status, created_at) "
-        "VALUES (?, 'A-OLD', 100, 0, 'active', 'x')", (mids[0],))  # 잔량0 → 제외
-    m = bs.list_material_lots_map(conn, mids)
-    assert [lot["lot_no"] for lot in m[mids[0]]] == ["A-001"]
-    assert m[mids[1]] == []
 
 
 # ── 라우트 (무로그인 개방) ──────────────────────────────────────

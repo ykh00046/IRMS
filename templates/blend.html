@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260626a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260630a" />
 {% endblock %}
 
 {% block content %}
@@ -25,7 +25,7 @@
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-worker">작업자</label>
-                  <input class="input" id="blend-worker" placeholder="이름" list="worker-names" autocomplete="off" />
+                  <input class="input" id="blend-worker" value="{{ blend_worker or '' }}" placeholder="이름" list="worker-names" autocomplete="off" readonly />
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-date">작업일자</label>
@@ -113,15 +113,12 @@
               </label>
               <div class="blend-field">
                 <label class="filter-label" for="bulk-worker">작업자</label>
-                <input class="input" id="bulk-worker" placeholder="이름" list="worker-names" autocomplete="off" />
+                <input class="input" id="bulk-worker" value="{{ blend_worker or '' }}" placeholder="이름" list="worker-names" autocomplete="off" readonly />
               </div>
               <div class="blend-field">
                 <label class="filter-label" for="bulk-scale">저울</label>
                 <input class="input" id="bulk-scale" value="M-65" placeholder="예: M-65" />
               </div>
-              <label class="visc-checkbox blend-field">
-                <input id="bulk-deduct" type="checkbox" /> 재고 차감
-              </label>
             </div>
           </section>
           <section class="panel">
@@ -204,5 +201,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend.js?v=20260626h"></script>
-{% endblock %}
+    <script src="/static/js/blend.js?v=20260630a"></script>
+    <script src="/static/js/blend_session.js?v=20260630a"></script>
+  {% endblock %}

@@ -23,9 +23,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth import get_current_user
+from ..auth import get_current_user, has_access_level
 from ..db import get_db, utc_now_text, write_audit_log
-from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, viscosity_service
+from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
 from .models import (
     BlendApprovalBody,
     BlendBulkBody,
@@ -69,14 +69,6 @@ def build_router() -> APIRouter:
     @router.get("/blend/workers")
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
-
-    @router.get("/blend/material-lots")
-    def blend_material_lots(
-        material_ids: str = "",
-        connection: sqlite3.Connection = Depends(get_db),
-    ) -> dict[str, Any]:
-        ids = [int(x) for x in material_ids.split(",") if x.strip().isdigit()]
-        return {"map": blend_service.list_material_lots_map(connection, ids)}
 
     @router.get("/blend/records")
     def blend_records(
@@ -257,16 +249,7 @@ def build_router() -> APIRouter:
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
         )
-        deducted = 0
-        if body.deduct_stock:
-            deducted = blend_service.deduct_blend_stock(
-                connection, record_id,
-                actor_id=(current_user or {}).get("id"),
-                actor_name=actor,
-                created_at=utc_now_text(),
-            )
         record = blend_service.get_blend_record(connection, record_id)
-        record["stock_deducted"] = deducted
         write_audit_log(
             connection,
             action="blend_record_create",
@@ -391,13 +374,6 @@ def build_router() -> APIRouter:
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-        if body.deduct_stock:
-            for rid in ids:
-                blend_service.deduct_blend_stock(
-                    connection, rid,
-                    actor_id=(current_user or {}).get("id"),
-                    actor_name=actor, created_at=now,
-                )
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
         write_audit_log(
             connection,
@@ -415,13 +391,30 @@ def build_router() -> APIRouter:
     def blend_cancel(
         record_id: int,
         request: Request,
+        hard: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
         current_user = get_current_user(request, required=False)
-        restored = blend_service.reverse_blend_stock(connection, record_id)
+        if hard:
+            if current_user is None or not has_access_level(current_user, "manager"):
+                raise HTTPException(status_code=403, detail="FORBIDDEN")
+            result = record_delete_service.delete_blend_record(connection, record_id)
+            if result is None:
+                raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+            write_audit_log(
+                connection,
+                action="blend_record_deleted",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(result.record_id),
+                target_label=result.product_lot,
+            )
+            connection.commit()
+            return {"deleted": result.record_id}
+
         connection.execute(
             "UPDATE blend_records SET status = 'canceled', updated_at = ? WHERE id = ?",
             (utc_now_text(), record_id),
@@ -435,6 +428,6 @@ def build_router() -> APIRouter:
             target_label=record["product_lot"],
         )
         connection.commit()
-        return {"canceled": record_id, "stock_restored": restored}
+        return {"canceled": record_id}
 
     return router

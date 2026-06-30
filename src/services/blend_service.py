@@ -324,92 +324,6 @@ def create_bulk(
     return ids
 
 
-def _blend_stock_note(record_id: int) -> str:
-    return f"배합 #{record_id}"
-
-
-def deduct_blend_stock(
-    connection: sqlite3.Connection,
-    record_id: int,
-    *,
-    actor_id: int | None,
-    actor_name: str | None,
-    created_at: str,
-) -> int:
-    """배합 상세의 실제(없으면 이론) 사용량만큼 자재 재고를 차감하고 로그를 남긴다.
-
-    reason='measurement' 로 기록해 소비 예측(forecast)에 자동 포함된다. note 에 배합
-    레코드 태그를 달아 취소 시 :func:`reverse_blend_stock` 으로 정확히 되돌린다.
-    이미 차감된 배합은(같은 note 존재) 건너뛴다(멱등).
-    """
-    existing = connection.execute(
-        "SELECT 1 FROM material_stock_logs WHERE note = ? LIMIT 1",
-        (_blend_stock_note(record_id),),
-    ).fetchone()
-    if existing:
-        return 0
-    recipe_id = connection.execute(
-        "SELECT recipe_id FROM blend_records WHERE id = ?", (record_id,)
-    ).fetchone()["recipe_id"]
-    rows = connection.execute(
-        """
-        SELECT material_id, actual_amount, theory_amount
-        FROM blend_details
-        WHERE blend_record_id = ? AND material_id IS NOT NULL
-        """,
-        (record_id,),
-    ).fetchall()
-    count = 0
-    for r in rows:
-        used = r["actual_amount"]
-        if used is None:
-            used = r["theory_amount"]
-        if not used:
-            continue
-        used = float(used)
-        mat = connection.execute(
-            "SELECT stock_quantity FROM materials WHERE id = ?", (r["material_id"],)
-        ).fetchone()
-        if not mat:
-            continue
-        balance_after = float(mat["stock_quantity"] or 0) - used
-        connection.execute(
-            "UPDATE materials SET stock_quantity = ? WHERE id = ?",
-            (balance_after, r["material_id"]),
-        )
-        connection.execute(
-            """
-            INSERT INTO material_stock_logs
-                (material_id, delta, balance_after, reason, actor_id, actor_name,
-                 recipe_id, recipe_item_id, note, created_at)
-            VALUES (?, ?, ?, 'measurement', ?, ?, ?, NULL, ?, ?)
-            """,
-            (
-                r["material_id"], -used, balance_after, actor_id, actor_name,
-                recipe_id, _blend_stock_note(record_id), created_at,
-            ),
-        )
-        count += 1
-    return count
-
-
-def reverse_blend_stock(connection: sqlite3.Connection, record_id: int) -> int:
-    """배합 차감을 되돌린다(재고 복원 + 로그 삭제). 취소 시 호출."""
-    logs = connection.execute(
-        "SELECT id, material_id, delta FROM material_stock_logs WHERE note = ?",
-        (_blend_stock_note(record_id),),
-    ).fetchall()
-    for log in logs:
-        connection.execute(
-            "UPDATE materials SET stock_quantity = stock_quantity - ? WHERE id = ?",
-            (log["delta"], log["material_id"]),  # delta 는 음수 → 빼면 복원
-        )
-        connection.execute(
-            "DELETE FROM material_stock_logs WHERE id = ?", (log["id"],)
-        )
-    return len(logs)
-
-
 def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         """
@@ -478,35 +392,6 @@ def list_blend_records(
         params,
     ).fetchall()
     return [_serialize_record(r) for r in rows]
-
-
-def list_material_lots_map(
-    connection: sqlite3.Connection, material_ids: list[int]
-) -> dict[int, list[dict[str, Any]]]:
-    """자재별 보유 LOT 추천 목록 (active·잔량>0). 원본 OUT.xlsx 조회의 웹 대체."""
-    result: dict[int, list[dict[str, Any]]] = {mid: [] for mid in material_ids}
-    if not material_ids:
-        return result
-    placeholders = ",".join("?" for _ in material_ids)
-    rows = connection.execute(
-        f"""
-        SELECT material_id, lot_no, remaining_quantity, expiry_date
-        FROM material_lots
-        WHERE material_id IN ({placeholders})
-          AND status = 'active' AND remaining_quantity > 0 AND lot_no IS NOT NULL
-        ORDER BY
-            CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
-            expiry_date ASC, id ASC
-        """,
-        material_ids,
-    ).fetchall()
-    for r in rows:
-        result.setdefault(int(r["material_id"]), []).append({
-            "lot_no": r["lot_no"],
-            "remaining_quantity": float(r["remaining_quantity"]),
-            "expiry_date": r["expiry_date"],
-        })
-    return result
 
 
 def list_workers(connection: sqlite3.Connection) -> list[str]:

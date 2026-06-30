@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BRM · 반제품 작업자</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260624a" />
+  </head>
+  <body class="launch-body">
+    <main class="login-stage">
+      <form id="blend-login-form" class="login-card" autocomplete="off" data-next-url="{{ next_url }}">
+        <div class="login-head">
+          <span class="brand-logo login-logo">BR</span>
+          <h1 class="login-title">반제품 작업자</h1>
+          <p class="login-subtitle">작업자 이름을 입력하면 배합 화면으로 이동합니다</p>
+        </div>
+
+        <div class="login-field">
+          <label class="filter-label" for="blend-login-worker">작업자</label>
+          <input
+            id="blend-login-worker"
+            name="worker"
+            type="text"
+            class="input"
+            list="blend-login-workers"
+            autocomplete="off"
+            required
+            minlength="1"
+            maxlength="100"
+            placeholder="예) 김도현"
+          />
+          <datalist id="blend-login-workers"></datalist>
+        </div>
+
+        <p id="blend-login-error" class="login-error" hidden></p>
+
+        <button id="blend-login-submit" type="submit" class="btn accent login-submit">시작</button>
+        <p class="login-demo">작업자 세션은 유휴 상태가 지속되면 자동 로그아웃됩니다</p>
+        <a href="/" class="login-back">← 처음으로</a>
+      </form>
+    </main>
+
+    <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
+    <script src="/static/js/common/core.js?v=20260624a"></script>
+    <script src="/static/js/blend_login.js?v=20260630a"></script>
+  </body>
+</html>

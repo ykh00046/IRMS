@@ -17,24 +17,28 @@
 }
 .dashboard-custom-range .input { width: 150px; }
 
+@media (max-width: 720px) {
+  .dashboard-filter-row,
+  .dashboard-custom-range {
+    align-items: stretch;
+  }
+
+  .dashboard-presets,
+  .dashboard-custom-range,
+  .dashboard-filter-row > .btn {
+    width: 100%;
+  }
+
+  .dashboard-presets .btn,
+  .dashboard-filter-row > .btn {
+    flex: 1;
+  }
+
+  .dashboard-custom-range .input {
+    width: 100%;
+  }
+}
+
 /* 지표 카드/그리드/차트 공용 스타일은 common.css 로 이동. 여기엔 대시보드 전용만 유지. */
 .metric-value[id="card-variance-total"] { color: #b91c1c; }
 .dashboard-operators-panel .table-wrap { max-height: 300px; overflow-y: auto; }
-
-/* forecast-dashboard-alert: 발주 임박 카드 */
-#forecast-alert { border-left: 4px solid #ef4444; margin-bottom: 18px; }
-.forecast-alert-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-/* management.css의 상태 배지 규칙을 대시보드에서도 재사용(이 페이지엔 미로드) */
-.stock-status {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.stock-low { background: #fef3c7; color: #92400e; }
-.stock-negative { background: #fecaca; color: #991b1b; }

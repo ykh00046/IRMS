@@ -1,17 +1,3 @@
-/**
- * api-stock.js — Materials + weighing endpoints (operator scope).
- *
- * Split from static/js/common.js during the split-common-js PDCA cycle
- * (2026-05). getMaterials lives here (not api-recipes) because materials
- * are stock-master data; see design §4.1 for rationale.
- *
- * Exports (window.IRMS.*):
- *   getMaterials, getWeighingQueue, completeWeighingStep,
- *   undoWeighingStep, completeWeighingRecipe, resetWeighingRecipe
- *
- * Side effects: none.
- * Dependencies: core.js, mappers.js.
- */
 (function () {
   "use strict";
 
