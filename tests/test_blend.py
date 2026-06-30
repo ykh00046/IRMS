@@ -19,14 +19,7 @@ def _make_db() -> sqlite3.Connection:
         CREATE TABLE materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, unit_type TEXT, unit TEXT DEFAULT 'g',
-            category TEXT, is_active INTEGER DEFAULT 1,
-            stock_quantity REAL NOT NULL DEFAULT 0
-        );
-        CREATE TABLE material_stock_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
-            delta REAL NOT NULL, balance_after REAL NOT NULL, reason TEXT NOT NULL,
-            actor_id INTEGER, actor_name TEXT, recipe_id INTEGER, recipe_item_id INTEGER,
-            note TEXT, created_at TEXT NOT NULL
+            category TEXT, is_active INTEGER DEFAULT 1
         );
         CREATE TABLE recipes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,12 +47,6 @@ def _make_db() -> sqlite3.Connection:
             material_code TEXT, material_name TEXT NOT NULL, material_lot TEXT,
             ratio REAL, theory_amount REAL, actual_amount REAL,
             sequence_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
-        );
-        CREATE TABLE material_lots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
-            lot_no TEXT, received_quantity REAL, remaining_quantity REAL,
-            received_at TEXT, expiry_date TEXT, status TEXT DEFAULT 'active',
-            note TEXT, actor_id INTEGER, actor_name TEXT, created_at TEXT
         );
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,

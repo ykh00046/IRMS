@@ -12,16 +12,7 @@ _ALLOWED_TABLES = frozenset({
     "recipe_items",
     "schema_migrations",
     "audit_logs",
-    "ss_products",
-    "ss_columns",
-    "ss_rows",
-    "ss_cells",
     "attendance_users",
-    "purchase_orders",
-    "purchase_order_items",
-    "material_lots",
-    "po_receipts",
-    "po_receipt_items",
     "viscosity_products",
     "viscosity_readings",
     "blend_records",
@@ -104,181 +95,6 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
 
     # single-session enforcement: 로그인 시 발급, 새 로그인 시 회전
     ensure_column(connection, "users", "session_token", "TEXT")
-
-    # spreadsheet recipe type: 액상(solution) / 파우더(powder)
-    ensure_column(connection, "ss_products", "recipe_type", "TEXT NOT NULL DEFAULT 'solution'")
-
-    # material-stock-tracking: 원재료 재고 추적
-    ensure_column(connection, "materials", "stock_quantity", "REAL NOT NULL DEFAULT 0")
-    ensure_column(connection, "materials", "stock_threshold", "REAL NOT NULL DEFAULT 0")
-    # material-forecast: 소모량 예측·발주 추천 (0 = 전역 기본값 사용)
-    ensure_column(connection, "materials", "lead_time_days", "REAL NOT NULL DEFAULT 0")
-    ensure_column(connection, "materials", "reorder_cycle_days", "REAL NOT NULL DEFAULT 0")
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS material_stock_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            material_id INTEGER NOT NULL,
-            delta REAL NOT NULL,
-            balance_after REAL NOT NULL,
-            reason TEXT NOT NULL,
-            actor_id INTEGER,
-            actor_name TEXT,
-            recipe_id INTEGER,
-            recipe_item_id INTEGER,
-            note TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (material_id) REFERENCES materials(id)
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_stock_logs_material ON material_stock_logs(material_id, created_at DESC)"
-    )
-    connection.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_logs_item_measurement "
-        "ON material_stock_logs(recipe_item_id) WHERE reason = 'measurement'"
-    )
-    # forecast-dashboard-alert: 소비 집계는 material_id 조건 없이
-    # reason='measurement' AND created_at>=cutoff 로 스캔하므로 (material_id,created_at)
-    # 인덱스를 못 탄다. (reason, created_at)로 forecast 소비쿼리를 직접 지원.
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_stock_logs_reason_created "
-        "ON material_stock_logs(reason, created_at)"
-    )
-
-    # order-sheet-erp: 발주서 (forecast 스냅샷) + ERP 전송 상태
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS purchase_orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_no TEXT NOT NULL UNIQUE,
-            status TEXT NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'sent', 'failed', 'cancelled')),
-            window_days INTEGER NOT NULL,
-            note TEXT,
-            item_count INTEGER NOT NULL DEFAULT 0,
-            total_qty REAL NOT NULL DEFAULT 0,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT,
-            sent_at TEXT,
-            sent_by TEXT,
-            erp_mode TEXT,
-            erp_status_code INTEGER,
-            erp_response TEXT
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS purchase_order_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-            material_id INTEGER NOT NULL,
-            material_name TEXT NOT NULL,
-            category TEXT,
-            unit TEXT NOT NULL DEFAULT 'g',
-            stock_quantity REAL,
-            avg_daily REAL,
-            days_remaining REAL,
-            predicted_stockout_date TEXT,
-            urgency_status TEXT,
-            recommended_qty REAL NOT NULL,
-            order_qty REAL NOT NULL,
-            note TEXT
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_po_items_order ON purchase_order_items(order_id)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_po_status_created "
-        "ON purchase_orders(status, created_at DESC)"
-    )
-
-    # lot-expiry-tracking: 입고 LOT별 유통기한 추적 (재고 차감 경로와 독립)
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS material_lots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            material_id INTEGER NOT NULL REFERENCES materials(id),
-            lot_no TEXT,
-            received_quantity REAL NOT NULL,
-            remaining_quantity REAL NOT NULL,
-            received_at TEXT NOT NULL,
-            expiry_date TEXT,
-            status TEXT NOT NULL DEFAULT 'active'
-                CHECK (status IN ('active', 'depleted', 'discarded')),
-            note TEXT,
-            actor_id INTEGER,
-            actor_name TEXT,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_material_lots_material "
-        "ON material_lots(material_id, status)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_material_lots_expiry "
-        "ON material_lots(expiry_date) WHERE status = 'active'"
-    )
-
-    # purchase-order-receiving: 발주 입고·검수 (발주 sent → LOT + 재고 동시 반영)
-    # 입고 진행 축은 ERP 전송 status(draft/sent/...)와 직교한 receipt_status 로 분리.
-    ensure_column(
-        connection,
-        "purchase_orders",
-        "receipt_status",
-        "TEXT NOT NULL DEFAULT 'pending'",
-    )
-    ensure_column(
-        connection,
-        "purchase_order_items",
-        "received_qty",
-        "REAL NOT NULL DEFAULT 0",
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS po_receipts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            receipt_no TEXT NOT NULL UNIQUE,
-            order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-            note TEXT,
-            item_count INTEGER NOT NULL DEFAULT 0,
-            total_qty REAL NOT NULL DEFAULT 0,
-            received_by TEXT NOT NULL,
-            received_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS po_receipt_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            receipt_id INTEGER NOT NULL REFERENCES po_receipts(id) ON DELETE CASCADE,
-            order_item_id INTEGER NOT NULL REFERENCES purchase_order_items(id),
-            material_id INTEGER NOT NULL,
-            material_name TEXT NOT NULL,
-            received_qty REAL NOT NULL,
-            lot_no TEXT,
-            expiry_date TEXT,
-            lot_id INTEGER,
-            stock_log_id INTEGER,
-            note TEXT
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_po_receipts_order ON po_receipts(order_id)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_po_receipt_items_receipt "
-        "ON po_receipt_items(receipt_id)"
-    )
 
     # viscosity-analysis: 합성 점도 LOT별 측정 + 추세·이상 분석
     # 제품군마다 정상 점도 대역이 완전히 다르므로(PB~49, SBCT~204, SCRA~90)
@@ -467,20 +283,6 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
                 (hash_password("admin"), utc_now_text()),
             )
         record_migration(connection, "ensure_single_admin")
-
-    # formula-excel-style: 기존 수식 컬럼을 numeric으로 전환
-    if not has_migration(connection, "formula_columns_to_numeric"):
-        connection.execute(
-            """
-            UPDATE ss_columns
-               SET col_type = 'numeric',
-                   formula_type = NULL,
-                   formula_params = NULL,
-                   is_readonly = 0
-             WHERE col_type = 'formula'
-            """
-        )
-        record_migration(connection, "formula_columns_to_numeric")
 
     # admin access level: 김지훈, 김진우, 함지안 → admin
     if not has_migration(connection, "admin_access_level"):

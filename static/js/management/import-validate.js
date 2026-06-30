@@ -116,7 +116,7 @@
       try {
         const effEl = document.getElementById("register-effective-from");
         const effectiveFrom = effEl && effEl.value ? effEl.value : null;
-        const result = await IRMS.importRecipes(state.confirmedRawText, "System Gate", state.pendingRevisionOf, effectiveFrom);
+        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, effectiveFrom);
         IRMS.notify(
           `${result.created_count}건 레시피를 등록했습니다.`,
           "success",
@@ -134,6 +134,9 @@
       state.confirmedRawText = "";
       state.previewIsStale = false;
       state.pendingRevisionOf = null;
+      if (ctx.recipeEditLoader) {
+        ctx.recipeEditLoader.clearRevisionBanner();
+      }
       if (state.sheet) {
         ctx.spreadsheet.initSpreadsheet(state.materials);
       } else if (dom.rawInput) {

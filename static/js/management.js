@@ -11,8 +11,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── DOM references → ctx.dom ──
   const dom = {
     shell: document.querySelector(".app-shell"),
+    topbarEyebrow: document.querySelector(".topbar-eyebrow"),
+    topbarHeading: document.querySelector(".topbar-heading"),
     spreadsheetContainer: document.getElementById("spreadsheet"),
     rawInput: document.getElementById("raw-input"),
+    revisionBanner: document.getElementById("revision-banner"),
     previewBtn: document.getElementById("preview-btn"),
     registerBtn: document.getElementById("register-btn"),
     clearBtn: document.getElementById("clear-btn"),
@@ -53,12 +56,26 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // ── Tab navigation ──
+  const tabTitles = {
+    history: { eyebrow: "운영 관리", heading: "레시피 현황" },
+    import: { eyebrow: "레시피 관리", heading: "레시피 등록·수정" },
+    lookup: { eyebrow: "레시피 관리", heading: "버전 비교" },
+  };
+
+  function syncTopbarTitle(tabName) {
+    const title = tabTitles[tabName] || tabTitles.history;
+    if (dom.topbarEyebrow) dom.topbarEyebrow.textContent = title.eyebrow;
+    if (dom.topbarHeading) dom.topbarHeading.textContent = title.heading;
+    document.title = `BRM · ${title.heading}`;
+  }
+
   dom.tabBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
       dom.tabBtns.forEach((b) => b.classList.remove("active"));
       dom.tabPanels.forEach((p) => p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+      syncTopbarTitle(btn.dataset.tab);
     });
   });
 
@@ -68,6 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const importTab = document.querySelector('[data-tab="import"]');
     if (importTab) importTab.classList.add("active");
     document.getElementById("tab-import").classList.add("active");
+    syncTopbarTitle("import");
   }
 
   // ── Shared constants ──
@@ -111,13 +129,17 @@ document.addEventListener("DOMContentLoaded", () => {
   ctx.importValidate = importValidate;
   ctx.onDirty = importValidate.markPreviewStale;
 
+  const recipeEditLoader = IRMS.management.createRecipeEditLoader(ctx);
+  ctx.recipeEditLoader = recipeEditLoader;
+
   const recipeLookup = IRMS.management.createRecipeLookup(ctx);
   ctx.recipeLookup = recipeLookup;
-  ctx.onClone = recipeLookup.handleLookupClone;
+  ctx.onEditFromVersion = recipeLookup.handleLookupClone;
   ctx.copyToClipboard = recipeLookup.copyToClipboard;
 
-  const recipeHistory = IRMS.management.createRecipeHistory(ctx);
   const versionCompare = IRMS.management.createVersionCompare(ctx);
+  ctx.versionCompare = versionCompare;
+  const recipeHistory = IRMS.management.createRecipeHistory(ctx);
 
   async function loadMaterials() {
     ctx.state.materials = await IRMS.getMaterials();

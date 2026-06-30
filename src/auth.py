@@ -115,7 +115,10 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
     user_id = request.session.get("user_id")
     if not user_id:
         if required:
-            return dict(FIELD_USER)  # 비로그인 → 현장(manager). admin 게이트는 여전히 403.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="AUTH_REQUIRED",
+            )
         return None
 
     cookie_token = request.session.get("session_token")
@@ -137,7 +140,10 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
 
     request.session.clear()
     if required:
-        return dict(FIELD_USER)  # 만료/무효 세션 → 현장(manager). admin 은 여전히 403.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="AUTH_REQUIRED",
+        )
     return None
 
 

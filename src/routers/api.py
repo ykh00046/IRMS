@@ -13,7 +13,6 @@ from . import (
     recipe_manager_routes,
     recipe_operator_routes,
     recipe_stats_routes,
-    spreadsheet_routes,
     viscosity_routes,
     weighing_routes,
     worker_routes,
@@ -36,7 +35,6 @@ def build_router() -> APIRouter:
     blend_router = blend_routes.build_router()
     blend_session_router = blend_session_routes.build_router()
     worker_open_router, worker_admin_router = worker_routes.build_router()
-    ss_router = spreadsheet_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
 
     @public_router.get("/health")
@@ -59,6 +57,5 @@ def build_router() -> APIRouter:
     router.include_router(worker_open_router)        # worker name registry (open)
     router.include_router(worker_admin_router)       # worker registry admin (cleanup)
     router.include_router(admin_router)
-    router.include_router(ss_router, prefix="/spreadsheet")
     router.include_router(dashboard_router)
     return router

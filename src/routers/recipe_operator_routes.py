@@ -186,7 +186,7 @@ def build_router() -> APIRouter:
                 """
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
                        r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
-                       r.effective_from
+                       r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr
                 FROM recipes r
                 WHERE r.id = ?
                 """,

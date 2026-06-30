@@ -44,12 +44,10 @@ def _daterange(from_date: str, to_date: str) -> list[str]:
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(
-        prefix="/dashboard",
-        dependencies=[Depends(require_access_level("manager"))],
-    )
+    router = APIRouter(prefix="/dashboard")
+    manager_only = [Depends(require_access_level("manager"))]
 
-    @router.get("/export")
+    @router.get("/export", dependencies=manager_only)
     def dashboard_export_excel(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -71,7 +69,7 @@ def build_router() -> APIRouter:
             headers={"Content-Disposition": disposition},
         )
 
-    @router.get("/summary")
+    @router.get("/summary", dependencies=manager_only)
     def dashboard_summary(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -127,7 +125,7 @@ def build_router() -> APIRouter:
             "throughput_per_hour": round(throughput, 2),
         }
 
-    @router.get("/materials")
+    @router.get("/materials", dependencies=manager_only)
     def dashboard_materials(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -165,7 +163,7 @@ def build_router() -> APIRouter:
         ]
         return {"range": _range_dict(from_date, to_date), "items": items}
 
-    @router.get("/materials/{material_id}/recipes")
+    @router.get("/materials/{material_id}/recipes", dependencies=manager_only)
     def dashboard_material_recipes(
         material_id: int,
         from_: str | None = Query(default=None, alias="from"),
@@ -261,7 +259,7 @@ def build_router() -> APIRouter:
             "recipes": recipes,
         }
 
-    @router.get("/throughput")
+    @router.get("/throughput", dependencies=manager_only)
     def dashboard_throughput(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -329,7 +327,7 @@ def build_router() -> APIRouter:
             "by_day": by_day,
         }
 
-    @router.get("/trend")
+    @router.get("/trend", dependencies=manager_only)
     def dashboard_trend(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),
@@ -371,7 +369,7 @@ def build_router() -> APIRouter:
         ]
         return {"range": _range_dict(from_date, to_date), "points": points}
 
-    @router.get("/operators")
+    @router.get("/operators", dependencies=manager_only)
     def dashboard_operators(
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None),

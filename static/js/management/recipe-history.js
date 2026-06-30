@@ -13,8 +13,8 @@
  *   dom:   historyBody, historyStatus, historySearch, historyFrom,
  *          historyTo, historySummary
  *   const: preferenceKeys
- *   state: selectedRecipeId (accordion clone button)
- *   other: ctx.onClone (.history-clone-btn), ctx.copyToClipboard (.history-copy-btn)
+ *   state: selectedRecipeId
+ *   other: ctx.copyToClipboard (.history-copy-btn)
  */
 (function () {
   "use strict";
@@ -131,12 +131,15 @@
 
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
+              const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
               detailRow.innerHTML = `<td colspan="6">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">
                     <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
-                    <button class="btn btn-sm accent history-clone-btn" data-recipe-id="${recipeId}">복제하여 등록</button>
+                    <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
+                    <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
+                    <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
                     ${detail.status === "pending" || detail.status === "in_progress"
                       ? `<button class="btn btn-sm history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
                       : ""}
@@ -157,10 +160,30 @@
                 }
               });
 
-              detailRow.querySelector(".history-clone-btn").addEventListener("click", (e) => {
+              detailRow.querySelector(".history-edit-btn").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                try {
+                  await ctx.recipeEditLoader.loadRecipeForEdit(recipeId, "레시피 현황");
+                } catch (err) {
+                  IRMS.notify(`수정 등록 준비 실패: ${err.message}`, "error");
+                }
+              });
+
+              detailRow.querySelector(".history-version-btn").addEventListener("click", (e) => {
                 e.stopPropagation();
                 state.selectedRecipeId = recipeId;
-                ctx.onClone();
+                ctx.versionCompare.handleLookupHistory();
+              });
+
+              detailRow.querySelector(".history-dhr-btn").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                try {
+                  await IRMS.setRecipeDhr(recipeId, !detail.is_dhr);
+                  IRMS.notify(!detail.is_dhr ? "DHR 전용으로 지정했습니다." : "DHR 전용을 해제했습니다.", "success");
+                  renderHistory();
+                } catch (err) {
+                  IRMS.notify(`DHR 변경 실패: ${err.message}`, "error");
+                }
               });
 
               const cancelBtn = detailRow.querySelector(".history-cancel-btn");

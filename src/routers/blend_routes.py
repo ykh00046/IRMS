@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user, has_access_level
+from ..blend_session import current_blend_worker, touch_worker_session
 from ..db import get_db, utc_now_text, write_audit_log
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
 from .models import (
@@ -37,6 +38,13 @@ from .models import (
 
 def build_router() -> APIRouter:
     router = APIRouter()
+
+    def require_blend_worker(request: Request) -> str:
+        worker = current_blend_worker(request)
+        if not worker:
+            raise HTTPException(status_code=401, detail="BLEND_WORKER_REQUIRED")
+        touch_worker_session(request)
+        return worker
 
     @router.get("/blend/recipes")
     def blend_recipes(
@@ -230,6 +238,7 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
+        worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
         record_id = blend_service.create_blend_record(
@@ -238,7 +247,7 @@ def build_router() -> APIRouter:
             product_name=body.product_name,
             ink_name=body.ink_name,
             position=body.position,
-            worker=body.worker,
+            worker=worker,
             work_date=body.work_date,
             work_time=body.work_time,
             total_amount=body.total_amount,
@@ -359,6 +368,7 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         if not body.entries:
             raise HTTPException(status_code=400, detail="생성할 항목이 없습니다.")
+        worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
         now = utc_now_text()
@@ -366,7 +376,7 @@ def build_router() -> APIRouter:
             ids = blend_service.create_bulk(
                 connection,
                 recipe_id=body.recipe_id,
-                worker=body.worker,
+                worker=worker,
                 scale=body.scale,
                 entries=[e.model_dump() for e in body.entries],
                 created_by=actor,

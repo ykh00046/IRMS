@@ -8,8 +8,10 @@ slowapi의 ``Limiter`` 는 FastAPI 앱당 단일 인스턴스로 ``app.state.lim
 
 from __future__ import annotations
 
+import sys
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, enabled="pytest" not in sys.modules)

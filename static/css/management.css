@@ -94,6 +94,24 @@
   flex: 0 1 190px;
 }
 
+.revision-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--brand-mid);
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.revision-banner b {
+  color: var(--brand);
+}
+
 .import-helper {
   display: flex;
   align-items: center;

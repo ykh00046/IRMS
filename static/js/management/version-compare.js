@@ -14,7 +14,7 @@
  *          versionHistoryBody, historyCompareBtn, compareModal,
  *          compareModalTitle, compareThead, compareTbody
  *   state: selectedRecipeId, currentHistoryChain
- *   other: ctx.onClone (.history-row-clone button)
+ *   other: ctx.onEditFromVersion (.history-row-edit button)
  */
 (function () {
   "use strict";
@@ -62,7 +62,7 @@
               <td>${IRMS.escapeHtml(it.created_by || "-")}</td>
               <td class="num">${it.item_count}</td>
               <td><span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span></td>
-              <td><button class="btn btn-sm history-row-clone" data-recipe-id="${it.id}" type="button">이 버전 복제</button></td>
+              <td><button class="btn btn-sm history-row-edit" data-recipe-id="${it.id}" type="button">이 버전으로 수정 등록</button></td>
             </tr>
           `,
         )
@@ -71,13 +71,13 @@
       dom.versionHistoryBody.querySelectorAll(".version-check").forEach((cb) => {
         cb.addEventListener("change", updateCompareButtonState);
       });
-      dom.versionHistoryBody.querySelectorAll(".history-row-clone").forEach((btn) => {
+      dom.versionHistoryBody.querySelectorAll(".history-row-edit").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const rid = Number(btn.dataset.recipeId);
           state.selectedRecipeId = rid;
           if (dom.historyModal) dom.historyModal.hidden = true;
-          ctx.onClone();
+          ctx.onEditFromVersion();
         });
       });
       updateCompareButtonState();

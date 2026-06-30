@@ -199,70 +199,9 @@
     async function handleLookupClone() {
       if (!state.selectedRecipeId) return;
       try {
-        const detail = await IRMS.getRecipeDetail(state.selectedRecipeId);
-        const tsvRows = detail.tsv.split("\n").map((r) => r.split("\t"));
-
-        // Switch to import tab
-        ctx.switchToImportTab();
-
-        // Load data into spreadsheet
-        state.suppressDirtyTracking = true;
-        ctx.spreadsheet.destroySpreadsheet();
-
-        const spreadsheetFactory = ctx.spreadsheet.getSpreadsheetFactory();
-        if (spreadsheetFactory && dom.spreadsheetContainer) {
-          // Pad rows to at least 15 rows
-          while (tsvRows.length < 15) {
-            tsvRows.push(Array(tsvRows[0]?.length || 10).fill(""));
-          }
-          // Pad columns to at least 10
-          for (const row of tsvRows) {
-            while (row.length < 10) row.push("");
-          }
-
-          spreadsheetFactory(dom.spreadsheetContainer, {
-            worksheets: [
-              {
-                data: tsvRows,
-                minDimensions: [Math.max(10, tsvRows[0].length), 15],
-                defaultColWidth: 80,
-                tableOverflow: true,
-                tableWidth: "100%",
-                tableHeight: "300px",
-                rowResize: true,
-                columnDrag: true,
-                contextMenu: true,
-                textOverflow: true,
-                onchange: () => ctx.onDirty(),
-                onafterchanges: () => ctx.onDirty(),
-                onpaste: () => ctx.onDirty(),
-              },
-            ],
-          });
-
-          ctx.spreadsheet.setRawInputMode(false);
-          setTimeout(() => {
-            ctx.spreadsheet.getActiveWorksheet();
-            state.suppressDirtyTracking = false;
-          }, 0);
-        } else if (dom.rawInput) {
-          dom.rawInput.value = detail.tsv;
-          ctx.spreadsheet.setRawInputMode(true);
-          state.suppressDirtyTracking = false;
-        }
-
-        state.pendingRevisionOf = state.selectedRecipeId;
-        state.currentPreview = null;
-        state.previewIsStale = false;
-        state.confirmedRawText = "";
-        ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
-        ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
-        ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
-        ctx.importValidate.syncRegisterState();
-
-        IRMS.notify(`레시피 #${state.selectedRecipeId}을 등록 탭으로 불러왔습니다. 수정 후 검증하고 등록하세요.`, "info");
+        await ctx.recipeEditLoader.loadRecipeForEdit(state.selectedRecipeId, "버전 비교");
       } catch (error) {
-        IRMS.notify(`복제 실패: ${error.message}`, "error");
+        IRMS.notify(`수정 등록 준비 실패: ${error.message}`, "error");
       }
     }
 

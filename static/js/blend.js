@@ -11,6 +11,15 @@
   const IRMS = window.IRMS || {};
   const request = IRMS._core && IRMS._core.request;
   const notify = IRMS.notify || function (m) { console.log(m); };
+  const esc = IRMS.escapeHtml || function (value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  };
   const $ = (id) => document.getElementById(id);
 
   const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [] };
@@ -25,7 +34,7 @@
       const data = await request("/workers");
       state.workers = (data.items || []).map((w) => w.name);
       const dl = $("worker-names");
-      if (dl) dl.innerHTML = state.workers.map((n) => `<option value="${n}"></option>`).join("");
+      if (dl) dl.innerHTML = state.workers.map((n) => `<option value="${esc(n)}"></option>`).join("");
     } catch (_e) { /* optional */ }
   }
 
@@ -39,7 +48,7 @@
       await request("/workers", { method: "POST", body: { name: clean } });
       state.workers.push(clean);
       const dl = $("worker-names");
-      if (dl) dl.insertAdjacentHTML("beforeend", `<option value="${clean}"></option>`);
+      if (dl) dl.insertAdjacentHTML("beforeend", `<option value="${esc(clean)}"></option>`);
       return true;
     } catch (e) { notify(`작업자 등록 실패: ${e.message}`, "error"); return false; }
   }
@@ -231,11 +240,11 @@
       const tr = document.createElement("tr");
       tr.innerHTML =
         `<td>${idx + 1}</td>` +
-        `<td>${it.material_name}</td>` +
+        `<td>${esc(it.material_name)}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
-        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${it.actual_amount}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
-        `<td><input class="input blend-lot" data-idx="${idx}" value="${it.material_lot}" placeholder="LOT" /></td>` +
+        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
+        `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
@@ -418,9 +427,9 @@
       const tr = document.createElement("tr");
       tr.className = "blend-row";
       tr.innerHTML =
-        `<td>${r.work_date}</td><td>${r.product_lot}</td>` +
-        `<td>${r.product_name}</td>` +
-        `<td>${r.worker}</td><td class="num">${fmt(r.total_amount)}</td><td>${r.scale || "-"}</td>`;
+        `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}</td>` +
+        `<td>${esc(r.product_name)}</td>` +
+        `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
       tr.addEventListener("click", () => openDetail(r.id));
       body.appendChild(tr);
     });
@@ -433,28 +442,28 @@
     const v = rec.variance || {};
     const rows = (rec.details || []).map((d, i) =>
       `<tr>
-        <td>${i + 1}</td><td>${d.material_name}</td>
+        <td>${i + 1}</td><td>${esc(d.material_name)}</td>
         <td class="num">${fmt(d.ratio, 2)}</td>
         <td class="num">${fmt(d.theory_amount)}</td>
         <td class="num">${fmt(d.actual_amount)}</td>
         <td class="num ${d.variance > 0 ? "var-up" : d.variance < 0 ? "var-down" : ""}">${d.variance === null ? "-" : (d.variance > 0 ? "+" : "") + fmt(d.variance, 2)}</td>
-        <td>${d.material_lot || "-"}</td>
+        <td>${esc(d.material_lot || "-")}</td>
       </tr>`).join("");
     $("blend-detail-body").innerHTML =
       `<div class="dhr-head">
-        <div><span class="dhr-k">제품 LOT</span><b>${rec.product_lot}</b></div>
-        <div><span class="dhr-k">제품</span><b>${rec.product_name}</b></div>
-        <div><span class="dhr-k">작업자</span><b>${rec.worker}</b></div>
-        <div><span class="dhr-k">작업일시</span><b>${rec.work_date} ${rec.work_time || ""}</b></div>
+        <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
+        <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}</b></div>
+        <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}</b></div>
+        <div><span class="dhr-k">작업일시</span><b>${esc(rec.work_date)} ${esc(rec.work_time || "")}</b></div>
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
-        <div><span class="dhr-k">저울</span><b>${rec.scale || "-"}</b></div>
+        <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
       </div>
       <div class="table-wrap"><table class="blend-table">
         <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><td colspan="3">합계</td><td class="num">${fmt(v.theory_total)}</td><td class="num">${fmt(v.actual_total)}</td><td class="num">${(v.net_variance > 0 ? "+" : "") + fmt(v.net_variance, 2)}</td><td></td></tr></tfoot>
       </table></div>
-      ${rec.note ? `<p class="dhr-note">비고: ${rec.note}</p>` : ""}
+      ${rec.note ? `<p class="dhr-note">비고: ${esc(rec.note)}</p>` : ""}
       ${renderApprovalSection(rec)}
       ${renderViscositySection(rec)}`;
     bindApprovalSection(id);
@@ -463,12 +472,12 @@
   }
 
   function approvalCell(label, name, at, sign) {
-    const img = sign ? `<img class="dhr-sign-img" src="${sign}" alt="서명" />` : "";
+    const img = sign ? `<img class="dhr-sign-img" src="${esc(sign)}" alt="서명" />` : "";
     return `<div class="dhr-sign">
       <div class="dhr-sign-role">${label}</div>
       ${img}
-      <div class="dhr-sign-name">${name || ""}</div>
-      <div class="dhr-sign-at">${at ? at.slice(0, 16).replace("T", " ") : ""}</div>
+      <div class="dhr-sign-name">${esc(name || "")}</div>
+      <div class="dhr-sign-at">${esc(at ? at.slice(0, 16).replace("T", " ") : "")}</div>
     </div>`;
   }
 
@@ -515,7 +524,7 @@
     const linked = rec.viscosity || [];
     const list = linked.length
       ? `<ul class="blend-visc-list">${linked.map((v) =>
-          `<li><b>${v.product_code}</b> ${fmt(v.viscosity)} <span class="muted small">${v.measured_date || ""}${v.created_by ? " · " + v.created_by : ""}</span></li>`
+          `<li><b>${esc(v.product_code)}</b> ${fmt(v.viscosity)} <span class="muted small">${esc(v.measured_date || "")}${v.created_by ? " · " + esc(v.created_by) : ""}</span></li>`
         ).join("")}</ul>`
       : '<p class="muted small">측정된 점도가 없습니다.</p>';
     return `<div class="blend-visc-block no-print">
