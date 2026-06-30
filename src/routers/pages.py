@@ -12,6 +12,7 @@ from ..attendance_auth import (
 from ..auth import get_current_user, has_access_level, list_users_by_access_levels
 from ..blend_session import current_blend_worker, logout_worker_session
 from ..config import SEED_DEMO_DATA
+from ..security import refresh_csrf_cookie
 
 
 def _safe_next(next_url: str | None, default: str) -> str:
@@ -121,9 +122,11 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/viscosity", response_class=HTMLResponse)
     def viscosity_page(request: Request) -> Response:
         # 로그인 없이 누구나 진입 (사내 공용 단말 운영 편의)
-        return _render(templates, request, "viscosity.html", {
+        response = _render(templates, request, "viscosity.html", {
             "current_user": get_current_user(request, required=False),
         })
+        refresh_csrf_cookie(response)
+        return response
 
     @router.get("/blend", response_class=HTMLResponse)
     def blend_page(request: Request) -> Response:

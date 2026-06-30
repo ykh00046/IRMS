@@ -5,11 +5,11 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260701b" />
 {% endblock %}
 
 {% block content %}
-        <section class="panel">
+        <section class="panel visc-toolbar-panel">
           <div class="visc-toolbar">
             <div class="visc-product-picker">
               <label class="filter-label" for="visc-product-select">반제품</label>
@@ -25,6 +25,61 @@
           </div>
         </section>
 
+        <section class="panel visc-register-panel">
+          <div class="visc-register-head">
+            <div>
+              <h3 class="panel-title">배합 기록 연계 점도 등록</h3>
+              <p class="muted small">배합 기록을 먼저 선택하면 LOT, 작업일, 반제품명이 자동으로 연결됩니다.</p>
+            </div>
+            <div class="visc-cond" id="visc-cond">측정 조건 -</div>
+          </div>
+
+          <div class="visc-register-grid">
+            <div class="visc-record-column">
+              <div class="visc-record-topline">
+                <label class="filter-label" for="visc-blend-record">연계할 배합 기록</label>
+                <span class="muted small" id="visc-record-count">-</span>
+              </div>
+              <select class="input" id="visc-blend-record" required></select>
+              <div class="visc-selected-blend" id="visc-selected-blend">
+                <b>배합 기록을 선택하세요.</b>
+                <span>최근 배합 LOT와 작업자를 한 번에 확인하고 점도값만 입력합니다.</span>
+              </div>
+              <div class="table-wrap visc-blend-table-wrap">
+                <table class="visc-table visc-blend-table">
+                  <thead>
+                    <tr>
+                      <th>LOT</th>
+                      <th>작업일</th>
+                      <th>작업자</th>
+                      <th class="num">총량</th>
+                      <th>연계</th>
+                    </tr>
+                  </thead>
+                  <tbody id="visc-blend-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <form id="visc-form" class="visc-form visc-register-form" autocomplete="off">
+              <div>
+                <label class="filter-label" for="visc-value">점도값</label>
+                <input class="input visc-value-input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
+              </div>
+
+              <div>
+                <label class="filter-label" for="visc-memo">메모</label>
+                <textarea class="input" id="visc-memo" name="memo" rows="3" placeholder="온도, 교반, 측정 특이사항"></textarea>
+              </div>
+
+              <div class="visc-control-summary" id="visc-control-summary">관리 기준 -</div>
+              <p class="login-error" id="visc-form-error" hidden></p>
+              <p class="visc-form-result" id="visc-form-result" hidden></p>
+              <button class="btn accent visc-submit" id="visc-submit" type="submit">선택한 배합 기록에 점도 등록</button>
+            </form>
+          </div>
+        </section>
+
         <section class="dashboard-cards visc-cards">
           <div class="metric-card">
             <div class="metric-label">측정 건수</div>
@@ -37,71 +92,51 @@
             <div class="metric-unit" id="visc-card-latest-date">-</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">평균 ± σ</div>
+            <div class="metric-label">평균 및 표준편차</div>
             <div class="metric-value" id="visc-card-mean">-</div>
-            <div class="metric-unit">중심선</div>
+            <div class="metric-unit">중심 기준</div>
           </div>
           <div class="metric-card visc-card-anomaly">
-            <div class="metric-label">이상 건수</div>
+            <div class="metric-label">이상</div>
             <div class="metric-value" id="visc-card-anomaly">-</div>
             <div class="metric-unit">건</div>
           </div>
           <div class="metric-card visc-card-warn">
-            <div class="metric-label">경고 건수</div>
+            <div class="metric-label">경고</div>
             <div class="metric-value" id="visc-card-warn">-</div>
             <div class="metric-unit">건</div>
           </div>
         </section>
 
         <section id="visc-trend-banner" class="visc-trend-banner" hidden>
-          <span class="visc-trend-icon">📈</span>
           <span id="visc-trend-text"></span>
         </section>
 
         <section id="visc-period-alert" class="visc-trend-banner visc-period-alert" hidden>
-          <span class="visc-trend-icon">🔔</span>
           <span id="visc-period-alert-text"></span>
         </section>
 
-        <section class="dashboard-grid">
-          <div class="panel">
+        <section class="panel">
+          <div class="visc-panel-head">
             <h3 class="panel-title">측정 이력</h3>
-            <div class="table-wrap">
-              <table class="visc-table">
-                <thead>
-                  <tr>
-                    <th>측정일</th><th>LOT</th><th class="num">점도</th><th>상태</th>
-                    <th>레시피/원료</th><th>원료 LOT</th><th>메모</th><th></th>
-                  </tr>
-                </thead>
-                <tbody id="visc-readings-body"></tbody>
-              </table>
-            </div>
+            <span class="muted small">최신 측정이 위에 표시됩니다.</span>
           </div>
-
-          <div class="panel visc-form-panel">
-            <h3 class="panel-title">점도 등록</h3>
-            <form id="visc-form" class="visc-form" autocomplete="off">
-              <p class="muted small">배합 기록을 선택하면 LOT·측정일이 자동 연계됩니다.</p>
-              <label class="filter-label" for="visc-blend-record">배합 기록 (LOT · 작업일)</label>
-              <select class="input" id="visc-blend-record" required></select>
-
-              <label class="filter-label" for="visc-value">점도 (cP)</label>
-              <input class="input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required />
-
-              <label class="filter-label" for="visc-memo">메모 (선택)</label>
-              <textarea class="input" id="visc-memo" name="memo" rows="2" placeholder="점도 변동 원인 등"></textarea>
-
-              <p class="login-error" id="visc-form-error" hidden></p>
-              <p class="visc-form-result" id="visc-form-result" hidden></p>
-              <button class="btn accent" id="visc-submit" type="submit">등록</button>
-            </form>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>측정일</th><th>LOT</th><th class="num">점도</th><th>상태</th>
+                  <th>연계 반제품</th><th>자재 LOT</th><th>메모</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="visc-readings-body"></tbody>
+            </table>
           </div>
         </section>
 
         <section class="panel">
           <div class="visc-panel-head">
-            <h3 class="panel-title">기간별 추세 · 분석</h3>
+            <h3 class="panel-title">기간별 추세 및 분석</h3>
             <div class="visc-gran-toggle" id="visc-gran-toggle">
               <button class="btn btn-sm active" data-gran="quarter" type="button">분기</button>
               <button class="btn btn-sm" data-gran="month" type="button">월</button>
@@ -116,8 +151,8 @@
                   <th>기간</th>
                   <th class="num">건수</th>
                   <th class="num">평균</th>
-                  <th class="num">전기대비</th>
-                  <th class="num">σ</th>
+                  <th class="num">전기 대비</th>
+                  <th class="num">표준편차</th>
                   <th class="num">최소</th>
                   <th class="num">최대</th>
                   <th class="num">이상</th>
@@ -128,7 +163,6 @@
             </table>
           </div>
         </section>
-
 
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal">
@@ -141,34 +175,34 @@
                 <label class="filter-label" for="visc-set-name">반제품명</label>
                 <input class="input" id="visc-set-name" required />
 
-                <label class="filter-label" for="visc-set-target">목표 점도 (선택 · 비우면 평균을 중심선으로)</label>
+                <label class="filter-label" for="visc-set-target">목표 점도</label>
                 <input class="input" id="visc-set-target" type="number" step="0.1" min="0" />
 
                 <div class="visc-form-row">
                   <div>
-                    <label class="filter-label" for="visc-set-lower">관리 하한 (선택)</label>
+                    <label class="filter-label" for="visc-set-lower">관리 하한</label>
                     <input class="input" id="visc-set-lower" type="number" step="0.1" min="0" />
                   </div>
                   <div>
-                    <label class="filter-label" for="visc-set-upper">관리 상한 (선택)</label>
+                    <label class="filter-label" for="visc-set-upper">관리 상한</label>
                     <input class="input" id="visc-set-upper" type="number" step="0.1" min="0" />
                   </div>
                 </div>
 
-                <label class="filter-label" for="visc-set-sigma">통계 관리계수 k (기본 3)</label>
+                <label class="filter-label" for="visc-set-sigma">통계 관리계수 k</label>
                 <input class="input" id="visc-set-sigma" type="number" step="0.5" min="1" max="6" value="3" />
 
                 <div class="visc-form-row">
                   <div>
-                    <label class="filter-label" for="visc-set-rpm">측정 RPM (선택)</label>
+                    <label class="filter-label" for="visc-set-rpm">측정 RPM</label>
                     <input class="input" id="visc-set-rpm" type="number" step="1" min="0" placeholder="예: 12" />
                   </div>
                   <div>
-                    <label class="filter-label" for="visc-set-temp">측정 온도 °C (선택)</label>
+                    <label class="filter-label" for="visc-set-temp">측정 온도 °C</label>
                     <input class="input" id="visc-set-temp" type="number" step="0.1" placeholder="예: 25" />
                   </div>
                 </div>
-                <p class="visc-cond-note">RPM·온도는 반제품마다 한 번만 설정하면 됩니다. 매 측정 시 재입력하지 않습니다.</p>
+                <p class="visc-cond-note">RPM과 온도는 반제품마다 한 번만 설정합니다. 매 측정 때 재입력하지 않습니다.</p>
 
                 <label class="visc-checkbox">
                   <input id="visc-set-active" type="checkbox" checked /> 사용
@@ -181,7 +215,7 @@
               <hr class="visc-divider" />
               <h4 class="panel-title">새 반제품 추가</h4>
               <form id="visc-new-form" class="visc-form" autocomplete="off">
-                <label class="filter-label" for="visc-new-code">코드 (영문/숫자)</label>
+                <label class="filter-label" for="visc-new-code">코드</label>
                 <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._-]+" required />
                 <label class="filter-label" for="visc-new-name">반제품명</label>
                 <input class="input" id="visc-new-name" required />
@@ -195,5 +229,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity.js?v=20260626b"></script>
+    <script src="/static/js/viscosity.js?v=20260701b"></script>
 {% endblock %}

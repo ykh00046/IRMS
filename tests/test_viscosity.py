@@ -389,3 +389,4 @@ def test_viscosity_page_open_without_login():
     res = client.get("/viscosity")
     assert res.status_code == 200
     assert "visc-period-chart" in res.text
+    assert client.cookies.get("csrftoken")

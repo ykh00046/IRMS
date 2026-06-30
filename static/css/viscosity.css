@@ -1,221 +1,414 @@
-/* viscosity.css — 점도 등록·추세·이상 분석 화면 */
+html,
+body {
+  height: auto;
+  min-height: 100%;
+}
 
 .visc-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
 }
 
-.visc-product-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+.visc-toolbar-panel {
+  margin-bottom: var(--space-4);
 }
 
-/* 단일 반제품 선택 드롭다운 (상단 토글 대체) */
-.visc-product-picker {
+.visc-product-picker,
+.visc-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
-.visc-product-picker .filter-label {
+
+.visc-product-picker .filter-label,
+.visc-toolbar-actions .filter-label {
   margin: 0;
   white-space: nowrap;
 }
+
 .visc-product-picker .input {
-  min-width: 220px;
+  min-width: 260px;
 }
 
-/* 등록 폼 측정 조건(rpm/온도) 안내 */
-.visc-cond {
-  font-size: 12px;
-  color: var(--brand);
-  background: var(--brand-soft);
-  border-radius: 8px;
-  padding: 7px 11px;
-  margin: 0 0 0.4rem;
-  font-weight: 600;
-}
-.visc-cond-note {
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-  margin: 0.3rem 0 0;
-  line-height: 1.5;
+.visc-year-select {
+  width: auto;
+  min-width: 8rem;
 }
 
-.visc-tab {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.85rem;
-  color: var(--text);
+.visc-cards .metric-card.visc-card-anomaly .metric-value {
+  color: var(--status-error);
 }
 
-.visc-tab.active {
-  background: var(--accent, #2563eb);
-  color: #fff;
-  border-color: var(--accent, #2563eb);
+.visc-cards .metric-card.visc-card-warn .metric-value {
+  color: var(--status-warning);
 }
-
-.visc-tab .visc-tab-badge {
-  display: inline-block;
-  margin-left: 0.35rem;
-  min-width: 1.2rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: #dc2626;
-  color: #fff;
-  font-size: 0.7rem;
-  line-height: 1.2rem;
-  text-align: center;
-}
-
-.visc-toolbar-actions {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-}
-
-.visc-year-select { width: auto; min-width: 8rem; }
-
-.visc-cards .metric-card.visc-card-anomaly .metric-value { color: #dc2626; }
-.visc-cards .metric-card.visc-card-warn .metric-value { color: #d97706; }
 
 .visc-trend-banner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.7rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
   border-radius: 8px;
-  background: #fff7ed;
-  border: 1px solid #fdba74;
-  color: #9a3412;
-  font-size: 0.9rem;
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-warning) 75%, var(--text-primary));
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.visc-trend-banner[hidden] { display: none; }
+.visc-trend-banner[hidden] {
+  display: none;
+}
 
-/* 기간 알림 배너 (이상 급증/평균 이동) — 빨강 강조 */
 .visc-period-alert {
-  background: #fef2f2;
-  border-color: #fca5a5;
-  color: #991b1b;
+  border-color: color-mix(in srgb, var(--status-error) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-error) 10%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-error) 78%, var(--text-primary));
 }
 
-/* 신규 입력 즉시 경고/이상 결과 라인 */
-.visc-form-result {
-  margin: 0.2rem 0;
-  padding: 0.5rem 0.7rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
+.visc-register-panel {
+  margin-top: var(--space-4);
 }
-.visc-form-result[hidden] { display: none; }
-.visc-form-result.anomaly { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-.visc-form-result.warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 
-.visc-panel-head {
+.visc-register-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.visc-register-head .panel-title,
+.visc-panel-head .panel-title {
+  margin: 0;
+}
+
+.visc-cond,
+.visc-control-summary {
+  border: 1px solid color-mix(in srgb, var(--brand-mid) 28%, var(--border-subtle));
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.visc-cond {
+  min-width: 190px;
+  padding: var(--space-2) var(--space-3);
+  text-align: right;
+}
+
+.visc-control-summary {
+  padding: var(--space-3);
+}
+
+.visc-register-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.visc-record-column {
+  min-width: 0;
+}
+
+.visc-record-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.visc-selected-blend {
+  display: grid;
+  gap: var(--space-1);
+  min-height: 72px;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-surface-200);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.visc-selected-blend b {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.visc-selected-blend .visc-linked {
+  color: var(--status-success);
+  font-weight: 700;
+}
+
+.visc-selected-blend .visc-blocked {
+  color: var(--status-warning);
+  font-weight: 700;
+}
+
+.visc-blend-table-wrap {
+  max-height: 300px;
+}
+
+.visc-blend-table tbody tr {
+  cursor: pointer;
+}
+
+.visc-blend-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--brand-soft) 70%, var(--bg-base));
+  outline: 2px solid color-mix(in srgb, var(--brand-mid) 42%, transparent);
+  outline-offset: -2px;
+}
+
+.visc-link-chip,
+.visc-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.visc-link-chip.pending {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.visc-link-chip.done,
+.visc-status.normal {
+  background: color-mix(in srgb, var(--status-success) 14%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-success) 80%, var(--text-primary));
+}
+
+.visc-status.warn {
+  background: color-mix(in srgb, var(--status-warning) 15%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-warning) 82%, var(--text-primary));
+}
+
+.visc-status.anomaly {
+  background: color-mix(in srgb, var(--status-error) 13%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-error) 82%, var(--text-primary));
 }
 
 .visc-form {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--space-2);
 }
 
-.visc-form .input { margin-bottom: 0.4rem; }
+.visc-form .input {
+  margin-bottom: var(--space-2);
+}
+
+.visc-register-form {
+  position: sticky;
+  top: 86px;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface-200);
+}
+
+.visc-value-input {
+  min-height: 52px;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.visc-submit {
+  width: 100%;
+  min-height: 44px;
+}
+
+.visc-form-result {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.visc-form-result[hidden] {
+  display: none;
+}
+
+.visc-form-result.anomaly {
+  border: 1px solid color-mix(in srgb, var(--status-error) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-error) 12%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-error) 84%, var(--text-primary));
+}
+
+.visc-form-result.warn {
+  border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+}
+
+.visc-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
 
 .visc-form-row {
-  display: flex;
-  gap: 0.6rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
 }
-
-.visc-form-row > div { flex: 1; }
 
 .visc-checkbox {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  margin: 0.3rem 0;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  font-size: 13px;
+}
+
+.visc-cond-note {
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .visc-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 1rem 0;
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
-/* 기간별 분석 토글 + 전기대비 */
-.visc-gran-toggle { display: flex; gap: 0.3rem; }
+.visc-gran-toggle {
+  display: flex;
+  gap: var(--space-1);
+}
+
 .visc-gran-toggle .btn.active {
-  background: var(--accent, #2563eb);
-  color: #fff;
-  border-color: var(--accent, #2563eb);
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--bg-base);
 }
-.visc-period-chart { height: 220px; }
-.visc-delta-up { color: #dc2626; font-weight: 600; }
-.visc-delta-down { color: var(--brand); font-weight: 600; }
-.visc-delta-flat { color: var(--muted, #6b7280); }
 
-/* 측정 이력 테이블 상태 배지 */
-.visc-status {
-  display: inline-block;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+.visc-period-chart {
+  height: 220px;
 }
-.visc-status.normal { background: #dcfce7; color: #166534; }
-.visc-status.warn { background: #fef3c7; color: #92400e; }
-.visc-status.anomaly { background: #fee2e2; color: #991b1b; }
 
-.visc-table tr.row-anomaly { background: rgba(220, 38, 38, 0.06); }
-.visc-table tr.row-warn { background: rgba(217, 119, 6, 0.05); }
+.visc-delta-up,
+.visc-delta-down,
+.visc-delta-flat {
+  font-weight: 800;
+}
+
+.visc-delta-up {
+  color: var(--status-error);
+}
+
+.visc-delta-down {
+  color: var(--brand);
+}
+
+.visc-delta-flat {
+  color: var(--text-tertiary);
+}
+
+.visc-table tr.row-anomaly {
+  background: color-mix(in srgb, var(--status-error) 8%, var(--bg-base));
+}
+
+.visc-table tr.row-warn {
+  background: color-mix(in srgb, var(--status-warning) 8%, var(--bg-base));
+}
 
 .visc-del-btn {
-  border: none;
+  border: 0;
   background: transparent;
-  color: #dc2626;
+  color: var(--status-error);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-/* 모달 (페이지 자립용 — 공용 ss-modal 스타일 복제) */
 .ss-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  background: rgba(16, 24, 39, 0.45);
 }
-.ss-modal-overlay[hidden] { display: none !important; }
+
+.ss-modal-overlay[hidden] {
+  display: none !important;
+}
+
 .ss-modal {
-  background: var(--bg, #fff);
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: min(520px, 92vw);
-  max-height: 85vh;
   display: flex;
   flex-direction: column;
+  width: min(520px, 92vw);
+  max-height: 85vh;
+  border-radius: 8px;
+  background: var(--bg-base);
+  box-shadow: var(--shadow-prominent, 0 18px 48px rgba(21, 35, 63, 0.22));
 }
+
 .ss-modal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
 }
-.ss-modal-header h3 { margin: 0; font-size: 1rem; }
-.ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
+
+.ss-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ss-modal-body {
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+@media (max-width: 900px) {
+  .visc-toolbar,
+  .visc-toolbar-actions,
+  .visc-product-picker,
+  .visc-register-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .visc-product-picker .input,
+  .visc-toolbar-actions .input,
+  .visc-toolbar-actions .btn {
+    width: 100%;
+  }
+
+  .visc-register-grid,
+  .visc-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .visc-register-form {
+    position: static;
+  }
+
+  .visc-cond {
+    text-align: left;
+  }
+}
