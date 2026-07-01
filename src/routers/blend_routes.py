@@ -65,6 +65,16 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
         return result
 
+    @router.get("/blend/next-lot")
+    def blend_next_lot(
+        product: str = Query(..., min_length=1),
+        date: str | None = Query(default=None),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """저장 시 실제 부여될 product_lot 미리보기({제품명}{YYMMDD}{순번:02d})."""
+        work_date = date or utc_now_text()[:10]
+        return {"next_lot": blend_service.generate_product_lot(connection, product, work_date)}
+
     @router.get("/blend/material-usage")
     def blend_material_usage(
         start_date: str = "",

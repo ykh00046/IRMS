@@ -341,11 +341,20 @@
     nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, 2) : "-";
   }
 
-  function updateLotPreview() {
-    if (!state.current) { $("blend-lot-preview").textContent = "-"; return; }
-    const date = ($("blend-date").value || todayISO()).replace(/-/g, "");
-    const yymmdd = date.slice(2, 8);
-    $("blend-lot-preview").textContent = `${state.current.recipe.product_name}${yymmdd}NN`;
+  async function updateLotPreview() {
+    const el = $("blend-lot-preview");
+    if (!state.current) { el.textContent = "-"; return; }
+    const product = state.current.recipe.product_name;
+    const date = $("blend-date").value || todayISO();
+    const yymmdd = date.replace(/-/g, "").slice(2, 8);
+    // 저장 시 부여될 실제 순번을 서버에서 받아 표시(리터럴 NN 금지).
+    try {
+      const data = await request("/blend/next-lot", { query: { product, date } });
+      el.textContent = data.next_lot;
+    } catch (_e) {
+      // 조회 실패 시에도 가짜 NN 은 쓰지 않고 순번 없는 베이스만 표시.
+      el.textContent = `${product}${yymmdd}`;
+    }
   }
 
   async function saveBlend() {
