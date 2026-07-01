@@ -30,7 +30,12 @@ a = Analysis(
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=["unittest", "pydoc_data"],
+    # simplejson: requests.compat imports it optionally. If the build venv has a
+    # (partial) simplejson, PyInstaller bundles it as a namespace package and
+    # `from simplejson import JSONDecodeError` fails at runtime with
+    # "cannot import name 'JSONDecodeError' from 'simplejson' (unknown location)".
+    # Excluding it forces requests to fall back to the stdlib json (fully supported).
+    excludes=["unittest", "pydoc_data", "simplejson"],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
