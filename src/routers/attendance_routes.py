@@ -12,8 +12,10 @@ All attendance endpoints share a single router under ``/api/attendance``:
 - ``POST /admin/reset-password`` - Admin resets password to a temporary value.
 """
 
-from __future__ import annotations
-
+# NOTE: 이 파일에는 `from __future__ import annotations` 를 넣지 말 것.
+# @limiter.limit(slowapi) 로 감싼 엔드포인트에서 타입힌트가 문자열로 남으면
+# FastAPI 가 본문 모델(LoginRequest 등)을 못 풀어 본문을 쿼리로 오인 → 로그인/
+# 비번변경이 무조건 422 로 거부된다(auth_routes 는 이 import 가 없어 정상이었음).
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
