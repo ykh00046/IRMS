@@ -344,6 +344,7 @@ body {
 }
 
 .visc-del-btn {
+  margin-left: 10px;
   border: 0;
   background: transparent;
   color: var(--status-error);
