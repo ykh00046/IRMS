@@ -70,16 +70,6 @@
                 <label class="filter-label" for="visc-value">점도값</label>
                 <input class="input visc-value-input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
               </div>
-              <div id="visc-reactor-field" hidden>
-                <label class="filter-label" for="visc-reg-reactor">반응기 (필수)</label>
-                <select class="input" id="visc-reg-reactor">
-                  <option value="">반응기 선택</option>
-                  <option value="1">반응기 1</option>
-                  <option value="2">반응기 2</option>
-                  <option value="3">반응기 3</option>
-                  <option value="4">반응기 4</option>
-                </select>
-              </div>
               <p class="visc-selected-row" id="visc-selected-row">배합 기록 표에서 미등록 행을 선택하세요.</p>
 
               <div>
@@ -236,5 +226,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity.js?v=20260701e"></script>
+    <script src="/static/js/viscosity.js?v=20260701f"></script>
 {% endblock %}

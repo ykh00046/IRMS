@@ -148,8 +148,6 @@
         select.value = state.reactor == null ? "" : String(state.reactor);
       }
     }
-    const field = $("visc-reactor-field");
-    if (field) field.hidden = !use;
   }
 
   function renderCards() {
@@ -526,24 +524,14 @@
       showFormError("점도값을 입력하세요.");
       return;
     }
-    const product = currentProduct();
-    let reactor = null;
-    if (product && product.use_reactor) {
-      const raw = $("visc-reg-reactor").value;
-      if (!raw) {
-        showFormError("반응기를 선택하세요.");
-        return;
-      }
-      reactor = Number(raw);
-    }
     try {
+      // 반응기는 배합 실적에서 지정하고 점도는 실적에서 물려받는다(여기서 입력하지 않음).
       await request(`/blend/records/${recordId}/viscosity`, {
         method: "POST",
-        body: { viscosity: value, memo: $("visc-memo").value.trim() || null, reactor },
+        body: { viscosity: value, memo: $("visc-memo").value.trim() || null },
       });
       $("visc-value").value = "";
       $("visc-memo").value = "";
-      if ($("visc-reg-reactor")) $("visc-reg-reactor").value = "";
       const selectedId = recordId;
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });

@@ -36,7 +36,7 @@ def _make_db() -> sqlite3.Connection:
             product_lot TEXT NOT NULL, recipe_id INTEGER, product_name TEXT NOT NULL,
             ink_name TEXT, position TEXT, worker TEXT NOT NULL, work_date TEXT NOT NULL,
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
-            status TEXT NOT NULL DEFAULT 'completed', note TEXT,
+            status TEXT NOT NULL DEFAULT 'completed', note TEXT, reactor INTEGER,
             reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
             worker_sign TEXT, reviewed_sign TEXT, approved_sign TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
@@ -215,6 +215,29 @@ def test_viscosity_linked_to_blend():
     assert linked[0]["product_code"] == "잉크A"
     # 연계 안 된 다른 배합엔 안 보임
     assert vs.list_readings_for_blend(conn, 999) == []
+
+
+def test_reactor_stored_on_blend_record_and_exposed_to_recipe():
+    """반응기는 배합 실적에 기록되고, 레시피 조회에 use_reactor 로 노출된다."""
+    conn = _make_db()
+    rid = _seed_recipe(conn)  # product_name = '잉크A'
+    conn.execute(
+        "INSERT INTO viscosity_products (code, name, use_reactor, sigma_k, is_active, created_at) "
+        "VALUES ('잉크A', '잉크A', 1, 3, 1, '2026-01-01')"
+    )
+    assert bs.product_uses_reactor(conn, "잉크A") is True
+    assert bs.product_uses_reactor(conn, "없는제품") is False
+
+    recipe = bs.get_recipe_for_blend(conn, rid)
+    assert recipe["recipe"]["use_reactor"] is True
+
+    record_id = bs.create_blend_record(
+        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100, scale=None, note=None,
+        details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100, "material_lot": "L1"}],
+        created_by="t", created_at="2026-06-24T00:00:00Z", reactor=3,
+    )
+    assert bs.get_blend_record(conn, record_id)["reactor"] == 3
 
 
 def test_create_bulk():

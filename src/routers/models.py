@@ -103,6 +103,7 @@ class BlendCreateBody(BaseModel):
     total_amount: float = Field(gt=0, le=10_000_000)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
+    reactor: int | None = Field(default=None, ge=1, le=4)
     worker_sign: str | None = Field(default=None, max_length=300_000)
     details: list[BlendDetailBody] = Field(default_factory=list)
 
@@ -114,9 +115,9 @@ class BlendCreateBody(BaseModel):
 
 class BlendViscosityBody(BaseModel):
     # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요.
+    # 반응기는 배합 실적에서 물려받으므로 여기서 입력하지 않는다.
     viscosity: float = Field(gt=0, le=100000)
     memo: str | None = Field(default=None, max_length=1000)
-    reactor: int | None = Field(default=None, ge=1, le=4)
 
 
 def _validate_signature(value: str | None) -> str | None:

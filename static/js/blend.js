@@ -215,8 +215,18 @@
     // 총 배합량은 비워 둠(입력해야 하는 값임을 인지). 비어 있으면 이론량은 "-"로.
     if (!(totalRaw > 0)) state.items.forEach((it) => { it.theory_amount = null; });
     renderMatRows();
+    renderReactorField();
     updateLotPreview();
     updateInputGuide();
+  }
+
+  // 반응기 진행 반제품(레시피)일 때만 배합 설정에 반응기 선택을 노출한다.
+  function renderReactorField() {
+    const field = $("blend-reactor-field");
+    if (!field) return;
+    const use = Boolean(state.current && state.current.recipe && state.current.recipe.use_reactor);
+    field.hidden = !use;
+    if (!use) $("blend-reactor").value = "";
   }
 
   function recomputeTheory() {
@@ -377,6 +387,14 @@
       notify("편차 발생 — 저장할 수 없습니다. 실제량을 이론량과 일치시키세요.", "error");
       return;
     }
+    // 반응기 진행 반제품은 반응기(1~4) 지정 필수.
+    const useReactor = Boolean(state.current.recipe && state.current.recipe.use_reactor);
+    const reactorRaw = useReactor ? $("blend-reactor").value : "";
+    if (useReactor && !reactorRaw) {
+      err.textContent = "반응기를 선택하세요."; err.hidden = false;
+      notify("반응기를 선택하세요.", "error");
+      return;
+    }
     if (!(await ensureWorker(worker))) return;
     const body = {
       recipe_id: state.current.recipe.id,
@@ -389,6 +407,7 @@
       total_amount: total,
       scale: $("blend-scale").value.trim() || null,
       note: $("blend-note").value.trim() || null,
+      reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,

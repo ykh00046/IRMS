@@ -207,9 +207,6 @@ def build_router() -> APIRouter:
         )
         if not product:
             raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
-        # 반응기 진행 반제품은 반응기(1~4) 지정 필수.
-        if product["use_reactor"] and body.reactor is None:
-            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         first_lot = record["details"][0]["material_lot"] if record["details"] else None
         try:
             viscosity_service.add_reading(
@@ -224,7 +221,7 @@ def build_router() -> APIRouter:
                 created_by=actor,
                 created_at=now,
                 blend_record_id=record_id,
-                reactor=body.reactor,
+                reactor=record.get("reactor"),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(
@@ -252,6 +249,9 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
+        # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
+        if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
+            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
@@ -271,6 +271,7 @@ def build_router() -> APIRouter:
             created_by=actor,
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
+            reactor=body.reactor,
         )
         record = blend_service.get_blend_record(connection, record_id)
         write_audit_log(

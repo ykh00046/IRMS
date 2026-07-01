@@ -85,6 +85,7 @@ def get_recipe_for_blend(
             "position": recipe["position"],
             "ink_name": recipe["ink_name"],
             "status": recipe["status"],
+            "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
         },
         "base_total": round(base_total, 3),
         "total_amount": round(total, 3),
@@ -196,6 +197,24 @@ def generate_product_lot(
     return f"{base}{max_seq + 1:02d}"
 
 
+def product_uses_reactor(connection: sqlite3.Connection, product_name: str) -> bool:
+    """제품명(레시피명)에 해당하는 점도 반제품이 반응기 진행(use_reactor)인지.
+
+    반응기는 배합 실적을 진행한 위치이고, 반응기 사용 여부는 점도 반제품 설정
+    (viscosity_products.use_reactor)이 소유한다. 실적 저장 시 이 값으로 반응기
+    지정을 강제할지 판단한다.
+    """
+    name = str(product_name or "").strip()
+    if not name:
+        return False
+    row = connection.execute(
+        "SELECT use_reactor FROM viscosity_products "
+        "WHERE code = ? OR name = ? ORDER BY use_reactor DESC LIMIT 1",
+        (name, name),
+    ).fetchone()
+    return bool(row["use_reactor"]) if row else False
+
+
 # ── 배합 기록 생성/조회 ─────────────────────────────────────────
 def create_blend_record(
     connection: sqlite3.Connection,
@@ -214,21 +233,27 @@ def create_blend_record(
     created_by: str | None,
     created_at: str,
     worker_sign: str | None = None,
+    reactor: int | None = None,
 ) -> int:
-    """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성."""
+    """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성.
+
+    reactor 지정 시 실적을 진행한 반응기(1~4)를 기록한다(반응기 진행 반제품).
+    """
     product_lot = generate_product_lot(connection, product_name, work_date)
     cur = connection.execute(
         """
         INSERT INTO blend_records
             (product_lot, recipe_id, product_name, ink_name, position, worker,
              work_date, work_time, total_amount, scale, status, note,
-             worker_sign, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
+             worker_sign, reactor, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
         """,
         (
             product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
             work_date, work_time, float(total_amount), scale,
-            (note or "").strip() or None, worker_sign, created_by, created_at, created_at,
+            (note or "").strip() or None, worker_sign,
+            int(reactor) if reactor is not None else None,
+            created_by, created_at, created_at,
         ),
     )
     record_id = int(cur.lastrowid)
@@ -328,7 +353,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     row = connection.execute(
         """
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
-               work_date, work_time, total_amount, scale, status, note,
+               work_date, work_time, total_amount, scale, status, note, reactor,
                reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at
@@ -420,7 +445,7 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"] if "created_at" in keys else None,
     }
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
-              "worker_sign", "reviewed_sign", "approved_sign"):
+              "worker_sign", "reviewed_sign", "approved_sign", "reactor"):
         out[f] = row[f] if f in keys else None
     return out
 

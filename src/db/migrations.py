@@ -248,6 +248,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 지정 필수(use_reactor=1). 지정 시 점도를 반응기별로 추세·이상 분석할 수 있다.
     ensure_column(connection, "viscosity_products", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "viscosity_readings", "reactor", "INTEGER")
+    # 반응기는 배합 실적을 진행한 위치 → blend_records 에 기록. 점도는 실적에서 물려받아 표시.
+    ensure_column(connection, "blend_records", "reactor", "INTEGER")
 
     # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
     connection.execute(

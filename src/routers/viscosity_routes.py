@@ -89,9 +89,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     ) -> dict[str, Any]:
         current_user = get_current_user(request, required=False)
         product = _require_product(connection, body.product_id)
-        # 반응기 진행 반제품은 반응기(1~4) 지정 필수.
-        if product["use_reactor"] and body.reactor is None:
-            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        # 반응기는 배합 실적에서 지정하고 점도는 실적에서 물려받는다. 이 직접 등록
+        # 경로(수동/임포트)는 reactor 를 선택적으로만 받는다.
         # 입력 전 '같은 연도' 표본 기준으로 판정 (연도별 기준 + 자기 자신 평균 오염 방지)
         resolved_date = (
             body.measured_date
