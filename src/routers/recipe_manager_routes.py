@@ -15,24 +15,23 @@ Endpoints:
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import get_current_user, require_access_level
+from ..auth import require_access_level
 from ..db import get_connection, row_to_dict, write_audit_log
 from ..services import record_delete_service
 from ..services.recipe_helpers import fetch_recipe_items
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
+    router = APIRouter()
 
     @router.delete("/recipes/{recipe_id}")
     def delete_recipe(
         recipe_id: int,
-        request: Request,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
         delete_blend_records: bool = Query(default=False),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
         with get_connection() as connection:
             result = record_delete_service.delete_recipe(
                 connection,

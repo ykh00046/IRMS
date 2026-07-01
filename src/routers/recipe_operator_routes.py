@@ -23,9 +23,9 @@ Endpoints:
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..auth import get_current_user, require_access_level
+from ..auth import require_access_level
 from ..db import (
     get_connection,
     list_audit_logs,
@@ -42,7 +42,7 @@ from .models import StatusUpdateRequest, actor_name, recipe_label
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(dependencies=[Depends(require_access_level("operator"))])
+    router = APIRouter()
 
     @router.get("/notifications/recipe-imports")
     def recipe_import_notifications(
@@ -159,10 +159,9 @@ def build_router() -> APIRouter:
     def set_recipe_dhr(
         recipe_id: int,
         body: dict[str, Any],
-        request: Request,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
         """레시피를 DHR 전용으로 지정/해제 — 일반 조회·배합 선택에서 제외(DHR 전용으로만 사용)."""
-        current_user = get_current_user(request)
         is_dhr = 1 if body.get("is_dhr") else 0
         with get_connection() as connection:
             row = connection.execute(
@@ -443,9 +442,8 @@ def build_router() -> APIRouter:
     def update_recipe_status(
         recipe_id: int,
         body: StatusUpdateRequest,
-        request: Request,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        current_user = get_current_user(request)
         transition_map = {
             "start": ("pending", "in_progress"),
             "complete": ("in_progress", "completed"),

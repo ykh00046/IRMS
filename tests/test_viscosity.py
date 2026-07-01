@@ -28,6 +28,7 @@ def _make_db() -> sqlite3.Connection:
             sigma_k REAL NOT NULL DEFAULT 3,
             rpm REAL,
             temperature REAL,
+            remind_daily INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         );

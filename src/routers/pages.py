@@ -30,9 +30,11 @@ def _safe_next(next_url: str | None, default: str) -> str:
 
 
 def _build_context(request: Request, **extra) -> dict:
+    current_user = get_current_user(request, required=False)
     context = {
         "request": request,
-        "current_user": get_current_user(request, required=False),
+        "current_user": current_user,
+        "can_manage": bool(current_user and has_access_level(current_user, "manager")),
     }
     context.update(extra)
     return context
@@ -63,6 +65,19 @@ def _protected_page_response(
 
     return _render(templates, request, template_name, {
         "current_user": current_user,
+        "can_manage": has_access_level(current_user, "manager"),
+    })
+
+
+def _app_page_response(
+    request: Request,
+    templates: Jinja2Templates,
+    template_name: str,
+) -> Response:
+    current_user = get_current_user(request, required=False)
+    return _render(templates, request, template_name, {
+        "current_user": current_user,
+        "can_manage": bool(current_user and has_access_level(current_user, "manager")),
     })
 
 
@@ -117,14 +132,12 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/management", response_class=HTMLResponse)
     def management_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "management.html", "manager")
+        return _app_page_response(request, templates, "management.html")
 
     @router.get("/viscosity", response_class=HTMLResponse)
     def viscosity_page(request: Request) -> Response:
         # 로그인 없이 누구나 진입 (사내 공용 단말 운영 편의)
-        response = _render(templates, request, "viscosity.html", {
-            "current_user": get_current_user(request, required=False),
-        })
+        response = _app_page_response(request, templates, "viscosity.html")
         refresh_csrf_cookie(response)
         return response
 
@@ -160,19 +173,19 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/insight", response_class=HTMLResponse)
     def insight_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "insight.html", "manager")
+        return _app_page_response(request, templates, "insight.html")
 
     @router.get("/dashboard", response_class=HTMLResponse)
     def dashboard_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "dashboard.html", "manager")
+        return _app_page_response(request, templates, "dashboard.html")
 
     @router.get("/status", response_class=HTMLResponse)
     def status_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "status.html", "manager")
+        return _app_page_response(request, templates, "status.html")
 
     @router.get("/base", response_class=HTMLResponse)
     def base_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "base.html", "manager")
+        return _app_page_response(request, templates, "base.html")
 
     @router.get("/admin/users", response_class=HTMLResponse)
     def admin_users_page(request: Request) -> Response:

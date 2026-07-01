@@ -71,6 +71,12 @@
       dom.versionHistoryBody.querySelectorAll(".version-check").forEach((cb) => {
         cb.addEventListener("change", updateCompareButtonState);
       });
+      if (!ctx.canManage) {
+        dom.versionHistoryBody.querySelectorAll(".history-row-edit").forEach((btn) => {
+          btn.hidden = true;
+          btn.disabled = true;
+        });
+      }
       dom.versionHistoryBody.querySelectorAll(".history-row-edit").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();

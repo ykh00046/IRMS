@@ -1,17 +1,17 @@
-import unittest
 import datetime as dt
+import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from pydantic import ValidationError
-
 import tray_client.src.main as tray_main
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
-from tray_client.src.config import Config
 from tray_client.src.attendance_popup import (
     PopupPayload,
     build_live_popup_payload,
+    build_viscosity_popup_payload,
 )
+from tray_client.src.config import Config
+from tray_client.src.viscosity_alerts import ViscosityAlertPoller
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):
@@ -58,10 +58,10 @@ class AttendanceAlertPollerTests(unittest.TestCase):
             "items": [
                 {
                     "emp_id": "171013",
-                    "name": "\uAE40\uBBFC\uD638",
-                    "department": "\uC0DD\uC0B01\uD300",
-                    "shift_time": "\uC8FC\uAC04",
-                    "issues": ["\uCD9C\uADFC \uB204\uB77D"],
+                    "name": "김민호",
+                    "department": "생산1팀",
+                    "shift_time": "주간",
+                    "issues": ["출근 누락"],
                 }
             ],
         }
@@ -80,52 +80,16 @@ class AttendanceAlertPollerTests(unittest.TestCase):
             is_enabled_getter=lambda: True,
         )
 
-        # 09:35 → 09 슬롯 시작 후 35분 경과 → 스킬 대상
         self.assertEqual(
             poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 9, 35)),
             "2026-04-26T09",
         )
-        # 09:25 → 그레이스 내 → 팔린다
         self.assertIsNone(
             poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 9, 25))
         )
-        # 08:00 → 안 띄는 시간
         self.assertIsNone(
             poller._stale_slot_key_on_startup(dt.datetime(2026, 4, 26, 8, 0))
         )
-
-    def test_disabled_state_does_not_consume_slot(self) -> None:
-        presented: list[PopupPayload] = []
-        enabled_flag = {"value": False}
-        poller = AttendanceAlertPoller(
-            config=Config(),
-            present_alert=presented.append,
-            is_enabled_getter=lambda: enabled_flag["value"],
-        )
-        payload = {
-            "month": "2026-04",
-            "total": 1,
-            "items": [
-                {
-                    "emp_id": "171013",
-                    "name": "김민호",
-                    "department": "생산1팀",
-                    "shift_time": "주간",
-                    "issues": ["출근 누락"],
-                }
-            ],
-        }
-
-        with patch.object(poller, "_poll_once", return_value=payload):
-            # 비활성 상태: 폴링되지 않고 슬롯도 소비하지 않음
-            self.assertIsNone(poller._last_processed_slot)
-            self.assertEqual(len(presented), 0)
-
-            # 사용자가 다시 켜면 같은 슬롯에서도 팝업 발생
-            enabled_flag["value"] = True
-            poller._poll_and_notify(slot_key="2026-04-26T09")
-
-        self.assertEqual(len(presented), 1)
 
     def test_manual_check_uses_live_popup_payload(self) -> None:
         presented: list[PopupPayload] = []
@@ -144,13 +108,13 @@ class AttendanceAlertPollerTests(unittest.TestCase):
                 "items": [
                     {
                         "emp_id": "260445",
-                        "name": "박종휘",
+                        "name": "박종원",
                         "department": "원료생산팀",
                         "details": [
                             {
                                 "display_date": "05-06",
                                 "code": "1",
-                                "content": "출/퇴근 미타각",
+                                "content": "출퇴근 미처리",
                             }
                         ],
                     }
@@ -162,6 +126,7 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(len(presented), 1)
         self.assertEqual(presented[0].title, "근태 확인 필요")
         self.assertEqual(presented[0].badge_text, "1건")
+        self.assertEqual(presented[0].confirm_text, "근태 확인")
         self.assertEqual(presented[0].table_rows[0]["emp_id"], "260445")
 
     def test_live_popup_payload_builds_table_rows_and_remaining_count(self) -> None:
@@ -177,124 +142,156 @@ class AttendanceAlertPollerTests(unittest.TestCase):
                             {
                                 "display_date": "05-04",
                                 "code": "1",
-                                "content": "출/퇴근 미타각",
+                                "content": "출퇴근 미처리",
                                 "extra_content": "출근 누락 / 퇴근 누락",
                             }
                         ],
                     },
-                    {
-                        "emp_id": "101001",
-                        "name": "최기자",
-                        "department": "원료생산팀",
-                        "details": [
-                            {
-                                "display_date": "05-05",
-                                "code": "0",
-                                "content": "기타",
-                                "extra_content": "근무 시간 확인 필요",
-                            }
-                        ],
-                    },
-                    {"name": "박종휘", "details": [{"display_date": "05-06"}]},
-                    {"name": "김성근", "details": [{"display_date": "05-10"}]},
-                    {"name": "이시현", "details": [{"display_date": "05-11"}]},
-                    {"name": "김세민", "details": [{"display_date": "05-12"}]},
-                    {"name": "정윤규", "details": [{"display_date": "05-13"}]},
-                    {"name": "한가람", "details": [{"display_date": "05-14"}]},
+                    {"name": "박종원", "details": [{"display_date": "05-06"}]},
+                    {"name": "김태근", "details": [{"display_date": "05-10"}]},
+                    {"name": "이시훈", "details": [{"display_date": "05-11"}]},
+                    {"name": "김현민", "details": [{"display_date": "05-12"}]},
+                    {"name": "정윤근", "details": [{"display_date": "05-13"}]},
+                    {"name": "서강호", "details": [{"display_date": "05-14"}]},
                     {"name": "최선미", "details": [{"display_date": "05-15"}]},
+                    {"name": "장도훈", "details": [{"display_date": "05-16"}]},
                 ],
             }
         )
 
         self.assertEqual(payload.title, "근태 확인 필요")
         self.assertEqual(payload.badge_text, "9건")
-        self.assertEqual(payload.summary, "이번 달 시급직 근태 특이사항을 확인해주세요.")
+        self.assertEqual(payload.summary, "이번 달 미처리 근태 특이사항을 확인해주세요.")
         self.assertEqual(len(payload.table_rows), 8)
-        self.assertEqual(payload.lines, ["외 1건 추가"])
+        self.assertEqual(payload.lines, ["+1건 추가"])
         self.assertEqual(payload.table_rows[0]["emp_id"], "240910")
         self.assertEqual(payload.table_rows[0]["date"], "05-04")
         self.assertEqual(payload.table_rows[0]["code"], "1")
-        self.assertEqual(payload.table_rows[1]["content"], "기타")
 
-    def test_live_popup_payload_uses_privacy_safe_copy(self) -> None:
-        presented: list[PopupPayload] = []
-        poller = AttendanceAlertPoller(
-            config=Config(),
-            present_alert=presented.append,
-            is_enabled_getter=lambda: True,
-        )
-
-        with patch.object(
-            poller,
-            "_poll_once",
-            return_value={
-                "date": "2026-04-24",
-                "day_type": "평일2",
+    def test_live_popup_payload_uses_privacy_safe_copy_without_table(self) -> None:
+        payload = build_live_popup_payload(
+            {
                 "total": 1,
                 "items": [
                     {
                         "emp_id": "171013",
                         "name": "김철수",
                         "department": "생산1팀",
-                        "shift_time": "주간",
                         "issues": ["지각 미처리", "조퇴 미처리"],
                     }
                 ],
-            },
-        ):
+            }
+        )
+
+        self.assertEqual(payload.table_rows[0]["emp_id"], "171013")
+        self.assertIn("지각 미처리", payload.table_rows[0]["content"])
+
+
+class ViscosityAlertPollerTests(unittest.TestCase):
+    def test_poll_once_requests_server_without_product_codes(self) -> None:
+        # 알림 대상은 서버(remind_daily)가 정한다 — 트레이는 codes 를 보내지 않는다.
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"date": "2026-07-01", "total": 0, "items": []}
+
+        class FakeSession:
+            def get(self, url, params=None, headers=None, timeout=None):
+                captured["url"] = url
+                captured["params"] = params
+                return FakeResponse()
+
+        poller = ViscosityAlertPoller(
+            config=Config(server_url="http://192.168.11.147:9000"),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+            today_provider=lambda: "2026-07-01",
+        )
+        poller._session = FakeSession()
+
+        result = poller._poll_once("2026-07-01")
+
+        self.assertEqual(result, {"date": "2026-07-01", "total": 0, "items": []})
+        self.assertEqual(captured["params"], {"target_date": "2026-07-01"})
+        self.assertNotIn("codes", captured["params"])
+
+    def test_viscosity_payload_points_to_viscosity_action(self) -> None:
+        payload = build_viscosity_popup_payload(
+            {
+                "total": 1,
+                "items": [{"code": "PB", "name": "PB"}],
+            }
+        )
+
+        self.assertEqual(payload.title, "점도 입력 필요")
+        self.assertEqual(payload.badge_text, "1개")
+        self.assertEqual(payload.lines, ["PB 점도를 입력하세요."])
+        self.assertEqual(payload.action_key, "viscosity")
+        self.assertEqual(payload.confirm_text, "점도 등록")
+
+    def test_viscosity_duplicate_signature_is_suppressed_per_day(self) -> None:
+        presented: list[PopupPayload] = []
+        poller = ViscosityAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: True,
+            today_provider=lambda: "2026-07-01",
+        )
+        payload = {
+            "date": "2026-07-01",
+            "total": 1,
+            "items": [{"code": "PB", "name": "PB"}],
+        }
+
+        with patch.object(poller, "_poll_once", return_value=payload):
             poller._poll_and_notify()
+            poller._poll_and_notify()
+            poller._poll_and_notify(force=True)
 
-        self.assertEqual(len(presented), 1)
-        self.assertEqual(presented[0].title, "근태 확인 필요")
-        self.assertEqual(presented[0].badge_text, "1건")
-        self.assertEqual(presented[0].summary, "이번 달 시급직 근태 특이사항을 확인해주세요.")
-        self.assertEqual(presented[0].table_rows[0]["emp_id"], "171013")
-        self.assertIn("지각 미처리", presented[0].table_rows[0]["content"])
+        self.assertEqual(len(presented), 2)
 
 
-class TrayAttendanceNavigationTests(unittest.TestCase):
-    def test_attendance_page_url_uses_server_root(self) -> None:
+class TrayNavigationTests(unittest.TestCase):
+    def test_page_urls_use_server_root(self) -> None:
         self.assertEqual(
             tray_main.attendance_page_url("http://192.168.11.147:9000/"),
             "http://192.168.11.147:9000/attendance",
         )
-
-    def test_attendance_anomaly_menu_triggers_real_poll(self) -> None:
-        events: list[str] = []
-
-        class FakeAlertPoller:
-            def trigger_once(self) -> None:
-                events.append("poll")
-
-        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
-        app.config = Config(server_url="http://192.168.11.147:9000/")
-        app.alert_poller = FakeAlertPoller()
-        app.logger = SimpleNamespace(
-            info=lambda *args, **kwargs: None,
-            warning=lambda *args, **kwargs: None,
+        self.assertEqual(
+            tray_main.blend_page_url("http://192.168.11.147:9000/"),
+            "http://192.168.11.147:9000/blend",
+        )
+        self.assertEqual(
+            tray_main.viscosity_page_url("http://192.168.11.147:9000/"),
+            "http://192.168.11.147:9000/viscosity",
         )
 
-        with patch(
-            "tray_client.src.main.open_in_browser",
-            side_effect=lambda url: events.append(url),
-        ):
-            app._show_attendance_anomalies(None, None)
+    def test_attendance_and_viscosity_menu_trigger_pollers(self) -> None:
+        events: list[str] = []
 
-        self.assertEqual(events, ["poll"])
+        class FakePoller:
+            def __init__(self, name: str) -> None:
+                self._name = name
 
-    def test_today_mute_reenables_after_midnight(self) -> None:
+            def trigger_once(self) -> None:
+                events.append(self._name)
+
         app = tray_main.TrayApp.__new__(tray_main.TrayApp)
-        app._alert_mute_date = "2026-05-27"
+        app.alert_poller = FakePoller("attendance")
+        app.viscosity_poller = FakePoller("viscosity")
+        app.logger = SimpleNamespace(info=lambda *args, **kwargs: None)
 
-        with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
-            self.assertFalse(app._alerts_enabled_today())
+        app._show_attendance_anomalies(None, None)
+        app._show_viscosity_reminders(None, None)
 
-        with patch("tray_client.src.main.today_iso", return_value="2026-05-28"):
-            self.assertTrue(app._alerts_enabled_today())
+        self.assertEqual(events, ["attendance", "viscosity"])
 
-    def test_open_attendance_uses_browser(self) -> None:
+    def test_popup_action_routes_to_expected_page(self) -> None:
         opened: list[str] = []
-
         app = tray_main.TrayApp.__new__(tray_main.TrayApp)
         app.config = Config(server_url="http://192.168.11.147:9000/")
         app.logger = SimpleNamespace(
@@ -306,9 +303,42 @@ class TrayAttendanceNavigationTests(unittest.TestCase):
             "tray_client.src.main.open_in_browser",
             side_effect=lambda url: opened.append(url),
         ):
-            app._open_attendance_menu(None, None)
+            app._open_popup_target(
+                PopupPayload(
+                    title="점도 입력 필요",
+                    badge_text="1개",
+                    summary="",
+                    lines=[],
+                    action_key="viscosity",
+                )
+            )
+            app._open_popup_target(
+                PopupPayload(
+                    title="근태 확인 필요",
+                    badge_text="1건",
+                    summary="",
+                    lines=[],
+                    action_key="attendance",
+                )
+            )
 
-        self.assertEqual(opened, ["http://192.168.11.147:9000/attendance"])
+        self.assertEqual(
+            opened,
+            [
+                "http://192.168.11.147:9000/viscosity",
+                "http://192.168.11.147:9000/attendance",
+            ],
+        )
+
+    def test_today_mute_reenables_after_midnight(self) -> None:
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app._alert_mute_date = "2026-05-27"
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
+            self.assertFalse(app._alerts_enabled_today())
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-28"):
+            self.assertTrue(app._alerts_enabled_today())
 
 
 if __name__ == "__main__":

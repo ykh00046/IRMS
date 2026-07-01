@@ -3,15 +3,29 @@ from fastapi.testclient import TestClient
 from src.main import create_app
 
 
-def test_manager_pages_and_apis_require_login() -> None:
+def test_operations_pages_and_read_apis_are_viewable_without_login() -> None:
     client = TestClient(create_app())
 
     page_response = client.get("/management", follow_redirects=False)
     api_response = client.get("/api/recipes/progress")
 
-    assert page_response.status_code == 303
-    assert page_response.headers["location"].startswith("/management/login")
-    assert api_response.status_code == 401
+    assert page_response.status_code == 200
+    assert api_response.status_code == 200
+
+
+def test_recipe_write_apis_still_require_manager_login() -> None:
+    client = TestClient(create_app())
+    client.get("/viscosity")
+    token = client.cookies.get("csrftoken")
+
+    assert token
+    response = client.patch(
+        "/api/recipes/1/status",
+        headers={"x-csrftoken": token},
+        json={"action": "cancel"},
+    )
+
+    assert response.status_code == 401
 
 
 def test_blend_record_create_requires_worker_session() -> None:

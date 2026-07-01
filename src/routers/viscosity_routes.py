@@ -189,7 +189,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             """
             UPDATE viscosity_products
             SET name = ?, target = ?, lower_limit = ?, upper_limit = ?,
-                sigma_k = ?, rpm = ?, temperature = ?, is_active = ?
+                sigma_k = ?, rpm = ?, temperature = ?, remind_daily = ?, is_active = ?
             WHERE id = ?
             """,
             (
@@ -200,6 +200,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 body.sigma_k,
                 body.rpm,
                 body.temperature,
+                1 if body.remind_daily else 0,
                 1 if body.is_active else 0,
                 product_id,
             ),
@@ -216,6 +217,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 "lower_limit": body.lower_limit,
                 "upper_limit": body.upper_limit,
                 "sigma_k": body.sigma_k,
+                "remind_daily": body.remind_daily,
                 "is_active": body.is_active,
             },
         )

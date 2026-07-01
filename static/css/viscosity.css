@@ -126,32 +126,21 @@ body {
   margin-bottom: var(--space-2);
 }
 
-.visc-selected-blend {
-  display: grid;
-  gap: var(--space-1);
-  min-height: 72px;
-  margin: var(--space-3) 0;
-  padding: var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--bg-surface-200);
-  color: var(--text-secondary);
-  font-size: 13px;
+.visc-record-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
-.visc-selected-blend b {
-  color: var(--text-primary);
-  font-size: 14px;
+.visc-record-filters .input {
+  width: min(320px, 42vw);
+  margin: 0;
 }
 
-.visc-selected-blend .visc-linked {
-  color: var(--status-success);
-  font-weight: 700;
-}
-
-.visc-selected-blend .visc-blocked {
-  color: var(--status-warning);
-  font-weight: 700;
+.visc-inline-check {
+  margin: 0;
 }
 
 .visc-blend-table-wrap {
@@ -230,6 +219,27 @@ body {
 .visc-submit {
   width: 100%;
   min-height: 44px;
+}
+
+.visc-selected-row {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.visc-reading-cell {
+  white-space: nowrap;
+}
+
+.visc-reading-value {
+  color: var(--text-primary);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 
 .visc-form-result {
@@ -388,12 +398,15 @@ body {
   .visc-toolbar,
   .visc-toolbar-actions,
   .visc-product-picker,
-  .visc-register-head {
+  .visc-register-head,
+  .visc-record-topline,
+  .visc-record-filters {
     align-items: stretch;
     flex-direction: column;
   }
 
   .visc-product-picker .input,
+  .visc-record-filters .input,
   .visc-toolbar-actions .input,
   .visc-toolbar-actions .btn {
     width: 100%;

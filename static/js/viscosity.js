@@ -100,7 +100,6 @@
     renderTrendBanner();
     renderPeriodAlerts();
     renderPeriods();
-    renderReadings();
     renderCondition();
     await loadBlendRecordsForProduct(state.analysis.product);
   }
@@ -181,57 +180,6 @@
       .map((item) => (PERIOD_ALERT_LABEL[item.type] || (() => item.type))(item))
       .join(" · ");
     banner.hidden = false;
-  }
-
-  function renderReadings() {
-    const body = $("visc-readings-body");
-    body.innerHTML = "";
-    const rows = state.analysis.readings.slice().reverse();
-    if (!rows.length) {
-      body.appendChild(emptyRow(isManager ? 8 : 7, "등록된 점도 측정이 없습니다."));
-      return;
-    }
-    rows.forEach((reading) => {
-      const row = document.createElement("tr");
-      if (reading.status === "anomaly") row.className = "row-anomaly";
-      else if (reading.status === "warn") row.className = "row-warn";
-
-      appendTextCell(row, reading.measured_date || "-");
-      appendTextCell(row, reading.lot_no);
-      appendTextCell(row, fmt(reading.viscosity), "num");
-      appendStatusCell(row, reading);
-      appendTextCell(row, reading.recipe_material || "-");
-      appendTextCell(row, reading.material_lot || "-");
-      appendTextCell(row, reading.memo || "-");
-
-      if (isManager) {
-        const cell = document.createElement("td");
-        const button = document.createElement("button");
-        button.className = "visc-del-btn";
-        button.type = "button";
-        button.textContent = "삭제";
-        button.addEventListener("click", () => deleteReading(reading.id, reading.lot_no));
-        cell.appendChild(button);
-        row.appendChild(cell);
-      }
-      body.appendChild(row);
-    });
-  }
-
-  function appendStatusCell(row, reading) {
-    const cell = document.createElement("td");
-    const status = document.createElement("span");
-    status.className = `visc-status ${reading.status}`;
-    status.textContent = STATUS_LABEL[reading.status] || reading.status;
-    cell.appendChild(status);
-    const reasons = (reading.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ");
-    if (reasons) {
-      const reason = document.createElement("span");
-      reason.className = "muted small";
-      reason.textContent = ` ${reasons}`;
-      cell.appendChild(reason);
-    }
-    row.appendChild(cell);
   }
 
   function renderPeriods() {
@@ -377,41 +325,49 @@
   }
 
   function renderBlendRecords() {
-    renderBlendSelect();
-    renderBlendTable();
+    const records = visibleBlendRecords();
+    if (records.length && !records.some((record) => record.id === state.selectedBlendId)) {
+      state.selectedBlendId = records[0].id;
+      state.selectedBlendDetail = selectedRecord();
+    } else if (!records.length) {
+      state.selectedBlendId = null;
+      state.selectedBlendDetail = null;
+    }
+    $("visc-blend-record").value = state.selectedBlendId ? String(state.selectedBlendId) : "";
+    renderBlendTable(records);
     renderSelectedBlend();
   }
 
-  function renderBlendSelect() {
-    const select = $("visc-blend-record");
-    select.innerHTML = "";
-    if (!currentProduct()) {
-      select.appendChild(option("", "반제품을 선택하세요"));
-      select.disabled = true;
-      return;
-    }
-    if (!state.blendRecords.length) {
-      select.appendChild(option("", "연계 가능한 배합 기록이 없습니다"));
-      select.disabled = true;
-      return;
-    }
-    state.blendRecords.forEach((record) => {
-      const item = option(String(record.id), `${record.product_lot} · ${record.work_date || "-"} · ${record.worker || "-"}`);
-      item.selected = record.id === state.selectedBlendId;
-      select.appendChild(item);
+  function visibleBlendRecords() {
+    const filter = $("visc-blend-filter").value.trim().toLowerCase();
+    const openOnly = $("visc-open-only").checked;
+    return state.blendRecords.filter((record) => {
+      if (openOnly && linkedReadingsForRecord(record).length) return false;
+      if (!filter) return true;
+      return [
+        record.product_lot,
+        record.work_date,
+        record.worker,
+        record.total_amount,
+        latestViscosityLabel(record),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(filter);
     });
-    select.disabled = false;
   }
 
-  function renderBlendTable() {
+  function renderBlendTable(records) {
     const body = $("visc-blend-body");
     body.innerHTML = "";
-    $("visc-record-count").textContent = state.blendRecords.length ? `최근 ${state.blendRecords.length}건` : "0건";
-    if (!state.blendRecords.length) {
+    $("visc-record-count").textContent = state.blendRecords.length
+      ? `${records.length} / ${state.blendRecords.length}건`
+      : "0건";
+    if (!records.length) {
       body.appendChild(emptyRow(5, "이 반제품의 배합 기록이 없습니다."));
       return;
     }
-    state.blendRecords.forEach((record) => {
+    records.forEach((record) => {
       const row = document.createElement("tr");
       row.classList.toggle("is-selected", record.id === state.selectedBlendId);
       row.addEventListener("click", () => selectBlendRecord(record.id, { focus: true }));
@@ -419,55 +375,79 @@
       appendTextCell(row, record.work_date || "-");
       appendTextCell(row, record.worker || "-");
       appendTextCell(row, record.total_amount == null ? "-" : `${fmt(record.total_amount)} g`, "num");
-      const cell = document.createElement("td");
-      const chip = document.createElement("span");
-      const hasLinkedViscosity = (record.viscosity || []).length > 0;
-      chip.className = hasLinkedViscosity ? "visc-link-chip done" : "visc-link-chip pending";
-      chip.textContent = hasLinkedViscosity ? "등록됨" : "대기";
-      cell.appendChild(chip);
-      row.appendChild(cell);
+      appendViscosityCell(row, record);
       body.appendChild(row);
     });
   }
 
+  function appendViscosityCell(row, record) {
+    const linked = linkedReadingsForRecord(record);
+    if (!linked.length) {
+      const cell = document.createElement("td");
+      cell.className = "num muted";
+      cell.textContent = "미입력";
+      row.appendChild(cell);
+      return;
+    }
+
+    const reading = linked[0];
+    const cell = document.createElement("td");
+    cell.className = "num visc-reading-cell";
+    const value = document.createElement("span");
+    value.className = "visc-reading-value";
+    value.textContent = fmt(reading.viscosity);
+    cell.appendChild(value);
+    if (reading.measured_date) {
+      const date = document.createElement("span");
+      date.className = "muted small";
+      date.textContent = ` ${reading.measured_date}`;
+      cell.appendChild(date);
+    }
+    if (isManager) {
+      const button = document.createElement("button");
+      button.className = "visc-del-btn";
+      button.type = "button";
+      button.textContent = "삭제";
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteReading(reading.id, reading.lot_no);
+      });
+      cell.appendChild(button);
+    }
+    row.appendChild(cell);
+  }
+
   function renderSelectedBlend() {
-    const box = $("visc-selected-blend");
+    const box = $("visc-selected-row");
     const detail = state.selectedBlendDetail;
     const record = selectedRecord();
     if (!record) {
-      box.innerHTML = "<b>배합 기록을 선택하세요.</b><span>배합 기록이 없으면 먼저 배합 화면에서 실적을 저장해야 합니다.</span>";
+      box.textContent = "배합 기록 표에서 미등록 행을 선택하세요.";
       setSubmitEnabled(false);
       return;
     }
     if (!detail) {
-      box.innerHTML = `<b>${record.product_lot}</b><span>선택한 배합 기록 정보를 불러오는 중입니다.</span>`;
+      box.textContent = `${record.product_lot} 정보를 불러오는 중입니다.`;
       setSubmitEnabled(false);
       return;
     }
     const linked = linkedReadings();
-    const info = [
-      `${detail.product_name}`,
-      `${detail.work_date || "-"} ${detail.work_time || ""}`.trim(),
-      `작업자 ${detail.worker || "-"}`,
-      `총량 ${fmt(detail.total_amount)} g`,
-    ].join(" · ");
-    const status = linked.length
-      ? `<span class="visc-blocked">이미 점도 ${fmt(linked[0].viscosity)}가 등록되어 있습니다.</span>`
-      : '<span class="visc-linked">점도값만 입력하면 이 LOT에 연결됩니다.</span>';
-    box.innerHTML = `<b>${detail.product_lot}</b><span>${info}</span>${status}`;
+    box.textContent = linked.length
+      ? `${detail.product_lot} · 점도 ${fmt(linked[0].viscosity)} 등록`
+      : `${detail.product_lot} · ${detail.work_date || "-"} · ${detail.worker || "-"} 선택`;
     setSubmitEnabled(linked.length === 0);
   }
 
   async function selectBlendRecord(recordId, options) {
     state.selectedBlendId = Number(recordId);
-    $("visc-blend-record").value = String(recordId);
+    $("visc-blend-record").value = String(recordId || "");
     renderBlendRecords();
     try {
       state.selectedBlendDetail = selectedRecord() || await request(`/blend/records/${recordId}`);
       renderBlendRecords();
       if (options && options.focus) $("visc-value").focus();
     } catch (error) {
-      $("visc-selected-blend").innerHTML = `<b>배합 기록을 불러오지 못했습니다.</b><span>${error.message}</span>`;
+      $("visc-selected-row").textContent = `배합 기록을 불러오지 못했습니다. ${error.message}`;
       setSubmitEnabled(false);
     }
   }
@@ -478,6 +458,15 @@
 
   function linkedReadings() {
     return (state.selectedBlendDetail && state.selectedBlendDetail.viscosity) || [];
+  }
+
+  function linkedReadingsForRecord(record) {
+    return (record && record.viscosity) || [];
+  }
+
+  function latestViscosityLabel(record) {
+    const linked = linkedReadingsForRecord(record);
+    return linked.length ? fmt(linked[0].viscosity) : "미입력";
   }
 
   function setSubmitEnabled(enabled) {
@@ -507,7 +496,9 @@
       });
       $("visc-value").value = "";
       $("visc-memo").value = "";
+      const selectedId = recordId;
       await loadProduct(state.currentId);
+      if (selectedId) await selectBlendRecord(selectedId, { focus: false });
       warnNewReading(value);
       notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
     } catch (error_) {
@@ -564,6 +555,7 @@
     $("visc-set-sigma").value = product.sigma_k;
     $("visc-set-rpm").value = product.rpm ?? "";
     $("visc-set-temp").value = product.temperature ?? "";
+    $("visc-set-remind").checked = product.remind_daily;
     $("visc-set-active").checked = product.is_active;
     $("visc-settings-error").hidden = true;
     $("visc-settings-modal").hidden = false;
@@ -586,6 +578,7 @@
       sigma_k: Number($("visc-set-sigma").value),
       rpm: numOrNull("visc-set-rpm"),
       temperature: numOrNull("visc-set-temp"),
+      remind_daily: $("visc-set-remind").checked,
       is_active: $("visc-set-active").checked,
     };
     try {
@@ -628,9 +621,8 @@
   function bind() {
     $("visc-form").addEventListener("submit", submitReading);
     $("visc-refresh").addEventListener("click", () => loadOverview());
-    $("visc-blend-record").addEventListener("change", (event) => {
-      selectBlendRecord(Number(event.target.value), { focus: true });
-    });
+    $("visc-blend-filter").addEventListener("input", renderBlendRecords);
+    $("visc-open-only").addEventListener("change", renderBlendRecords);
     $("visc-year").addEventListener("change", () => {
       const value = $("visc-year").value;
       state.year = value === "" ? null : Number(value);

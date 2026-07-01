@@ -42,6 +42,7 @@
     }
 
     function setLookupSelection(recipeId) {
+      const canManage = !!ctx.canManage;
       state.selectedRecipeId = recipeId;
       const rows = dom.lookupResult.querySelectorAll("tbody tr");
       rows.forEach((row) => {
@@ -51,10 +52,10 @@
         dom.lookupSelectedLabel.textContent = recipeId ? `선택: #${recipeId}` : "선택: 없음";
       }
       if (dom.lookupCopyBtn) dom.lookupCopyBtn.disabled = !recipeId;
-      if (dom.lookupCloneBtn) dom.lookupCloneBtn.disabled = !recipeId;
+      if (dom.lookupCloneBtn) dom.lookupCloneBtn.disabled = !canManage || !recipeId;
       if (dom.lookupHistoryBtn) dom.lookupHistoryBtn.disabled = !recipeId;
       if (dom.lookupDhrBtn) {
-        dom.lookupDhrBtn.disabled = !recipeId;
+        dom.lookupDhrBtn.disabled = !canManage || !recipeId;
         dom.lookupDhrBtn.textContent = dhrMode() ? "DHR 전용 해제" : "DHR 전용 지정";
       }
       if (dom.lookupActions) dom.lookupActions.hidden = !recipeId;

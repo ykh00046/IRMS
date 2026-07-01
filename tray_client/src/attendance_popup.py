@@ -1,5 +1,3 @@
-"""Persistent attendance alert popup for the tray client."""
-
 from __future__ import annotations
 
 import logging
@@ -10,7 +8,7 @@ from typing import Any, Callable
 
 try:
     import tkinter as tk
-except Exception:  # pragma: no cover - platform/import guard
+except ImportError:
     tk = None  # type: ignore[assignment]
 
 
@@ -52,10 +50,18 @@ ACCENT_TOKENS = {
         "primary_fg": "#ffffff",
         "primary_active": "#1f2937",
     },
+    "viscosity": {
+        "dot": "#0f766e",
+        "badge_bg": "#ccfbf1",
+        "badge_fg": "#0f766e",
+        "primary_bg": "#0f766e",
+        "primary_fg": "#ffffff",
+        "primary_active": "#115e59",
+    },
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PopupPayload:
     title: str
     badge_text: str
@@ -63,6 +69,8 @@ class PopupPayload:
     lines: list[str]
     table_rows: list[dict[str, str]] = field(default_factory=list)
     accent: str = "live"
+    action_key: str = "attendance"
+    confirm_text: str = "확인"
 
 
 def _display_name(item: dict[str, Any]) -> str:
@@ -80,9 +88,9 @@ def _privacy_safe_lines(items: list[dict[str, Any]], total: int) -> list[str]:
     lines = [_privacy_safe_line(item) for item in visible]
     remaining = max(0, total - len(visible))
     if remaining > 0:
-        lines.append(f"외 {remaining}명")
+        lines.append(f"+{remaining}명")
     if not lines:
-        lines.append("근태 확인이 필요한 인원이 있습니다.")
+        lines.append("근태 확인이 필요한 인원이 없습니다.")
     return lines
 
 
@@ -104,17 +112,13 @@ def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
                 }
             )
             continue
-
         for detail in details:
             rows.append(
                 {
                     "emp_id": str(item.get("emp_id") or ""),
                     "name": _display_name(item),
                     "department": str(item.get("department") or ""),
-                    "date": str(
-                        detail.get("display_date")
-                        or str(detail.get("date") or "")[-5:]
-                    ),
+                    "date": str(detail.get("display_date") or str(detail.get("date") or "")[-5:]),
                     "code": str(detail.get("code") or ""),
                     "content": str(detail.get("content") or ""),
                     "extra_content": str(detail.get("extra_content") or ""),
@@ -132,36 +136,58 @@ def build_live_popup_payload(payload: dict[str, Any]) -> PopupPayload:
     overflow = max(0, row_total - POPUP_MAX_ROWS)
     lines: list[str] = []
     if overflow > 0:
-        lines.append(f"외 {overflow}건 추가")
+        lines.append(f"+{overflow}건 추가")
     elif not table_rows:
         lines = _privacy_safe_lines(items, total)
     return PopupPayload(
         title="근태 확인 필요",
         badge_text=f"{row_total}건" if row_total else "확인",
-        summary="이번 달 시급직 근태 특이사항을 확인해주세요.",
+        summary="이번 달 미처리 근태 특이사항을 확인해주세요.",
         lines=lines,
         table_rows=table_rows[:POPUP_MAX_ROWS],
         accent="live",
+        action_key="attendance",
+        confirm_text="근태 확인",
     )
 
 
 def build_test_popup_payload() -> PopupPayload:
-    items = [{"name": "홍길동"}, {"name": "김영희"}]
+    items = [{"name": "홍길동"}, {"name": "김현장"}]
     return PopupPayload(
         title="근태 알림 테스트",
         badge_text="TEST",
         summary="팝업 표시와 버튼 동작을 확인하세요.",
         lines=_privacy_safe_lines(items, len(items)),
         accent="test",
+        action_key="attendance",
+        confirm_text="근태 확인",
+    )
+
+
+def build_viscosity_popup_payload(payload: dict[str, Any]) -> PopupPayload:
+    items = list(payload.get("items") or [])
+    lines = [
+        f"{str(item.get('code') or item.get('name') or '').strip()} 점도를 입력하세요."
+        for item in items[:POPUP_MAX_NAMES]
+    ]
+    remaining = max(0, len(items) - len(lines))
+    if remaining > 0:
+        lines.append(f"+{remaining}개 품목 추가")
+    return PopupPayload(
+        title="점도 입력 필요",
+        badge_text=f"{len(items)}개" if items else "확인",
+        summary="지정된 품목 중 오늘 점도 기록이 없는 품목이 있습니다.",
+        lines=lines,
+        accent="viscosity",
+        action_key="viscosity",
+        confirm_text="점도 등록",
     )
 
 
 class AttendanceAlertPopupManager:
-    """Show a persistent bottom-right popup until the user acts on it."""
-
     def __init__(
         self,
-        on_confirm: Callable[[], None],
+        on_confirm: Callable[[PopupPayload], None],
         on_dismiss_today: Callable[[], None],
     ) -> None:
         self._on_confirm = on_confirm
@@ -178,6 +204,7 @@ class AttendanceAlertPopupManager:
         self._status_dot = None
         self._badge_label = None
         self._confirm_button = None
+        self._current_payload: PopupPayload | None = None
 
     def start(self) -> None:
         if tk is None:
@@ -214,7 +241,7 @@ class AttendanceAlertPopupManager:
             self._root = root
             root.after(QUEUE_POLL_MS, self._drain_queue)
             root.mainloop()
-        except Exception as exc:  # noqa: BLE001
+        except tk.TclError as exc:
             logger.warning("attendance popup ui failed: %s", exc)
 
     def _drain_queue(self) -> None:
@@ -246,7 +273,7 @@ class AttendanceAlertPopupManager:
 
         window = tk.Toplevel(self._root)
         window.withdraw()
-        window.title("IRMS 근태 알림")
+        window.title("IRMS 현장 알림")
         window.attributes("-topmost", True)
         window.overrideredirect(True)
         window.resizable(False, False)
@@ -270,18 +297,10 @@ class AttendanceAlertPopupManager:
 
         header = tk.Frame(panel, bg=PANEL_BG)
         header.pack(fill="x")
-
         title_row = tk.Frame(header, bg=PANEL_BG)
         title_row.pack(side="left", fill="x", expand=True)
 
-        status_dot = tk.Canvas(
-            title_row,
-            width=10,
-            height=10,
-            bg=PANEL_BG,
-            highlightthickness=0,
-            bd=0,
-        )
+        status_dot = tk.Canvas(title_row, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
         status_dot.create_oval(2, 2, 8, 8, fill=ACCENT_TOKENS["live"]["dot"], outline="")
         status_dot.pack(side="left", pady=(3, 0))
         self._status_dot = status_dot
@@ -329,7 +348,6 @@ class AttendanceAlertPopupManager:
 
         buttons = tk.Frame(panel, bg=PANEL_BG)
         buttons.pack(fill="x", pady=(14, 0))
-
         confirm_button = tk.Button(
             buttons,
             text="확인",
@@ -363,7 +381,6 @@ class AttendanceAlertPopupManager:
             font=("Malgun Gothic", 9),
             cursor="hand2",
         ).pack(side="left", padx=(8, 0))
-
         tk.Button(
             buttons,
             text="오늘은 그만",
@@ -389,34 +406,30 @@ class AttendanceAlertPopupManager:
             self._status_dot.delete("all")
             self._status_dot.create_oval(2, 2, 8, 8, fill=accent["dot"], outline="")
         if self._badge_label is not None:
-            self._badge_label.configure(
-                bg=accent["badge_bg"],
-                fg=accent["badge_fg"],
-            )
+            self._badge_label.configure(bg=accent["badge_bg"], fg=accent["badge_fg"])
         if self._confirm_button is not None:
             self._confirm_button.configure(
                 bg=accent["primary_bg"],
                 fg=accent["primary_fg"],
                 activebackground=accent["primary_active"],
                 activeforeground=accent["primary_fg"],
+                text=payload.confirm_text,
             )
 
     def _render_table(self, payload: PopupPayload) -> None:
         assert tk is not None
         if self._lines_frame is None:
             return
-
         columns = [
             ("emp_id", "사번", 8, "center"),
             ("name", "성명", 8, "center"),
-            ("department", "부서", 14, "w"),
+            ("department", "부서", 12, "w"),
             ("date", "일자", 7, "center"),
-            ("code", "코", 4, "center"),
+            ("code", "구분", 5, "center"),
             ("content", "내용", 24, "w"),
-            ("extra_content", "추가 내용", 34, "w"),
-            ("status", "처리 상황", 24, "w"),
+            ("extra_content", "추가 내용", 30, "w"),
+            ("status", "처리 상황", 22, "w"),
         ]
-
         table = tk.Frame(
             self._lines_frame,
             bg=TABLE_BORDER,
@@ -460,18 +473,14 @@ class AttendanceAlertPopupManager:
         assert tk is not None
         if self._lines_frame is None:
             return
-
         for child in self._lines_frame.winfo_children():
             child.destroy()
-
         if payload.table_rows:
             self._render_table(payload)
-
         for line in payload.lines:
             row = tk.Frame(self._lines_frame, bg=PANEL_BG)
             row.pack(fill="x", pady=2)
-
-            if line.startswith("외 "):
+            if line.startswith("+"):
                 tk.Label(
                     row,
                     text=line,
@@ -482,18 +491,9 @@ class AttendanceAlertPopupManager:
                     justify="left",
                 ).pack(fill="x", anchor="w")
                 continue
-
-            dot = tk.Canvas(
-                row,
-                width=8,
-                height=8,
-                bg=PANEL_BG,
-                highlightthickness=0,
-                bd=0,
-            )
+            dot = tk.Canvas(row, width=8, height=8, bg=PANEL_BG, highlightthickness=0, bd=0)
             dot.create_oval(2, 2, 6, 6, fill="#94a3b8", outline="")
             dot.pack(side="left", pady=(5, 0))
-
             tk.Label(
                 row,
                 text=line,
@@ -514,7 +514,7 @@ class AttendanceAlertPopupManager:
             or self._summary_var is None
         ):
             return
-
+        self._current_payload = payload
         self._title_var.set(payload.title)
         self._badge_var.set(payload.badge_text)
         self._summary_var.set(payload.summary)
@@ -532,8 +532,12 @@ class AttendanceAlertPopupManager:
         self._window.lift()
 
     def _confirm(self) -> None:
+        payload = self._current_payload
+        if payload is None:
+            self._dismiss_window()
+            return
         try:
-            self._on_confirm()
+            self._on_confirm(payload)
         finally:
             self._dismiss_window()
 

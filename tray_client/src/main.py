@@ -1,13 +1,3 @@
-"""IRMS Notice tray application entrypoint.
-
-The tray client now exists solely to surface attendance-anomaly popups
-on field PCs and to give operators a one-click shortcut into the
-attendance page. Voice broadcasting (TTS) was removed in 2.0.0 because
-the SAPI/PyInstaller combination produced unreliable audio across the
-heterogeneous field PC fleet; admins still post notices via the web UI
-for record keeping.
-"""
-
 from __future__ import annotations
 
 import os
@@ -19,7 +9,7 @@ from pathlib import Path
 
 try:
     from PIL import Image
-except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+except ModuleNotFoundError as exc:
     Image = None  # type: ignore[assignment]
     _PIL_IMPORT_ERROR = exc
 else:
@@ -28,7 +18,7 @@ else:
 try:
     import pystray
     from pystray import Menu, MenuItem
-except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+except ModuleNotFoundError as exc:
     pystray = None  # type: ignore[assignment]
     _PYSTRAY_IMPORT_ERROR = exc
 
@@ -47,15 +37,15 @@ else:
     _PYSTRAY_IMPORT_ERROR = None
 
 from .attendance_alerts import AttendanceAlertPoller, today_iso
-from .attendance_popup import AttendanceAlertPopupManager
+from .attendance_popup import AttendanceAlertPopupManager, PopupPayload
 from .config import Config, logs_dir
 from .logger import setup_logger
+from .viscosity_alerts import ViscosityAlertPoller
 
-APP_TITLE = "IRMS 근태 알림"
+APP_TITLE = "IRMS 현장 알림"
 
 
 def asset_path(name: str) -> Path:
-    """Locate a bundled asset for both dev and PyInstaller one-folder modes."""
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
         candidate = base / "assets" / name
@@ -78,12 +68,18 @@ def load_icon_image() -> Image.Image:
 
 
 def attendance_page_url(server_url: str) -> str:
-    """Return the attendance page URL rooted at the configured server."""
     return f"{server_url.rstrip('/')}/attendance"
 
 
+def blend_page_url(server_url: str) -> str:
+    return f"{server_url.rstrip('/')}/blend"
+
+
+def viscosity_page_url(server_url: str) -> str:
+    return f"{server_url.rstrip('/')}/viscosity"
+
+
 def open_in_browser(url: str) -> None:
-    """Open a URL in the default browser."""
     webbrowser.open_new_tab(url)
 
 
@@ -94,10 +90,15 @@ class TrayApp:
         self._icon: pystray.Icon | None = None
         self._alert_mute_date: str | None = None
         self.alert_popup = AttendanceAlertPopupManager(
-            on_confirm=self._open_attendance,
+            on_confirm=self._open_popup_target,
             on_dismiss_today=self._mute_alerts_for_today,
         )
         self.alert_poller = AttendanceAlertPoller(
+            config=self.config,
+            present_alert=self.alert_popup.show,
+            is_enabled_getter=self._alerts_enabled_today,
+        )
+        self.viscosity_poller = ViscosityAlertPoller(
             config=self.config,
             present_alert=self.alert_popup.show,
             is_enabled_getter=self._alerts_enabled_today,
@@ -109,12 +110,10 @@ class TrayApp:
                 "pystray is required to run the tray client. "
                 "Install test dependencies with `pip install -r requirements-dev.txt`."
             ) from _PYSTRAY_IMPORT_ERROR
-        self.logger.info(
-            "starting IRMS attendance tray (server=%s)",
-            self.config.server_url,
-        )
+        self.logger.info("starting IRMS tray (server=%s)", self.config.server_url)
         self.alert_popup.start()
         self.alert_poller.start()
+        self.viscosity_poller.start()
 
         self._icon = pystray.Icon(
             "irms_notice",
@@ -128,6 +127,7 @@ class TrayApp:
             self.logger.info("shutting down")
             self.alert_popup.stop()
             self.alert_poller.stop()
+            self.viscosity_poller.stop()
 
     def _alerts_enabled_today(self) -> bool:
         if self._alert_mute_date is None:
@@ -138,14 +138,19 @@ class TrayApp:
         return Menu(
             MenuItem(
                 lambda _item: (
-                    "근태 알림 오늘만 끄기"
+                    "현장 알림 오늘만 끄기"
                     if self._alerts_enabled_today()
-                    else "근태 알림 오늘만 켜기 (자정 자동 복귀)"
+                    else "현장 알림 다시 켜기"
                 ),
                 self._toggle_alert_mute_today,
             ),
             MenuItem("근태 알림 바로 확인", self._show_attendance_anomalies),
+            MenuItem("점도 알림 바로 확인", self._show_viscosity_reminders),
+            Menu.SEPARATOR,
             MenuItem("근태 확인", self._open_attendance_menu),
+            MenuItem("반제품 제조 관리", self._open_blend_menu),
+            MenuItem("점도 등록", self._open_viscosity_menu),
+            Menu.SEPARATOR,
             MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
@@ -153,13 +158,13 @@ class TrayApp:
 
     def _mute_alerts_for_today(self) -> None:
         self._alert_mute_date = today_iso()
-        self.logger.info("attendance alerts muted for %s", self._alert_mute_date)
+        self.logger.info("field alerts muted for %s", self._alert_mute_date)
         if self._icon is not None:
             self._icon.update_menu()
 
     def _enable_alerts(self) -> None:
         self._alert_mute_date = None
-        self.logger.info("attendance alerts re-enabled")
+        self.logger.info("field alerts re-enabled")
         if self._icon is not None:
             self._icon.update_menu()
 
@@ -173,6 +178,16 @@ class TrayApp:
         self.logger.info("manual attendance anomaly check requested")
         self.alert_poller.trigger_once()
 
+    def _show_viscosity_reminders(self, _icon, _item) -> None:
+        self.logger.info("manual viscosity reminder check requested")
+        self.viscosity_poller.trigger_once()
+
+    def _open_popup_target(self, payload: PopupPayload) -> None:
+        if payload.action_key == "viscosity":
+            self._open_viscosity()
+            return
+        self._open_attendance()
+
     def _open_attendance(self) -> None:
         url = attendance_page_url(self.config.server_url)
         try:
@@ -181,8 +196,30 @@ class TrayApp:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("open attendance failed: %s", exc)
 
+    def _open_blend(self) -> None:
+        url = blend_page_url(self.config.server_url)
+        try:
+            open_in_browser(url)
+            self.logger.info("blend page opened: %s", url)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("open blend failed: %s", exc)
+
+    def _open_viscosity(self) -> None:
+        url = viscosity_page_url(self.config.server_url)
+        try:
+            open_in_browser(url)
+            self.logger.info("viscosity page opened: %s", url)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("open viscosity failed: %s", exc)
+
     def _open_attendance_menu(self, _icon, _item) -> None:
         self._open_attendance()
+
+    def _open_blend_menu(self, _icon, _item) -> None:
+        self._open_blend()
+
+    def _open_viscosity_menu(self, _icon, _item) -> None:
+        self._open_viscosity()
 
     def _open_logs(self, _icon, _item) -> None:
         path = logs_dir()

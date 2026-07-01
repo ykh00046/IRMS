@@ -65,6 +65,7 @@ class ViscosityProductUpdateBody(BaseModel):
     sigma_k: float = Field(default=3, ge=1, le=6)
     rpm: float | None = Field(default=None, ge=0, le=100000)
     temperature: float | None = Field(default=None, ge=-50, le=300)
+    remind_daily: bool = False
     is_active: bool = True
 
     @model_validator(mode="after")

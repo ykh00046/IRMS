@@ -16,15 +16,14 @@ import io
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from ..auth import require_access_level
 from ..db import get_connection, row_to_dict
 
 
 def build_router() -> APIRouter:
-    router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
+    router = APIRouter()
 
     @router.get("/stats/consumption")
     def stats_consumption(

@@ -71,7 +71,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
     where = "WHERE is_active = 1" if active_only else ""
     rows = connection.execute(
         f"""
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
         FROM viscosity_products
         {where}
         ORDER BY is_active DESC, code ASC
@@ -83,7 +83,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
 def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
         FROM viscosity_products
         WHERE id = ?
         """,
@@ -95,7 +95,7 @@ def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, An
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
         FROM viscosity_products
         WHERE code = ?
         """,
@@ -136,6 +136,7 @@ def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
         "sigma_k": float(row["sigma_k"]),
         "rpm": _opt_float(row["rpm"]),
         "temperature": _opt_float(row["temperature"]),
+        "remind_daily": bool(row["remind_daily"]),
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "has_spec": row["lower_limit"] is not None or row["upper_limit"] is not None,
@@ -499,6 +500,77 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
         "total_anomaly": total_anomaly,
         "product_count": len(items),
     }
+
+
+def daily_reading_reminders(
+    connection: sqlite3.Connection,
+    *,
+    target_date: str,
+    codes: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """오늘(target_date) 측정이 밀린 '매일 알림 대상'(remind_daily=1) 반제품 목록.
+
+    알림 대상 여부는 웹 점도 설정이 소유한다(remind_daily 플래그). codes 는 선택적
+    추가 필터일 뿐이며, 비어 있으면 알림 대상 전체를 대상으로 한다(서버 주도).
+    """
+    normalized_codes: list[str] = []
+    seen_codes: set[str] = set()
+    for code in codes or []:
+        normalized = str(code or "").strip().upper()
+        if normalized and normalized not in seen_codes:
+            normalized_codes.append(normalized)
+            seen_codes.add(normalized)
+
+    where = ["p.is_active = 1", "p.remind_daily = 1"]
+    params: list[Any] = []
+    if normalized_codes:
+        placeholders = ",".join("?" for _code in normalized_codes)
+        where.append(f"upper(p.code) IN ({placeholders})")
+        params.extend(normalized_codes)
+    params.append(target_date)  # NOT EXISTS today.measured_date = ?
+
+    rows = connection.execute(
+        f"""
+        SELECT
+            p.id,
+            p.code,
+            p.name,
+            latest.viscosity AS latest_value,
+            latest.measured_date AS latest_date
+        FROM viscosity_products p
+        LEFT JOIN (
+            SELECT r.product_id, r.viscosity, r.measured_date
+            FROM viscosity_readings r
+            JOIN (
+                SELECT product_id, MAX(measured_date || ':' || printf('%012d', id)) AS max_key
+                FROM viscosity_readings
+                WHERE measured_date IS NOT NULL
+                GROUP BY product_id
+            ) pick
+              ON pick.product_id = r.product_id
+             AND pick.max_key = r.measured_date || ':' || printf('%012d', r.id)
+        ) latest ON latest.product_id = p.id
+        WHERE {" AND ".join(where)}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM viscosity_readings today
+              WHERE today.product_id = p.id
+                AND today.measured_date = ?
+          )
+        ORDER BY p.code ASC
+        """,
+        params,
+    ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "code": row["code"],
+            "name": row["name"],
+            "latest_value": _opt_float(row["latest_value"]),
+            "latest_date": row["latest_date"],
+        }
+        for row in rows
+    ]
 
 
 def add_reading(

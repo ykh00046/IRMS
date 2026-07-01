@@ -14,12 +14,12 @@
 {% block content %}
         <nav class="mgmt-tabs">
           <button class="mgmt-tab active" data-tab="history" type="button">레시피 현황</button>
-          <button class="mgmt-tab" data-tab="import" type="button">레시피 등록·수정</button>
+          <button class="mgmt-tab" data-tab="import" type="button" {% if not can_manage %}hidden{% endif %}>레시피 등록·수정</button>
           <button class="mgmt-tab" data-tab="lookup" type="button">버전 비교</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
-        <div class="tab-panel" id="tab-import">
+        <div class="tab-panel" id="tab-import" {% if not can_manage %}hidden{% endif %}>
           <section class="panel import-layout">
             <div class="input-section">
               <div id="revision-banner" class="revision-banner" hidden></div>
@@ -139,8 +139,8 @@
               <span id="lookup-selected-label" class="muted">선택: 없음</span>
               <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
               <button id="lookup-history-btn" class="btn" disabled>버전 이력</button>
-              <button id="lookup-dhr-btn" class="btn" disabled>DHR 전용 지정/해제</button>
-              <button id="lookup-clone-btn" class="btn accent" disabled>수정 등록</button>
+              <button id="lookup-dhr-btn" class="btn" disabled {% if not can_manage %}hidden{% endif %}>DHR 전용 지정/해제</button>
+              <button id="lookup-clone-btn" class="btn accent" disabled {% if not can_manage %}hidden{% endif %}>수정 등록</button>
             </div>
           </section>
         </div>
@@ -206,8 +206,8 @@
     <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
     <script src="/static/js/management/recipe-edit-loader.js?v=20260630a"></script>
     <script src="/static/js/management/import-validate.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260630a"></script>
-    <script src="/static/js/management/version-compare.js?v=20260630a"></script>
-    <script src="/static/js/management.js?v=20260630a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260701d"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260701d"></script>
+    <script src="/static/js/management/version-compare.js?v=20260701d"></script>
+    <script src="/static/js/management.js?v=20260701d"></script>
 {% endblock %}

@@ -2,8 +2,10 @@
 
 Stored as JSON in ``%APPDATA%\\IRMS-Notice\\config.json``. The 2.0.0
 release dropped TTS voice broadcasting, so the only thing the tray
-still needs to remember between restarts is which IRMS server to ping
-for attendance anomalies.
+still needs to remember between restarts is which IRMS server to ping.
+
+점도 알림 대상 반제품 선택은 웹 점도 설정(remind_daily)이 소유한다. 트레이는
+서버에 '오늘 밀린 알림 대상'을 물어보기만 하므로 품목 목록을 저장하지 않는다.
 """
 
 from __future__ import annotations

@@ -61,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
     import: { eyebrow: "레시피 관리", heading: "레시피 등록·수정" },
     lookup: { eyebrow: "레시피 관리", heading: "버전 비교" },
   };
+  const canManage = dom.shell && dom.shell.dataset.canManage === "1";
 
   function syncTopbarTitle(tabName) {
     const title = tabTitles[tabName] || tabTitles.history;
@@ -105,6 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Shared ctx ──
   const ctx = {
     dom,
+    canManage,
     state: {
       currentPreview: null,
       materials: [],
@@ -142,15 +144,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
 
   async function loadMaterials() {
+    if (!canManage) return;
     ctx.state.materials = await IRMS.getMaterials();
     spreadsheet.initSpreadsheet(ctx.state.materials);
   }
 
   // ── Event bindings ──
-  dom.previewBtn.addEventListener("click", importValidate.handlePreview);
+  if (canManage) {
+    dom.previewBtn.addEventListener("click", importValidate.handlePreview);
 
-  dom.registerBtn.addEventListener("click", importValidate.handleRegister);
-  dom.clearBtn.addEventListener("click", importValidate.handleClear);
+    dom.registerBtn.addEventListener("click", importValidate.handleRegister);
+    dom.clearBtn.addEventListener("click", importValidate.handleClear);
+  }
 
   dom.historyStatus.addEventListener("change", () => {
     recipeHistory.persistHistoryFilters();
@@ -224,9 +229,11 @@ document.addEventListener("DOMContentLoaded", () => {
       recipeHistory.restoreHistoryFilters();
       recipeHistory.updateHistorySummary();
       await loadMaterials();
-      importValidate.renderIssues([], dom.errorList, "오류 없음");
-      importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
-      importValidate.syncRegisterState();
+      if (canManage) {
+        importValidate.renderIssues([], dom.errorList, "오류 없음");
+        importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
+        importValidate.syncRegisterState();
+      }
       await Promise.all([
         recipeHistory.renderHistory(),
         recipeLookup.loadProducts(),

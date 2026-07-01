@@ -149,6 +149,16 @@
                 </div>
               </td>`;
               row.after(detailRow);
+              if (!ctx.canManage) {
+                detailRow
+                  .querySelectorAll(
+                    ".history-edit-btn, .history-dhr-btn, .history-cancel-btn, .history-delete-btn, .history-delete-with-records-btn",
+                  )
+                  .forEach((button) => {
+                    button.hidden = true;
+                    button.disabled = true;
+                  });
+              }
 
               detailRow.querySelector(".history-copy-btn").addEventListener("click", async (e) => {
                 e.stopPropagation();

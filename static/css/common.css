@@ -119,8 +119,9 @@ body {
 
 .session-countdown-badge {
   position: fixed;
-  top: 12px;
+  top: auto;
   right: 16px;
+  bottom: 16px;
   z-index: 1200;
   padding: 6px 12px;
   border-radius: 999px;
@@ -161,7 +162,6 @@ body {
 
 @media (max-width: 560px) {
   .session-countdown-badge {
-    top: auto;
     right: 12px;
     bottom: 12px;
     max-width: calc(100vw - 24px);
