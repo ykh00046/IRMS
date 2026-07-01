@@ -27,9 +27,6 @@
         <nav class="sidebar-nav" aria-label="주 메뉴">
           <div class="nav-section">
             <p class="nav-section-label">현장 작업</p>
-            <a href="/" class="side-link{{ ' active' if request.url.path == '/' else '' }}">
-              <span class="side-ico side-ico-home" aria-hidden="true"></span><span>작업 홈</span>
-            </a>
             <a href="/blend" class="side-link{{ ' active' if request.url.path == '/blend' else '' }}">
               <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>배합</span>
             </a>
@@ -93,6 +90,7 @@
             <h1 class="topbar-heading">{% block heading %}{% endblock %}</h1>
           </div>
           <div class="topbar-actions">
+            <a href="/" class="btn compact" aria-label="작업 홈" title="작업 홈">홈</a>
             {% if current_user and current_user.id %}
             <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
             {% else %}
