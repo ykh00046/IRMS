@@ -182,18 +182,25 @@
   async function loadRecipes() {
     const data = await request("/blend/recipes");
     state.recipes = data.items || [];
-    const sel = $("blend-recipe");
-    sel.innerHTML = '<option value="">레시피 선택…</option>';
-    state.recipes.forEach((r) => {
-      const o = document.createElement("option");
-      o.value = String(r.id);
-      o.textContent = r.product_name;
-      sel.appendChild(o);
-    });
+    // 레시피는 타이핑 필터(datalist): 'sb' 입력 → 후보 좁혀짐 → 선택 시 로드.
+    const dl = $("recipe-names");
+    if (dl) dl.innerHTML = state.recipes.map((r) => `<option value="${esc(r.product_name)}"></option>`).join("");
+    $("blend-recipe").value = "";
+  }
+
+  // 입력한 레시피명(대소문자 무시, 정확 일치)을 레시피 id 로 해석. 부분 입력은 미선택.
+  function selectedRecipeId() {
+    const name = $("blend-recipe").value.trim().toLowerCase();
+    if (!name) return "";
+    const hit = state.recipes.find((r) => String(r.product_name || "").trim().toLowerCase() === name);
+    return hit ? String(hit.id) : "";
   }
 
   async function onRecipeChange() {
-    const id = $("blend-recipe").value;
+    const id = selectedRecipeId();
+    // 입력 이벤트가 연속으로 와도 선택이 실제로 바뀌었을 때만 반응(중복 API 호출 방지).
+    if (id === state._lastRecipeId) return;
+    state._lastRecipeId = id;
     if (!id) {
       state.current = null;
       state.items = [];
@@ -570,7 +577,9 @@
   }
 
   function bind() {
-    $("blend-recipe").addEventListener("change", () => onRecipeChange().catch((e) => notify(e.message, "error")));
+    const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
+    $("blend-recipe").addEventListener("input", onRecipePick);
+    $("blend-recipe").addEventListener("change", onRecipePick);
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
       state.items.forEach((_, i) => updateRowVar(i));

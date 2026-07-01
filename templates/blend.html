@@ -17,7 +17,8 @@
               <div class="blend-form-grid">
                 <div class="blend-field">
                   <label class="filter-label" for="blend-recipe">레시피</label>
-                  <select class="input" id="blend-recipe"></select>
+                  <input class="input" id="blend-recipe" list="recipe-names" autocomplete="off" placeholder="레시피 검색 (예: sb)" />
+                  <datalist id="recipe-names"></datalist>
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-total">총 배합량 (g)</label>
