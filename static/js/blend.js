@@ -222,7 +222,10 @@
   function recomputeTheory() {
     const total = Number($("blend-total").value) || 0;
     state.items.forEach((it) => {
-      it.theory_amount = Math.round((it.ratio / 100) * total * 1000) / 1000;
+      // 이론량을 저울/입력 단위(0.1g)로 반올림. 표시값과 내부값을 일치시켜, 표시된
+      // 이론값을 그대로 입력하면 편차가 정확히 0이 되도록 한다(반올림 잔차로 저장이
+      // 막히던 문제 해결).
+      it.theory_amount = Math.round((it.ratio / 100) * total * 10) / 10;
     });
   }
 
