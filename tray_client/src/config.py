@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 APP_NAME = "IRMS-Notice"
-DEFAULT_SERVER_URL = "http://192.168.11.147:9000"
+DEFAULT_SERVER_URL = "http://192.168.11.194:9000"
 
 
 def app_data_dir() -> Path:
