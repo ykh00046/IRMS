@@ -18,6 +18,7 @@
     periodChart: null,
     granularity: "quarter",
     year: null,
+    reactor: null,
   };
 
   const STATUS_LABEL = { normal: "정상", warn: "경고", anomaly: "이상" };
@@ -87,15 +88,17 @@
       if (!product) return;
       state.currentId = product.id;
       state.year = product.year;
+      state.reactor = null; // 반제품이 바뀌면 반응기 필터 초기화
       loadProduct(product.id);
     };
   }
 
   async function loadProduct(productId) {
     state.analysis = await request(`/viscosity/products/${productId}`, {
-      query: { granularity: state.granularity, year: state.year },
+      query: { granularity: state.granularity, year: state.year, reactor: state.reactor },
     });
     renderYearSelect();
+    renderReactorControls();
     renderCards();
     renderTrendBanner();
     renderPeriodAlerts();
@@ -119,6 +122,34 @@
     all.textContent = "전체";
     select.appendChild(all);
     select.value = state.year === null || state.year === undefined ? "" : String(state.year);
+  }
+
+  // 반응기 진행 반제품일 때만 툴바 반응기 필터 + 등록 폼 반응기 선택을 노출.
+  function renderReactorControls() {
+    const product = currentProduct();
+    const use = Boolean(product && product.use_reactor);
+    const label = $("visc-reactor-label");
+    const select = $("visc-reactor");
+    if (label) label.hidden = !use;
+    if (select) {
+      select.hidden = !use;
+      if (use) {
+        select.innerHTML = "";
+        const all = document.createElement("option");
+        all.value = "";
+        all.textContent = "전체(반응기)";
+        select.appendChild(all);
+        [1, 2, 3, 4].forEach((n) => {
+          const option = document.createElement("option");
+          option.value = String(n);
+          option.textContent = `반응기 ${n}`;
+          select.appendChild(option);
+        });
+        select.value = state.reactor == null ? "" : String(state.reactor);
+      }
+    }
+    const field = $("visc-reactor-field");
+    if (field) field.hidden = !use;
   }
 
   function renderCards() {
@@ -403,6 +434,12 @@
       date.textContent = ` ${reading.measured_date}`;
       cell.appendChild(date);
     }
+    if (reading.reactor) {
+      const rx = document.createElement("span");
+      rx.className = "muted small";
+      rx.textContent = ` · 반응기 ${reading.reactor}`;
+      cell.appendChild(rx);
+    }
     if (isManager) {
       const button = document.createElement("button");
       button.className = "visc-del-btn";
@@ -489,13 +526,24 @@
       showFormError("점도값을 입력하세요.");
       return;
     }
+    const product = currentProduct();
+    let reactor = null;
+    if (product && product.use_reactor) {
+      const raw = $("visc-reg-reactor").value;
+      if (!raw) {
+        showFormError("반응기를 선택하세요.");
+        return;
+      }
+      reactor = Number(raw);
+    }
     try {
       await request(`/blend/records/${recordId}/viscosity`, {
         method: "POST",
-        body: { viscosity: value, memo: $("visc-memo").value.trim() || null },
+        body: { viscosity: value, memo: $("visc-memo").value.trim() || null, reactor },
       });
       $("visc-value").value = "";
       $("visc-memo").value = "";
+      if ($("visc-reg-reactor")) $("visc-reg-reactor").value = "";
       const selectedId = recordId;
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });
@@ -556,6 +604,7 @@
     $("visc-set-rpm").value = product.rpm ?? "";
     $("visc-set-temp").value = product.temperature ?? "";
     $("visc-set-remind").checked = product.remind_daily;
+    $("visc-set-reactor").checked = product.use_reactor;
     $("visc-set-active").checked = product.is_active;
     $("visc-settings-error").hidden = true;
     $("visc-settings-modal").hidden = false;
@@ -579,6 +628,7 @@
       rpm: numOrNull("visc-set-rpm"),
       temperature: numOrNull("visc-set-temp"),
       remind_daily: $("visc-set-remind").checked,
+      use_reactor: $("visc-set-reactor").checked,
       is_active: $("visc-set-active").checked,
     };
     try {
@@ -626,6 +676,11 @@
     $("visc-year").addEventListener("change", () => {
       const value = $("visc-year").value;
       state.year = value === "" ? null : Number(value);
+      if (state.currentId) loadProduct(state.currentId);
+    });
+    $("visc-reactor").addEventListener("change", () => {
+      const value = $("visc-reactor").value;
+      state.reactor = value === "" ? null : Number(value);
       if (state.currentId) loadProduct(state.currentId);
     });
     $("visc-gran-toggle").querySelectorAll("button[data-gran]").forEach((button) => {

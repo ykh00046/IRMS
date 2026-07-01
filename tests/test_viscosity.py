@@ -29,6 +29,7 @@ def _make_db() -> sqlite3.Connection:
             rpm REAL,
             temperature REAL,
             remind_daily INTEGER NOT NULL DEFAULT 0,
+            use_reactor INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         );
@@ -41,6 +42,7 @@ def _make_db() -> sqlite3.Connection:
             memo TEXT,
             recipe_material TEXT,
             material_lot TEXT,
+            reactor INTEGER,
             created_by TEXT,
             created_at TEXT NOT NULL,
             blend_record_id INTEGER
@@ -72,6 +74,36 @@ def _seed(conn, product_id, values, start_seq=1):
             memo=None, recipe_material=None, material_lot=None,
             created_by="test", created_at="2026-01-01T00:00:00Z",
         )
+
+
+# ── 반응기 ──────────────────────────────────────────────────────
+def test_reactor_stored_and_filtered():
+    """반응기별 저장 + analyze_product(reactor=)로 해당 반응기 표본만 분석."""
+    conn = _make_db()
+    p = _add_product(conn, "PB")
+    vs.add_reading(
+        conn, product_id=p["id"], lot_no="26010101", viscosity=49.0,
+        measured_date="2026-01-01", memo=None, recipe_material=None,
+        material_lot=None, created_by="t", created_at="2026-01-01T00:00:00Z",
+        reactor=1,
+    )
+    vs.add_reading(
+        conn, product_id=p["id"], lot_no="26010201", viscosity=90.0,
+        measured_date="2026-01-02", memo=None, recipe_material=None,
+        material_lot=None, created_by="t", created_at="2026-01-01T00:00:00Z",
+        reactor=2,
+    )
+    assert vs.available_reactors(conn, p["id"]) == [1, 2]
+
+    all_read = vs.analyze_product(conn, p)
+    assert all_read["stats"]["n"] == 2
+    assert all_read["available_reactors"] == [1, 2]
+
+    only_r2 = vs.analyze_product(conn, p, reactor=2)
+    assert only_r2["stats"]["n"] == 1
+    assert only_r2["readings"][0]["viscosity"] == 90.0
+    assert only_r2["readings"][0]["reactor"] == 2
+    assert only_r2["reactor"] == 2
 
 
 # ── LOT 날짜 파서 ────────────────────────────────────────────────

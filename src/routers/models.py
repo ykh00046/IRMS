@@ -36,6 +36,7 @@ class ViscosityReadingBody(BaseModel):
     memo: str | None = Field(default=None, max_length=1000)
     recipe_material: str | None = Field(default=None, max_length=200)
     material_lot: str | None = Field(default=None, max_length=100)
+    reactor: int | None = Field(default=None, ge=1, le=4)
 
 
 class ViscosityProductCreateBody(BaseModel):
@@ -66,6 +67,7 @@ class ViscosityProductUpdateBody(BaseModel):
     rpm: float | None = Field(default=None, ge=0, le=100000)
     temperature: float | None = Field(default=None, ge=-50, le=300)
     remind_daily: bool = False
+    use_reactor: bool = False
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -114,6 +116,7 @@ class BlendViscosityBody(BaseModel):
     # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요.
     viscosity: float = Field(gt=0, le=100000)
     memo: str | None = Field(default=None, max_length=1000)
+    reactor: int | None = Field(default=None, ge=1, le=4)
 
 
 def _validate_signature(value: str | None) -> str | None:

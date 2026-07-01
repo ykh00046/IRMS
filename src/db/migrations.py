@@ -244,6 +244,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 트레이는 오늘 측정이 밀린 '알림 대상' 반제품을 서버에 물어보기만 한다.
     ensure_column(connection, "viscosity_products", "remind_daily", "INTEGER NOT NULL DEFAULT 0")
 
+    # 반응기(1~4)에서 진행하는 반제품 여부 + 측정 시 반응기 번호. 특정 반제품만 반응기
+    # 지정 필수(use_reactor=1). 지정 시 점도를 반응기별로 추세·이상 분석할 수 있다.
+    ensure_column(connection, "viscosity_products", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "viscosity_readings", "reactor", "INTEGER")
+
     # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
     connection.execute(
         """

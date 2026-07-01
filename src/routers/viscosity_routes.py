@@ -69,13 +69,16 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         product_id: int,
         granularity: str = "quarter",
         year: int | None = None,
+        reactor: int | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         product = _require_product(connection, product_id)
         if granularity not in ("month", "quarter", "year"):
             granularity = "quarter"
+        if reactor is not None and reactor not in (1, 2, 3, 4):
+            reactor = None
         return viscosity_service.analyze_product(
-            connection, product, granularity=granularity, year=year
+            connection, product, granularity=granularity, year=year, reactor=reactor
         )
 
     @op_router.post("/viscosity/readings")
@@ -86,6 +89,9 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     ) -> dict[str, Any]:
         current_user = get_current_user(request, required=False)
         product = _require_product(connection, body.product_id)
+        # 반응기 진행 반제품은 반응기(1~4) 지정 필수.
+        if product["use_reactor"] and body.reactor is None:
+            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         # 입력 전 '같은 연도' 표본 기준으로 판정 (연도별 기준 + 자기 자신 평균 오염 방지)
         resolved_date = (
             body.measured_date
@@ -94,7 +100,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         )
         reading_year = int(resolved_date[:4]) if resolved_date[:4].isdigit() else None
         verdict = viscosity_service.classify_value(
-            connection, product, body.viscosity, year=reading_year
+            connection, product, body.viscosity, year=reading_year, reactor=body.reactor
         )
         try:
             reading_id = viscosity_service.add_reading(
@@ -108,6 +114,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 material_lot=body.material_lot,
                 created_by=actor_name(current_user) if current_user else "현장",
                 created_at=utc_now_text(),
+                reactor=body.reactor,
             )
         except sqlite3.IntegrityError:
             raise HTTPException(
@@ -189,7 +196,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             """
             UPDATE viscosity_products
             SET name = ?, target = ?, lower_limit = ?, upper_limit = ?,
-                sigma_k = ?, rpm = ?, temperature = ?, remind_daily = ?, is_active = ?
+                sigma_k = ?, rpm = ?, temperature = ?, remind_daily = ?,
+                use_reactor = ?, is_active = ?
             WHERE id = ?
             """,
             (
@@ -201,6 +209,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 body.rpm,
                 body.temperature,
                 1 if body.remind_daily else 0,
+                1 if body.use_reactor else 0,
                 1 if body.is_active else 0,
                 product_id,
             ),
@@ -218,6 +227,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 "upper_limit": body.upper_limit,
                 "sigma_k": body.sigma_k,
                 "remind_daily": body.remind_daily,
+                "use_reactor": body.use_reactor,
                 "is_active": body.is_active,
             },
         )

@@ -51,12 +51,13 @@ def _make_db() -> sqlite3.Connection:
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,
             target REAL, lower_limit REAL, upper_limit REAL, sigma_k REAL DEFAULT 3,
-            is_active INTEGER DEFAULT 1, created_at TEXT
+            rpm REAL, temperature REAL, remind_daily INTEGER DEFAULT 0,
+            use_reactor INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT
         );
         CREATE TABLE viscosity_readings (
             id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, lot_no TEXT,
             viscosity REAL, measured_date TEXT, memo TEXT, recipe_material TEXT,
-            material_lot TEXT, created_by TEXT, created_at TEXT, blend_record_id INTEGER
+            material_lot TEXT, reactor INTEGER, created_by TEXT, created_at TEXT, blend_record_id INTEGER
         );
         """
     )

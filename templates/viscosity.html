@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260701d" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260701e" />
 {% endblock %}
 
 {% block content %}
@@ -18,6 +18,8 @@
             <div class="visc-toolbar-actions">
               <label class="filter-label" for="visc-year">연도</label>
               <select class="input visc-year-select" id="visc-year"></select>
+              <label class="filter-label" for="visc-reactor" id="visc-reactor-label" hidden>반응기</label>
+              <select class="input visc-year-select" id="visc-reactor" hidden></select>
               <button id="visc-settings-btn" class="btn btn-sm" type="button">반제품 설정</button>
               <button id="visc-export-btn" class="btn btn-sm" type="button">CSV 내보내기</button>
               <button id="visc-refresh" class="btn btn-sm" type="button">새로고침</button>
@@ -67,6 +69,16 @@
               <div>
                 <label class="filter-label" for="visc-value">점도값</label>
                 <input class="input visc-value-input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
+              </div>
+              <div id="visc-reactor-field" hidden>
+                <label class="filter-label" for="visc-reg-reactor">반응기 (필수)</label>
+                <select class="input" id="visc-reg-reactor">
+                  <option value="">반응기 선택</option>
+                  <option value="1">반응기 1</option>
+                  <option value="2">반응기 2</option>
+                  <option value="3">반응기 3</option>
+                  <option value="4">반응기 4</option>
+                </select>
               </div>
               <p class="visc-selected-row" id="visc-selected-row">배합 기록 표에서 미등록 행을 선택하세요.</p>
 
@@ -195,6 +207,11 @@
                 <p class="visc-cond-note">켜면 이 반제품의 오늘 점도 측정이 밀렸을 때 현장 트레이에 알림이 뜹니다.</p>
 
                 <label class="visc-checkbox">
+                  <input id="visc-set-reactor" type="checkbox" /> 반응기에서 진행 (측정 시 반응기 지정 필수)
+                </label>
+                <p class="visc-cond-note">켜면 점도 등록 시 반응기(1~4) 선택이 필수가 되고, 반응기별로 추세·이상을 볼 수 있습니다.</p>
+
+                <label class="visc-checkbox">
                   <input id="visc-set-active" type="checkbox" checked /> 사용
                 </label>
 
@@ -219,5 +236,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity.js?v=20260701d"></script>
+    <script src="/static/js/viscosity.js?v=20260701e"></script>
 {% endblock %}

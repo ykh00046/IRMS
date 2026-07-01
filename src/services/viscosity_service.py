@@ -71,7 +71,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
     where = "WHERE is_active = 1" if active_only else ""
     rows = connection.execute(
         f"""
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
         FROM viscosity_products
         {where}
         ORDER BY is_active DESC, code ASC
@@ -83,7 +83,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
 def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
         FROM viscosity_products
         WHERE id = ?
         """,
@@ -95,7 +95,7 @@ def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, An
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
     row = connection.execute(
         """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, is_active, created_at
+        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
         FROM viscosity_products
         WHERE code = ?
         """,
@@ -137,6 +137,7 @@ def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
         "rpm": _opt_float(row["rpm"]),
         "temperature": _opt_float(row["temperature"]),
         "remind_daily": bool(row["remind_daily"]),
+        "use_reactor": bool(row["use_reactor"]),
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "has_spec": row["lower_limit"] is not None or row["upper_limit"] is not None,
@@ -148,7 +149,10 @@ def _opt_float(value: Any) -> float | None:
 
 
 def _fetch_readings(
-    connection: sqlite3.Connection, product_id: int, year: int | None = None
+    connection: sqlite3.Connection,
+    product_id: int,
+    year: int | None = None,
+    reactor: int | None = None,
 ) -> list[sqlite3.Row]:
     params: list[Any] = [product_id]
     year_clause = ""
@@ -156,12 +160,16 @@ def _fetch_readings(
         # measured_date 는 'YYYY-MM-DD' (또는 NULL). 연도 필터 시 날짜 없는 측정은 제외.
         year_clause = "AND substr(measured_date, 1, 4) = ?"
         params.append(f"{year:04d}")
+    reactor_clause = ""
+    if reactor is not None:
+        reactor_clause = "AND reactor = ?"
+        params.append(int(reactor))
     return connection.execute(
         f"""
         SELECT id, product_id, lot_no, viscosity, measured_date,
-               memo, recipe_material, material_lot, created_by, created_at
+               memo, recipe_material, material_lot, reactor, created_by, created_at
         FROM viscosity_readings
-        WHERE product_id = ? {year_clause}
+        WHERE product_id = ? {year_clause} {reactor_clause}
         ORDER BY
             CASE WHEN measured_date IS NULL THEN 1 ELSE 0 END,
             measured_date ASC,
@@ -184,6 +192,20 @@ def available_years(connection: sqlite3.Connection, product_id: int) -> list[int
         (product_id,),
     ).fetchall()
     return [int(r["y"]) for r in rows if r["y"] and str(r["y"]).isdigit()]
+
+
+def available_reactors(connection: sqlite3.Connection, product_id: int) -> list[int]:
+    """제품에 측정 기록이 있는 반응기 번호 목록 (오름차순)."""
+    rows = connection.execute(
+        """
+        SELECT DISTINCT reactor
+        FROM viscosity_readings
+        WHERE product_id = ? AND reactor IS NOT NULL
+        ORDER BY reactor ASC
+        """,
+        (product_id,),
+    ).fetchall()
+    return [int(r["reactor"]) for r in rows if r["reactor"] is not None]
 
 
 def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, Any]:
@@ -386,13 +408,14 @@ def classify_value(
     product: dict[str, Any],
     value: float,
     year: int | None = None,
+    reactor: int | None = None,
 ) -> dict[str, Any]:
     """단일 값을 현재 제품 기준으로 판정 (신규 입력 즉시 경고용).
 
-    중심선/관리한계는 같은 연도의 기존 측정 표본 + 제품 설정으로 산출한다
+    중심선/관리한계는 같은 연도(+반응기) 의 기존 측정 표본 + 제품 설정으로 산출한다
     (입력값 포함 전 기준). year 미지정 시 전체 표본.
     """
-    rows = _fetch_readings(connection, product["id"], year)
+    rows = _fetch_readings(connection, product["id"], year, reactor)
     values = [float(r["viscosity"]) for r in rows]
     control = _control_limits(product, values)
     verdict = _classify(value, product, control)
@@ -406,13 +429,15 @@ def analyze_product(
     *,
     granularity: str = "quarter",
     year: int | None = None,
+    reactor: int | None = None,
 ) -> dict[str, Any]:
     """제품 단위 분석: 통계 + 관리한계 + 측정 시계열(이상 표기) + 이상/추세 + 기간 집계.
 
     year 지정 시 해당 연도 표본만으로 기준(중심선/σ/이상)을 계산한다. 같은 제품이라도
-    연도/공정에 따라 점도 대역이 달라지므로 연도별 기준이 기본 분석 단위.
+    연도/공정에 따라 점도 대역이 달라지므로 연도별 기준이 기본 분석 단위. reactor 지정
+    시 해당 반응기 표본만으로 계산(반응기별 추세).
     """
-    rows = _fetch_readings(connection, product["id"], year)
+    rows = _fetch_readings(connection, product["id"], year, reactor)
     values = [float(r["viscosity"]) for r in rows]
     control = _control_limits(product, values)
 
@@ -429,6 +454,7 @@ def analyze_product(
             "memo": r["memo"],
             "recipe_material": r["recipe_material"],
             "material_lot": r["material_lot"],
+            "reactor": r["reactor"],
             "created_by": r["created_by"],
             "status": verdict["status"],
             "side": verdict["side"],
@@ -455,7 +481,9 @@ def analyze_product(
         "trends": trends,
         "granularity": granularity,
         "year": year,
+        "reactor": reactor,
         "available_years": available_years(connection, product["id"]),
+        "available_reactors": available_reactors(connection, product["id"]),
         "periods": periods,
         "period_alerts": _period_alerts(periods, control["std"]),
     }
@@ -586,18 +614,20 @@ def add_reading(
     created_by: str | None,
     created_at: str,
     blend_record_id: int | None = None,
+    reactor: int | None = None,
 ) -> int:
     """점도 측정 1건 등록. measured_date 미지정 시 LOT 에서 추론, 실패 시 등록일.
 
     blend_record_id 지정 시 해당 배합 실적과 연계된다([[blend-overhaul]]).
+    reactor 지정 시 반응기 번호(1~4)를 기록한다(반응기 진행 반제품).
     """
     resolved_date = measured_date or parse_lot_date(lot_no) or created_at[:10]
     cur = connection.execute(
         """
         INSERT INTO viscosity_readings
             (product_id, lot_no, viscosity, measured_date, memo,
-             recipe_material, material_lot, created_by, created_at, blend_record_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             recipe_material, material_lot, created_by, created_at, blend_record_id, reactor)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             product_id,
@@ -610,6 +640,7 @@ def add_reading(
             created_by,
             created_at,
             blend_record_id,
+            int(reactor) if reactor is not None else None,
         ),
     )
     return int(cur.lastrowid)
@@ -621,7 +652,7 @@ def list_readings_for_blend(
     """배합 실적에 연계된 점도 측정 목록 (제품 코드 포함)."""
     rows = connection.execute(
         """
-        SELECT r.id, r.viscosity, r.measured_date, r.memo, r.lot_no, r.created_by,
+        SELECT r.id, r.viscosity, r.measured_date, r.memo, r.lot_no, r.reactor, r.created_by,
                p.code AS product_code, p.name AS product_name, p.id AS product_id
         FROM viscosity_readings r
         JOIN viscosity_products p ON p.id = r.product_id
@@ -637,6 +668,7 @@ def list_readings_for_blend(
             "measured_date": r["measured_date"],
             "memo": r["memo"],
             "lot_no": r["lot_no"],
+            "reactor": r["reactor"],
             "product_id": int(r["product_id"]),
             "product_code": r["product_code"],
             "product_name": r["product_name"],
