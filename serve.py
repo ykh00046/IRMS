@@ -44,6 +44,20 @@ def _git(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
     )
 
 
+def ensure_runtime() -> str:
+    if not _VENV_PY.exists():
+        log("가상환경이 없어 생성하고 requirements.txt 를 설치합니다...")
+        subprocess.run([sys.executable, "tools/bootstrap_irms.py"], cwd=ROOT, check=True)
+    else:
+        log("가상환경 의존성 확인 중...")
+        subprocess.run(
+            [str(_VENV_PY), "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
+            cwd=ROOT,
+            check=True,
+        )
+    return str(_VENV_PY)
+
+
 def has_update() -> bool:
     """origin/main 이 로컬 HEAD 보다 앞서 있으면 True."""
     try:
@@ -101,6 +115,8 @@ def stop_server(proc: subprocess.Popen | None) -> None:
 
 
 def main() -> None:
+    global PYTHON
+    PYTHON = ensure_runtime()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "
         f"{INTERVAL}초 주기, 포트 {PORT}). 종료: Ctrl+C"
