@@ -205,6 +205,7 @@
       state.current = null;
       state.items = [];
       renderMatRows();
+      renderReactorField();
       return;
     }
     const totalRaw = Number($("blend-total").value);
