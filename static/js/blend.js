@@ -41,6 +41,31 @@
     document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = !state.scaleReady; });
   }
 
+  // 저울 값을 idx 행 실제량에 채우고 LOT 로 포커스 이동(수동 Enter 흐름과 동일)
+  function fillScaleValue(idx, value) {
+    const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (!input) return;
+    input.value = String(value);
+    state.items[idx].actual_amount = input.value;
+    updateRowVar(idx);
+    updateTotals();
+    warnIfVariance(idx);
+    const lot = document.querySelector(`.blend-lot[data-idx="${idx}"]`);
+    if (lot) lot.focus();
+  }
+
+  // PRINT 키 입력이 들어갈 행: 포커스된 실제량 칸 우선, 없으면 첫 미입력 행
+  function activeScaleRow() {
+    const focused = document.activeElement;
+    if (focused && focused.classList && focused.classList.contains("blend-actual")) {
+      return Number(focused.dataset.idx);
+    }
+    const idx = state.items.findIndex(
+      (it) => it.actual_amount === "" && it.theory_amount != null
+    );
+    return idx >= 0 ? idx : null;
+  }
+
   async function readScaleInto(idx) {
     try {
       const res = await fetch(`${SCALE_URL}/weight`, { signal: AbortSignal.timeout(2500) });
@@ -48,21 +73,41 @@
       const frame = await res.json();
       if (frame.overload) { notify("저울 과부하(OL) 상태입니다.", "error"); return; }
       if (!frame.stable) { notify("측정 중입니다 — 표시가 안정된 뒤 다시 누르세요.", "warn"); return; }
-      const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
-      if (!input) return;
-      input.value = String(frame.value);
-      state.items[idx].actual_amount = input.value;
-      updateRowVar(idx);
-      updateTotals();
-      warnIfVariance(idx);
-      // 다음 행 LOT 로 포커스 이동(키보드 Enter 흐름과 동일)
-      const lot = document.querySelector(`.blend-lot[data-idx="${idx}"]`);
-      if (lot) lot.focus();
+      fillScaleValue(idx, frame.value);
     } catch (_e) {
       state.scaleReady = false;
       document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = true; });
       notify("저울 연결이 끊겼습니다. 저울 에이전트 창을 확인하세요.", "error");
     }
+  }
+
+  // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
+  let scaleEventLast = 0;
+  let scaleEventSynced = false;
+
+  async function pollScaleEvents() {
+    if (!state.scaleReady) { scaleEventSynced = false; return; }
+    try {
+      const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
+        signal: AbortSignal.timeout(1500),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = data.items || [];
+      scaleEventLast = data.last_id || 0;
+      // 첫 동기화: 페이지 열기 전 눌렀던 PRINT 잔여 이벤트는 무시
+      if (!scaleEventSynced) { scaleEventSynced = true; return; }
+      if (!items.length || !state.items.length) return;
+      for (const ev of items) {
+        const idx = activeScaleRow();
+        if (idx === null) {
+          notify("모든 자재의 실제량이 입력되어 있습니다. (PRINT 무시)", "warn");
+          break;
+        }
+        fillScaleValue(idx, ev.value);
+        notify(`저울 입력: ${state.items[idx].material_name} = ${ev.value} g`, "success");
+      }
+    } catch (_e) { /* 폴링 실패는 조용히 — detectScale 이 상태 회복 */ }
   }
 
   function lockedWorkerName() {
@@ -727,6 +772,8 @@
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
     detectScale();
     setInterval(detectScale, 30000);
+    // 저울 PRINT 키 이벤트 폴링(0.8초) — 누르면 활성 행 실제량 자동 입력.
+    setInterval(pollScaleEvents, 800);
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});

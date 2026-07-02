@@ -24,6 +24,8 @@ import json
 import os
 import sys
 import threading
+import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -117,32 +119,44 @@ def load_config() -> dict:
 
 
 # ── 저울 통신 ─────────────────────────────────────────────────────
+# 상시 수신 구조: 리더 스레드가 포트를 계속 읽는다. 저울에서 오는 프레임은
+# 두 갈래 — (a) 웹 [저울] 버튼의 Q 질의 응답, (b) 저울 PRINT 키를 눌러
+# 저울이 스스로 보낸 값(푸시). 푸시된 안정값은 이벤트 버퍼에 쌓이고,
+# 배합 화면이 /events 를 폴링해 실제량 칸에 자동 입력한다.
 class Scale:
     def __init__(self, config: dict) -> None:
         self._config = config
-        self._lock = threading.Lock()
-        self._serial: "serial.Serial | None" = None
+        self._write_lock = threading.Lock()
+        self._serial = None  # serial.Serial | None
         self.port: str | None = None
+        # PRINT 푸시 이벤트 버퍼
+        self._events: deque = deque(maxlen=100)
+        self._event_seq = 0
+        # Q 질의 대기자
+        self._expect_q = False
+        self._q_result: dict | None = None
+        self._q_waiter = threading.Event()
+        self._stop = threading.Event()
+        self._reader = threading.Thread(target=self._reader_loop, name="scale-reader", daemon=True)
+        self._reader.start()
 
-    def _open(self, port: str) -> "serial.Serial":
+    def _open(self, port: str):
         return serial.Serial(
             port=port,
             baudrate=int(self._config["baudrate"]),
             bytesize=int(self._config["bytesize"]),
             parity=str(self._config["parity"]),
             stopbits=int(self._config["stopbits"]),
-            timeout=1.2,
+            timeout=0.5,
             write_timeout=1.2,
         )
 
-    def _query(self, ser: "serial.Serial") -> dict | None:
-        ser.reset_input_buffer()
-        ser.write(b"Q\r\n")
-        line = ser.readline()
-        return parse_frame(line) if line else None
-
     def connect(self) -> str | None:
-        """설정 포트 또는 자동 탐지로 저울 연결. 성공 시 포트명."""
+        """설정 포트 또는 자동 탐지로 저울 연결. 성공 시 포트명.
+
+        탐지(probe)는 self._serial 배정 전에 로컬 객체로 직접 읽으므로
+        리더 스레드와 충돌하지 않는다.
+        """
         if serial is None:
             return None
         candidates = (
@@ -153,7 +167,16 @@ class Scale:
         for port in candidates:
             try:
                 ser = self._open(port)
-                if self._query(ser) is not None:
+                ser.reset_input_buffer()
+                ser.write(b"Q\r\n")
+                deadline = time.time() + 1.5
+                found = False
+                while time.time() < deadline:
+                    line = ser.readline()
+                    if line and parse_frame(line) is not None:
+                        found = True
+                        break
+                if found:
                     self._serial = ser
                     self.port = port
                     return port
@@ -162,25 +185,65 @@ class Scale:
                 continue
         return None
 
-    def read(self) -> dict | None:
-        """현재 무게 1건. 연결이 끊겼으면 재연결 시도."""
-        with self._lock:
-            if self._serial is None and self.connect() is None:
-                return None
+    def _drop_connection(self) -> None:
+        ser, self._serial, self.port = self._serial, None, None
+        if ser is not None:
             try:
-                return self._query(self._serial)
-            except Exception:  # noqa: BLE001 - 케이블 분리 등 → 재연결 1회
-                try:
-                    self._serial.close()
-                except Exception:  # noqa: BLE001
-                    pass
-                self._serial = None
-                if self.connect() is None:
-                    return None
-                try:
-                    return self._query(self._serial)
-                except Exception:  # noqa: BLE001
-                    return None
+                ser.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _handle_frame(self, frame: dict) -> None:
+        """수신 프레임 분배 — Q 응답이면 대기자에게, 아니면 PRINT 푸시 이벤트로."""
+        if self._expect_q:
+            self._expect_q = False
+            self._q_result = frame
+            self._q_waiter.set()
+            return
+        if frame.get("stable") and not frame.get("overload"):
+            self._event_seq += 1
+            self._events.append({**frame, "id": self._event_seq})
+
+    def _reader_loop(self) -> None:
+        while not self._stop.is_set():
+            ser = self._serial
+            if ser is None:
+                time.sleep(2)
+                continue
+            try:
+                line = ser.readline()
+            except Exception:  # noqa: BLE001 - 케이블 분리 등
+                self._drop_connection()
+                continue
+            if not line:
+                continue
+            frame = parse_frame(line)
+            if frame:
+                self._handle_frame(frame)
+
+    def read(self) -> dict | None:
+        """현재 무게 1건(Q 질의) — 웹 [저울] 버튼용."""
+        if self._serial is None and self.connect() is None:
+            return None
+        with self._write_lock:
+            self._q_waiter.clear()
+            self._q_result = None
+            self._expect_q = True
+            try:
+                self._serial.write(b"Q\r\n")
+            except Exception:  # noqa: BLE001
+                self._expect_q = False
+                self._drop_connection()
+                return None
+        if self._q_waiter.wait(timeout=2.0):
+            return self._q_result
+        self._expect_q = False
+        return None
+
+    def events_after(self, after_id: int) -> tuple[list[dict], int]:
+        """PRINT 푸시 이벤트 중 id > after_id 인 것들 + 현재 마지막 id."""
+        items = [e for e in list(self._events) if e["id"] > after_id]
+        return items, self._event_seq
 
 
 # ── 로컬 HTTP 서버 ────────────────────────────────────────────────
@@ -213,6 +276,17 @@ def build_handler(scale: Scale):
                     self._send(503, {"error": "SCALE_NOT_CONNECTED", "port": scale.port})
                     return
                 self._send(200, frame)
+                return
+            if self.path.startswith("/events"):
+                # 저울 PRINT 키 푸시 이벤트. ?after=<id> 이후 것만 반환.
+                from urllib.parse import parse_qs, urlparse
+                params = parse_qs(urlparse(self.path).query)
+                try:
+                    after = int(params.get("after", ["0"])[0])
+                except ValueError:
+                    after = 0
+                items, last_id = scale.events_after(after)
+                self._send(200, {"last_id": last_id, "items": items})
                 return
             self._send(404, {"error": "NOT_FOUND"})
 

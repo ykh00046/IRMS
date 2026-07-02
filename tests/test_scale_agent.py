@@ -1,8 +1,8 @@
-"""저울 에이전트(A&D 프레임 파서) + 배합 허용 편차(±0.05g) 검증."""
+"""저울 에이전트(A&D 프레임 파서·PRINT 이벤트) + 배합 허용 편차(±0.05g) 검증."""
 
 from __future__ import annotations
 
-from scale_agent.agent import parse_frame
+from scale_agent.agent import DEFAULT_CONFIG, Scale, parse_frame
 from src.services import blend_service
 
 
@@ -33,6 +33,41 @@ def test_parse_garbage_returns_none():
     assert parse_frame("hello world") is None
     assert parse_frame("ST+00123") is None  # 콤마 없음
     assert parse_frame("XX,+0000001.0   g") is None  # 알 수 없는 헤더
+
+
+# ── PRINT 푸시 이벤트 분배 ───────────────────────────────────────
+def _scale() -> Scale:
+    return Scale(dict(DEFAULT_CONFIG))
+
+
+def test_print_push_becomes_event():
+    s = _scale()
+    s._handle_frame(parse_frame("ST,+0004775.7   g"))
+    s._handle_frame(parse_frame("ST,+0000181.0   g"))
+    items, last = s.events_after(0)
+    assert [e["value"] for e in items] == [4775.7, 181.0]
+    assert last == 2
+    # after 커서 이후만
+    items2, _ = s.events_after(1)
+    assert [e["value"] for e in items2] == [181.0]
+
+
+def test_unstable_or_overload_not_evented():
+    s = _scale()
+    s._handle_frame(parse_frame("US,+0000012.3   g"))  # 측정 중
+    s._handle_frame(parse_frame("OL,+9999999.9   g"))  # 과부하
+    assert s.events_after(0) == ([], 0)
+
+
+def test_q_response_consumed_not_evented():
+    """[저울] 버튼의 Q 질의 응답은 이벤트로 새지 않는다(이중 입력 방지)."""
+    s = _scale()
+    s._expect_q = True
+    frame = parse_frame("ST,+0000058.0   g")
+    s._handle_frame(frame)
+    assert s.events_after(0) == ([], 0)      # 이벤트 아님
+    assert s._q_result == frame              # 질의 응답으로 전달
+    assert s._q_waiter.is_set()
 
 
 # ── 허용 편차 검증(서버) ─────────────────────────────────────────
