@@ -266,7 +266,9 @@ class Scale:
             frames = [(int(self._comm["bytesize"]), str(self._comm["parity"]))]
         else:
             preset_frame = (int(self._comm["bytesize"]), str(self._comm["parity"]))
-            frames = [preset_frame] + [f for f in [(8, "N"), (7, "E")] if f != preset_frame]
+            frames = [preset_frame] + [
+                f for f in [(8, "N"), (7, "E"), (8, "E")] if f != preset_frame
+            ]
         return [(b, bits, par) for b in bauds for (bits, par) in frames]
 
     def _probe(
@@ -287,15 +289,30 @@ class Scale:
             write_timeout=1.2,
         )
         try:
+            # USB-시리얼 어댑터는 포트를 여는 순간 잡음 바이트가 낄 수 있어
+            # (저울에 '?SI' 처럼 도착 → MT-SICS 'ES' 오류 응답) 안정화 후
+            # 빈 줄로 저울 쪽 명령 버퍼를 비우고 질의를 최대 3회 재시도한다.
+            time.sleep(0.2)
             ser.reset_input_buffer()
-            ser.write(self._comm["query"])
-            deadline = time.time() + 1.5
-            while time.time() < deadline:
-                line = ser.readline()
-                if line and parse_frame(line, self._protocol) is not None:
-                    return ser
-                if line and raw_sink is not None and len(raw_sink) < 8:
-                    raw_sink.append((f"{baudrate}/{bytesize}{parity}", bytes(line)))
+            ser.write(b"\r\n")
+            time.sleep(0.15)
+            ser.reset_input_buffer()
+            # 질의 3회: 표준(CRLF) 2회 + CR 단독 종결 1회(터미네이터 상이 대비)
+            query = self._comm["query"]
+            attempts = [query, query, query.replace(b"\r\n", b"\r")]
+            for attempt_query in attempts:
+                ser.write(attempt_query)
+                deadline = time.time() + 1.2
+                while time.time() < deadline:
+                    line = ser.readline()
+                    if not line:
+                        continue
+                    if parse_frame(line, self._protocol) is not None:
+                        return ser
+                    if raw_sink is not None and len(raw_sink) < 8:
+                        raw_sink.append((f"{baudrate}/{bytesize}{parity}", bytes(line)))
+                    if line.strip().upper() in (b"ES", b"EL", b"ET"):
+                        break  # 저울이 응답함(명령만 오염) → 같은 조합에서 재질의
         except Exception:  # noqa: BLE001
             pass
         try:
