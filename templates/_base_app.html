@@ -37,14 +37,15 @@
 
           <div class="nav-section">
             <p class="nav-section-label">운영 관리</p>
-            <a href="/dashboard" class="side-link{{ ' active' if request.url.path == '/dashboard' else '' }}">
-              <span class="side-ico side-ico-dashboard" aria-hidden="true"></span><span>대시보드</span>
-            </a>
+            <!-- 순서: 기록이 기본(주 사용) → 레시피 → 요약 대시보드 -->
             <a href="/status" class="side-link{{ ' active' if request.url.path == '/status' else '' }}">
               <span class="side-ico side-ico-status" aria-hidden="true"></span><span>배합 기록</span>
             </a>
             <a href="/management" class="side-link{{ ' active' if request.url.path == '/management' else '' }}">
               <span class="side-ico side-ico-recipes" aria-hidden="true"></span><span>레시피 관리</span>
+            </a>
+            <a href="/dashboard" class="side-link{{ ' active' if request.url.path == '/dashboard' else '' }}">
+              <span class="side-ico side-ico-dashboard" aria-hidden="true"></span><span>대시보드</span>
             </a>
           </div>
 
