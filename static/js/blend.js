@@ -162,7 +162,8 @@
 
   function fmt(v, d) {
     if (v === null || v === undefined || v === "") return "-";
-    return Number(v).toFixed(d === undefined ? 1 : d);
+    // 기본 소수 2자리 — 저울(XP 0.01g) 해상도에 맞춤
+    return Number(v).toFixed(d === undefined ? 2 : d);
   }
   function todayISO() {
     const d = new Date();
@@ -308,10 +309,9 @@
   function recomputeTheory() {
     const total = Number($("blend-total").value) || 0;
     state.items.forEach((it) => {
-      // 이론량을 저울/입력 단위(0.1g)로 반올림. 표시값과 내부값을 일치시켜, 표시된
-      // 이론값을 그대로 입력하면 편차가 정확히 0이 되도록 한다(반올림 잔차로 저장이
-      // 막히던 문제 해결).
-      it.theory_amount = Math.round((it.ratio / 100) * total * 10) / 10;
+      // 이론량을 저울/표시 단위(0.01g)로 반올림. 표시값=내부값이라 표시된 이론값을
+      // 그대로 계량하면 편차 0. 허용 편차(±0.05g) 판정과도 같은 눈금.
+      it.theory_amount = Math.round((it.ratio / 100) * total * 100) / 100;
     });
   }
 

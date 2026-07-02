@@ -133,16 +133,17 @@ def _parse_sics(text: str) -> dict | None:
                 "unit": tokens[3] if len(tokens) > 3 else "g",
             }
         return None
-    # 인쇄 템플릿(수신 전용 모드): "N 105.00 g" 또는 "105.00 g"
+    # 인쇄 템플릿(수신 전용 모드): 마지막이 단위, 그 앞이 값, 나머지 앞부분은
+    # 순번/N(순중량) 표기만 허용. 실측 예(XP10002S): " 1    N    -4544.27 g"
+    # G(총중량)/T(용기) 줄은 오탐 방지를 위해 계속 무시.
     units = ("g", "kg", "mg")
-    if len(tokens) == 3 and tokens[0] == "N" and tokens[2] in units:
-        number = tokens[1]
-    elif len(tokens) == 2 and tokens[1] in units:
-        number = tokens[0]
-    else:
+    if len(tokens) < 2 or tokens[-1] not in units:
+        return None
+    prefix = tokens[:-2]
+    if not all(t == "N" or t.isdigit() for t in prefix):
         return None
     try:
-        value = float(number)
+        value = float(tokens[-2])
     except ValueError:
         return None
     unit = tokens[-1]

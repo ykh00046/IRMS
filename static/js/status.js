@@ -7,7 +7,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const IRMS = window.IRMS || {};
   const request = IRMS._core && IRMS._core.request;
   const $ = (id) => document.getElementById(id);
-  const fmt = (v, d = 1) =>
+  // 기본 소수 2자리 — 저울(XP 0.01g) 해상도에 맞춤
+  const fmt = (v, d = 2) =>
     v === null || v === undefined || v === ""
       ? "-"
       : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: d });

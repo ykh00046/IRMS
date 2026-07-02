@@ -59,6 +59,9 @@ def test_sics_overload_and_invalid():
 
 def test_sics_print_template_lines():
     """PRINT(전송) 키 인쇄 템플릿 출력도 안정값으로 해석(수신 전용 모드)."""
+    # 현장 XP10002S 실측 포맷: 순번 + N + 값 + 단위
+    field = parse_frame(b" 1    N    -4544.27 g   \r\n", protocol="mt-sics")
+    assert field["stable"] is True and field["value"] == -4544.27
     net = parse_frame("N      105.00 g", protocol="mt-sics")
     assert net["stable"] is True and net["value"] == 105.0
     bare = parse_frame("   4775.7 g", protocol="mt-sics")
@@ -68,7 +71,8 @@ def test_sics_print_template_lines():
     # 오탐 방지: ES/문자열/단위 없는 숫자는 여전히 무시
     assert parse_frame("ES", protocol="mt-sics") is None
     assert parse_frame("105.00", protocol="mt-sics") is None
-    assert parse_frame("G 105.00 g", protocol="mt-sics") is None  # 총중량 줄은 제외
+    assert parse_frame("G 105.00 g", protocol="mt-sics") is None   # 총중량 줄 제외
+    assert parse_frame("1 T 12.00 g", protocol="mt-sics") is None  # 용기 줄 제외
 
 
 def test_protocol_presets():
