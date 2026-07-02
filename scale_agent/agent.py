@@ -251,41 +251,84 @@ class Scale:
             write_timeout=1.2,
         )
 
+    def _baud_candidates(self) -> list[int]:
+        """시도할 통신 속도 목록. config 에 명시하면 그 값만, 아니면 프리셋 우선
+        + 흔한 속도들을 자동 시도(저울 쪽 설정이 기본과 다른 경우 대비)."""
+        if self._config.get("baudrate"):
+            return [int(self._config["baudrate"])]
+        preset = int(self._comm["baudrate"])
+        common = [9600, 19200, 4800, 2400, 38400, 57600, 115200]
+        return [preset] + [b for b in common if b != preset]
+
+    def _probe(self, port: str, baudrate: int) -> "serial.Serial | None":
+        """지정 속도로 열고 질의 → 유효 프레임이 오면 연결 유지, 아니면 닫음."""
+        ser = serial.Serial(
+            port=port,
+            baudrate=baudrate,
+            bytesize=int(self._comm["bytesize"]),
+            parity=str(self._comm["parity"]),
+            stopbits=int(self._comm["stopbits"]),
+            timeout=0.5,
+            write_timeout=1.2,
+        )
+        try:
+            ser.reset_input_buffer()
+            ser.write(self._comm["query"])
+            deadline = time.time() + 1.5
+            while time.time() < deadline:
+                line = ser.readline()
+                if line and parse_frame(line, self._protocol) is not None:
+                    return ser
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            ser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
     def connect(self) -> str | None:
         """설정 포트 또는 자동 탐지로 저울 연결. 성공 시 포트명.
 
         탐지(probe)는 self._serial 배정 전에 로컬 객체로 직접 읽으므로
         리더 스레드와 충돌하지 않는다. 양보 중에는 연결하지 않는다.
+        실패 원인(포트 점유 vs 응답 없음)을 agent.log 에 구분해 남긴다.
         """
         if serial is None or self.yielding:
             return None
+        fixed_port = bool(self._config.get("port"))
         candidates = (
             [self._config["port"]]
-            if self._config.get("port")
+            if fixed_port
             else [p.device for p in list_ports.comports()]
         )
         # 다른 저울이 이미 잡은 포트는 건너뜀(자동 탐지 충돌 방지)
         candidates = [p for p in candidates if p not in self._taken]
+        bauds = self._baud_candidates()
         for port in candidates:
-            try:
-                ser = self._open(port)
-                ser.reset_input_buffer()
-                ser.write(self._comm["query"])
-                deadline = time.time() + 1.5
-                found = False
-                while time.time() < deadline:
-                    line = ser.readline()
-                    if line and parse_frame(line, self._protocol) is not None:
-                        found = True
-                        break
-                if found:
+            tried: list[str] = []
+            for baud in bauds:
+                try:
+                    ser = self._probe(port, baud)
+                except Exception as exc:  # noqa: BLE001 - 포트 자체를 못 연 경우
+                    msg = str(exc)
+                    if "denied" in msg.lower() or "액세스" in msg or "PermissionError" in msg:
+                        log(f"[{self.name}] {port} 열기 실패 — 다른 프로그램이 포트 사용 중입니다.")
+                    elif fixed_port:
+                        log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
+                    break  # 이 포트는 못 여니 다른 속도 시도 무의미
+                if ser is not None:
+                    if baud != bauds[0]:
+                        log(f"[{self.name}] {port} 통신 속도 {baud}bps 로 연결됨 — config 에 "
+                            f"\"baudrate\": {baud} 를 넣어두면 다음부터 바로 붙습니다.")
                     self._serial = ser
                     self.port = port
                     self._taken.add(port)
                     return port
-                ser.close()
-            except Exception:  # noqa: BLE001 - 다음 포트 시도
-                continue
+                tried.append(str(baud))
+            if tried and fixed_port:
+                log(f"[{self.name}] {port} 열림, 그러나 응답 없음 (시도한 속도: {', '.join(tried)}bps). "
+                    "저울 쪽 인터페이스 설정(호스트 모드/속도) 확인 필요.")
         return None
 
     # ── 기존 프로그램 공존: 프로세스 감지 → 포트 자동 양보/복귀 ──
