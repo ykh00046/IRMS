@@ -222,22 +222,142 @@ def build_handler(scale: Scale):
     return Handler
 
 
+def log(message: str) -> None:
+    """파일 로그(+가능하면 콘솔). 트레이(창 없는) 모드에선 파일이 유일한 기록."""
+    line = f"{__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S} {message}"
+    try:
+        with open(config_path().parent / "agent.log", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+    try:
+        print(line, flush=True)
+    except Exception:  # noqa: BLE001 - 창 없는 exe 에선 stdout 이 없을 수 있음
+        pass
+
+
+# ── Windows 부팅 시 자동 실행 (HKCU Run 레지스트리) ────────────────
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_NAME = "IRMS-Scale"
+
+
+def _autostart_command() -> str:
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return f'"{sys.executable}" "{Path(__file__).resolve()}"'
+
+
+def autostart_enabled() -> bool:
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            winreg.QueryValueEx(key, RUN_NAME)
+        return True
+    except OSError:
+        return False
+
+
+def set_autostart(enabled: bool) -> None:
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        if enabled:
+            winreg.SetValueEx(key, RUN_NAME, 0, winreg.REG_SZ, _autostart_command())
+        else:
+            try:
+                winreg.DeleteValue(key, RUN_NAME)
+            except OSError:
+                pass
+    log(f"부팅 시 자동 실행: {'켜짐' if enabled else '꺼짐'}")
+
+
+# ── 트레이 아이콘 (pystray) — 콘솔 없이 작업표시줄 상주 ────────────
+def _tray_image():
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(27, 64, 121, 255))  # 브랜드 네이비
+    d.rectangle([16, 40, 48, 46], fill=(255, 255, 255, 255))                 # 저울 받침
+    d.polygon([(32, 16), (20, 40), (44, 40)], fill=(244, 124, 38, 255))      # 저울 접시(오렌지)
+    return img
+
+
+def run_tray(scale: Scale, server: ThreadingHTTPServer) -> None:
+    import pystray
+    from pystray import Menu, MenuItem
+
+    def status_text(_item) -> str:
+        return f"저울: {scale.port} 연결됨" if scale.port else "저울: 연결 안 됨"
+
+    def reconnect(_icon, _item) -> None:
+        threading.Thread(target=scale.connect, daemon=True).start()
+
+    def toggle_autostart(icon, _item) -> None:
+        set_autostart(not autostart_enabled())
+        icon.update_menu()
+
+    def open_folder(_icon, _item) -> None:
+        os.startfile(str(config_path().parent))  # noqa: S606
+
+    def quit_app(icon, _item) -> None:
+        threading.Thread(target=server.shutdown, daemon=True).start()
+        icon.stop()
+
+    icon = pystray.Icon(
+        "irms_scale",
+        icon=_tray_image(),
+        title="IRMS 저울 에이전트",
+        menu=Menu(
+            MenuItem(status_text, None, enabled=False),
+            MenuItem("다시 연결", reconnect),
+            Menu.SEPARATOR,
+            MenuItem("부팅 시 자동 실행", toggle_autostart,
+                     checked=lambda _item: autostart_enabled()),
+            MenuItem("로그·설정 폴더 열기", open_folder),
+            Menu.SEPARATOR,
+            MenuItem("종료", quit_app),
+        ),
+    )
+    log("트레이 모드 시작 (작업표시줄 아이콘)")
+    icon.run()
+
+
 def main() -> None:
     config = load_config()
     scale = Scale(config)
     port = scale.connect()
-    print(f"[IRMS-Scale] 설정: {config_path()}")
-    if port:
-        print(f"[IRMS-Scale] 저울 연결됨: {port}")
-    else:
-        print("[IRMS-Scale] 저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
+    log(f"설정: {config_path()}")
+    log(f"저울 연결됨: {port}" if port else "저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
+
     http_port = int(config["http_port"])
     server = ThreadingHTTPServer(("127.0.0.1", http_port), build_handler(scale))
-    print(f"[IRMS-Scale] http://127.0.0.1:{http_port} 대기 중 (Ctrl+C 종료)")
+    log(f"http://127.0.0.1:{http_port} 대기 중")
+
+    # 최초 실행 시 부팅 자동 실행을 기본으로 켠다(트레이 메뉴에서 끌 수 있음).
+    try:
+        if not autostart_enabled():
+            set_autostart(True)
+    except Exception:  # noqa: BLE001 - 레지스트리 접근 불가 환경은 무시
+        pass
+
+    # 트레이 모드(기본): 콘솔 없이 상주. pystray 가 없거나 --console 이면 콘솔 모드.
+    tray_available = False
+    if "--console" not in sys.argv:
+        try:
+            import pystray  # noqa: F401
+            from PIL import Image  # noqa: F401
+            tray_available = True
+        except ImportError:
+            log("pystray/Pillow 미설치 - 콘솔 모드로 동작")
+
+    if tray_available:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        run_tray(scale, server)
+        log("종료")
+        return
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n[IRMS-Scale] 종료")
+        log("종료")
 
 
 if __name__ == "__main__":

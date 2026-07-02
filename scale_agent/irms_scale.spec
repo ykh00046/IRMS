@@ -5,8 +5,8 @@ Build from the ``scale_agent`` directory:
 
     pyinstaller irms_scale.spec --clean --noconfirm
 
-Output: dist/IRMS-Scale/IRMS-Scale.exe (one-folder, console app —
-콘솔 창이 곧 상태 표시(연결 포트/오류)이므로 console=True 유지).
+Output: dist/IRMS-Scale/IRMS-Scale.exe (one-folder, 창 없는 트레이 앱 —
+상태는 작업표시줄 아이콘 + %APPDATA%\\IRMS-Scale\\agent.log 로 확인).
 """
 
 from pathlib import Path
@@ -17,11 +17,11 @@ a = Analysis(
     [str(ROOT / "agent.py")],
     pathex=[str(ROOT)],
     datas=[],
-    hiddenimports=["serial", "serial.tools.list_ports"],
+    hiddenimports=["serial", "serial.tools.list_ports", "pystray", "PIL", "winreg"],
     hookspath=[],
     runtime_hooks=[],
     # simplejson: requests.compat 함정과 동일 예방 차원(여긴 requests 없지만 무해)
-    excludes=["unittest", "pydoc_data", "simplejson", "tkinter", "numpy", "PIL"],
+    excludes=["unittest", "pydoc_data", "simplejson", "tkinter", "numpy"],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
@@ -35,7 +35,7 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,
 )
 
 coll = COLLECT(
