@@ -1,6 +1,5 @@
 """배합일지 스캔효과 PDF(서명 합성) 검증."""
 
-import io
 
 from PIL import Image
 

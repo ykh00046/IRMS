@@ -276,3 +276,91 @@ def test_blend_routes_public_and_create():
     # 무로그인 조회 가능
     assert client.get("/api/blend/recipes").status_code == 200
     assert client.get("/api/blend/records").status_code == 200
+
+
+def test_blend_next_lot_route():
+    """GET /blend/next-lot 은 저장 시 부여될 실제 LOT({제품}{YYMMDD}{순번:02d})을 준다."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    res = client.get(
+        "/api/blend/next-lot", params={"product": "NEXTLOTX", "date": "2026-07-01"}
+    )
+    assert res.status_code == 200
+    # 기록이 없는 제품이므로 첫 순번 01
+    assert res.json()["next_lot"] == "NEXTLOTX26070101"
+
+
+def test_reactor_required_route_and_settings_patch():
+    """반응기 반제품 설정(PATCH use_reactor/remind_daily 저장) + 실적 저장 시 반응기 필수 400."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    client.get("/viscosity")  # csrftoken 쿠키 확보
+    token = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": token} if token else {}
+
+    # 반제품 확보 (재실행 멱등: 이미 있으면 409 → 목록에서 id 조회)
+    created = client.post(
+        "/api/viscosity/products",
+        json={"code": "RXTEST", "name": "RXTEST"},
+        headers=headers,
+    )
+    if created.status_code == 409:
+        items = client.get("/api/viscosity/products").json()["items"]
+        pid = next(it["id"] for it in items if it["code"] == "RXTEST")
+    else:
+        assert created.status_code == 200
+        pid = created.json()["id"]
+
+    # PATCH 로 use_reactor + remind_daily 저장이 실제 반영되는지
+    patched = client.patch(
+        f"/api/viscosity/products/{pid}",
+        json={
+            "name": "RXTEST",
+            "sigma_k": 3,
+            "remind_daily": True,
+            "use_reactor": True,
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert patched.status_code == 200
+    assert patched.json()["use_reactor"] is True
+    assert patched.json()["remind_daily"] is True
+
+    # 반응기 미지정 실적 저장 → 400 (작업자 세션 검증보다 앞서 걸림)
+    res = client.post(
+        "/api/blend/records",
+        json={
+            "product_name": "RXTEST",
+            "worker": "테스트",
+            "work_date": "2026-07-01",
+            "total_amount": 100,
+            "details": [
+                {
+                    "material_name": "원료1",
+                    "theory_amount": 100,
+                    "actual_amount": 100,
+                    "sequence_order": 1,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert res.status_code == 400
+    assert "반응기" in res.json()["detail"]

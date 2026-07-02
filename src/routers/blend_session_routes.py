@@ -11,7 +11,7 @@ from ..blend_session import (
     logout_worker_session,
     touch_worker_session,
 )
-from ..db import get_db, utc_now_text, write_audit_log
+from ..db import get_db, write_audit_log
 from ..services import worker_service
 
 

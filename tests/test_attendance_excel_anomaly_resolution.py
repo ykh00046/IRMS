@@ -56,11 +56,6 @@ def _record(
 
 class AttendanceAnomalyResolutionTests(unittest.TestCase):
     def test_detect_month_anomalies_returns_unresolved_rows_across_month(self) -> None:
-        fake_workbook = SimpleNamespace(
-            sheetnames=[],
-            active=object(),
-            close=lambda: None,
-        )
         records = [
             _record(_row(date="2026-04-23", check_in=None, check_out=None), emp_id="171013"),
             _record(
