@@ -14,7 +14,6 @@ from . import (
     recipe_import_routes,
     recipe_manager_routes,
     recipe_operator_routes,
-    recipe_stats_routes,
     viscosity_routes,
     weighing_routes,
     worker_routes,
@@ -33,7 +32,6 @@ def build_router() -> APIRouter:
     recipe_op_router = recipe_operator_routes.build_router()
     recipe_mgr_router = recipe_manager_routes.build_router()
     import_router = recipe_import_routes.build_router()
-    stats_router = recipe_stats_routes.build_router()
     weighing_router = weighing_routes.build_router()
     viscosity_op_router, viscosity_mgr_router = viscosity_routes.build_router()
     blend_router = blend_routes.build_router()
@@ -55,7 +53,6 @@ def build_router() -> APIRouter:
     router.include_router(weighing_router)
     router.include_router(recipe_mgr_router)       # manager recipe writes
     router.include_router(import_router)
-    router.include_router(stats_router)
     router.include_router(viscosity_op_router)       # operator viscosity reads + register
     router.include_router(viscosity_mgr_router)      # manager viscosity product settings
     router.include_router(blend_router)              # blend records (ink weighing overhaul, open)

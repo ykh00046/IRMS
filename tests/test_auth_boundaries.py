@@ -7,7 +7,7 @@ def test_operations_pages_and_read_apis_are_viewable_without_login() -> None:
     client = TestClient(create_app())
 
     page_response = client.get("/management", follow_redirects=False)
-    api_response = client.get("/api/recipes/progress")
+    api_response = client.get("/api/recipes")
 
     assert page_response.status_code == 200
     assert api_response.status_code == 200

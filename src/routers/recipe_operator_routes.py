@@ -473,19 +473,8 @@ def build_router() -> APIRouter:
             if not allowed:
                 raise HTTPException(status_code=409, detail="INVALID_STATUS_TRANSITION")
 
-            # Prevent completing a recipe that has unmeasured weighing steps
-            if next_status == "completed":
-                unmeasured_count = int(
-                    connection.execute(
-                        "SELECT COUNT(*) AS count FROM recipe_items WHERE recipe_id = ? AND measured_at IS NULL",
-                        (recipe_id,),
-                    ).fetchone()["count"]
-                )
-                if unmeasured_count > 0:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"WEIGHING_INCOMPLETE:{unmeasured_count}",
-                    )
+            # (구) 계량 미완료(recipe_items.measured_at) 검사는 /blend 전환으로 폐기 —
+            # 배합 워크플로에선 measured_at 이 항상 NULL 이라 완료 전환을 영구히 막았다.
 
             now = utc_now_text()
             completed_at = now if next_status == "completed" else None
