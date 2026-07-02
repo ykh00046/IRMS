@@ -95,15 +95,28 @@
     });
     const current = state.products.find((item) => item.id === state.currentId);
     if (input && current) input.value = productLabel(current);
-    input.oninput = () => {
+    if (input._pickerBound) return;
+    input._pickerBound = true;
+    // 포커스 시 비움 → datalist 가 현재값으로 필터되지 않고 전체 목록이 뜸.
+    // 선택 없이 나가면(blur) 현재 반제품 라벨로 원복.
+    input.addEventListener("focus", () => {
+      input.value = "";
+    });
+    input.addEventListener("blur", () => {
+      if (selectedProduct()) return;
+      const cur = state.products.find((item) => item.id === state.currentId);
+      input.value = cur ? productLabel(cur) : "";
+    });
+    input.addEventListener("input", () => {
       const product = selectedProduct();
       if (!product) return;
+      input.blur(); // 선택 확정 — 드롭다운 닫기
       if (product.id === state.currentId) return;
       state.currentId = product.id;
       state.year = product.year;
       state.reactor = null; // 반제품이 바뀌면 반응기 필터 초기화
       loadProduct(product.id);
-    };
+    });
   }
 
   async function loadProduct(productId) {

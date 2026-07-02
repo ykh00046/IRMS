@@ -108,6 +108,13 @@ body {
   overflow-x: hidden;
 }
 
+/* hidden 속성은 display 클래스(.blend-form-grid 의 grid 등)보다 항상 우선.
+   이 규칙이 없으면 display 를 지정한 요소가 hidden 인데도 화면에 남는다
+   (예: 배합 '작업시간·저울 변경' 접기가 안 접히던 버그). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-page);

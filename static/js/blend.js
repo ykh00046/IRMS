@@ -268,16 +268,11 @@
 
   async function onRecipeChange() {
     const id = selectedRecipeId();
+    // 미해석(검색 타이핑 중/비움)은 무시 — 현재 레시피와 입력값을 지우지 않는다.
+    if (!id) return;
     // 입력 이벤트가 연속으로 와도 선택이 실제로 바뀌었을 때만 반응(중복 API 호출 방지).
     if (id === state._lastRecipeId) return;
     state._lastRecipeId = id;
-    if (!id) {
-      state.current = null;
-      state.items = [];
-      renderMatRows();
-      renderReactorField();
-      return;
-    }
     const totalRaw = Number($("blend-total").value);
     const query = totalRaw > 0 ? { total: totalRaw } : {};
     const data = await request(`/blend/recipes/${id}`, { query });
@@ -681,8 +676,18 @@
 
   function bind() {
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
-    $("blend-recipe").addEventListener("input", onRecipePick);
-    $("blend-recipe").addEventListener("change", onRecipePick);
+    const recipeInput = $("blend-recipe");
+    recipeInput.addEventListener("input", onRecipePick);
+    recipeInput.addEventListener("change", onRecipePick);
+    // 포커스 시 비움 → 이미 선택된 이름으로 datalist 가 필터되지 않고 전체 목록 표시.
+    // 선택 없이 나가면 현재 레시피명으로 원복(선택 유지).
+    recipeInput.addEventListener("focus", () => {
+      recipeInput.value = "";
+    });
+    recipeInput.addEventListener("blur", () => {
+      if (selectedRecipeId()) return;
+      recipeInput.value = state.current ? state.current.recipe.product_name : "";
+    });
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
       state.items.forEach((_, i) => updateRowVar(i));
