@@ -89,7 +89,8 @@
           break;
         }
         fillScaleValue(idx, ev.value);
-        notify(`저울 입력: ${state.items[idx].material_name} = ${ev.value} g`, "success");
+        const src = ev.source ? `[${ev.source}] ` : "";
+        notify(`${src}저울 입력: ${state.items[idx].material_name} = ${ev.value} g`, "success");
       }
     } catch (_e) { /* 폴링 실패는 조용히 — detectScale 이 상태 회복 */ }
   }

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from scale_agent.agent import DEFAULT_CONFIG, Scale, parse_frame, resolve_comm
+from scale_agent.agent import (
+    EventBus,
+    Scale,
+    parse_frame,
+    resolve_comm,
+    scale_entries,
+)
 from src.services import blend_service
 
 
@@ -63,39 +69,64 @@ def test_protocol_presets():
     assert custom["baudrate"] == 19200
 
 
-# ── PRINT 푸시 이벤트 분배 ───────────────────────────────────────
-def _scale() -> Scale:
-    return Scale(dict(DEFAULT_CONFIG))
+# ── PRINT 푸시 이벤트 분배 (다중 저울 공용 EventBus) ─────────────
+def _scale(name="GX", protocol="and"):
+    bus = EventBus()
+    return Scale({"name": name, "protocol": protocol}, bus, set()), bus
 
 
 def test_print_push_becomes_event():
-    s = _scale()
+    s, bus = _scale()
     s._handle_frame(parse_frame("ST,+0004775.7   g"))
     s._handle_frame(parse_frame("ST,+0000181.0   g"))
-    items, last = s.events_after(0)
+    items, last = bus.after(0)
     assert [e["value"] for e in items] == [4775.7, 181.0]
+    assert [e["source"] for e in items] == ["GX", "GX"]
     assert last == 2
     # after 커서 이후만
-    items2, _ = s.events_after(1)
+    items2, _ = bus.after(1)
     assert [e["value"] for e in items2] == [181.0]
 
 
+def test_two_scales_share_one_event_stream():
+    """A&D + Mettler 두 저울의 PRINT 가 한 스트림으로 합쳐진다(전환 불필요)."""
+    bus = EventBus()
+    gx = Scale({"name": "GX", "protocol": "and"}, bus, set())
+    xp = Scale({"name": "XP", "protocol": "mt-sics"}, bus, set())
+    gx._handle_frame(parse_frame("ST,+0004775.7   g"))
+    xp._handle_frame(parse_frame("S S     105.00 g", protocol="mt-sics"))
+    items, last = bus.after(0)
+    assert [(e["source"], e["value"]) for e in items] == [("GX", 4775.7), ("XP", 105.0)]
+    assert last == 2
+
+
 def test_unstable_or_overload_not_evented():
-    s = _scale()
+    s, bus = _scale()
     s._handle_frame(parse_frame("US,+0000012.3   g"))  # 측정 중
     s._handle_frame(parse_frame("OL,+9999999.9   g"))  # 과부하
-    assert s.events_after(0) == ([], 0)
+    assert bus.after(0) == ([], 0)
 
 
 def test_q_response_consumed_not_evented():
-    """[저울] 버튼의 Q 질의 응답은 이벤트로 새지 않는다(이중 입력 방지)."""
-    s = _scale()
+    """질의(/weight) 응답은 이벤트로 새지 않는다(이중 입력 방지)."""
+    s, bus = _scale()
     s._expect_q = True
     frame = parse_frame("ST,+0000058.0   g")
     s._handle_frame(frame)
-    assert s.events_after(0) == ([], 0)      # 이벤트 아님
+    assert bus.after(0) == ([], 0)           # 이벤트 아님
     assert s._q_result == frame              # 질의 응답으로 전달
     assert s._q_waiter.is_set()
+
+
+def test_scale_entries_multi_and_legacy():
+    multi = scale_entries({"scales": [
+        {"protocol": "and", "port": "COM4"},
+        {"name": "XP10002S", "protocol": "mt-sics", "port": "COM3", "yield_to": ["COMBINATION.exe"]},
+    ]})
+    assert [e["name"] for e in multi] == ["and", "XP10002S"]
+    # 구 단일(평평한) 설정도 저울 1대로 해석 (하위 호환)
+    legacy = scale_entries({"protocol": "and", "port": "COM4", "yield_to": []})
+    assert len(legacy) == 1 and legacy[0]["port"] == "COM4"
 
 
 # ── 허용 편차 검증(서버) ─────────────────────────────────────────

@@ -163,37 +163,82 @@ def load_config() -> dict:
     except (json.JSONDecodeError, OSError):
         return dict(DEFAULT_CONFIG)
     merged = dict(DEFAULT_CONFIG)
-    merged.update({k: v for k, v in raw.items() if k in DEFAULT_CONFIG})
+    known = set(DEFAULT_CONFIG) | {"scales"}
+    merged.update({k: v for k, v in raw.items() if k in known})
     return merged
 
 
+def scale_entries(config: dict) -> list[dict]:
+    """설정에서 저울 목록을 추출. 여러 대를 동시에 연결할 수 있다.
+
+    - "scales": [{...}, {...}] 형식이면 그대로 (저울별 name/protocol/port/yield_to)
+    - 없으면 구 단일 설정(평평한 키)을 저울 1대로 해석 (하위 호환)
+    """
+    entries = config.get("scales")
+    if isinstance(entries, list) and entries:
+        out = []
+        for i, e in enumerate(entries):
+            if not isinstance(e, dict):
+                continue
+            entry = dict(e)
+            entry.setdefault("name", entry.get("protocol") or f"저울{i + 1}")
+            out.append(entry)
+        if out:
+            return out
+    single = {k: config.get(k) for k in ("port", "protocol", "baudrate", "bytesize", "parity", "stopbits", "yield_to")}
+    single["name"] = str(config.get("protocol") or "저울1")
+    return [single]
+
+
+# ── 이벤트 버스: 여러 저울의 PRINT 푸시를 하나의 스트림으로 ──────
+class EventBus:
+    def __init__(self) -> None:
+        self._events: deque = deque(maxlen=100)
+        self._seq = 0
+        self._lock = threading.Lock()
+
+    def push(self, frame: dict, source: str) -> None:
+        with self._lock:
+            self._seq += 1
+            self._events.append({**frame, "id": self._seq, "source": source})
+
+    def after(self, after_id: int) -> tuple[list[dict], int]:
+        with self._lock:
+            return [e for e in self._events if e["id"] > after_id], self._seq
+
+
 # ── 저울 통신 ─────────────────────────────────────────────────────
-# 상시 수신 구조: 리더 스레드가 포트를 계속 읽는다. 저울에서 오는 프레임은
-# 두 갈래 — (a) 웹 [저울] 버튼의 Q 질의 응답, (b) 저울 PRINT 키를 눌러
-# 저울이 스스로 보낸 값(푸시). 푸시된 안정값은 이벤트 버퍼에 쌓이고,
-# 배합 화면이 /events 를 폴링해 실제량 칸에 자동 입력한다.
+# 상시 수신 구조: 저울마다 리더 스레드가 포트를 계속 읽는다. 프레임은
+# 두 갈래 — (a) 질의(/weight) 응답, (b) 저울 PRINT 키 푸시. 푸시된
+# 안정값은 공용 EventBus 에 쌓이고, 배합 화면이 /events 를 폴링해
+# 실제량 칸에 자동 입력한다. 여러 저울(A&D + Mettler 등)을 동시에
+# 연결할 수 있고, 어느 저울에서 PRINT 를 눌러도 같은 흐름으로 들어간다.
 class Scale:
-    def __init__(self, config: dict) -> None:
-        self._config = config
-        self._comm = resolve_comm(config)
-        self._protocol = str(config.get("protocol") or "and")
+    def __init__(self, entry: dict, bus: EventBus, taken_ports: set) -> None:
+        self._config = entry
+        self._bus = bus
+        self._taken = taken_ports  # 다른 저울이 점유한 포트(자동탐지 중복 방지)
+        self._comm = resolve_comm(entry)
+        self._protocol = str(entry.get("protocol") or "and")
+        self.name = str(entry.get("name") or self._protocol)
         self._write_lock = threading.Lock()
         self._serial = None  # serial.Serial | None
         self.port: str | None = None
         # 기존 프로그램(yield_to)에 포트를 양보 중인가
         self.yielding = False
-        # PRINT 푸시 이벤트 버퍼
-        self._events: deque = deque(maxlen=100)
-        self._event_seq = 0
-        # Q 질의 대기자
+        # 질의 대기자
         self._expect_q = False
         self._q_result: dict | None = None
         self._q_waiter = threading.Event()
         self._stop = threading.Event()
-        self._reader = threading.Thread(target=self._reader_loop, name="scale-reader", daemon=True)
+        self._reader = threading.Thread(
+            target=self._reader_loop, name=f"scale-reader-{self.name}", daemon=True
+        )
         self._reader.start()
-        if config.get("yield_to"):
-            threading.Thread(target=self._yield_watcher, name="scale-yield", daemon=True).start()
+        if entry.get("yield_to"):
+            threading.Thread(
+                target=self._yield_watcher, name=f"scale-yield-{self.name}", daemon=True
+            ).start()
 
     def _open(self, port: str):
         return serial.Serial(
@@ -216,9 +261,11 @@ class Scale:
             return None
         candidates = (
             [self._config["port"]]
-            if self._config["port"]
+            if self._config.get("port")
             else [p.device for p in list_ports.comports()]
         )
+        # 다른 저울이 이미 잡은 포트는 건너뜀(자동 탐지 충돌 방지)
+        candidates = [p for p in candidates if p not in self._taken]
         for port in candidates:
             try:
                 ser = self._open(port)
@@ -234,6 +281,7 @@ class Scale:
                 if found:
                     self._serial = ser
                     self.port = port
+                    self._taken.add(port)
                     return port
                 ser.close()
             except Exception:  # noqa: BLE001 - 다음 포트 시도
@@ -259,15 +307,18 @@ class Scale:
             if running and not self.yielding:
                 self.yielding = True
                 self._drop_connection()
-                log("기존 저울 프로그램 감지 → 포트 양보(연결 해제)")
+                log(f"[{self.name}] 기존 저울 프로그램 감지 → 포트 양보(연결 해제)")
             elif not running and self.yielding:
                 self.yielding = False
                 port = self.connect()
-                log(f"기존 프로그램 종료 → 재연결{'됨: ' + port if port else ' 시도(저울 응답 없음)'}")
+                log(f"[{self.name}] 기존 프로그램 종료 → 재연결{'됨: ' + port if port else ' 시도(저울 응답 없음)'}")
             time.sleep(3)
 
     def _drop_connection(self) -> None:
-        ser, self._serial, self.port = self._serial, None, None
+        ser, self._serial = self._serial, None
+        if self.port:
+            self._taken.discard(self.port)
+        self.port = None
         if ser is not None:
             try:
                 ser.close()
@@ -275,15 +326,14 @@ class Scale:
                 pass
 
     def _handle_frame(self, frame: dict) -> None:
-        """수신 프레임 분배 — Q 응답이면 대기자에게, 아니면 PRINT 푸시 이벤트로."""
+        """수신 프레임 분배 — 질의 응답이면 대기자에게, 아니면 PRINT 푸시 이벤트로."""
         if self._expect_q:
             self._expect_q = False
             self._q_result = frame
             self._q_waiter.set()
             return
         if frame.get("stable") and not frame.get("overload"):
-            self._event_seq += 1
-            self._events.append({**frame, "id": self._event_seq})
+            self._bus.push(frame, self.name)
 
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
@@ -323,14 +373,9 @@ class Scale:
         self._expect_q = False
         return None
 
-    def events_after(self, after_id: int) -> tuple[list[dict], int]:
-        """PRINT 푸시 이벤트 중 id > after_id 인 것들 + 현재 마지막 id."""
-        items = [e for e in list(self._events) if e["id"] > after_id]
-        return items, self._event_seq
-
 
 # ── 로컬 HTTP 서버 ────────────────────────────────────────────────
-def build_handler(scale: Scale):
+def build_handler(scales: list, bus: EventBus):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, status: int, payload: dict) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -352,27 +397,33 @@ def build_handler(scale: Scale):
         def do_GET(self) -> None:  # noqa: N802
             if self.path.startswith("/health"):
                 self._send(200, {
-                    "ok": scale.port is not None,
-                    "port": scale.port,
-                    "yielding": scale.yielding,
+                    "ok": any(s.port is not None for s in scales),
+                    "scales": [
+                        {"name": s.name, "port": s.port, "yielding": s.yielding}
+                        for s in scales
+                    ],
                 })
                 return
             if self.path.startswith("/weight"):
-                frame = scale.read()
-                if frame is None:
-                    self._send(503, {"error": "SCALE_NOT_CONNECTED", "port": scale.port})
-                    return
-                self._send(200, frame)
+                # 진단용: 연결된 저울들에 차례로 질의해 첫 응답 반환.
+                for s in scales:
+                    if s.port is None:
+                        continue
+                    frame = s.read()
+                    if frame is not None:
+                        self._send(200, {**frame, "source": s.name})
+                        return
+                self._send(503, {"error": "SCALE_NOT_CONNECTED"})
                 return
             if self.path.startswith("/events"):
-                # 저울 PRINT 키 푸시 이벤트. ?after=<id> 이후 것만 반환.
+                # 저울 PRINT 키 푸시 이벤트(모든 저울 공용). ?after=<id> 이후만.
                 from urllib.parse import parse_qs, urlparse
                 params = parse_qs(urlparse(self.path).query)
                 try:
                     after = int(params.get("after", ["0"])[0])
                 except ValueError:
                     after = 0
-                items, last_id = scale.events_after(after)
+                items, last_id = bus.after(after)
                 self._send(200, {"last_id": last_id, "items": items})
                 return
             self._send(404, {"error": "NOT_FOUND"})
@@ -442,17 +493,23 @@ def _tray_image():
     return img
 
 
-def run_tray(scale: Scale, server: ThreadingHTTPServer) -> None:
+def run_tray(scales: list, server: ThreadingHTTPServer) -> None:
     import pystray
     from pystray import Menu, MenuItem
 
-    def status_text(_item) -> str:
-        if scale.yielding:
-            return "저울: 기존 프로그램에 양보 중"
-        return f"저울: {scale.port} 연결됨" if scale.port else "저울: 연결 안 됨"
+    def status_text(scale):
+        def _text(_item) -> str:
+            if scale.yielding:
+                return f"{scale.name}: 기존 프로그램에 양보 중"
+            return f"{scale.name}: {scale.port} 연결됨" if scale.port else f"{scale.name}: 연결 안 됨"
+        return _text
 
     def reconnect(_icon, _item) -> None:
-        threading.Thread(target=scale.connect, daemon=True).start()
+        def _all():
+            for s in scales:
+                if s.port is None and not s.yielding:
+                    s.connect()
+        threading.Thread(target=_all, daemon=True).start()
 
     def toggle_autostart(icon, _item) -> None:
         set_autostart(not autostart_enabled())
@@ -465,12 +522,13 @@ def run_tray(scale: Scale, server: ThreadingHTTPServer) -> None:
         threading.Thread(target=server.shutdown, daemon=True).start()
         icon.stop()
 
+    status_items = [MenuItem(status_text(s), None, enabled=False) for s in scales]
     icon = pystray.Icon(
         "irms_scale",
         icon=_tray_image(),
         title="IRMS 저울 에이전트",
         menu=Menu(
-            MenuItem(status_text, None, enabled=False),
+            *status_items,
             MenuItem("다시 연결", reconnect),
             Menu.SEPARATOR,
             MenuItem("부팅 시 자동 실행", toggle_autostart,
@@ -486,14 +544,17 @@ def run_tray(scale: Scale, server: ThreadingHTTPServer) -> None:
 
 def main() -> None:
     config = load_config()
-    scale = Scale(config)
-    port = scale.connect()
     log(f"설정: {config_path()}")
-    log(f"저울 연결됨: {port}" if port else "저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
+    bus = EventBus()
+    taken_ports: set = set()
+    scales = [Scale(entry, bus, taken_ports) for entry in scale_entries(config)]
+    for s in scales:
+        port = s.connect()
+        log(f"[{s.name}] 연결됨: {port}" if port else f"[{s.name}] 저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
 
     http_port = int(config["http_port"])
-    server = ThreadingHTTPServer(("127.0.0.1", http_port), build_handler(scale))
-    log(f"http://127.0.0.1:{http_port} 대기 중")
+    server = ThreadingHTTPServer(("127.0.0.1", http_port), build_handler(scales, bus))
+    log(f"http://127.0.0.1:{http_port} 대기 중 (저울 {len(scales)}대 설정)")
 
     # 최초 실행 시 부팅 자동 실행을 기본으로 켠다(트레이 메뉴에서 끌 수 있음).
     try:
@@ -514,7 +575,7 @@ def main() -> None:
 
     if tray_available:
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        run_tray(scale, server)
+        run_tray(scales, server)
         log("종료")
         return
     try:
