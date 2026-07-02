@@ -40,7 +40,8 @@
     }
   }
 
-  // 저울 값을 idx 행 실제량에 채우고 다음 행 LOT 로 포커스(LOT 먼저 입력 흐름)
+  // 저울 값을 idx 행 실제량에 채우고, 수동 Enter 와 동일하게 진행:
+  // 다음 행 LOT 로 포커스, 마지막 자재였으면 저장 버튼으로.
   function fillScaleValue(idx, value) {
     const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
     if (!input) return;
@@ -50,7 +51,12 @@
     updateTotals();
     warnIfVariance(idx);
     const nextLot = document.querySelector(`.blend-lot[data-idx="${idx + 1}"]`);
-    if (nextLot) nextLot.focus();
+    if (nextLot) {
+      nextLot.focus();
+    } else {
+      const save = $("blend-save");
+      if (save) save.focus();
+    }
   }
 
   // PRINT 키 입력이 들어갈 행: 커서가 있는 행(LOT/실제량) 우선, 없으면 첫 미입력 행
