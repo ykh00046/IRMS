@@ -1,8 +1,9 @@
 # BRM (Blend & Recipe Management) — 배합·레시피 관리
 
-> 배합·레시피 관리, 계량, 재고, 근태 기능을 갖춘 FastAPI 웹 애플리케이션.
+> 배합 실적(DHR)·레시피 관리, 점도 분석, 근태 기능을 갖춘 FastAPI 웹 애플리케이션.
 > (구 IRMS. 화면 브랜드는 BRM이지만 **내부 코드 식별자는 IRMS 유지** — `window.IRMS`
 >  네임스페이스, `IRMS_ENV`·`IRMS_DATA_DIR` 등 환경변수, 배치파일. 리네이밍 위험으로 보존.)
+> UI·대화에서 '잉크/ink' 단어 금지(내부 컬럼 ink_name 은 잔존 허용). 재고/발주/채팅 기능은 제거됨.
 
 ## Project Level
 **Level: Dynamic** (FastAPI 웹서버 + SQLite + Jinja2 템플릿 + 인증/세션 + Cloudflare Tunnel)
@@ -23,12 +24,13 @@ python tools/bootstrap_irms.py --run-smoke
 uvicorn src.main:app --reload
 # 브라우저: http://127.0.0.1:8000/
 
-# 또는 배치 파일
+# 운영 PC (포트 9000, 창 하나로 서버 + 자동 업데이트)
+run_auto.bat              # serve.py — 주기적 git pull 감시 후 자동 재시작
+
+# 기타 배치 파일
 run_irms.bat              # 일반 실행
 run_irms_intranet.bat     # 인트라넷 실행 (reload 없음)
-
-# 터널 실행 (외부 접근)
-run_tunnel.bat
+run_tunnel.bat            # 터널 실행 (외부 접근)
 ```
 
 ## Architecture
@@ -55,62 +57,46 @@ run_tunnel.bat
 src/
 ├── main.py              # FastAPI 앱 팩토리 (create_app)
 ├── config.py            # 환경 설정 (IRMS_ENV, SESSION_SECRET 등)
-├── auth.py              # 인증 로직
-├── security.py          # 보안 헬퍼
+├── auth.py              # 인증 (단일 admin + FIELD_USER 무로그인 개방)
+├── blend_session.py     # 배합 작업자 세션 (이름 기반)
+├── attendance_auth.py   # 근태 인증 (사번+비번, 자체 세션)
+├── security.py          # 보안 헬퍼 (CSRF 등)
 ├── limiter.py           # Rate limiter (slowapi)
-├── attendance_auth.py   # 출입관리 인증
-├── db/
-│   ├── connection.py    # DB 연결
-│   ├── schema.py        # 스키마 정의
-│   ├── migrations.py    # 마이그레이션
-│   ├── queries.py       # 쿼리 헬퍼
-│   ├── seeds.py         # 시드 데이터
-│   ├── audit.py         # 감사 로그
-│   └── time_utils.py    # 시간 유틸
+├── db/                  # connection/schema/migrations/queries/seeds/audit
 ├── routers/
 │   ├── pages.py         # 페이지 라우트 (HTML)
-│   ├── api.py           # API 라우트 (JSON)
-│   ├── auth_routes.py   # 인증 라우트
-│   ├── admin_routes.py  # 관리자 라우트
-│   ├── dashboard_routes.py # 대시보드
-│   ├── recipe_manager_routes.py  # 레시피 관리
-│   ├── recipe_operator_routes.py # 레시피 운영
-│   ├── recipe_stats_routes.py    # 레시피 통계
-│   ├── recipe_import_routes.py   # 레시피 가져오기
-│   ├── spreadsheet_routes.py     # 스프레드시트
-│   ├── weighing_routes.py        # 계량
-│   ├── stock_routes.py           # 재고
-│   ├── attendance_routes.py      # 출입관리
-│   ├── chat_routes.py            # 채팅
+│   ├── api.py           # API 라우터 조립 (모든 하위 라우터 include)
+│   ├── auth_routes.py / admin_routes.py     # 로그인 · 사용자관리(admin 전용)
+│   ├── blend_routes.py                      # 배합 실적·DHR·점도연계·next-lot
+│   ├── blend_session_routes.py / worker_routes.py  # 작업자 세션·명단
+│   ├── viscosity_routes.py                  # 점도 등록·분석·반제품 설정
+│   ├── recipe_{manager,operator,stats,import}_routes.py  # 레시피
+│   ├── dashboard_routes.py                  # 대시보드
+│   ├── attendance_routes.py                 # 근태 (⚠ future annotations 금지 — 상단 주석)
+│   ├── public_{attendance_alert,notice,viscosity_reminder}_routes.py  # 트레이용 내부망 공개 API
+│   ├── weighing_routes.py                   # 구 계량 API (dormant, /weighing→/blend 리다이렉트)
 │   └── models.py        # Pydantic 모델
-├── services/
-│   ├── attendance_excel.py       # 출입 Excel 처리
-│   ├── import_parser.py          # 가져오기 파서
-│   ├── material_resolver.py      # 자재 해석
-│   ├── recipe_helpers.py         # 레시피 헬퍼
-│   ├── stock_service.py          # 재고 서비스
-│   └── cell_value_parser.py      # 셀 값 파서
-└── middleware/
-    ├── internal_only.py          # 내부망 접근 제한
-    └── security_headers.py       # 보안 헤더
+├── services/            # blend/viscosity/attendance_excel/dhr_{excel,pdf,cache}/
+│                        # signature_*/record_delete/variance/worker/import_parser 등
+└── middleware/          # internal_only(내부망 제한) · security_headers
 
-templates/              # Jinja2 HTML 템플릿
-├── _base_app.html      # 공통 베이스
-├── base.html           # 일반 베이스
-├── entry.html          # 레시피 입력
-├── management.html     # 관리 페이지
-├── insight.html        # 분석 페이지
-├── dashboard.html      # 대시보드
-├── weighing_select.html# 계량 선택
-├── login.html          # 로그인
-├── attendance.html     # 출입관리
-└── work.html           # 작업
+templates/              # Jinja2 (_base_app.html 상속)
+├── entry.html          # 홈 런처 (근태/반제품 제조 게이트)
+├── blend.html          # 배합 실적 입력 (+blend_login.html)
+├── status.html         # 배합 기록 · DHR 출력
+├── viscosity.html      # 점도 등록·추세·이상 분석
+├── management.html     # 레시피 관리 (+management_login.html)
+├── insight.html        # 배합 자재 분석
+├── dashboard.html      # 운영 대시보드
+├── admin_users.html    # 사용자 관리 (admin)
+└── attendance*.html    # 근태 (메인/로그인/비번변경)
 
-static/                 # 정적 파일 (css, js, vendor)
-tests/                  # pytest 테스트
-data/                   # SQLite DB (런타임)
-scripts/                # 유틸리티 스크립트
-tools/                  # 부트스트랩/스모크 도구
+static/                 # 정적 파일 (css, js, vendor) — ?v= 캐시버스팅 필수
+tests/                  # pytest (in-memory SQLite 픽스처)
+tray_client/            # Windows 트레이 알림 앱 (근태·점도 리마인더)
+serve.py / run_auto.bat # 운영: 단일 창 서버 + 자동 git pull 업데이트
+data/                   # SQLite DB (런타임, gitignore)
+scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 ```
 
 ## Key Commands

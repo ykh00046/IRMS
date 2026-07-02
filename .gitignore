@@ -49,14 +49,18 @@ cloudflared/*.json
 # WSL backup
 .venv-wsl-backup-*/
 
-# Misc
+# Misc (루트에 두는 스크린샷·캡처 이미지)
 *.png
+*.jpg
+*.jpeg
 .pytest-tmp/
 .pytest_tmp/
 .tmp-tests/
 .coverage
 .gstack/
 
-# 서명 합성 필수 자산(*.png 무시 예외)
+# 서명 합성 필수 자산(이미지 무시 예외)
 !src/resources/signature/
 !src/resources/signature/*.png
+!src/resources/signature/*.jpg
+!src/resources/signature/*.jpeg
