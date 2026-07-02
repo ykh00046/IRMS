@@ -1,15 +1,18 @@
-"""운영 대시보드 보고서 Excel 출력 — Program-estimation v3 dashboard_exporter 이식.
+"""운영 대시보드 보고서 Excel 출력 — 배합 실적(blend_records) + 점도 현황 기반.
 
-요약(KPI)·자재 사용량 TOP·작업자 통계를 한 시트로. openpyxl 만 의존(서버 동작).
-PDF 변환(win32com)은 웹 부적합이라 제외.
+구 계량 워크플로(recipe_items) 기반 보고서는 데이터가 더 이상 쌓이지 않아
+2026-07 배합 기준으로 재작성. openpyxl 만 의존(서버 동작).
 """
 
 import io
 import sqlite3
+from datetime import date
 from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
+
+from . import viscosity_service
 
 
 def _section(ws, row: int, title: str, headers: list[str] | None, rows: list[list[Any]]) -> int:
@@ -32,8 +35,6 @@ def build_dashboard_excel(
     *,
     from_date: str,
     to_date: str,
-    from_ts: str,
-    to_ts: str,
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -42,50 +43,84 @@ def build_dashboard_excel(
     ws.cell(row=2, column=1, value=f"기간: {from_date} ~ {to_date}")
 
     # 요약
-    completed = connection.execute(
-        "SELECT COUNT(*) AS c FROM recipes WHERE status='completed' AND completed_at IS NOT NULL "
-        "AND completed_at BETWEEN ? AND ?",
-        (from_ts, to_ts),
-    ).fetchone()["c"]
-    meas = connection.execute(
-        "SELECT COUNT(*) AS c, COALESCE(SUM(value_weight),0) AS w FROM recipe_items "
-        "WHERE measured_at IS NOT NULL AND measured_at BETWEEN ? AND ?",
-        (from_ts, to_ts),
+    summary = connection.execute(
+        """
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount), 0) AS w,
+               COUNT(DISTINCT product_name) AS products,
+               COUNT(DISTINCT worker) AS workers
+        FROM blend_records
+        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+        """,
+        (from_date, to_date),
     ).fetchone()
+    approval_pending = connection.execute(
+        "SELECT COUNT(*) AS c FROM blend_records "
+        "WHERE status = 'completed' AND (approved_by IS NULL OR approved_by = '')"
+    ).fetchone()["c"]
 
     row = 4
     row = _section(ws, row, "[요약]", None, [
-        ["완료 레시피", int(completed or 0)],
-        ["계량 단계", int(meas["c"] or 0)],
-        ["총 사용량(g)", round(float(meas["w"] or 0), 2)],
+        ["배합 건수", int(summary["cnt"] or 0)],
+        ["총 배합량(g)", round(float(summary["w"] or 0), 2)],
+        ["반제품 종류", int(summary["products"] or 0)],
+        ["작업자 수", int(summary["workers"] or 0)],
+        ["결재 대기(전체)", int(approval_pending or 0)],
     ])
 
-    # 자재 사용량 TOP 10
-    mat_rows = connection.execute(
-        "SELECT m.name AS name, m.category AS cat, COALESCE(SUM(ri.value_weight),0) AS w, COUNT(*) AS c "
-        "FROM recipe_items ri JOIN materials m ON m.id=ri.material_id "
-        "WHERE ri.measured_at IS NOT NULL AND ri.measured_at BETWEEN ? AND ? "
-        "GROUP BY m.id, m.name, m.category ORDER BY w DESC LIMIT 10",
-        (from_ts, to_ts),
+    # 반제품별 배합 TOP 10
+    product_rows = connection.execute(
+        """
+        SELECT product_name, COUNT(*) AS c, COALESCE(SUM(total_amount), 0) AS w
+        FROM blend_records
+        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+        GROUP BY product_name ORDER BY w DESC LIMIT 10
+        """,
+        (from_date, to_date),
     ).fetchall()
     row = _section(
-        ws, row, "[자재 사용량 TOP 10]", ["자재", "분류", "총량(g)", "사용 횟수"],
-        [[r["name"], r["cat"] or "", round(float(r["w"] or 0), 2), int(r["c"])] for r in mat_rows],
+        ws, row, "[반제품별 배합 TOP 10]", ["반제품", "건수", "총량(g)"],
+        [[r["product_name"], int(r["c"]), round(float(r["w"] or 0), 2)] for r in product_rows],
     )
 
     # 작업자 통계
-    op_rows = connection.execute(
-        "SELECT COALESCE(NULLIF(measured_by,''),'(미기록)') AS op, COUNT(*) AS c, "
-        "COALESCE(SUM(value_weight),0) AS w FROM recipe_items "
-        "WHERE measured_at IS NOT NULL AND measured_at BETWEEN ? AND ? GROUP BY op ORDER BY c DESC",
-        (from_ts, to_ts),
+    worker_rows = connection.execute(
+        """
+        SELECT COALESCE(NULLIF(worker, ''), '(미기록)') AS op,
+               COUNT(*) AS c, COALESCE(SUM(total_amount), 0) AS w
+        FROM blend_records
+        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+        GROUP BY op ORDER BY c DESC
+        """,
+        (from_date, to_date),
     ).fetchall()
     row = _section(
-        ws, row, "[작업자 통계]", ["작업자", "계량 건수", "총량(g)"],
-        [[r["op"], int(r["c"]), round(float(r["w"] or 0), 2)] for r in op_rows],
+        ws, row, "[작업자 통계]", ["작업자", "배합 건수", "총량(g)"],
+        [[r["op"], int(r["c"]), round(float(r["w"] or 0), 2)] for r in worker_rows],
     )
 
-    widths = [22, 14, 14, 12]
+    # 점도 현황 (제품별 최신 연도 기준)
+    overview = viscosity_service.overview(connection)
+    due = viscosity_service.daily_reading_reminders(
+        connection, target_date=date.today().isoformat()
+    )
+    row = _section(
+        ws, row, "[점도 현황 (최신 연도 기준)]",
+        ["반제품", "측정수", "평균", "이상", "경고", "최근값", "최근일"],
+        [
+            [
+                it["code"], it["count"], it["mean"], it["anomaly_count"],
+                it["warn_count"], it["latest_value"], it["latest_date"],
+            ]
+            for it in overview["items"]
+        ],
+    )
+    if due:
+        row = _section(
+            ws, row, "[오늘 점도 미입력 (알림 대상)]", ["반제품"],
+            [[it["code"]] for it in due],
+        )
+
+    widths = [22, 14, 14, 12, 12, 12, 14]
     for col, w in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + col)].width = w
 

@@ -30,147 +30,88 @@
 
         <section class="dashboard-cards">
           <div class="metric-card">
-            <div class="metric-label">완료 레시피</div>
-            <div class="metric-value" id="card-completed">-</div>
+            <div class="metric-label">배합 건수</div>
+            <div class="metric-value" id="card-blend-count">-</div>
             <div class="metric-unit">건</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">계량 단계</div>
-            <div class="metric-value" id="card-measurement">-</div>
-            <div class="metric-unit">단계</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">목표 사용량</div>
+            <div class="metric-label">총 배합량</div>
             <div class="metric-value" id="card-weight">-</div>
             <div class="metric-unit">g</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">처리량</div>
-            <div class="metric-value" id="card-throughput">-</div>
-            <div class="metric-unit">단계/시간</div>
+            <div class="metric-label">반제품 종류</div>
+            <div class="metric-value" id="card-products">-</div>
+            <div class="metric-unit">종</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">실측 반영률</div>
-            <div class="metric-value" id="card-actual-coverage">-</div>
-            <div class="metric-unit">%</div>
+            <div class="metric-label">결재 대기</div>
+            <div class="metric-value" id="card-approval">-</div>
+            <div class="metric-unit">건 · 전체 기간</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">순편차</div>
-            <div class="metric-value" id="card-variance-total">-</div>
-            <div class="metric-unit">g</div>
+            <div class="metric-label">점도 이상</div>
+            <div class="metric-value" id="card-visc-anomaly">-</div>
+            <div class="metric-unit">건 · 최신 연도</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">오늘 점도 미입력</div>
+            <div class="metric-value" id="card-visc-due">-</div>
+            <div class="metric-unit" id="card-visc-due-codes">알림 대상 기준</div>
           </div>
         </section>
 
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">일별 추이</h3>
+            <h3 class="panel-title">일별 배합 추이</h3>
             <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
           </div>
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">자재 사용 TOP 10</h3>
-            <div class="chart-wrap"><canvas id="chart-materials"></canvas></div>
-            <p class="muted small">막대를 클릭하면 자재 사용 상세를 봅니다.</p>
+            <h3 class="panel-title">반제품별 배합 TOP 10</h3>
+            <div class="chart-wrap"><canvas id="chart-products"></canvas></div>
           </div>
         </section>
 
         <section class="dashboard-grid">
-          <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">일별 처리량</h3>
-            <div class="chart-wrap"><canvas id="chart-throughput"></canvas></div>
-          </div>
           <div class="panel dashboard-operators-panel">
-            <h3 class="panel-title">작업자 성과</h3>
+            <h3 class="panel-title">작업자별 실적</h3>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>작업자</th>
-                    <th class="num">단계</th>
-                    <th class="num">목표 사용량(g)</th>
-                    <th class="num">완료 레시피</th>
+                    <th class="num">배합 건수</th>
+                    <th class="num">총량(g)</th>
+                    <th class="num">반제품 종류</th>
                   </tr>
                 </thead>
-                <tbody id="operators-body"></tbody>
+                <tbody id="workers-body"></tbody>
               </table>
             </div>
-          </div>
-        </section>
-
-        <section class="dashboard-grid">
-          <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">실제·목표 편차 TOP 10</h3>
-            <div class="chart-wrap"><canvas id="chart-variance"></canvas></div>
-            <p class="muted small">막대를 클릭하면 레시피별 편차를 봅니다.</p>
           </div>
           <div class="panel dashboard-operators-panel">
-            <h3 class="panel-title">편차 요약</h3>
+            <h3 class="panel-title">최근 배합 기록 <a class="muted small" href="/status">전체 보기 →</a></h3>
             <div class="table-wrap">
               <table>
-                <tbody>
-                  <tr><th>계량 단계</th><td class="num" id="variance-measured-count">-</td></tr>
-                  <tr><th>실측 입력</th><td class="num" id="variance-actual-count">-</td></tr>
-                  <tr><th>목표 합계(g)</th><td class="num" id="variance-target-total">-</td></tr>
-                  <tr><th>실제 합계(g)</th><td class="num" id="variance-actual-total">-</td></tr>
-                  <tr><th>절대 편차(g)</th><td class="num" id="variance-abs-total">-</td></tr>
-                </tbody>
+                <thead>
+                  <tr>
+                    <th>LOT</th>
+                    <th>반제품</th>
+                    <th>작업일</th>
+                    <th>작업자</th>
+                    <th class="num">총량(g)</th>
+                    <th>점도</th>
+                    <th>결재</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-body"></tbody>
               </table>
             </div>
           </div>
         </section>
-
-        <div id="material-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal ss-modal-wide">
-            <div class="ss-modal-header">
-              <h3 id="material-modal-title">자재 상세</h3>
-              <button id="material-modal-close" class="btn" type="button">닫기</button>
-            </div>
-            <div class="ss-modal-body">
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>제품</th>
-                      <th class="num">목표 사용량(g)</th>
-                      <th>작업자</th>
-                      <th>측정시각</th>
-                    </tr>
-                  </thead>
-                  <tbody id="material-modal-body"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="variance-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal ss-modal-wide">
-            <div class="ss-modal-header">
-              <h3 id="variance-modal-title">편차 상세</h3>
-              <button id="variance-modal-close" class="btn" type="button">닫기</button>
-            </div>
-            <div class="ss-modal-body">
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>제품</th>
-                      <th class="num">목표(g)</th>
-                      <th class="num">실제(g)</th>
-                      <th class="num">편차(g)</th>
-                      <th class="num">편차(%)</th>
-                      <th>작업자</th>
-                      <th>측정시각</th>
-                    </tr>
-                  </thead>
-                  <tbody id="variance-modal-body"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260626b"></script>
+    <script src="/static/js/dashboard.js?v=20260702a"></script>
 {% endblock %}

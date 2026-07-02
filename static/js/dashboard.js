@@ -1,41 +1,24 @@
+/**
+ * dashboard.js — 운영 대시보드 컨트롤러.
+ *
+ * 배합 실적(blend_records) + 점도 현황 기반. 구 계량 지표(완료 레시피·계량
+ * 단계·처리량·계량 편차)는 데이터가 더 이상 쌓이지 않아 2026-07 재구축.
+ */
 document.addEventListener("DOMContentLoaded", () => {
   const presetBtns = document.querySelectorAll(".preset-btn");
   const fromInput = document.getElementById("dash-from");
   const toInput = document.getElementById("dash-to");
-  const applyBtn = document.getElementById("dash-apply");
-  const refreshBtn = document.getElementById("dash-refresh");
-
-  const cardCompleted = document.getElementById("card-completed");
-  const cardMeasurement = document.getElementById("card-measurement");
-  const cardWeight = document.getElementById("card-weight");
-  const cardThroughput = document.getElementById("card-throughput");
-  const cardActualCoverage = document.getElementById("card-actual-coverage");
-  const cardVarianceTotal = document.getElementById("card-variance-total");
-
-  const operatorsBody = document.getElementById("operators-body");
-  const materialModal = document.getElementById("material-modal");
-  const materialModalTitle = document.getElementById("material-modal-title");
-  const materialModalBody = document.getElementById("material-modal-body");
-  const materialModalClose = document.getElementById("material-modal-close");
-
-  const varianceModal = document.getElementById("variance-modal");
-  const varianceModalTitle = document.getElementById("variance-modal-title");
-  const varianceModalBody = document.getElementById("variance-modal-body");
-  const varianceModalClose = document.getElementById("variance-modal-close");
-
-  const trendCanvas = document.getElementById("chart-trend");
-  const materialsCanvas = document.getElementById("chart-materials");
-  const throughputCanvas = document.getElementById("chart-throughput");
-  const varianceCanvas = document.getElementById("chart-variance");
 
   let trendChart = null;
-  let materialsChart = null;
-  let throughputChart = null;
-  let varianceChart = null;
-  let currentMaterials = [];
-  let currentVariances = [];
+  let productsChart = null;
 
   const PREF_KEY = "irms_dashboard_range";
+
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   function todayISO() {
     return new Date().toISOString().slice(0, 10);
   }
@@ -86,32 +69,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function fmtPct(value) {
-    return value === null || value === undefined ? "-" : Number(value).toFixed(1);
-  }
-
   async function loadAll() {
     const range = getCurrentRange();
     const main = document.querySelector("main.page-grid") || document.body;
     IRMS.showLoading(main);
     try {
-      const [summary, trend, materials, throughput, operators, varianceSummary, variances] =
-        await Promise.all([
-          fetchJSON(`/api/dashboard/summary?${qs(range)}`),
-          fetchJSON(`/api/dashboard/trend?${qs(range)}`),
-          fetchJSON(`/api/dashboard/materials?${qs(range)}&limit=10`),
-          fetchJSON(`/api/dashboard/throughput?${qs(range)}`),
-          fetchJSON(`/api/dashboard/operators?${qs(range)}`),
-          fetchJSON(`/api/dashboard/variance/summary?${qs(range)}`),
-          fetchJSON(`/api/dashboard/variance/materials?${qs(range)}&limit=10`),
-        ]);
-      renderSummary(summary, varianceSummary);
+      const [summary, trend, products, workers, recent] = await Promise.all([
+        fetchJSON(`/api/dashboard/summary?${qs(range)}`),
+        fetchJSON(`/api/dashboard/trend?${qs(range)}`),
+        fetchJSON(`/api/dashboard/products?${qs(range)}&limit=10`),
+        fetchJSON(`/api/dashboard/workers?${qs(range)}`),
+        fetchJSON("/api/dashboard/recent?limit=10"),
+      ]);
+      renderSummary(summary);
       renderTrend(trend);
-      renderMaterials(materials);
-      renderThroughput(throughput);
-      renderOperators(operators);
-      renderVarianceSummary(varianceSummary);
-      renderVariances(variances);
+      renderProducts(products);
+      renderWorkers(workers);
+      renderRecent(recent);
     } catch (error) {
       IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
     } finally {
@@ -119,38 +93,48 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderSummary(data, variance) {
-    cardCompleted.textContent = fmtNumber(data.completed_recipe_count);
-    cardMeasurement.textContent = fmtNumber(data.measurement_count);
-    cardWeight.textContent = fmtNumber(data.total_weight_g, 2);
-    cardThroughput.textContent = fmtNumber(data.throughput_per_hour, 1);
-    cardActualCoverage.textContent = fmtPct(variance.coverage_pct);
-    cardVarianceTotal.textContent = fmtNumber(variance.deviation_total_g, 2);
+  function renderSummary(data) {
+    document.getElementById("card-blend-count").textContent = fmtNumber(data.blend_count);
+    document.getElementById("card-weight").textContent = fmtNumber(data.total_weight_g, 1);
+    document.getElementById("card-products").textContent = fmtNumber(data.product_count);
+    const approval = document.getElementById("card-approval");
+    approval.textContent = fmtNumber(data.approval_pending);
+    approval.style.color = data.approval_pending > 0 ? cssVar("--status-warning", "#c98212") : "";
+    const anomaly = document.getElementById("card-visc-anomaly");
+    anomaly.textContent = fmtNumber(data.viscosity_anomaly);
+    anomaly.style.color = data.viscosity_anomaly > 0 ? cssVar("--status-error", "#d8453f") : "";
+    const due = data.viscosity_due_today || [];
+    const dueEl = document.getElementById("card-visc-due");
+    dueEl.textContent = fmtNumber(due.length);
+    dueEl.style.color = due.length > 0 ? cssVar("--status-error", "#d8453f") : "";
+    document.getElementById("card-visc-due-codes").textContent = due.length
+      ? due.join(", ")
+      : "알림 대상 모두 입력됨";
   }
 
   function renderTrend(data) {
     const labels = data.points.map((point) => point.date.slice(5));
-    const counts = data.points.map((point) => point.completed_count);
+    const counts = data.points.map((point) => point.blend_count);
     const weights = data.points.map((point) => point.total_weight_g);
     if (trendChart) trendChart.destroy();
-    trendChart = new Chart(trendCanvas, {
+    trendChart = new Chart(document.getElementById("chart-trend"), {
       type: "line",
       data: {
         labels,
         datasets: [
           {
-            label: "완료 레시피",
+            label: "배합 건수",
             data: counts,
-            borderColor: "#2563eb",
-            backgroundColor: "rgba(37, 99, 235, 0.15)",
+            borderColor: cssVar("--brand", "#1b4079"),
+            backgroundColor: "rgba(27, 64, 121, 0.15)",
             yAxisID: "y",
             tension: 0.25,
           },
           {
-            label: "목표 사용량 (g)",
+            label: "총 배합량 (g)",
             data: weights,
-            borderColor: "#f59e0b",
-            backgroundColor: "rgba(245, 158, 11, 0.15)",
+            borderColor: cssVar("--accent", "#f47c26"),
+            backgroundColor: "rgba(244, 124, 38, 0.15)",
             yAxisID: "y1",
             tension: 0.25,
           },
@@ -173,16 +157,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function renderMaterials(data) {
-    currentMaterials = data.items || [];
-    const labels = currentMaterials.map((item) => item.material_name);
-    const values = currentMaterials.map((item) => item.total_weight_g);
-    if (materialsChart) materialsChart.destroy();
-    materialsChart = new Chart(materialsCanvas, {
+  function renderProducts(data) {
+    const items = data.items || [];
+    const labels = items.map((item) => item.product_name);
+    const values = items.map((item) => item.total_weight_g);
+    if (productsChart) productsChart.destroy();
+    productsChart = new Chart(document.getElementById("chart-products"), {
       type: "bar",
       data: {
         labels,
-        datasets: [{ label: "사용량 (g)", data: values, backgroundColor: "#16a34a" }],
+        datasets: [{
+          label: "총 배합량 (g)",
+          data: values,
+          backgroundColor: cssVar("--brand-mid", "#2c5d9b"),
+        }],
       },
       options: {
         indexAxis: "y",
@@ -190,141 +178,56 @@ document.addEventListener("DOMContentLoaded", () => {
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: { x: { beginAtZero: true } },
-        onClick: (evt, elements) => {
-          if (!elements.length) return;
-          const item = currentMaterials[elements[0].index];
-          if (item) openMaterialDrill(item.material_id, item.material_name);
-        },
       },
     });
   }
 
-  function renderThroughput(data) {
-    const labels = (data.by_day || []).map((point) => point.date.slice(5));
-    const values = (data.by_day || []).map((point) => point.throughput_per_hour);
-    if (throughputChart) throughputChart.destroy();
-    throughputChart = new Chart(throughputCanvas, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [{ label: "회/시간", data: values, backgroundColor: "#8b5cf6" }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } },
-      },
-    });
-  }
-
-  function renderOperators(data) {
+  function renderWorkers(data) {
+    const body = document.getElementById("workers-body");
     const items = data.items || [];
     if (!items.length) {
-      operatorsBody.innerHTML = '<tr><td colspan="4"><div class="empty-state">데이터 없음</div></td></tr>';
+      body.innerHTML = '<tr><td colspan="4"><div class="empty-state">데이터 없음</div></td></tr>';
       return;
     }
-    operatorsBody.innerHTML = items
+    body.innerHTML = items
       .map(
-        (op) => `
+        (w) => `
           <tr>
-            <td>${IRMS.escapeHtml(op.operator)}</td>
-            <td class="num">${fmtNumber(op.measurement_count)}</td>
-            <td class="num">${fmtNumber(op.total_weight_g, 2)}</td>
-            <td class="num">${fmtNumber(op.completed_recipe_count)}</td>
+            <td>${IRMS.escapeHtml(w.worker)}</td>
+            <td class="num">${fmtNumber(w.blend_count)}</td>
+            <td class="num">${fmtNumber(w.total_weight_g, 1)}</td>
+            <td class="num">${fmtNumber(w.product_count)}</td>
           </tr>
         `,
       )
       .join("");
   }
 
-  function renderVarianceSummary(data) {
-    document.getElementById("variance-measured-count").textContent = fmtNumber(data.measured_count);
-    document.getElementById("variance-actual-count").textContent = fmtNumber(data.actual_count);
-    document.getElementById("variance-target-total").textContent = fmtNumber(data.target_total_g, 2);
-    document.getElementById("variance-actual-total").textContent = fmtNumber(data.actual_total_g, 2);
-    document.getElementById("variance-abs-total").textContent = fmtNumber(data.absolute_deviation_total_g, 2);
-  }
-
-  function renderVariances(data) {
-    currentVariances = data.items || [];
-    const labels = currentVariances.map((item) => item.material_name);
-    const values = currentVariances.map((item) => item.absolute_deviation_g);
-    if (varianceChart) varianceChart.destroy();
-    varianceChart = new Chart(varianceCanvas, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [{ label: "|편차| (g)", data: values, backgroundColor: "#dc2626" }],
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true } },
-        onClick: (evt, elements) => {
-          if (!elements.length) return;
-          const item = currentVariances[elements[0].index];
-          if (item) openVarianceDrill(item.material_id, item.material_name);
-        },
-      },
-    });
-  }
-
-  async function openMaterialDrill(materialId, materialName) {
-    const range = getCurrentRange();
-    try {
-      const data = await fetchJSON(`/api/dashboard/materials/${materialId}/recipes?${qs(range)}`);
-      materialModalTitle.textContent = `${materialName} · 상세`;
-      const recipes = data.recipes || [];
-      materialModalBody.innerHTML = recipes.length
-        ? recipes
-            .map(
-              (recipe) => `
-                <tr>
-                  <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
-                  <td class="num">${fmtNumber(recipe.weight_g, 2)}</td>
-                  <td>${IRMS.escapeHtml(recipe.measured_by)}</td>
-                  <td>${IRMS.formatDateTime(recipe.measured_at)}</td>
-                </tr>
-              `,
-            )
-            .join("")
-        : '<tr><td colspan="5"><div class="empty-state">데이터 없음</div></td></tr>';
-      materialModal.hidden = false;
-    } catch (error) {
-      IRMS.notify(`재료 상세 조회 실패: ${error.message}`, "error");
+  function renderRecent(data) {
+    const body = document.getElementById("recent-body");
+    const items = data.items || [];
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="7"><div class="empty-state">배합 기록 없음</div></td></tr>';
+      return;
     }
-  }
-
-  async function openVarianceDrill(materialId, materialName) {
-    const range = getCurrentRange();
-    try {
-      const data = await fetchJSON(`/api/dashboard/variance/materials/${materialId}/recipes?${qs(range)}`);
-      varianceModalTitle.textContent = `${materialName} · 편차 상세`;
-      const recipes = data.recipes || [];
-      varianceModalBody.innerHTML = recipes.length
-        ? recipes
-            .map(
-              (recipe) => `
-                <tr>
-                  <td>${IRMS.escapeHtml(recipe.product_name || "-")}</td>
-                  <td class="num">${fmtNumber(recipe.target_weight_g, 2)}</td>
-                  <td class="num">${fmtNumber(recipe.actual_weight_g, 2)}</td>
-                  <td class="num">${fmtNumber(recipe.deviation_g, 2)}</td>
-                  <td class="num">${recipe.deviation_pct === null ? "-" : fmtNumber(recipe.deviation_pct, 2)}</td>
-                  <td>${IRMS.escapeHtml(recipe.measured_by)}</td>
-                  <td>${IRMS.formatDateTime(recipe.measured_at)}</td>
-                </tr>
-              `,
-            )
-            .join("")
-        : '<tr><td colspan="8"><div class="empty-state">실측 데이터 없음</div></td></tr>';
-      varianceModal.hidden = false;
-    } catch (error) {
-      IRMS.notify(`편차 상세 조회 실패: ${error.message}`, "error");
-    }
+    body.innerHTML = items
+      .map((r) => {
+        const lot = r.reactor
+          ? `${IRMS.escapeHtml(r.product_lot)} <span class="muted small">반응기 ${r.reactor}</span>`
+          : IRMS.escapeHtml(r.product_lot);
+        return `
+          <tr>
+            <td>${lot}</td>
+            <td>${IRMS.escapeHtml(r.product_name)}</td>
+            <td>${IRMS.escapeHtml(r.work_date || "-")}</td>
+            <td>${IRMS.escapeHtml(r.worker || "-")}</td>
+            <td class="num">${fmtNumber(r.total_amount, 1)}</td>
+            <td>${r.has_viscosity ? "입력" : '<span class="muted">미입력</span>'}</td>
+            <td>${r.approved ? "완료" : '<span class="muted">대기</span>'}</td>
+          </tr>
+        `;
+      })
+      .join("");
   }
 
   function persistRange(range) {
@@ -360,7 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  applyBtn.addEventListener("click", () => {
+  document.getElementById("dash-apply").addEventListener("click", () => {
     if (!fromInput.value || !toInput.value) {
       IRMS.notify("시작일과 종료일을 모두 입력하세요.", "warn");
       return;
@@ -369,18 +272,9 @@ document.addEventListener("DOMContentLoaded", () => {
     persistRange({ from: fromInput.value, to: toInput.value });
     loadAll();
   });
-  refreshBtn.addEventListener("click", loadAll);
-  const exportBtn = document.getElementById("dash-export");
-  if (exportBtn) {
-    exportBtn.addEventListener("click", () => {
-      window.location.assign(`/api/dashboard/export?${qs(getCurrentRange())}`);
-    });
-  }
-  materialModalClose.addEventListener("click", () => {
-    materialModal.hidden = true;
-  });
-  varianceModalClose.addEventListener("click", () => {
-    varianceModal.hidden = true;
+  document.getElementById("dash-refresh").addEventListener("click", loadAll);
+  document.getElementById("dash-export").addEventListener("click", () => {
+    window.location.assign(`/api/dashboard/export?${qs(getCurrentRange())}`);
   });
 
   restoreRange();
