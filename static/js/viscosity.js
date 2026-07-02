@@ -54,6 +54,18 @@
       : product.code;
   }
 
+  function selectedProduct() {
+    const input = $("visc-product-select");
+    const value = input ? input.value.trim().toLowerCase() : "";
+    if (!value) return null;
+    return state.products.find((product) => {
+      const code = String(product.code || "").trim().toLowerCase();
+      const name = String(product.name || "").trim().toLowerCase();
+      const label = productLabel(product).trim().toLowerCase();
+      return value === code || value === name || value === label;
+    }) || null;
+  }
+
   function currentProduct() {
     return state.analysis ? state.analysis.product : null;
   }
@@ -61,10 +73,10 @@
   async function loadOverview() {
     const data = await request("/viscosity/overview");
     state.products = data.items || [];
-    renderProductSelect();
     if (!state.currentId && state.products.length) {
       state.currentId = state.products[0].id;
     }
+    renderProductSelect();
     if (state.currentId) {
       const product = state.products.find((item) => item.id === state.currentId);
       state.year = product ? product.year : null;
@@ -73,19 +85,20 @@
   }
 
   function renderProductSelect() {
-    const select = $("visc-product-select");
-    select.innerHTML = "";
+    const input = $("visc-product-select");
+    const list = $("visc-product-names");
+    if (list) list.innerHTML = "";
     state.products.forEach((product) => {
       const option = document.createElement("option");
-      option.value = String(product.id);
-      const warning = product.anomaly_count > 0 ? ` · 이상 ${product.anomaly_count}` : "";
-      option.textContent = `${productLabel(product)}${warning}`;
-      option.selected = product.id === state.currentId;
-      select.appendChild(option);
+      option.value = productLabel(product);
+      if (list) list.appendChild(option);
     });
-    select.onchange = () => {
-      const product = state.products.find((item) => item.id === Number(select.value));
+    const current = state.products.find((item) => item.id === state.currentId);
+    if (input && current) input.value = productLabel(current);
+    input.oninput = () => {
+      const product = selectedProduct();
       if (!product) return;
+      if (product.id === state.currentId) return;
       state.currentId = product.id;
       state.year = product.year;
       state.reactor = null; // 반제품이 바뀌면 반응기 필터 초기화
