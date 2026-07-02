@@ -95,12 +95,6 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "current_user": get_current_user(request, required=False),
         })
 
-    @router.get("/test", response_class=HTMLResponse)
-    def entry_test_page(request: Request) -> Response:
-        return _render(templates, request, "entry_test.html", {
-            "current_user": get_current_user(request, required=False),
-        })
-
     @router.get("/login", response_class=HTMLResponse)
     def legacy_login_page(request: Request, next: str | None = None) -> Response:
         next_url = _safe_next(next, "/management")
@@ -182,10 +176,6 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/status", response_class=HTMLResponse)
     def status_page(request: Request) -> Response:
         return _app_page_response(request, templates, "status.html")
-
-    @router.get("/base", response_class=HTMLResponse)
-    def base_page(request: Request) -> Response:
-        return _app_page_response(request, templates, "base.html")
 
     @router.get("/admin/users", response_class=HTMLResponse)
     def admin_users_page(request: Request) -> Response:
