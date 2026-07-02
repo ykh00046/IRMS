@@ -22,7 +22,48 @@
   };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [] };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false };
+
+  // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
+  const TOLERANCE_G = 0.05;
+
+  // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
+  const SCALE_URL = "http://127.0.0.1:8787";
+
+  async function detectScale() {
+    try {
+      const res = await fetch(`${SCALE_URL}/health`, { signal: AbortSignal.timeout(1200) });
+      const data = await res.json();
+      state.scaleReady = Boolean(data && data.ok);
+    } catch (_e) {
+      state.scaleReady = false;
+    }
+    document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = !state.scaleReady; });
+  }
+
+  async function readScaleInto(idx) {
+    try {
+      const res = await fetch(`${SCALE_URL}/weight`, { signal: AbortSignal.timeout(2500) });
+      if (!res.ok) throw new Error("저울 에이전트 응답 없음");
+      const frame = await res.json();
+      if (frame.overload) { notify("저울 과부하(OL) 상태입니다.", "error"); return; }
+      if (!frame.stable) { notify("측정 중입니다 — 표시가 안정된 뒤 다시 누르세요.", "warn"); return; }
+      const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (!input) return;
+      input.value = String(frame.value);
+      state.items[idx].actual_amount = input.value;
+      updateRowVar(idx);
+      updateTotals();
+      warnIfVariance(idx);
+      // 다음 행 LOT 로 포커스 이동(키보드 Enter 흐름과 동일)
+      const lot = document.querySelector(`.blend-lot[data-idx="${idx}"]`);
+      if (lot) lot.focus();
+    } catch (_e) {
+      state.scaleReady = false;
+      document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = true; });
+      notify("저울 연결이 끊겼습니다. 저울 에이전트 창을 확인하세요.", "error");
+    }
+  }
 
   function lockedWorkerName() {
     const worker = $("blend-worker");
@@ -264,11 +305,15 @@
         `<td>${esc(it.material_name)}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
-        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="0.1" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
+        `<td class="num blend-actual-cell"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" />` +
+        `<button class="btn btn-sm blend-scale-read" data-idx="${idx}" type="button" title="저울에서 현재 무게 읽기"${state.scaleReady ? "" : " hidden"}>저울</button></td>` +
         `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
+    body.querySelectorAll(".blend-scale-read").forEach((el) =>
+      el.addEventListener("click", () => readScaleInto(Number(el.dataset.idx)))
+    );
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
@@ -277,7 +322,7 @@
         updateTotals();
       })
     );
-    // 편차는 발생하면 안 됨 — 실제량 입력 완료(blur) 시 이론량과 다르면 경고
+    // 실제량 입력 완료(blur) 시 허용 편차(±0.05g) 초과면 경고
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("change", () => warnIfVariance(Number(el.dataset.idx)))
     );
@@ -323,7 +368,8 @@
     if (actual === null || it.theory_amount === null) { cell.textContent = "-"; cell.className = "num blend-var"; return; }
     const v = Math.round((actual - it.theory_amount) * 1000) / 1000;
     cell.textContent = (v > 0 ? "+" : "") + fmt(v, 2);
-    cell.className = "num blend-var " + (Math.abs(v) < 1e-9 ? "" : v > 0 ? "var-up" : "var-down");
+    // 허용 편차(±0.05g) 이내면 정상 표시, 초과 시에만 색으로 경고
+    cell.className = "num blend-var " + (Math.abs(v) <= TOLERANCE_G + 1e-9 ? "" : v > 0 ? "var-up" : "var-down");
   }
 
   function rowVariance(it) {
@@ -334,10 +380,10 @@
   function warnIfVariance(i) {
     const it = state.items[i];
     const v = rowVariance(it);
-    if (Math.abs(v) > 1e-9) {
+    if (Math.abs(v) > TOLERANCE_G + 1e-9) {
       notify(
-        `편차 발생: ${it.material_name} — 이론 ${fmt(it.theory_amount)} ≠ 실제 ${fmt(it.actual_amount)} `
-        + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}). 잘못된 값입니다.`,
+        `허용 편차 초과: ${it.material_name} — 이론 ${fmt(it.theory_amount)} / 실제 ${fmt(it.actual_amount)} `
+        + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${TOLERANCE_G}g). 다시 계량하세요.`,
         "error",
       );
       return true;
@@ -379,13 +425,13 @@
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
-    // 편차는 발생하면 안 됨 — 실제량 ≠ 이론량인 품목이 있으면 저장 차단(잘못된 값)
-    const bad = state.items.filter((it) => Math.abs(rowVariance(it)) > 1e-9);
+    // 자재별 허용 편차 ±0.05g — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음)
+    const bad = state.items.filter((it) => Math.abs(rowVariance(it)) > TOLERANCE_G + 1e-9);
     if (bad.length) {
-      const names = bad.map((it) => `${it.material_name}(${rowVariance(it) > 0 ? "+" : ""}${fmt(rowVariance(it), 2)})`).join(", ");
-      err.textContent = `편차가 있어 저장할 수 없습니다(잘못된 값): ${names}. 실제량을 이론량과 같게 입력하세요.`;
+      const names = bad.map((it) => `${it.material_name}(${rowVariance(it) > 0 ? "+" : ""}${fmt(rowVariance(it), 2)}g)`).join(", ");
+      err.textContent = `허용 편차(±${TOLERANCE_G}g)를 초과해 저장할 수 없습니다: ${names}. 해당 자재를 다시 계량하세요.`;
       err.hidden = false;
-      notify("편차 발생 — 저장할 수 없습니다. 실제량을 이론량과 일치시키세요.", "error");
+      notify(`허용 편차 ±${TOLERANCE_G}g 초과 — 저장할 수 없습니다.`, "error");
       return;
     }
     // 반응기 진행 반제품은 반응기(1~4) 지정 필수.
@@ -678,6 +724,9 @@
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkers();
     loadWorkerNames();
+    // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
+    detectScale();
+    setInterval(detectScale, 30000);
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});

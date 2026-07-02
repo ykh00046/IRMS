@@ -197,6 +197,24 @@ def generate_product_lot(
     return f"{base}{max_seq + 1:02d}"
 
 
+# 자재별 계량 허용 편차(g). 저울(A&D GX-10202M) 실측값 연동 기준 —
+# 각 자재는 |실제-이론| ≤ 0.05g 이어야 하고, 배치 합계 편차는 제한하지 않는다.
+WEIGHING_TOLERANCE_G = 0.05
+
+
+def weighing_tolerance_violations(details: list[dict[str, Any]]) -> list[str]:
+    """허용 편차(±0.05g/자재)를 넘는 자재명 목록. 실제량 미입력(None)은 검사 제외."""
+    offenders: list[str] = []
+    for d in details:
+        theory = _opt_num(d.get("theory_amount"))
+        actual = _opt_num(d.get("actual_amount"))
+        if theory is None or actual is None:
+            continue
+        if abs(actual - theory) > WEIGHING_TOLERANCE_G + 1e-9:
+            offenders.append(str(d.get("material_name") or "?"))
+    return offenders
+
+
 def product_uses_reactor(connection: sqlite3.Connection, product_name: str) -> bool:
     """제품명(레시피명)에 해당하는 점도 반제품이 반응기 진행(use_reactor)인지.
 

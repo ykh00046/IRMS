@@ -252,6 +252,16 @@ def build_router() -> APIRouter:
         # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        # 자재별 허용 편차(±0.05g) 검사 — 합계 편차는 제한 없음.
+        offenders = blend_service.weighing_tolerance_violations(
+            [d.model_dump() for d in body.details]
+        )
+        if offenders:
+            raise HTTPException(
+                status_code=400,
+                detail=f"허용 편차(±{blend_service.WEIGHING_TOLERANCE_G}g)를 초과한 자재: "
+                + ", ".join(offenders),
+            )
         worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
