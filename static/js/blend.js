@@ -40,7 +40,7 @@
     }
   }
 
-  // 저울 값을 idx 행 실제량에 채우고 LOT 로 포커스 이동(수동 Enter 흐름과 동일)
+  // 저울 값을 idx 행 실제량에 채우고 다음 행 LOT 로 포커스(LOT 먼저 입력 흐름)
   function fillScaleValue(idx, value) {
     const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
     if (!input) return;
@@ -49,14 +49,17 @@
     updateRowVar(idx);
     updateTotals();
     warnIfVariance(idx);
-    const lot = document.querySelector(`.blend-lot[data-idx="${idx}"]`);
-    if (lot) lot.focus();
+    const nextLot = document.querySelector(`.blend-lot[data-idx="${idx + 1}"]`);
+    if (nextLot) nextLot.focus();
   }
 
-  // PRINT 키 입력이 들어갈 행: 포커스된 실제량 칸 우선, 없으면 첫 미입력 행
+  // PRINT 키 입력이 들어갈 행: 커서가 있는 행(LOT/실제량) 우선, 없으면 첫 미입력 행
   function activeScaleRow() {
     const focused = document.activeElement;
-    if (focused && focused.classList && focused.classList.contains("blend-actual")) {
+    if (
+      focused && focused.classList
+      && (focused.classList.contains("blend-actual") || focused.classList.contains("blend-lot"))
+    ) {
       return Number(focused.dataset.idx);
     }
     const idx = state.items.findIndex(
@@ -330,8 +333,8 @@
         `<td>${esc(it.material_name)}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
-        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
         `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
+        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
@@ -350,7 +353,7 @@
     body.querySelectorAll(".blend-lot").forEach((el) =>
       el.addEventListener("input", () => { state.items[Number(el.dataset.idx)].material_lot = el.value; })
     );
-    // 키보드 흐름: 실제량 Enter → 같은 행 LOT, LOT Enter → 다음 품목 실제량(마지막이면 저장)
+    // 키보드 흐름(LOT 먼저): LOT Enter → 같은 행 실제량, 실제량 Enter → 다음 품목 LOT(마지막이면 저장)
     const focusField = (selector) => {
       const t = body.querySelector(selector);
       if (!t) return false;
@@ -360,19 +363,19 @@
       }
       return true;
     };
-    body.querySelectorAll(".blend-actual").forEach((el) =>
-      el.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" || e.isComposing) return;
-        e.preventDefault();
-        focusField(`.blend-lot[data-idx="${el.dataset.idx}"]`);
-      })
-    );
     body.querySelectorAll(".blend-lot").forEach((el) =>
       el.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
+        focusField(`.blend-actual[data-idx="${el.dataset.idx}"]`);
+      })
+    );
+    body.querySelectorAll(".blend-actual").forEach((el) =>
+      el.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
         const next = Number(el.dataset.idx) + 1;
-        if (!focusField(`.blend-actual[data-idx="${next}"]`)) {
+        if (!focusField(`.blend-lot[data-idx="${next}"]`)) {
           const save = document.getElementById("blend-save");
           if (save) save.focus();
         }
@@ -760,6 +763,9 @@
     setInterval(detectScale, 30000);
     // 저울 PRINT 키 이벤트 폴링(0.8초) — 누르면 활성 행 실제량 자동 입력.
     setInterval(pollScaleEvents, 800);
+    // 작업자 세션 하트비트(2분) — 배합 화면이 떠 있는 동안 유휴 로그아웃(5분) 방지.
+    // 계량은 손이 저울에 가 있어 키보드 입력이 오래 없을 수 있다.
+    setInterval(() => { request("/blend/session/me").catch(() => {}); }, 120000);
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});

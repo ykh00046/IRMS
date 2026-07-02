@@ -251,22 +251,29 @@ class Scale:
             write_timeout=1.2,
         )
 
-    def _baud_candidates(self) -> list[int]:
-        """시도할 통신 속도 목록. config 에 명시하면 그 값만, 아니면 프리셋 우선
-        + 흔한 속도들을 자동 시도(저울 쪽 설정이 기본과 다른 경우 대비)."""
+    def _comm_candidates(self) -> list[tuple[int, int, str]]:
+        """시도할 (속도, 데이터비트, 패리티) 조합. config 에 명시한 항목은 고정,
+        나머지는 프리셋 우선 + 흔한 값들을 자동 시도(저울 쪽 설정 상이 대비)."""
         if self._config.get("baudrate"):
-            return [int(self._config["baudrate"])]
-        preset = int(self._comm["baudrate"])
-        common = [9600, 19200, 4800, 2400, 38400, 57600, 115200]
-        return [preset] + [b for b in common if b != preset]
+            bauds = [int(self._config["baudrate"])]
+        else:
+            preset = int(self._comm["baudrate"])
+            common = [9600, 19200, 4800, 2400, 38400]
+            bauds = [preset] + [b for b in common if b != preset]
+        if self._config.get("bytesize") or self._config.get("parity"):
+            frames = [(int(self._comm["bytesize"]), str(self._comm["parity"]))]
+        else:
+            preset_frame = (int(self._comm["bytesize"]), str(self._comm["parity"]))
+            frames = [preset_frame] + [f for f in [(8, "N"), (7, "E")] if f != preset_frame]
+        return [(b, bits, par) for b in bauds for (bits, par) in frames]
 
-    def _probe(self, port: str, baudrate: int) -> "serial.Serial | None":
-        """지정 속도로 열고 질의 → 유효 프레임이 오면 연결 유지, 아니면 닫음."""
+    def _probe(self, port: str, baudrate: int, bytesize: int, parity: str) -> "serial.Serial | None":
+        """지정 조합으로 열고 질의 → 유효 프레임이 오면 연결 유지, 아니면 닫음."""
         ser = serial.Serial(
             port=port,
             baudrate=baudrate,
-            bytesize=int(self._comm["bytesize"]),
-            parity=str(self._comm["parity"]),
+            bytesize=bytesize,
+            parity=parity,
             stopbits=int(self._comm["stopbits"]),
             timeout=0.5,
             write_timeout=1.2,
@@ -304,31 +311,32 @@ class Scale:
         )
         # 다른 저울이 이미 잡은 포트는 건너뜀(자동 탐지 충돌 방지)
         candidates = [p for p in candidates if p not in self._taken]
-        bauds = self._baud_candidates()
+        combos = self._comm_candidates()
         for port in candidates:
             tried: list[str] = []
-            for baud in bauds:
+            for baud, bits, parity in combos:
                 try:
-                    ser = self._probe(port, baud)
+                    ser = self._probe(port, baud, bits, parity)
                 except Exception as exc:  # noqa: BLE001 - 포트 자체를 못 연 경우
                     msg = str(exc)
                     if "denied" in msg.lower() or "액세스" in msg or "PermissionError" in msg:
                         log(f"[{self.name}] {port} 열기 실패 — 다른 프로그램이 포트 사용 중입니다.")
                     elif fixed_port:
                         log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
-                    break  # 이 포트는 못 여니 다른 속도 시도 무의미
+                    break  # 이 포트는 못 여니 다른 조합 시도 무의미
                 if ser is not None:
-                    if baud != bauds[0]:
-                        log(f"[{self.name}] {port} 통신 속도 {baud}bps 로 연결됨 — config 에 "
-                            f"\"baudrate\": {baud} 를 넣어두면 다음부터 바로 붙습니다.")
+                    if (baud, bits, parity) != combos[0]:
+                        log(f"[{self.name}] {port} {baud}bps/{bits}bit/{parity} 로 연결됨 — config 에 "
+                            f"\"baudrate\": {baud}, \"bytesize\": {bits}, \"parity\": \"{parity}\" "
+                            "를 넣어두면 다음부터 바로 붙습니다.")
                     self._serial = ser
                     self.port = port
                     self._taken.add(port)
                     return port
-                tried.append(str(baud))
+                tried.append(f"{baud}/{bits}{parity}")
             if tried and fixed_port:
-                log(f"[{self.name}] {port} 열림, 그러나 응답 없음 (시도한 속도: {', '.join(tried)}bps). "
-                    "저울 쪽 인터페이스 설정(호스트 모드/속도) 확인 필요.")
+                log(f"[{self.name}] {port} 열림, 그러나 응답 없음 (시도: {', '.join(tried)}). "
+                    "저울 쪽 설정 확인 필요 — 주변기기=Host 인지, 인터페이스 속도가 위 목록에 있는지.")
         return None
 
     # ── 기존 프로그램 공존: 프로세스 감지 → 포트 자동 양보/복귀 ──
