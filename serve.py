@@ -84,15 +84,26 @@ def backup_db() -> None:
         log(f"DB 백업 실패(계속 진행): {exc}")
 
 
-def apply_update() -> None:
+def apply_update() -> bool:
+    """DB 백업 → git pull → pip install. 전부 성공하면 True.
+
+    실패 시 False 를 돌려주고 호출부가 재시작을 건너뛴다(기존 서버는 메모리의
+    옛 코드로 계속 동작하므로 무중단). 다음 주기에 자동 재시도된다.
+    """
     log("새 업데이트 발견 → 반영 중 (DB 백업 → git pull → pip install)...")
     backup_db()
-    _git("pull", "origin", "main")
-    subprocess.run(
+    if _git("pull", "origin", "main").returncode != 0:
+        log("git pull 실패 — 이번 주기는 건너뛰고 다음에 재시도합니다.")
+        return False
+    pip = subprocess.run(
         [PYTHON, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
         cwd=ROOT,
     )
+    if pip.returncode != 0:
+        log("pip install 실패 — 서버 재시작을 건너뜁니다(다음 주기에 재시도).")
+        return False
     log("업데이트 반영 완료.")
+    return True
 
 
 def start_server() -> subprocess.Popen:
@@ -130,9 +141,11 @@ def main() -> None:
                 proc = start_server()
                 continue
             if AUTO and has_update():
-                stop_server(proc)
-                apply_update()
-                proc = start_server()
+                # pull/pip 가 전부 성공했을 때만 재시작 — 실패하면 기존 서버가
+                # (메모리에 올라간 옛 코드로) 계속 돌아 무중단.
+                if apply_update():
+                    stop_server(proc)
+                    proc = start_server()
     except KeyboardInterrupt:
         log("종료 요청 — 서버 정리 중...")
     finally:
