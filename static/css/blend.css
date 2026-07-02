@@ -249,20 +249,3 @@
     width: min(240px, 100%);
   }
 }
-
-/* 저울 연동: 실제량 칸 옆 [저울] 버튼 (에이전트 감지 시에만 노출) */
-.blend-actual-cell {
-  white-space: nowrap;
-}
-
-.blend-actual-cell .blend-actual {
-  width: calc(100% - 3.4rem);
-  display: inline-block;
-  vertical-align: middle;
-}
-
-.blend-scale-read {
-  margin-left: 0.3rem;
-  vertical-align: middle;
-  padding: 0.3rem 0.5rem;
-}

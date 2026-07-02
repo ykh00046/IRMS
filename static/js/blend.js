@@ -38,7 +38,6 @@
     } catch (_e) {
       state.scaleReady = false;
     }
-    document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = !state.scaleReady; });
   }
 
   // 저울 값을 idx 행 실제량에 채우고 LOT 로 포커스 이동(수동 Enter 흐름과 동일)
@@ -64,21 +63,6 @@
       (it) => it.actual_amount === "" && it.theory_amount != null
     );
     return idx >= 0 ? idx : null;
-  }
-
-  async function readScaleInto(idx) {
-    try {
-      const res = await fetch(`${SCALE_URL}/weight`, { signal: AbortSignal.timeout(2500) });
-      if (!res.ok) throw new Error("저울 에이전트 응답 없음");
-      const frame = await res.json();
-      if (frame.overload) { notify("저울 과부하(OL) 상태입니다.", "error"); return; }
-      if (!frame.stable) { notify("측정 중입니다 — 표시가 안정된 뒤 다시 누르세요.", "warn"); return; }
-      fillScaleValue(idx, frame.value);
-    } catch (_e) {
-      state.scaleReady = false;
-      document.querySelectorAll(".blend-scale-read").forEach((b) => { b.hidden = true; });
-      notify("저울 연결이 끊겼습니다. 저울 에이전트 창을 확인하세요.", "error");
-    }
   }
 
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
@@ -350,15 +334,11 @@
         `<td>${esc(it.material_name)}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
         `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
-        `<td class="num blend-actual-cell"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" />` +
-        `<button class="btn btn-sm blend-scale-read" data-idx="${idx}" type="button" title="저울에서 현재 무게 읽기"${state.scaleReady ? "" : " hidden"}>저울</button></td>` +
+        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
         `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
-    body.querySelectorAll(".blend-scale-read").forEach((el) =>
-      el.addEventListener("click", () => readScaleInto(Number(el.dataset.idx)))
-    );
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
