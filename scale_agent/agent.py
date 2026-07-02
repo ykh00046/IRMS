@@ -22,9 +22,17 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+# Windows 콘솔(cp949)에서 특수문자로 죽지 않도록 출력 인코딩 방어
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):  # pragma: no cover
+        pass
 
 try:
     import serial  # pyserial
@@ -222,7 +230,7 @@ def main() -> None:
     if port:
         print(f"[IRMS-Scale] 저울 연결됨: {port}")
     else:
-        print("[IRMS-Scale] 저울을 찾지 못했습니다 — 케이블/전원 확인. (요청 시 재시도)")
+        print("[IRMS-Scale] 저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
     http_port = int(config["http_port"])
     server = ThreadingHTTPServer(("127.0.0.1", http_port), build_handler(scale))
     print(f"[IRMS-Scale] http://127.0.0.1:{http_port} 대기 중 (Ctrl+C 종료)")

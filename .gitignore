@@ -64,3 +64,7 @@ cloudflared/*.json
 !src/resources/signature/*.png
 !src/resources/signature/*.jpg
 !src/resources/signature/*.jpeg
+
+# 저울 에이전트 빌드 산출물
+scale_agent/dist/
+scale_agent/build/
