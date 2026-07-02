@@ -57,6 +57,20 @@ def test_sics_overload_and_invalid():
     assert parse_frame("ST,+0004775.7   g", protocol="mt-sics") is None  # A&D 프레임 혼입
 
 
+def test_sics_print_template_lines():
+    """PRINT(전송) 키 인쇄 템플릿 출력도 안정값으로 해석(수신 전용 모드)."""
+    net = parse_frame("N      105.00 g", protocol="mt-sics")
+    assert net["stable"] is True and net["value"] == 105.0
+    bare = parse_frame("   4775.7 g", protocol="mt-sics")
+    assert bare["stable"] is True and bare["value"] == 4775.7
+    kg = parse_frame("1.2345 kg", protocol="mt-sics")
+    assert kg["value"] == 1234.5 and kg["unit"] == "g"
+    # 오탐 방지: ES/문자열/단위 없는 숫자는 여전히 무시
+    assert parse_frame("ES", protocol="mt-sics") is None
+    assert parse_frame("105.00", protocol="mt-sics") is None
+    assert parse_frame("G 105.00 g", protocol="mt-sics") is None  # 총중량 줄은 제외
+
+
 def test_protocol_presets():
     and_comm = resolve_comm({"protocol": "and"})
     assert (and_comm["baudrate"], and_comm["bytesize"], and_comm["parity"]) == (2400, 7, "E")

@@ -109,25 +109,48 @@ def _parse_and(text: str) -> dict | None:
 
 def _parse_sics(text: str) -> dict | None:
     """Mettler MT-SICS 포맷: "S S     105.00 g" (S S=안정, S D=동적/불안정,
-    S +/- = 과부하/부족, S I = 명령 처리 불가 — 무시)."""
+    S +/- = 과부하/부족, S I = 명령 처리 불가 — 무시).
+
+    PRINT(전송) 키의 인쇄 템플릿 출력도 허용:
+      "N      105.00 g" (순중량 줄) / "105.00 g" (값+단위만)
+    """
     tokens = text.split()
-    if not tokens or tokens[0] != "S":
+    if not tokens:
         return None
-    if len(tokens) >= 2 and tokens[1] in ("+", "-"):
-        return {"header": "OL", "stable": False, "overload": True, "value": 0.0, "unit": "g"}
-    if len(tokens) >= 3 and tokens[1] in ("S", "D"):
-        try:
-            value = float(tokens[2])
-        except ValueError:
-            return None
-        return {
-            "header": "ST" if tokens[1] == "S" else "US",
-            "stable": tokens[1] == "S",
-            "overload": False,
-            "value": value,
-            "unit": tokens[3] if len(tokens) > 3 else "g",
-        }
-    return None
+    if tokens[0] == "S":
+        if len(tokens) >= 2 and tokens[1] in ("+", "-"):
+            return {"header": "OL", "stable": False, "overload": True, "value": 0.0, "unit": "g"}
+        if len(tokens) >= 3 and tokens[1] in ("S", "D"):
+            try:
+                value = float(tokens[2])
+            except ValueError:
+                return None
+            return {
+                "header": "ST" if tokens[1] == "S" else "US",
+                "stable": tokens[1] == "S",
+                "overload": False,
+                "value": value,
+                "unit": tokens[3] if len(tokens) > 3 else "g",
+            }
+        return None
+    # 인쇄 템플릿(수신 전용 모드): "N 105.00 g" 또는 "105.00 g"
+    units = ("g", "kg", "mg")
+    if len(tokens) == 3 and tokens[0] == "N" and tokens[2] in units:
+        number = tokens[1]
+    elif len(tokens) == 2 and tokens[1] in units:
+        number = tokens[0]
+    else:
+        return None
+    try:
+        value = float(number)
+    except ValueError:
+        return None
+    unit = tokens[-1]
+    if unit == "kg":
+        value, unit = value * 1000, "g"
+    elif unit == "mg":
+        value, unit = value / 1000, "g"
+    return {"header": "ST", "stable": True, "overload": False, "value": value, "unit": unit}
 
 
 def parse_frame(raw: str | bytes, protocol: str = "and") -> dict | None:
@@ -185,7 +208,7 @@ def scale_entries(config: dict) -> list[dict]:
             out.append(entry)
         if out:
             return out
-    single = {k: config.get(k) for k in ("port", "protocol", "baudrate", "bytesize", "parity", "stopbits", "yield_to")}
+    single = {k: config.get(k) for k in ("port", "protocol", "baudrate", "bytesize", "parity", "stopbits", "yield_to", "passive")}
     single["name"] = str(config.get("protocol") or "저울1")
     return [single]
 
@@ -228,6 +251,8 @@ class Scale:
         self.yielding = False
         # 최초 연결 실패 시 1회 수신 감청(포맷 판독용) 수행 여부
         self._sniffed = False
+        # 리더가 해석 못 한 수신 라인 로깅 횟수(세션당 상한)
+        self._unparsed_logged = 0
         # 질의 대기자
         self._expect_q = False
         self._q_result: dict | None = None
@@ -363,6 +388,36 @@ class Scale:
         if serial is None or self.yielding:
             return None
         fixed_port = bool(self._config.get("port"))
+        # 수신 전용(passive): 질의 없이 포트만 열고 PRINT 푸시를 기다린다.
+        # 질의(SI)를 거부(ES)하는 저울도 PRINT 출력은 정상 수신 가능.
+        if self._config.get("passive"):
+            if not fixed_port:
+                log(f"[{self.name}] passive 모드는 port 를 고정 지정해야 합니다.")
+                return None
+            port = self._config["port"]
+            if port in self._taken:
+                return None
+            try:
+                ser = serial.Serial(
+                    port=port,
+                    baudrate=int(self._comm["baudrate"]),
+                    bytesize=int(self._comm["bytesize"]),
+                    parity=str(self._comm["parity"]),
+                    stopbits=int(self._comm["stopbits"]),
+                    timeout=0.5,
+                )
+            except Exception as exc:  # noqa: BLE001
+                msg = str(exc)
+                if "denied" in msg.lower() or "액세스" in msg:
+                    log(f"[{self.name}] {port} 열기 실패 — 다른 프로그램이 포트 사용 중입니다.")
+                else:
+                    log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
+                return None
+            self._serial = ser
+            self.port = port
+            self._taken.add(port)
+            log(f"[{self.name}] {port} 수신 전용으로 연결 — 저울에서 PRINT(전송) 키를 누르면 입력됩니다.")
+            return port
         candidates = (
             [self._config["port"]]
             if fixed_port
@@ -478,6 +533,10 @@ class Scale:
             frame = parse_frame(line, self._protocol)
             if frame:
                 self._handle_frame(frame)
+            elif self._unparsed_logged < 6 and line.strip():
+                # 해석 못 한 수신(인쇄 템플릿 등) 원본을 남겨 파서 보강 근거로.
+                self._unparsed_logged += 1
+                log(f"[{self.name}] 수신(해석 불가): {bytes(line)!r}")
 
     def read(self) -> dict | None:
         """현재 무게 1건(질의) — 진단용(/weight)."""
