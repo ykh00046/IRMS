@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scale_agent.agent import DEFAULT_CONFIG, Scale, parse_frame
+from scale_agent.agent import DEFAULT_CONFIG, Scale, parse_frame, resolve_comm
 from src.services import blend_service
 
 
@@ -33,6 +33,34 @@ def test_parse_garbage_returns_none():
     assert parse_frame("hello world") is None
     assert parse_frame("ST+00123") is None  # 콤마 없음
     assert parse_frame("XX,+0000001.0   g") is None  # 알 수 없는 헤더
+
+
+# ── Mettler MT-SICS (XP10002S 등) ───────────────────────────────
+def test_sics_stable_and_dynamic():
+    stable = parse_frame("S S     105.00 g", protocol="mt-sics")
+    assert stable == {"header": "ST", "stable": True, "overload": False, "value": 105.0, "unit": "g"}
+    dynamic = parse_frame("S D 104.87 g", protocol="mt-sics")
+    assert dynamic["stable"] is False and dynamic["value"] == 104.87
+
+
+def test_sics_overload_and_invalid():
+    ol = parse_frame("S +", protocol="mt-sics")
+    assert ol["overload"] is True
+    assert parse_frame("S I", protocol="mt-sics") is None  # 처리불가 → 무시
+    assert parse_frame("ES", protocol="mt-sics") is None   # 문법 오류 응답
+    assert parse_frame("ST,+0004775.7   g", protocol="mt-sics") is None  # A&D 프레임 혼입
+
+
+def test_protocol_presets():
+    and_comm = resolve_comm({"protocol": "and"})
+    assert (and_comm["baudrate"], and_comm["bytesize"], and_comm["parity"]) == (2400, 7, "E")
+    assert and_comm["query"] == b"Q\r\n"
+    sics_comm = resolve_comm({"protocol": "mt-sics"})
+    assert (sics_comm["baudrate"], sics_comm["bytesize"], sics_comm["parity"]) == (9600, 8, "N")
+    assert sics_comm["query"] == b"SI\r\n"
+    # 명시 오버라이드가 프리셋보다 우선
+    custom = resolve_comm({"protocol": "mt-sics", "baudrate": 19200})
+    assert custom["baudrate"] == 19200
 
 
 # ── PRINT 푸시 이벤트 분배 ───────────────────────────────────────

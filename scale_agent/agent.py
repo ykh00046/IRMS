@@ -46,28 +46,39 @@ except ImportError:  # pragma: no cover - 테스트 환경엔 pyserial 이 없�
 APP_NAME = "IRMS-Scale"
 DEFAULT_CONFIG = {
     "port": None,          # null = 자동 탐지
-    "baudrate": 2400,      # A&D 공장 기본
-    "bytesize": 7,
-    "parity": "E",
-    "stopbits": 1,
+    "protocol": "and",     # "and"(A&D GX 등) | "mt-sics"(Mettler XP 등)
+    "baudrate": None,      # null = 프로토콜 기본값 사용
+    "bytesize": None,
+    "parity": None,
+    "stopbits": None,
     "http_port": 8787,
+    # 이 프로세스들이 실행 중이면 포트를 양보(자동 해제), 종료되면 자동 재연결.
+    # 예: ["LabX.exe", "BalanceLink.exe"] — 같은 저울을 쓰는 기존 프로그램 exe 이름.
+    "yield_to": [],
+}
+
+# 프로토콜별 통신 기본값 + 질의 명령 (config 에서 개별 항목을 지정하면 그 값이 우선)
+PROTOCOL_PRESETS = {
+    "and": {"baudrate": 2400, "bytesize": 7, "parity": "E", "stopbits": 1, "query": b"Q\r\n"},
+    "mt-sics": {"baudrate": 9600, "bytesize": 8, "parity": "N", "stopbits": 1, "query": b"SI\r\n"},
 }
 
 
-# ── A&D 프레임 파서 (순수 함수 — 단위 테스트 대상) ────────────────
-def parse_frame(raw: str | bytes) -> dict | None:
-    """A&D 표준 포맷 한 줄을 해석. 해석 불가 시 None.
+def resolve_comm(config: dict) -> dict:
+    """프로토콜 프리셋 + config 오버라이드를 합친 실제 통신 파라미터."""
+    preset = PROTOCOL_PRESETS.get(str(config.get("protocol") or "and"), PROTOCOL_PRESETS["and"])
+    return {
+        "baudrate": config.get("baudrate") or preset["baudrate"],
+        "bytesize": config.get("bytesize") or preset["bytesize"],
+        "parity": config.get("parity") or preset["parity"],
+        "stopbits": config.get("stopbits") or preset["stopbits"],
+        "query": preset["query"],
+    }
 
-    예: "ST,+0004775.7   g" → {header: ST, stable: True, value: 4775.7, unit: g}
-        "US,-0000012.3   g" → 불안정(측정 중)
-        "OL,+9999999.9   g" → 과부하
-    """
-    if isinstance(raw, bytes):
-        try:
-            raw = raw.decode("ascii", errors="ignore")
-        except Exception:  # noqa: BLE001
-            return None
-    text = raw.strip()
+
+# ── 프레임 파서 (순수 함수 — 단위 테스트 대상) ────────────────────
+def _parse_and(text: str) -> dict | None:
+    """A&D 표준 포맷: "ST,+0004775.7   g" (ST=안정, US=불안정, OL=과부하)."""
     if len(text) < 4 or text[2] != ",":
         return None
     header = text[:2].upper()
@@ -94,6 +105,44 @@ def parse_frame(raw: str | bytes) -> dict | None:
         "value": value,
         "unit": unit or "g",
     }
+
+
+def _parse_sics(text: str) -> dict | None:
+    """Mettler MT-SICS 포맷: "S S     105.00 g" (S S=안정, S D=동적/불안정,
+    S +/- = 과부하/부족, S I = 명령 처리 불가 — 무시)."""
+    tokens = text.split()
+    if not tokens or tokens[0] != "S":
+        return None
+    if len(tokens) >= 2 and tokens[1] in ("+", "-"):
+        return {"header": "OL", "stable": False, "overload": True, "value": 0.0, "unit": "g"}
+    if len(tokens) >= 3 and tokens[1] in ("S", "D"):
+        try:
+            value = float(tokens[2])
+        except ValueError:
+            return None
+        return {
+            "header": "ST" if tokens[1] == "S" else "US",
+            "stable": tokens[1] == "S",
+            "overload": False,
+            "value": value,
+            "unit": tokens[3] if len(tokens) > 3 else "g",
+        }
+    return None
+
+
+def parse_frame(raw: str | bytes, protocol: str = "and") -> dict | None:
+    """저울 한 줄 응답 해석. 해석 불가 시 None."""
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("ascii", errors="ignore")
+        except Exception:  # noqa: BLE001
+            return None
+    text = raw.strip()
+    if not text:
+        return None
+    if protocol == "mt-sics":
+        return _parse_sics(text)
+    return _parse_and(text)
 
 
 # ── 설정 ─────────────────────────────────────────────────────────
@@ -126,9 +175,13 @@ def load_config() -> dict:
 class Scale:
     def __init__(self, config: dict) -> None:
         self._config = config
+        self._comm = resolve_comm(config)
+        self._protocol = str(config.get("protocol") or "and")
         self._write_lock = threading.Lock()
         self._serial = None  # serial.Serial | None
         self.port: str | None = None
+        # 기존 프로그램(yield_to)에 포트를 양보 중인가
+        self.yielding = False
         # PRINT 푸시 이벤트 버퍼
         self._events: deque = deque(maxlen=100)
         self._event_seq = 0
@@ -139,14 +192,16 @@ class Scale:
         self._stop = threading.Event()
         self._reader = threading.Thread(target=self._reader_loop, name="scale-reader", daemon=True)
         self._reader.start()
+        if config.get("yield_to"):
+            threading.Thread(target=self._yield_watcher, name="scale-yield", daemon=True).start()
 
     def _open(self, port: str):
         return serial.Serial(
             port=port,
-            baudrate=int(self._config["baudrate"]),
-            bytesize=int(self._config["bytesize"]),
-            parity=str(self._config["parity"]),
-            stopbits=int(self._config["stopbits"]),
+            baudrate=int(self._comm["baudrate"]),
+            bytesize=int(self._comm["bytesize"]),
+            parity=str(self._comm["parity"]),
+            stopbits=int(self._comm["stopbits"]),
             timeout=0.5,
             write_timeout=1.2,
         )
@@ -155,9 +210,9 @@ class Scale:
         """설정 포트 또는 자동 탐지로 저울 연결. 성공 시 포트명.
 
         탐지(probe)는 self._serial 배정 전에 로컬 객체로 직접 읽으므로
-        리더 스레드와 충돌하지 않는다.
+        리더 스레드와 충돌하지 않는다. 양보 중에는 연결하지 않는다.
         """
-        if serial is None:
+        if serial is None or self.yielding:
             return None
         candidates = (
             [self._config["port"]]
@@ -168,12 +223,12 @@ class Scale:
             try:
                 ser = self._open(port)
                 ser.reset_input_buffer()
-                ser.write(b"Q\r\n")
+                ser.write(self._comm["query"])
                 deadline = time.time() + 1.5
                 found = False
                 while time.time() < deadline:
                     line = ser.readline()
-                    if line and parse_frame(line) is not None:
+                    if line and parse_frame(line, self._protocol) is not None:
                         found = True
                         break
                 if found:
@@ -184,6 +239,32 @@ class Scale:
             except Exception:  # noqa: BLE001 - 다음 포트 시도
                 continue
         return None
+
+    # ── 기존 프로그램 공존: 프로세스 감지 → 포트 자동 양보/복귀 ──
+    def _yield_watcher(self) -> None:
+        names = [str(n).lower() for n in (self._config.get("yield_to") or []) if str(n).strip()]
+        if not names:
+            return
+        import subprocess
+        while not self._stop.is_set():
+            try:
+                out = subprocess.run(
+                    ["tasklist", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                ).stdout.lower()
+                running = any(name in out for name in names)
+            except Exception:  # noqa: BLE001
+                running = False
+            if running and not self.yielding:
+                self.yielding = True
+                self._drop_connection()
+                log("기존 저울 프로그램 감지 → 포트 양보(연결 해제)")
+            elif not running and self.yielding:
+                self.yielding = False
+                port = self.connect()
+                log(f"기존 프로그램 종료 → 재연결{'됨: ' + port if port else ' 시도(저울 응답 없음)'}")
+            time.sleep(3)
 
     def _drop_connection(self) -> None:
         ser, self._serial, self.port = self._serial, None, None
@@ -217,12 +298,14 @@ class Scale:
                 continue
             if not line:
                 continue
-            frame = parse_frame(line)
+            frame = parse_frame(line, self._protocol)
             if frame:
                 self._handle_frame(frame)
 
     def read(self) -> dict | None:
-        """현재 무게 1건(Q 질의) — 웹 [저울] 버튼용."""
+        """현재 무게 1건(질의) — 진단용(/weight)."""
+        if self.yielding:
+            return None
         if self._serial is None and self.connect() is None:
             return None
         with self._write_lock:
@@ -230,7 +313,7 @@ class Scale:
             self._q_result = None
             self._expect_q = True
             try:
-                self._serial.write(b"Q\r\n")
+                self._serial.write(self._comm["query"])
             except Exception:  # noqa: BLE001
                 self._expect_q = False
                 self._drop_connection()
@@ -268,7 +351,11 @@ def build_handler(scale: Scale):
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path.startswith("/health"):
-                self._send(200, {"ok": scale.port is not None, "port": scale.port})
+                self._send(200, {
+                    "ok": scale.port is not None,
+                    "port": scale.port,
+                    "yielding": scale.yielding,
+                })
                 return
             if self.path.startswith("/weight"):
                 frame = scale.read()
@@ -360,6 +447,8 @@ def run_tray(scale: Scale, server: ThreadingHTTPServer) -> None:
     from pystray import Menu, MenuItem
 
     def status_text(_item) -> str:
+        if scale.yielding:
+            return "저울: 기존 프로그램에 양보 중"
         return f"저울: {scale.port} 연결됨" if scale.port else "저울: 연결 안 됨"
 
     def reconnect(_icon, _item) -> None:
