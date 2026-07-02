@@ -226,6 +226,8 @@ class Scale:
         self.port: str | None = None
         # 기존 프로그램(yield_to)에 포트를 양보 중인가
         self.yielding = False
+        # 최초 연결 실패 시 1회 수신 감청(포맷 판독용) 수행 여부
+        self._sniffed = False
         # 질의 대기자
         self._expect_q = False
         self._q_result: dict | None = None
@@ -267,8 +269,14 @@ class Scale:
             frames = [preset_frame] + [f for f in [(8, "N"), (7, "E")] if f != preset_frame]
         return [(b, bits, par) for b in bauds for (bits, par) in frames]
 
-    def _probe(self, port: str, baudrate: int, bytesize: int, parity: str) -> "serial.Serial | None":
-        """지정 조합으로 열고 질의 → 유효 프레임이 오면 연결 유지, 아니면 닫음."""
+    def _probe(
+        self, port: str, baudrate: int, bytesize: int, parity: str,
+        raw_sink: list | None = None,
+    ) -> "serial.Serial | None":
+        """지정 조합으로 열고 질의 → 유효 프레임이 오면 연결 유지, 아니면 닫음.
+
+        raw_sink 를 주면 해석 실패한 수신 원본(bytes)을 모아준다(포맷 판독용).
+        """
         ser = serial.Serial(
             port=port,
             baudrate=baudrate,
@@ -286,6 +294,8 @@ class Scale:
                 line = ser.readline()
                 if line and parse_frame(line, self._protocol) is not None:
                     return ser
+                if line and raw_sink is not None and len(raw_sink) < 8:
+                    raw_sink.append((f"{baudrate}/{bytesize}{parity}", bytes(line)))
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -293,6 +303,38 @@ class Scale:
         except Exception:  # noqa: BLE001
             pass
         return None
+
+    def _sniff(self, port: str, seconds: float = 10.0) -> bytes:
+        """수신 전용 감청 — 질의 없이 저울이 스스로 보내는 데이터를 모은다.
+
+        (연속 전송 모드이거나, 사용자가 이 사이 PRINT 를 누르면 잡힌다.)
+        프리셋 통신값으로 연다. 최초 연결 실패 시 1회만 수행.
+        """
+        try:
+            ser = serial.Serial(
+                port=port,
+                baudrate=int(self._comm["baudrate"]),
+                bytesize=int(self._comm["bytesize"]),
+                parity=str(self._comm["parity"]),
+                stopbits=int(self._comm["stopbits"]),
+                timeout=1.0,
+            )
+        except Exception:  # noqa: BLE001
+            return b""
+        chunks: list[bytes] = []
+        deadline = time.time() + seconds
+        try:
+            while time.time() < deadline and sum(len(c) for c in chunks) < 300:
+                data = ser.read(64)
+                if data:
+                    chunks.append(data)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            ser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return b"".join(chunks)
 
     def connect(self) -> str | None:
         """설정 포트 또는 자동 탐지로 저울 연결. 성공 시 포트명.
@@ -314,9 +356,10 @@ class Scale:
         combos = self._comm_candidates()
         for port in candidates:
             tried: list[str] = []
+            raw_sink: list = []
             for baud, bits, parity in combos:
                 try:
-                    ser = self._probe(port, baud, bits, parity)
+                    ser = self._probe(port, baud, bits, parity, raw_sink)
                 except Exception as exc:  # noqa: BLE001 - 포트 자체를 못 연 경우
                     msg = str(exc)
                     if "denied" in msg.lower() or "액세스" in msg or "PermissionError" in msg:
@@ -335,8 +378,24 @@ class Scale:
                     return port
                 tried.append(f"{baud}/{bits}{parity}")
             if tried and fixed_port:
-                log(f"[{self.name}] {port} 열림, 그러나 응답 없음 (시도: {', '.join(tried)}). "
-                    "저울 쪽 설정 확인 필요 — 주변기기=Host 인지, 인터페이스 속도가 위 목록에 있는지.")
+                if raw_sink:
+                    # 수신은 있었으나 해석 불가 → 원본을 로그에 남겨 포맷 판독 근거로.
+                    samples = " | ".join(f"({c}) {d!r}" for c, d in raw_sink[:5])
+                    log(f"[{self.name}] {port} 수신 데이터가 있으나 해석하지 못했습니다. "
+                        f"원본 샘플: {samples} — 이 로그를 개발자에게 전달하세요.")
+                elif not self._sniffed:
+                    self._sniffed = True
+                    log(f"[{self.name}] {port} 응답 없음 → 10초간 수신 감청을 시작합니다. "
+                        "지금 저울의 PRINT(전송) 키를 몇 번 눌러 보세요...")
+                    raw = self._sniff(port)
+                    if raw:
+                        log(f"[{self.name}] 감청 수신: {raw[:200]!r} — 이 로그를 개발자에게 전달하세요.")
+                    else:
+                        log(f"[{self.name}] 감청에도 수신 없음 — 저울이 이 포트로 아무것도 보내지 않습니다. "
+                            "저울 설정에서 주변기기=Host 인지 확인하세요. (시도: "
+                            + ", ".join(tried) + ")")
+                else:
+                    log(f"[{self.name}] {port} 열림, 그러나 응답 없음 (시도: {', '.join(tried)}).")
         return None
 
     # ── 기존 프로그램 공존: 프로세스 감지 → 포트 자동 양보/복귀 ──
