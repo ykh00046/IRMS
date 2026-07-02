@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260624a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260702a" />
 {% endblock %}
 
 {% block content %}
@@ -92,11 +92,10 @@
           <div class="panel dashboard-operators-panel">
             <h3 class="panel-title">최근 배합 기록 <a class="muted small" href="/status">전체 보기 →</a></h3>
             <div class="table-wrap">
-              <table>
+              <table class="dash-recent">
                 <thead>
                   <tr>
                     <th>LOT</th>
-                    <th>반제품</th>
                     <th>작업일</th>
                     <th>작업자</th>
                     <th class="num">총량(g)</th>
@@ -113,5 +112,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260702a"></script>
+    <script src="/static/js/dashboard.js?v=20260702b"></script>
 {% endblock %}

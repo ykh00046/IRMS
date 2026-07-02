@@ -40,5 +40,16 @@
 }
 
 /* 지표 카드/그리드/차트 공용 스타일은 common.css 로 이동. 여기엔 대시보드 전용만 유지. */
-.metric-value[id="card-variance-total"] { color: #b91c1c; }
 .dashboard-operators-panel .table-wrap { max-height: 300px; overflow-y: auto; }
+
+/* 최근 배합 기록 — 좁은 패널에 6열이 들어가도록 컴팩트 표 */
+.dash-recent th,
+.dash-recent td {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.dash-recent .dash-lot-reactor {
+  display: block;
+  line-height: 1.2;
+}

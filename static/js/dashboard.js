@@ -133,7 +133,8 @@ document.addEventListener("DOMContentLoaded", () => {
           {
             label: "총 배합량 (g)",
             data: weights,
-            borderColor: cssVar("--accent", "#f47c26"),
+            // 주의: 이 앱에서 --accent 는 네이비 별칭 — 오렌지는 --accent-secondary
+            borderColor: cssVar("--accent-secondary", "#f47c26"),
             backgroundColor: "rgba(244, 124, 38, 0.15)",
             yAxisID: "y1",
             tension: 0.25,
@@ -207,19 +208,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = document.getElementById("recent-body");
     const items = data.items || [];
     if (!items.length) {
-      body.innerHTML = '<tr><td colspan="7"><div class="empty-state">배합 기록 없음</div></td></tr>';
+      body.innerHTML = '<tr><td colspan="6"><div class="empty-state">배합 기록 없음</div></td></tr>';
       return;
     }
     body.innerHTML = items
       .map((r) => {
+        // LOT 이 {반제품명}{YYMMDD}{순번} 이라 반제품 열은 중복 — LOT 한 칸으로 통합
         const lot = r.reactor
-          ? `${IRMS.escapeHtml(r.product_lot)} <span class="muted small">반응기 ${r.reactor}</span>`
+          ? `${IRMS.escapeHtml(r.product_lot)}<span class="muted small dash-lot-reactor">반응기 ${r.reactor}</span>`
           : IRMS.escapeHtml(r.product_lot);
+        const workDate = (r.work_date || "-").length === 10 ? r.work_date.slice(5) : (r.work_date || "-");
         return `
           <tr>
             <td>${lot}</td>
-            <td>${IRMS.escapeHtml(r.product_name)}</td>
-            <td>${IRMS.escapeHtml(r.work_date || "-")}</td>
+            <td>${IRMS.escapeHtml(workDate)}</td>
             <td>${IRMS.escapeHtml(r.worker || "-")}</td>
             <td class="num">${fmtNumber(r.total_amount, 1)}</td>
             <td>${r.has_viscosity ? "입력" : '<span class="muted">미입력</span>'}</td>
