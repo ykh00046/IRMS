@@ -67,25 +67,42 @@ def build_router() -> APIRouter:
                         },
                     )
 
+            # 수정 등록(revision)이면 원본 체인의 DHR 전용 여부를 승계한다.
+            # 승계하지 않으면 새 버전이 일반 레시피가 되어 배합 화면에 노출되는 회귀 발생.
+            inherited_is_dhr = 0
+            if body.revision_of is not None:
+                parent_row = connection.execute(
+                    "SELECT COALESCE(is_dhr, 0) AS is_dhr FROM recipes WHERE id = ?",
+                    (body.revision_of,),
+                ).fetchone()
+                if parent_row:
+                    inherited_is_dhr = int(parent_row["is_dhr"])
+
             for parsed_row in parsed["parsed_rows"]:
+                # 등록 즉시 사용 가능(completed). (구) 계량 워크플로의 pending→진행→완료
+                # 단계는 /blend 전환으로 폐기 — 승인 단계가 없어 pending 은 영구 정체됨.
                 cursor = connection.execute(
                     """
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
-                        raw_input_hash, raw_input_text, revision_of, remark, effective_from
-                    ) VALUES (?, ?, ?, 'pending', ?, ?, NULL, ?, ?, ?, ?, ?)
+                        raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
                         parsed_row["position"],
-                        parsed_row["ink_name"],
+                        # ink 는 폐기 중인 개념 — 열이 없으면(문서상 기본 형식) 반제품명으로 대체.
+                        # (ink_name 은 NOT NULL 이라 None 이면 등록이 500 으로 실패했음)
+                        parsed_row["ink_name"] or parsed_row["product_name"],
                         creator_name,
+                        now,
                         now,
                         raw_hash,
                         body.raw_text,
                         body.revision_of,
                         parsed_row.get("remark"),
                         effective_from,
+                        inherited_is_dhr,
                     ),
                 )
                 recipe_id = cursor.lastrowid

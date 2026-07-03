@@ -161,7 +161,12 @@ def build_router() -> APIRouter:
         body: dict[str, Any],
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        """레시피를 DHR 전용으로 지정/해제 — 일반 조회·배합 선택에서 제외(DHR 전용으로만 사용)."""
+        """레시피를 DHR 전용으로 지정/해제 — 버전 체인 전체에 적용.
+
+        한 제품의 여러 버전 중 하나만 바꾸면 옛 버전이 일반으로 남아 배합 화면에
+        계속 노출되므로, revision 체인 전체를 함께 지정/해제한다.
+        일반 조회·배합 선택에서 제외되고 DHR(배합일지) 전용으로만 사용된다.
+        """
         is_dhr = 1 if body.get("is_dhr") else 0
         with get_connection() as connection:
             row = connection.execute(
@@ -169,14 +174,21 @@ def build_router() -> APIRouter:
             ).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
-            connection.execute("UPDATE recipes SET is_dhr = ? WHERE id = ?", (is_dhr, recipe_id))
+            root_id = find_chain_root(connection, recipe_id)
+            chain_ids = [int(r["id"]) for r in fetch_chain(connection, root_id)] or [recipe_id]
+            placeholders = ",".join("?" for _ in chain_ids)
+            connection.execute(
+                f"UPDATE recipes SET is_dhr = ? WHERE id IN ({placeholders})",
+                (is_dhr, *chain_ids),
+            )
             write_audit_log(
                 connection, action="recipe_dhr_set", actor=current_user,
                 target_type="recipe", target_id=recipe_id,
-                target_label=str(row["product_name"]), details={"is_dhr": bool(is_dhr)},
+                target_label=str(row["product_name"]),
+                details={"is_dhr": bool(is_dhr), "chain_count": len(chain_ids)},
             )
             connection.commit()
-        return {"id": recipe_id, "is_dhr": bool(is_dhr)}
+        return {"id": recipe_id, "is_dhr": bool(is_dhr), "chain_count": len(chain_ids)}
 
     @router.get("/recipes/{recipe_id}/detail")
     def recipe_detail(recipe_id: int) -> dict[str, Any]:
@@ -372,6 +384,7 @@ def build_router() -> APIRouter:
         search: str | None = Query(None, max_length=100),
         date_from: date | None = None,
         date_to: date | None = None,
+        limit: int = Query(default=1000, ge=1, le=5000),
     ) -> dict[str, Any]:
         where_parts: list[str] = []
         params: list[Any] = []
@@ -408,12 +421,14 @@ def build_router() -> APIRouter:
         with get_connection() as connection:
             recipe_rows = connection.execute(
                 f"""
-                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.created_by, r.created_at, r.completed_at, r.remark
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.created_by,
+                       r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr
                 FROM recipes r
                 {where_sql}
                 ORDER BY r.created_at DESC, r.id DESC
+                LIMIT ?
                 """,
-                params,
+                [*params, limit],
             ).fetchall()
 
             recipe_ids = [row["id"] for row in recipe_rows]
@@ -444,11 +459,6 @@ def build_router() -> APIRouter:
         body: StatusUpdateRequest,
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        transition_map = {
-            "start": ("pending", "in_progress"),
-            "complete": ("in_progress", "completed"),
-            "cancel": ("pending", "canceled"),
-        }
         actor = actor_name(current_user)
 
         with get_connection() as connection:
@@ -460,15 +470,17 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="Recipe not found")
 
             current_status = row["status"]
-            if body.action == "complete" and current_status == "pending":
-                allowed = True
-                next_status = "completed"
-            elif body.action == "cancel" and current_status == "in_progress":
-                allowed = True
+            # 등록 즉시 completed 정책(등록 취소만 노출). 취소는 어떤 활성 상태에서든 허용하고,
+            # 레거시 워크플로(start/complete)는 옛 pending/in_progress 데이터를 위해 유지.
+            if body.action == "cancel":
+                allowed = current_status in ("pending", "in_progress", "completed")
                 next_status = "canceled"
-            else:
-                from_status, next_status = transition_map[body.action]
-                allowed = current_status == from_status
+            elif body.action == "complete":
+                allowed = current_status in ("pending", "in_progress")
+                next_status = "completed"
+            else:  # start
+                allowed = current_status == "pending"
+                next_status = "in_progress"
 
             if not allowed:
                 raise HTTPException(status_code=409, detail="INVALID_STATUS_TRANSITION")

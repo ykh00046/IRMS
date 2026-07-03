@@ -354,6 +354,19 @@
   color: var(--text-secondary);
 }
 
+.chip-dhr {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-primary) 15%, var(--bg-base));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, var(--border-subtle));
+  color: color-mix(in srgb, var(--accent-primary) 80%, var(--text-primary));
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .detail-actions {
   display: flex;
   gap: 0.5rem;

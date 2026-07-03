@@ -94,7 +94,7 @@
             (recipe) => `
               <tr class="history-row" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
-                <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}</td>
+                <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
@@ -140,7 +140,7 @@
                     <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
                     <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
                     <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
-                    ${detail.status === "pending" || detail.status === "in_progress"
+                    ${detail.status !== "canceled"
                       ? `<button class="btn btn-sm history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
                       : ""}
                     <button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">레시피 삭제</button>

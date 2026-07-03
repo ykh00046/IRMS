@@ -105,6 +105,7 @@
       position: row.position,
       inkName: row.ink_name,
       status: row.status,
+      isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,
       completedAt: row.completed_at,

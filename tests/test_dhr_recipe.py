@@ -18,7 +18,7 @@ def _db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_name TEXT, position TEXT, ink_name TEXT,
             status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-06-26',
-            is_dhr INTEGER NOT NULL DEFAULT 0
+            is_dhr INTEGER NOT NULL DEFAULT 0, revision_of INTEGER
         );
         CREATE TABLE recipe_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT, recipe_id INTEGER,
@@ -62,3 +62,27 @@ def test_dhr_recipe_excluded_from_blend_selection():
     conn.execute("UPDATE recipes SET is_dhr = 0 WHERE id = ?", (dhr_id,))
     conn.commit()
     assert "DHR전용P" in [r["product_name"] for r in blend_service.list_blend_recipes(conn)]
+
+
+def test_blend_selection_excludes_superseded_versions():
+    """배합 레시피 목록은 현재 버전(tip)만 — 수정 등록으로 대체된 옛 버전은 제외."""
+    conn = _db()
+    base = _add(conn, "제품X", 0)
+    # base 를 대체하는 새 버전(revision_of=base)
+    conn.execute(
+        "INSERT INTO recipes (product_name, ink_name, status, is_dhr, revision_of) "
+        "VALUES ('제품X', 'x', 'completed', 0, ?)",
+        (base,),
+    )
+    rev = conn.execute(
+        "SELECT id FROM recipes WHERE revision_of = ?", (base,)
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO recipe_items (recipe_id, material_id, value_weight) VALUES (?, 1, 100)",
+        (rev,),
+    )
+    conn.commit()
+
+    ids = [r["id"] for r in blend_service.list_blend_recipes(conn)]
+    assert rev in ids       # 현재 버전은 포함
+    assert base not in ids   # 대체된 옛 버전은 제외

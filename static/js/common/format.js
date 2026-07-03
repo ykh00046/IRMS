@@ -21,7 +21,7 @@
     const map = {
       pending: "대기",
       in_progress: "진행",
-      completed: "완료",
+      completed: "사용중",
       canceled: "취소",
       draft: "초안",
     };

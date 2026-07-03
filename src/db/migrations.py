@@ -93,6 +93,17 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")
 
+    # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
+    # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고
+    # 기존에 정체돼 있던 레시피도 completed 로 전환한다(취소 건은 보존).
+    if not has_migration(connection, "recipes_status_active_default"):
+        connection.execute(
+            "UPDATE recipes SET status = 'completed', "
+            "completed_at = COALESCE(completed_at, created_at) "
+            "WHERE status IN ('pending', 'in_progress')"
+        )
+        record_migration(connection, "recipes_status_active_default")
+
     # single-session enforcement: 로그인 시 발급, 새 로그인 시 회전
     ensure_column(connection, "users", "session_token", "TEXT")
 
