@@ -320,10 +320,7 @@ def build_router() -> APIRouter:
                 if int(remaining["c"]) == 0:
                     raise HTTPException(status_code=400, detail="LAST_MANAGER")
 
-            connection.execute(
-                "UPDATE users SET is_active = 0, session_token = NULL WHERE id = ?",
-                (user_id,),
-            )
+            connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
             write_audit_log(
                 connection,
                 action="user_deleted",

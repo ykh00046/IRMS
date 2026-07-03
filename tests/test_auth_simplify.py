@@ -57,3 +57,39 @@ def test_admin_login_access_and_deactivate_others():
         ).fetchone()
     assert admin["is_active"] == 1
     assert others["n"] == 0
+
+
+def test_admin_delete_user_removes_row():
+    """삭제 API는 비활성화가 아니라 실제로 행을 제거해 목록에서 사라져야 한다."""
+    client = _client()
+    res = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    assert res.status_code == 200
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    res = client.post(
+        "/api/admin/users",
+        json={
+            "username": "todelete1",
+            "display_name": "삭제 대상",
+            "access_level": "operator",
+            "password": "Passw0rd!23",
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200
+    user_id = res.json()["user"]["id"]
+
+    res = client.delete(f"/api/admin/users/{user_id}", headers=headers)
+    assert res.status_code == 200
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    assert row is None
+
+    usernames = [item["username"] for item in client.get("/api/admin/users").json()["items"]]
+    assert "todelete1" not in usernames
