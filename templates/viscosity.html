@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260701e" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260703a" />
 {% endblock %}
 
 {% block content %}
@@ -159,6 +159,23 @@
               <button id="visc-settings-close" class="btn" type="button">닫기</button>
             </div>
             <div class="ss-modal-body">
+              <div class="table-wrap visc-prod-list-wrap">
+                <table class="visc-table">
+                  <thead>
+                    <tr>
+                      <th>코드</th>
+                      <th>이름</th>
+                      <th>매일 알림</th>
+                      <th>반응기</th>
+                      <th>상태</th>
+                    </tr>
+                  </thead>
+                  <tbody id="visc-prod-list"></tbody>
+                </table>
+              </div>
+              <p class="muted small">행을 선택하면 아래에서 수정합니다. 코드는 기록과 연결된 식별자라 변경할 수 없습니다.</p>
+
+              <hr class="visc-divider" />
               <form id="visc-settings-form" class="visc-form" autocomplete="off">
                 <label class="filter-label" for="visc-set-name">반제품명</label>
                 <input class="input" id="visc-set-name" required />
@@ -214,7 +231,7 @@
               <h4 class="panel-title">새 반제품 추가</h4>
               <form id="visc-new-form" class="visc-form" autocomplete="off">
                 <label class="filter-label" for="visc-new-code">코드</label>
-                <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._-]+" required />
+                <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._\-]+" required />
                 <label class="filter-label" for="visc-new-name">반제품명</label>
                 <input class="input" id="visc-new-name" required />
                 <p class="login-error" id="visc-new-error" hidden></p>
@@ -227,5 +244,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity.js?v=20260702a"></script>
+    <script src="/static/js/viscosity.js?v=20260703a"></script>
 {% endblock %}

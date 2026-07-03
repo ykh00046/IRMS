@@ -426,3 +426,17 @@ body {
     text-align: left;
   }
 }
+
+/* 반제품 설정 모달: 품목 목록 (행 선택 → 아래 폼에서 수정) */
+.visc-prod-list-wrap {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+#visc-prod-list tr.is-selected {
+  background: var(--brand-soft, #eaf1fb);
+}
+
+#visc-prod-list tr:hover {
+  background: var(--bg-surface-200, #f4f6fa);
+}

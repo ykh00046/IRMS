@@ -606,22 +606,66 @@
     }
   }
 
-  function openSettings() {
-    const product = currentProduct();
-    if (!product) return;
-    $("visc-settings-title").textContent = `반제품 설정 · ${product.code}`;
-    $("visc-set-name").value = product.name;
-    $("visc-set-target").value = product.target ?? "";
-    $("visc-set-lower").value = product.lower_limit ?? "";
-    $("visc-set-upper").value = product.upper_limit ?? "";
-    $("visc-set-sigma").value = product.sigma_k;
-    $("visc-set-rpm").value = product.rpm ?? "";
-    $("visc-set-temp").value = product.temperature ?? "";
-    $("visc-set-remind").checked = product.remind_daily;
-    $("visc-set-reactor").checked = product.use_reactor;
-    $("visc-set-active").checked = product.is_active;
+  // ── 반제품 관리 모달: 전체 목록 → 행 선택 → 수정 / 새 반제품 추가 ──
+  // 수정 대상은 화면에서 보고 있는 반제품과 무관하게 목록에서 고른다.
+  let settingsProducts = [];
+  let settingsId = null;
+
+  async function openSettings() {
+    try {
+      const data = await request("/viscosity/products");
+      settingsProducts = data.items || [];
+    } catch (error_) {
+      notify(`반제품 목록을 불러오지 못했습니다: ${error_.message}`, "error");
+      return;
+    }
+    const current = settingsProducts.find((p) => p.id === state.currentId) || settingsProducts[0];
+    fillSettingsForm(current || null);
+    renderSettingsList();
     $("visc-settings-error").hidden = true;
+    $("visc-new-error").hidden = true;
     $("visc-settings-modal").hidden = false;
+  }
+
+  function renderSettingsList() {
+    const body = $("visc-prod-list");
+    body.innerHTML = "";
+    if (!settingsProducts.length) {
+      body.appendChild(emptyRow(5, "반제품이 없습니다. 아래에서 추가하세요."));
+      return;
+    }
+    settingsProducts.forEach((product) => {
+      const row = document.createElement("tr");
+      row.classList.toggle("is-selected", product.id === settingsId);
+      row.style.cursor = "pointer";
+      appendTextCell(row, product.code);
+      appendTextCell(row, product.name);
+      appendTextCell(row, product.remind_daily ? "켜짐" : "-");
+      appendTextCell(row, product.use_reactor ? "사용" : "-");
+      appendTextCell(row, product.is_active ? "사용" : "중지");
+      row.addEventListener("click", () => {
+        fillSettingsForm(product);
+        renderSettingsList();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function fillSettingsForm(product) {
+    settingsId = product ? product.id : null;
+    $("visc-settings-title").textContent = product
+      ? `반제품 설정 · ${product.code}`
+      : "반제품 설정";
+    $("visc-set-name").value = product ? product.name : "";
+    $("visc-set-target").value = product ? (product.target ?? "") : "";
+    $("visc-set-lower").value = product ? (product.lower_limit ?? "") : "";
+    $("visc-set-upper").value = product ? (product.upper_limit ?? "") : "";
+    $("visc-set-sigma").value = product ? product.sigma_k : 3;
+    $("visc-set-rpm").value = product ? (product.rpm ?? "") : "";
+    $("visc-set-temp").value = product ? (product.temperature ?? "") : "";
+    $("visc-set-remind").checked = Boolean(product && product.remind_daily);
+    $("visc-set-reactor").checked = Boolean(product && product.use_reactor);
+    $("visc-set-active").checked = product ? product.is_active : true;
   }
 
   function numOrNull(id) {
@@ -633,6 +677,11 @@
     event.preventDefault();
     const error = $("visc-settings-error");
     error.hidden = true;
+    if (!settingsId) {
+      error.textContent = "수정할 반제품을 목록에서 선택하세요.";
+      error.hidden = false;
+      return;
+    }
     const body = {
       name: $("visc-set-name").value.trim(),
       target: numOrNull("visc-set-target"),
@@ -646,10 +695,12 @@
       is_active: $("visc-set-active").checked,
     };
     try {
-      await request(`/viscosity/products/${state.currentId}`, { method: "PATCH", body });
-      $("visc-settings-modal").hidden = true;
-      notify("반제품 설정을 저장했습니다.", "success");
-      await loadOverview();
+      const updated = await request(`/viscosity/products/${settingsId}`, { method: "PATCH", body });
+      notify(`저장했습니다: ${updated.code}`, "success");
+      // 모달은 열어 둔 채 목록 갱신(여러 반제품 연속 관리), 본화면은 뒤에서 갱신
+      settingsProducts = settingsProducts.map((p) => (p.id === updated.id ? updated : p));
+      renderSettingsList();
+      loadOverview().catch(() => {});
     } catch (error_) {
       error.textContent = error_.message;
       error.hidden = false;
@@ -667,10 +718,11 @@
     try {
       const created = await request("/viscosity/products", { method: "POST", body });
       $("visc-new-form").reset();
-      notify(`반제품을 추가했습니다. ${created.code}`, "success");
-      state.currentId = created.id;
-      $("visc-settings-modal").hidden = true;
-      await loadOverview();
+      notify(`반제품을 추가했습니다: ${created.code}`, "success");
+      settingsProducts = [...settingsProducts, created];
+      fillSettingsForm(created);   // 이어서 기준값 입력하도록 수정 폼에 로드
+      renderSettingsList();
+      loadOverview().catch(() => {});
     } catch (error_) {
       error.textContent = error_.message;
       error.hidden = false;
