@@ -6,11 +6,40 @@
   const safeNextUrl = IRMS._core && IRMS._core.safeNextUrl;
   const form = document.getElementById("blend-login-form");
   const workerInput = document.getElementById("blend-login-worker");
-  const workerList = document.getElementById("blend-login-workers");
+  const suggestBox = document.getElementById("blend-login-suggest");
   const errorEl = document.getElementById("blend-login-error");
   let workers = [];
 
   if (!form || !request) return;
+
+  // ── 자체 제안 목록: 높이 제한(스크롤) + 타이핑 필터 ──────────
+  function renderSuggest() {
+    if (!suggestBox) return;
+    const query = (workerInput.value || "").trim().toLowerCase();
+    const matches = query
+      ? workers.filter((name) => name.toLowerCase().includes(query))
+      : workers;
+    suggestBox.innerHTML = "";
+    if (!matches.length) {
+      suggestBox.hidden = true;
+      return;
+    }
+    matches.forEach((name) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "worker-suggest-item";
+      item.textContent = name;
+      // blur 보다 먼저 실행되도록 mousedown 사용
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        workerInput.value = name;
+        suggestBox.hidden = true;
+        workerInput.focus();
+      });
+      suggestBox.appendChild(item);
+    });
+    suggestBox.hidden = false;
+  }
 
   function setMessage(message, muted) {
     if (!errorEl) return;
@@ -26,10 +55,6 @@
 
   function fillWorkers(items) {
     workers = (items || []).map((item) => item.name);
-    if (!workerList) return;
-    workerList.innerHTML = workers
-      .map((name) => `<option value="${name}"></option>`)
-      .join("");
   }
 
   async function registerWorker(worker) {
@@ -39,9 +64,6 @@
     }
     await request("/workers", { method: "POST", body: { name: worker } });
     workers.push(worker);
-    if (workerList) {
-      workerList.insertAdjacentHTML("beforeend", `<option value="${worker}"></option>`);
-    }
     return true;
   }
 
@@ -70,8 +92,20 @@
   }
 
   request("/workers")
-    .then((data) => fillWorkers(data.items || []))
+    .then((data) => {
+      fillWorkers(data.items || []);
+      // 자동 포커스가 명단 로딩보다 빠른 경우 — 로딩 완료 시점에 목록 표시
+      if (document.activeElement === workerInput) renderSuggest();
+    })
     .catch(() => fillWorkers([]));
   form.addEventListener("submit", submit);
+  workerInput.addEventListener("focus", renderSuggest);
+  workerInput.addEventListener("input", renderSuggest);
+  workerInput.addEventListener("blur", () => {
+    if (suggestBox) suggestBox.hidden = true;
+  });
+  workerInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && suggestBox) suggestBox.hidden = true;
+  });
   workerInput.focus();
 })();
