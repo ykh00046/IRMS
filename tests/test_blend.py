@@ -261,6 +261,68 @@ def test_create_bulk():
     assert r1["product_lot"] != r2["product_lot"]
 
 
+# ── 배합 분석 (제품별 빈도 + 배치 상세, Dashboard 반제품 배합 분석 흡수) ──
+def _seed_analysis_records(conn, rid):
+    for d, product, actual in [
+        ("2026-06-20", "제품A", 98.5),
+        ("2026-06-21", "제품A", 100.0),
+        ("2026-06-22", "제품A", 101.0),
+        ("2026-06-21", "제품B", 100.0),
+    ]:
+        bs.create_blend_record(
+            conn, recipe_id=rid, product_name=product, ink_name=None, position=None,
+            worker="홍", work_date=d, work_time=None, total_amount=100, scale=None, note=None,
+            details=[{
+                "material_name": "원료1", "material_lot": "L1",
+                "ratio": 100.0, "theory_amount": 100, "actual_amount": actual,
+            }],
+            created_by="t", created_at=f"{d}T00:00:00Z",
+        )
+
+
+def test_product_usage_counts_batches():
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    _seed_analysis_records(conn, rid)
+
+    result = bs.product_usage(conn)
+    assert result["product_count"] == 2
+    assert result["batch_total"] == 4
+    assert result["last_work_date"] == "2026-06-22"
+    top = result["items"][0]
+    assert top["product_name"] == "제품A"
+    assert top["batch_count"] == 3
+    assert top["total_amount"] == 300.0
+
+    # 기간 필터
+    filtered = bs.product_usage(conn, start_date="2026-06-21")
+    by_name = {i["product_name"]: i for i in filtered["items"]}
+    assert by_name["제품A"]["batch_count"] == 2
+
+    # 취소 기록 제외
+    conn.execute("UPDATE blend_records SET status = 'canceled' WHERE product_name = '제품B'")
+    assert bs.product_usage(conn)["product_count"] == 1
+
+
+def test_batch_details_variance_and_product_filter():
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    _seed_analysis_records(conn, rid)
+
+    result = bs.batch_details(conn)
+    assert result["batch_count"] == 4
+    assert result["material_count"] == 1
+    # 작업일 역순 정렬
+    assert result["items"][0]["work_date"] == "2026-06-22"
+
+    # 제품 필터 + 편차(실제-이론)
+    only_a = bs.batch_details(conn, product="제품A")
+    assert only_a["batch_count"] == 3
+    variances = {it["work_date"]: it["variance"] for it in only_a["items"]}
+    assert variances["2026-06-20"] == -1.5
+    assert variances["2026-06-21"] == 0.0
+
+
 # ── 라우트 (무로그인 개방) ──────────────────────────────────────
 def test_blend_routes_public_and_create():
     import importlib
@@ -276,6 +338,11 @@ def test_blend_routes_public_and_create():
     # 무로그인 조회 가능
     assert client.get("/api/blend/recipes").status_code == 200
     assert client.get("/api/blend/records").status_code == 200
+    assert client.get("/api/blend/product-usage").status_code == 200
+    assert client.get("/api/blend/batch-details").status_code == 200
+    export = client.get("/api/blend/batch-details/export")
+    assert export.status_code == 200
+    assert "spreadsheetml" in export.headers["content-type"]
 
 
 def test_blend_next_lot_route():

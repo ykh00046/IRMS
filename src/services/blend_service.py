@@ -143,6 +143,115 @@ def material_usage(
     }
 
 
+def product_usage(
+    connection: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """제품별 배합 빈도 분석. 기간 내 완료 기록의 제품별 배치 수·총 배합량·최근 작업일."""
+    where = ["status = 'completed'"]
+    params: list[Any] = []
+    if start_date:
+        where.append("work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        where.append("work_date <= ?")
+        params.append(end_date)
+    wsql = " AND ".join(where)
+    rows = connection.execute(
+        f"""
+        SELECT product_name,
+               COUNT(*) AS batch_count,
+               COALESCE(SUM(total_amount), 0) AS total_amount,
+               MAX(work_date) AS last_work_date
+        FROM blend_records
+        WHERE {wsql}
+        GROUP BY product_name
+        ORDER BY batch_count DESC, product_name ASC
+        """,
+        params,
+    ).fetchall()
+    items = [
+        {
+            "product_name": r["product_name"],
+            "batch_count": int(r["batch_count"]),
+            "total_amount": round(float(r["total_amount"]), 3),
+            "last_work_date": r["last_work_date"],
+        }
+        for r in rows
+    ]
+    return {
+        "items": items,
+        "product_count": len(items),
+        "batch_total": sum(i["batch_count"] for i in items),
+        "last_work_date": max((i["last_work_date"] for i in items), default=None),
+    }
+
+
+def batch_details(
+    connection: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    product: str | None = None,
+    limit: int = 2000,
+) -> dict[str, Any]:
+    """배치 상세 — 완료 기록의 자재별 비율·이론량·실제량·편차 평면 목록(작업일 역순)."""
+    where = ["br.status = 'completed'"]
+    params: list[Any] = []
+    if start_date:
+        where.append("br.work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        where.append("br.work_date <= ?")
+        params.append(end_date)
+    if product:
+        where.append("br.product_name = ?")
+        params.append(product)
+    wsql = " AND ".join(where)
+    rows = connection.execute(
+        f"""
+        SELECT br.id AS record_id, br.work_date, br.product_lot, br.product_name, br.worker,
+               bd.material_code, bd.material_name, bd.material_lot,
+               bd.ratio, bd.theory_amount, bd.actual_amount
+        FROM blend_details bd
+        JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE {wsql}
+        ORDER BY br.work_date DESC, br.id DESC, bd.sequence_order ASC
+        LIMIT ?
+        """,
+        [*params, max(1, min(int(limit), 10000))],
+    ).fetchall()
+    items = []
+    for r in rows:
+        theory = None if r["theory_amount"] is None else float(r["theory_amount"])
+        actual = None if r["actual_amount"] is None else float(r["actual_amount"])
+        variance = (
+            None if theory is None or actual is None else round(actual - theory, 3)
+        )
+        items.append(
+            {
+                "record_id": int(r["record_id"]),
+                "work_date": r["work_date"],
+                "product_lot": r["product_lot"],
+                "product_name": r["product_name"],
+                "worker": r["worker"],
+                "material_code": r["material_code"],
+                "material_name": r["material_name"],
+                "material_lot": r["material_lot"],
+                "ratio": None if r["ratio"] is None else float(r["ratio"]),
+                "theory_amount": theory,
+                "actual_amount": actual,
+                "variance": variance,
+            }
+        )
+    return {
+        "items": items,
+        "total": len(items),
+        "batch_count": len({i["record_id"] for i in items}),
+        "material_count": len({i["material_name"] for i in items}),
+    }
+
+
 def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> list[dict[str, Any]]:
     """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외).
 

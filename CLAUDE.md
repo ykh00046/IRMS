@@ -86,7 +86,7 @@ templates/              # Jinja2 (_base_app.html 상속)
 ├── status.html         # 배합 기록 · DHR 출력
 ├── viscosity.html      # 점도 등록·추세·이상 분석
 ├── management.html     # 레시피 관리 (+management_login.html)
-├── insight.html        # 배합 자재 분석
+├── insight.html        # 배합 분석 (자재별 사용량 + 제품별 빈도·배치 상세)
 ├── dashboard.html      # 운영 대시보드
 ├── admin_users.html    # 사용자 관리 (admin)
 └── attendance*.html    # 근태 (메인/로그인/비번변경)

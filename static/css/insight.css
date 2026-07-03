@@ -75,6 +75,30 @@
   color: var(--text-tertiary);
 }
 
+.insight-chart-wrap {
+  position: relative;
+  height: 300px;
+  margin-top: 0.75rem;
+}
+
+.panel-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.variance-over {
+  color: var(--status-warning);
+  font-weight: 600;
+}
+
+.variance-under {
+  color: var(--status-error);
+  font-weight: 600;
+}
+
 .data-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

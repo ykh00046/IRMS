@@ -84,6 +84,72 @@ def build_router() -> APIRouter:
         """배합 기록 기반 자재 사용 분석(기간별 자재별 실제/이론 사용량·건수)."""
         return blend_service.material_usage(connection, start_date or None, end_date or None)
 
+    @router.get("/blend/product-usage")
+    def blend_product_usage(
+        start_date: str = "",
+        end_date: str = "",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """제품별 배합 빈도 분석(기간 내 제품별 배치 수·총 배합량·최근 작업일)."""
+        return blend_service.product_usage(connection, start_date or None, end_date or None)
+
+    @router.get("/blend/batch-details")
+    def blend_batch_details(
+        start_date: str = "",
+        end_date: str = "",
+        product: str = "",
+        limit: int = Query(default=2000, ge=1, le=10000),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """배치 상세(자재별 비율·이론량·실제량·편차 평면 목록, 작업일 역순)."""
+        return blend_service.batch_details(
+            connection, start_date or None, end_date or None, product or None, limit,
+        )
+
+    @router.get("/blend/batch-details/export")
+    def blend_batch_details_export(
+        start_date: str = "",
+        end_date: str = "",
+        product: str = "",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """배치 상세를 Excel 한 시트로 — 배합 분석·데이터 이관용."""
+        result = blend_service.batch_details(
+            connection, start_date or None, end_date or None, product or None, limit=10000,
+        )
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "배합 상세"
+        headers = [
+            "작업일", "제품LOT", "제품", "작업자", "자재코드", "자재명",
+            "자재LOT", "비율(%)", "이론량(g)", "실제량(g)", "편차(g)",
+        ]
+        ws.append(headers)
+        for c in range(1, len(headers) + 1):
+            ws.cell(row=1, column=c).font = Font(bold=True)
+        for it in result["items"]:
+            ws.append([
+                it["work_date"], it["product_lot"], it["product_name"], it["worker"],
+                it.get("material_code") or "", it["material_name"], it.get("material_lot") or "",
+                it["ratio"], it["theory_amount"], it["actual_amount"], it["variance"],
+            ])
+        widths = [12, 18, 16, 10, 12, 18, 14, 9, 11, 11, 9]
+        for col, w in enumerate(widths, start=1):
+            ws.column_dimensions[chr(64 + col)].width = w
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from datetime import date as _date
+        filename = f"blend-batch-details-{_date.today().isoformat()}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @router.get("/blend/workers")
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
