@@ -124,57 +124,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.session-countdown-badge {
-  position: fixed;
-  top: auto;
-  right: 16px;
-  bottom: 16px;
-  z-index: 1200;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-secondary);
-  background: var(--bg-surface-200);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-subtle);
-  cursor: pointer;
-  user-select: none;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, transform 120ms ease;
-}
-
-.session-countdown-badge:hover {
-  background: var(--bg-surface-300);
-}
-
-.session-countdown-badge.is-warning {
-  color: var(--status-warning);
-  background: #fef7df;
-  border-color: #efc46a;
-}
-
-.session-countdown-badge.is-critical {
-  color: var(--status-error);
-  background: #fde9e7;
-  border-color: #f3aaa6;
-  animation: session-countdown-pulse 800ms ease-in-out infinite alternate;
-}
-
-@keyframes session-countdown-pulse {
-  from { transform: scale(1); }
-  to { transform: scale(1.05); }
-}
 
 @media (max-width: 560px) {
-  .session-countdown-badge {
-    right: 12px;
-    bottom: 12px;
-    max-width: calc(100vw - 24px);
-    white-space: nowrap;
-  }
-
   .app-content {
     padding-bottom: 140px;
   }
