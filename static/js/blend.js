@@ -769,9 +769,8 @@
     setInterval(detectScale, 30000);
     // 저울 PRINT 키 이벤트 폴링(0.8초) — 누르면 활성 행 실제량 자동 입력.
     setInterval(pollScaleEvents, 800);
-    // 작업자 세션 하트비트(2분) — 배합 화면이 떠 있는 동안 유휴 로그아웃(5분) 방지.
-    // 계량은 손이 저울에 가 있어 키보드 입력이 오래 없을 수 있다.
-    setInterval(() => { request("/blend/session/me").catch(() => {}); }, 120000);
+    // 작업자 세션 하트비트는 전 화면 공통(common.js)으로 이동 — 배합↔점도↔기록
+    // 어디에 있든 세션이 유지된다.
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});
