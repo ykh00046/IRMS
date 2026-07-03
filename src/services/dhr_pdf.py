@@ -349,7 +349,7 @@ def render_exact_form_image(
 ) -> Image.Image | None:
     """공식 양식 xlsx(결재 도장 G2 삽입) → Excel→PDF → 이미지(픽셀 일치).
 
-    sign=False(기본): 빈 결재칸(image.jpeg)만 삽입(서명 없음). sign=True: 서명 합성.
+    sign=False(기본): 결재칸 이미지를 넣지 않음. sign=True: 서명 합성 도장 삽입.
     Excel/PyMuPDF 미지원 시 None.
     """
     if not exact_available():
@@ -361,7 +361,9 @@ def render_exact_form_image(
             overrides = _worker_sign_override(record, worker, tmp)
             stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"), overrides)
         else:
-            stamp_path = _STAMP_TEMPLATE if os.path.exists(_STAMP_TEMPLATE) else None  # 빈 결재칸
+            # 서명 미포함(기본)일 땐 결재칸 이미지 자체를 넣지 않는다 — 빈 이미지가
+            # 삽입되어 보이는 문제(2026-07-03 현장 지적). 서명 시에만 도장 합성.
+            stamp_path = None
         xlsx = dhr_excel.build_official_dhr_xlsx(record, signature_image_path=stamp_path)
         pdf_bytes = _excel_to_pdf_bytes(xlsx)
     if not pdf_bytes:
