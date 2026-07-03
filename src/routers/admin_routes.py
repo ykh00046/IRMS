@@ -1,4 +1,5 @@
 import io
+import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -320,7 +321,13 @@ def build_router() -> APIRouter:
                 if int(remaining["c"]) == 0:
                     raise HTTPException(status_code=400, detail="LAST_MANAGER")
 
-            connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            try:
+                connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="다른 데이터가 이 계정을 참조하고 있어 삭제할 수 없습니다. 비활성으로 전환해 주세요.",
+                ) from exc
             write_audit_log(
                 connection,
                 action="user_deleted",

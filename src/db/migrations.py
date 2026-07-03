@@ -318,6 +318,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         connection.execute("DROP TABLE IF EXISTS production_plans")
         record_migration(connection, "drop_orphan_plan_tables")
 
+    # 채팅 기능 제거 후 잔존 테이블 정리. chat_messages.created_by_user_id 가
+    # users(id) 를 FK 참조해 사용자 삭제가 FOREIGN KEY 위반(500)으로 막히던 원인.
+    if not has_migration(connection, "drop_orphan_chat_tables"):
+        connection.execute("DROP TABLE IF EXISTS chat_messages")
+        connection.execute("DROP TABLE IF EXISTS chat_rooms")
+        record_migration(connection, "drop_orphan_chat_tables")
+
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     if has_migration(connection, "standardize_units_to_grams"):
