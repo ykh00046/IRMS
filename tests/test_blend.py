@@ -314,6 +314,27 @@ def test_reactor_required_route_and_settings_patch():
     token = client.cookies.get("csrftoken")
     headers = {"x-csrftoken": token} if token else {}
 
+    # 반제품 생성은 레시피 연동 강제 — 레시피에 없는 코드는 400
+    denied = client.post(
+        "/api/viscosity/products",
+        json={"code": "NO-SUCH-RECIPE-XYZ", "name": "x"},
+        headers=headers,
+    )
+    assert denied.status_code == 400
+
+    # RXTEST 레시피를 만들어 두면 생성 가능 (재실행 멱등: INSERT OR IGNORE 성격)
+    from src.db import get_connection
+    with get_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM recipes WHERE product_name = 'RXTEST'"
+        ).fetchone()
+        if not exists:
+            conn.execute(
+                "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at) "
+                "VALUES ('RXTEST', 'RXTEST', 'completed', 'test', '2026-07-01T00:00:00Z')"
+            )
+            conn.commit()
+
     # 반제품 확보 (재실행 멱등: 이미 있으면 409 → 목록에서 id 조회)
     created = client.post(
         "/api/viscosity/products",

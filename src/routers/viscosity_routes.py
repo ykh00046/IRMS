@@ -153,6 +153,18 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         current_user = get_current_user(request, required=False)
         if viscosity_service.get_product_by_code(connection, body.code):
             raise HTTPException(status_code=409, detail=f"이미 존재하는 코드입니다: {body.code}")
+        # 반제품 코드는 레시피 제품명과 연동되는 키 — 자유 입력 금지.
+        # (배합 기록에 점도를 처음 등록하면 자동 생성되므로, 수동 추가는
+        #  '첫 배합 전에 기준값·반응기 필수를 미리 세팅'하는 용도.)
+        recipe_exists = connection.execute(
+            "SELECT 1 FROM recipes WHERE product_name = ? LIMIT 1",
+            (body.code.strip(),),
+        ).fetchone()
+        if not recipe_exists:
+            raise HTTPException(
+                status_code=400,
+                detail=f"레시피에 없는 제품입니다: {body.code}. 레시피를 먼저 등록하세요.",
+            )
         cur = connection.execute(
             """
             INSERT INTO viscosity_products

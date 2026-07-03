@@ -40,7 +40,8 @@ class ViscosityReadingBody(BaseModel):
 
 
 class ViscosityProductCreateBody(BaseModel):
-    code: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    # code 는 레시피 제품명과 연동(라우트에서 존재 검증) — 한글 제품명 허용.
+    code: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
     target: float | None = Field(default=None, gt=0, le=100000)
     lower_limit: float | None = Field(default=None, ge=0, le=100000)

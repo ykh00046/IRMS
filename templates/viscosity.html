@@ -228,12 +228,14 @@
               </form>
 
               <hr class="visc-divider" />
-              <h4 class="panel-title">새 반제품 추가</h4>
+              <h4 class="panel-title">레시피에서 반제품 추가</h4>
+              <p class="visc-cond-note">반제품은 레시피 제품과 연동됩니다(자유 입력 불가). 배합 기록에 점도를
+                처음 등록하면 자동으로 생기므로, 여기서는 첫 배합 전에 기준값·반응기 필수를 미리
+                세팅할 때만 추가하면 됩니다.</p>
               <form id="visc-new-form" class="visc-form" autocomplete="off">
-                <label class="filter-label" for="visc-new-code">코드</label>
-                <input class="input" id="visc-new-code" pattern="[A-Za-z0-9._\-]+" required />
-                <label class="filter-label" for="visc-new-name">반제품명</label>
-                <input class="input" id="visc-new-name" required />
+                <label class="filter-label" for="visc-new-code">레시피 선택</label>
+                <input class="input" id="visc-new-code" list="visc-recipe-candidates" autocomplete="off" placeholder="레시피 검색" required />
+                <datalist id="visc-recipe-candidates"></datalist>
                 <p class="login-error" id="visc-new-error" hidden></p>
                 <button class="btn" id="visc-new-save" type="submit">반제품 추가</button>
               </form>
@@ -244,5 +246,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity.js?v=20260703a"></script>
+    <script src="/static/js/viscosity.js?v=20260703b"></script>
 {% endblock %}

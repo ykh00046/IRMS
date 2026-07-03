@@ -610,6 +610,7 @@
   // 수정 대상은 화면에서 보고 있는 반제품과 무관하게 목록에서 고른다.
   let settingsProducts = [];
   let settingsId = null;
+  let recipeCandidates = [];
 
   async function openSettings() {
     try {
@@ -622,9 +623,30 @@
     const current = settingsProducts.find((p) => p.id === state.currentId) || settingsProducts[0];
     fillSettingsForm(current || null);
     renderSettingsList();
+    loadRecipeCandidates().catch(() => {});
     $("visc-settings-error").hidden = true;
     $("visc-new-error").hidden = true;
     $("visc-settings-modal").hidden = false;
+  }
+
+  // 반제품 추가 후보 = (완성) 레시피 중 아직 점도 반제품이 없는 제품명
+  async function loadRecipeCandidates() {
+    const data = await request("/blend/recipes");
+    const existing = new Set(
+      settingsProducts.flatMap((p) => [String(p.code).toLowerCase(), String(p.name).toLowerCase()])
+    );
+    recipeCandidates = (data.items || [])
+      .map((r) => String(r.product_name || "").trim())
+      .filter((name) => name && !existing.has(name.toLowerCase()));
+    const list = $("visc-recipe-candidates");
+    if (list) {
+      list.innerHTML = "";
+      recipeCandidates.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        list.appendChild(option);
+      });
+    }
   }
 
   function renderSettingsList() {
@@ -711,17 +733,25 @@
     event.preventDefault();
     const error = $("visc-new-error");
     error.hidden = true;
-    const body = {
-      code: $("visc-new-code").value.trim(),
-      name: $("visc-new-name").value.trim(),
-    };
+    const name = $("visc-new-code").value.trim();
+    // 레시피 연동 강제: 후보(점도 반제품이 없는 레시피)에서만 선택 가능
+    const hit = recipeCandidates.find((c) => c.toLowerCase() === name.toLowerCase());
+    if (!hit) {
+      error.textContent = "레시피 목록에서 선택하세요. (이미 반제품이 있거나 레시피에 없는 제품)";
+      error.hidden = false;
+      return;
+    }
     try {
-      const created = await request("/viscosity/products", { method: "POST", body });
+      const created = await request("/viscosity/products", {
+        method: "POST",
+        body: { code: hit, name: hit },
+      });
       $("visc-new-form").reset();
       notify(`반제품을 추가했습니다: ${created.code}`, "success");
       settingsProducts = [...settingsProducts, created];
       fillSettingsForm(created);   // 이어서 기준값 입력하도록 수정 폼에 로드
       renderSettingsList();
+      loadRecipeCandidates().catch(() => {});
       loadOverview().catch(() => {});
     } catch (error_) {
       error.textContent = error_.message;
