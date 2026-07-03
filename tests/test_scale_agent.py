@@ -106,6 +106,29 @@ def test_print_push_becomes_event():
     assert [e["value"] for e in items2] == [181.0]
 
 
+def test_event_dedupe_same_value_within_window():
+    """같은 저울·같은 값이 2초 안에 반복되면 중복 전송으로 무시."""
+    now = [100.0]
+    bus = EventBus(clock=lambda: now[0])
+    s = Scale({"name": "XP", "protocol": "mt-sics"}, bus, set())
+    frame = parse_frame(" 1 N 105.00 g", protocol="mt-sics")
+    s._handle_frame(dict(frame))
+    now[0] += 1.0
+    s._handle_frame(dict(frame))       # 1초 뒤 같은 값 → 무시
+    now[0] += 1.5
+    s._handle_frame(dict(frame))       # 이전 무시 시점 기준 1.5초 → 여전히 무시(연속 스트림 억제)
+    now[0] += 3.0
+    s._handle_frame(dict(frame))       # 3초 경과 → 새 계량으로 인정
+    items, last = bus.after(0)
+    assert [e["value"] for e in items] == [105.0, 105.0]
+    assert last == 2
+    # 다른 값은 즉시 통과
+    other = parse_frame(" 2 N 58.01 g", protocol="mt-sics")
+    s._handle_frame(other)
+    items2, _ = bus.after(0)
+    assert [e["value"] for e in items2][-1] == 58.01
+
+
 def test_two_scales_share_one_event_stream():
     """A&D + Mettler 두 저울의 PRINT 가 한 스트림으로 합쳐진다(전환 불필요)."""
     bus = EventBus()

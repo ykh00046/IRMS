@@ -216,13 +216,30 @@ def scale_entries(config: dict) -> list[dict]:
 
 # ── 이벤트 버스: 여러 저울의 PRINT 푸시를 하나의 스트림으로 ──────
 class EventBus:
-    def __init__(self) -> None:
+    # 같은 저울이 같은 값을 이 시간(초) 안에 다시 보내면 중복 전송으로 보고 무시
+    # (일부 설정은 PRINT 1회에 같은 줄을 두 번 내보내거나 짧게 반복 출력함)
+    DEDUPE_SECONDS = 2.0
+
+    def __init__(self, clock=time.time) -> None:
         self._events: deque = deque(maxlen=100)
         self._seq = 0
         self._lock = threading.Lock()
+        self._clock = clock
+        self._last: tuple[str, float, float] | None = None  # (source, value, at)
 
     def push(self, frame: dict, source: str) -> None:
         with self._lock:
+            now = self._clock()
+            if self._last is not None:
+                last_source, last_value, last_at = self._last
+                if (
+                    last_source == source
+                    and last_value == frame.get("value")
+                    and now - last_at < self.DEDUPE_SECONDS
+                ):
+                    self._last = (source, last_value, now)
+                    return
+            self._last = (source, float(frame.get("value") or 0.0), now)
             self._seq += 1
             self._events.append({**frame, "id": self._seq, "source": source})
 
@@ -495,7 +512,8 @@ class Scale:
                 self.yielding = False
                 port = self.connect()
                 log(f"[{self.name}] 기존 프로그램 종료 → 재연결{'됨: ' + port if port else ' 시도(저울 응답 없음)'}")
-            time.sleep(3)
+            # 1초 주기: 기존 프로그램이 켜지자마자 포트를 열기 전에 양보가 끝나도록.
+            time.sleep(1)
 
     def _drop_connection(self) -> None:
         ser, self._serial = self._serial, None
