@@ -23,7 +23,7 @@ from .models import WorkerCreateBody, WorkerUpdateBody
 
 def build_router() -> tuple[APIRouter, APIRouter]:
     open_router = APIRouter()
-    admin_router = APIRouter(dependencies=[Depends(require_access_level("admin"))])
+    admin_router = APIRouter(dependencies=[Depends(require_access_level("manager"))])
 
     @open_router.get("/workers")
     def list_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:

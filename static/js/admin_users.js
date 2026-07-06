@@ -23,7 +23,8 @@
 
   function accessLabel(accessLevel) {
     const map = {
-      admin: "관리자",
+      // admin 은 구 3단계 잔존값 — 책임자로 표기(백엔드가 manager 로 정규화).
+      admin: "책임자",
       manager: "책임자",
       operator: "담당자",
     };
@@ -54,18 +55,15 @@
     return IRMS.formatDateTime(value);
   }
 
-  const summaryAdmins = document.getElementById("summary-admins");
-
   function renderSummary(summary) {
     summaryTotal.textContent = String(summary.total || 0);
     summaryActive.textContent = String(summary.active || 0);
-    if (summaryAdmins) summaryAdmins.textContent = String(summary.admins || 0);
     summaryManagers.textContent = String(summary.managers || 0);
     summaryOperators.textContent = String(summary.operators || 0);
   }
 
   function accessOptions(selected) {
-    return ["operator", "manager", "admin"]
+    return ["operator", "manager"]
       .map(
         (accessLevel) =>
           `<option value="${accessLevel}"${selected === accessLevel ? " selected" : ""}>${accessLabel(accessLevel)}</option>`,
@@ -334,7 +332,6 @@
       const messageMap = {
         USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
         CANNOT_CHANGE_SELF_ACCESS: "본인 계정의 권한 또는 활성 상태는 직접 변경할 수 없습니다.",
-        LAST_ADMIN: "마지막 관리자 계정은 변경할 수 없습니다.",
         LAST_MANAGER: "마지막 책임자 계정은 변경할 수 없습니다.",
       };
       IRMS.notify(`저장 실패: ${messageMap[error.message] || error.message}`, "error");
@@ -409,7 +406,6 @@
       const messageMap = {
         USER_NOT_FOUND: "대상 사용자를 찾을 수 없습니다.",
         CANNOT_DELETE_SELF: "본인 계정은 삭제할 수 없습니다.",
-        LAST_ADMIN: "마지막 관리자 계정은 삭제할 수 없습니다.",
         LAST_MANAGER: "마지막 책임자 계정은 삭제할 수 없습니다.",
       };
       IRMS.notify(`삭제 실패: ${messageMap[error.message] || error.message}`, "error");

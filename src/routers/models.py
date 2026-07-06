@@ -186,13 +186,13 @@ class WeighingRecipeCompleteRequest(BaseModel):
 class AdminUserCreateRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
     display_name: str = Field(min_length=1, max_length=50)
-    access_level: Literal["operator", "manager", "admin"]
+    access_level: Literal["operator", "manager"]
     password: str = Field(min_length=8, max_length=100)
 
 
 class AdminUserUpdateRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=50)
-    access_level: Literal["operator", "manager", "admin"]
+    access_level: Literal["operator", "manager"]
     is_active: bool
 
 

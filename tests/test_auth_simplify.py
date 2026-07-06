@@ -6,6 +6,7 @@ Design: 관리자는 admin 하나, 작업자는 이름 입력(근태 제외).
 from __future__ import annotations
 
 import importlib
+import uuid
 
 
 def _client():
@@ -19,7 +20,8 @@ def _client():
     return TestClient(mainmod.app)
 
 
-def test_admin_account_exists_and_is_admin():
+def test_admin_account_exists_as_manager():
+    """권한 2단계 통합: admin 계정은 최상위 '책임자(manager)'로 존재한다(구 admin 흡수)."""
     _client()  # triggers init_db + migrations
     from src.db import get_connection
 
@@ -28,7 +30,7 @@ def test_admin_account_exists_and_is_admin():
             "SELECT access_level, is_active FROM users WHERE username = 'admin'"
         ).fetchone()
     assert row is not None
-    assert row["access_level"] == "admin"
+    assert row["access_level"] == "manager"
     assert row["is_active"] == 1
 
 
@@ -105,10 +107,11 @@ def test_admin_delete_user_with_legacy_chat_table():
     tok = client.cookies.get("csrftoken")
     headers = {"x-csrftoken": tok} if tok else {}
 
+    uname = "todelete_" + uuid.uuid4().hex[:8]
     res = client.post(
         "/api/admin/users",
         json={
-            "username": "todelete2",
+            "username": uname,
             "display_name": "잔재 참조 대상",
             "access_level": "operator",
             "password": "Passw0rd!23",
@@ -148,5 +151,61 @@ def test_admin_delete_user_with_legacy_chat_table():
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_messages'"
         ).fetchone() is None
 
-    res = client.delete(f"/api/admin/users/{user_id}", headers=headers)
+
+def test_legacy_admin_level_collapsed_to_manager():
+    """권한 2단계: 남아있는 access_level='admin' 계정을 마이그레이션이 manager 로 승격."""
+    client = _client()
+    res = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    res = client.post(
+        "/api/admin/users",
+        json={
+            "username": "legacyadmin_" + uuid.uuid4().hex[:8],
+            "display_name": "구 관리자",
+            "access_level": "manager",
+            "password": "Passw0rd!23",
+        },
+        headers=headers,
+    )
     assert res.status_code == 200
+    uid = res.json()["user"]["id"]
+
+    from src.db import get_connection
+    from src.db.migrations import apply_schema_migrations
+
+    with get_connection() as conn:
+        # 구 3단계 잔존값 재현
+        conn.execute("UPDATE users SET access_level = 'admin' WHERE id = ?", (uid,))
+        conn.execute(
+            "DELETE FROM schema_migrations WHERE name = 'collapse_admin_into_manager'"
+        )
+        apply_schema_migrations(conn)
+        conn.commit()
+        level = conn.execute(
+            "SELECT access_level FROM users WHERE id = ?", (uid,)
+        ).fetchone()["access_level"]
+    assert level == "manager"
+
+
+def test_create_user_rejects_admin_level():
+    """권한 2단계: 사용자 생성 시 'admin' 등급은 더 이상 허용되지 않는다(422)."""
+    client = _client()
+    res = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    res = client.post(
+        "/api/admin/users",
+        json={
+            "username": "wannabeadmin",
+            "display_name": "관리자 지망",
+            "access_level": "admin",
+            "password": "Passw0rd!23",
+        },
+        headers=headers,
+    )
+    assert res.status_code == 422

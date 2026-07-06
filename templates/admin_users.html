@@ -18,7 +18,7 @@
             <p class="panel-subtitle">
               계량용 담당자와 관리용 책임자 계정을 등록하고 권한을 설정합니다.
             </p>
-            <p class="mode-note">권한 레벨: 담당자 → 책임자 → 관리자</p>
+            <p class="mode-note">권한 레벨: 담당자(현장·조회) → 책임자(관리 전권)</p>
           </div>
           <input id="current-user-id" type="hidden" value="{{ current_user.id }}" />
         </section>
@@ -31,10 +31,6 @@
           <article class="panel summary-card">
             <span class="summary-label">활성 사용자</span>
             <strong id="summary-active" class="summary-value">0</strong>
-          </article>
-          <article class="panel summary-card">
-            <span class="summary-label">관리자</span>
-            <strong id="summary-admins" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
             <span class="summary-label">책임자</span>
@@ -64,7 +60,6 @@
                 <select id="create-access-level" class="select">
                   <option value="operator">담당자</option>
                   <option value="manager">책임자</option>
-                  <option value="admin">관리자</option>
                 </select>
               </div>
               <div class="form-group">
@@ -259,5 +254,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260626b"></script>
+    <script src="/static/js/admin_users.js?v=20260706a"></script>
 {% endblock %}

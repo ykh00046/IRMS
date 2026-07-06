@@ -116,7 +116,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "current_user": current_user,
             "next_url": next_url,
             "show_demo_credentials": SEED_DEMO_DATA,
-            "managers": list_users_by_access_levels("manager", "admin"),
+            "managers": list_users_by_access_levels("manager"),
         })
 
     @router.get("/weighing", response_class=HTMLResponse)
@@ -179,7 +179,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/admin/users", response_class=HTMLResponse)
     def admin_users_page(request: Request) -> Response:
-        return _protected_page_response(request, templates, "admin_users.html", "admin")
+        return _protected_page_response(request, templates, "admin_users.html", "manager")
 
     @router.get("/attendance", response_class=HTMLResponse)
     def attendance_page(request: Request) -> Response:

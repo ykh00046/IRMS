@@ -294,19 +294,19 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         ).fetchone()
         if existing:
             connection.execute(
-                "UPDATE users SET role = 'admin', access_level = 'admin', is_active = 1 "
+                "UPDATE users SET role = 'admin', access_level = 'manager', is_active = 1 "
                 "WHERE username = 'admin'"
             )
         else:
             connection.execute(
                 "INSERT INTO users (username, password_hash, display_name, role, "
                 "access_level, is_active, created_at) "
-                "VALUES ('admin', ?, '관리자', 'admin', 'admin', 1, ?)",
+                "VALUES ('admin', ?, '책임자', 'admin', 'manager', 1, ?)",
                 (hash_password("admin"), utc_now_text()),
             )
         record_migration(connection, "ensure_single_admin")
 
-    # admin access level: 김지훈, 김진우, 함지안 → admin
+    # admin access level: 김지훈, 김진우, 함지안 → admin (구 3단계 시절 승격)
     if not has_migration(connection, "admin_access_level"):
         connection.execute(
             """
@@ -317,6 +317,19 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             """
         )
         record_migration(connection, "admin_access_level")
+
+    # 권한 2단계 통합: 구 '관리자(admin)'를 '책임자(manager)'로 흡수. 남아있는 모든
+    # access_level='admin' 계정을 manager 로 승격하고, 기본 admin 계정의 표시 이름이
+    # 옛 기본값 '관리자'면 '책임자'로 정리(사용자가 바꾼 이름은 보존).
+    if not has_migration(connection, "collapse_admin_into_manager"):
+        connection.execute(
+            "UPDATE users SET access_level = 'manager' WHERE access_level = 'admin'"
+        )
+        connection.execute(
+            "UPDATE users SET display_name = '책임자' "
+            "WHERE username = 'admin' AND display_name = '관리자'"
+        )
+        record_migration(connection, "collapse_admin_into_manager")
 
     # 잉크/사출 OCR 기능 (28aa888, 2026-05-19) 삭제 후 잔존 테이블 정리.
     # dev DB는 이미 깨끗하므로 no-op, 운영 DB(현장 PC)에서만 실제 DROP 수행.

@@ -561,7 +561,7 @@
   changePwBtn?.addEventListener("click", () => {
     if (!ownEmpId) {
       window.IRMS?.notify?.(
-        "관리자 전용 보기에서는 본인 근태 비밀번호를 바꿀 대상이 없습니다.",
+        "책임자 전용 보기에서는 본인 근태 비밀번호를 바꿀 대상이 없습니다.",
         "info"
       );
       return;

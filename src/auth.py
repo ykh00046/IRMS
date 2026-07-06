@@ -6,16 +6,19 @@ from fastapi import HTTPException, Request, status
 from .db import get_connection
 from .security import verify_password
 
+# 권한 2단계: 담당자(현장·조회) < 책임자(최상위 — 레시피·근태·사용자·시스템 관리 전부).
+# 구 3단계의 '관리자(admin)'는 책임자로 흡수됨. 하위호환: 남아있는 access_level='admin'
+# 값은 to_public_user/마이그레이션에서 manager 로 승격 처리.
 ACCESS_LEVEL_RANK = {
     "operator": 1,
     "manager": 2,
-    "admin": 3,
+    "admin": 2,  # legacy value → 책임자와 동급으로 취급(마이그레이션 전 잔존 대비)
 }
 
 ACCESS_LEVEL_LABEL = {
     "operator": "담당자",
     "manager": "책임자",
-    "admin": "관리자",
+    "admin": "책임자",  # legacy value
 }
 
 # 배합(잉크) 쪽은 단일 신뢰 도구라 작업자/책임자 권한 구분이 의미 없다. 로그인이 없으면
@@ -33,6 +36,9 @@ FIELD_USER = {
 
 def to_public_user(row) -> dict[str, Any]:
     access_level = row["access_level"] or ("manager" if row["role"] == "admin" else "operator")
+    # 구 3단계 잔존 값 정규화: 관리자(admin) → 책임자(manager).
+    if access_level == "admin":
+        access_level = "manager"
     return {
         "id": row["id"],
         "username": row["username"],
