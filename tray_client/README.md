@@ -31,7 +31,7 @@
 
 ### 설치
 
-1. 관리자가 배포한 `IRMS-Notice-Setup-2.0.0.exe` 더블클릭
+1. 관리자가 배포한 `IRMS-Notice-Setup-3.0.0.exe` 더블클릭
 2. Windows가 "알 수 없는 게시자" 경고를 띄우면 **"추가 정보" → "실행"**
 3. 한국어 설치 마법사에서 **다음 → 다음 → 설치**
 4. "Windows 시작 시 자동 실행" 체크(기본)
@@ -92,11 +92,11 @@ build\build.bat
 
 산출물:
 - `tray_client\dist\IRMS-Notice\` — 실행 파일 폴더 (수동 복사용)
-- `tray_client\build\Output\IRMS-Notice-Setup-2.0.0.exe` — **배포용 설치 파일**
+- `tray_client\build\Output\IRMS-Notice-Setup-3.0.0.exe` — **배포용 설치 파일**
 
 ### 2.2 현장 PC 7대 설치
 
-1. `IRMS-Notice-Setup-2.0.0.exe`를 USB / 공유 폴더로 복사
+1. `IRMS-Notice-Setup-3.0.0.exe`를 USB / 공유 폴더로 복사
 2. 각 PC에서 더블클릭 → 다음 → 다음 → 설치 (이전 버전 위에 덮어쓰기)
 3. 설치 직후 자동 실행됨. 트레이 아이콘 확인
 4. 우클릭 → "근태 알림 바로 확인"으로 실제 이상자 조회와 팝업 동작 확인
@@ -118,10 +118,13 @@ build\build.bat
 ```
 tray_client/
 ├── src/
-│   ├── main.py             # pystray 기반 트레이 앱 진입점
+│   ├── main.py             # pystray 통합 트레이 진입점(알림/저울 토글)
 │   ├── attendance_alerts.py # /api/public/attendance-alerts/month 폴러 (슬롯 스케줄)
-│   ├── attendance_popup.py # 근태 이상 팝업 UI (Tkinter)
-│   ├── config.py           # %APPDATA% JSON 설정 (server_url만 보존)
+│   ├── viscosity_alerts.py # 점도 입력 리마인더 폴러
+│   ├── attendance_popup.py # 근태/점도 팝업 UI (Tkinter)
+│   ├── scale_service.py    # 저울 연동 서비스(scale_agent 재사용, HTTP start/stop)
+│   ├── autostart.py        # 부팅 자동 실행(HKCU Run) + 구 항목 정리
+│   ├── config.py           # %APPDATA% JSON 설정 (server_url + 알림/저울 토글)
 │   ├── logger.py           # 일별 로테이팅 파일 로거
 │   └── assets_gen.py       # 아이콘/wav 런타임 생성
 ├── assets/                 # 빌드 시 자동 생성

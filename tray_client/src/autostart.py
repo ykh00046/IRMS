@@ -16,8 +16,10 @@ from pathlib import Path
 logger = logging.getLogger("irms_notice")
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-RUN_NAME = "IRMS-Field"
-# 통합되며 폐기된 구 개별 앱의 자동 실행 항목(있으면 정리).
+# 설치 프로그램(installer.iss)이 등록하는 자동 실행 이름과 반드시 일치해야 한다.
+# (다르면 같은 exe 를 가리키는 항목이 둘 생겨 부팅 시 이중 실행된다.)
+RUN_NAME = "IRMS-Notice"
+# 통합되며 폐기된 구 개별 앱(저울 에이전트)의 자동 실행 항목(있으면 정리).
 LEGACY_RUN_NAMES = ("IRMS-Scale",)
 
 

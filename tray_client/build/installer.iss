@@ -5,8 +5,8 @@
 ;
 ; Output: Output\IRMS-Notice-Setup-2.0.0.exe
 
-#define MyAppName "IRMS Notice"
-#define MyAppVersion "2.0.0"
+#define MyAppName "IRMS 현장 도우미"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "IRMS"
 #define MyAppExeName "IRMS-Notice.exe"
 
