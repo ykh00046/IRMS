@@ -6,6 +6,7 @@ from unittest.mock import patch
 import tray_client.src.main as tray_main
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
 from tray_client.src.attendance_popup import (
+    AttendanceAlertPopupManager,
     PopupPayload,
     build_live_popup_payload,
     build_viscosity_popup_payload,
@@ -362,6 +363,49 @@ class TrayNavigationTests(unittest.TestCase):
         with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
             self.assertFalse(app._attendance_active())
             self.assertFalse(app._viscosity_active())
+
+
+class CombinedPopupTests(unittest.TestCase):
+    """근태·점도가 한 창에 섹션으로 합쳐지는 로직 (Tkinter 없이 — 창 미생성 시 렌더는 no-op)."""
+
+    def _manager(self):
+        self.confirmed = []
+        self.muted = []
+        return AttendanceAlertPopupManager(
+            on_confirm=lambda p: self.confirmed.append(p.action_key),
+            on_dismiss_today=lambda: self.muted.append(1),
+        )
+
+    @staticmethod
+    def _payload(kind: str) -> PopupPayload:
+        return PopupPayload(title=kind, badge_text="1", summary="", lines=[], action_key=kind)
+
+    def test_two_kinds_merge_into_one_window(self) -> None:
+        mgr = self._manager()
+        mgr._show_payload(self._payload("attendance"))
+        mgr._show_payload(self._payload("viscosity"))
+        self.assertEqual(list(mgr._sections), ["attendance", "viscosity"])
+
+    def test_confirm_removes_only_that_section(self) -> None:
+        mgr = self._manager()
+        att = self._payload("attendance")
+        mgr._sections = {"attendance": att, "viscosity": self._payload("viscosity")}
+        mgr._confirm_section(att)
+        self.assertEqual(self.confirmed, ["attendance"])
+        self.assertEqual(list(mgr._sections), ["viscosity"])  # 다른 종류는 남는다
+
+    def test_dismiss_clears_all_sections(self) -> None:
+        mgr = self._manager()
+        mgr._sections = {"attendance": self._payload("attendance"), "viscosity": self._payload("viscosity")}
+        mgr._dismiss()
+        self.assertEqual(mgr._sections, {})
+
+    def test_dismiss_today_mutes_and_clears(self) -> None:
+        mgr = self._manager()
+        mgr._sections = {"viscosity": self._payload("viscosity")}
+        mgr._dismiss_today()
+        self.assertEqual(self.muted, [1])
+        self.assertEqual(mgr._sections, {})
 
 
 if __name__ == "__main__":

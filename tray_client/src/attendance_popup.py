@@ -29,6 +29,7 @@ LINE_TEXT = "#111827"
 TABLE_HEADER_BG = "#e8edf5"
 TABLE_BORDER = "#cbd5e1"
 TABLE_ROW_ALT = "#f8fafc"
+HAIR = "#eef2f7"
 BUTTON_SUBTLE_BG = "#f8fafc"
 BUTTON_SUBTLE_FG = "#334155"
 BUTTON_MUTED_FG = "#64748b"
@@ -59,6 +60,11 @@ ACCENT_TOKENS = {
         "primary_active": "#115e59",
     },
 }
+
+# 알림 종류(action_key) → 섹션 라벨 / 표시 순서. 근태·점도가 같이 오면 한 창에 이 순서로 쌓는다.
+KIND_LABEL = {"attendance": "근태", "viscosity": "점도"}
+KIND_ORDER = ("attendance", "viscosity")
+KIND_SECTION_TITLE = {"attendance": "근태 확인", "viscosity": "점도 입력"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +191,12 @@ def build_viscosity_popup_payload(payload: dict[str, Any]) -> PopupPayload:
 
 
 class AttendanceAlertPopupManager:
+    """근태·점도 알림을 한 창에 섹션으로 합쳐 보여주는 팝업 매니저.
+
+    두 종류가 겹쳐 와도 하나가 다른 하나를 덮어쓰지 않고, 종류별 섹션(표/목록)과
+    종류별 확인 버튼을 한 창에 쌓아 보여준다. 한 종류만 있으면 그 섹션만 뜬다.
+    """
+
     def __init__(
         self,
         on_confirm: Callable[[PopupPayload], None],
@@ -193,20 +205,14 @@ class AttendanceAlertPopupManager:
         self._on_confirm = on_confirm
         self._on_dismiss_today = on_dismiss_today
         # 큐 항목: ("show", payload) | ("call", fn(root)) | ("shutdown", None).
-        # "call" 은 설정 창 등 부가 UI 를 같은 Tkinter 스레드에서 생성하기 위한 통로.
         self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._start_lock = threading.Lock()
         self._root = None
         self._window = None
-        self._title_var = None
-        self._badge_var = None
-        self._summary_var = None
-        self._lines_frame = None
-        self._status_dot = None
-        self._badge_label = None
-        self._confirm_button = None
-        self._current_payload: PopupPayload | None = None
+        self._body = None  # 섹션을 새로 그리는 컨테이너(매 렌더마다 자식 제거 후 재구성)
+        # 현재 창에 표시 중인 섹션들. kind(action_key) -> 최신 payload.
+        self._sections: dict[str, PopupPayload] = {}
 
     def start(self) -> None:
         if tk is None:
@@ -271,7 +277,7 @@ class AttendanceAlertPopupManager:
             elif action == "call" and callable(payload):
                 try:
                     payload(self._root)
-                except Exception as exc:  # noqa: BLE001 - 설정 창 오류가 UI 스레드를 죽이지 않게
+                except Exception as exc:  # noqa: BLE001 - 부가 창 오류가 UI 스레드를 죽이지 않게
                     logger.warning("ui call failed: %s", exc)
         if should_stop:
             self._destroy_window()
@@ -281,11 +287,11 @@ class AttendanceAlertPopupManager:
             return
         self._root.after(QUEUE_POLL_MS, self._drain_queue)
 
+    # ── 창 생성 ──────────────────────────────────────────────────
     def _ensure_window(self) -> None:
         assert tk is not None
         if self._root is None or self._window is not None:
             return
-
         window = tk.Toplevel(self._root)
         window.withdraw()
         window.title("IRMS 현장 알림")
@@ -293,148 +299,120 @@ class AttendanceAlertPopupManager:
         window.overrideredirect(True)
         window.resizable(False, False)
         window.configure(bg=PANEL_BORDER)
-        window.protocol("WM_DELETE_WINDOW", self._dismiss_window)
-
-        panel = tk.Frame(
+        window.protocol("WM_DELETE_WINDOW", self._dismiss)
+        body = tk.Frame(
             window,
             bg=PANEL_BG,
             highlightthickness=1,
             highlightbackground=PANEL_BORDER,
             highlightcolor=PANEL_BORDER,
             padx=16,
-            pady=16,
+            pady=14,
         )
-        panel.pack(fill="both", expand=True)
+        body.pack(fill="both", expand=True)
+        self._body = body
+        self._window = window
 
-        self._title_var = tk.StringVar()
-        self._badge_var = tk.StringVar()
-        self._summary_var = tk.StringVar()
+    # ── 병합 + 렌더 ──────────────────────────────────────────────
+    def _show_payload(self, payload: PopupPayload) -> None:
+        self._sections[payload.action_key] = payload
+        self._render()
 
-        header = tk.Frame(panel, bg=PANEL_BG)
+    def _render(self) -> None:
+        self._ensure_window()
+        if self._window is None or self._body is None:
+            return
+        order = [k for k in KIND_ORDER if k in self._sections]
+        # 알 수 없는 종류가 있으면 뒤에 붙임(안전)
+        order += [k for k in self._sections if k not in KIND_ORDER]
+        if not order:
+            self._dismiss()
+            return
+
+        for child in self._body.winfo_children():
+            child.destroy()
+
+        self._build_header(order)
+        for index, kind in enumerate(order):
+            if index > 0:
+                tk.Frame(self._body, bg=HAIR, height=1).pack(fill="x", pady=(12, 0))
+            self._build_section(self._sections[kind])
+        self._build_footer()
+
+        self._window.update_idletasks()
+        width = self._window.winfo_reqwidth()
+        height = self._window.winfo_reqheight()
+        screen_width = self._window.winfo_screenwidth()
+        screen_height = self._window.winfo_screenheight()
+        x = max(0, screen_width - width - POPUP_MARGIN_X)
+        y = max(0, screen_height - height - POPUP_MARGIN_Y)
+        self._window.geometry(f"+{x}+{y}")
+        self._window.deiconify()
+        self._window.lift()
+
+    def _build_header(self, order: list[str]) -> None:
+        assert tk is not None
+        header = tk.Frame(self._body, bg=PANEL_BG)
         header.pack(fill="x")
         title_row = tk.Frame(header, bg=PANEL_BG)
         title_row.pack(side="left", fill="x", expand=True)
 
-        status_dot = tk.Canvas(title_row, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
-        status_dot.create_oval(2, 2, 8, 8, fill=ACCENT_TOKENS["live"]["dot"], outline="")
-        status_dot.pack(side="left", pady=(3, 0))
-        self._status_dot = status_dot
+        dot = tk.Canvas(title_row, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
+        dot.create_oval(2, 2, 8, 8, fill="#334155", outline="")
+        dot.pack(side="left", pady=(3, 0))
 
+        title = "현장 확인 필요" if len(order) > 1 else self._sections[order[0]].title
         tk.Label(
-            title_row,
-            textvariable=self._title_var,
-            bg=PANEL_BG,
-            fg=PANEL_TEXT,
-            font=("Malgun Gothic", 11, "bold"),
-            anchor="w",
-            justify="left",
+            title_row, text=title, bg=PANEL_BG, fg=PANEL_TEXT,
+            font=("Malgun Gothic", 11, "bold"), anchor="w", justify="left",
         ).pack(side="left", padx=(8, 0))
 
-        badge_label = tk.Label(
-            header,
-            textvariable=self._badge_var,
-            bg=ACCENT_TOKENS["live"]["badge_bg"],
-            fg=ACCENT_TOKENS["live"]["badge_fg"],
-            font=("Malgun Gothic", 8, "bold"),
-            padx=10,
-            pady=3,
-        )
-        badge_label.pack(side="right")
-        self._badge_label = badge_label
+        badges = tk.Frame(header, bg=PANEL_BG)
+        badges.pack(side="right")
+        for kind in order:
+            payload = self._sections[kind]
+            accent = ACCENT_TOKENS.get(payload.accent, ACCENT_TOKENS["live"])
+            text = f"{KIND_LABEL.get(kind, '')} {payload.badge_text}".strip()
+            tk.Label(
+                badges, text=text, bg=accent["badge_bg"], fg=accent["badge_fg"],
+                font=("Malgun Gothic", 8, "bold"), padx=10, pady=3,
+            ).pack(side="left", padx=(6, 0))
 
-        tk.Label(
-            panel,
-            textvariable=self._summary_var,
-            bg=PANEL_BG,
-            fg=PANEL_MUTED,
-            font=("Malgun Gothic", 9),
-            anchor="w",
-            justify="left",
-            wraplength=POPUP_WIDTH - 48,
-            pady=10,
-        ).pack(fill="x")
-
-        divider = tk.Frame(panel, bg="#eef2f7", height=1)
-        divider.pack(fill="x", pady=(0, 12))
-
-        lines_frame = tk.Frame(panel, bg=PANEL_BG)
-        lines_frame.pack(fill="x")
-        self._lines_frame = lines_frame
-
-        buttons = tk.Frame(panel, bg=PANEL_BG)
-        buttons.pack(fill="x", pady=(14, 0))
-        confirm_button = tk.Button(
-            buttons,
-            text="확인",
-            command=self._confirm,
-            bg=ACCENT_TOKENS["live"]["primary_bg"],
-            fg=ACCENT_TOKENS["live"]["primary_fg"],
-            activebackground=ACCENT_TOKENS["live"]["primary_active"],
-            activeforeground=ACCENT_TOKENS["live"]["primary_fg"],
-            relief="flat",
-            bd=0,
-            padx=16,
-            pady=8,
-            font=("Malgun Gothic", 9, "bold"),
-            cursor="hand2",
-        )
-        confirm_button.pack(side="left")
-        self._confirm_button = confirm_button
-
-        tk.Button(
-            buttons,
-            text="닫기",
-            command=self._dismiss_window,
-            bg=BUTTON_SUBTLE_BG,
-            fg=BUTTON_SUBTLE_FG,
-            activebackground="#e2e8f0",
-            activeforeground=BUTTON_SUBTLE_FG,
-            relief="flat",
-            bd=0,
-            padx=14,
-            pady=8,
-            font=("Malgun Gothic", 9),
-            cursor="hand2",
-        ).pack(side="left", padx=(8, 0))
-        tk.Button(
-            buttons,
-            text="오늘은 그만",
-            command=self._dismiss_today,
-            bg=PANEL_BG,
-            fg=BUTTON_MUTED_FG,
-            activebackground=PANEL_BG,
-            activeforeground=BUTTON_SUBTLE_FG,
-            relief="flat",
-            bd=0,
-            padx=4,
-            pady=8,
-            font=("Malgun Gothic", 9),
-            cursor="hand2",
-        ).pack(side="right")
-
-        self._window = window
-
-    def _apply_accent(self, payload: PopupPayload) -> None:
+    def _build_section(self, payload: PopupPayload) -> None:
         assert tk is not None
         accent = ACCENT_TOKENS.get(payload.accent, ACCENT_TOKENS["live"])
-        if self._status_dot is not None:
-            self._status_dot.delete("all")
-            self._status_dot.create_oval(2, 2, 8, 8, fill=accent["dot"], outline="")
-        if self._badge_label is not None:
-            self._badge_label.configure(bg=accent["badge_bg"], fg=accent["badge_fg"])
-        if self._confirm_button is not None:
-            self._confirm_button.configure(
-                bg=accent["primary_bg"],
-                fg=accent["primary_fg"],
-                activebackground=accent["primary_active"],
-                activeforeground=accent["primary_fg"],
-                text=payload.confirm_text,
-            )
+        section = tk.Frame(self._body, bg=PANEL_BG)
+        section.pack(fill="x", pady=(12, 0))
 
-    def _render_table(self, payload: PopupPayload) -> None:
+        head = tk.Frame(section, bg=PANEL_BG)
+        head.pack(fill="x", pady=(0, 8))
+        left = tk.Frame(head, bg=PANEL_BG)
+        left.pack(side="left")
+        dot = tk.Canvas(left, width=8, height=8, bg=PANEL_BG, highlightthickness=0, bd=0)
+        dot.create_oval(1, 1, 7, 7, fill=accent["dot"], outline="")
+        dot.pack(side="left", pady=(4, 0))
+        tk.Label(
+            left, text=KIND_SECTION_TITLE.get(payload.action_key, payload.title),
+            bg=PANEL_BG, fg=PANEL_TEXT, font=("Malgun Gothic", 10, "bold"),
+        ).pack(side="left", padx=(8, 0))
+        tk.Label(
+            left, text=payload.badge_text, bg=PANEL_BG, fg=PANEL_MUTED,
+            font=("Malgun Gothic", 9),
+        ).pack(side="left", padx=(6, 0))
+
+        tk.Button(
+            head, text=payload.confirm_text, command=lambda p=payload: self._confirm_section(p),
+            bg=accent["primary_bg"], fg=accent["primary_fg"],
+            activebackground=accent["primary_active"], activeforeground=accent["primary_fg"],
+            relief="flat", bd=0, padx=14, pady=6, font=("Malgun Gothic", 9, "bold"), cursor="hand2",
+        ).pack(side="right")
+
+        if payload.table_rows:
+            self._render_table(section, payload.table_rows)
+        self._render_lines(section, payload.lines)
+
+    def _render_table(self, parent: Any, rows: list[dict[str, str]]) -> None:
         assert tk is not None
-        if self._lines_frame is None:
-            return
         columns = [
             ("emp_id", "사번", 8, "center"),
             ("name", "성명", 8, "center"),
@@ -445,130 +423,86 @@ class AttendanceAlertPopupManager:
             ("extra_content", "추가 내용", 30, "w"),
             ("status", "처리 상황", 22, "w"),
         ]
-        table = tk.Frame(
-            self._lines_frame,
-            bg=TABLE_BORDER,
-            highlightthickness=1,
-            highlightbackground=TABLE_BORDER,
-        )
+        table = tk.Frame(parent, bg=TABLE_BORDER, highlightthickness=1, highlightbackground=TABLE_BORDER)
         table.pack(fill="x")
-
         for index, (_key, label, width, anchor) in enumerate(columns):
             table.grid_columnconfigure(index, weight=1 if index in (5, 6, 7) else 0)
             tk.Label(
-                table,
-                text=label,
-                bg=TABLE_HEADER_BG,
-                fg=PANEL_TEXT,
-                font=("Malgun Gothic", 8, "bold"),
-                width=width,
-                padx=5,
-                pady=5,
-                anchor=anchor,
+                table, text=label, bg=TABLE_HEADER_BG, fg=PANEL_TEXT,
+                font=("Malgun Gothic", 8, "bold"), width=width, padx=5, pady=5, anchor=anchor,
             ).grid(row=0, column=index, sticky="nsew", padx=(0, 1), pady=(0, 1))
-
-        for row_index, row_data in enumerate(payload.table_rows, start=1):
+        for row_index, row_data in enumerate(rows, start=1):
             bg = PANEL_BG if row_index % 2 else TABLE_ROW_ALT
             for column_index, (key, _label, width, anchor) in enumerate(columns):
                 tk.Label(
-                    table,
-                    text=row_data.get(key, ""),
-                    bg=bg,
-                    fg=LINE_TEXT,
-                    font=("Malgun Gothic", 8),
-                    width=width,
-                    padx=5,
-                    pady=5,
-                    anchor=anchor,
+                    table, text=row_data.get(key, ""), bg=bg, fg=LINE_TEXT,
+                    font=("Malgun Gothic", 8), width=width, padx=5, pady=5, anchor=anchor,
                     justify="left" if anchor == "w" else "center",
                     wraplength=260 if key in ("extra_content", "status") else 180,
                 ).grid(row=row_index, column=column_index, sticky="nsew", padx=(0, 1), pady=(0, 1))
 
-    def _render_lines(self, payload: PopupPayload) -> None:
+    def _render_lines(self, parent: Any, lines: list[str]) -> None:
         assert tk is not None
-        if self._lines_frame is None:
-            return
-        for child in self._lines_frame.winfo_children():
-            child.destroy()
-        if payload.table_rows:
-            self._render_table(payload)
-        for line in payload.lines:
-            row = tk.Frame(self._lines_frame, bg=PANEL_BG)
+        for line in lines:
+            row = tk.Frame(parent, bg=PANEL_BG)
             row.pack(fill="x", pady=2)
             if line.startswith("+"):
                 tk.Label(
-                    row,
-                    text=line,
-                    bg=PANEL_BG,
-                    fg=PANEL_MUTED,
-                    font=("Malgun Gothic", 9, "bold"),
-                    anchor="w",
-                    justify="left",
+                    row, text=line, bg=PANEL_BG, fg=PANEL_MUTED,
+                    font=("Malgun Gothic", 9, "bold"), anchor="w", justify="left",
                 ).pack(fill="x", anchor="w")
                 continue
             dot = tk.Canvas(row, width=8, height=8, bg=PANEL_BG, highlightthickness=0, bd=0)
             dot.create_oval(2, 2, 6, 6, fill="#94a3b8", outline="")
             dot.pack(side="left", pady=(5, 0))
             tk.Label(
-                row,
-                text=line,
-                bg=PANEL_BG,
-                fg=LINE_TEXT,
-                font=("Malgun Gothic", 9),
-                anchor="w",
-                justify="left",
-                wraplength=POPUP_WIDTH - 52,
+                row, text=line, bg=PANEL_BG, fg=LINE_TEXT, font=("Malgun Gothic", 9),
+                anchor="w", justify="left", wraplength=POPUP_WIDTH - 52,
             ).pack(side="left", fill="x", expand=True, padx=(8, 0))
 
-    def _show_payload(self, payload: PopupPayload) -> None:
-        self._ensure_window()
-        if (
-            self._window is None
-            or self._title_var is None
-            or self._badge_var is None
-            or self._summary_var is None
-        ):
-            return
-        self._current_payload = payload
-        self._title_var.set(payload.title)
-        self._badge_var.set(payload.badge_text)
-        self._summary_var.set(payload.summary)
-        self._apply_accent(payload)
-        self._render_lines(payload)
+    def _build_footer(self) -> None:
+        assert tk is not None
+        buttons = tk.Frame(self._body, bg=PANEL_BG)
+        buttons.pack(fill="x", pady=(16, 0))
+        tk.Button(
+            buttons, text="닫기", command=self._dismiss,
+            bg=BUTTON_SUBTLE_BG, fg=BUTTON_SUBTLE_FG, activebackground="#e2e8f0",
+            activeforeground=BUTTON_SUBTLE_FG, relief="flat", bd=0, padx=14, pady=8,
+            font=("Malgun Gothic", 9), cursor="hand2",
+        ).pack(side="left")
+        tk.Button(
+            buttons, text="오늘은 그만", command=self._dismiss_today,
+            bg=PANEL_BG, fg=BUTTON_MUTED_FG, activebackground=PANEL_BG,
+            activeforeground=BUTTON_SUBTLE_FG, relief="flat", bd=0, padx=4, pady=8,
+            font=("Malgun Gothic", 9), cursor="hand2",
+        ).pack(side="right")
 
-        self._window.update_idletasks()
-        height = self._window.winfo_reqheight()
-        screen_width = self._window.winfo_screenwidth()
-        screen_height = self._window.winfo_screenheight()
-        x = max(0, screen_width - POPUP_WIDTH - POPUP_MARGIN_X)
-        y = max(0, screen_height - height - POPUP_MARGIN_Y)
-        self._window.geometry(f"{POPUP_WIDTH}x{height}+{x}+{y}")
-        self._window.deiconify()
-        self._window.lift()
-
-    def _confirm(self) -> None:
-        payload = self._current_payload
-        if payload is None:
-            self._dismiss_window()
-            return
+    # ── 동작 ─────────────────────────────────────────────────────
+    def _confirm_section(self, payload: PopupPayload) -> None:
         try:
             self._on_confirm(payload)
         finally:
-            self._dismiss_window()
+            # 처리한 섹션만 제거 — 다른 종류 알림은 창에 남겨 둔다.
+            self._sections.pop(payload.action_key, None)
+            if self._sections:
+                self._render()
+            else:
+                self._dismiss()
+
+    def _dismiss(self) -> None:
+        self._sections.clear()
+        if self._window is not None:
+            self._window.withdraw()
 
     def _dismiss_today(self) -> None:
         try:
             self._on_dismiss_today()
         finally:
-            self._dismiss_window()
-
-    def _dismiss_window(self) -> None:
-        if self._window is None:
-            return
-        self._window.withdraw()
+            self._dismiss()
 
     def _destroy_window(self) -> None:
         if self._window is None:
             return
         self._window.destroy()
         self._window = None
+        self._body = None
