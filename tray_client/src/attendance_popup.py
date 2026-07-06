@@ -332,12 +332,16 @@ class AttendanceAlertPopupManager:
         for child in self._body.winfo_children():
             child.destroy()
 
-        self._build_header(order)
-        for index, kind in enumerate(order):
-            if index > 0:
-                tk.Frame(self._body, bg=HAIR, height=1).pack(fill="x", pady=(12, 0))
-            self._build_section(self._sections[kind])
-        self._build_footer()
+        # 한 종류만 있으면 그 알림 하나만(제목 중복 없이). 둘 이상이면 공용 헤더 + 섹션들.
+        if len(order) == 1:
+            self._build_single(self._sections[order[0]])
+        else:
+            self._build_multi_header(order)
+            for index, kind in enumerate(order):
+                if index > 0:
+                    tk.Frame(self._body, bg=HAIR, height=1).pack(fill="x", pady=(12, 0))
+                self._build_section(self._sections[kind])
+            self._build_footer()
 
         self._window.update_idletasks()
         width = self._window.winfo_reqwidth()
@@ -350,20 +354,46 @@ class AttendanceAlertPopupManager:
         self._window.deiconify()
         self._window.lift()
 
-    def _build_header(self, order: list[str]) -> None:
+    def _build_single(self, payload: PopupPayload) -> None:
+        """한 종류만 있을 때 — 헤더(제목+개수) + 본문 + 하단(해당 확인 버튼). 제목 중복 없음."""
+        assert tk is not None
+        accent = ACCENT_TOKENS.get(payload.accent, ACCENT_TOKENS["live"])
+        header = tk.Frame(self._body, bg=PANEL_BG)
+        header.pack(fill="x")
+        left = tk.Frame(header, bg=PANEL_BG)
+        left.pack(side="left", fill="x", expand=True)
+        dot = tk.Canvas(left, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
+        dot.create_oval(2, 2, 8, 8, fill=accent["dot"], outline="")
+        dot.pack(side="left", pady=(3, 0))
+        tk.Label(
+            left, text=payload.title, bg=PANEL_BG, fg=PANEL_TEXT,
+            font=("Malgun Gothic", 11, "bold"), anchor="w", justify="left",
+        ).pack(side="left", padx=(8, 0))
+        tk.Label(
+            header, text=payload.badge_text, bg=accent["badge_bg"], fg=accent["badge_fg"],
+            font=("Malgun Gothic", 8, "bold"), padx=10, pady=3,
+        ).pack(side="right")
+
+        body = tk.Frame(self._body, bg=PANEL_BG)
+        body.pack(fill="x", pady=(12, 0))
+        if payload.table_rows:
+            self._render_table(body, payload.table_rows)
+        self._render_lines(body, payload.lines)
+
+        self._build_footer(primary=payload)
+
+    def _build_multi_header(self, order: list[str]) -> None:
+        """둘 이상일 때 공용 헤더 — '현장 확인 필요' + 종류별 배지(근태 N건 · 점도 M개)."""
         assert tk is not None
         header = tk.Frame(self._body, bg=PANEL_BG)
         header.pack(fill="x")
-        title_row = tk.Frame(header, bg=PANEL_BG)
-        title_row.pack(side="left", fill="x", expand=True)
-
-        dot = tk.Canvas(title_row, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
+        left = tk.Frame(header, bg=PANEL_BG)
+        left.pack(side="left", fill="x", expand=True)
+        dot = tk.Canvas(left, width=10, height=10, bg=PANEL_BG, highlightthickness=0, bd=0)
         dot.create_oval(2, 2, 8, 8, fill="#334155", outline="")
         dot.pack(side="left", pady=(3, 0))
-
-        title = "현장 확인 필요" if len(order) > 1 else self._sections[order[0]].title
         tk.Label(
-            title_row, text=title, bg=PANEL_BG, fg=PANEL_TEXT,
+            left, text="현장 확인 필요", bg=PANEL_BG, fg=PANEL_TEXT,
             font=("Malgun Gothic", 11, "bold"), anchor="w", justify="left",
         ).pack(side="left", padx=(8, 0))
 
@@ -460,16 +490,26 @@ class AttendanceAlertPopupManager:
                 anchor="w", justify="left", wraplength=POPUP_WIDTH - 52,
             ).pack(side="left", fill="x", expand=True, padx=(8, 0))
 
-    def _build_footer(self) -> None:
+    def _build_footer(self, primary: PopupPayload | None = None) -> None:
         assert tk is not None
         buttons = tk.Frame(self._body, bg=PANEL_BG)
         buttons.pack(fill="x", pady=(16, 0))
+        # 단일 섹션이면 확인 버튼을 하단에 둔다(복수일 땐 확인 버튼이 각 섹션에 있음).
+        if primary is not None:
+            accent = ACCENT_TOKENS.get(primary.accent, ACCENT_TOKENS["live"])
+            tk.Button(
+                buttons, text=primary.confirm_text,
+                command=lambda p=primary: self._confirm_section(p),
+                bg=accent["primary_bg"], fg=accent["primary_fg"],
+                activebackground=accent["primary_active"], activeforeground=accent["primary_fg"],
+                relief="flat", bd=0, padx=16, pady=8, font=("Malgun Gothic", 9, "bold"), cursor="hand2",
+            ).pack(side="left")
         tk.Button(
             buttons, text="닫기", command=self._dismiss,
             bg=BUTTON_SUBTLE_BG, fg=BUTTON_SUBTLE_FG, activebackground="#e2e8f0",
             activeforeground=BUTTON_SUBTLE_FG, relief="flat", bd=0, padx=14, pady=8,
             font=("Malgun Gothic", 9), cursor="hand2",
-        ).pack(side="left")
+        ).pack(side="left", padx=(8, 0) if primary is not None else (0, 0))
         tk.Button(
             buttons, text="오늘은 그만", command=self._dismiss_today,
             bg=PANEL_BG, fg=BUTTON_MUTED_FG, activebackground=PANEL_BG,
