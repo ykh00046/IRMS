@@ -83,6 +83,11 @@ def viscosity_page_url(server_url: str) -> str:
     return f"{server_url.rstrip('/')}/viscosity"
 
 
+def home_page_url(server_url: str) -> str:
+    # 공용 홈(런처) — 여기서 근태·반제품 제조·점도로 이동한다.
+    return f"{server_url.rstrip('/')}/"
+
+
 def open_in_browser(url: str) -> None:
     webbrowser.open_new_tab(url)
 
@@ -187,9 +192,7 @@ class TrayApp:
             MenuItem("점도 알림 바로 확인", self._show_viscosity_reminders),
             MenuItem("저울 다시 연결", self._reconnect_scale, enabled=lambda _item: self.config.scale_enabled),
             Menu.SEPARATOR,
-            MenuItem("근태 확인", self._open_attendance_menu),
-            MenuItem("반제품 제조 관리", self._open_blend_menu),
-            MenuItem("점도 등록", self._open_viscosity_menu),
+            MenuItem("홈 화면 열기", self._open_home),
             Menu.SEPARATOR,
             MenuItem(
                 "부팅 시 자동 실행",
@@ -270,14 +273,6 @@ class TrayApp:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("open attendance failed: %s", exc)
 
-    def _open_blend(self) -> None:
-        url = blend_page_url(self.config.server_url)
-        try:
-            open_in_browser(url)
-            self.logger.info("blend page opened: %s", url)
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("open blend failed: %s", exc)
-
     def _open_viscosity(self) -> None:
         url = viscosity_page_url(self.config.server_url)
         try:
@@ -286,14 +281,14 @@ class TrayApp:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("open viscosity failed: %s", exc)
 
-    def _open_attendance_menu(self, _icon, _item) -> None:
-        self._open_attendance()
-
-    def _open_blend_menu(self, _icon, _item) -> None:
-        self._open_blend()
-
-    def _open_viscosity_menu(self, _icon, _item) -> None:
-        self._open_viscosity()
+    def _open_home(self, _icon, _item) -> None:
+        # 공용 홈 하나로 이동 — 근태·반제품 제조·점도는 여기서 골라 들어간다.
+        url = home_page_url(self.config.server_url)
+        try:
+            open_in_browser(url)
+            self.logger.info("home page opened: %s", url)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("open home failed: %s", exc)
 
     def _open_logs(self, _icon, _item) -> None:
         path = logs_dir()

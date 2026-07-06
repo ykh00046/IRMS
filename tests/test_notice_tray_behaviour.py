@@ -269,6 +269,10 @@ class TrayNavigationTests(unittest.TestCase):
             tray_main.viscosity_page_url("http://192.168.11.147:9000/"),
             "http://192.168.11.147:9000/viscosity",
         )
+        self.assertEqual(
+            tray_main.home_page_url("http://192.168.11.147:9000/"),
+            "http://192.168.11.147:9000/",
+        )
 
     def test_attendance_and_viscosity_menu_trigger_pollers(self) -> None:
         events: list[str] = []
