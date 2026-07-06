@@ -192,7 +192,9 @@ class AttendanceAlertPopupManager:
     ) -> None:
         self._on_confirm = on_confirm
         self._on_dismiss_today = on_dismiss_today
-        self._queue: queue.Queue[tuple[str, PopupPayload | None]] = queue.Queue()
+        # 큐 항목: ("show", payload) | ("call", fn(root)) | ("shutdown", None).
+        # "call" 은 설정 창 등 부가 UI 를 같은 Tkinter 스레드에서 생성하기 위한 통로.
+        self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._start_lock = threading.Lock()
         self._root = None
@@ -233,6 +235,14 @@ class AttendanceAlertPopupManager:
             return
         self._queue.put(("show", payload))
 
+    def run_on_ui(self, fn: Callable[[Any], None]) -> None:
+        """Tkinter(UI) 스레드에서 fn(root) 를 실행 — 설정 창 등 부가 창 생성용."""
+        self.start()
+        if self._thread is None:
+            logger.warning("ui call skipped: tkinter thread unavailable")
+            return
+        self._queue.put(("call", fn))
+
     def _run(self) -> None:
         assert tk is not None
         try:
@@ -258,6 +268,11 @@ class AttendanceAlertPopupManager:
                 break
             if action == "show" and payload is not None:
                 self._show_payload(payload)
+            elif action == "call" and callable(payload):
+                try:
+                    payload(self._root)
+                except Exception as exc:  # noqa: BLE001 - 설정 창 오류가 UI 스레드를 죽이지 않게
+                    logger.warning("ui call failed: %s", exc)
         if should_stop:
             self._destroy_window()
             self._root.quit()

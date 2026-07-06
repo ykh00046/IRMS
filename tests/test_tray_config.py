@@ -33,25 +33,28 @@ def _load_config_module(app_data_root: Path):
 def test_defaults_alerts_on_scale_off(tmp_path):
     mod = _load_config_module(tmp_path)
     cfg = mod.Config.load()
-    assert cfg.alerts_enabled is True
+    assert cfg.attendance_alerts_enabled is True
+    assert cfg.viscosity_alerts_enabled is True
     assert cfg.scale_enabled is False
 
 
 def test_toggles_persist_across_reload(tmp_path):
     mod = _load_config_module(tmp_path)
     cfg = mod.Config.load()
-    cfg.alerts_enabled = False
+    cfg.attendance_alerts_enabled = False
+    cfg.viscosity_alerts_enabled = True
     cfg.scale_enabled = True
     cfg.save()
 
     # 새 인스턴스로 다시 읽어도(=재부팅 상당) 값 유지
     reloaded = mod.Config.load()
-    assert reloaded.alerts_enabled is False
+    assert reloaded.attendance_alerts_enabled is False
+    assert reloaded.viscosity_alerts_enabled is True
     assert reloaded.scale_enabled is True
 
     # 실제로 파일에 저장됐는지 확인
     saved = json.loads(mod.config_path().read_text(encoding="utf-8"))
-    assert saved["alerts_enabled"] is False
+    assert saved["attendance_alerts_enabled"] is False
     assert saved["scale_enabled"] is True
 
 
@@ -63,8 +66,21 @@ def test_legacy_config_without_toggles_gets_defaults(tmp_path):
 
     cfg = mod.Config.load()
     assert cfg.server_url == "http://10.0.0.5:9000"  # 기존 값 보존
-    assert cfg.alerts_enabled is True   # 누락 토글은 기본값
+    assert cfg.attendance_alerts_enabled is True   # 누락 토글은 기본값
+    assert cfg.viscosity_alerts_enabled is True
     assert cfg.scale_enabled is False
+
+
+def test_legacy_alerts_enabled_migrates_to_granular(tmp_path):
+    mod = _load_config_module(tmp_path)
+    # 옛 단일 토글 alerts_enabled=False → 근태·점도 개별 토글 모두 False 로 이관
+    mod.config_path().write_text(
+        json.dumps({"server_url": "http://x:9000", "alerts_enabled": False}), encoding="utf-8"
+    )
+    cfg = mod.Config.load()
+    assert cfg.attendance_alerts_enabled is False
+    assert cfg.viscosity_alerts_enabled is False
+    assert not hasattr(cfg, "alerts_enabled")
 
 
 def test_unknown_keys_dropped(tmp_path):

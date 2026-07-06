@@ -42,6 +42,7 @@ from .attendance_popup import AttendanceAlertPopupManager, PopupPayload
 from .config import Config, logs_dir
 from .logger import setup_logger
 from .scale_service import ScaleService
+from .settings_window import SettingsWindow
 from .viscosity_alerts import ViscosityAlertPoller
 
 # 통합 앱: 근태·점도 알림 + 저울 연동을 한 트레이에서. 각 기능은 메뉴에서 켜고 끌 수
@@ -102,20 +103,22 @@ class TrayApp:
             on_confirm=self._open_popup_target,
             on_dismiss_today=self._mute_alerts_for_today,
         )
-        # 알림 폴러는 항상 떠 있고, 아래 _alerts_active() 게이트로 on/off 된다.
-        # (config.alerts_enabled 토글 + '오늘만 끄기' 뮤트 두 조건을 모두 만족해야 발송)
+        # 알림 폴러는 항상 떠 있고, 근태/점도 각각의 게이트로 on/off 된다.
+        # (config 개별 토글 + '오늘만 끄기' 뮤트 두 조건을 모두 만족해야 발송)
         self.alert_poller = AttendanceAlertPoller(
             config=self.config,
             present_alert=self.alert_popup.show,
-            is_enabled_getter=self._alerts_active,
+            is_enabled_getter=self._attendance_active,
         )
         self.viscosity_poller = ViscosityAlertPoller(
             config=self.config,
             present_alert=self.alert_popup.show,
-            is_enabled_getter=self._alerts_active,
+            is_enabled_getter=self._viscosity_active,
         )
         # 저울은 포트·HTTP 서버를 잡으므로 토글 시 실제 start/stop 한다.
         self.scale = ScaleService(self.logger)
+        # 흩어진 토글/버튼을 모은 단일 설정 창(팝업 UI 스레드에서 생성).
+        self.settings = SettingsWindow(self)
 
     def run(self) -> None:
         if pystray is None:
@@ -124,8 +127,10 @@ class TrayApp:
                 "Install test dependencies with `pip install -r requirements-dev.txt`."
             ) from _PYSTRAY_IMPORT_ERROR
         self.logger.info(
-            "starting %s (server=%s, alerts=%s, scale=%s)",
-            APP_TITLE, self.config.server_url, self.config.alerts_enabled, self.config.scale_enabled,
+            "starting %s (server=%s, attendance=%s, viscosity=%s, scale=%s)",
+            APP_TITLE, self.config.server_url,
+            self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
+            self.config.scale_enabled,
         )
         autostart.ensure_default_on_first_run()
 
@@ -157,9 +162,14 @@ class TrayApp:
             return True
         return self._alert_mute_date != today_iso()
 
-    def _alerts_active(self) -> bool:
-        """실제 발송 여부 = 영구 토글(config) AND 오늘 뮤트 안 됨."""
-        return self.config.alerts_enabled and self._alerts_enabled_today()
+    def _attendance_active(self) -> bool:
+        return self.config.attendance_alerts_enabled and self._alerts_enabled_today()
+
+    def _viscosity_active(self) -> bool:
+        return self.config.viscosity_alerts_enabled and self._alerts_enabled_today()
+
+    def _any_alert_enabled(self) -> bool:
+        return self.config.attendance_alerts_enabled or self.config.viscosity_alerts_enabled
 
     def _save_config(self) -> None:
         try:
@@ -168,66 +178,79 @@ class TrayApp:
             self.logger.warning("config save failed: %s", exc)
 
     def _build_menu(self) -> Menu:
+        # 버튼을 늘리지 않는다 — 설정은 전부 '설정…' 창으로. 메뉴엔 자주 쓰는 동작만.
         return Menu(
-            MenuItem(
-                "알림 사용",
-                self._toggle_alerts,
-                checked=lambda _item: self.config.alerts_enabled,
-            ),
-            MenuItem(
-                "저울 연동 사용",
-                self._toggle_scale,
-                checked=lambda _item: self.config.scale_enabled,
-            ),
-            MenuItem(lambda _item: self.scale.status_line(), None, enabled=False),
+            MenuItem("설정…", self._open_settings, default=True),
+            MenuItem("홈 화면 열기", self._open_home),
             Menu.SEPARATOR,
             MenuItem(
                 lambda _item: (
                     "현장 알림 오늘만 끄기" if self._alerts_enabled_today() else "현장 알림 다시 켜기"
                 ),
                 self._toggle_alert_mute_today,
-                enabled=lambda _item: self.config.alerts_enabled,
+                enabled=lambda _item: self._any_alert_enabled(),
             ),
             MenuItem("근태 알림 바로 확인", self._show_attendance_anomalies),
             MenuItem("점도 알림 바로 확인", self._show_viscosity_reminders),
-            MenuItem("저울 다시 연결", self._reconnect_scale, enabled=lambda _item: self.config.scale_enabled),
-            Menu.SEPARATOR,
-            MenuItem("홈 화면 열기", self._open_home),
-            Menu.SEPARATOR,
-            MenuItem(
-                "부팅 시 자동 실행",
-                self._toggle_autostart,
-                checked=lambda _item: autostart.is_enabled(),
-            ),
-            MenuItem("로그 폴더 열기", self._open_logs),
             Menu.SEPARATOR,
             MenuItem("종료", self._quit),
         )
 
-    # ── 기능 토글 ────────────────────────────────────────────────
-    def _toggle_alerts(self, _icon, _item) -> None:
-        self.config.alerts_enabled = not self.config.alerts_enabled
+    # ── 설정 창 ──────────────────────────────────────────────────
+    def _open_settings(self, _icon, _item) -> None:
+        # 설정 UI 는 팝업이 소유한 Tkinter 스레드에서 생성한다(스레드 안전).
+        self.alert_popup.run_on_ui(self.settings.open)
+
+    def apply_settings(
+        self,
+        *,
+        attendance_alerts: bool,
+        viscosity_alerts: bool,
+        scale_enabled: bool,
+        server_url: str,
+        autostart_enabled: bool,
+    ) -> None:
+        """설정 창의 '저장'에서 호출 — 값 반영·저장·저울 lifecycle·자동실행 일괄 적용."""
+        self.config.attendance_alerts_enabled = bool(attendance_alerts)
+        self.config.viscosity_alerts_enabled = bool(viscosity_alerts)
+        cleaned_url = (server_url or "").strip()
+        if cleaned_url:
+            self.config.server_url = cleaned_url
+
+        want_scale = bool(scale_enabled)
+        if want_scale != self.config.scale_enabled:
+            self.config.scale_enabled = want_scale
+            # 저울 연결은 시리얼 탐지로 몇 초 걸릴 수 있어 UI 스레드를 막지 않도록 분리.
+            def _apply_scale() -> None:
+                if want_scale:
+                    ok = self.scale.start()
+                    self.logger.info("scale %s (settings)", "started" if ok else "start failed")
+                else:
+                    self.scale.stop()
+                    self.logger.info("scale stopped (settings)")
+            threading.Thread(target=_apply_scale, name="scale-apply", daemon=True).start()
+
         self._save_config()
-        self.logger.info("alerts %s", "enabled" if self.config.alerts_enabled else "disabled")
+        try:
+            autostart.set_enabled(bool(autostart_enabled))
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("autostart set failed: %s", exc)
+        self.logger.info(
+            "settings applied: attendance=%s viscosity=%s scale=%s server=%s",
+            self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
+            self.config.scale_enabled, self.config.server_url,
+        )
         if self._icon is not None:
             self._icon.update_menu()
 
-    def _toggle_scale(self, _icon, _item) -> None:
-        self.config.scale_enabled = not self.config.scale_enabled
-        self._save_config()
-        if self.config.scale_enabled:
-            started = self.scale.start()
-            self.logger.info("scale %s", "started" if started else "enabled (start failed — will retry on next launch)")
+    def open_logs_folder(self) -> None:
+        path = logs_dir()
+        if sys.platform == "win32":
+            os.startfile(str(path))  # type: ignore[attr-defined]
         else:
-            self.scale.stop()
-            self.logger.info("scale stopped")
-        if self._icon is not None:
-            self._icon.update_menu()
+            subprocess.Popen(["xdg-open", str(path)])
 
-    def _reconnect_scale(self, _icon, _item) -> None:
-        if self.config.scale_enabled:
-            self.scale.reconnect()
-
+    # ── 오늘만 끄기(뮤트) ────────────────────────────────────────
     def _mute_alerts_for_today(self) -> None:
         self._alert_mute_date = today_iso()
         self.logger.info("field alerts muted for %s", self._alert_mute_date)
@@ -245,10 +268,6 @@ class TrayApp:
             self._mute_alerts_for_today()
         else:
             self._enable_alerts_today()
-
-    def _toggle_autostart(self, icon, _item) -> None:
-        autostart.set_enabled(not autostart.is_enabled())
-        icon.update_menu()
 
     # ── 액션 ─────────────────────────────────────────────────────
     def _show_attendance_anomalies(self, _icon, _item) -> None:
@@ -289,16 +308,6 @@ class TrayApp:
             self.logger.info("home page opened: %s", url)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("open home failed: %s", exc)
-
-    def _open_logs(self, _icon, _item) -> None:
-        path = logs_dir()
-        try:
-            if sys.platform == "win32":
-                os.startfile(str(path))  # type: ignore[attr-defined]
-            else:
-                subprocess.Popen(["xdg-open", str(path)])
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("open logs failed: %s", exc)
 
     def _quit(self, icon, _item) -> None:
         def _stop() -> None:

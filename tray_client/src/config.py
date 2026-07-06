@@ -40,9 +40,10 @@ def config_path() -> Path:
 class Config:
     server_url: str = DEFAULT_SERVER_URL
     tray_api_token: str = ""
-    # 통합 앱(현장 도우미)의 기능 토글 — 한 번 켜고/끄면 재부팅해도 유지된다.
-    # 기본: 알림만 켜짐. 저울은 저울이 연결된 현장 PC에서만 켜서 쓴다.
-    alerts_enabled: bool = True
+    # 통합 앱(현장 도우미)의 기능 토글 — 한 번 켜고/끄면 재부팅해도 유지된다(설정 창에서 변경).
+    # 기본: 근태·점도 알림 켜짐, 저울은 저울이 연결된 현장 PC에서만 켜서 쓴다.
+    attendance_alerts_enabled: bool = True
+    viscosity_alerts_enabled: bool = True
     scale_enabled: bool = False
 
     @classmethod
@@ -69,6 +70,11 @@ class Config:
         # broadcaster and are no longer meaningful.
         allowed = {f.name for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         cleaned = {k: v for k, v in raw.items() if k in allowed}
+        # 레거시 이관: 옛 단일 토글 alerts_enabled → 근태/점도 개별 토글.
+        if "alerts_enabled" in raw:
+            master = bool(raw.get("alerts_enabled"))
+            cleaned.setdefault("attendance_alerts_enabled", master)
+            cleaned.setdefault("viscosity_alerts_enabled", master)
         return cls(**cleaned)
 
     def save(self) -> None:

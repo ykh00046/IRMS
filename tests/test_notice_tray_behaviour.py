@@ -344,6 +344,25 @@ class TrayNavigationTests(unittest.TestCase):
         with patch("tray_client.src.main.today_iso", return_value="2026-05-28"):
             self.assertTrue(app._alerts_enabled_today())
 
+    def test_attendance_and_viscosity_gate_independently(self) -> None:
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app._alert_mute_date = None
+        app.config = Config(attendance_alerts_enabled=True, viscosity_alerts_enabled=False)
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
+            self.assertTrue(app._attendance_active())     # 근태만 켜짐
+            self.assertFalse(app._viscosity_active())      # 점도는 꺼짐
+            self.assertTrue(app._any_alert_enabled())
+
+    def test_today_mute_suppresses_both_alert_types(self) -> None:
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app.config = Config(attendance_alerts_enabled=True, viscosity_alerts_enabled=True)
+        app._alert_mute_date = "2026-05-27"
+
+        with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
+            self.assertFalse(app._attendance_active())
+            self.assertFalse(app._viscosity_active())
+
 
 if __name__ == "__main__":
     unittest.main()
