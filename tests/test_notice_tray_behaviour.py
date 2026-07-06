@@ -210,7 +210,6 @@ class ViscosityAlertPollerTests(unittest.TestCase):
             config=Config(server_url="http://192.168.11.147:9000"),
             present_alert=lambda _payload: None,
             is_enabled_getter=lambda: True,
-            today_provider=lambda: "2026-07-01",
         )
         poller._session = FakeSession()
 
@@ -234,13 +233,12 @@ class ViscosityAlertPollerTests(unittest.TestCase):
         self.assertEqual(payload.action_key, "viscosity")
         self.assertEqual(payload.confirm_text, "점도 등록")
 
-    def test_viscosity_duplicate_signature_is_suppressed_per_day(self) -> None:
+    def test_viscosity_duplicate_signature_is_suppressed_in_same_slot(self) -> None:
         presented: list[PopupPayload] = []
         poller = ViscosityAlertPoller(
             config=Config(),
             present_alert=presented.append,
             is_enabled_getter=lambda: True,
-            today_provider=lambda: "2026-07-01",
         )
         payload = {
             "date": "2026-07-01",
@@ -249,11 +247,25 @@ class ViscosityAlertPollerTests(unittest.TestCase):
         }
 
         with patch.object(poller, "_poll_once", return_value=payload):
-            poller._poll_and_notify()
-            poller._poll_and_notify()
-            poller._poll_and_notify(force=True)
+            poller._poll_and_notify(slot_key="2026-07-01T09")
+            poller._poll_and_notify(slot_key="2026-07-01T09")   # 같은 슬롯·내용 → 억제
+            poller._poll_and_notify(slot_key="2026-07-01T13")   # 다음 슬롯 → 다시 표시
 
         self.assertEqual(len(presented), 2)
+
+    def test_viscosity_uses_9_13_16_slots(self) -> None:
+        poller = ViscosityAlertPoller(
+            config=Config(), present_alert=lambda _p: None, is_enabled_getter=lambda: True,
+        )
+        # 근태와 동일한 슬롯 로직(schedule 모듈)을 쓰는지 확인
+        import tray_client.src.schedule as sched
+        self.assertIsNone(sched.current_slot_key(dt.datetime(2026, 7, 1, 8, 59)))
+        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 9, 0)), "2026-07-01T09")
+        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 14, 30)), "2026-07-01T13")
+        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 16, 5)), "2026-07-01T16")
+        # 재시작 유예: 09:35(35분 경과)면 그 슬롯은 처리된 것으로 → 다시 안 뜸
+        self.assertEqual(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 35)), "2026-07-01T09")
+        self.assertIsNone(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 25)))
 
 
 class TrayNavigationTests(unittest.TestCase):

@@ -15,13 +15,20 @@ from .attendance_popup import (
     build_test_popup_payload,
 )
 
+from .schedule import (  # 근태·점도 공통 스케줄
+    SCHEDULED_ALERT_HOURS,
+    SLOT_STALE_GRACE_MINUTES,
+    current_slot_key,
+    seconds_until_next_slot,
+    stale_slot_key_on_startup,
+)
+
 logger = logging.getLogger("irms_notice")
 
 
 DEFAULT_INTERVAL_SECONDS = 60 * 60
-SCHEDULED_ALERT_HOURS = (9, 13, 16)
 SLOT_RETRY_SECONDS = 60
-SLOT_STALE_GRACE_MINUTES = 30
+# SCHEDULED_ALERT_HOURS, SLOT_STALE_GRACE_MINUTES 는 schedule 모듈에서 가져온다(하위호환 re-export).
 
 
 class _FileLockedRetry(Exception):
@@ -118,35 +125,13 @@ class AttendanceAlertPoller:
             self._stop_event.wait(wait_seconds)
 
     def _stale_slot_key_on_startup(self, now: _dt.datetime) -> str | None:
-        slot_key = self._current_schedule_slot_key(now)
-        if not slot_key:
-            return None
-        slot_hour = int(slot_key.split("T", 1)[1])
-        slot_start = _dt.datetime.combine(now.date(), _dt.time(hour=slot_hour))
-        elapsed = (now - slot_start).total_seconds()
-        if elapsed > SLOT_STALE_GRACE_MINUTES * 60:
-            return slot_key
-        return None
+        return stale_slot_key_on_startup(now)
 
     def _current_schedule_slot_key(self, now: _dt.datetime) -> str | None:
-        due_hour: int | None = None
-        for hour in SCHEDULED_ALERT_HOURS:
-            if now.hour >= hour:
-                due_hour = hour
-            else:
-                break
-        if due_hour is None:
-            return None
-        return f"{now.date().isoformat()}T{due_hour:02d}"
+        return current_slot_key(now)
 
     def _seconds_until_next_schedule(self, now: _dt.datetime) -> int:
-        for hour in SCHEDULED_ALERT_HOURS:
-            scheduled = _dt.datetime.combine(now.date(), _dt.time(hour=hour))
-            if scheduled > now:
-                return max(int((scheduled - now).total_seconds()), 1)
-        tomorrow = now.date() + _dt.timedelta(days=1)
-        scheduled = _dt.datetime.combine(tomorrow, _dt.time(hour=SCHEDULED_ALERT_HOURS[0]))
-        return max(int((scheduled - now).total_seconds()), 1)
+        return seconds_until_next_slot(now)
 
     def _poll_and_notify(self, force: bool = False, slot_key: str | None = None) -> bool:
         try:
