@@ -37,7 +37,8 @@ a = Analysis(
         "winreg",
     ],
     hookspath=[],
-    runtime_hooks=[],
+    # requests + PyInstaller + simplejson 함정 차단(아래 excludes 주석 참조).
+    runtime_hooks=[str(ROOT / "build" / "rthook_no_simplejson.py")],
     # simplejson: requests.compat imports it optionally. If the build venv has a
     # (partial) simplejson, PyInstaller bundles it as a namespace package and
     # `from simplejson import JSONDecodeError` fails at runtime with
