@@ -5,7 +5,12 @@ import datetime as _dt
 from fastapi import Request
 
 SESSION_KEY = "blend_worker"
-IDLE_TIMEOUT_SECONDS = 5 * 60
+# 배합 작업자 세션은 민감정보 없는 현장 편의 세션(이름 기반)이다. 홈(/) 복귀나 탭 닫기 시
+# 이미 정리되고, 배합 기록은 작업자 이름 귀속일 뿐 보안 경계가 아니다. 5분 유휴 만료는
+# 현장에서 저울로 몇 분간 계량하는 동안(로컬 저울 통신이라 서버 요청 없음) 세션이 끊겨
+# 저장 시 작업자 입력 화면으로 튕기고 입력 데이터가 날아가는 문제를 유발했다. 근무 시간
+# 단위(12h)로 늘려 근무 중 재로그인을 없앤다. 실질 상한은 세션 쿠키 max_age(8h).
+IDLE_TIMEOUT_SECONDS = 12 * 60 * 60
 
 
 def _utc_now() -> _dt.datetime:
