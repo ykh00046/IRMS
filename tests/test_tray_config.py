@@ -83,6 +83,29 @@ def test_legacy_alerts_enabled_migrates_to_granular(tmp_path):
     assert not hasattr(cfg, "alerts_enabled")
 
 
+def test_old_default_server_migrates_to_new(tmp_path):
+    """서버 이전: 옛 기본값(.147)으로 저장된 기존 설치는 새 기본값(.194)으로 자동 이관."""
+    mod = _load_config_module(tmp_path)
+    mod.config_path().write_text(
+        json.dumps({"server_url": "http://192.168.11.147:9000"}), encoding="utf-8"
+    )
+    cfg = mod.Config.load()
+    assert cfg.server_url == "http://192.168.11.194:9000"
+    # 파일에도 반영(1회 이관)
+    saved = json.loads(mod.config_path().read_text(encoding="utf-8"))
+    assert saved["server_url"] == "http://192.168.11.194:9000"
+
+
+def test_custom_server_is_not_migrated(tmp_path):
+    """사용자가 직접 지정한 주소(옛 기본값이 아닌)는 그대로 보존."""
+    mod = _load_config_module(tmp_path)
+    mod.config_path().write_text(
+        json.dumps({"server_url": "http://192.168.11.50:9000"}), encoding="utf-8"
+    )
+    cfg = mod.Config.load()
+    assert cfg.server_url == "http://192.168.11.50:9000"
+
+
 def test_unknown_keys_dropped(tmp_path):
     mod = _load_config_module(tmp_path)
     path = mod.config_path()

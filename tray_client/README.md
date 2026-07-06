@@ -181,7 +181,7 @@ python -m src.main
 `%APPDATA%\IRMS-Notice\logs\tray.log` (자정 기준 로테이션, 7일 보관)
 
 ```
-2026-04-30 09:00:00 | INFO  | starting IRMS attendance tray (server=http://192.168.11.147:9000)
+2026-07-06 09:00:00 | INFO  | starting IRMS 현장 도우미 (server=http://192.168.11.194:9000, attendance=True, viscosity=True, scale=False)
 2026-04-30 09:00:01 | INFO  | attendance popup raised: 근태 확인 필요 / 이번 달 확인이 필요한 인원이 있습니다.
 ```
 

@@ -17,6 +17,8 @@ from pathlib import Path
 
 APP_NAME = "IRMS-Notice"
 DEFAULT_SERVER_URL = "http://192.168.11.194:9000"
+# 서버 이전 전 옛 기본값. 이 값 그대로 저장돼 있던 기존 설치는 새 기본값으로 자동 이관한다.
+_OLD_DEFAULT_SERVER_URL = "http://192.168.11.147:9000"
 
 
 def app_data_dir() -> Path:
@@ -75,7 +77,21 @@ class Config:
             master = bool(raw.get("alerts_enabled"))
             cleaned.setdefault("attendance_alerts_enabled", master)
             cleaned.setdefault("viscosity_alerts_enabled", master)
-        return cls(**cleaned)
+
+        # 서버 이전 이관: 옛 기본값(.147)이 그대로 저장돼 있으면 새 기본값(.194)으로 갱신.
+        # (사용자가 직접 지정한 다른 주소는 건드리지 않는다 — 정확히 옛 기본값일 때만.)
+        migrated_server = False
+        if cleaned.get("server_url") == _OLD_DEFAULT_SERVER_URL:
+            cleaned["server_url"] = DEFAULT_SERVER_URL
+            migrated_server = True
+
+        config = cls(**cleaned)
+        if migrated_server:
+            try:
+                config.save()
+            except OSError:
+                pass
+        return config
 
     def save(self) -> None:
         path = config_path()
