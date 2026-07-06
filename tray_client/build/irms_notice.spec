@@ -12,12 +12,14 @@ mode, chosen for fast start-up and easier SmartScreen auditing).
 from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve().parent
+REPO_ROOT = ROOT.parent   # scale_agent 패키지를 임포트하기 위한 저장소 루트
 ASSETS = ROOT / "assets"
 SRC = ROOT / "src"
 
 a = Analysis(
     [str(ROOT / "run.py")],
-    pathex=[str(ROOT)],
+    # REPO_ROOT: 통합된 저울 로직(scale_agent 패키지)을 프리즈에 포함하기 위해 경로에 추가.
+    pathex=[str(ROOT), str(REPO_ROOT)],
     datas=[
         (str(ASSETS / "icon.ico"), "assets"),
         (str(ASSETS / "ding.wav"), "assets"),
@@ -27,6 +29,12 @@ a = Analysis(
         "pythoncom",
         "win32com",
         "win32com.client",
+        # 저울 연동(통합): pyserial + 재사용하는 scale_agent 패키지 + 자동실행용 winreg
+        "serial",
+        "serial.tools.list_ports",
+        "scale_agent",
+        "scale_agent.agent",
+        "winreg",
     ],
     hookspath=[],
     runtime_hooks=[],

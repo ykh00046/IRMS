@@ -40,6 +40,10 @@ def config_path() -> Path:
 class Config:
     server_url: str = DEFAULT_SERVER_URL
     tray_api_token: str = ""
+    # 통합 앱(현장 도우미)의 기능 토글 — 한 번 켜고/끄면 재부팅해도 유지된다.
+    # 기본: 알림만 켜짐. 저울은 저울이 연결된 현장 PC에서만 켜서 쓴다.
+    alerts_enabled: bool = True
+    scale_enabled: bool = False
 
     @classmethod
     def load(cls) -> "Config":

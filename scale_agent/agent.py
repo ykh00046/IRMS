@@ -557,6 +557,11 @@ class Scale:
                 self._unparsed_logged += 1
                 log(f"[{self.name}] 수신(해석 불가): {bytes(line)!r}")
 
+    def close(self) -> None:
+        """리더/양보 스레드를 멈추고 포트를 반납한다(통합 앱에서 저울 끄기 시 사용)."""
+        self._stop.set()
+        self._drop_connection()
+
     def read(self) -> dict | None:
         """현재 무게 1건(질의) — 진단용(/weight)."""
         if self.yielding:
