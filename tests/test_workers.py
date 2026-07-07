@@ -112,6 +112,60 @@ def test_manager_needs_password_to_count():
     assert ws.list_workers(conn)[0]["is_manager"] is False
 
 
+def test_delete_worker_and_has_records_guard():
+    conn = _make_db()
+    # 배합 기록 테이블(삭제 안전장치 검사용)
+    conn.execute("CREATE TABLE blend_records (id INTEGER PRIMARY KEY, worker TEXT NOT NULL)")
+    ws.register(conn, "오타이름", "t")
+    ws.register(conn, "기록보유", "t")
+    conn.execute("INSERT INTO blend_records (worker) VALUES ('기록보유')")
+
+    assert ws.has_blend_records(conn, "기록보유") is True
+    assert ws.has_blend_records(conn, "오타이름") is False
+
+    wid = conn.execute("SELECT id FROM workers WHERE name='오타이름'").fetchone()["id"]
+    ws.delete_worker(conn, wid)
+    assert conn.execute("SELECT 1 FROM workers WHERE id=?", (wid,)).fetchone() is None
+
+
+def test_delete_worker_blocked_for_manager_and_records():
+    """책임자·배합 기록 있는 이름은 삭제가 400 으로 막히고 비활성화 안내."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    name = "삭제대상_" + uuid.uuid4().hex[:6]
+    mgr = "책임삭제_" + uuid.uuid4().hex[:6]
+    client.post("/api/workers", json={"name": name}, headers=headers)
+    client.post("/api/workers", json={"name": mgr}, headers=headers)
+    from src.db import get_connection
+    with get_connection() as conn:
+        mid = conn.execute("SELECT id FROM workers WHERE name=?", (mgr,)).fetchone()["id"]
+        did = conn.execute("SELECT id FROM workers WHERE name=?", (name,)).fetchone()["id"]
+    client.post(f"/api/workers/{mid}/manager", json={"password": "pw12345"}, headers=headers)
+
+    # 책임자는 삭제 불가
+    res = client.request("DELETE", f"/api/workers/{mid}", headers=headers)
+    assert res.status_code == 400
+
+    # 일반 이용자(기록 없음)는 삭제 가능
+    res = client.request("DELETE", f"/api/workers/{did}", headers=headers)
+    assert res.status_code == 200
+    with get_connection() as conn:
+        assert conn.execute("SELECT 1 FROM workers WHERE id=?", (did,)).fetchone() is None
+
+
 def test_worker_routes_open():
     import importlib
 

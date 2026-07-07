@@ -125,3 +125,19 @@ def rename(connection: sqlite3.Connection, worker_id: int, new_name: str) -> Non
     if not clean:
         raise ValueError("이름이 비어 있습니다.")
     connection.execute("UPDATE workers SET name = ? WHERE id = ?", (clean, worker_id))
+
+
+def has_blend_records(connection: sqlite3.Connection, name: str) -> bool:
+    """이 이름으로 남은 배합 기록이 있는가(삭제 안전장치 — 있으면 비활성화 권장)."""
+    try:
+        row = connection.execute(
+            "SELECT 1 FROM blend_records WHERE worker = ? LIMIT 1", (name.strip(),)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None
+
+
+def delete_worker(connection: sqlite3.Connection, worker_id: int) -> None:
+    """명단에서 완전 삭제(오타 정리용). 호출 전 책임자·기록 보유 여부를 확인할 것."""
+    connection.execute("DELETE FROM workers WHERE id = ?", (worker_id,))

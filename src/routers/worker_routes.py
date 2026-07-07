@@ -143,4 +143,25 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         connection.commit()
         return {"ok": True}
 
+    @admin_router.delete("/workers/{worker_id}")
+    def delete_worker(
+        worker_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """명단에서 완전 삭제(오타 정리용). 책임자·배합 기록 있는 이름은 막고 비활성화 안내."""
+        worker = _worker_or_404(connection, worker_id)
+        if worker["is_manager"]:
+            raise HTTPException(status_code=400, detail="CANNOT_DELETE_MANAGER")
+        if worker_service.has_blend_records(connection, worker["name"]):
+            raise HTTPException(status_code=400, detail="HAS_RECORDS")
+        worker_service.delete_worker(connection, worker_id)
+        write_audit_log(
+            connection, action="worker_deleted",
+            actor=get_current_user(request, required=False),
+            target_type="worker", target_id=str(worker_id), target_label=worker["name"],
+        )
+        connection.commit()
+        return {"ok": True}
+
     return open_router, admin_router

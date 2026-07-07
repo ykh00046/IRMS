@@ -71,9 +71,13 @@ document.addEventListener("DOMContentLoaded", () => {
             placeholder="비밀번호 설정(6자 이상)" />
           <button type="button" class="btn accent" data-action="grant">책임자 지정</button>
         </div>`;
-    const statusCell = worker.is_active
-      ? '<button type="button" class="btn" data-action="deactivate">비활성화</button>'
-      : '<button type="button" class="btn" data-action="activate">활성화</button>';
+    const statusCell = `
+      <div class="button-row">
+        ${worker.is_active
+          ? '<button type="button" class="btn" data-action="deactivate">비활성화</button>'
+          : '<button type="button" class="btn" data-action="activate">활성화</button>'}
+        <button type="button" class="btn danger" data-action="delete">삭제</button>
+      </div>`;
     return `
       <tr data-worker-id="${worker.id}" data-name="${esc(worker.name)}">
         <td>
@@ -136,6 +140,8 @@ document.addEventListener("DOMContentLoaded", () => {
     WORKER_NOT_FOUND: "대상 이용자를 찾을 수 없습니다.",
     NOT_A_MANAGER: "책임자가 아닙니다.",
     CANNOT_REVOKE_SELF: "본인의 책임자 권한은 해제할 수 없습니다.",
+    CANNOT_DELETE_MANAGER: "책임자는 삭제할 수 없습니다. 먼저 책임자를 해제한 뒤 삭제하세요.",
+    HAS_RECORDS: "배합 기록이 있는 이름은 삭제할 수 없습니다. 비활성화해 주세요.",
   };
 
   async function handleWorkerAction(event) {
@@ -173,6 +179,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (action === "activate") {
         await request(`/workers/${workerId}`, { method: "PATCH", body: { is_active: true } });
         IRMS.notify(`${name}을(를) 활성화했습니다.`, "success");
+      } else if (action === "delete") {
+        if (!window.confirm(`'${name}'을(를) 명단에서 완전히 삭제하시겠습니까? 되돌릴 수 없습니다.\n(사람이 그만둔 경우는 삭제 대신 "비활성화"를 권장합니다.)`)) return;
+        await request(`/workers/${workerId}`, { method: "DELETE" });
+        IRMS.notify(`${name}을(를) 삭제했습니다.`, "success");
       }
       await refreshDashboard();
     } catch (error) {
