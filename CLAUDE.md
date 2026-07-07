@@ -135,3 +135,10 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 - **Cloudflare Tunnel**: `cloudflared/` + `setup_tunnel.bat`으로 외부 접근 가능
 - **런타임 산출물**: `tmp_*`, `data/`는 gitignore, 소스 기준 아님
 - **트레이 클라이언트**: `tray_client/`에 Windows 알림 트레이 앱 존재
+- **DB 백업**: serve.py 가 매일 1회 + 업데이트 직전 자동 백업(`backups/irms_*.db`,
+  SQLite 온라인 백업, 보존 `IRMS_BACKUP_KEEP_DAYS`=30일·최근 5개 항상 유지,
+  `IRMS_BACKUP_MIRROR`로 2차 사본 폴더 지정 가능).
+  **복구**: 서버 중지 → `backups/`의 원하는 파일을 `data/irms.db`로 복사 → 서버 시작
+- **의존성 잠금**: 운영은 `requirements-lock.txt`(고정 버전) 우선 설치 — 무통제 업그레이드
+  방지. 업그레이드 절차: 개발 PC에서 `pip install -r requirements.txt` → 전체 테스트/smoke
+  통과 → `pip freeze > requirements-lock.txt` 커밋

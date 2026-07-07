@@ -6,9 +6,15 @@ origin/main 을 확인해 새 커밋이 있으면 DB 백업 → git pull → pip
 
 실행:  .venv\\Scripts\\python.exe serve.py   (보통 run_auto.bat 이 대신 실행)
 설정(환경변수):
-    IRMS_PORT            서버 포트 (기본 9000)
-    IRMS_AUTO_INTERVAL   업데이트 확인 주기(초, 기본 600 = 10분)
-    IRMS_AUTO_UPDATE     0 이면 업데이트 감시 없이 서버만 실행
+    IRMS_PORT              서버 포트 (기본 9000)
+    IRMS_AUTO_INTERVAL     업데이트 확인 주기(초, 기본 600 = 10분)
+    IRMS_AUTO_UPDATE       0 이면 업데이트 감시 없이 서버만 실행
+    IRMS_BACKUP_KEEP_DAYS  백업 보존 일수 (기본 30 — 오래된 백업 자동 삭제, 최근 5개는 항상 보존)
+    IRMS_BACKUP_MIRROR     백업 2차 사본 폴더 (예: D:\\irms-backup — 미설정 시 로컬 backups/ 만)
+
+백업: 업데이트 반영 직전 + 매일 1회(감시 루프) 자동 백업. SQLite 온라인 백업
+API 사용(서버 가동 중에도 일관된 사본). 복구: 서버 중지 → backups/ 의 원하는
+irms_*.db 를 data/irms.db 로 복사 → 서버 시작.
 
 참고: serve.py 자체가 업데이트되면 재시작 후 반영된다(무한 로딩 방지를 위해
 실행 중에는 옛 serve.py 로 계속 감시). 서버(src/*) 변경은 매 재시작마다 반영.
@@ -18,19 +24,40 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PORT = os.environ.get("IRMS_PORT", "9000")
 INTERVAL = max(30, int(os.environ.get("IRMS_AUTO_INTERVAL", "600")))
 AUTO = os.environ.get("IRMS_AUTO_UPDATE", "1") != "0"
+BACKUP_KEEP_DAYS = max(1, int(os.environ.get("IRMS_BACKUP_KEEP_DAYS", "30")))
+BACKUP_KEEP_MIN = 5  # 보존일수와 무관하게 항상 남길 최근 백업 수
+BACKUP_MIRROR = os.environ.get("IRMS_BACKUP_MIRROR", "").strip()
 
 _VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
+
+
+def _requirements_file() -> str:
+    """운영은 검증된 고정 버전(requirements-lock.txt) 우선 — 무통제 업그레이드 방지.
+
+    lock 갱신은 개발 PC에서: pip install -r requirements.txt 로 올린 뒤 전체
+    테스트/smoke 통과 확인 → pip freeze > requirements-lock.txt 커밋.
+    """
+    lock = ROOT / "requirements-lock.txt"
+    return "requirements-lock.txt" if lock.exists() else "requirements.txt"
+
+
+# 출력이 파일/파이프로 리다이렉트되면 콘솔 코드페이지(cp949)로 떨어져
+# 특수문자(—, · 등)에서 UnicodeEncodeError 로 죽을 수 있다 — UTF-8 로 고정.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def log(message: str) -> None:
@@ -49,9 +76,10 @@ def ensure_runtime() -> str:
         log("가상환경이 없어 생성하고 requirements.txt 를 설치합니다...")
         subprocess.run([sys.executable, "tools/bootstrap_irms.py"], cwd=ROOT, check=True)
     else:
-        log("가상환경 의존성 확인 중...")
+        req = _requirements_file()
+        log(f"가상환경 의존성 확인 중... ({req})")
         subprocess.run(
-            [str(_VENV_PY), "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
+            [str(_VENV_PY), "-m", "pip", "install", "-r", req, "--quiet"],
             cwd=ROOT,
             check=True,
         )
@@ -70,18 +98,93 @@ def has_update() -> bool:
         return False
 
 
+def _db_path() -> Path:
+    """운영 DB 경로 — IRMS_DATA_DIR 환경변수를 따른다(상대경로는 ROOT 기준)."""
+    raw = os.environ.get("IRMS_DATA_DIR", "").strip()
+    data_dir = (Path(raw) if Path(raw).is_absolute() else ROOT / raw) if raw else ROOT / "data"
+    return data_dir / "irms.db"
+
+
 def backup_db() -> None:
-    db = ROOT / "data" / "irms.db"
+    """SQLite 온라인 백업 — 서버 가동 중에도 트랜잭션 일관된 사본을 만든다."""
+    db = _db_path()
     if not db.exists():
         return
     backups = ROOT / "backups"
     backups.mkdir(exist_ok=True)
     dest = backups / f"irms_{datetime.now():%Y%m%d_%H%M%S}.db"
     try:
-        shutil.copy2(db, dest)
+        src = sqlite3.connect(str(db))
+        dst = sqlite3.connect(str(dest))
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            src.close()
+            dst.close()
         log(f"DB 백업: {dest.name}")
     except Exception as exc:  # noqa: BLE001
-        log(f"DB 백업 실패(계속 진행): {exc}")
+        # 온라인 백업 실패 시 단순 복사 폴백(없는 것보단 낫다)
+        try:
+            shutil.copy2(db, dest)
+            log(f"DB 백업(복사 폴백): {dest.name} — 온라인 백업 실패: {exc}")
+        except Exception as exc2:  # noqa: BLE001
+            log(f"DB 백업 실패(계속 진행): {exc2}")
+            return
+    _mirror_backup(dest)
+    prune_backups()
+
+
+def _mirror_backup(dest: Path) -> None:
+    """IRMS_BACKUP_MIRROR 가 설정돼 있으면 2차 사본을 복사(실패해도 계속)."""
+    if not BACKUP_MIRROR:
+        return
+    try:
+        mirror = Path(BACKUP_MIRROR)
+        mirror.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dest, mirror / dest.name)
+        log(f"백업 2차 사본: {mirror / dest.name}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"백업 2차 사본 실패(계속 진행): {exc}")
+
+
+def prune_backups() -> None:
+    """보존일수를 넘긴 백업 삭제 — 단 최근 BACKUP_KEEP_MIN 개는 항상 보존."""
+    backups = ROOT / "backups"
+    if not backups.exists():
+        return
+    files = sorted(backups.glob("irms_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cutoff = (datetime.now() - timedelta(days=BACKUP_KEEP_DAYS)).timestamp()
+    removed = 0
+    for old in files[BACKUP_KEEP_MIN:]:
+        if old.stat().st_mtime < cutoff:
+            try:
+                old.unlink()
+                removed += 1
+            except Exception as exc:  # noqa: BLE001
+                log(f"백업 정리 실패({old.name}): {exc}")
+    if removed:
+        log(f"백업 정리: {removed}개 삭제 (보존 {BACKUP_KEEP_DAYS}일, 최소 {BACKUP_KEEP_MIN}개 유지)")
+
+
+def free_port() -> None:
+    """PORT 를 점유한 프로세스를 정리 — 비정상 종료 잔존 서버로 인한 크래시 루프 방지."""
+    try:
+        out = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                f"Get-NetTCPConnection -LocalPort {PORT} -State Listen -ErrorAction SilentlyContinue "
+                "| Select-Object -ExpandProperty OwningProcess -Unique",
+            ],
+            capture_output=True, text=True, timeout=20,
+        ).stdout.split()
+        me = os.getpid()
+        for pid in out:
+            if pid.isdigit() and int(pid) not in (me, 0):
+                subprocess.run(["taskkill", "/PID", pid, "/F"], capture_output=True)
+                log(f"포트 {PORT} 점유 프로세스 종료: PID {pid}")
+    except Exception as exc:  # noqa: BLE001
+        log(f"포트 정리 실패(계속 진행): {exc}")
 
 
 def apply_update() -> bool:
@@ -96,7 +199,7 @@ def apply_update() -> bool:
         log("git pull 실패 — 이번 주기는 건너뛰고 다음에 재시도합니다.")
         return False
     pip = subprocess.run(
-        [PYTHON, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
+        [PYTHON, "-m", "pip", "install", "-r", _requirements_file(), "--quiet"],
         cwd=ROOT,
     )
     if pip.returncode != 0:
@@ -130,16 +233,25 @@ def main() -> None:
     PYTHON = ensure_runtime()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "
-        f"{INTERVAL}초 주기, 포트 {PORT}). 종료: Ctrl+C"
+        f"{INTERVAL}초 주기, 포트 {PORT}, 백업 보존 {BACKUP_KEEP_DAYS}일"
+        f"{' + 미러 ' + BACKUP_MIRROR if BACKUP_MIRROR else ''}). 종료: Ctrl+C"
     )
+    free_port()  # 비정상 종료로 남은 옛 서버가 포트를 물고 있으면 정리
+    last_daily_backup: date | None = None
     proc = start_server()
     try:
         while True:
             time.sleep(INTERVAL)
             if proc.poll() is not None:
                 log("서버가 종료되어 다시 시작합니다.")
+                free_port()
                 proc = start_server()
                 continue
+            # 일일 자동 백업(감시 주기마다 날짜 확인 — 하루 1회)
+            today = date.today()
+            if last_daily_backup != today:
+                backup_db()
+                last_daily_backup = today
             if AUTO and has_update():
                 # pull/pip 가 전부 성공했을 때만 재시작 — 실패하면 기존 서버가
                 # (메모리에 올라간 옛 코드로) 계속 돌아 무중단.

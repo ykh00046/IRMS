@@ -38,9 +38,13 @@ exit /b 1
 :git_ok
 echo.
 
-:: ── 3. Install dependencies ──
+:: ── 3. Install dependencies (검증된 고정 버전 우선) ──
 echo [3/4] Installing dependencies...
-.venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+if exist requirements-lock.txt (
+  .venv\Scripts\python.exe -m pip install -r requirements-lock.txt --quiet
+) else (
+  .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+)
 if not errorlevel 1 goto pip_ok
 echo.
 echo [ERROR] pip install failed.
