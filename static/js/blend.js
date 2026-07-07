@@ -264,9 +264,13 @@
     const data = await request("/blend/recipes");
     state.recipes = data.items || [];
     // 레시피는 타이핑 필터(datalist): 'sb' 입력 → 후보 좁혀짐 → 선택 시 로드.
+    // 주의: 내용이 같으면 datalist 를 다시 그리지 않는다 — 포커스 재조회 때 재구성하면
+    // 열린 드롭다운이 즉시 닫히는 증상(여러 번 클릭해야 열림)이 생긴다.
     const dl = $("recipe-names");
-    if (dl) dl.innerHTML = state.recipes.map((r) => `<option value="${esc(r.product_name)}"></option>`).join("");
-    $("blend-recipe").value = "";
+    if (dl) {
+      const html = state.recipes.map((r) => `<option value="${esc(r.product_name)}"></option>`).join("");
+      if (dl.innerHTML !== html) dl.innerHTML = html;
+    }
   }
 
   // 입력한 레시피명(대소문자 무시, 정확 일치)을 레시피 id 로 해석. 부분 입력은 미선택.
@@ -281,16 +285,19 @@
     const id = selectedRecipeId();
     // 미해석(검색 타이핑 중/비움)은 무시 — 현재 레시피와 입력값을 지우지 않는다.
     if (!id) return;
-    // 입력 이벤트가 연속으로 와도 선택이 실제로 바뀌었을 때만 반응(중복 API 호출 방지).
-    if (id === state._lastRecipeId) return;
-    state._lastRecipeId = id;
-    const totalRaw = Number($("blend-total").value);
-    const query = totalRaw > 0 ? { total: totalRaw } : {};
-    const data = await request(`/blend/recipes/${id}`, { query });
+    // 같은 레시피 재선택은 무시 — 입력 중인 값(실제량·LOT 등)을 보존.
+    const prevId = state.current && state.current.recipe ? String(state.current.recipe.id) : "";
+    if (id === prevId) return;
+    const data = await request(`/blend/recipes/${id}`);
     state.current = data;
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
-    // 총 배합량은 비워 둠(입력해야 하는 값임을 인지). 비어 있으면 이론량은 "-"로.
-    if (!(totalRaw > 0)) state.items.forEach((it) => { it.theory_amount = null; });
+    // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
+    // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
+    $("blend-total").value = "";
+    $("blend-note").value = "";
+    $("blend-reactor").value = "";
+    if (state.workerPad) state.workerPad.clear();
+    state.items.forEach((it) => { it.theory_amount = null; });
     renderMatRows();
     renderReactorField();
     renderBaseTotalButton();
@@ -653,7 +660,6 @@
     // 목록도 재조회 — 화면을 계속 띄워두는 단말에서 레시피 수정(개정)이 반영되도록.
     recipeInput.addEventListener("focus", () => {
       recipeInput.value = "";
-      state._lastRecipeId = "";
       loadRecipes().catch(() => {});
     });
     recipeInput.addEventListener("blur", () => {
