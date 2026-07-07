@@ -298,12 +298,17 @@
     updateInputGuide();
   }
 
-  // '기준량' 버튼 — 레시피 등록값 합계를 총 배합량에 그대로 채운다.
-  // (합이 100/4000 등으로 안 떨어지게 이관된 레시피도 등록값 그대로 배합)
+  // '기준량' 버튼 — 레시피에 저장된 기준 배합량(레시피 관리에서 입력)을 총량에 채운다.
+  // 저장값이 없으면 등록값 합계로 폴백(합이 100/4000 등으로 안 떨어지는 이관 레시피 대응).
+  function baseTotalValue() {
+    if (!state.current) return 0;
+    return Number(state.current.default_total || state.current.base_total) || 0;
+  }
+
   function renderBaseTotalButton() {
     const btn = $("blend-total-base");
     if (!btn) return;
-    const base = Number(state.current && state.current.base_total);
+    const base = baseTotalValue();
     if (!(base > 0)) { btn.hidden = true; return; }
     btn.textContent = `기준량 ${fmt(base)} g 적용`;
     btn.hidden = false;
@@ -656,7 +661,7 @@
       recipeInput.value = state.current ? state.current.recipe.product_name : "";
     });
     $("blend-total-base").addEventListener("click", () => {
-      const base = Number(state.current && state.current.base_total);
+      const base = baseTotalValue();
       if (!(base > 0)) return;
       const totalInput = $("blend-total");
       totalInput.value = String(base);

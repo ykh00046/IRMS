@@ -94,6 +94,13 @@
   flex: 0 1 190px;
 }
 
+/* 기준 배합량(g) 입력 — 배합 화면 '기준량 적용' 버튼이 채울 총량(선택) */
+.input-section .base-total-input {
+  width: auto;
+  min-width: 120px;
+  flex: 0 1 140px;
+}
+
 .revision-banner {
   display: flex;
   flex-wrap: wrap;

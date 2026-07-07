@@ -70,7 +70,7 @@
     return mapPreview(payload);
   }
 
-  async function importRecipes(rawText, createdBy, revisionOf, effectiveFrom) {
+  async function importRecipes(rawText, createdBy, revisionOf, effectiveFrom, baseTotal) {
     const body = {
       raw_text: rawText,
       created_by: createdBy || "책임자",
@@ -80,6 +80,9 @@
     }
     if (effectiveFrom) {
       body.effective_from = effectiveFrom;
+    }
+    if (baseTotal != null && Number(baseTotal) > 0) {
+      body.base_total = Number(baseTotal);
     }
     return request("/recipes/import", {
       method: "POST",

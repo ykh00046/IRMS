@@ -25,7 +25,7 @@ def _make_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_name TEXT, position TEXT, ink_name TEXT,
             status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-01-01',
-            revision_of INTEGER
+            revision_of INTEGER, base_total REAL
         );
         CREATE TABLE recipe_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +103,64 @@ def test_get_recipe_for_blend_scales_to_total():
     assert theory == [120.0, 60.0, 20.0]
     ratios = [it["ratio"] for it in result["items"]]
     assert ratios == [60.0, 30.0, 10.0]
+
+
+def test_get_recipe_for_blend_default_total_prefers_stored_base():
+    """레시피에 저장된 기준 배합량(base_total)이 있으면 default_total 로 우선 반환.
+    없으면 자재 합계 폴백 — 배합 화면 '기준량 적용' 버튼이 채우는 값."""
+    conn = _make_db()
+    rid = _seed_recipe(conn, product="BASE1", weights=(60, 40))  # 합계 100
+    # 저장값 없음 → 합계 폴백
+    assert bs.get_recipe_for_blend(conn, rid)["default_total"] == 100.0
+    # 저장값 있음(비율 레시피의 실제 기본 배합량) → 저장값 우선
+    conn.execute("UPDATE recipes SET base_total = 3924.38 WHERE id = ?", (rid,))
+    result = bs.get_recipe_for_blend(conn, rid)
+    assert result["default_total"] == 3924.38
+    assert result["base_total"] == 100.0  # 합계는 그대로(비율 계산용)
+
+
+def test_import_stores_and_inherits_base_total():
+    """등록 시 기준 배합량 저장 + 수정 등록(개정) 시 미입력이면 승계."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    prod = "BT" + uuid.uuid4().hex[:6]
+
+    raw = f"반제품명\tMatA\tMatB\n{prod}\t60\t40"
+    res = client.post("/api/recipes/import",
+                      json={"raw_text": raw, "force": True, "base_total": 3924.38},
+                      headers=headers)
+    assert res.status_code == 200, res.text
+    rid = res.json()["created_ids"][0]
+    with get_connection() as conn:
+        assert conn.execute("SELECT base_total FROM recipes WHERE id=?", (rid,)).fetchone()[0] == 3924.38
+
+    # 배합 API 에도 반영
+    detail = client.get(f"/api/blend/recipes/{rid}").json()
+    assert detail["default_total"] == 3924.38
+
+    # 개정(미입력) → 승계
+    raw2 = f"반제품명\tMatA\tMatB\n{prod}\t70\t30"
+    res2 = client.post("/api/recipes/import",
+                       json={"raw_text": raw2, "force": True, "revision_of": rid},
+                       headers=headers)
+    assert res2.status_code == 200, res2.text
+    rid2 = res2.json()["created_ids"][0]
+    with get_connection() as conn:
+        assert conn.execute("SELECT base_total FROM recipes WHERE id=?", (rid2,)).fetchone()[0] == 3924.38
 
 
 def test_get_recipe_for_blend_resolves_to_latest_revision():

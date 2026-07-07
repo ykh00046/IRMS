@@ -93,6 +93,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # excel-recipe-migration: 엑셀 원본의 비고 컬럼 이관용
     ensure_column(connection, "recipes", "remark", "TEXT")
 
+    # 기준 배합량(g, 선택): 이 레시피를 기본으로 배합할 때의 총량. 연구소 이관 값이
+    # 100/4000 등으로 안 떨어져도(예: 합 3924.38) 배합 화면 '기준량 적용' 버튼이 이 값을
+    # 사용. 미설정 시 자재 합계로 폴백.
+    ensure_column(connection, "recipes", "base_total", "REAL")
+
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고
     # 기존에 정체돼 있던 레시피도 completed 로 전환한다(취소 건은 보존).
