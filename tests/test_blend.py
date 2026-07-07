@@ -105,14 +105,14 @@ def test_get_recipe_for_blend_scales_to_total():
     assert ratios == [60.0, 30.0, 10.0]
 
 
-def test_get_recipe_for_blend_default_total_prefers_stored_base():
-    """레시피에 저장된 기준 배합량(base_total)이 있으면 default_total 로 우선 반환.
-    없으면 자재 합계 폴백 — 배합 화면 '기준량 적용' 버튼이 채우는 값."""
+def test_get_recipe_for_blend_default_total_only_when_designated():
+    """기준 배합량(base_total)을 지정한 레시피만 default_total 반환(버튼 노출).
+    미지정 레시피는 None — 배합 화면에 기준량 버튼이 뜨지 않는다."""
     conn = _make_db()
     rid = _seed_recipe(conn, product="BASE1", weights=(60, 40))  # 합계 100
-    # 저장값 없음 → 합계 폴백
-    assert bs.get_recipe_for_blend(conn, rid)["default_total"] == 100.0
-    # 저장값 있음(비율 레시피의 실제 기본 배합량) → 저장값 우선
+    # 미지정 → None (버튼 없음)
+    assert bs.get_recipe_for_blend(conn, rid)["default_total"] is None
+    # 지정(비율 레시피의 실제 기본 배합량) → 저장값 반환
     conn.execute("UPDATE recipes SET base_total = 3924.38 WHERE id = ?", (rid,))
     result = bs.get_recipe_for_blend(conn, rid)
     assert result["default_total"] == 3924.38

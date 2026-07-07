@@ -101,9 +101,9 @@ def get_recipe_for_blend(
             "theory_amount": theory[idx],
             "sequence_order": idx + 1,
         })
-    # 기준 배합량: 레시피에 저장된 값 우선(레시피 관리에서 입력), 없으면 자재 합계.
+    # 기준 배합량: 레시피 관리에서 지정한 레시피만 값 반환(버튼 노출) — 미지정은 None.
     stored_base = recipe["base_total_setting"]
-    default_total = float(stored_base) if stored_base and float(stored_base) > 0 else base_total
+    default_total = float(stored_base) if stored_base and float(stored_base) > 0 else None
     return {
         "recipe": {
             "id": int(recipe["id"]),
@@ -114,7 +114,7 @@ def get_recipe_for_blend(
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
         },
         "base_total": round(base_total, 3),
-        "default_total": round(default_total, 3),
+        "default_total": round(default_total, 3) if default_total is not None else None,
         "total_amount": round(total, 3),
         "items": items,
     }

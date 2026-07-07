@@ -298,11 +298,11 @@
     updateInputGuide();
   }
 
-  // '기준량' 버튼 — 레시피에 저장된 기준 배합량(레시피 관리에서 입력)을 총량에 채운다.
-  // 저장값이 없으면 등록값 합계로 폴백(합이 100/4000 등으로 안 떨어지는 이관 레시피 대응).
+  // '기준량' 버튼 — 레시피 관리에서 기준 배합량을 지정한 레시피에서만 노출.
+  // (미지정 레시피는 버튼 없음 — 총량은 직접 입력)
   function baseTotalValue() {
     if (!state.current) return 0;
-    return Number(state.current.default_total || state.current.base_total) || 0;
+    return Number(state.current.default_total) || 0;
   }
 
   function renderBaseTotalButton() {
