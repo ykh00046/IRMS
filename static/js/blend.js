@@ -293,8 +293,20 @@
     if (!(totalRaw > 0)) state.items.forEach((it) => { it.theory_amount = null; });
     renderMatRows();
     renderReactorField();
+    renderBaseTotalButton();
     updateLotPreview();
     updateInputGuide();
+  }
+
+  // '기준량' 버튼 — 레시피 등록값 합계를 총 배합량에 그대로 채운다.
+  // (합이 100/4000 등으로 안 떨어지게 이관된 레시피도 등록값 그대로 배합)
+  function renderBaseTotalButton() {
+    const btn = $("blend-total-base");
+    if (!btn) return;
+    const base = Number(state.current && state.current.base_total);
+    if (!(base > 0)) { btn.hidden = true; return; }
+    btn.textContent = `기준량 ${fmt(base)} g 적용`;
+    btn.hidden = false;
   }
 
   // 반응기 진행 반제품(레시피)일 때만 배합 설정에 반응기 선택을 노출한다.
@@ -642,6 +654,13 @@
     recipeInput.addEventListener("blur", () => {
       if (selectedRecipeId()) return;
       recipeInput.value = state.current ? state.current.recipe.product_name : "";
+    });
+    $("blend-total-base").addEventListener("click", () => {
+      const base = Number(state.current && state.current.base_total);
+      if (!(base > 0)) return;
+      const totalInput = $("blend-total");
+      totalInput.value = String(base);
+      totalInput.dispatchEvent(new Event("input"));  // 이론량 재계산 경로 재사용
     });
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();

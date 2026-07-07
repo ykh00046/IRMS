@@ -177,6 +177,9 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
+/* 기준량 적용 버튼(총 배합량 아래) — 레시피 등록값 합계 채우기 */
+.blend-base-btn { margin-top: 0.35rem; align-self: flex-start; white-space: nowrap; }
+
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
