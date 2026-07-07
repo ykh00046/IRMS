@@ -24,7 +24,8 @@ def _make_db() -> sqlite3.Connection:
         CREATE TABLE recipes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_name TEXT, position TEXT, ink_name TEXT,
-            status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-01-01'
+            status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-01-01',
+            revision_of INTEGER
         );
         CREATE TABLE recipe_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,6 +103,27 @@ def test_get_recipe_for_blend_scales_to_total():
     assert theory == [120.0, 60.0, 20.0]
     ratios = [it["ratio"] for it in result["items"]]
     assert ratios == [60.0, 30.0, 10.0]
+
+
+def test_get_recipe_for_blend_resolves_to_latest_revision():
+    """옛(개정 전) 레시피 id 로 요청해도 최신 개정판을 돌려준다.
+
+    배합 화면을 계속 띄워두는 단말은 목록이 낡아 옛 id 로 요청할 수 있다 —
+    '레시피 수정이 배합에 반영 안 됨' 원인(2026-07-08)."""
+    conn = _make_db()
+    old_id = _seed_recipe(conn, product="NTOP", weights=(60, 40))
+    # 개정판(값 변경): revision_of=old_id
+    new_id = _seed_recipe(conn, product="NTOP", weights=(70, 30))
+    conn.execute("UPDATE recipes SET revision_of = ? WHERE id = ?", (old_id, new_id))
+
+    result = bs.get_recipe_for_blend(conn, old_id, total_amount=100)
+    assert result["recipe"]["id"] == new_id                       # 최신판으로 귀결
+    assert [it["theory_amount"] for it in result["items"]] == [70.0, 30.0]
+
+    # 개정판이 취소되면 원본 유지
+    conn.execute("UPDATE recipes SET status = 'canceled' WHERE id = ?", (new_id,))
+    result = bs.get_recipe_for_blend(conn, old_id, total_amount=100)
+    assert result["recipe"]["id"] == old_id
 
 
 def test_get_recipe_for_blend_defaults_total_to_base():

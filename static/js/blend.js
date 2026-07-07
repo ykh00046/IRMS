@@ -633,8 +633,11 @@
     recipeInput.addEventListener("change", onRecipePick);
     // 포커스 시 비움 → 이미 선택된 이름으로 datalist 가 필터되지 않고 전체 목록 표시.
     // 선택 없이 나가면 현재 레시피명으로 원복(선택 유지).
+    // 목록도 재조회 — 화면을 계속 띄워두는 단말에서 레시피 수정(개정)이 반영되도록.
     recipeInput.addEventListener("focus", () => {
       recipeInput.value = "";
+      state._lastRecipeId = "";
+      loadRecipes().catch(() => {});
     });
     recipeInput.addEventListener("blur", () => {
       if (selectedRecipeId()) return;

@@ -33,13 +33,35 @@ def scale_theory(weights: list[float], total_amount: float) -> list[float]:
 
 
 # ── 레시피 → 배합 입력용 환산 ──────────────────────────────────
+def _resolve_latest_revision(connection: sqlite3.Connection, recipe_id: int) -> int:
+    """개정 체인을 끝까지 따라가 최신 레시피 id 반환.
+
+    배합 화면이 오래 열려 있으면(목록은 페이지 로드 때 1회) 개정 전의 옛 id 로
+    요청이 올 수 있다 — 서버가 항상 최신 개정판으로 귀결시켜 수정 미반영을 막는다.
+    """
+    current = int(recipe_id)
+    seen: set[int] = {current}
+    while True:
+        row = connection.execute(
+            "SELECT id FROM recipes WHERE revision_of = ? "
+            "AND status NOT IN ('canceled', 'draft') ORDER BY id DESC LIMIT 1",
+            (current,),
+        ).fetchone()
+        if not row or int(row["id"]) in seen:
+            return current
+        current = int(row["id"])
+        seen.add(current)
+
+
 def get_recipe_for_blend(
     connection: sqlite3.Connection, recipe_id: int, total_amount: float | None = None
 ) -> dict[str, Any] | None:
     """레시피와 자재 목록을 비율·이론량과 함께 반환 (배합 입력 화면용).
 
     total_amount 미지정 시 레시피 절대중량 합계를 기본 배치 총량으로 사용.
+    개정된 레시피 id 가 오면 최신 개정판으로 자동 귀결.
     """
+    recipe_id = _resolve_latest_revision(connection, recipe_id)
     recipe = connection.execute(
         "SELECT id, product_name, position, ink_name, status FROM recipes WHERE id = ?",
         (recipe_id,),
