@@ -159,7 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── 전체 수정(책임자 전용) ────────────────────────────────────
   // 헤더 액션(PDF/인쇄/Excel/수정/삭제 + 서명 체크)을 편집 중에는 숨긴다.
-  const EDIT_HIDE_IDS = ["status-pdf", "status-print", "status-excel", "status-edit", "status-delete"];
+  const EDIT_HIDE_IDS = ["status-pdf", "status-excel", "status-edit", "status-delete"];
 
   function setEditChromeHidden(hidden) {
     EDIT_HIDE_IDS.forEach((id) => { const el = $(id); if (el) el.style.display = hidden ? "none" : ""; });
@@ -313,7 +313,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const sign = $("status-detail-sign") && $("status-detail-sign").checked ? "?sign=1" : "";
     window.open(`/api/blend/records/${detailId}/pdf${sign}`, "_blank");
   });
-  $("status-print").addEventListener("click", () => window.print());
   $("status-excel").addEventListener("click", () => {
     if (detailId) window.location.assign(`/api/blend/records/${detailId}/export`);
   });
