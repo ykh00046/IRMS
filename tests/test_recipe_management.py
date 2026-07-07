@@ -128,6 +128,32 @@ def test_dhr_set_applies_to_whole_chain():
     assert flags[base] == 1 and flags[rev] == 1
 
 
+def test_list_recipes_shows_only_latest_revision():
+    """레시피 현황(GET /recipes)은 개정 체인의 최신 버전만 — 수정 등록해도 같은
+    제품이 줄줄이 늘어나 보이지 않는다. 개정본이 취소되면 원본이 복귀."""
+    client = _client()
+    headers = _login(client)
+    product = f"PTIP{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+    v2 = _import(client, headers, product, 70, 30, revision_of=v1)
+
+    def visible_ids():
+        items = client.get("/api/recipes", params={"search": product}).json()["items"]
+        return [r["id"] for r in items]
+
+    ids = visible_ids()
+    assert v2 in ids and v1 not in ids  # 최신만 한 줄
+
+    # 개정본 취소 → 원본이 현황에 복귀
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        conn.execute("UPDATE recipes SET status = 'canceled' WHERE id = ?", (v2,))
+        conn.commit()
+    ids = visible_ids()
+    assert v1 in ids
+
+
 def test_list_recipes_returns_is_dhr():
     """GET /recipes 응답에 is_dhr 포함 — 현황 표 DHR 칩 표시 근거."""
     client = _client()

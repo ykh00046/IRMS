@@ -386,7 +386,13 @@ def build_router() -> APIRouter:
         date_to: date | None = None,
         limit: int = Query(default=1000, ge=1, le=5000),
     ) -> dict[str, Any]:
-        where_parts: list[str] = []
+        # 현황에는 각 개정 체인의 최신 버전만 — 수정 등록 때마다 같은 제품이 줄줄이
+        # 늘어나 보이지 않게. 옛 버전은 '버전 이력'에서 조회. (개정본이 취소되면
+        # 원본이 다시 최신으로 복귀)
+        where_parts: list[str] = [
+            "r.id NOT IN (SELECT revision_of FROM recipes "
+            "WHERE revision_of IS NOT NULL AND status != 'canceled')"
+        ]
         params: list[Any] = []
 
         if status:
