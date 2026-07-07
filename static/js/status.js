@@ -109,14 +109,9 @@ document.addEventListener("DOMContentLoaded", () => {
               `<li><b>${esc(x.product_code)}</b> ${fmt(x.viscosity)} <span class="muted small">${esc(x.measured_date || "")}${x.created_by ? " · " + esc(x.created_by) : ""}</span></li>`,
           )
           .join("")}</ul>`
-      : '<p class="muted small">측정된 점도가 없습니다.</p>';
-    const visc = `<div class="blend-visc-block"><b>점도 측정</b>${linkedVisc}
-      <div class="blend-visc-form">
-        <input class="input" id="status-visc-value" type="number" step="0.1" min="0" placeholder="점도값" />
-        <input class="input" id="status-visc-memo" placeholder="메모(선택)" />
-        <button class="btn btn-sm accent" id="status-visc-add" type="button">점도 기록</button>
-      </div>
-      <p class="login-error" id="status-visc-error" hidden></p></div>`;
+      : '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
+    // 점도 등록은 '점도 관리' 화면 한 곳으로 통일 — 여기선 측정값을 읽기전용으로만 표시.
+    const visc = `<div class="blend-visc-block"><b>점도 측정</b>${linkedVisc}</div>`;
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
@@ -137,24 +132,6 @@ document.addEventListener("DOMContentLoaded", () => {
         ${visc}
       </div>`;
     $("status-detail-modal").hidden = false;
-
-    const vbtn = $("status-visc-add");
-    if (vbtn) {
-      vbtn.addEventListener("click", async () => {
-        const err = $("status-visc-error");
-        err.hidden = true;
-        const viscosity = Number($("status-visc-value").value);
-        if (!(viscosity > 0)) { err.textContent = "점도값을 입력하세요."; err.hidden = false; return; }
-        try {
-          await request(`/blend/records/${id}/viscosity`, {
-            method: "POST",
-            body: { viscosity, memo: $("status-visc-memo").value.trim() || null },
-          });
-          IRMS.notify("점도를 기록했습니다.", "success");
-          openDetail(id);
-        } catch (e) { err.textContent = e.message; err.hidden = false; }
-      });
-    }
   }
 
   // ── 전체 수정(책임자 전용) ────────────────────────────────────
