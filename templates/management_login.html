@@ -24,15 +24,18 @@
         </div>
 
         <div class="login-field">
-          <label class="filter-label" for="manager-username">아이디</label>
+          <label class="filter-label" for="manager-username">이름</label>
           <input
             id="manager-username"
             type="text"
             class="input"
             autocomplete="username"
-            placeholder="admin"
-            value="admin"
+            list="manager-names"
+            placeholder="책임자 이름"
           />
+          <datalist id="manager-names">
+            {% for name in managers %}<option value="{{ name }}"></option>{% endfor %}
+          </datalist>
         </div>
 
         <div class="login-field">
@@ -50,9 +53,7 @@
 
         <button id="management-login-submit" type="submit" class="btn accent login-submit">로그인</button>
 
-        {% if show_demo_credentials %}
-        <p class="login-demo">기본 계정 <code>admin / admin</code> · 로그인 후 비밀번호를 변경하세요</p>
-        {% endif %}
+        <p class="login-demo">책임자로 지정된 이름과 개인 비밀번호로 로그인합니다. 최초 설정은 <code>admin / admin</code>.</p>
 
         <a href="/" class="login-back">← 처음으로</a>
       </form>

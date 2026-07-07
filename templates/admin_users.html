@@ -16,52 +16,32 @@
 
         <section class="summary-grid">
           <article class="panel summary-card">
-            <span class="summary-label">전체 사용자</span>
+            <span class="summary-label">전체 이용자</span>
             <strong id="summary-total" class="summary-value">0</strong>
-          </article>
-          <article class="panel summary-card">
-            <span class="summary-label">활성 사용자</span>
-            <strong id="summary-active" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
             <span class="summary-label">책임자</span>
             <strong id="summary-managers" class="summary-value">0</strong>
           </article>
-          <article class="panel summary-card">
-            <span class="summary-label">담당자</span>
-            <strong id="summary-operators" class="summary-value">0</strong>
-          </article>
         </section>
 
         <section class="admin-secondary-grid">
           <article class="panel">
-            <span class="kicker">계정 생성</span>
-            <h3 class="panel-title">신규 사용자 등록</h3>
-            <form id="create-user-form" class="create-user-grid">
+            <span class="kicker">이용자</span>
+            <h3 class="panel-title">이용자 추가</h3>
+            <form id="add-worker-form" class="create-user-grid">
               <div class="form-group">
-                <label class="filter-label" for="create-display-name">이름</label>
-                <input id="create-display-name" class="input" maxlength="50" placeholder="예: 홍길동" />
-              </div>
-              <div class="form-group">
-                <label class="filter-label" for="create-username">아이디</label>
-                <input id="create-username" class="input mono" maxlength="50" placeholder="예: operator4" />
-              </div>
-              <div class="form-group">
-                <label class="filter-label" for="create-access-level">권한</label>
-                <select id="create-access-level" class="select">
-                  <option value="operator">담당자</option>
-                  <option value="manager">책임자</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="filter-label" for="create-password">초기 비밀번호</label>
-                <input id="create-password" type="password" class="input mono" maxlength="100" placeholder="6자 이상" />
+                <label class="filter-label" for="add-worker-name">이름</label>
+                <input id="add-worker-name" class="input" maxlength="100" placeholder="예: 홍길동" />
               </div>
               <div class="button-row create-actions">
-                <button id="create-user-submit" type="submit" class="btn accent">계정 생성</button>
-                <button id="create-user-reset" type="reset" class="btn">입력 초기화</button>
+                <button id="add-worker-submit" type="submit" class="btn accent">추가</button>
               </div>
             </form>
+            <p class="panel-subtitle">
+              현장 배합·점도는 이름만 입력하면 됩니다. 레시피·기록 <b>수정·삭제</b> 등 관리 권한이
+              필요한 사람만 아래 명단에서 <b>"책임자 지정"</b>으로 개인 비밀번호를 부여하세요.
+            </p>
           </article>
 
           <article class="panel audit-panel">
@@ -113,12 +93,11 @@
         <section class="panel">
           <div class="panel-head-row">
             <div>
-              <span class="kicker">사용자 목록</span>
-              <h3 class="panel-title">사용자 목록</h3>
+              <span class="kicker">이용자 명단</span>
+              <h3 class="panel-title">이용자 명단</h3>
             </div>
             <div class="button-row">
-              <button id="deactivate-others-btn" type="button" class="btn">admin 외 계정 모두 비활성화</button>
-              <button id="users-refresh" type="button" class="btn">새로고침</button>
+              <button id="workers-refresh" type="button" class="btn">새로고침</button>
             </div>
           </div>
 
@@ -126,17 +105,13 @@
             <table class="user-table">
               <thead>
                 <tr>
-                  <th>계정</th>
-                  <th>표시 이름</th>
+                  <th>이름</th>
                   <th>권한</th>
+                  <th>관리 권한 (책임자)</th>
                   <th>상태</th>
-                  <th>생성 시각</th>
-                  <th>저장</th>
-                  <th>비밀번호 초기화</th>
-                  <th>삭제</th>
                 </tr>
               </thead>
-              <tbody id="users-body"></tbody>
+              <tbody id="workers-body"></tbody>
             </table>
           </div>
         </section>
@@ -245,5 +220,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260706a"></script>
+    <script src="/static/js/admin_users.js?v=20260707b"></script>
 {% endblock %}

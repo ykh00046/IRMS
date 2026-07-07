@@ -17,8 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_current_user, require_access_level
 from ..db import get_db, utc_now_text, write_audit_log
+from ..security import hash_password
 from ..services import worker_service
-from .models import WorkerCreateBody, WorkerUpdateBody
+from .models import WorkerCreateBody, WorkerManagerBody, WorkerUpdateBody
 
 
 def build_router() -> tuple[APIRouter, APIRouter]:
@@ -78,5 +79,68 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         )
         connection.commit()
         return {"updated": worker_id}
+
+    def _worker_or_404(connection: sqlite3.Connection, worker_id: int) -> dict[str, Any]:
+        worker = worker_service.get_worker(connection, worker_id)
+        if not worker:
+            raise HTTPException(status_code=404, detail="WORKER_NOT_FOUND")
+        return worker
+
+    @admin_router.post("/workers/{worker_id}/manager")
+    def grant_manager(
+        worker_id: int,
+        body: WorkerManagerBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """이용자를 책임자로 지정(개인 비밀번호 설정)."""
+        worker = _worker_or_404(connection, worker_id)
+        worker_service.set_manager(connection, worker_id, hash_password(body.password))
+        write_audit_log(
+            connection, action="worker_manager_granted",
+            actor=get_current_user(request, required=False),
+            target_type="worker", target_id=str(worker_id), target_label=worker["name"],
+        )
+        connection.commit()
+        return {"ok": True}
+
+    @admin_router.post("/workers/{worker_id}/manager/password")
+    def reset_manager_password(
+        worker_id: int,
+        body: WorkerManagerBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        worker = _worker_or_404(connection, worker_id)
+        if not worker["is_manager"]:
+            raise HTTPException(status_code=400, detail="NOT_A_MANAGER")
+        worker_service.reset_manager_password(connection, worker_id, hash_password(body.password))
+        write_audit_log(
+            connection, action="worker_manager_password_reset",
+            actor=get_current_user(request, required=False),
+            target_type="worker", target_id=str(worker_id), target_label=worker["name"],
+        )
+        connection.commit()
+        return {"ok": True}
+
+    @admin_router.delete("/workers/{worker_id}/manager")
+    def revoke_manager(
+        worker_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """책임자 해제 — 다시 이름만 쓰는 이용자로. 본인 계정은 해제 불가."""
+        worker = _worker_or_404(connection, worker_id)
+        current = get_current_user(request, required=False)
+        if current and current.get("is_worker_manager") and int(current["id"]) == int(worker_id):
+            raise HTTPException(status_code=400, detail="CANNOT_REVOKE_SELF")
+        worker_service.revoke_manager(connection, worker_id)
+        write_audit_log(
+            connection, action="worker_manager_revoked",
+            actor=current,
+            target_type="worker", target_id=str(worker_id), target_label=worker["name"],
+        )
+        connection.commit()
+        return {"ok": True}
 
     return open_router, admin_router

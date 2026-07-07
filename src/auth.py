@@ -64,6 +64,34 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
     return to_public_user(row)
 
 
+def _worker_to_public(row) -> dict[str, Any]:
+    """책임자로 지정된 이용자(workers) 행 → 공용 사용자 dict(access_level=manager)."""
+    return {
+        "id": int(row["id"]),
+        "username": row["name"],          # 이름이 곧 로그인 아이디
+        "display_name": row["name"],
+        "role": "manager",
+        "role_label": ACCESS_LEVEL_LABEL["manager"],
+        "access_level": "manager",
+        "is_worker_manager": True,
+    }
+
+
+def authenticate_manager_worker(name: str, password: str) -> dict[str, Any] | None:
+    """이름+비밀번호로 책임자(이용자 명단에서 지정된 사람) 인증."""
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, name, password_hash, is_active, COALESCE(is_manager,0) AS is_manager "
+            "FROM workers WHERE name = ?",
+            (name.strip(),),
+        ).fetchone()
+    if not row or not row["is_active"] or not row["is_manager"] or not row["password_hash"]:
+        return None
+    if not verify_password(password, row["password_hash"]):
+        return None
+    return _worker_to_public(row)
+
+
 def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
     with get_connection() as connection:
         row = connection.execute(
@@ -118,6 +146,24 @@ def list_users_by_access_levels(*access_levels: str) -> list[dict[str, Any]]:
 
 
 def get_current_user(request: Request, required: bool = True) -> dict[str, Any] | None:
+    # 1) 이름 기반 책임자(이용자 명단) 세션
+    mgr_worker_id = request.session.get("mgr_worker_id")
+    if mgr_worker_id:
+        token = request.session.get("mgr_token")
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT id, name, is_active, COALESCE(is_manager,0) AS is_manager, session_token "
+                "FROM workers WHERE id = ?",
+                (int(mgr_worker_id),),
+            ).fetchone()
+        if row and row["is_active"] and row["is_manager"] and (token or "") == (row["session_token"] or ""):
+            return _worker_to_public(row)
+        request.session.clear()
+        if required:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
+        return None
+
+    # 2) 레거시 users 계정(admin 부트스트랩/폴백) 세션
     user_id = request.session.get("user_id")
     if not user_id:
         if required:
@@ -188,7 +234,29 @@ def login_user(request: Request, user: dict[str, Any], max_level: str | None = N
         request.session["max_level"] = max_level
 
 
+def login_manager_worker(request: Request, worker: dict[str, Any]) -> None:
+    """이름 기반 책임자 로그인 — workers.session_token 회전(단일 세션)."""
+    token = secrets.token_urlsafe(32)
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE workers SET session_token = ? WHERE id = ?",
+            (token, int(worker["id"])),
+        )
+        connection.commit()
+    request.session.clear()
+    request.session["mgr_worker_id"] = worker["id"]
+    request.session["mgr_token"] = token
+
+
 def logout_user(request: Request) -> None:
+    mgr_worker_id = request.session.get("mgr_worker_id")
+    if mgr_worker_id:
+        with get_connection() as connection:
+            connection.execute(
+                "UPDATE workers SET session_token = NULL WHERE id = ?",
+                (int(mgr_worker_id),),
+            )
+            connection.commit()
     user_id = request.session.get("user_id")
     if user_id:
         with get_connection() as connection:

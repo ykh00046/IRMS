@@ -273,6 +273,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # people-merge: 이용자 명단(workers)을 사람 목록의 단일 소스로. 그 중 지정된 사람만
+    # 개인 비밀번호를 가진 책임자(수정·삭제·관리 권한)로 로그인한다.
+    ensure_column(connection, "workers", "is_manager", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "workers", "password_hash", "TEXT")
+    ensure_column(connection, "workers", "session_token", "TEXT")
     # 기존 사용자 이름을 작업자 명단에 1회 프리필 (로그인 계정과 별개로 선택 편의)
     if not has_migration(connection, "prefill_workers_from_users"):
         now = utc_now_text()

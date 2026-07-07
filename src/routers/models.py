@@ -166,6 +166,11 @@ class WorkerUpdateBody(BaseModel):
     is_active: bool | None = None
 
 
+class WorkerManagerBody(BaseModel):
+    # 이용자를 책임자로 지정/비밀번호 초기화할 때의 개인 비밀번호
+    password: str = Field(min_length=6, max_length=100)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

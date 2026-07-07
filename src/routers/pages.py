@@ -9,10 +9,19 @@ from ..attendance_auth import (
     is_admin_mode,
     logout_session as att_logout_session,
 )
-from ..auth import get_current_user, has_access_level, list_users_by_access_levels
+from ..auth import get_current_user, has_access_level
 from ..blend_session import current_blend_worker, logout_worker_session
 from ..config import SEED_DEMO_DATA
+from ..db import get_connection
 from ..security import refresh_csrf_cookie
+from ..services import worker_service
+
+
+def _manager_names() -> list[str]:
+    """로그인 화면 자동완성용 — 지정된 책임자 이름 + 레거시 admin."""
+    with get_connection() as connection:
+        names = worker_service.manager_names(connection)
+    return names + ["admin"]
 
 
 def _safe_next(next_url: str | None, default: str) -> str:
@@ -116,7 +125,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "current_user": current_user,
             "next_url": next_url,
             "show_demo_credentials": SEED_DEMO_DATA,
-            "managers": list_users_by_access_levels("manager"),
+            "managers": _manager_names(),
         })
 
     @router.get("/weighing", response_class=HTMLResponse)

@@ -11,13 +11,75 @@ from typing import Any
 def list_workers(connection: sqlite3.Connection, *, active_only: bool = True) -> list[dict[str, Any]]:
     where = "WHERE is_active = 1" if active_only else ""
     rows = connection.execute(
-        f"SELECT id, name, is_active, created_at FROM workers {where} ORDER BY name"
+        f"""
+        SELECT id, name, is_active, created_at,
+               COALESCE(is_manager, 0) AS is_manager,
+               (password_hash IS NOT NULL) AS has_password
+        FROM workers {where} ORDER BY name
+        """
     ).fetchall()
     return [
-        {"id": int(r["id"]), "name": r["name"], "is_active": bool(r["is_active"]),
-         "created_at": r["created_at"]}
+        {
+            "id": int(r["id"]), "name": r["name"], "is_active": bool(r["is_active"]),
+            "created_at": r["created_at"],
+            "is_manager": bool(r["is_manager"]) and bool(r["has_password"]),
+        }
         for r in rows
     ]
+
+
+def manager_names(connection: sqlite3.Connection) -> list[str]:
+    """로그인 가능한(비번 있는) 책임자 이름 목록 — 로그인 화면 자동완성용."""
+    rows = connection.execute(
+        "SELECT name FROM workers WHERE is_active = 1 AND is_manager = 1 "
+        "AND password_hash IS NOT NULL ORDER BY name"
+    ).fetchall()
+    return [r["name"] for r in rows]
+
+
+def active_manager_count(connection: sqlite3.Connection) -> int:
+    row = connection.execute(
+        "SELECT COUNT(*) AS c FROM workers WHERE is_active = 1 AND is_manager = 1 "
+        "AND password_hash IS NOT NULL"
+    ).fetchone()
+    return int(row["c"])
+
+
+def set_manager(connection: sqlite3.Connection, worker_id: int, password_hash: str) -> None:
+    """이용자를 책임자로 지정(개인 비밀번호 설정)."""
+    connection.execute(
+        "UPDATE workers SET is_manager = 1, password_hash = ? WHERE id = ?",
+        (password_hash, worker_id),
+    )
+
+
+def reset_manager_password(connection: sqlite3.Connection, worker_id: int, password_hash: str) -> None:
+    connection.execute(
+        "UPDATE workers SET password_hash = ?, session_token = NULL WHERE id = ? AND is_manager = 1",
+        (password_hash, worker_id),
+    )
+
+
+def revoke_manager(connection: sqlite3.Connection, worker_id: int) -> None:
+    """책임자 해제 — 비밀번호·세션 제거, 다시 이름만 쓰는 이용자로."""
+    connection.execute(
+        "UPDATE workers SET is_manager = 0, password_hash = NULL, session_token = NULL WHERE id = ?",
+        (worker_id,),
+    )
+
+
+def get_worker(connection: sqlite3.Connection, worker_id: int) -> dict[str, Any] | None:
+    r = connection.execute(
+        "SELECT id, name, is_active, COALESCE(is_manager,0) AS is_manager, "
+        "(password_hash IS NOT NULL) AS has_password FROM workers WHERE id = ?",
+        (worker_id,),
+    ).fetchone()
+    if not r:
+        return None
+    return {
+        "id": int(r["id"]), "name": r["name"], "is_active": bool(r["is_active"]),
+        "is_manager": bool(r["is_manager"]) and bool(r["has_password"]),
+    }
 
 
 def worker_names(connection: sqlite3.Connection) -> list[str]:

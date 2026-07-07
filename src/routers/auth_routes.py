@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from slowapi.util import get_remote_address
 
 from ..auth import (
+    authenticate_manager_worker,
     authenticate_user,
     get_current_user,
     has_access_level,
+    login_manager_worker,
     login_user,
     logout_user,
     require_access_level,
@@ -82,7 +84,27 @@ def build_router() -> APIRouter:
     @router.post("/auth/management-login")
     @limiter.limit("5/minute")
     def auth_management_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
-        user = _authenticate_or_fail(request, body, "management_login", required_level="manager")
+        # 이름 기반 책임자(이용자 명단에서 지정된 사람) 우선, 없으면 레거시 admin 계정 폴백.
+        user = authenticate_manager_worker(body.username, body.password)
+        if user is None:
+            legacy = authenticate_user(body.username, body.password)
+            if legacy and has_access_level(legacy, "manager"):
+                user = legacy
+        if user is None:
+            _log_failed_login(request, body.username, "management_login")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_CREDENTIALS")
+
+        if user.get("is_worker_manager"):
+            login_manager_worker(request, user)
+            with get_connection() as connection:
+                write_audit_log(
+                    connection, action="management_login", actor=user,
+                    target_type="session", target_id=user["id"], target_label=user["username"],
+                    details={"entry_point": "management_login"},
+                )
+                connection.commit()
+            refresh_csrf_cookie(response)
+            return {"user": user}
         return _do_login(request, response, user, "management_login", "management_login")
 
     @router.post("/auth/operator-login")
