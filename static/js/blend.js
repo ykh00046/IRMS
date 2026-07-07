@@ -582,7 +582,6 @@
       ${renderApprovalSection(rec)}
       ${renderViscositySection(rec)}`;
     bindApprovalSection(id);
-    bindViscositySection(id);
     $("blend-detail-modal").hidden = false;
   }
 
@@ -641,36 +640,12 @@
       ? `<ul class="blend-visc-list">${linked.map((v) =>
           `<li><b>${esc(v.product_code)}</b> ${fmt(v.viscosity)} <span class="muted small">${esc(v.measured_date || "")}${v.created_by ? " · " + esc(v.created_by) : ""}</span></li>`
         ).join("")}</ul>`
-      : '<p class="muted small">측정된 점도가 없습니다.</p>';
+      : '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
+    // 점도 등록 UI 는 점도 관리 화면 한 곳 — 여기는 읽기전용 표시만.
     return `<div class="blend-visc-block no-print">
       <h4 class="panel-title">점도 측정</h4>
       ${list}
-      <div class="blend-visc-form">
-        <input class="input" id="blend-visc-value" type="number" step="0.1" min="0" placeholder="점도값" />
-        <input class="input" id="blend-visc-memo" placeholder="메모(선택)" />
-        <button class="btn btn-sm accent" id="blend-visc-add" type="button">점도 기록</button>
-      </div>
-      <p class="login-error" id="blend-visc-error" hidden></p>
     </div>`;
-  }
-
-  function bindViscositySection(recordId) {
-    const btn = $("blend-visc-add");
-    if (!btn) return;
-    btn.addEventListener("click", async () => {
-      const err = $("blend-visc-error");
-      err.hidden = true;
-      const viscosity = Number($("blend-visc-value").value);
-      if (!(viscosity > 0)) { err.textContent = "점도값을 입력하세요."; err.hidden = false; return; }
-      try {
-        await request(`/blend/records/${recordId}/viscosity`, {
-          method: "POST",
-          body: { viscosity, memo: $("blend-visc-memo").value.trim() || null },
-        });
-        notify("점도를 기록했습니다.", "success");
-        openDetail(recordId);
-      } catch (e) { err.textContent = e.message; err.hidden = false; }
-    });
   }
 
   async function cancelDetail() {

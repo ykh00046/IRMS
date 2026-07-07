@@ -258,6 +258,50 @@ def test_blend_update_route_requires_manager_and_full_edit():
     assert bad.status_code == 400
 
 
+def test_blend_viscosity_route_links_reading():
+    """POST /blend/records/{id}/viscosity — 점도 관리 화면의 저장 경로.
+    배합 실적에 연계(blend_record_id)되고, 같은 LOT 재등록은 409.
+    (2026-07-07 실수로 제거돼 점도 등록이 깨졌던 회귀 방지용 라우트 테스트.)"""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    worker = "점도작업_" + uuid.uuid4().hex[:6]
+    prod = "VISCR" + uuid.uuid4().hex[:4]
+
+    def headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")  # csrf 쿠키 확보
+    client.post("/api/workers", json={"name": worker}, headers=headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-05",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    res = client.post(f"/api/blend/records/{rid}/viscosity",
+                      json={"viscosity": 1234.5, "memo": "route"}, headers=headers())
+    assert res.status_code == 200, res.text
+    linked = res.json()["viscosity"]
+    assert len(linked) == 1 and linked[0]["viscosity"] == 1234.5
+
+    dup = client.post(f"/api/blend/records/{rid}/viscosity",
+                      json={"viscosity": 2000}, headers=headers())
+    assert dup.status_code == 409  # 같은 LOT 중복 등록 차단
+
+
 def test_list_blend_records_filters():
     conn = _make_db()
     rid = _seed_recipe(conn)
