@@ -1,3 +1,4 @@
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -15,8 +16,8 @@ from ..auth import (
 )
 from ..db import get_connection, write_audit_log
 from ..limiter import limiter
-from ..security import refresh_csrf_cookie
-from .models import LoginRequest
+from ..security import hash_password, refresh_csrf_cookie, verify_password
+from .models import ChangePasswordBody, LoginRequest
 
 
 def build_router() -> APIRouter:
@@ -119,6 +120,48 @@ def build_router() -> APIRouter:
             "operator_login",
             max_level="operator",
         )
+
+    @router.post("/auth/change-password")
+    @limiter.limit("5/minute")
+    def auth_change_password(request: Request, body: ChangePasswordBody) -> dict[str, Any]:
+        """로그인한 책임자 본인의 비밀번호 변경(현재 비밀번호 확인 + 세션 토큰 회전)."""
+        user = get_current_user(request, required=True)
+        if not has_access_level(user, "manager"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+        new_token = secrets.token_urlsafe(32)
+        with get_connection() as connection:
+            if user.get("is_worker_manager"):
+                row = connection.execute(
+                    "SELECT password_hash FROM workers WHERE id = ?", (int(user["id"]),)
+                ).fetchone()
+                if not row or not row["password_hash"] or not verify_password(
+                    body.current_password, row["password_hash"]
+                ):
+                    raise HTTPException(status_code=400, detail="INVALID_CURRENT_PASSWORD")
+                connection.execute(
+                    "UPDATE workers SET password_hash = ?, session_token = ? WHERE id = ?",
+                    (hash_password(body.new_password), new_token, int(user["id"])),
+                )
+                request.session["mgr_token"] = new_token
+                action = "worker_manager_password_changed"
+            else:
+                row = connection.execute(
+                    "SELECT password_hash FROM users WHERE id = ?", (int(user["id"]),)
+                ).fetchone()
+                if not row or not verify_password(body.current_password, row["password_hash"]):
+                    raise HTTPException(status_code=400, detail="INVALID_CURRENT_PASSWORD")
+                connection.execute(
+                    "UPDATE users SET password_hash = ?, session_token = ? WHERE id = ?",
+                    (hash_password(body.new_password), new_token, int(user["id"])),
+                )
+                request.session["session_token"] = new_token
+                action = "password_changed"
+            write_audit_log(
+                connection, action=action, actor=user, target_type="user",
+                target_id=str(user["id"]), target_label=user["username"],
+            )
+            connection.commit()
+        return {"ok": True}
 
     @router.post("/auth/logout")
     def auth_logout(request: Request) -> dict[str, str]:

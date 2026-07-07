@@ -171,6 +171,12 @@ class WorkerManagerBody(BaseModel):
     password: str = Field(min_length=6, max_length=100)
 
 
+class ChangePasswordBody(BaseModel):
+    # 로그인한 책임자가 본인 비밀번호를 직접 변경(현재 비밀번호 확인)
+    current_password: str = Field(min_length=1, max_length=100)
+    new_password: str = Field(min_length=6, max_length=100)
+
+
 class WeighingStepRequest(BaseModel):
     recipe_id: int = Field(gt=0)
     material_id: int | None = Field(default=None, gt=0)

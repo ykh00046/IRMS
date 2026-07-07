@@ -166,6 +166,80 @@ def test_delete_worker_blocked_for_manager_and_records():
         assert conn.execute("SELECT 1 FROM workers WHERE id=?", (did,)).fetchone() is None
 
 
+def test_manager_self_change_password_flow():
+    """책임자 본인이 현재 비밀번호 확인 후 직접 비밀번호 변경 → 새 비번으로 재로그인."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    name = "본인변경_" + uuid.uuid4().hex[:6]
+
+    # admin(폴백)으로 이용자 등록 + 책임자 지정
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    client.post("/api/workers", json={"name": name}, headers=headers)
+    with get_connection() as conn:
+        wid = conn.execute("SELECT id FROM workers WHERE name=?", (name,)).fetchone()["id"]
+    client.post(f"/api/workers/{wid}/manager", json={"password": "oldpw123"}, headers=headers)
+
+    # 본인 로그인
+    client.post("/api/auth/logout", headers=headers)
+    res = client.post("/api/auth/management-login", json={"username": name, "password": "oldpw123"})
+    assert res.status_code == 200
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    # 현재 비번 틀리면 400
+    bad = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrong", "new_password": "newpw123"},
+        headers=headers,
+    )
+    assert bad.status_code == 400
+
+    # 현재 비번 맞으면 변경 성공(세션 유지)
+    ok = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "oldpw123", "new_password": "newpw123"},
+        headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/workers/all").status_code == 200  # 여전히 로그인 상태
+
+    # 재로그인: 옛 비번 거부, 새 비번 허용
+    client.post("/api/auth/logout", headers=headers)
+    assert client.post("/api/auth/management-login", json={"username": name, "password": "oldpw123"}).status_code == 401
+    assert client.post("/api/auth/management-login", json={"username": name, "password": "newpw123"}).status_code == 200
+
+
+def test_change_password_requires_login():
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    res = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "x", "new_password": "newpw123"},
+    )
+    assert res.status_code in (401, 403)
+
+
 def test_worker_routes_open():
     import importlib
 

@@ -10,6 +10,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const addWorkerSubmit = document.getElementById("add-worker-submit");
   const workersBody = document.getElementById("workers-body");
   const workersRefresh = document.getElementById("workers-refresh");
+
+  // 내 비밀번호 변경 refs
+  const changePwForm = document.getElementById("change-pw-form");
+  const cpwCurrent = document.getElementById("cpw-current");
+  const cpwNew = document.getElementById("cpw-new");
+  const cpwSubmit = document.getElementById("cpw-submit");
   const summaryTotal = document.getElementById("summary-total");
   const summaryManagers = document.getElementById("summary-managers");
 
@@ -31,6 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
       worker_manager_granted: "책임자 지정",
       worker_manager_revoked: "책임자 해제",
       worker_manager_password_reset: "책임자 비번 초기화",
+      worker_manager_password_changed: "책임자 비번 변경(본인)",
+      password_changed: "비밀번호 변경(본인)",
       attendance_viewed_by_admin: "근태 조회",
       attendance_password_reset: "근태 비번 초기화",
       recipe_status_updated: "레시피 상태",
@@ -133,6 +141,36 @@ document.addEventListener("DOMContentLoaded", () => {
       IRMS.notify(`추가 실패: ${error.message}`, "error");
     } finally {
       IRMS.btnLoading(addWorkerSubmit, false);
+    }
+  }
+
+  async function handleChangePassword(event) {
+    event.preventDefault();
+    const current = String(cpwCurrent?.value || "");
+    const next = String(cpwNew?.value || "");
+    if (!current) {
+      IRMS.notify("현재 비밀번호를 입력하세요.", "error");
+      return;
+    }
+    if (next.length < 6) {
+      IRMS.notify("새 비밀번호는 6자 이상이어야 합니다.", "error");
+      return;
+    }
+    IRMS.btnLoading(cpwSubmit, true);
+    try {
+      await request("/auth/change-password", {
+        method: "POST",
+        body: { current_password: current, new_password: next },
+      });
+      changePwForm.reset();
+      IRMS.notify("비밀번호를 변경했습니다.", "success");
+    } catch (error) {
+      const msg = error.message === "INVALID_CURRENT_PASSWORD"
+        ? "현재 비밀번호가 올바르지 않습니다."
+        : error.message;
+      IRMS.notify(`변경 실패: ${msg}`, "error");
+    } finally {
+      IRMS.btnLoading(cpwSubmit, false);
     }
   }
 
@@ -274,6 +312,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   addWorkerForm?.addEventListener("submit", handleAddWorker);
+  changePwForm?.addEventListener("submit", handleChangePassword);
   workersRefresh?.addEventListener("click", loadWorkers);
   workersBody?.addEventListener("click", handleWorkerAction);
   auditRefreshBtn?.addEventListener("click", loadAuditLogs);
