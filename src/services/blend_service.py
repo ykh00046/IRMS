@@ -120,6 +120,45 @@ def get_recipe_for_blend(
     }
 
 
+def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
+    """자재명 → ERP 품목코드(RM…) 매핑.
+
+    IRMS 의 materials.category 는 분류('기타' 등)라 ERP 코드가 아니다 — 레거시
+    이관이 RM 코드를 material_aliases 에 별칭으로 넣으므로 거기서 찾는다.
+    RM 으로 시작하는 별칭 우선.
+    """
+    try:
+        rows = connection.execute(
+            "SELECT m.name AS name, a.alias_name AS alias "
+            "FROM material_aliases a JOIN materials m ON m.id = a.material_id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    mapping: dict[str, str] = {}
+    for r in rows:
+        alias = (r["alias"] or "").strip()
+        if not alias:
+            continue
+        current = mapping.get(r["name"])
+        if current is None or (
+            alias.upper().startswith("RM") and not current.upper().startswith("RM")
+        ):
+            mapping[r["name"]] = alias
+    return mapping
+
+
+def _resolve_erp_code(name: str, code: str, alias_map: dict[str, str]) -> str:
+    """ERP 품목코드 결정: RM 별칭 > RM 형태의 저장 코드 > RM 형태의 자재명 > ''."""
+    alias = alias_map.get(name, "")
+    if alias.upper().startswith("RM"):
+        return alias
+    if code.upper().startswith("RM"):
+        return code
+    if name.upper().startswith("RM"):
+        return name
+    return alias  # RM 형태가 아니어도 별칭이 있으면 제공
+
+
 def material_usage_periods(
     connection: sqlite3.Connection,
     *,
@@ -130,7 +169,7 @@ def material_usage_periods(
     """자재 사용량(불출) 기간 집계 — 외부 재고 대시보드 연동용([[roadmap-2026H2]] P3).
 
     group: total(기간 합계, 기본) | day(작업일별) | month(월별).
-    material_code 포함(재고 시스템 매칭 키), 단위 g 고정.
+    erp_code(RM 품목코드 — 재고 시스템 매칭 키)·material_code 포함, 단위 g 고정.
     """
     period_expr = {
         "total": "NULL",
@@ -153,9 +192,13 @@ def material_usage_periods(
         """,
         (start_date, end_date),
     ).fetchall()
+    alias_map = _erp_code_map(connection)
     items = [
         {
             "period": r["period"],
+            "erp_code": _resolve_erp_code(
+                r["material_name"], r["material_code"], alias_map
+            ),
             "material_code": r["material_code"],
             "material_name": r["material_name"],
             "total_actual": round(float(r["total_actual"]), 3),

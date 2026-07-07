@@ -63,6 +63,34 @@ def test_material_usage_periods_grouping():
     assert res["record_count"] == 2
 
 
+def test_erp_code_resolution_from_aliases():
+    """ERP 품목코드(RM…)는 material_aliases 별칭에서 우선 해석 —
+    IRMS category('기타' 등)는 ERP 코드가 아니므로 대체 키가 필요하다."""
+    conn = _make_db()
+    conn.execute(
+        "CREATE TABLE material_aliases (id INTEGER PRIMARY KEY, "
+        "material_id INTEGER NOT NULL, alias_name TEXT NOT NULL)"
+    )
+    # MatA: RM 별칭 보유 / MatB: 별칭 없음, 저장 코드가 RM 형태 / MatC: 아무 코드 없음
+    conn.execute("INSERT INTO materials (name, unit_type, unit, category) VALUES ('MatA','weight','g','기타')")
+    aid = conn.execute("SELECT id FROM materials WHERE name='MatA'").fetchone()["id"]
+    conn.execute("INSERT INTO material_aliases (material_id, alias_name) VALUES (?, 'RM00123')", (aid,))
+
+    _seed_record(conn, "P2", "2026-07-10", [
+        {"material_name": "MatA", "material_code": "기타", "ratio": 50,
+         "theory_amount": 50, "actual_amount": 50},
+        {"material_name": "MatB", "material_code": "RM00456", "ratio": 30,
+         "theory_amount": 30, "actual_amount": 30},
+        {"material_name": "MatC", "material_code": "", "ratio": 20,
+         "theory_amount": 20, "actual_amount": 20},
+    ])
+    res = bs.material_usage_periods(conn, start_date="2026-07-10", end_date="2026-07-10")
+    codes = {i["material_name"]: i["erp_code"] for i in res["items"]}
+    assert codes["MatA"] == "RM00123"   # 별칭 우선
+    assert codes["MatB"] == "RM00456"   # 저장 코드가 RM 형태면 사용
+    assert codes["MatC"] == ""          # 매칭 불가 → 빈 값(대시보드에서 제외 가능)
+
+
 def _client():
     import src.config as cfg
     import src.main as mainmod
