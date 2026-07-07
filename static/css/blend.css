@@ -1,12 +1,5 @@
 /* blend.css — 배합 실적(잉크 계량 재구축) 화면 */
 
-.blend-tabs { display: flex; gap: 0.4rem; }
-.blend-tabs .btn.active {
-  background: var(--accent, #2563eb);
-  color: #fff;
-  border-color: var(--accent, #2563eb);
-}
-
 .blend-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -22,7 +15,7 @@
   align-items: flex-end;
 }
 
-.blend-cards .metric-card.blend-card-var .metric-value { color: var(--brand); }
+/* 자재 LOT 입력칸(모노스페이스) — blend.js renderMatRows 가 부여 */
 .blend-lot { font-family: "JetBrains Mono", monospace; font-size: 0.95rem; }
 
 /* 배합 설정 + 제품·DHR 네이비 카드 (시안 레이아웃) */
@@ -165,8 +158,6 @@
 .dhr-sign-role { font-size: 0.75rem; color: var(--muted, #6b7280); }
 .dhr-sign-name { font-weight: 700; font-size: 1.05rem; margin-top: 0.4rem; }
 .dhr-sign-at { font-size: 0.7rem; color: var(--muted, #6b7280); margin-top: 0.2rem; }
-.blend-approve-bar { display: flex; gap: 0.4rem; margin-top: 0.6rem; align-items: center; }
-.blend-approve-bar .input { margin: 0; max-width: 12rem; }
 
 /* 결재(작성) + 점도 측정 나란히 — 검토/승인은 DHR 출력물에서만 합성, 화면에선 생략 */
 .dhr-foot-row { display: flex; gap: 0.8rem; margin-top: 1rem; align-items: stretch; flex-wrap: wrap; }
@@ -199,16 +190,13 @@
 .blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: 0.8rem; }
 .blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }
 .blend-visc-list li { margin: 0.15rem 0; }
-.blend-visc-form { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
-.blend-visc-form .input { margin: 0; }
-.blend-visc-form select.input { width: auto; min-width: 6rem; }
 
-/* 인쇄: DHR 실적서만 출력 */
+/* 인쇄(브라우저 Ctrl+P): 배합 기록 상세(DHR 실적서)만 출력 */
 @media print {
   .no-print { display: none !important; }
   body * { visibility: hidden !important; }
-  #blend-dhr, #blend-dhr * { visibility: visible !important; }
-  #blend-dhr {
+  #status-dhr, #status-dhr * { visibility: visible !important; }
+  #status-dhr {
     position: absolute; left: 0; top: 0; width: 100%;
     max-height: none; box-shadow: none; border-radius: 0;
   }

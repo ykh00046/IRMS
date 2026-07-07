@@ -8,7 +8,7 @@ const COMMON_MODULES = [
   "static/js/common/format.js",
   "static/js/common/api-users.js",
   "static/js/common/api-recipes.js",
-  "static/js/common/api-materials-weighing.js",
+  "static/js/common/api-materials.js",
   "static/js/common/api-stats.js",
   "static/js/common/ui.js",
   "static/js/common/audio.js",

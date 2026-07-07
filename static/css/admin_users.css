@@ -178,23 +178,11 @@
   vertical-align: top;
 }
 
-.user-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
 .user-name {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   font-weight: 600;
-}
-
-.user-id {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--text-tertiary);
 }
 
 .inline-chip {
@@ -221,17 +209,10 @@
   border-color: rgba(239, 68, 68, 0.35);
 }
 
-.row-input,
-.row-select,
 .row-password {
   min-width: 150px;
 }
 
-.action-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
 
 .password-stack {
   display: flex;

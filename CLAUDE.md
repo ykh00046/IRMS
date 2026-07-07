@@ -57,7 +57,7 @@ run_tunnel.bat            # 터널 실행 (외부 접근)
 src/
 ├── main.py              # FastAPI 앱 팩토리 (create_app)
 ├── config.py            # 환경 설정 (IRMS_ENV, SESSION_SECRET 등)
-├── auth.py              # 인증 (단일 admin + FIELD_USER 무로그인 개방)
+├── auth.py              # 인증 (이름 기반 책임자(workers 명단) + admin/admin 폴백, 권한 2단계)
 ├── blend_session.py     # 배합 작업자 세션 (이름 기반)
 ├── attendance_auth.py   # 근태 인증 (사번+비번, 자체 세션)
 ├── security.py          # 보안 헬퍼 (CSRF 등)
@@ -66,16 +66,15 @@ src/
 ├── routers/
 │   ├── pages.py         # 페이지 라우트 (HTML)
 │   ├── api.py           # API 라우터 조립 (모든 하위 라우터 include)
-│   ├── auth_routes.py / admin_routes.py     # 로그인 · 사용자관리(admin 전용)
+│   ├── auth_routes.py / admin_routes.py     # 로그인·비번변경 · 감사로그/서명/시트백업(책임자 전용)
 │   ├── blend_routes.py                      # 배합 실적·DHR·점도연계·next-lot
 │   ├── blend_session_routes.py / worker_routes.py  # 작업자 세션·명단
 │   ├── viscosity_routes.py                  # 점도 등록·분석·반제품 설정
-│   ├── recipe_{manager,operator,stats,import}_routes.py  # 레시피
+│   ├── recipe_{manager,operator,import}_routes.py  # 레시피
 │   ├── dashboard_routes.py                  # 대시보드
 │   ├── attendance_routes.py                 # 근태 (⚠ future annotations 금지 — 상단 주석)
-│   ├── public_{attendance_alert,notice,viscosity_reminder}_routes.py  # 트레이용 내부망 공개 API
-│   ├── weighing_routes.py                   # 구 계량 API (dormant, /weighing→/blend 리다이렉트)
-│   └── models.py        # Pydantic 모델
+│   ├── public_{attendance_alert,viscosity_reminder}_routes.py  # 트레이용 내부망 공개 API
+│   └── models.py        # Pydantic 모델   (구 계량 API 는 제거 — /weighing 페이지는 /blend 리다이렉트만 잔존)
 ├── services/            # blend/viscosity/attendance_excel/dhr_{excel,pdf,cache}/
 │                        # signature_*/record_delete/variance/worker/import_parser 등
 └── middleware/          # internal_only(내부망 제한) · security_headers
@@ -88,12 +87,13 @@ templates/              # Jinja2 (_base_app.html 상속)
 ├── management.html     # 레시피 관리 (+management_login.html)
 ├── insight.html        # 배합 분석 (자재별 사용량 + 제품별 빈도·배치 상세)
 ├── dashboard.html      # 운영 대시보드
-├── admin_users.html    # 사용자 관리 (admin)
+├── admin_users.html    # 사용자 관리 — 이용자 명단·책임자 지정·감사로그 (책임자 전용)
 └── attendance*.html    # 근태 (메인/로그인/비번변경)
 
 static/                 # 정적 파일 (css, js, vendor) — ?v= 캐시버스팅 필수
 tests/                  # pytest (in-memory SQLite 픽스처)
-tray_client/            # Windows 트레이 알림 앱 (근태·점도 리마인더)
+tray_client/            # Windows 트레이 앱 (근태·점도 리마인더 + 저울 연동, 기능별 토글)
+scale_agent/            # A&D 저울 로컬 HTTP 에이전트 (127.0.0.1:8787 — 배합 화면 연동)
 serve.py / run_auto.bat # 운영: 단일 창 서버 + 자동 git pull 업데이트
 data/                   # SQLite DB (런타임, gitignore)
 scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
@@ -126,7 +126,7 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 ## Important Notes
 
 - **모든 레시피 값 단위**: `g` 고정
-- **계량 모드**: 수동 진행 (저울 연계 없음)
+- **계량 모드**: 수동 입력 기본 + A&D 저울 연동 옵션 (scale_agent/트레이 앱이 로컬 127.0.0.1:8787 HTTP 로 배합 화면에 무게 전달)
 - **환경변수**: `IRMS_ENV`, `IRMS_SESSION_SECRET`, `IRMS_DATA_DIR`, `IRMS_SEED_DEMO_DATA`
 - **세션**: `SessionMiddleware` + CSRF 보호 (`starlette-csrf`)
 - **Rate Limiting**: `slowapi` 적용

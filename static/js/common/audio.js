@@ -5,7 +5,7 @@
  * (2026-05).
  *
  * Exports (window.IRMS.*):
- *   playChatSound, speakText
+ *   speakText
  *
  * Side effects (executed on script parse):
  *   document.addEventListener("click", resumeAudioCtx)
@@ -20,25 +20,6 @@
   const IRMS = window.IRMS = window.IRMS || {};
 
   var notifSoundCtx = null;
-
-  function playChatSound() {
-    try {
-      if (!notifSoundCtx) notifSoundCtx = new (window.AudioContext || window.webkitAudioContext)();
-      var ctx = notifSoundCtx;
-      if (ctx.state === "suspended") { ctx.resume(); }
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.setValueAtTime(1047, ctx.currentTime + 0.08);
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
-    } catch (_) { /* AudioContext unavailable */ }
-  }
 
   // Resume AudioContext on first user interaction (browser autoplay policy)
   function resumeAudioCtx() {
@@ -84,6 +65,5 @@
     speakNextQueuedText();
   }
 
-  IRMS.playChatSound = playChatSound;
   IRMS.speakText = speakText;
 })();

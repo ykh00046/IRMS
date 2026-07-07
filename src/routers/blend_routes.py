@@ -7,13 +7,25 @@ Plan:   docs/01-plan/features/blend-overhaul.plan.md
 Design: docs/02-design/features/blend-overhaul.design.md
 
 Endpoints:
-    GET    /blend/recipes                     배합용 레시피 목록
-    GET    /blend/recipes/{id}?total=...      비율·이론량 환산
-    POST   /blend/records                     배합 실적 저장
-    GET    /blend/records                     기록조회(필터)
-    GET    /blend/records/{id}                상세(배합상세+편차)
-    DELETE /blend/records/{id}                기록 취소
+    GET    /blend/recipes                     배합용 레시피 목록 (최신 개정판만)
+    GET    /blend/recipes/{id}?total=...      비율·이론량 환산 (개정 자동 귀결)
+    GET    /blend/next-lot                    저장 시 부여될 제품 LOT 미리보기
     GET    /blend/workers                     작업자 목록(필터용)
+    GET    /blend/material-usage              자재별 사용량 집계
+    GET    /blend/product-usage               제품별 배치 빈도
+    GET    /blend/batch-details[/export]      배치 상세(+Excel)
+    POST   /blend/records                     배합 실적 저장 (작업자 세션 필요)
+    POST   /blend/records/bulk                일괄 생성
+    GET    /blend/records                     기록 조회(필터)
+    GET    /blend/records/export-all          전체 Excel 백업
+    GET    /blend/records/dhr-batch           배합일지 일괄 PDF
+    GET    /blend/records/{id}                상세(배합상세+편차+점도)
+    PUT    /blend/records/{id}                전체 수정 (책임자 전용)
+    DELETE /blend/records/{id}                기록 취소/삭제(hard 는 책임자)
+    POST   /blend/records/{id}/viscosity      점도 등록(배합 연계 — 점도 화면의 저장 경로)
+    POST   /blend/records/{id}/approve        결재 기록 (책임자 전용, 현장 미사용)
+    GET    /blend/records/{id}/export         실적서 Excel
+    GET    /blend/records/{id}/pdf            배합일지 PDF(?sign=1 서명 합성)
 """
 
 import io

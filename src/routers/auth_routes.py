@@ -29,10 +29,8 @@ def build_router() -> APIRouter:
         user: dict[str, Any],
         action: str,
         entry_point: str,
-        *,
-        max_level: str | None = None,
     ) -> dict[str, Any]:
-        login_user(request, user, max_level=max_level)
+        login_user(request, user)
         with get_connection() as connection:
             write_audit_log(
                 connection,
@@ -47,22 +45,6 @@ def build_router() -> APIRouter:
         refresh_csrf_cookie(response)
         return {"user": user}
 
-    def _authenticate_or_fail(
-        request: Request,
-        body: LoginRequest,
-        entry_point: str,
-        *,
-        required_level: str | None = None,
-    ) -> dict[str, Any]:
-        user = authenticate_user(body.username, body.password)
-        if not user or (required_level and not has_access_level(user, required_level)):
-            _log_failed_login(request, body.username, entry_point)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="INVALID_CREDENTIALS",
-            )
-        return user
-
     def _log_failed_login(request: Request, username: str, entry_point: str) -> None:
         with get_connection() as connection:
             write_audit_log(
@@ -75,12 +57,6 @@ def build_router() -> APIRouter:
                 details={"entry_point": entry_point, "ip": get_remote_address(request)},
             )
             connection.commit()
-
-    @router.post("/auth/login")
-    @limiter.limit("5/minute")
-    def auth_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
-        user = _authenticate_or_fail(request, body, "legacy_login")
-        return _do_login(request, response, user, "auth_login", "legacy_login")
 
     @router.post("/auth/management-login")
     @limiter.limit("5/minute")
@@ -107,19 +83,6 @@ def build_router() -> APIRouter:
             refresh_csrf_cookie(response)
             return {"user": user}
         return _do_login(request, response, user, "management_login", "management_login")
-
-    @router.post("/auth/operator-login")
-    @limiter.limit("5/minute")
-    def auth_operator_login(request: Request, response: Response, body: LoginRequest) -> dict[str, Any]:
-        user = _authenticate_or_fail(request, body, "operator_login")
-        return _do_login(
-            request,
-            response,
-            user,
-            "operator_select",
-            "operator_login",
-            max_level="operator",
-        )
 
     @router.post("/auth/change-password")
     @limiter.limit("5/minute")

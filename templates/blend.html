@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260707c" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260707d" />
 {% endblock %}
 
 {% block content %}
@@ -150,72 +150,12 @@
           </section>
         </div>
 
-        <!-- ===== 기록 조회 ===== -->
-        <div id="blend-records-mode" hidden>
-          <section class="panel">
-            <div class="blend-filter-row">
-              <div class="blend-field">
-                <label class="filter-label" for="rec-from">시작일</label>
-                <input class="input" id="rec-from" type="date" />
-              </div>
-              <div class="blend-field">
-                <label class="filter-label" for="rec-to">종료일</label>
-                <input class="input" id="rec-to" type="date" />
-              </div>
-              <div class="blend-field">
-                <label class="filter-label" for="rec-worker">작업자</label>
-                <select class="input" id="rec-worker"><option value="">전체</option></select>
-              </div>
-              <div class="blend-field blend-field-grow">
-                <label class="filter-label" for="rec-search">검색(LOT/제품)</label>
-                <input class="input" id="rec-search" placeholder="검색어" />
-              </div>
-              <button class="btn accent" id="rec-apply" type="button">조회</button>
-              <button class="btn" id="rec-export-all" type="button">전체 Excel</button>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="table-wrap">
-              <table class="blend-table">
-                <thead>
-                  <tr>
-                    <th>작업일</th>
-                    <th>제품 LOT</th>
-                    <th>제품</th>
-                    <th>작업자</th>
-                    <th class="num">총량(g)</th>
-                    <th>저울</th>
-                  </tr>
-                </thead>
-                <tbody id="rec-body"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
+        <!-- 기록 조회·상세(DHR)는 '배합 기록'(/status) 화면으로 일원화(2026-07-07 데드코드 정리) -->
         <datalist id="worker-names"></datalist>
-
-        <!-- ===== 상세(DHR) 모달 ===== -->
-        <div id="blend-detail-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal ss-modal-wide" id="blend-dhr">
-            <div class="ss-modal-header">
-              <h3 id="blend-detail-title">배합 실적서</h3>
-              <div class="blend-detail-actions">
-                <button id="blend-pdf" class="btn btn-sm accent" type="button">배합일지 PDF</button>
-                <button id="blend-print" class="btn btn-sm" type="button">인쇄</button>
-                <button id="blend-excel" class="btn btn-sm" type="button">Excel</button>
-                <button id="blend-detail-cancel" class="btn btn-sm" type="button">기록 취소</button>
-                <button id="blend-detail-close" class="btn btn-sm" type="button">닫기</button>
-              </div>
-            </div>
-            <div class="ss-modal-body" id="blend-detail-body"></div>
-          </div>
-        </div>
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend.js?v=20260707g"></script>
+    <script src="/static/js/blend.js?v=20260707h"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

@@ -534,122 +534,6 @@
     }
   }
 
-  // ── 기록 조회 ──────────────────────────────────────────────
-  async function loadWorkers() {
-    try {
-      const data = await request("/blend/workers");
-      const sel = $("rec-worker");
-      sel.innerHTML = '<option value="">전체</option>';
-      (data.items || []).forEach((w) => {
-        const o = document.createElement("option");
-        o.value = w; o.textContent = w; sel.appendChild(o);
-      });
-    } catch (_e) { /* ignore */ }
-  }
-
-  async function loadRecords() {
-    const query = {
-      start_date: $("rec-from").value || undefined,
-      end_date: $("rec-to").value || undefined,
-      worker: $("rec-worker").value || undefined,
-      search: $("rec-search").value.trim() || undefined,
-    };
-    const data = await request("/blend/records", { query });
-    const body = $("rec-body");
-    body.innerHTML = "";
-    const items = data.items || [];
-    if (!items.length) {
-      body.innerHTML = '<tr><td colspan="6" class="muted">기록이 없습니다.</td></tr>';
-      return;
-    }
-    items.forEach((r) => {
-      const tr = document.createElement("tr");
-      tr.className = "blend-row";
-      tr.innerHTML =
-        `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}</td>` +
-        `<td>${esc(r.product_name)}</td>` +
-        `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
-      tr.addEventListener("click", () => openDetail(r.id));
-      body.appendChild(tr);
-    });
-  }
-
-  async function openDetail(id) {
-    const rec = await request(`/blend/records/${id}`);
-    state.detailId = id;
-    $("blend-detail-title").textContent = `배합 실적서 — ${rec.product_lot}`;
-    const v = rec.variance || {};
-    const rows = (rec.details || []).map((d, i) =>
-      `<tr>
-        <td>${i + 1}</td><td>${esc(d.material_name)}</td>
-        <td class="num">${fmt(d.ratio, 2)}</td>
-        <td class="num">${fmt(d.theory_amount)}</td>
-        <td class="num">${fmt(d.actual_amount)}</td>
-        <td class="num ${d.variance > 0 ? "var-up" : d.variance < 0 ? "var-down" : ""}">${d.variance === null ? "-" : (d.variance > 0 ? "+" : "") + fmt(d.variance, 2)}</td>
-        <td>${esc(d.material_lot || "-")}</td>
-      </tr>`).join("");
-    $("blend-detail-body").innerHTML =
-      `<div class="dhr-head">
-        <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
-        <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}</b></div>
-        <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}</b></div>
-        <div><span class="dhr-k">작업일시</span><b>${esc(rec.work_date)} ${esc(rec.work_time || "")}</b></div>
-        <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
-        <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
-      </div>
-      <div class="table-wrap"><table class="blend-table">
-        <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="3">합계</td><td class="num">${fmt(v.theory_total)}</td><td class="num">${fmt(v.actual_total)}</td><td class="num">${(v.net_variance > 0 ? "+" : "") + fmt(v.net_variance, 2)}</td><td></td></tr></tfoot>
-      </table></div>
-      ${rec.note ? `<p class="dhr-note">비고: ${esc(rec.note)}</p>` : ""}
-      ${renderApprovalSection(rec)}
-      ${renderViscositySection(rec)}`;
-    $("blend-detail-modal").hidden = false;
-  }
-
-  function approvalCell(label, name, at, sign) {
-    const img = sign ? `<img class="dhr-sign-img" src="${esc(sign)}" alt="서명" />` : "";
-    return `<div class="dhr-sign">
-      <div class="dhr-sign-role">${label}</div>
-      ${img}
-      <div class="dhr-sign-name">${esc(name || "")}</div>
-      <div class="dhr-sign-at">${esc(at ? at.slice(0, 16).replace("T", " ") : "")}</div>
-    </div>`;
-  }
-
-  function renderApprovalSection(rec) {
-    // 현장에서는 검토/승인을 하지 않는다 — 작성만 표시(검토/승인 서명은 DHR 출력물에서 합성).
-    return `<div class="dhr-approvals dhr-approvals-single">
-        ${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}
-      </div>`;
-  }
-
-  function renderViscositySection(rec) {
-    const linked = rec.viscosity || [];
-    const list = linked.length
-      ? `<ul class="blend-visc-list">${linked.map((v) =>
-          `<li><b>${esc(v.product_code)}</b> ${fmt(v.viscosity)} <span class="muted small">${esc(v.measured_date || "")}${v.created_by ? " · " + esc(v.created_by) : ""}</span></li>`
-        ).join("")}</ul>`
-      : '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
-    // 점도 등록 UI 는 점도 관리 화면 한 곳 — 여기는 읽기전용 표시만.
-    return `<div class="blend-visc-block no-print">
-      <h4 class="panel-title">점도 측정</h4>
-      ${list}
-    </div>`;
-  }
-
-  async function cancelDetail() {
-    if (!state.detailId) return;
-    if (!window.confirm("이 배합 기록을 취소(삭제 표시)할까요?")) return;
-    try {
-      await request(`/blend/records/${state.detailId}`, { method: "DELETE" });
-      notify("기록이 취소되었습니다.", "success");
-      $("blend-detail-modal").hidden = true;
-      loadRecords();
-    } catch (e) { notify(`취소 실패: ${e.message}`, "error"); }
-  }
-
   function bind() {
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
     const recipeInput = $("blend-recipe");
@@ -705,26 +589,8 @@
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
-    $("rec-apply").addEventListener("click", () => loadRecords().catch((e) => notify(e.message, "error")));
     $("bulk-add-row").addEventListener("click", addBulkRow);
     $("bulk-create").addEventListener("click", createBulk);
-    $("rec-export-all").addEventListener("click", () => {
-      const q = new URLSearchParams();
-      if ($("rec-from").value) q.set("start_date", $("rec-from").value);
-      if ($("rec-to").value) q.set("end_date", $("rec-to").value);
-      if ($("rec-worker").value) q.set("worker", $("rec-worker").value);
-      if ($("rec-search").value.trim()) q.set("search", $("rec-search").value.trim());
-      window.location.assign(`/api/blend/records/export-all?${q.toString()}`);
-    });
-    $("blend-detail-close").addEventListener("click", () => { $("blend-detail-modal").hidden = true; });
-    $("blend-detail-cancel").addEventListener("click", cancelDetail);
-    $("blend-pdf").addEventListener("click", () => {
-      if (state.detailId) window.open(`/api/blend/records/${state.detailId}/pdf`, "_blank");
-    });
-    $("blend-print").addEventListener("click", () => window.print());
-    $("blend-excel").addEventListener("click", () => {
-      if (state.detailId) window.location.assign(`/api/blend/records/${state.detailId}/export`);
-    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -737,7 +603,6 @@
     setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");
     updateInputGuide();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
-    loadWorkers();
     loadWorkerNames();
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
     detectScale();

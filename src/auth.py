@@ -21,19 +21,6 @@ ACCESS_LEVEL_LABEL = {
     "admin": "책임자",  # legacy value
 }
 
-# 배합(잉크) 쪽은 단일 신뢰 도구라 작업자/책임자 권한 구분이 의미 없다. 로그인이 없으면
-# '현장'(manager) 으로 취급해 배합 관련 화면·기능을 모두 연다. admin(사용자 관리/시스템)과
-# 근태만 실제 로그인이 의미를 가진다. id=None 이라 화면 크롬에선 '비로그인' 으로 취급한다.
-FIELD_USER = {
-    "id": None,
-    "username": "현장",
-    "display_name": "현장",
-    "role": "operator",
-    "role_label": "현장",
-    "access_level": "manager",
-}
-
-
 def to_public_user(row) -> dict[str, Any]:
     access_level = row["access_level"] or ("manager" if row["role"] == "admin" else "operator")
     # 구 3단계 잔존 값 정규화: 관리자(admin) → 책임자(manager).
@@ -109,42 +96,6 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
     return to_public_user(row)
 
 
-def get_user_for_selection(user_id: int, allowed_levels: tuple[str, ...]) -> dict[str, Any] | None:
-    with get_connection() as connection:
-        row = connection.execute(
-            """
-            SELECT id, username, display_name, role, access_level, is_active
-            FROM users
-            WHERE id = ? AND is_active = 1
-            """,
-            (user_id,),
-        ).fetchone()
-    if not row:
-        return None
-    user = to_public_user(row)
-    if user["access_level"] not in allowed_levels:
-        return None
-    return user
-
-
-def list_users_by_access_levels(*access_levels: str) -> list[dict[str, Any]]:
-    if not access_levels:
-        return []
-
-    placeholders = ", ".join("?" for _ in access_levels)
-    with get_connection() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT id, username, display_name, role, access_level, is_active
-            FROM users
-            WHERE is_active = 1 AND access_level IN ({placeholders})
-            ORDER BY display_name ASC, username ASC
-            """,
-            access_levels,
-        ).fetchall()
-    return [to_public_user(row) for row in rows]
-
-
 def get_current_user(request: Request, required: bool = True) -> dict[str, Any] | None:
     # 1) 이름 기반 책임자(이용자 명단) 세션
     mgr_worker_id = request.session.get("mgr_worker_id")
@@ -181,14 +132,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
             (int(user_id),),
         ).fetchone()
     if row and (cookie_token or "") == (row["session_token"] or ""):
-        user = to_public_user(row)
-        max_level = request.session.get("max_level")
-        if max_level:
-            max_rank = ACCESS_LEVEL_RANK.get(max_level, 0)
-            user_rank = ACCESS_LEVEL_RANK.get(user.get("access_level", ""), 0)
-            if user_rank > max_rank:
-                user["access_level"] = max_level
-        return user
+        return to_public_user(row)
 
     request.session.clear()
     if required:
@@ -219,7 +163,7 @@ def require_access_level(required_level: str):
     return dependency
 
 
-def login_user(request: Request, user: dict[str, Any], max_level: str | None = None) -> None:
+def login_user(request: Request, user: dict[str, Any]) -> None:
     token = secrets.token_urlsafe(32)
     with get_connection() as connection:
         connection.execute(
@@ -230,8 +174,6 @@ def login_user(request: Request, user: dict[str, Any], max_level: str | None = N
     request.session.clear()
     request.session["user_id"] = user["id"]
     request.session["session_token"] = token
-    if max_level:
-        request.session["max_level"] = max_level
 
 
 def login_manager_worker(request: Request, worker: dict[str, Any]) -> None:

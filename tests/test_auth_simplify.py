@@ -1,6 +1,8 @@
-"""인증 단순화 — 단일 admin 계정 + 로그인 + 기타 계정 비활성화.
+"""레거시 admin 폴백 경로 검증 — users 테이블 admin 계정 관리 API.
 
-Design: 관리자는 admin 하나, 작업자는 이름 입력(근태 제외).
+현행 모델: 책임자는 이용자 명단(workers)에서 지정된 사람이 각자 비밀번호로
+로그인(test_workers.py). admin/admin 은 부트스트랩·비상용 폴백이며, 이 파일은
+그 폴백 계정의 로그인·users CRUD API(화면 없음, API 전용)를 검증한다.
 """
 
 from __future__ import annotations

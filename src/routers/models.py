@@ -11,10 +11,6 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=100)
 
 
-class OperatorSelectRequest(BaseModel):
-    user_id: int = Field(gt=0)
-
-
 class ImportRequest(BaseModel):
     raw_text: str = Field(min_length=1)
     created_by: str = Field(default="책임자")
@@ -198,23 +194,6 @@ class ChangePasswordBody(BaseModel):
     def _strength(self) -> "ChangePasswordBody":
         _check_manager_password(self.new_password)
         return self
-
-
-class WeighingStepRequest(BaseModel):
-    recipe_id: int = Field(gt=0)
-    material_id: int | None = Field(default=None, gt=0)
-    recipe_item_id: int | None = Field(default=None, gt=0)
-    actual_weight: float | None = Field(default=None, ge=0)
-
-
-class WeighingStepUndoRequest(BaseModel):
-    recipe_id: int = Field(gt=0)
-    material_id: int | None = Field(default=None, gt=0)
-    recipe_item_id: int | None = Field(default=None, gt=0)
-
-
-class WeighingRecipeCompleteRequest(BaseModel):
-    recipe_id: int = Field(gt=0)
 
 
 class AdminUserCreateRequest(BaseModel):

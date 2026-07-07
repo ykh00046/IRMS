@@ -296,10 +296,6 @@ def reset_password_to_temporary(emp_id: str) -> str:
     return temporary_password
 
 
-def reset_password_to_empid(emp_id: str) -> str:
-    return reset_password_to_temporary(emp_id)
-
-
 def login_session(request: Request, emp_id: str, password_reset_required: bool) -> None:
     request.session[SESSION_KEY] = {
         "emp_id": emp_id,

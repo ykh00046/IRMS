@@ -5,7 +5,7 @@ split-large-files PDCA cycle (2026-05). See
 docs/01-plan/features/split-large-files.plan.md.
 
 Public symbols (no leading underscore) so router modules and
-weighing_routes can import without crossing the routers/ ↔ services/
+routers can import without crossing the routers/ ↔ services/
 layer boundary in the wrong direction.
 """
 

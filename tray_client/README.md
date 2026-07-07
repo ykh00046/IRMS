@@ -132,6 +132,7 @@ tray_client/
 │   ├── main.py             # pystray 통합 트레이 진입점(알림/저울 토글)
 │   ├── attendance_alerts.py # /api/public/attendance-alerts/month 폴러 (슬롯 스케줄)
 │   ├── viscosity_alerts.py # 점도 입력 리마인더 폴러
+│   ├── schedule.py         # 근태·점도 공통 알림 슬롯(09/13/16시) 로직
 │   ├── attendance_popup.py # 근태/점도 팝업 UI (Tkinter)
 │   ├── scale_service.py    # 저울 연동 서비스(scale_agent 재사용, HTTP start/stop)
 │   ├── settings_window.py  # 단일 설정 창(Tkinter Toplevel) — 알림/저울/서버/자동실행
@@ -162,6 +163,7 @@ python -m src.main
 | Endpoint | 설명 |
 |----------|------|
 | `GET /api/public/attendance-alerts/month` | 이번 달 미처리 근태 이상 목록 |
+| `GET /api/public/viscosity-reminders/due` | 오늘 점도 미입력 리마인더 목록 |
 
 내부망 IP만 허용 (`127.0.0.1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). 외부 IP는 403.
 

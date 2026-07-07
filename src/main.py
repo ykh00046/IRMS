@@ -46,9 +46,7 @@ def create_app() -> FastAPI:
         cookie_secure=not IS_DEVELOPMENT,
         exempt_urls=[
             re.compile(r"^/health$"),
-            re.compile(r"^/api/auth/login$"),
             re.compile(r"^/api/auth/management-login$"),
-            re.compile(r"^/api/auth/operator-login$"),
             re.compile(r"^/api/attendance/login$"),
             re.compile(r"^/api/blend/session/login$"),
             # sendBeacon cannot attach custom headers; logout is idempotent
@@ -61,7 +59,6 @@ def create_app() -> FastAPI:
         InternalNetworkOnlyMiddleware,
         protected_prefixes=(
             "/api/public/attendance-alerts",
-            "/api/public/notice",
             "/api/public/viscosity-reminders",
         ),
         api_token=TRAY_API_TOKEN,
