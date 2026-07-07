@@ -178,11 +178,14 @@ def material_usage_periods(
         "day": "br.work_date",
         "month": "substr(br.work_date, 1, 7)",
     }[group]
-    product_expr = "br.product_name" if by_product else "NULL"
+    # 주의: GROUP BY 에 별칭 'product_name' 을 쓰면 SQLite 가 br.product_name
+    # 실컬럼으로 해석해 by_product=False 에서도 제품별로 쪼개진다 — 조건부 구성.
+    product_select = "br.product_name AS product_name," if by_product else ""
+    product_group = ", br.product_name" if by_product else ""
     rows = connection.execute(
         f"""
         SELECT {period_expr} AS period,
-               {product_expr} AS product_name,
+               {product_select}
                COALESCE(bd.material_code, '') AS material_code,
                bd.material_name AS material_name,
                COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
@@ -191,7 +194,7 @@ def material_usage_periods(
         FROM blend_details bd
         JOIN blend_records br ON br.id = bd.blend_record_id
         WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?
-        GROUP BY period, product_name, bd.material_code, bd.material_name
+        GROUP BY {period_expr}{product_group}, bd.material_code, bd.material_name
         ORDER BY period, total_actual DESC
         """,
         (start_date, end_date),
