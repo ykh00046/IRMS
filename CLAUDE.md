@@ -73,7 +73,8 @@ src/
 │   ├── recipe_{manager,operator,import}_routes.py  # 레시피
 │   ├── dashboard_routes.py                  # 대시보드
 │   ├── attendance_routes.py                 # 근태 (⚠ future annotations 금지 — 상단 주석)
-│   ├── public_{attendance_alert,viscosity_reminder}_routes.py  # 트레이용 내부망 공개 API
+│   ├── public_{attendance_alert,viscosity_reminder,material_usage}_routes.py
+│   │                    # 내부망 공개 API (트레이 알림 + 상위 재고 대시보드용 자재 불출량)
 │   └── models.py        # Pydantic 모델   (구 계량 API 는 제거 — /weighing 페이지는 /blend 리다이렉트만 잔존)
 ├── services/            # blend/viscosity/attendance_excel/dhr_{excel,pdf,cache}/
 │                        # signature_*/record_delete/variance/worker/import_parser 등

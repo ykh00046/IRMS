@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
         InternalNetworkOnlyMiddleware,
         protected_prefixes=(
             "/api/public/attendance-alerts",
+            "/api/public/material-usage",
             "/api/public/viscosity-reminders",
         ),
         api_token=TRAY_API_TOKEN,

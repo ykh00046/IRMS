@@ -120,6 +120,66 @@ def get_recipe_for_blend(
     }
 
 
+def material_usage_periods(
+    connection: sqlite3.Connection,
+    *,
+    start_date: str,
+    end_date: str,
+    group: str = "total",
+) -> dict[str, Any]:
+    """자재 사용량(불출) 기간 집계 — 외부 재고 대시보드 연동용([[roadmap-2026H2]] P3).
+
+    group: total(기간 합계, 기본) | day(작업일별) | month(월별).
+    material_code 포함(재고 시스템 매칭 키), 단위 g 고정.
+    """
+    period_expr = {
+        "total": "NULL",
+        "day": "br.work_date",
+        "month": "substr(br.work_date, 1, 7)",
+    }[group]
+    rows = connection.execute(
+        f"""
+        SELECT {period_expr} AS period,
+               COALESCE(bd.material_code, '') AS material_code,
+               bd.material_name AS material_name,
+               COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
+               COALESCE(SUM(bd.theory_amount), 0) AS total_theory,
+               COUNT(DISTINCT bd.blend_record_id) AS batch_count
+        FROM blend_details bd
+        JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?
+        GROUP BY period, bd.material_code, bd.material_name
+        ORDER BY period, total_actual DESC
+        """,
+        (start_date, end_date),
+    ).fetchall()
+    items = [
+        {
+            "period": r["period"],
+            "material_code": r["material_code"],
+            "material_name": r["material_name"],
+            "total_actual": round(float(r["total_actual"]), 3),
+            "total_theory": round(float(r["total_theory"]), 3),
+            "batch_count": int(r["batch_count"]),
+        }
+        for r in rows
+    ]
+    rec_count = connection.execute(
+        "SELECT COUNT(*) FROM blend_records br "
+        "WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?",
+        (start_date, end_date),
+    ).fetchone()[0]
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "group": group,
+        "unit": "g",
+        "record_count": int(rec_count),
+        "total_weight": round(sum(i["total_actual"] for i in items), 3),
+        "items": items,
+    }
+
+
 def material_usage(
     connection: sqlite3.Connection,
     start_date: str | None = None,
