@@ -89,11 +89,13 @@ def test_name_validation_blocks_obvious_mistakes():
         ws.register(conn, "ㄱ", "t")
     with pytest.raises(ValueError):
         ws.register(conn, "머ㅏ미", "t")
-    # 차단 — 특수문자·1자
+    # 차단 — 특수문자·1자(한 글자는 전용 메시지)
     with pytest.raises(ValueError):
         ws.register(conn, "김민호!", "t")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="너무 짧습니다"):
         ws.register(conn, "김", "t")
+    with pytest.raises(ValueError, match="너무 짧습니다"):
+        ws.register(conn, "ㄱ", "t")
     # rename 도 동일 규칙
     wid = conn.execute("SELECT id FROM workers WHERE name='김민호'").fetchone()["id"]
     with pytest.raises(ValueError):

@@ -20,6 +20,8 @@ def validate_name(name: str) -> str:
         raise ValueError("이름을 입력하세요.")
     if re.search(r"\s", clean):
         raise ValueError("이름에 공백을 넣을 수 없습니다. (예: '김 민호' → '김민호')")
+    if len(clean) < 2:
+        raise ValueError("이름이 너무 짧습니다. 성과 이름을 포함해 2자 이상 입력하세요.")
     if not _NAME_RE.fullmatch(clean):
         raise ValueError(
             "이름은 한글·영문·숫자 2~20자만 가능합니다. "
