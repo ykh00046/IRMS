@@ -168,6 +168,15 @@
 .blend-approve-bar { display: flex; gap: 0.4rem; margin-top: 0.6rem; align-items: center; }
 .blend-approve-bar .input { margin: 0; max-width: 12rem; }
 
+/* 결재(작성) + 점도 측정 나란히 — 검토/승인은 DHR 출력물에서만 합성, 화면에선 생략 */
+.dhr-foot-row { display: flex; gap: 0.8rem; margin-top: 1rem; align-items: stretch; flex-wrap: wrap; }
+.dhr-approvals-single { margin-top: 0; flex: 0 0 clamp(9rem, 22%, 13rem); }
+.dhr-foot-row .blend-visc-block {
+  flex: 1; min-width: 15rem; margin-top: 0;
+  border-top: none; border-left: 1px solid var(--border, #e5e7eb);
+  padding-top: 0; padding-left: 0.9rem;
+}
+
 /* 점도 연계 블록 */
 .blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: 0.8rem; }
 .blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }

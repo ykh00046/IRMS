@@ -129,8 +129,10 @@ document.addEventListener("DOMContentLoaded", () => {
         <tfoot><tr><td colspan="3">합계</td><td class="num">${fmt(v.theory_total)}</td><td class="num">${fmt(v.actual_total)}</td><td class="num">${(v.net_variance > 0 ? "+" : "") + fmt(v.net_variance, 2)}</td><td></td></tr></tfoot>
       </table></div>
       ${rec.note ? `<p class="dhr-note">비고: ${esc(rec.note)}</p>` : ""}
-      <div class="dhr-approvals">${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}${approvalCell("검토", rec.reviewed_by, rec.reviewed_at, rec.reviewed_sign)}${approvalCell("승인", rec.approved_by, rec.approved_at, rec.approved_sign)}</div>
-      ${visc}`;
+      <div class="dhr-foot-row">
+        <div class="dhr-approvals dhr-approvals-single">${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}</div>
+        ${visc}
+      </div>`;
     $("status-detail-modal").hidden = false;
 
     const vbtn = $("status-visc-add");
