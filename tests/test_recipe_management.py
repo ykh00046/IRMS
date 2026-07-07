@@ -154,6 +154,30 @@ def test_list_recipes_shows_only_latest_revision():
     assert v1 in ids
 
 
+def test_version_history_current_flag():
+    """버전 이력: 현재 버전만 is_current — 개정본이 취소되면 원본이 현재로 복귀."""
+    client = _client()
+    headers = _login(client)
+    product = f"PCUR{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+    v2 = _import(client, headers, product, 70, 30, revision_of=v1)
+
+    def current_map():
+        items = client.get(f"/api/recipes/{v1}/history").json()["items"]
+        return {it["id"]: it["is_current"] for it in items}
+
+    m = current_map()
+    assert m[v2] is True and m[v1] is False  # v2 만 현재
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        conn.execute("UPDATE recipes SET status = 'canceled' WHERE id = ?", (v2,))
+        conn.commit()
+    m = current_map()
+    assert m[v1] is True and m[v2] is False  # 취소 → v1 복귀
+
+
 def test_list_recipes_returns_is_dhr():
     """GET /recipes 응답에 is_dhr 포함 — 현황 표 DHR 칩 표시 근거."""
     client = _client()

@@ -51,6 +51,16 @@
         dom.versionHistoryBody.innerHTML = '<tr><td colspan="8"><div class="empty-state">이력이 없습니다.</div></td></tr>';
         return;
       }
+      // 상태: DB status 는 모든 버전이 completed 라 그대로 쓰면 옛 버전도 '사용중'으로
+      // 보인다 — 현재 버전만 '사용중', 대체된 버전은 '이전 버전', 취소는 그대로.
+      const statusChip = (it) => {
+        if (it.status === "canceled") {
+          return `<span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span>`;
+        }
+        return it.is_current
+          ? '<span class="status-chip status-completed">사용중</span>'
+          : '<span class="status-chip">이전 버전</span>';
+      };
       dom.versionHistoryBody.innerHTML = items
         .map(
           (it) => `
@@ -60,7 +70,7 @@
               <td>${IRMS.formatDateTime(it.created_at)}</td>
               <td>${IRMS.escapeHtml(it.created_by || "-")}</td>
               <td class="num">${it.item_count}</td>
-              <td><span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span></td>
+              <td>${statusChip(it)}</td>
               <td><button class="btn btn-sm history-row-edit" data-recipe-id="${it.id}" type="button">이 버전으로 수정 등록</button></td>
             </tr>
           `,

@@ -114,8 +114,10 @@ def build_router() -> APIRouter:
         dhr: bool = Query(default=False),
     ) -> dict[str, Any]:
         # current_only(기본): 옛 버전(다른 리비전의 부모) 숨기고 각 체인의 현재 버전(tip)만.
+        # 개정본이 취소되면 원본이 다시 현재 버전으로 복귀(취소 인지 — 현황·배합과 동일 규칙).
         revision_filter = (
-            "AND r.id NOT IN (SELECT revision_of FROM recipes WHERE revision_of IS NOT NULL)"
+            "AND r.id NOT IN (SELECT revision_of FROM recipes "
+            "WHERE revision_of IS NOT NULL AND status != 'canceled')"
             if current_only
             else ""
         )
@@ -246,7 +248,9 @@ def build_router() -> APIRouter:
         if not chain:
             return {"root_id": root_id, "current_id": recipe_id, "items": []}
 
-        current_id = max(chain, key=lambda r: (r["created_at"] or "", r["id"]))["id"]
+        # 현재 사용 = 취소되지 않은 최신 버전(전부 취소면 최신) — 현황·배합 노출과 동일 규칙.
+        active = [r for r in chain if r["status"] != "canceled"]
+        current_id = max(active or chain, key=lambda r: (r["created_at"] or "", r["id"]))["id"]
         items = []
         for idx, rec in enumerate(chain, start=1):
             items.append({
