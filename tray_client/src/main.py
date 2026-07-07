@@ -178,9 +178,9 @@ class TrayApp:
             self.logger.warning("config save failed: %s", exc)
 
     def _build_menu(self) -> Menu:
-        # 버튼을 늘리지 않는다 — 설정은 전부 '설정…' 창으로. 메뉴엔 자주 쓰는 동작만.
+        # 자주 쓰는 동작만 위에, '설정…'은 맨 아래로(눈에 덜 띄게). 더블클릭 단축 없음
+        # → 트레이 아이콘을 눌러도 설정이 바로 열리지 않는다(우클릭 메뉴에서만 접근).
         return Menu(
-            MenuItem("설정…", self._open_settings, default=True),
             MenuItem("홈 화면 열기", self._open_home),
             Menu.SEPARATOR,
             MenuItem(
@@ -193,6 +193,7 @@ class TrayApp:
             MenuItem("근태 알림 바로 확인", self._show_attendance_anomalies),
             MenuItem("점도 알림 바로 확인", self._show_viscosity_reminders),
             Menu.SEPARATOR,
+            MenuItem("설정…", self._open_settings),
             MenuItem("종료", self._quit),
         )
 
