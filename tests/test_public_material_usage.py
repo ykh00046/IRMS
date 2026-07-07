@@ -63,6 +63,26 @@ def test_material_usage_periods_grouping():
     assert res["record_count"] == 2
 
 
+def test_by_product_dimension():
+    """by_product=True — 제품 차원 추가(자재별 '주 사용처' 분석용)."""
+    conn = _make_db()
+    a = {"material_name": "MatA", "material_code": "A01", "ratio": 100,
+         "theory_amount": 100, "actual_amount": 100}
+    _seed_record(conn, "PROD1", "2026-07-01", [dict(a)])
+    _seed_record(conn, "PROD2", "2026-07-01", [dict(a)])
+    _seed_record(conn, "PROD1", "2026-07-02", [dict(a)])
+
+    res = bs.material_usage_periods(
+        conn, start_date="2026-07-01", end_date="2026-07-31", by_product=True
+    )
+    per_product = {i["product_name"]: i["total_actual"] for i in res["items"]}
+    assert per_product == {"PROD1": 200.0, "PROD2": 100.0}
+    # 기본(False)은 product_name 없이 자재로 합산
+    res = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert "product_name" not in res["items"][0]
+    assert res["items"][0]["total_actual"] == 300.0
+
+
 def test_erp_code_resolution_from_aliases():
     """ERP 품목코드(RM…)는 material_aliases 별칭에서 우선 해석 —
     IRMS category('기타' 등)는 ERP 코드가 아니므로 대체 키가 필요하다."""

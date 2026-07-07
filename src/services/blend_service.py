@@ -165,10 +165,12 @@ def material_usage_periods(
     start_date: str,
     end_date: str,
     group: str = "total",
+    by_product: bool = False,
 ) -> dict[str, Any]:
     """자재 사용량(불출) 기간 집계 — 외부 재고 대시보드 연동용([[roadmap-2026H2]] P3).
 
     group: total(기간 합계, 기본) | day(작업일별) | month(월별).
+    by_product=True 면 제품(product_name) 차원 추가 — 자재별 '주 사용처(제품)' 분석용.
     erp_code(RM 품목코드 — 재고 시스템 매칭 키)·material_code 포함, 단위 g 고정.
     """
     period_expr = {
@@ -176,9 +178,11 @@ def material_usage_periods(
         "day": "br.work_date",
         "month": "substr(br.work_date, 1, 7)",
     }[group]
+    product_expr = "br.product_name" if by_product else "NULL"
     rows = connection.execute(
         f"""
         SELECT {period_expr} AS period,
+               {product_expr} AS product_name,
                COALESCE(bd.material_code, '') AS material_code,
                bd.material_name AS material_name,
                COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
@@ -187,7 +191,7 @@ def material_usage_periods(
         FROM blend_details bd
         JOIN blend_records br ON br.id = bd.blend_record_id
         WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?
-        GROUP BY period, bd.material_code, bd.material_name
+        GROUP BY period, product_name, bd.material_code, bd.material_name
         ORDER BY period, total_actual DESC
         """,
         (start_date, end_date),
@@ -196,6 +200,7 @@ def material_usage_periods(
     items = [
         {
             "period": r["period"],
+            **({"product_name": r["product_name"]} if by_product else {}),
             "erp_code": _resolve_erp_code(
                 r["material_name"], r["material_code"], alias_map
             ),

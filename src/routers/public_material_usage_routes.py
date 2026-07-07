@@ -37,6 +37,7 @@ def build_router() -> APIRouter:
         start_date: str | None = Query(default=None, max_length=10),
         end_date: str | None = Query(default=None, max_length=10),
         group: str = Query(default="total", pattern="^(total|day|month)$"),
+        by_product: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         today = local_today_text()
@@ -45,7 +46,7 @@ def build_router() -> APIRouter:
         if start > end:
             raise HTTPException(status_code=400, detail="start_date 가 end_date 보다 늦습니다.")
         return blend_service.material_usage_periods(
-            connection, start_date=start, end_date=end, group=group
+            connection, start_date=start, end_date=end, group=group, by_product=by_product
         )
 
     return router
