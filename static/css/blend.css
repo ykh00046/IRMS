@@ -177,6 +177,21 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
+/* 배합 기록 전체 수정(책임자) */
+.edit-head-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem; margin-bottom: 0.9rem;
+}
+.edit-f { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.78rem; color: var(--muted, #6b7280); }
+.edit-f .input { margin: 0; }
+.edit-f-wide { grid-column: 1 / -1; }
+.edit-table td { padding: 0.25rem 0.3rem; }
+.edit-table .input { margin: 0; padding: 0.3rem 0.4rem; }
+.edit-table .num { text-align: right; }
+.edit-table .e-del { padding: 0.15rem 0.5rem; line-height: 1; }
+.edit-actions { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.8rem; }
+.edit-actions .edit-spacer { flex: 1; }
+
 /* 점도 연계 블록 */
 .blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border, #e5e7eb); padding-top: 0.8rem; }
 .blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }

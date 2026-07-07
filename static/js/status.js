@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
   let detailId = null;
+  let currentRecord = null;
 
   async function deleteRecord(recordId) {
     await request(`/blend/records/${recordId}`, {
@@ -87,6 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
   async function openDetail(id) {
     const rec = await request(`/blend/records/${id}`);
     detailId = id;
+    currentRecord = rec;
+    setEditChromeHidden(false);
     $("status-detail-title").textContent = `배합 실적서 — ${rec.product_lot}`;
     const v = rec.variance || {};
     const rows = (rec.details || [])
@@ -152,6 +155,126 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) { err.textContent = e.message; err.hidden = false; }
       });
     }
+  }
+
+  // ── 전체 수정(책임자 전용) ────────────────────────────────────
+  // 헤더 액션(PDF/인쇄/Excel/수정/삭제 + 서명 체크)을 편집 중에는 숨긴다.
+  const EDIT_HIDE_IDS = ["status-pdf", "status-print", "status-excel", "status-edit", "status-delete"];
+
+  function setEditChromeHidden(hidden) {
+    EDIT_HIDE_IDS.forEach((id) => { const el = $(id); if (el) el.style.display = hidden ? "none" : ""; });
+    const signWrap = $("status-detail-sign");
+    if (signWrap && signWrap.closest("label")) signWrap.closest("label").style.display = hidden ? "none" : "";
+  }
+
+  function editRow(d) {
+    return `<tr class="edit-row">
+      <td><input class="input e-name" value="${esc(d.material_name || "")}" placeholder="자재명" /></td>
+      <td><input class="input num e-ratio" type="number" step="0.01" min="0" value="${d.ratio ?? ""}" /></td>
+      <td><input class="input num e-theory" type="number" step="0.01" min="0" value="${d.theory_amount ?? ""}" /></td>
+      <td><input class="input num e-actual" type="number" step="0.01" min="0" value="${d.actual_amount ?? ""}" /></td>
+      <td><input class="input e-lot" value="${esc(d.material_lot || "")}" placeholder="LOT(선택)" /></td>
+      <td><button class="btn btn-sm danger e-del" type="button" title="행 삭제">×</button></td>
+    </tr>`;
+  }
+
+  function renderEditForm(rec) {
+    setEditChromeHidden(true);
+    $("status-detail-title").textContent = `배합 실적서 수정 — ${rec.product_lot}`;
+    const rows = (rec.details || []).map(editRow).join("");
+    $("status-detail-body").innerHTML =
+      `<div class="edit-head-grid">
+        <label class="edit-f"><span>제품명</span><input class="input" id="e-product" value="${esc(rec.product_name || "")}" /></label>
+        <label class="edit-f"><span>작업자</span><input class="input" id="e-worker" value="${esc(rec.worker || "")}" /></label>
+        <label class="edit-f"><span>작업일</span><input class="input" id="e-date" type="date" value="${esc(rec.work_date || "")}" /></label>
+        <label class="edit-f"><span>작업시간</span><input class="input" id="e-time" value="${esc(rec.work_time || "")}" placeholder="HH:MM" /></label>
+        <label class="edit-f"><span>총 배합량(g)</span><input class="input num" id="e-total" type="number" step="0.01" min="0" value="${rec.total_amount ?? ""}" /></label>
+        <label class="edit-f"><span>저울</span><input class="input" id="e-scale" value="${esc(rec.scale || "")}" /></label>
+        <label class="edit-f"><span>반응기(1~4, 선택)</span><input class="input num" id="e-reactor" type="number" min="1" max="4" value="${rec.reactor ?? ""}" /></label>
+        <label class="edit-f edit-f-wide"><span>비고</span><input class="input" id="e-note" value="${esc(rec.note || "")}" /></label>
+      </div>
+      <div class="table-wrap"><table class="blend-table edit-table">
+        <thead><tr><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th>자재 LOT</th><th></th></tr></thead>
+        <tbody id="e-rows">${rows}</tbody>
+      </table></div>
+      <div class="edit-actions">
+        <button class="btn btn-sm" id="e-add-row" type="button">＋ 행 추가</button>
+        <span class="edit-spacer"></span>
+        <button class="btn btn-sm" id="e-cancel" type="button">취소</button>
+        <button class="btn btn-sm accent" id="e-save" type="button">저장</button>
+      </div>
+      <p class="login-error" id="e-error" hidden></p>
+      <p class="muted small">제품 LOT·서명·생성 정보는 그대로 유지됩니다. 자재별 편차는 ±0.05g 이내여야 저장됩니다.</p>`;
+
+    $("e-rows").addEventListener("click", (ev) => {
+      const del = ev.target.closest(".e-del");
+      if (del) del.closest("tr").remove();
+    });
+    $("e-add-row").addEventListener("click", () => {
+      $("e-rows").insertAdjacentHTML("beforeend", editRow({}));
+    });
+    $("e-cancel").addEventListener("click", () => openDetail(rec.id));
+    $("e-save").addEventListener("click", () => saveEdit(rec.id));
+  }
+
+  function collectEdit() {
+    const details = [...document.querySelectorAll("#e-rows tr")].map((tr) => {
+      const name = tr.querySelector(".e-name").value.trim();
+      if (!name) return null;
+      const numOrNull = (sel) => {
+        const v = tr.querySelector(sel).value;
+        return v === "" ? null : Number(v);
+      };
+      return {
+        material_name: name,
+        ratio: numOrNull(".e-ratio"),
+        theory_amount: numOrNull(".e-theory"),
+        actual_amount: numOrNull(".e-actual"),
+        material_lot: tr.querySelector(".e-lot").value.trim() || null,
+      };
+    }).filter(Boolean);
+    const reactorRaw = $("e-reactor").value;
+    return {
+      product_name: $("e-product").value.trim(),
+      worker: $("e-worker").value.trim(),
+      work_date: $("e-date").value,
+      work_time: $("e-time").value.trim() || null,
+      total_amount: Number($("e-total").value),
+      scale: $("e-scale").value.trim() || null,
+      note: $("e-note").value.trim() || null,
+      reactor: reactorRaw === "" ? null : Number(reactorRaw),
+      details,
+    };
+  }
+
+  async function saveEdit(id) {
+    const err = $("e-error");
+    err.hidden = true;
+    const body = collectEdit();
+    if (!body.product_name) { err.textContent = "제품명을 입력하세요."; err.hidden = false; return; }
+    if (!body.worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
+    if (!body.work_date) { err.textContent = "작업일을 입력하세요."; err.hidden = false; return; }
+    if (!(body.total_amount > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
+    if (!body.details.length) { err.textContent = "자재를 1개 이상 입력하세요."; err.hidden = false; return; }
+    const btn = $("e-save");
+    IRMS.btnLoading && IRMS.btnLoading(btn, true);
+    try {
+      await request(`/blend/records/${id}`, { method: "PUT", body });
+      IRMS.notify("배합 기록을 수정했습니다.", "success");
+      await openDetail(id);
+      await loadRecords();
+    } catch (e) {
+      err.textContent = e.message || String(e);
+      err.hidden = false;
+    } finally {
+      IRMS.btnLoading && IRMS.btnLoading(btn, false);
+    }
+  }
+
+  if ($("status-edit")) {
+    $("status-edit").addEventListener("click", () => {
+      if (currentRecord) renderEditForm(currentRecord);
+    });
   }
 
   $("status-rec-apply").addEventListener("click", loadRecords);

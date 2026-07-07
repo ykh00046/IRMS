@@ -154,6 +154,110 @@ def test_create_and_get_blend_record_variance():
     assert v["abs_variance"] == 2.0  # |+1| + |-1| + 0
 
 
+def test_update_blend_record_full_edit_preserves_lot_and_sign():
+    conn = _make_db()
+    rid = _seed_recipe(conn, weights=(60, 40))
+    record_id = bs.create_blend_record(
+        conn,
+        recipe_id=rid, product_name="EditP", ink_name=None, position=None,
+        worker="김작업", work_date="2026-07-01", work_time="09:00:00",
+        total_amount=100, scale="M-65", note="원본",
+        details=[
+            {"material_name": "A", "ratio": 60, "theory_amount": 60, "actual_amount": 60},
+            {"material_name": "B", "ratio": 40, "theory_amount": 40, "actual_amount": 40},
+        ],
+        created_by="현장", created_at="2026-07-01T00:00:00Z",
+        worker_sign="data:image/png;base64,AAA",
+    )
+    lot = bs.get_blend_record(conn, record_id)["product_lot"]
+
+    bs.update_blend_record(
+        conn, record_id,
+        product_name="EditP2", ink_name=None, position=None, worker="이수정",
+        work_date="2026-07-02", work_time="11:00:00", total_amount=150, scale="S1",
+        note="수정본", reactor=None,
+        details=[
+            {"material_name": "A", "ratio": 50, "theory_amount": 75, "actual_amount": 75},
+            {"material_name": "C", "ratio": 50, "theory_amount": 75, "actual_amount": 75},
+        ],
+        updated_at="2026-07-02T00:00:00Z",
+    )
+    rec = bs.get_blend_record(conn, record_id)
+    assert rec["product_lot"] == lot                          # LOT 보존
+    assert rec["product_name"] == "EditP2"
+    assert rec["worker"] == "이수정"
+    assert rec["total_amount"] == 150.0
+    assert rec["note"] == "수정본"
+    assert rec["worker_sign"] == "data:image/png;base64,AAA"  # 서명 보존
+    assert [d["material_name"] for d in rec["details"]] == ["A", "C"]  # 상세 전량 교체
+
+
+def test_blend_update_route_requires_manager_and_full_edit():
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    worker = "수정작업_" + uuid.uuid4().hex[:6]
+    prod = "UPDP" + uuid.uuid4().hex[:4]
+
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")  # csrf 쿠키 확보
+    client.post("/api/workers", json={"name": worker}, headers=csrf_headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf_headers())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-01",
+        "total_amount": 100, "scale": "M-65",
+        "details": [
+            {"material_name": "A", "ratio": 60, "theory_amount": 60, "actual_amount": 60},
+            {"material_name": "B", "ratio": 40, "theory_amount": 40, "actual_amount": 40},
+        ],
+    }, headers=csrf_headers())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+    lot = created.json()["product_lot"]
+
+    # 현장(배합 세션만, 관리 미로그인)은 수정 불가
+    blocked = client.request("PUT", f"/api/blend/records/{rid}", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-01", "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+    }, headers=csrf_headers())
+    assert blocked.status_code in (401, 403)
+
+    # 책임자(admin) 로그인 후 전체 수정 → 200
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    res = client.request("PUT", f"/api/blend/records/{rid}", json={
+        "product_name": prod + "X", "worker": "책임수정", "work_date": "2026-07-03",
+        "total_amount": 200, "scale": "S9", "note": "정정",
+        "details": [
+            {"material_name": "A", "ratio": 50, "theory_amount": 100, "actual_amount": 100},
+            {"material_name": "C", "ratio": 50, "theory_amount": 100, "actual_amount": 100},
+        ],
+    }, headers=csrf_headers())
+    assert res.status_code == 200, res.text
+    j = res.json()
+    assert j["product_lot"] == lot                 # LOT 보존
+    assert j["product_name"] == prod + "X"
+    assert j["worker"] == "책임수정"
+    assert [d["material_name"] for d in j["details"]] == ["A", "C"]
+
+    # 편차 초과는 400
+    bad = client.request("PUT", f"/api/blend/records/{rid}", json={
+        "product_name": prod, "worker": "x", "work_date": "2026-07-03", "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 105}],
+    }, headers=csrf_headers())
+    assert bad.status_code == 400
+
+
 def test_list_blend_records_filters():
     conn = _make_db()
     rid = _seed_recipe(conn)

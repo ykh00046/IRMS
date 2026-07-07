@@ -410,6 +410,66 @@ def create_blend_record(
     return record_id
 
 
+def update_blend_record(
+    connection: sqlite3.Connection,
+    record_id: int,
+    *,
+    product_name: str,
+    ink_name: str | None,
+    position: str | None,
+    worker: str,
+    work_date: str,
+    work_time: str | None,
+    total_amount: float,
+    scale: str | None,
+    note: str | None,
+    details: list[dict[str, Any]],
+    reactor: int | None,
+    updated_at: str,
+) -> None:
+    """배합 실적 전체 수정(책임자 전용). product_lot·상태·생성정보·서명은 보존하고,
+    헤더와 상세(전량 교체)만 갱신한다. 상세는 create 와 동일 규칙으로 다시 채운다.
+    """
+    connection.execute(
+        """
+        UPDATE blend_records SET
+            product_name = ?, ink_name = ?, position = ?, worker = ?,
+            work_date = ?, work_time = ?, total_amount = ?, scale = ?,
+            note = ?, reactor = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            product_name.strip(), ink_name, position, worker.strip(),
+            work_date, work_time, float(total_amount), scale,
+            (note or "").strip() or None,
+            int(reactor) if reactor is not None else None,
+            updated_at, record_id,
+        ),
+    )
+    connection.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (record_id,))
+    for idx, d in enumerate(details):
+        connection.execute(
+            """
+            INSERT INTO blend_details
+                (blend_record_id, material_id, material_code, material_name,
+                 material_lot, ratio, theory_amount, actual_amount, sequence_order, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                d.get("material_id"),
+                (d.get("material_code") or None),
+                str(d.get("material_name") or "").strip(),
+                (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                _opt_num(d.get("ratio")),
+                _opt_num(d.get("theory_amount")),
+                _opt_num(d.get("actual_amount")),
+                int(d.get("sequence_order") or (idx + 1)),
+                updated_at,
+            ),
+        )
+
+
 def _opt_num(value: Any) -> float | None:
     if value is None or value == "":
         return None

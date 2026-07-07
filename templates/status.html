@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260707a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260707b" />
 {% endblock %}
 
 {% block content %}
@@ -65,6 +65,7 @@
                 <button id="status-pdf" class="btn btn-sm accent" type="button">배합일지 PDF</button>
                 <button id="status-print" class="btn btn-sm" type="button">인쇄</button>
                 <button id="status-excel" class="btn btn-sm" type="button">Excel</button>
+                {% if can_manage %}<button id="status-edit" class="btn btn-sm" type="button">수정</button>{% endif %}
                 <button id="status-delete" class="btn btn-sm danger" type="button">삭제</button>
                 <button id="status-detail-close" class="btn btn-sm" type="button">닫기</button>
               </div>
@@ -75,5 +76,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260707a"></script>
+    <script src="/static/js/status.js?v=20260707b"></script>
 {% endblock %}

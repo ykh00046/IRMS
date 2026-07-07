@@ -23,7 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth import get_current_user, has_access_level
+from ..auth import get_current_user, has_access_level, require_access_level
 from ..blend_session import current_blend_worker, touch_worker_session
 from ..db import get_db, utc_now_text, write_audit_log
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
@@ -365,6 +365,71 @@ def build_router() -> APIRouter:
         )
         connection.commit()
         return record
+
+    @router.put(
+        "/blend/records/{record_id}",
+        dependencies=[Depends(require_access_level("manager"))],
+    )
+    def blend_update(
+        record_id: int,
+        body: BlendCreateBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """배합 실적 전체 수정 — 책임자 이상만(현장 무로그인은 401). 드문 정정용.
+
+        product_lot·상태·생성정보·서명(담당/검토/승인)은 보존하고 헤더·상세만 교체.
+        """
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        if not body.details:
+            raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
+        if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
+            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        offenders = blend_service.weighing_tolerance_violations(
+            [d.model_dump() for d in body.details]
+        )
+        if offenders:
+            raise HTTPException(
+                status_code=400,
+                detail=f"허용 편차(±{blend_service.WEIGHING_TOLERANCE_G}g)를 초과한 자재: "
+                + ", ".join(offenders),
+            )
+        current_user = get_current_user(request, required=False)
+        blend_service.update_blend_record(
+            connection,
+            record_id,
+            product_name=body.product_name,
+            ink_name=body.ink_name,
+            position=body.position,
+            worker=body.worker,
+            work_date=body.work_date,
+            work_time=body.work_time,
+            total_amount=body.total_amount,
+            scale=body.scale,
+            note=body.note,
+            details=[d.model_dump() for d in body.details],
+            reactor=body.reactor,
+            updated_at=utc_now_text(),
+        )
+        updated = blend_service.get_blend_record(connection, record_id)
+        write_audit_log(
+            connection,
+            action="blend_record_update",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=updated["product_lot"],
+            details={
+                "product_name": body.product_name,
+                "total_amount": body.total_amount,
+                "items": len(body.details),
+            },
+        )
+        connection.commit()
+        updated["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
+        return updated
 
     @router.post("/blend/records/{record_id}/approve")
     def blend_approve(
