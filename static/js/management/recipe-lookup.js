@@ -121,7 +121,6 @@
           "<th>항목수</th>",
           "<th>상태</th>",
           "<th>등록일</th>",
-          "<th>사용 시작일</th>",
           "<th>등록자</th>",
         ].join("");
 
@@ -146,7 +145,6 @@
               <td class="value-cell">${(recipe.items || []).length}</td>
               <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
               <td>${IRMS.formatDateTime(recipe.created_at)}</td>
-              <td>${IRMS.escapeHtml(recipe.effective_from || "-")}</td>
               <td>${IRMS.escapeHtml(recipe.created_by || "-")}</td>
             </tr>`;
           })

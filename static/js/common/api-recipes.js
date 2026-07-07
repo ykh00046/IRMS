@@ -70,16 +70,14 @@
     return mapPreview(payload);
   }
 
-  async function importRecipes(rawText, createdBy, revisionOf, effectiveFrom, baseTotal) {
+  // 사용 시작일(effective_from)은 UI 에서 제거 — 서버가 등록일로 자동 기록.
+  async function importRecipes(rawText, createdBy, revisionOf, baseTotal) {
     const body = {
       raw_text: rawText,
       created_by: createdBy || "책임자",
     };
     if (revisionOf != null) {
       body.revision_of = revisionOf;
-    }
-    if (effectiveFrom) {
-      body.effective_from = effectiveFrom;
     }
     if (baseTotal != null && Number(baseTotal) > 0) {
       body.base_total = Number(baseTotal);

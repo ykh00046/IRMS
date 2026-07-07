@@ -58,7 +58,6 @@
               <td><input type="checkbox" class="version-check" value="${it.id}" /></td>
               <td><strong>${IRMS.escapeHtml(it.version_label)}</strong>${it.is_current ? ' <span class="status-chip status-completed">현재 사용</span>' : ""}</td>
               <td>${IRMS.formatDateTime(it.created_at)}</td>
-              <td>${IRMS.escapeHtml(it.effective_from || "-")}</td>
               <td>${IRMS.escapeHtml(it.created_by || "-")}</td>
               <td class="num">${it.item_count}</td>
               <td><span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span></td>

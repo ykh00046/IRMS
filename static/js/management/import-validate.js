@@ -114,11 +114,9 @@
 
       IRMS.btnLoading(dom.registerBtn, true);
       try {
-        const effEl = document.getElementById("register-effective-from");
-        const effectiveFrom = effEl && effEl.value ? effEl.value : null;
         const baseEl = document.getElementById("register-base-total");
         const baseTotal = baseEl && baseEl.value ? Number(baseEl.value) : null;
-        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, effectiveFrom, baseTotal);
+        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, baseTotal);
         IRMS.notify(
           `${result.created_count}건 레시피를 등록했습니다.`,
           "success",
