@@ -146,9 +146,31 @@ def set_active(connection: sqlite3.Connection, worker_id: int, active: bool) -> 
     )
 
 
-def rename(connection: sqlite3.Connection, worker_id: int, new_name: str) -> None:
+def rename(connection: sqlite3.Connection, worker_id: int, new_name: str) -> dict[str, Any]:
+    """이름 변경(오타 정정용) — 과거 배합 기록의 작업자명도 함께 동기화.
+
+    동기화하지 않으면 옛 기록이 옛 이름으로 남아 화면 연결이 끊기고,
+    '기록 있는 이름 삭제 차단' 안전장치(has_blend_records)도 우회된다.
+    반환: {old, new, records_updated}
+    """
     clean = validate_name(new_name)
+    row = connection.execute(
+        "SELECT name FROM workers WHERE id = ?", (worker_id,)
+    ).fetchone()
+    if not row:
+        raise ValueError("이용자를 찾을 수 없습니다.")
+    old = row["name"]
+    if old == clean:
+        return {"old": old, "new": clean, "records_updated": 0}
     connection.execute("UPDATE workers SET name = ? WHERE id = ?", (clean, worker_id))
+    try:
+        cur = connection.execute(
+            "UPDATE blend_records SET worker = ? WHERE worker = ?", (clean, old)
+        )
+        updated = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    except sqlite3.OperationalError:  # blend_records 없는 테스트 DB 등
+        updated = 0
+    return {"old": old, "new": clean, "records_updated": updated}
 
 
 def has_blend_records(connection: sqlite3.Connection, name: str) -> bool:

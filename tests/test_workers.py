@@ -73,6 +73,52 @@ def test_rename():
     assert ws.worker_names(conn) == ["정정"]
 
 
+def test_rename_syncs_blend_records_and_guard():
+    """이름 변경(오타 정정) 시 과거 배합 기록의 작업자명도 동기화 —
+    화면 연결 유지 + '기록 있는 이름 삭제 차단' 안전장치 정상화."""
+    conn = _make_db()
+    conn.execute("CREATE TABLE blend_records (id INTEGER PRIMARY KEY, worker TEXT NOT NULL)")
+    ws.register(conn, "김오탈", "t")
+    conn.execute("INSERT INTO blend_records (worker) VALUES ('김오탈')")
+    conn.execute("INSERT INTO blend_records (worker) VALUES ('김오탈')")
+    wid = conn.execute("SELECT id FROM workers WHERE name='김오탈'").fetchone()["id"]
+
+    result = ws.rename(conn, wid, "김오탁")
+    assert result == {"old": "김오탈", "new": "김오탁", "records_updated": 2}
+    # 기록이 새 이름으로 따라옴 → 안전장치도 새 이름 기준으로 동작
+    assert conn.execute("SELECT COUNT(*) FROM blend_records WHERE worker='김오탁'").fetchone()[0] == 2
+    assert ws.has_blend_records(conn, "김오탁") is True
+    assert ws.has_blend_records(conn, "김오탈") is False
+
+
+def test_rename_duplicate_name_route_returns_400():
+    """이미 있는 이름으로 변경 시 500 이 아니라 400 + 한글 안내."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    a = "중복갑" + uuid.uuid4().hex[:6]
+    b = "중복을" + uuid.uuid4().hex[:6]
+    client.post("/api/workers", json={"name": a}, headers=headers)
+    client.post("/api/workers", json={"name": b}, headers=headers)
+    with get_connection() as conn:
+        bid = conn.execute("SELECT id FROM workers WHERE name=?", (b,)).fetchone()["id"]
+    res = client.patch(f"/api/workers/{bid}", json={"name": a}, headers=headers)
+    assert res.status_code == 400 and "이미" in res.json()["detail"]
+
+
 def test_name_validation_blocks_obvious_mistakes():
     """공백('김 민호')·자모 낱글자('ㄱ 머ㅏ미')·특수문자·1자 이름은 등록/개명 차단.
     동명이인 구분 숫자(김민호3)와 영문 이름은 허용."""

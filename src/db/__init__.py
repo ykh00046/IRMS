@@ -22,7 +22,7 @@ from .migrations import (
 from .queries import in_clause, normalize_token, row_to_dict
 from .schema import init_db
 from .seeds import seed_users, seed_workers
-from .time_utils import utc_now_text
+from .time_utils import local_today_text, utc_now_text
 
 __all__ = [
     "apply_schema_migrations",
@@ -39,6 +39,7 @@ __all__ = [
     "seed_workers",
     "seed_users",
     "standardize_recipe_units_to_grams",
+    "local_today_text",
     "utc_now_text",
     "write_audit_log",
 ]

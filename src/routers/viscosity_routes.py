@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import get_current_user
-from ..db import get_db, utc_now_text, write_audit_log
+from ..db import get_db, local_today_text, utc_now_text, write_audit_log
 from ..services import viscosity_service
 from .models import (
     ViscosityProductCreateBody,
@@ -95,7 +95,9 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         resolved_date = (
             body.measured_date
             or viscosity_service.parse_lot_date(body.lot_no)
-            or utc_now_text()[:10]
+            # 측정일 기본값은 현장 기준 '오늘'(로컬) — UTC 로 자르면 자정 전
+            # 등록이 어제로 밀려 '오늘 미입력' 리마인더와 어긋난다.
+            or local_today_text()
         )
         reading_year = int(resolved_date[:4]) if resolved_date[:4].isdigit() else None
         verdict = viscosity_service.classify_value(

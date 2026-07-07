@@ -62,11 +62,16 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        rename_result = None
         if body.name is not None:
             try:
-                worker_service.rename(connection, worker_id, body.name)
+                rename_result = worker_service.rename(connection, worker_id, body.name)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
+            except sqlite3.IntegrityError:
+                raise HTTPException(
+                    status_code=400, detail="이미 같은 이름의 이용자가 있습니다."
+                )
         if body.is_active is not None:
             worker_service.set_active(connection, worker_id, body.is_active)
         write_audit_log(
@@ -75,7 +80,13 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             actor=get_current_user(request, required=False),
             target_type="worker",
             target_id=str(worker_id),
-            details={"name": body.name, "is_active": body.is_active},
+            details={
+                "name": body.name,
+                "is_active": body.is_active,
+                # 이름 변경 시 과거 배합 기록 동기화 건수(rename 이 함께 갱신)
+                **({"records_updated": rename_result["records_updated"],
+                    "old_name": rename_result["old"]} if rename_result else {}),
+            },
         )
         connection.commit()
         return {"updated": worker_id}

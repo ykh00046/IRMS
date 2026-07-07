@@ -621,7 +621,8 @@ def add_reading(
     blend_record_id 지정 시 해당 배합 실적과 연계된다([[blend-overhaul]]).
     reactor 지정 시 반응기 번호(1~4)를 기록한다(반응기 진행 반제품).
     """
-    resolved_date = measured_date or parse_lot_date(lot_no) or created_at[:10]
+    # 측정일 폴백은 로컬 '오늘' — created_at(UTC) 을 자르면 자정 부근 하루 밀림.
+    resolved_date = measured_date or parse_lot_date(lot_no) or date.today().isoformat()
     cur = connection.execute(
         """
         INSERT INTO viscosity_readings
