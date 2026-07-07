@@ -34,9 +34,9 @@ def _make_db() -> sqlite3.Connection:
 def test_register_new_then_existing():
     conn = _make_db()
     r1 = ws.register(conn, "홍길동", "2026-06-24")
-    assert r1 == {"name": "홍길동", "created": True}
+    assert r1 == {"name": "홍길동", "created": True, "reactivated": False}
     r2 = ws.register(conn, "홍길동", "2026-06-24")
-    assert r2 == {"name": "홍길동", "created": False}
+    assert r2 == {"name": "홍길동", "created": False, "reactivated": False}
     assert ws.worker_names(conn) == ["홍길동"]
 
 
@@ -71,6 +71,53 @@ def test_rename():
     wid = conn.execute("SELECT id FROM workers WHERE name='오타'").fetchone()["id"]
     ws.rename(conn, wid, "정정")
     assert ws.worker_names(conn) == ["정정"]
+
+
+def test_name_validation_blocks_obvious_mistakes():
+    """공백('김 민호')·자모 낱글자('ㄱ 머ㅏ미')·특수문자·1자 이름은 등록/개명 차단.
+    동명이인 구분 숫자(김민호3)와 영문 이름은 허용."""
+    conn = _make_db()
+    # 허용
+    assert ws.register(conn, "김민호", "t")["created"] is True
+    assert ws.register(conn, "김민호3", "t")["created"] is True
+    assert ws.register(conn, "ParkLead", "t")["created"] is True
+    # 차단 — 내부 공백
+    with pytest.raises(ValueError, match="공백"):
+        ws.register(conn, "김 민호", "t")
+    # 차단 — 자모 낱글자 포함
+    with pytest.raises(ValueError):
+        ws.register(conn, "ㄱ", "t")
+    with pytest.raises(ValueError):
+        ws.register(conn, "머ㅏ미", "t")
+    # 차단 — 특수문자·1자
+    with pytest.raises(ValueError):
+        ws.register(conn, "김민호!", "t")
+    with pytest.raises(ValueError):
+        ws.register(conn, "김", "t")
+    # rename 도 동일 규칙
+    wid = conn.execute("SELECT id FROM workers WHERE name='김민호'").fetchone()["id"]
+    with pytest.raises(ValueError):
+        ws.rename(conn, wid, "김 민호")
+
+
+def test_reactivation_does_not_revive_manager():
+    """비활성화된 책임자를 이름 재등록으로 살려도 책임자 권한·비밀번호는 부활하지 않는다."""
+    conn = _make_db()
+    ws.register(conn, "복귀책임", "t")
+    wid = conn.execute("SELECT id FROM workers WHERE name='복귀책임'").fetchone()["id"]
+    ws.set_manager(conn, wid, "hashed-pw")
+    ws.set_active(conn, wid, False)
+
+    r = ws.register(conn, "복귀책임", "t")  # 무인증 등록 경로로 재활성화
+    assert r["reactivated"] is True
+    row = conn.execute(
+        "SELECT is_active, is_manager, password_hash, session_token FROM workers WHERE id=?",
+        (wid,),
+    ).fetchone()
+    assert row["is_active"] == 1
+    assert row["is_manager"] == 0          # 책임자 권한 미부활
+    assert row["password_hash"] is None    # 비밀번호 제거
+    assert row["session_token"] is None
 
 
 def test_manager_designation_flow():
@@ -145,15 +192,15 @@ def test_delete_worker_blocked_for_manager_and_records():
     tok = client.cookies.get("csrftoken")
     headers = {"x-csrftoken": tok} if tok else {}
 
-    name = "삭제대상_" + uuid.uuid4().hex[:6]
-    mgr = "책임삭제_" + uuid.uuid4().hex[:6]
+    name = "삭제대상" + uuid.uuid4().hex[:6]
+    mgr = "책임삭제" + uuid.uuid4().hex[:6]
     client.post("/api/workers", json={"name": name}, headers=headers)
     client.post("/api/workers", json={"name": mgr}, headers=headers)
     from src.db import get_connection
     with get_connection() as conn:
         mid = conn.execute("SELECT id FROM workers WHERE name=?", (mgr,)).fetchone()["id"]
         did = conn.execute("SELECT id FROM workers WHERE name=?", (name,)).fetchone()["id"]
-    client.post(f"/api/workers/{mid}/manager", json={"password": "pw12345"}, headers=headers)
+    client.post(f"/api/workers/{mid}/manager", json={"password": "pw123456"}, headers=headers)
 
     # 책임자는 삭제 불가
     res = client.request("DELETE", f"/api/workers/{mid}", headers=headers)
@@ -164,6 +211,58 @@ def test_delete_worker_blocked_for_manager_and_records():
     assert res.status_code == 200
     with get_connection() as conn:
         assert conn.execute("SELECT 1 FROM workers WHERE id=?", (did,)).fetchone() is None
+
+
+def test_manager_password_strength_enforced():
+    """책임자 비밀번호는 8자 이상 + 반복/연속 차단(근태와 동일 수준)."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    name = "강도검사" + uuid.uuid4().hex[:6]
+    client.post("/api/workers", json={"name": name}, headers=headers)
+    with get_connection() as conn:
+        wid = conn.execute("SELECT id FROM workers WHERE name=?", (name,)).fetchone()["id"]
+
+    for bad in ("short7!", "11111111", "12345678"):  # 7자·반복·연속
+        res = client.post(f"/api/workers/{wid}/manager", json={"password": bad}, headers=headers)
+        assert res.status_code == 422, f"{bad!r} 가 거부되지 않음"
+    ok = client.post(f"/api/workers/{wid}/manager", json={"password": "goodpw12"}, headers=headers)
+    assert ok.status_code == 200
+
+
+def test_worker_name_validation_route():
+    """POST /workers 라우트에서 공백·자모 이름이 400 + 한글 안내 메시지."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    client.get("/api/workers")  # csrf 쿠키 확보
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    res = client.post("/api/workers", json={"name": "김 민호"}, headers=headers)
+    assert res.status_code == 400 and "공백" in res.json()["detail"]
+    res = client.post("/api/workers", json={"name": "ㄱ 머ㅏ미"}, headers=headers)
+    assert res.status_code == 400
 
 
 def test_manager_self_change_password_flow():
@@ -181,7 +280,7 @@ def test_manager_self_change_password_flow():
     from src.db import get_connection
 
     client = TestClient(mainmod.app)
-    name = "본인변경_" + uuid.uuid4().hex[:6]
+    name = "본인변경" + uuid.uuid4().hex[:6]
 
     # admin(폴백)으로 이용자 등록 + 책임자 지정
     client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
@@ -270,7 +369,7 @@ def test_name_based_manager_login_flow():
     from fastapi.testclient import TestClient
 
     client = TestClient(mainmod.app)
-    name = "책임_" + uuid.uuid4().hex[:8]
+    name = "책임" + uuid.uuid4().hex[:8]
 
     # 1) 레거시 admin 으로 로그인(부트스트랩)
     res = client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})

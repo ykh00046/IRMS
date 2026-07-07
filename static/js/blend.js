@@ -581,7 +581,6 @@
       ${rec.note ? `<p class="dhr-note">비고: ${esc(rec.note)}</p>` : ""}
       ${renderApprovalSection(rec)}
       ${renderViscositySection(rec)}`;
-    bindApprovalSection(id);
     $("blend-detail-modal").hidden = false;
   }
 
@@ -596,42 +595,10 @@
   }
 
   function renderApprovalSection(rec) {
-    return `<div class="dhr-approvals">
+    // 현장에서는 검토/승인을 하지 않는다 — 작성만 표시(검토/승인 서명은 DHR 출력물에서 합성).
+    return `<div class="dhr-approvals dhr-approvals-single">
         ${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}
-        ${approvalCell("검토", rec.reviewed_by, rec.reviewed_at, rec.reviewed_sign)}
-        ${approvalCell("승인", rec.approved_by, rec.approved_at, rec.approved_sign)}
-      </div>
-      <div class="blend-approve-bar no-print">
-        <input class="input" id="blend-approve-name" placeholder="결재자 이름" />
-        <div class="blend-sign-field">
-          <span class="filter-label">서명 (선택)</span>
-          <canvas id="blend-approve-sign" class="blend-sign-pad" width="240" height="70"></canvas>
-          <button class="btn btn-sm" id="blend-approve-sign-clear" type="button">지우기</button>
-        </div>
-        <button class="btn btn-sm" id="blend-review-btn" type="button">검토 기록</button>
-        <button class="btn btn-sm accent" id="blend-approve-btn" type="button">승인 기록</button>
       </div>`;
-  }
-
-  function bindApprovalSection(recordId) {
-    const pad = attachSignaturePad($("blend-approve-sign"));
-    const clr = $("blend-approve-sign-clear");
-    if (clr && pad) clr.addEventListener("click", () => pad.clear());
-    const doApprove = async (role) => {
-      const name = ($("blend-approve-name").value || "").trim();
-      if (!name) { notify("결재자 이름을 입력하세요.", "warn"); return; }
-      try {
-        await request(`/blend/records/${recordId}/approve`, {
-          method: "POST",
-          body: { role, name, signature: pad ? pad.dataUrl() : null },
-        });
-        notify(role === "review" ? "검토 기록됨" : "승인 기록됨", "success");
-        openDetail(recordId);
-      } catch (e) { notify(e.message, "error"); }
-    };
-    const rb = $("blend-review-btn"), ab = $("blend-approve-btn");
-    if (rb) rb.addEventListener("click", () => doApprove("review"));
-    if (ab) ab.addEventListener("click", () => doApprove("approve"));
   }
 
   function renderViscositySection(rec) {

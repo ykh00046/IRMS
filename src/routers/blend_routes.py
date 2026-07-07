@@ -433,7 +433,10 @@ def build_router() -> APIRouter:
         updated["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
         return updated
 
-    @router.post("/blend/records/{record_id}/approve")
+    @router.post(
+        "/blend/records/{record_id}/approve",
+        dependencies=[Depends(require_access_level("manager"))],
+    )
     def blend_approve(
         record_id: int,
         body: BlendApprovalBody,

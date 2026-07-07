@@ -37,8 +37,8 @@
               <input id="cpw-current" class="input" type="password" autocomplete="current-password" maxlength="100" />
             </div>
             <div class="form-group">
-              <label class="filter-label" for="cpw-new">새 비밀번호 (6자 이상)</label>
-              <input id="cpw-new" class="input" type="password" autocomplete="new-password" minlength="6" maxlength="100" />
+              <label class="filter-label" for="cpw-new">새 비밀번호 (8자 이상)</label>
+              <input id="cpw-new" class="input" type="password" autocomplete="new-password" minlength="8" maxlength="100" />
             </div>
             <div class="button-row create-actions">
               <button id="cpw-submit" type="submit" class="btn accent">변경</button>
@@ -241,5 +241,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260707d"></script>
+    <script src="/static/js/admin_users.js?v=20260707e"></script>
 {% endblock %}

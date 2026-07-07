@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? `
         <div class="password-stack">
           <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
-            placeholder="새 비밀번호(6자 이상)" />
+            placeholder="새 비밀번호(8자 이상)" />
           <div class="button-row">
             <button type="button" class="btn accent" data-action="reset-password">비밀번호 초기화</button>
             ${isSelf ? '<span class="helper-text">본인 계정</span>'
@@ -76,7 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
       : `
         <div class="password-stack">
           <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
-            placeholder="비밀번호 설정(6자 이상)" />
+            placeholder="비밀번호 설정(8자 이상)" />
           <button type="button" class="btn accent" data-action="grant">책임자 지정</button>
         </div>`;
     const statusCell = `
@@ -152,8 +152,8 @@ document.addEventListener("DOMContentLoaded", () => {
       IRMS.notify("현재 비밀번호를 입력하세요.", "error");
       return;
     }
-    if (next.length < 6) {
-      IRMS.notify("새 비밀번호는 6자 이상이어야 합니다.", "error");
+    if (next.length < 8) {
+      IRMS.notify("새 비밀번호는 8자 이상이어야 합니다.", "error");
       return;
     }
     IRMS.btnLoading(cpwSubmit, true);
@@ -196,8 +196,8 @@ document.addEventListener("DOMContentLoaded", () => {
     button.disabled = true;
     try {
       if (action === "grant" || action === "reset-password") {
-        if (password.length < 6) {
-          IRMS.notify("비밀번호는 6자 이상이어야 합니다.", "error");
+        if (password.length < 8) {
+          IRMS.notify("비밀번호는 8자 이상이어야 합니다.", "error");
           return;
         }
         const path = action === "grant"

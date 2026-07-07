@@ -40,10 +40,10 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             result = worker_service.register(connection, body.name, utc_now_text())
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        if result["created"]:
+        if result["created"] or result.get("reactivated"):
             write_audit_log(
                 connection,
-                action="worker_register",
+                action="worker_register" if result["created"] else "worker_reactivated",
                 actor=get_current_user(request, required=False),
                 target_type="worker",
                 target_label=result["name"],

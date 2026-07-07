@@ -4,8 +4,28 @@
 명단(workers)에 추가된다. 자동완성·오타중복 정리에 사용.
 """
 
+import re
 import sqlite3
 from typing import Any
+
+# 완성형 한글·영문·숫자 2~20자만 허용. 동명이인 구분 숫자는 허용(김민호3),
+# 공백('김 민호')과 자모 낱글자('ㄱ', 'ㅏ') 같은 명백한 입력 실수는 차단.
+_NAME_RE = re.compile(r"^[가-힣A-Za-z0-9]{2,20}$")
+
+
+def validate_name(name: str) -> str:
+    """이름 검증 후 정리된 이름 반환. 문제가 있으면 ValueError(한글 메시지)."""
+    clean = (name or "").strip()
+    if not clean:
+        raise ValueError("이름을 입력하세요.")
+    if re.search(r"\s", clean):
+        raise ValueError("이름에 공백을 넣을 수 없습니다. (예: '김 민호' → '김민호')")
+    if not _NAME_RE.fullmatch(clean):
+        raise ValueError(
+            "이름은 한글·영문·숫자 2~20자만 가능합니다. "
+            "자모 낱글자(ㄱ, ㅏ 등)나 특수문자는 쓸 수 없습니다."
+        )
+    return clean
 
 
 def list_workers(connection: sqlite3.Connection, *, active_only: bool = True) -> list[dict[str, Any]]:
@@ -94,24 +114,28 @@ def exists(connection: sqlite3.Connection, name: str) -> bool:
 
 
 def register(connection: sqlite3.Connection, name: str, created_at: str) -> dict[str, Any]:
-    """이름을 명단에 등록(이미 있으면 그대로). {name, created} 반환."""
-    clean = name.strip()
-    if not clean:
-        raise ValueError("이름이 비어 있습니다.")
+    """이름을 명단에 등록(이미 있으면 그대로). {name, created, reactivated} 반환."""
+    clean = validate_name(name)
     existing = connection.execute(
         "SELECT id, is_active FROM workers WHERE name = ?", (clean,)
     ).fetchone()
     if existing:
+        reactivated = False
         if not existing["is_active"]:
+            # 재활성화 시 책임자 권한·비밀번호는 부활시키지 않는다(무인증 등록 경로라
+            # 비활성화된 책임자 계정이 이름 입력만으로 살아나는 것을 차단).
             connection.execute(
-                "UPDATE workers SET is_active = 1 WHERE id = ?", (existing["id"],)
+                "UPDATE workers SET is_active = 1, is_manager = 0, "
+                "password_hash = NULL, session_token = NULL WHERE id = ?",
+                (existing["id"],),
             )
-        return {"name": clean, "created": False}
+            reactivated = True
+        return {"name": clean, "created": False, "reactivated": reactivated}
     connection.execute(
         "INSERT INTO workers (name, is_active, created_at) VALUES (?, 1, ?)",
         (clean, created_at),
     )
-    return {"name": clean, "created": True}
+    return {"name": clean, "created": True, "reactivated": False}
 
 
 def set_active(connection: sqlite3.Connection, worker_id: int, active: bool) -> None:
@@ -121,9 +145,7 @@ def set_active(connection: sqlite3.Connection, worker_id: int, active: bool) -> 
 
 
 def rename(connection: sqlite3.Connection, worker_id: int, new_name: str) -> None:
-    clean = new_name.strip()
-    if not clean:
-        raise ValueError("이름이 비어 있습니다.")
+    clean = validate_name(new_name)
     connection.execute("UPDATE workers SET name = ? WHERE id = ?", (clean, worker_id))
 
 

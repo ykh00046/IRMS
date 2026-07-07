@@ -204,7 +204,7 @@ def test_blend_update_route_requires_manager_and_full_edit():
     from fastapi.testclient import TestClient
 
     client = TestClient(mainmod.app)
-    worker = "수정작업_" + uuid.uuid4().hex[:6]
+    worker = "수정작업" + uuid.uuid4().hex[:6]
     prod = "UPDP" + uuid.uuid4().hex[:4]
 
     def csrf_headers():
@@ -258,6 +258,49 @@ def test_blend_update_route_requires_manager_and_full_edit():
     assert bad.status_code == 400
 
 
+def test_blend_approve_requires_manager():
+    """결재(검토/승인 기록)는 책임자 전용 — 현장 무로그인은 401/403."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    worker = "결재작업" + uuid.uuid4().hex[:6]
+    prod = "APPR" + uuid.uuid4().hex[:4]
+
+    def headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")
+    client.post("/api/workers", json={"name": worker}, headers=headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-05",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    # 배합 세션만으로는 결재 불가
+    blocked = client.post(f"/api/blend/records/{rid}/approve",
+                          json={"role": "review", "name": "몰래검토"}, headers=headers())
+    assert blocked.status_code in (401, 403)
+
+    # 책임자 로그인 후 가능
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    ok = client.post(f"/api/blend/records/{rid}/approve",
+                     json={"role": "review", "name": "김검토"}, headers=headers())
+    assert ok.status_code == 200, ok.text
+
+
 def test_blend_viscosity_route_links_reading():
     """POST /blend/records/{id}/viscosity — 점도 관리 화면의 저장 경로.
     배합 실적에 연계(blend_record_id)되고, 같은 LOT 재등록은 409.
@@ -273,7 +316,7 @@ def test_blend_viscosity_route_links_reading():
     from fastapi.testclient import TestClient
 
     client = TestClient(mainmod.app)
-    worker = "점도작업_" + uuid.uuid4().hex[:6]
+    worker = "점도작업" + uuid.uuid4().hex[:6]
     prod = "VISCR" + uuid.uuid4().hex[:4]
 
     def headers():

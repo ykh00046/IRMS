@@ -166,15 +166,36 @@ class WorkerUpdateBody(BaseModel):
     is_active: bool | None = None
 
 
+def _check_manager_password(value: str) -> str:
+    """책임자 비밀번호 강도 — 근태(8자+반복/연속 차단)와 동일 수준으로 통일."""
+    if len(set(value)) == 1:
+        raise ValueError("같은 문자만 반복된 비밀번호는 쓸 수 없습니다.")
+    if value.isdigit():
+        diffs = {ord(b) - ord(a) for a, b in zip(value, value[1:])}
+        if diffs in ({1}, {-1}):
+            raise ValueError("연속된 숫자(12345678 등)는 비밀번호로 쓸 수 없습니다.")
+    return value
+
+
 class WorkerManagerBody(BaseModel):
-    # 이용자를 책임자로 지정/비밀번호 초기화할 때의 개인 비밀번호
-    password: str = Field(min_length=6, max_length=100)
+    # 이용자를 책임자로 지정/비밀번호 초기화할 때의 개인 비밀번호 (8자 이상 + 강도검사)
+    password: str = Field(min_length=8, max_length=100)
+
+    @model_validator(mode="after")
+    def _strength(self) -> "WorkerManagerBody":
+        _check_manager_password(self.password)
+        return self
 
 
 class ChangePasswordBody(BaseModel):
     # 로그인한 책임자가 본인 비밀번호를 직접 변경(현재 비밀번호 확인)
     current_password: str = Field(min_length=1, max_length=100)
-    new_password: str = Field(min_length=6, max_length=100)
+    new_password: str = Field(min_length=8, max_length=100)
+
+    @model_validator(mode="after")
+    def _strength(self) -> "ChangePasswordBody":
+        _check_manager_password(self.new_password)
+        return self
 
 
 class WeighingStepRequest(BaseModel):
