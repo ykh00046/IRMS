@@ -17,8 +17,22 @@ class ImportRequest(BaseModel):
     revision_of: int | None = None
     force: bool = False
     effective_from: str | None = Field(default=None, max_length=10)  # 사용 시작일(YYYY-MM-DD), 미지정 시 등록일
-    # 기준 배합량(g, 선택) — 배합 화면 '기준량 적용' 버튼이 채울 총량. 미지정 시 자재 합계.
+    # 기준 배합량(g, 선택) — 배합 화면 '기준량' 버튼이 채울 총량. 최대 3개, 미지정 시 버튼 없음.
+    base_totals: list[float] | None = Field(default=None, max_length=3)
+    # (구) 단일 기준 배합량 — 하위호환용, base_totals 미지정 시 사용.
     base_total: float | None = Field(default=None, gt=0, le=10_000_000)
+
+    @model_validator(mode="after")
+    def _check_base_totals(self) -> "ImportRequest":
+        if self.base_totals:
+            cleaned = []
+            for v in self.base_totals:
+                if not (0 < v <= 10_000_000):
+                    raise ValueError("기준 배합량은 0 초과 10,000,000 이하여야 합니다.")
+                if v not in cleaned:
+                    cleaned.append(v)
+            self.base_totals = cleaned
+        return self
 
 
 class StatusUpdateRequest(BaseModel):

@@ -6,6 +6,8 @@
   gap: 0.75rem;
 }
 .blend-field { display: flex; flex-direction: column; gap: 0.25rem; }
+/* 라벨 줄이 감겨도(기준량 버튼 여러 개 등) 입력칸 기준선은 항상 정렬 */
+.blend-form-grid .blend-field { justify-content: flex-end; }
 .blend-field-grow { flex: 1; }
 
 .blend-filter-row {
@@ -168,11 +170,13 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
-/* 기준량 버튼 — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
+/* 기준량 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
 .blend-label-row {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
   min-width: 0;
 }
+.blend-base-links { display: inline-flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.blend-base-label { font-size: 0.72rem; color: var(--muted, #6b7280); }
 .blend-base-link {
   background: none; border: none; padding: 0; cursor: pointer;
   font-size: 0.72rem; font-weight: 600; white-space: nowrap;

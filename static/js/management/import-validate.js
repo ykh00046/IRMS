@@ -115,8 +115,16 @@
       IRMS.btnLoading(dom.registerBtn, true);
       try {
         const baseEl = document.getElementById("register-base-total");
-        const baseTotal = baseEl && baseEl.value ? Number(baseEl.value) : null;
-        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, baseTotal);
+        let baseTotals = null;
+        if (baseEl && baseEl.value.trim()) {
+          baseTotals = baseEl.value.split(",").map((t) => Number(t.trim())).filter((v) => v > 0);
+          if (!baseTotals.length || baseTotals.length > 3
+              || baseEl.value.split(",").some((t) => t.trim() && !(Number(t.trim()) > 0))) {
+            IRMS.notify("기준 배합량은 양수 숫자를 쉼표로 최대 3개까지 입력하세요. (예: 3924.38, 2000)", "error");
+            return;
+          }
+        }
+        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, baseTotals);
         IRMS.notify(
           `${result.created_count}건 레시피를 등록했습니다.`,
           "success",

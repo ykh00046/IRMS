@@ -63,7 +63,8 @@ def get_recipe_for_blend(
     """
     recipe_id = _resolve_latest_revision(connection, recipe_id)
     recipe = connection.execute(
-        "SELECT id, product_name, position, ink_name, status, base_total AS base_total_setting "
+        "SELECT id, product_name, position, ink_name, status, "
+        "       base_total AS base_total_setting, base_totals AS base_totals_setting "
         "FROM recipes WHERE id = ?",
         (recipe_id,),
     ).fetchone()
@@ -101,9 +102,22 @@ def get_recipe_for_blend(
             "theory_amount": theory[idx],
             "sequence_order": idx + 1,
         })
-    # 기준 배합량: 레시피 관리에서 지정한 레시피만 값 반환(버튼 노출) — 미지정은 None.
-    stored_base = recipe["base_total_setting"]
-    default_total = float(stored_base) if stored_base and float(stored_base) > 0 else None
+    # 기준 배합량(최대 3개): 레시피 관리에서 지정한 레시피만 값 반환(버튼 노출).
+    # base_totals(CSV) 우선, 없으면 (구) 단일 base_total 폴백 — 미지정은 빈 목록.
+    default_totals: list[float] = []
+    raw_totals = recipe["base_totals_setting"]
+    if raw_totals:
+        for token in str(raw_totals).split(","):
+            token = token.strip()
+            try:
+                value = float(token)
+            except ValueError:
+                continue
+            if value > 0 and value not in default_totals:
+                default_totals.append(value)
+    elif recipe["base_total_setting"] and float(recipe["base_total_setting"]) > 0:
+        default_totals = [float(recipe["base_total_setting"])]
+    default_totals = [round(v, 3) for v in default_totals[:3]]
     return {
         "recipe": {
             "id": int(recipe["id"]),
@@ -114,7 +128,9 @@ def get_recipe_for_blend(
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
         },
         "base_total": round(base_total, 3),
-        "default_total": round(default_total, 3) if default_total is not None else None,
+        "default_totals": default_totals,
+        # (구) 단일 필드 — 하위호환(첫 값 또는 None)
+        "default_total": default_totals[0] if default_totals else None,
         "total_amount": round(total, 3),
         "items": items,
     }

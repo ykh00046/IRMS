@@ -25,7 +25,7 @@ def _make_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_name TEXT, position TEXT, ink_name TEXT,
             status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-01-01',
-            revision_of INTEGER, base_total REAL
+            revision_of INTEGER, base_total REAL, base_totals TEXT
         );
         CREATE TABLE recipe_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,18 +105,23 @@ def test_get_recipe_for_blend_scales_to_total():
     assert ratios == [60.0, 30.0, 10.0]
 
 
-def test_get_recipe_for_blend_default_total_only_when_designated():
-    """기준 배합량(base_total)을 지정한 레시피만 default_total 반환(버튼 노출).
-    미지정 레시피는 None — 배합 화면에 기준량 버튼이 뜨지 않는다."""
+def test_get_recipe_for_blend_default_totals_only_when_designated():
+    """기준 배합량을 지정한 레시피만 default_totals 반환(버튼 노출, 최대 3개).
+    미지정 레시피는 빈 목록 — 배합 화면에 기준량 버튼이 뜨지 않는다."""
     conn = _make_db()
     rid = _seed_recipe(conn, product="BASE1", weights=(60, 40))  # 합계 100
-    # 미지정 → None (버튼 없음)
-    assert bs.get_recipe_for_blend(conn, rid)["default_total"] is None
-    # 지정(비율 레시피의 실제 기본 배합량) → 저장값 반환
-    conn.execute("UPDATE recipes SET base_total = 3924.38 WHERE id = ?", (rid,))
+    # 미지정 → 빈 목록 (버튼 없음)
+    res = bs.get_recipe_for_blend(conn, rid)
+    assert res["default_totals"] == [] and res["default_total"] is None
+    # 다중 지정(CSV) → 순서 보존, 최대 3개
+    conn.execute("UPDATE recipes SET base_totals = '3924.38,2000,100' WHERE id = ?", (rid,))
     result = bs.get_recipe_for_blend(conn, rid)
-    assert result["default_total"] == 3924.38
+    assert result["default_totals"] == [3924.38, 2000.0, 100.0]
+    assert result["default_total"] == 3924.38  # 하위호환(첫 값)
     assert result["base_total"] == 100.0  # 합계는 그대로(비율 계산용)
+    # (구) 단일 base_total 만 있는 기존 레시피 → 폴백
+    conn.execute("UPDATE recipes SET base_totals = NULL, base_total = 500 WHERE id = ?", (rid,))
+    assert bs.get_recipe_for_blend(conn, rid)["default_totals"] == [500.0]
 
 
 def test_import_stores_and_inherits_base_total():
@@ -141,16 +146,24 @@ def test_import_stores_and_inherits_base_total():
 
     raw = f"반제품명\tMatA\tMatB\n{prod}\t60\t40"
     res = client.post("/api/recipes/import",
-                      json={"raw_text": raw, "force": True, "base_total": 3924.38},
+                      json={"raw_text": raw, "force": True,
+                            "base_totals": [3924.38, 2000, 100]},
                       headers=headers)
     assert res.status_code == 200, res.text
     rid = res.json()["created_ids"][0]
     with get_connection() as conn:
-        assert conn.execute("SELECT base_total FROM recipes WHERE id=?", (rid,)).fetchone()[0] == 3924.38
+        assert conn.execute("SELECT base_totals FROM recipes WHERE id=?",
+                            (rid,)).fetchone()[0] == "3924.38,2000,100"
 
-    # 배합 API 에도 반영
+    # 배합 API 에도 반영(최대 3개 목록)
     detail = client.get(f"/api/blend/recipes/{rid}").json()
-    assert detail["default_total"] == 3924.38
+    assert detail["default_totals"] == [3924.38, 2000.0, 100.0]
+
+    # 4개 이상은 422
+    bad = client.post("/api/recipes/import",
+                      json={"raw_text": raw, "force": True,
+                            "base_totals": [1, 2, 3, 4]}, headers=headers)
+    assert bad.status_code == 422
 
     # 개정(미입력) → 승계
     raw2 = f"반제품명\tMatA\tMatB\n{prod}\t70\t30"
@@ -160,7 +173,18 @@ def test_import_stores_and_inherits_base_total():
     assert res2.status_code == 200, res2.text
     rid2 = res2.json()["created_ids"][0]
     with get_connection() as conn:
-        assert conn.execute("SELECT base_total FROM recipes WHERE id=?", (rid2,)).fetchone()[0] == 3924.38
+        assert conn.execute("SELECT base_totals FROM recipes WHERE id=?",
+                            (rid2,)).fetchone()[0] == "3924.38,2000,100"
+
+    # (구) 단일 base_total 필드도 여전히 동작(하위호환)
+    prod2 = "BT2" + uuid.uuid4().hex[:5]
+    raw3 = f"반제품명\tMatA\n{prod2}\t100"
+    res3 = client.post("/api/recipes/import",
+                       json={"raw_text": raw3, "force": True, "base_total": 777},
+                       headers=headers)
+    assert res3.status_code == 200
+    rid3 = res3.json()["created_ids"][0]
+    assert client.get(f"/api/blend/recipes/{rid3}").json()["default_totals"] == [777.0]
 
 
 def test_get_recipe_for_blend_resolves_to_latest_revision():

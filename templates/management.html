@@ -36,8 +36,9 @@
               ></textarea>
               <div class="button-row">
                 <label class="filter-label inline-label" for="register-base-total">기준 배합량 (g)</label>
-                <input id="register-base-total" type="number" min="0" step="0.01" class="input base-total-input"
-                  placeholder="선택" title="배합 화면 '기준량 적용' 버튼이 채울 총량. 비우면 자재 합계를 사용합니다" />
+                <input id="register-base-total" class="input base-total-input"
+                  placeholder="선택 · 쉼표로 최대 3개"
+                  title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
                 <button id="preview-btn" class="btn accent">검증</button>
                 <button id="register-btn" class="btn success" disabled>등록</button>
                 <button id="clear-btn" class="btn">초기화</button>
@@ -202,8 +203,8 @@
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js?v=20260624a"></script>
     <!-- management modules: 5 factories (order-free) → controller last -->
     <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260707a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260707b"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260708a"></script>
+    <script src="/static/js/management/import-validate.js?v=20260708a"></script>
     <script src="/static/js/management/recipe-history.js?v=20260703a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260707a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>

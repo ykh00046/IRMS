@@ -305,20 +305,28 @@
     updateInputGuide();
   }
 
-  // '기준량' 버튼 — 레시피 관리에서 기준 배합량을 지정한 레시피에서만 노출.
+  // '기준량' 버튼(최대 3개) — 레시피 관리에서 기준 배합량을 지정한 레시피에서만 노출.
   // (미지정 레시피는 버튼 없음 — 총량은 직접 입력)
-  function baseTotalValue() {
-    if (!state.current) return 0;
-    return Number(state.current.default_total) || 0;
+  function baseTotalValues() {
+    if (!state.current) return [];
+    const list = Array.isArray(state.current.default_totals) ? state.current.default_totals : [];
+    return list.filter((v) => Number(v) > 0);
   }
 
   function renderBaseTotalButton() {
-    const btn = $("blend-total-base");
-    if (!btn) return;
-    const base = baseTotalValue();
-    if (!(base > 0)) { btn.hidden = true; return; }
-    btn.textContent = `기준량 ${fmt(base)} 적용`;  // 라벨 줄 링크형 — 간결하게
-    btn.hidden = false;
+    const wrap = $("blend-base-links");
+    if (!wrap) return;
+    const values = baseTotalValues();
+    if (!values.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    // 1개면 '기준량 N 적용', 여러 개면 '기준량' 라벨 + 압축 표기 값 버튼들
+    const short = (v) => String(Number(v));  // 2000.00 → 2000 (라벨 줄 한 줄 유지)
+    const label = values.length === 1 ? "" : '<span class="blend-base-label">기준량</span>';
+    wrap.innerHTML = label + values.map((v) =>
+      `<button class="blend-base-link" type="button" data-value="${v}" ` +
+      `title="총 배합량에 ${fmt(v)} g 을 채웁니다">` +
+      `${values.length === 1 ? `기준량 ${short(v)} 적용` : short(v)}</button>`
+    ).join("");
+    wrap.hidden = false;
   }
 
   // 반응기 진행 반제품(레시피)일 때만 배합 설정에 반응기 선택을 노출한다.
@@ -550,8 +558,10 @@
       if (selectedRecipeId()) return;
       recipeInput.value = state.current ? state.current.recipe.product_name : "";
     });
-    $("blend-total-base").addEventListener("click", () => {
-      const base = baseTotalValue();
+    $("blend-base-links").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".blend-base-link");
+      if (!btn) return;
+      const base = Number(btn.dataset.value);
       if (!(base > 0)) return;
       const totalInput = $("blend-total");
       totalInput.value = String(base);

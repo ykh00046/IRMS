@@ -75,9 +75,13 @@
       state.currentPreview = null;
       state.previewIsStale = false;
       state.confirmedRawText = "";
-      // 기준 배합량 프리필 — 수정 등록 시 저장된 값이 그대로 승계되도록.
+      // 기준 배합량 프리필 — 수정 등록 시 저장된 값(최대 3개)이 그대로 승계되도록.
       const baseEl = document.getElementById("register-base-total");
-      if (baseEl) baseEl.value = detail.base_total != null ? String(detail.base_total) : "";
+      if (baseEl) {
+        baseEl.value = detail.base_totals
+          ? String(detail.base_totals).split(",").map((t) => t.trim()).join(", ")
+          : (detail.base_total != null ? String(detail.base_total) : "");
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

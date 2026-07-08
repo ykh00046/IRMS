@@ -70,16 +70,27 @@ def build_router() -> APIRouter:
             # 수정 등록(revision)이면 원본 체인의 DHR 전용 여부·기준 배합량을 승계한다.
             # 승계하지 않으면 새 버전이 일반 레시피가 되어 배합 화면에 노출되는 회귀 발생.
             inherited_is_dhr = 0
-            base_total = body.base_total
+            totals = body.base_totals or ([body.base_total] if body.base_total else None)
             if body.revision_of is not None:
                 parent_row = connection.execute(
-                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total FROM recipes WHERE id = ?",
+                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals "
+                    "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
                 if parent_row:
                     inherited_is_dhr = int(parent_row["is_dhr"])
-                    if base_total is None and parent_row["base_total"]:
-                        base_total = float(parent_row["base_total"])
+                    if totals is None:
+                        if parent_row["base_totals"]:
+                            totals = [
+                                float(t) for t in str(parent_row["base_totals"]).split(",") if t.strip()
+                            ]
+                        elif parent_row["base_total"]:
+                            totals = [float(parent_row["base_total"])]
+            # 정수는 '.0' 없이 저장(프리필 표시·비교 편의)
+            base_totals_text = (
+                ",".join(str(int(t)) if float(t) == int(t) else str(t) for t in totals[:3])
+                if totals else None
+            )
 
             for parsed_row in parsed["parsed_rows"]:
                 # 등록 즉시 사용 가능(completed). (구) 계량 워크플로의 pending→진행→완료
@@ -89,7 +100,7 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_total
+                        base_totals
                     ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -107,7 +118,7 @@ def build_router() -> APIRouter:
                         parsed_row.get("remark"),
                         effective_from,
                         inherited_is_dhr,
-                        base_total,
+                        base_totals_text,
                     ),
                 )
                 recipe_id = cursor.lastrowid
