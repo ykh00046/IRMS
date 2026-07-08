@@ -170,6 +170,9 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
+/* 작업자 교대 힌트(라벨 옆 작은 안내) */
+.blend-worker-hint { font-size: 0.68rem; color: var(--muted, #9ca3af); font-weight: 400; }
+
 /* 기준량 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
 .blend-label-row {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;

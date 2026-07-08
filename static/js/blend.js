@@ -22,7 +22,7 @@
   };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "" };
 
   // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
   const TOLERANCE_G = 0.05;
@@ -116,6 +116,36 @@
       const dl = $("worker-names");
       if (dl) dl.innerHTML = state.workers.map((n) => `<option value="${esc(n)}"></option>`).join("");
     } catch (_e) { /* optional */ }
+  }
+
+  // ── 작업자 교대 — 작업자 칸에서 이름을 고르면 로그아웃 없이 세션 전환 ──
+  // 공용 단말에서 교대 시 앞사람 이름으로 기록되는 오귀속 방지. 등록된 이름은
+  // 즉시 교대, 처음 보는 이름은 등록 확인 후 교대.
+  async function switchWorker(name) {
+    const clean = (name || "").trim();
+    if (!clean) return false;
+    if (clean === state.sessionWorker) return true;
+    if (!state.workers.includes(clean)) {
+      if (!window.confirm(`처음 보는 이름입니다: "${clean}"
+작업자로 등록하고 교대할까요?`)) return false;
+      try {
+        await request("/workers", { method: "POST", body: { name: clean } });
+        state.workers.push(clean);
+        const dl = $("worker-names");
+        if (dl) dl.insertAdjacentHTML("beforeend", `<option value="${esc(clean)}"></option>`);
+      } catch (e) { notify(`작업자 등록 실패: ${e.message}`, "error"); return false; }
+    }
+    try {
+      await request("/blend/session/login", { method: "POST", body: { worker: clean } });
+      state.sessionWorker = clean;
+      $("blend-worker").value = clean;
+      if ($("bulk-worker")) $("bulk-worker").value = clean;
+      notify(`작업자 교대: ${clean}`, "success");
+      return true;
+    } catch (e) {
+      notify(`작업자 교대 실패: ${e.message}`, "error");
+      return false;
+    }
   }
 
   // 처음 보는 이름이면 등록 확인. 등록 거부 시 false 반환(저장 중단).
@@ -504,7 +534,10 @@
       notify("반응기를 선택하세요.", "error");
       return;
     }
-    if (!(await ensureWorker(worker))) return;
+    // 작업자 칸이 세션과 다르면 먼저 교대(오귀속 방지) — 실패 시 저장 중단
+    if (worker !== state.sessionWorker && !(await switchWorker(worker))) return;
+    // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
+    if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
     const body = {
       recipe_id: state.current.recipe.id,
       product_name: state.current.recipe.product_name,
@@ -531,7 +564,7 @@
     };
     try {
       const rec = await request("/blend/records", { method: "POST", body });
-      notify(`배합 실적 저장: ${rec.product_lot}`, "success");
+      notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       // 실제량/LOT 초기화 (연속 작업 편의)
       state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; });
       if (state.workerPad) state.workerPad.clear();
@@ -584,6 +617,18 @@
       updateInputGuide();
     });
     $("blend-worker").addEventListener("input", updateInputGuide);
+    // 교대: 포커스 시 비워 전체 명단 표시(레시피 칸과 동일 UX), 선택/확정 시 세션 전환
+    $("blend-worker").addEventListener("focus", () => { $("blend-worker").value = ""; });
+    $("blend-worker").addEventListener("change", async () => {
+      const name = $("blend-worker").value.trim();
+      if (name && name !== state.sessionWorker) {
+        if (!(await switchWorker(name))) $("blend-worker").value = state.sessionWorker;
+      }
+    });
+    $("blend-worker").addEventListener("blur", () => {
+      if (!$("blend-worker").value.trim()) $("blend-worker").value = state.sessionWorker;
+      updateInputGuide();
+    });
     const extraToggle = $("blend-extra-toggle");
     if (extraToggle) {
       extraToggle.addEventListener("click", () => {
@@ -605,6 +650,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     if (!request) { console.error("IRMS core not loaded"); return; }
+    state.sessionWorker = lockedWorkerName();
     $("blend-date").value = todayISO();
     $("blend-time").value = nowTime();
     if ($("bulk-worker") && lockedWorkerName()) $("bulk-worker").value = lockedWorkerName();
