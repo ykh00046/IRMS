@@ -48,7 +48,8 @@ def fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict
         FROM recipe_items ri
         JOIN materials m ON m.id = ri.material_id
         WHERE ri.recipe_id IN ({ids})
-        ORDER BY ri.recipe_id ASC, m.name ASC
+        ORDER BY ri.recipe_id ASC, ri.id ASC  -- 등록(투입) 순서 보존 — 이름순이면
+                                              -- 수정 등록 때마다 배합 순서가 뒤바뀐다
         """.format(
             ids=", ".join("?" for _ in recipe_ids)
         ),

@@ -154,6 +154,44 @@ def test_list_recipes_shows_only_latest_revision():
     assert v1 in ids
 
 
+def test_material_order_preserved_through_revision():
+    """자재 순서(=투입 순서)는 등록 순서 그대로 — 상세/TSV/개정을 거쳐도 불변.
+
+    fetch_recipe_items 가 이름순(m.name) 정렬이라 '수정 등록'이 가나다순으로
+    재배열된 시트를 저장 → 개정 때마다 배합 순서가 뒤바뀌던 회귀(2026-07-08)."""
+    client = _client()
+    headers = _login(client)
+    product = f"PORD{_uid()}"
+    # 의도적으로 가나다/알파벳 역순 자재 배치
+    raw = f"반제품명\t원료Z\t원료M\t원료A\n{product}\t50\t30\t20"
+    res = client.post("/api/recipes/import", json={"raw_text": raw, "force": True}, headers=headers)
+    assert res.status_code == 200, res.text
+    rid = res.json()["created_ids"][0]
+
+    def names(recipe_id):
+        detail = client.get(f"/api/recipes/{recipe_id}/detail").json()
+        return [it["material_name"] for it in detail["items"]]
+
+    assert names(rid) == ["원료Z", "원료M", "원료A"]  # 상세: 등록 순서
+
+    # 상세 TSV(수정 등록이 불러오는 형식)도 등록 순서
+    tsv_header = client.get(f"/api/recipes/{rid}/detail").json()["tsv"].split("\n")[0]
+    assert tsv_header.split("\t")[1:4] == ["원료Z", "원료M", "원료A"]
+
+    # 개정(값 변경) 후에도 순서 유지
+    raw2 = f"반제품명\t원료Z\t원료M\t원료A\n{product}\t60\t25\t15"
+    res2 = client.post("/api/recipes/import",
+                       json={"raw_text": raw2, "force": True, "revision_of": rid},
+                       headers=headers)
+    assert res2.status_code == 200, res2.text
+    rid2 = res2.json()["created_ids"][0]
+    assert names(rid2) == ["원료Z", "원료M", "원료A"]
+
+    # 배합 화면 환산 API 도 동일 순서
+    blend = client.get(f"/api/blend/recipes/{rid2}").json()
+    assert [it["material_name"] for it in blend["items"]] == ["원료Z", "원료M", "원료A"]
+
+
 def test_version_history_current_flag():
     """버전 이력: 현재 버전만 is_current — 개정본이 취소되면 원본이 현재로 복귀."""
     client = _client()
