@@ -133,6 +133,13 @@ def build_router() -> APIRouter:
                         (recipe_id, item["material_id"], item["value_weight"], item["value_text"]),
                     )
 
+                # 공정 설명 줄('설명' 열) — 자재 사이 안내문. 공식 배합일지 출력 미포함.
+                for step in parsed_row.get("steps", []):
+                    connection.execute(
+                        "INSERT INTO recipe_steps (recipe_id, position, note) VALUES (?, ?, ?)",
+                        (recipe_id, int(step["position"]), step["note"]),
+                    )
+
             write_audit_log(
                 connection,
                 action="recipes_imported",

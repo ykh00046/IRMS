@@ -210,6 +210,11 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="Recipe not found")
 
             item_map = fetch_recipe_items(connection, [recipe_id])
+            step_rows = connection.execute(
+                "SELECT position, note FROM recipe_steps WHERE recipe_id = ? "
+                "ORDER BY position, id",
+                (recipe_id,),
+            ).fetchall()
 
         recipe = row_to_dict(recipe_row)
         recipe_items = item_map.get(recipe_id, [])
@@ -224,14 +229,24 @@ def build_router() -> APIRouter:
             }
             for it in recipe_items
         ]
+        steps = [{"position": int(s["position"]), "note": s["note"]} for s in step_rows]
+        recipe["steps"] = steps
 
-        material_names = [it["material_name"] for it in recipe_items]
-        header = ["반제품명"] + material_names + ["비고"]
-        values = [
-            recipe["product_name"] or "",
-            *[str(it["target_value"]) if it["target_value"] is not None else "" for it in recipe_items],
-            recipe.get("remark") or "",
-        ]
+        # TSV: 공정 설명('설명' 열)을 자재 사이 원위치에 끼워 수정 등록 왕복 보존
+        header = ["반제품명"]
+        values = [recipe["product_name"] or ""]
+        step_queue = list(steps)
+        for idx, it in enumerate(recipe_items):
+            while step_queue and step_queue[0]["position"] <= idx:
+                header.append("설명")
+                values.append(step_queue.pop(0)["note"])
+            header.append(it["material_name"])
+            values.append(str(it["target_value"]) if it["target_value"] is not None else "")
+        while step_queue:  # 마지막 자재 뒤 설명
+            header.append("설명")
+            values.append(step_queue.pop(0)["note"])
+        header.append("비고")
+        values.append(recipe.get("remark") or "")
         recipe["tsv"] = "\t".join(header) + "\n" + "\t".join(values)
 
         return recipe

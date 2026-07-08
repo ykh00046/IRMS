@@ -394,18 +394,30 @@
       updateTotals();
       return;
     }
+    // 공정 설명 줄(레시피 '설명' 열) — 해당 위치에 전폭 안내 행으로 삽입
+    const steps = (state.current && state.current.steps) || [];
+    const appendSteps = (position) => {
+      steps.filter((st) => st.position === position).forEach((st) => {
+        const tr = document.createElement("tr");
+        tr.className = "blend-step-row";
+        tr.innerHTML = `<td colspan="7">▸ ${esc(st.note)}</td>`;
+        body.appendChild(tr);
+      });
+    };
     state.items.forEach((it, idx) => {
+      appendSteps(idx);  // 이 자재 앞(=앞선 자재 idx개 뒤)의 설명
       const tr = document.createElement("tr");
       tr.innerHTML =
         `<td>${idx + 1}</td>` +
         `<td>${esc(it.material_name)}</td>` +
         `<td class="num">${fmt(it.ratio, 2)}</td>` +
-        `<td class="num blend-theory">${fmt(it.theory_amount)}</td>` +
+        `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}</td>` +
         `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
         `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
         `<td class="num blend-var" data-idx="${idx}">-</td>`;
       body.appendChild(tr);
     });
+    appendSteps(state.items.length);  // 마지막 자재 뒤 설명
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
@@ -603,14 +615,14 @@
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
       state.items.forEach((_, i) => updateRowVar(i));
-      // 이론량 셀 + 실제량 입력칸 안내값 갱신
-      document.querySelectorAll("#blend-mat-body tr").forEach((tr, i) => {
-        const cell = tr.querySelector(".blend-theory");
-        if (cell && state.items[i]) cell.textContent = fmt(state.items[i].theory_amount);
-        const act = tr.querySelector(".blend-actual");
-        if (act && state.items[i]) {
-          act.placeholder = state.items[i].theory_amount == null ? "" : fmt(state.items[i].theory_amount);
-        }
+      // 이론량 셀 + 실제량 입력칸 안내값 갱신 — data-idx 기준(설명 줄이 끼어도 안전)
+      document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
+        const it = state.items[Number(cell.dataset.idx)];
+        if (it) cell.textContent = fmt(it.theory_amount);
+      });
+      document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
+        const it = state.items[Number(act.dataset.idx)];
+        if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount);
       });
       updateTotals();
       updateLotPreview();

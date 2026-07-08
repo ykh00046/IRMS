@@ -170,6 +170,12 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
+/* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함) */
+.blend-step-row td {
+  background: #f8fafc; color: #334155; font-size: 0.85rem; font-weight: 600;
+  border-left: 3px solid var(--accent, #2563eb); padding: 0.4rem 0.7rem;
+}
+
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
 .blend-worker-hint { font-size: 0.68rem; color: var(--muted, #9ca3af); font-weight: 400; }
 

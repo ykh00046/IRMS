@@ -90,6 +90,9 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
         for key, candidates in field_map.items()
     }
     remark_tokens = {normalize_token(c) for c in ["비고", "REMARK", "NOTE"]}
+    # 공정 설명 열: 자재가 아니라 그 위치의 안내문("개시제 교반 - 300rpm" 등).
+    # 열 제목이 '설명'이면(여러 번 가능) 해당 칸 내용이 자재 사이 설명 줄이 된다.
+    step_tokens = {normalize_token(c) for c in ["설명", "공정", "STEP"]}
 
     def get_header_config(row_cells, current_row_index, previous_config):
         normalized_headers = [normalize_token(c) for c in row_cells]
@@ -153,6 +156,12 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
              if i > metadata_end_index and normalize_token(val) in remark_tokens),
             -1,
         )
+        # '설명' 열들 — 자재 자동 등록 대상에서 제외하고 위치만 기억
+        step_indexes = [
+            i for i, val in enumerate(row_cells)
+            if i > metadata_end_index and i != remark_index
+            and normalize_token(val) in step_tokens
+        ]
 
         for idx, header in enumerate(row_cells):
             if idx in field_index_set:
@@ -160,6 +169,8 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             if idx <= metadata_end_index:
                 continue
             if idx == remark_index:
+                continue
+            if idx in step_indexes:
                 continue
             if not header.strip():
                 continue
@@ -179,6 +190,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
         return {
             "field_indexes": field_indexes,
             "remark_index": remark_index,
+            "step_indexes": step_indexes,
             "material_columns": mat_cols,
             "warnings": header_warnings,
             "headers": row_cells,
@@ -253,11 +265,22 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
 
         row_items = []
         preview_items = []
+        row_steps = []  # 공정 설명: {position(앞선 자재 수), note}
 
-        for col in current_config["material_columns"]:
+        # 자재·설명 열을 시트 열 순서대로 함께 훑어 설명 위치(몇 번째 자재 뒤)를 계산
+        merged_cols = sorted(
+            [("material", col) for col in current_config["material_columns"]]
+            + [("step", {"index": i}) for i in current_config.get("step_indexes", [])],
+            key=lambda pair: pair[1]["index"],
+        )
+        for kind, col in merged_cols:
             idx = col["index"]
             raw_val = cells[idx] if idx < len(cells) else ""
             if not raw_val:
+                continue
+
+            if kind == "step":
+                row_steps.append({"position": len(row_items), "note": raw_val.strip()})
                 continue
 
             mat = col["material"]
@@ -295,6 +318,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             "ink_name": ink or None,
             "remark": remark_val,
             "items": row_items,
+            "steps": row_steps,
         })
 
         preview_rows.append({

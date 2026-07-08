@@ -264,6 +264,20 @@ def build_router() -> APIRouter:
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
         record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
+        # 공정 설명 줄 — 기록 당시 레시피(recipe_id 원본 보존)의 설명을 함께 표시
+        record["steps"] = []
+        if record.get("recipe_id"):
+            try:
+                rows = connection.execute(
+                    "SELECT position, note FROM recipe_steps WHERE recipe_id = ? "
+                    "ORDER BY position, id",
+                    (record["recipe_id"],),
+                ).fetchall()
+                record["steps"] = [
+                    {"position": int(r["position"]), "note": r["note"]} for r in rows
+                ]
+            except sqlite3.OperationalError:
+                pass
         return record
 
     @router.post("/blend/records/{record_id}/viscosity")

@@ -154,6 +154,66 @@ def test_list_recipes_shows_only_latest_revision():
     assert v1 in ids
 
 
+def test_recipe_steps_between_materials():
+    """'설명' 열 — 자재 사이 공정 안내문(체크리스트식). 등록→상세/TSV→개정 왕복 보존,
+    배합 API·기록 상세에 노출. 자재로 오등록되지 않아야 한다. 공식 배합일지 미포함."""
+    client = _client()
+    headers = _login(client)
+    product = f"PSTEP{_uid()}"
+    raw = (
+        "반제품명\t원료A\t설명\t원료B\t원료C\t설명\t비고\n"
+        f"{product}\t60\t개시제 교반 - 300rpm\t30\t10\t반응기 15분 추가 교반\t메모"
+    )
+    res = client.post("/api/recipes/import", json={"raw_text": raw, "force": True}, headers=headers)
+    assert res.status_code == 200, res.text
+    rid = res.json()["created_ids"][0]
+
+    # '설명'이 자재로 자동 등록되지 않음
+    from src.db import get_connection
+    with get_connection() as conn:
+        assert conn.execute("SELECT 1 FROM materials WHERE name='설명'").fetchone() is None
+
+    detail = client.get(f"/api/recipes/{rid}/detail").json()
+    assert [it["material_name"] for it in detail["items"]] == ["원료A", "원료B", "원료C"]
+    assert detail["steps"] == [
+        {"position": 1, "note": "개시제 교반 - 300rpm"},
+        {"position": 3, "note": "반응기 15분 추가 교반"},
+    ]
+    # TSV 왕복: 설명 열이 원위치에 포함
+    header = detail["tsv"].split("\n")[0].split("\t")
+    assert header == ["반제품명", "원료A", "설명", "원료B", "원료C", "설명", "비고"]
+
+    # 개정(TSV 그대로 재등록) → 설명 보존
+    res2 = client.post("/api/recipes/import",
+                       json={"raw_text": detail["tsv"], "force": True, "revision_of": rid},
+                       headers=headers)
+    assert res2.status_code == 200, res2.text
+    rid2 = res2.json()["created_ids"][0]
+    detail2 = client.get(f"/api/recipes/{rid2}/detail").json()
+    assert detail2["steps"] == detail["steps"]
+
+    # 배합 환산 API 에도 steps 노출
+    blend = client.get(f"/api/blend/recipes/{rid2}").json()
+    assert blend["steps"] == detail["steps"]
+
+    # 기록 저장 → 기록 상세에도 steps (기록 당시 레시피 기준)
+    worker = "공정작업" + _uid()[:6]
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    created = client.post("/api/blend/records", json={
+        "recipe_id": rid2, "product_name": product, "worker": worker,
+        "work_date": "2026-07-08", "total_amount": 100,
+        "details": [
+            {"material_name": "원료A", "ratio": 60, "theory_amount": 60, "actual_amount": 60},
+            {"material_name": "원료B", "ratio": 30, "theory_amount": 30, "actual_amount": 30},
+            {"material_name": "원료C", "ratio": 10, "theory_amount": 10, "actual_amount": 10},
+        ],
+    }, headers=headers)
+    assert created.status_code == 200, created.text
+    rec = client.get(f"/api/blend/records/{created.json()['id']}").json()
+    assert rec["steps"] == detail["steps"]
+
+
 def test_material_order_preserved_through_revision():
     """자재 순서(=투입 순서)는 등록 순서 그대로 — 상세/TSV/개정을 거쳐도 불변.
 

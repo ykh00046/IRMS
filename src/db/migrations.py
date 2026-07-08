@@ -97,6 +97,23 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 100/4000 등으로 안 떨어져도(예: 합 3924.38) 배합 화면 '기준량 적용' 버튼이 이 값을
     # 사용. 미설정 시 자재 합계로 폴백.
     ensure_column(connection, "recipes", "base_total", "REAL")
+    # 공정 설명 줄(레시피 자재 사이 안내문 — 예: "개시제 교반 - 300rpm").
+    # position = 그 설명 앞에 오는 자재 수(0=맨 앞). 공식 배합일지 출력에는 미포함,
+    # 배합 화면·기록 상세 표시 전용.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_steps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL,
+            note TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_recipe_steps_recipe ON recipe_steps(recipe_id)"
+    )
+
     # 기준 배합량 확장(최대 3개, 쉼표 구분 TEXT). 기존 단일 base_total 은 이관 후 잔존(legacy).
     ensure_column(connection, "recipes", "base_totals", "TEXT")
     connection.execute(

@@ -92,16 +92,23 @@ document.addEventListener("DOMContentLoaded", () => {
     setEditChromeHidden(false);
     $("status-detail-title").textContent = `배합 실적서 — ${rec.product_lot}`;
     const v = rec.variance || {};
+    // 공정 설명 줄(레시피 '설명' 열) — 기록 당시 위치에 전폭 안내 행으로 삽입
+    const steps = rec.steps || [];
+    const stepRowsAt = (pos) => steps
+      .filter((st) => st.position === pos)
+      .map((st) => `<tr class="blend-step-row"><td colspan="7">▸ ${esc(st.note)}</td></tr>`)
+      .join("");
     const rows = (rec.details || [])
       .map(
         (d, i) =>
+          stepRowsAt(i) +
           `<tr><td>${i + 1}</td><td>${esc(d.material_name)}</td>` +
           `<td class="num">${fmt(d.ratio, 2)}</td><td class="num">${fmt(d.theory_amount)}</td>` +
           `<td class="num">${fmt(d.actual_amount)}</td>` +
           `<td class="num ${d.variance > 0 ? "var-up" : d.variance < 0 ? "var-down" : ""}">${d.variance == null ? "-" : (d.variance > 0 ? "+" : "") + fmt(d.variance, 2)}</td>` +
           `<td>${esc(d.material_lot || "-")}</td></tr>`,
       )
-      .join("");
+      .join("") + stepRowsAt((rec.details || []).length);
     const linkedVisc = (rec.viscosity || []).length
       ? `<ul class="blend-visc-list">${rec.viscosity
           .map(

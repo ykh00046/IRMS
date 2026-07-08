@@ -83,6 +83,16 @@ def get_recipe_for_blend(
         (recipe_id,),
     ).fetchall()
 
+    # 공정 설명 줄(자재 사이 안내문) — 화면 표시 전용, 계산·집계와 무관
+    try:
+        step_rows = connection.execute(
+            "SELECT position, note FROM recipe_steps WHERE recipe_id = ? ORDER BY position, id",
+            (recipe_id,),
+        ).fetchall()
+        steps = [{"position": int(s["position"]), "note": s["note"]} for s in step_rows]
+    except sqlite3.OperationalError:  # 테이블 없는 구버전/테스트 DB
+        steps = []
+
     weights = [float(r["value_weight"] or 0) for r in rows]
     base_total = sum(weights)
     total = float(total_amount) if total_amount and total_amount > 0 else base_total
@@ -128,6 +138,7 @@ def get_recipe_for_blend(
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
         },
         "base_total": round(base_total, 3),
+        "steps": steps,
         "default_totals": default_totals,
         # (구) 단일 필드 — 하위호환(첫 값 또는 None)
         "default_total": default_totals[0] if default_totals else None,
