@@ -96,6 +96,17 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
     return to_public_user(row)
 
 
+# 관리(책임자) 인증이 세션에 쓰는 키 — 이것만 지운다. 같은 쿠키 세션을 배합 작업자
+# (blend_session)·근태(att_user)도 쓰므로 session.clear() 를 부르면 책임자
+# 로그인/로그아웃이 현장 작업자 세션까지 끊어버린다(배합 재로그인 요구 증상).
+_AUTH_SESSION_KEYS = ("user_id", "session_token", "mgr_worker_id", "mgr_token")
+
+
+def _clear_auth_session(request: Request) -> None:
+    for key in _AUTH_SESSION_KEYS:
+        request.session.pop(key, None)
+
+
 def get_current_user(request: Request, required: bool = True) -> dict[str, Any] | None:
     # 1) 이름 기반 책임자(이용자 명단) 세션
     mgr_worker_id = request.session.get("mgr_worker_id")
@@ -109,7 +120,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
             ).fetchone()
         if row and row["is_active"] and row["is_manager"] and (token or "") == (row["session_token"] or ""):
             return _worker_to_public(row)
-        request.session.clear()
+        _clear_auth_session(request)
         if required:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
         return None
@@ -134,7 +145,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
     if row and (cookie_token or "") == (row["session_token"] or ""):
         return to_public_user(row)
 
-    request.session.clear()
+    _clear_auth_session(request)
     if required:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -171,7 +182,7 @@ def login_user(request: Request, user: dict[str, Any]) -> None:
             (token, int(user["id"])),
         )
         connection.commit()
-    request.session.clear()
+    _clear_auth_session(request)  # 배합 작업자·근태 세션은 보존
     request.session["user_id"] = user["id"]
     request.session["session_token"] = token
 
@@ -185,7 +196,7 @@ def login_manager_worker(request: Request, worker: dict[str, Any]) -> None:
             (token, int(worker["id"])),
         )
         connection.commit()
-    request.session.clear()
+    _clear_auth_session(request)  # 배합 작업자·근태 세션은 보존
     request.session["mgr_worker_id"] = worker["id"]
     request.session["mgr_token"] = token
 
@@ -207,4 +218,4 @@ def logout_user(request: Request) -> None:
                 (int(user_id),),
             )
             connection.commit()
-    request.session.clear()
+    _clear_auth_session(request)  # 배합 작업자·근태 세션은 보존

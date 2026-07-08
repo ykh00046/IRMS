@@ -208,6 +208,34 @@ def test_blend_hard_delete_requires_manager():
     assert res.status_code == 403
 
 
+# ── 세션 공존: 책임자 로그인/로그아웃이 배합 작업자 세션을 끊지 않는다 ────────
+
+def test_manager_login_preserves_blend_worker_session():
+    """배합 작업 중 책임자 화면을 다녀와도(로그인·로그아웃) 작업자 세션 유지.
+
+    같은 쿠키 세션을 공유하는 구조에서 session.clear() 가 현장 세션까지 지워
+    '배합으로 돌아가면 재로그인 요구' 증상이 있었다(2026-07-08)."""
+    client = _client()
+    worker = "세션유지" + uuid.uuid4().hex[:6]
+
+    client.get("/api/blend/records")
+    headers = _csrf(client)
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    res = client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    assert res.status_code == 200
+    assert client.get("/api/blend/session/me").json()["worker"] == worker
+
+    # 책임자 로그인 → 배합 작업자 세션이 살아 있어야 한다
+    _admin_login(client)
+    assert client.get("/api/blend/session/me").json()["worker"] == worker
+
+    # 책임자 로그아웃 → 여전히 유지
+    client.post("/api/auth/logout", headers=_csrf(client))
+    assert client.get("/api/blend/session/me").json()["worker"] == worker
+    # 관리 인증은 정리됨
+    assert client.get("/api/workers/all").status_code in (401, 403)
+
+
 # ── 서명/시트백업 설정 — 권한 게이트 ─────────────────────────────────────────
 
 def test_admin_config_routes_require_manager():
