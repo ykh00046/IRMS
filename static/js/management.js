@@ -17,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
     rawInput: document.getElementById("raw-input"),
     revisionBanner: document.getElementById("revision-banner"),
     previewBtn: document.getElementById("preview-btn"),
+    addRowBtn: document.getElementById("add-row-btn"),
+    addColBtn: document.getElementById("add-col-btn"),
     registerBtn: document.getElementById("register-btn"),
     clearBtn: document.getElementById("clear-btn"),
     previewMeta: document.getElementById("preview-meta"),
@@ -152,6 +154,23 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Event bindings ──
   if (canManage) {
     dom.previewBtn.addEventListener("click", importValidate.handlePreview);
+    // 칸 부족 대응: 시트에 행/열 추가 (우클릭 메뉴와 동일 동작의 노출형 버튼)
+    const insertToSheet = (kind) => {
+      const ws = spreadsheet.getActiveWorksheet();
+      if (!ws) {
+        IRMS.notify("텍스트 모드에서는 줄바꿈(행)·탭(열)으로 늘려 입력하세요.", "info");
+        return;
+      }
+      try {
+        if (kind === "row") ws.insertRow();
+        else ws.insertColumn();
+        ctx.onDirty();
+      } catch (e) {
+        IRMS.notify(`추가 실패: ${e.message || e}`, "error");
+      }
+    };
+    dom.addRowBtn?.addEventListener("click", () => insertToSheet("row"));
+    dom.addColBtn?.addEventListener("click", () => insertToSheet("col"));
 
     dom.registerBtn.addEventListener("click", importValidate.handleRegister);
     dom.clearBtn.addEventListener("click", importValidate.handleClear);

@@ -25,6 +25,8 @@
               <div id="revision-banner" class="revision-banner" hidden></div>
               <p class="import-helper">
                 첫 열은 반제품명, 이후 열은 자재명으로 입력하세요. 비고 열은 선택 사항입니다.
+                칸이 부족하면 <b>＋행/＋열</b> 버튼(또는 시트 우클릭 메뉴)으로 늘릴 수 있고,
+                엑셀 표를 붙여넣으면 자동으로 늘어납니다.
               </p>
               <p class="mode-note">표준 단위: g 고정 · 배합은 '배합' 화면에서 진행</p>
               <div id="spreadsheet" class="spreadsheet-container"></div>
@@ -35,6 +37,8 @@
                 hidden
               ></textarea>
               <div class="button-row">
+                <button id="add-row-btn" class="btn" type="button" title="시트 아래에 행 추가">＋행</button>
+                <button id="add-col-btn" class="btn" type="button" title="시트 오른쪽에 열 추가">＋열</button>
                 <label class="filter-label inline-label" for="register-base-total">기준 배합량 (g)</label>
                 <input id="register-base-total" class="input base-total-input"
                   placeholder="선택 · 쉼표로 최대 3개"
@@ -208,5 +212,5 @@
     <script src="/static/js/management/recipe-history.js?v=20260703a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260707a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
-    <script src="/static/js/management.js?v=20260701d"></script>
+    <script src="/static/js/management.js?v=20260708a"></script>
 {% endblock %}
