@@ -317,7 +317,7 @@
     if (!btn) return;
     const base = baseTotalValue();
     if (!(base > 0)) { btn.hidden = true; return; }
-    btn.textContent = `기준량 ${fmt(base)} g 적용`;
+    btn.textContent = `기준량 ${fmt(base)} 적용`;  // 라벨 줄 링크형 — 간결하게
     btn.hidden = false;
   }
 

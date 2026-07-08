@@ -168,8 +168,17 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
-/* 기준량 적용 버튼(총 배합량 아래) — 레시피 등록값 합계 채우기 */
-.blend-base-btn { margin-top: 0.35rem; align-self: flex-start; white-space: nowrap; }
+/* 기준량 버튼 — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
+.blend-label-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
+  min-width: 0;
+}
+.blend-base-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+  color: var(--accent, #2563eb);
+}
+.blend-base-link:hover { text-decoration: underline; }
 
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
