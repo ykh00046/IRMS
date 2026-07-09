@@ -467,30 +467,43 @@ class Scale:
             return None
         fixed_port = bool(self._config.get("port"))
         # 수신 전용(passive): 질의 없이 포트만 열고 PRINT 푸시를 기다린다.
-        # 질의(SI)를 거부(ES)하는 저울도 PRINT 출력은 정상 수신 가능.
-        if self._config.get("passive"):
+        #  - config 의 "passive": true 로 명시하거나,
+        #  - 능동 질의가 없는 프로토콜(CAS 등 query="")이면서 포트를 고정 지정한 경우 자동.
+        # 질의 불가 저울을 probe(여러 통신조합으로 반복 open/close)하면 같은 포트를 빠르게
+        # 여닫다 Windows 가 access-denied 를 내 '사용 중' 오탐을 만든다. 수신 전용은 한 번만 연다.
+        passive = bool(self._config.get("passive")) or (not self._comm.get("query") and fixed_port)
+        if passive:
             if not fixed_port:
-                log(f"[{self.name}] passive 모드는 port 를 고정 지정해야 합니다.")
+                log(f"[{self.name}] 수신 전용 모드는 config 에 port(예: COM3)를 지정해야 합니다.")
                 return None
             port = self._config["port"]
             if port in self._taken:
                 return None
-            try:
-                ser = serial.Serial(
-                    port=port,
-                    baudrate=int(self._comm["baudrate"]),
-                    bytesize=int(self._comm["bytesize"]),
-                    parity=str(self._comm["parity"]),
-                    stopbits=int(self._comm["stopbits"]),
-                    timeout=0.5,
-                )
-            except Exception as exc:  # noqa: BLE001
-                msg = str(exc)
-                if "denied" in msg.lower() or "액세스" in msg:
-                    log(f"[{self.name}] {port} 열기 실패 — 다른 프로그램이 포트 사용 중입니다.")
-                else:
-                    log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
-                return None
+            ser = None
+            for attempt in range(3):  # access-denied 는 직전 핸들 해제 지연일 수 있어 짧게 재시도
+                try:
+                    ser = serial.Serial(
+                        port=port,
+                        baudrate=int(self._comm["baudrate"]),
+                        bytesize=int(self._comm["bytesize"]),
+                        parity=str(self._comm["parity"]),
+                        stopbits=int(self._comm["stopbits"]),
+                        timeout=0.5,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    msg = str(exc)
+                    denied = "denied" in msg.lower() or "액세스" in msg or "PermissionError" in msg
+                    if denied and attempt < 2:
+                        time.sleep(0.6)
+                        continue
+                    if denied:
+                        log(f"[{self.name}] {port} 열기 실패 — 포트를 다른 프로그램이 쓰고 있습니다. "
+                            "이 앱(현장 도우미/저울 에이전트)이 이미 실행 중은 아닌지, 저울 제조사 "
+                            "프로그램(BalanceLink 등)이 켜져 있지 않은지 확인하세요.")
+                    else:
+                        log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
+                    return None
             self._serial = ser
             self.port = port
             self._taken.add(port)
@@ -600,7 +613,11 @@ class Scale:
         while not self._stop.is_set():
             ser = self._serial
             if ser is None:
-                time.sleep(2)
+                # 끊겨 있으면 주기적으로 자동 재연결(수신 전용 저울이 나중에 켜지거나
+                # 포트를 쥔 다른 프로그램이 종료되면 스스로 붙는다). 양보 중엔 시도 안 함.
+                time.sleep(3)
+                if not self.yielding and self._serial is None:
+                    self.connect()
                 continue
             try:
                 line = ser.readline()

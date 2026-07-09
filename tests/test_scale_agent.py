@@ -241,3 +241,55 @@ def test_tolerance_total_variance_unlimited():
 def test_tolerance_skips_missing_actual():
     details = [_detail("A", 100.0, None), _detail("B", None, 5.0)]
     assert blend_service.weighing_tolerance_violations(details) == []
+
+
+# ── CAS 수신 전용 자동 전환 (질의 없는 저울 probe 오탐 방지) ────────
+class _FakeSerial:
+    """serial.Serial 대역 — 생성 호출 횟수/포트만 기록. deny 회수만큼 access-denied."""
+    opens: list = []
+    deny_remaining = 0
+
+    def __init__(self, **kwargs):
+        _FakeSerial.opens.append(kwargs)
+        if _FakeSerial.deny_remaining > 0:
+            _FakeSerial.deny_remaining -= 1
+            raise PermissionError("could not open port 'COM3': Access is denied.")
+
+    def close(self):
+        pass
+
+
+def _make_cas_scale(monkeypatch, deny=0):
+    import scale_agent.agent as agent
+    fake = type("S", (), {"Serial": _FakeSerial})
+    monkeypatch.setattr(agent, "serial", fake)
+    scale = Scale({"protocol": "cas", "port": "COM3", "name": "카스"}, EventBus(), set())
+    # 리더 스레드가 connect 를 중복 호출하지 않도록 즉시 정지(첫 sleep(3) 중에 멈춘다).
+    scale._stop.set()
+    _FakeSerial.opens = []          # 정지 후 카운터 리셋(생성 시 리더의 잔여 호출 배제)
+    _FakeSerial.deny_remaining = deny
+    return scale
+
+
+def test_cas_fixed_port_uses_passive_single_open(monkeypatch):
+    """CAS(질의 없음)+고정 포트 → 수신 전용으로 '한 번만' 연다(probe 반복 open/close 없음)."""
+    scale = _make_cas_scale(monkeypatch)
+    port = scale.connect()
+    assert port == "COM3"
+    assert len(_FakeSerial.opens) == 1  # 15조합 probe 가 아니라 단 1회 오픈
+    assert scale._serial is not None
+
+
+def test_cas_passive_retries_on_access_denied(monkeypatch):
+    """access-denied 는 직전 핸들 해제 지연일 수 있어 짧게 재시도 후 붙는다."""
+    scale = _make_cas_scale(monkeypatch, deny=2)  # 2회 거부 후 성공
+    port = scale.connect()
+    assert port == "COM3"
+    assert len(_FakeSerial.opens) == 3  # 2회 실패 + 1회 성공
+
+
+def test_cas_passive_gives_up_after_persistent_denial(monkeypatch):
+    """계속 거부되면(실제 점유) None 반환 — 리더 루프가 나중에 자동 재시도."""
+    scale = _make_cas_scale(monkeypatch, deny=99)
+    assert scale.connect() is None
+    assert scale._serial is None
