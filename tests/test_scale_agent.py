@@ -82,9 +82,48 @@ def test_protocol_presets():
     sics_comm = resolve_comm({"protocol": "mt-sics"})
     assert (sics_comm["baudrate"], sics_comm["bytesize"], sics_comm["parity"]) == (9600, 8, "N")
     assert sics_comm["query"] == b"SI\r\n"
-    # 명시 오버라이드가 프리셋보다 우선
-    custom = resolve_comm({"protocol": "mt-sics", "baudrate": 19200})
-    assert custom["baudrate"] == 19200
+    cas_comm = resolve_comm({"protocol": "cas"})
+    assert (cas_comm["baudrate"], cas_comm["bytesize"], cas_comm["parity"]) == (9600, 8, "N")
+    assert cas_comm["query"] == b""  # PRINT 푸시 위주 — 능동 질의 없음
+    # 명시 오버라이드가 프리셋보다 우선(저울이 2400 이면)
+    custom = resolve_comm({"protocol": "cas", "baudrate": 2400})
+    assert custom["baudrate"] == 2400
+
+
+# ── CAS(카스) CBX/CBL 저울 ──────────────────────────────────────
+def test_cas_stable_and_unstable():
+    st = parse_frame("ST,+00123.45 g", protocol="cas")
+    assert st == {"header": "ST", "stable": True, "overload": False, "value": 123.45, "unit": "g"}
+    us = parse_frame("US,-0012.3 g", protocol="cas")
+    assert us["stable"] is False and us["value"] == -12.3
+
+
+def test_cas_with_weight_type_field():
+    """GS(총중량)/NT(순중량) 중간 필드가 있는 계열도 값만 뽑는다."""
+    gs = parse_frame("ST,GS,+00123.45 g", protocol="cas")
+    assert gs["stable"] is True and gs["value"] == 123.45
+    nt = parse_frame("US,NT,+0005.00 g", protocol="cas")
+    assert nt["stable"] is False and nt["value"] == 5.0
+
+
+def test_cas_overload_kg_and_padding():
+    ol = parse_frame("OL,+9999999 g", protocol="cas")
+    assert ol["overload"] is True and ol["value"] == 0.0
+    kg = parse_frame("ST,+0001.234 kg", protocol="cas")
+    assert kg["value"] == 1234.0 and kg["unit"] == "g"
+    # 부호와 값 사이 공백 패딩 허용
+    padded = parse_frame("ST,+  123.45 g", protocol="cas")
+    assert padded["value"] == 123.45
+    # 단위가 별도 콤마 필드인 계열도 처리
+    comma_unit = parse_frame("ST,GS,+00123.45,g", protocol="cas")
+    assert comma_unit["value"] == 123.45 and comma_unit["unit"] == "g"
+
+
+def test_cas_garbage_returns_none():
+    assert parse_frame("XX,+00123.45 g", protocol="cas") is None  # 알 수 없는 헤더
+    assert parse_frame("ST", protocol="cas") is None              # 값 없음
+    assert parse_frame("hello", protocol="cas") is None
+    assert parse_frame("ST,GS", protocol="cas") is None           # 값 필드 없음
 
 
 # ── PRINT 푸시 이벤트 분배 (다중 저울 공용 EventBus) ─────────────
