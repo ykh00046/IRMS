@@ -170,21 +170,7 @@
   padding-top: 0; padding-left: 0.9rem;
 }
 
-/* 저울 연동 수동 입력 잠금/토글 */
-.blend-manual-bar {
-  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
-  padding: 0.4rem 0.6rem; margin-bottom: 0.5rem;
-  background: #f1f5f9; border-radius: 6px;
-}
-.blend-manual-toggle-label { font-weight: 700; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
-.blend-manual-hint { font-size: 0.72rem; color: var(--muted, #6b7280); }
-.blend-manual-banner {
-  margin: 0 0 0.6rem; padding: 0.45rem 0.7rem;
-  background: #fef3c7; color: #92400e; border-left: 3px solid #f59e0b;
-  border-radius: 6px; font-size: 0.85rem; font-weight: 600;
-}
-.blend-actual.scale-locked { background: #f8fafc; color: #94a3b8; cursor: not-allowed; }
-.blend-actual.manual-mode { background: #fffbeb; border-color: #f59e0b; }
+/* 수동 입력 기록 표시(기록 목록·상세에서 나중에 확인 — 작업 중엔 안내 없음) */
 .manual-entry-chip { background: #fef3c7 !important; color: #92400e !important; }
 .manual-entry-dot { color: #f59e0b; font-weight: 700; }
 

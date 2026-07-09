@@ -22,7 +22,7 @@
   };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", manualEntry: false };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", manualDetected: false };
 
   // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
   const TOLERANCE_G = 0.05;
@@ -31,7 +31,6 @@
   const SCALE_URL = "http://127.0.0.1:8787";
 
   async function detectScale() {
-    const prev = state.scaleReady;
     try {
       const res = await fetch(`${SCALE_URL}/health`, { signal: AbortSignal.timeout(1200) });
       const data = await res.json();
@@ -39,32 +38,12 @@
     } catch (_e) {
       state.scaleReady = false;
     }
-    if (state.scaleReady !== prev) applyScaleLock();
   }
 
-  // 저울 연동 시 계량값 수동 입력 잠금:
-  //   저울 감지 + 수동 토글 OFF → 실제량 칸 잠금(저울 PRINT/버튼으로만 입력)
-  //   수동 토글 ON → 잠금 해제 + 경고색·배너(이 배치는 '수동 입력'으로 기록)
-  //   저울 미감지 → 잠금 없음(수동이 정상, 작업 무중단)
-  function applyScaleLock() {
-    const wrap = $("blend-manual-wrap");
-    const banner = $("blend-manual-banner");
-    if (wrap) wrap.hidden = !state.scaleReady;      // 토글은 저울 있을 때만 노출
-    if (!state.scaleReady) state.manualEntry = false;
-    const toggle = $("blend-manual-toggle");
-    if (toggle) toggle.checked = state.manualEntry;
-    const locked = state.scaleReady && !state.manualEntry;
-    const manualActive = state.scaleReady && state.manualEntry;
-    if (banner) banner.hidden = !manualActive;
-    document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
-      el.readOnly = locked;
-      el.classList.toggle("scale-locked", locked);
-      el.classList.toggle("manual-mode", manualActive);
-      const it = state.items[Number(el.dataset.idx)];
-      el.placeholder = locked ? "저울로 입력"
-        : (it && it.theory_amount != null ? fmt(it.theory_amount) : "");
-    });
-  }
+  // 수동 입력 표시(조용히): 저울이 연결된 상태에서 실제량을 손으로 입력하면
+  //   그 배치를 '수동 입력'으로 기록만 남긴다(작업자에겐 잠금·경고 없음).
+  //   저울 값은 fillScaleValue 가 input 이벤트 없이 채우므로 손입력만 감지된다.
+  //   기록 목록·상세에서 나중에 ⚠ 로 확인. 저울 없으면(수동이 정상) 표시 안 함.
 
   // 저울 값을 idx 행 실제량에 채우고, 수동 Enter 와 동일하게 진행:
   // 다음 행 LOT 로 포커스, 마지막 자재였으면 저장 버튼으로.
@@ -347,6 +326,7 @@
     const data = await request(`/blend/recipes/${id}`);
     state.current = data;
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
+    state.manualDetected = false;  // 새 배치 시작 — 수동 표시 초기화
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -448,6 +428,8 @@
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
         state.items[i].actual_amount = el.value;
+        // 저울 연결 중 손입력 → 조용히 '수동 입력'으로 표시(작업자엔 알림 없음)
+        if (state.scaleReady) state.manualDetected = true;
         updateRowVar(i);
         updateTotals();
       })
@@ -488,7 +470,6 @@
       })
     );
     updateTotals();
-    applyScaleLock();  // 저울 잠금 상태를 새로 그린 입력칸에 반영
   }
 
   function updateRowVar(i) {
@@ -590,8 +571,8 @@
       note: $("blend-note").value.trim() || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
-      // 저울 연동 중 수동 토글로 계량했으면 기록에 표시(추적성)
-      manual_entry: state.scaleReady && state.manualEntry,
+      // 저울 연결 중 손입력이 있었으면 '수동 입력'으로 기록(조용히 감지)
+      manual_entry: state.manualDetected,
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,
         material_name: it.material_name,
@@ -608,6 +589,7 @@
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       // 실제량/LOT 초기화 (연속 작업 편의)
       state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; });
+      state.manualDetected = false;  // 다음 배치 새로 감지
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
     } catch (e) {
@@ -682,24 +664,6 @@
     }
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
-    // 수동 입력 토글: 켤 때 확인 + 안내, 끄면 다시 저울 잠금
-    const manualToggle = $("blend-manual-toggle");
-    if (manualToggle) {
-      manualToggle.addEventListener("change", () => {
-        if (manualToggle.checked) {
-          if (!window.confirm("저울 대신 계량값을 직접 입력합니다.\n이 배치는 '수동 입력'으로 기록됩니다. 계속할까요?")) {
-            manualToggle.checked = false;
-            return;
-          }
-          state.manualEntry = true;
-          notify("수동 입력 모드 — 이 배치는 수동 입력으로 기록됩니다.", "warn");
-        } else {
-          state.manualEntry = false;
-          notify("저울 입력 모드로 전환했습니다.", "info");
-        }
-        applyScaleLock();
-      });
-    }
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
