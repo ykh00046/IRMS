@@ -329,6 +329,8 @@ class Scale:
         self.yielding = False
         # 최초 연결 실패 시 1회 수신 감청(포맷 판독용) 수행 여부
         self._sniffed = False
+        # 연결 실패 로그를 상태가 바뀔 때만 남기기 위한 플래그(3초 재연결 스팸 방지)
+        self._conn_error_logged = False
         # 리더가 해석 못 한 수신 라인 로깅 횟수(세션당 상한)
         self._unparsed_logged = 0
         # 질의 대기자
@@ -497,16 +499,21 @@ class Scale:
                     if denied and attempt < 2:
                         time.sleep(0.6)
                         continue
-                    if denied:
-                        log(f"[{self.name}] {port} 열기 실패 — 포트를 다른 프로그램이 쓰고 있습니다. "
-                            "이 앱(현장 도우미/저울 에이전트)이 이미 실행 중은 아닌지, 저울 제조사 "
-                            "프로그램(BalanceLink 등)이 켜져 있지 않은지 확인하세요.")
-                    else:
-                        log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
+                    # 3초마다 재시도하므로 로그는 상태가 바뀔 때 1회만(스팸 방지).
+                    if not self._conn_error_logged:
+                        self._conn_error_logged = True
+                        if denied:
+                            log(f"[{self.name}] {port} 를 열 수 없습니다 — 포트가 이미 점유돼 있습니다. "
+                                "① 이 앱이 두 번 실행 중은 아닌지(작업관리자에서 IRMS-Notice.exe 가 여러 개인지) "
+                                "② 저울 제조사 프로그램이 켜져 있는지 ③ 안 되면 PC 를 재부팅하면 대개 풀립니다. "
+                                "(연결되면 자동으로 잡습니다 — 이 메시지는 반복하지 않습니다.)")
+                        else:
+                            log(f"[{self.name}] {port} 열기 실패: {msg[:120]}")
                     return None
             self._serial = ser
             self.port = port
             self._taken.add(port)
+            self._conn_error_logged = False  # 다음 끊김 때 다시 1회 로그
             log(f"[{self.name}] {port} 수신 전용으로 연결 — 저울에서 PRINT(전송) 키를 누르면 입력됩니다.")
             return port
         candidates = (

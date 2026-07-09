@@ -317,7 +317,39 @@ class TrayApp:
         threading.Thread(target=_stop, daemon=True).start()
 
 
+_INSTANCE_LOCK = None  # 프로세스 생존 동안 뮤텍스 핸들 보관(GC 되면 해제됨)
+
+
+def acquire_single_instance() -> bool:
+    """중복 실행 방지 — 이미 실행 중이면 False. Windows 명명 뮤텍스 사용.
+
+    현장 도우미(트레이+저울)가 두 번 뜨면 같은 COM 포트를 두고 다투다 한 쪽이
+    '포트 사용 중'으로 실패한다. 두 번째 실행을 애초에 막는다.
+    """
+    global _INSTANCE_LOCK
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        ERROR_ALREADY_EXISTS = 183
+        handle = ctypes.windll.kernel32.CreateMutexW(None, False, "IRMS-Notice-SingleInstance")
+        if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+            return False
+        _INSTANCE_LOCK = handle  # 핸들 보관(닫히면 뮤텍스 해제)
+        return True
+    except Exception:  # noqa: BLE001 - 뮤텍스 실패 시엔 막지 않고 진행
+        return True
+
+
 def main() -> None:
+    if not acquire_single_instance():
+        # 이미 실행 중 — 조용히 종료(트레이에 하나만 유지)
+        try:
+            from .logger import setup_logger
+            setup_logger().warning("이미 실행 중이라 중복 실행을 종료합니다.")
+        except Exception:  # noqa: BLE001
+            pass
+        return
     TrayApp().run()
 
 

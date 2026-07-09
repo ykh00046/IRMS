@@ -420,5 +420,23 @@ class CombinedPopupTests(unittest.TestCase):
         self.assertEqual(mgr._sections, {})
 
 
+class SingleInstanceTest(unittest.TestCase):
+    """중복 실행 방지 — 첫 실행은 True, 뮤텍스 잔존 시 두 번째는 False."""
+
+    def test_first_instance_true_second_false(self) -> None:
+        import ctypes
+        import sys as _sys
+        if _sys.platform != "win32":
+            self.assertTrue(tray_main.acquire_single_instance())
+            return
+        # 이미 같은 이름 뮤텍스를 쥔 '다른 인스턴스'를 흉내내 잔존시킴
+        held = ctypes.windll.kernel32.CreateMutexW(None, False, "IRMS-Notice-SingleInstance")
+        try:
+            self.assertFalse(tray_main.acquire_single_instance())  # 두 번째 → 거부
+        finally:
+            ctypes.windll.kernel32.CloseHandle(held)
+            tray_main._INSTANCE_LOCK = None
+
+
 if __name__ == "__main__":
     unittest.main()
