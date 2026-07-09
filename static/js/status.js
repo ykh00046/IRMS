@@ -62,9 +62,10 @@ document.addEventListener("DOMContentLoaded", () => {
       items.forEach((r) => {
         const tr = document.createElement("tr");
         tr.className = "blend-row";
+        const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}</td>` +
+          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}</td>` +
           `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
@@ -119,11 +120,14 @@ document.addEventListener("DOMContentLoaded", () => {
       : '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
     // 점도 등록은 '점도 관리' 화면 한 곳으로 통일 — 여기선 측정값을 읽기전용으로만 표시.
     const visc = `<div class="blend-visc-block"><b>점도 측정</b>${linkedVisc}</div>`;
+    const manualBadge = rec.manual_entry
+      ? ' <span class="status-chip manual-entry-chip">⚠ 수동 입력</span>'
+      : "";
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
         <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}</b></div>
-        <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}</b></div>
+        <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}${manualBadge}</b></div>
         <div><span class="dhr-k">작업일시</span><b>${esc(rec.work_date)} ${esc(rec.work_time || "")}</b></div>
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>

@@ -528,10 +528,12 @@ def create_blend_record(
     created_at: str,
     worker_sign: str | None = None,
     reactor: int | None = None,
+    manual_entry: bool = False,
 ) -> int:
     """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성.
 
     reactor 지정 시 실적을 진행한 반응기(1~4)를 기록한다(반응기 진행 반제품).
+    manual_entry=True 면 저울 연동 중 수동 입력으로 계량됐음을 기록한다(추적성).
     """
     product_lot = generate_product_lot(connection, product_name, work_date)
     cur = connection.execute(
@@ -539,14 +541,15 @@ def create_blend_record(
         INSERT INTO blend_records
             (product_lot, recipe_id, product_name, ink_name, position, worker,
              work_date, work_time, total_amount, scale, status, note,
-             worker_sign, reactor, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
+             worker_sign, reactor, manual_entry, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
             work_date, work_time, float(total_amount), scale,
             (note or "").strip() or None, worker_sign,
             int(reactor) if reactor is not None else None,
+            1 if manual_entry else 0,
             created_by, created_at, created_at,
         ),
     )
@@ -708,7 +711,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         """
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, reactor,
-               reviewed_by, reviewed_at, approved_by, approved_at,
+               manual_entry, reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at
         FROM blend_records WHERE id = ?
@@ -762,7 +765,8 @@ def list_blend_records(
     rows = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
-               work_date, work_time, total_amount, scale, status, note, created_at
+               work_date, work_time, total_amount, scale, status, note, created_at,
+               manual_entry
         FROM blend_records
         WHERE {where}
         ORDER BY work_date DESC, id DESC
@@ -797,6 +801,7 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "note": row["note"],
         "created_at": row["created_at"] if "created_at" in keys else None,
+        "manual_entry": bool(row["manual_entry"]) if "manual_entry" in keys else False,
     }
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
               "worker_sign", "reviewed_sign", "approved_sign", "reactor"):

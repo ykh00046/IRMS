@@ -38,6 +38,7 @@ def _make_db() -> sqlite3.Connection:
             ink_name TEXT, position TEXT, worker TEXT NOT NULL, work_date TEXT NOT NULL,
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
             status TEXT NOT NULL DEFAULT 'completed', note TEXT, reactor INTEGER,
+            manual_entry INTEGER NOT NULL DEFAULT 0,
             reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
             worker_sign TEXT, reviewed_sign TEXT, approved_sign TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
@@ -480,6 +481,30 @@ def test_worker_signature_stored():
     rec = bs.get_blend_record(conn, record_id)
     assert rec["worker_sign"] == sign
     assert rec["reviewed_sign"] is None
+
+
+def test_manual_entry_flag_stored_and_default_false():
+    """저울 연동 수동 입력 여부(manual_entry) 저장·직렬화. 기본 False."""
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    base = dict(
+        recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100,
+        scale=None, note=None,
+        details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100}],
+        created_by="현장", created_at="2026-06-24T00:00:00Z",
+    )
+    # 기본(미지정) → False
+    r1 = bs.create_blend_record(conn, **base)
+    assert bs.get_blend_record(conn, r1)["manual_entry"] is False
+    # 수동 입력 → True
+    r2 = bs.create_blend_record(conn, **base, manual_entry=True)
+    rec = bs.get_blend_record(conn, r2)
+    assert rec["manual_entry"] is True
+    # 목록에도 노출
+    listed = {r["id"]: r for r in bs.list_blend_records(conn)}
+    assert listed[r2]["manual_entry"] is True
+    assert listed[r1]["manual_entry"] is False
 
 
 # ── 점도 ↔ 배합 연계 ────────────────────────────────────────────

@@ -181,6 +181,37 @@ def test_blend_bulk_and_delete_routes():
                             (ids[1],)).fetchone() is None
 
 
+def test_blend_manual_entry_flag_route():
+    """POST /blend/records manual_entry → 기록에 저장·조회 반영, 감사 로그 기록."""
+    client = _client()
+    headers = _admin_login(client)
+    worker = "수동작업" + uuid.uuid4().hex[:6]
+    prod = "MAN" + uuid.uuid4().hex[:5].upper()
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-09",
+        "total_amount": 100, "manual_entry": True,
+        "details": [{"material_name": "A", "ratio": 100,
+                     "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers)
+    assert created.status_code == 200, created.text
+    assert created.json()["manual_entry"] is True
+
+    rid = created.json()["id"]
+    detail = client.get(f"/api/blend/records/{rid}").json()
+    assert detail["manual_entry"] is True
+
+    # manual_entry 생략 시 기본 False
+    c2 = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-09",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100,
+                     "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers)
+    assert c2.json()["manual_entry"] is False
+
+
 def test_blend_hard_delete_requires_manager():
     client = _client()
     headers = _admin_login(client)

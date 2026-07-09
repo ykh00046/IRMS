@@ -376,6 +376,7 @@ def build_router() -> APIRouter:
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
             reactor=body.reactor,
+            manual_entry=body.manual_entry,
         )
         record = blend_service.get_blend_record(connection, record_id)
         write_audit_log(
@@ -389,6 +390,7 @@ def build_router() -> APIRouter:
                 "product_name": body.product_name,
                 "total_amount": body.total_amount,
                 "items": len(body.details),
+                "manual_entry": body.manual_entry,
             },
         )
         connection.commit()

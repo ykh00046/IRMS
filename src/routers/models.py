@@ -118,6 +118,8 @@ class BlendCreateBody(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
     worker_sign: str | None = Field(default=None, max_length=300_000)
+    # 저울 연동 중 '수동 입력' 토글로 계량값을 직접 입력했는가(추적성 — 기록에 표시).
+    manual_entry: bool = False
     details: list[BlendDetailBody] = Field(default_factory=list)
 
     @model_validator(mode="after")
