@@ -48,7 +48,8 @@ def _make_db() -> sqlite3.Connection:
             blend_record_id INTEGER NOT NULL, material_id INTEGER,
             material_code TEXT, material_name TEXT NOT NULL, material_lot TEXT,
             ratio REAL, theory_amount REAL, actual_amount REAL,
-            sequence_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+            sequence_order INTEGER NOT NULL DEFAULT 0,
+            manual_entry INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
         );
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,
@@ -484,24 +485,32 @@ def test_worker_signature_stored():
 
 
 def test_manual_entry_flag_stored_and_default_false():
-    """저울 연동 수동 입력 여부(manual_entry) 저장·직렬화. 기본 False."""
+    """저울 연동 수동 입력 여부 저장·직렬화 — 배치 단위 + 자재 행 단위. 기본 False."""
     conn = _make_db()
     rid = _seed_recipe(conn)
     base = dict(
         recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
         worker="홍", work_date="2026-06-24", work_time=None, total_amount=100,
         scale=None, note=None,
-        details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100}],
         created_by="현장", created_at="2026-06-24T00:00:00Z",
     )
-    # 기본(미지정) → False
-    r1 = bs.create_blend_record(conn, **base)
-    assert bs.get_blend_record(conn, r1)["manual_entry"] is False
-    # 수동 입력 → True
-    r2 = bs.create_blend_record(conn, **base, manual_entry=True)
-    rec = bs.get_blend_record(conn, r2)
-    assert rec["manual_entry"] is True
-    # 목록에도 노출
+    # 기본(미지정) → 모두 False
+    r1 = bs.create_blend_record(conn, **base, details=[
+        {"material_name": "원료1", "theory_amount": 100, "actual_amount": 100},
+    ])
+    rec1 = bs.get_blend_record(conn, r1)
+    assert rec1["manual_entry"] is False
+    assert rec1["details"][0]["manual_entry"] is False
+    # 행 단위: 원료2만 손입력 → 그 행만 True, 배치 플래그도 True
+    r2 = bs.create_blend_record(conn, **base, manual_entry=True, details=[
+        {"material_name": "원료1", "theory_amount": 60, "actual_amount": 60},
+        {"material_name": "원료2", "theory_amount": 40, "actual_amount": 40, "manual_entry": True},
+    ])
+    rec2 = bs.get_blend_record(conn, r2)
+    assert rec2["manual_entry"] is True
+    by_name = {d["material_name"]: d["manual_entry"] for d in rec2["details"]}
+    assert by_name == {"원료1": False, "원료2": True}
+    # 목록에도 배치 플래그 노출
     listed = {r["id"]: r for r in bs.list_blend_records(conn)}
     assert listed[r2]["manual_entry"] is True
     assert listed[r1]["manual_entry"] is False

@@ -172,6 +172,7 @@
 
 /* 수동 입력 기록 표시(기록 목록·상세에서 나중에 확인 — 작업 중엔 안내 없음) */
 .manual-entry-chip { background: #fef3c7 !important; color: #92400e !important; }
+.manual-entry-mark { color: #f59e0b; font-weight: 700; font-size: 0.85em; }
 
 /* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함) */
 .blend-step-row td {

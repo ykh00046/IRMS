@@ -289,8 +289,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "viscosity_readings", "reactor", "INTEGER")
     # 반응기는 배합 실적을 진행한 위치 → blend_records 에 기록. 점도는 실적에서 물려받아 표시.
     ensure_column(connection, "blend_records", "reactor", "INTEGER")
-    # 수동 입력 여부: 저울 연동 중 '수동 입력' 토글로 계량값을 직접 입력했는가(추적성).
+    # 수동 입력 여부: 저울 연동 중 계량값을 직접 입력했는가(추적성).
+    # 기록(배치) 단위 + 상세(자재 행) 단위 — 어느 자재가 수동이었는지까지 남긴다.
     ensure_column(connection, "blend_records", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "blend_details", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
 
     # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
     connection.execute(

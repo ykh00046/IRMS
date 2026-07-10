@@ -22,7 +22,7 @@
   };
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", manualDetected: false };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "" };
 
   // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
   const TOLERANCE_G = 0.05;
@@ -40,10 +40,11 @@
     }
   }
 
-  // 수동 입력 표시(조용히): 저울이 연결된 상태에서 실제량을 손으로 입력하면
-  //   그 배치를 '수동 입력'으로 기록만 남긴다(작업자에겐 잠금·경고 없음).
-  //   저울 값은 fillScaleValue 가 input 이벤트 없이 채우므로 손입력만 감지된다.
-  //   기록 목록·상세에서 나중에 ⚠ 로 확인. 저울 없으면(수동이 정상) 표시 안 함.
+  // 수동 입력 표시(조용히, 자재 행 단위): 저울이 연결된 상태에서 실제량을 손으로
+  //   입력하면 그 자재 행을 '수동 입력'으로 기록만 남긴다(작업자에겐 잠금·경고 없음).
+  //   저울 값은 fillScaleValue 가 input 이벤트 없이 채우므로 손입력만 감지되고,
+  //   손입력 후 저울로 다시 계량하면 그 행의 수동 표시는 해제된다.
+  //   기록 상세에서 나중에 행별 ⚠ 로 확인. 저울 없으면(수동이 정상) 표시 안 함.
 
   // 저울 값을 idx 행 실제량에 채우고, 수동 Enter 와 동일하게 진행:
   // 다음 행 LOT 로 포커스, 마지막 자재였으면 저장 버튼으로.
@@ -52,6 +53,7 @@
     if (!input) return;
     input.value = String(value);
     state.items[idx].actual_amount = input.value;
+    state.items[idx].manual = false;  // 저울 입력 — 손입력 표시 해제
     updateRowVar(idx);
     updateTotals();
     warnIfVariance(idx);
@@ -326,7 +328,6 @@
     const data = await request(`/blend/recipes/${id}`);
     state.current = data;
     state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
-    state.manualDetected = false;  // 새 배치 시작 — 수동 표시 초기화
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -428,8 +429,8 @@
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
         state.items[i].actual_amount = el.value;
-        // 저울 연결 중 손입력 → 조용히 '수동 입력'으로 표시(작업자엔 알림 없음)
-        if (state.scaleReady) state.manualDetected = true;
+        // 저울 연결 중 손입력 → 이 자재 행을 조용히 '수동 입력'으로 표시
+        if (state.scaleReady) state.items[i].manual = true;
         updateRowVar(i);
         updateTotals();
       })
@@ -571,8 +572,8 @@
       note: $("blend-note").value.trim() || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
-      // 저울 연결 중 손입력이 있었으면 '수동 입력'으로 기록(조용히 감지)
-      manual_entry: state.manualDetected,
+      // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
+      manual_entry: state.items.some((it) => it.manual === true),
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,
         material_name: it.material_name,
@@ -582,14 +583,14 @@
         actual_amount: it.actual_amount === "" ? null : Number(it.actual_amount),
         material_lot: it.material_lot || null,
         sequence_order: idx + 1,
+        manual_entry: it.manual === true,
       })),
     };
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       // 실제량/LOT 초기화 (연속 작업 편의)
-      state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; });
-      state.manualDetected = false;  // 다음 배치 새로 감지
+      state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; it.manual = false; });
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
     } catch (e) {

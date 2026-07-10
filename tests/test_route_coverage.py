@@ -192,8 +192,11 @@ def test_blend_manual_entry_flag_route():
     created = client.post("/api/blend/records", json={
         "product_name": prod, "worker": worker, "work_date": "2026-07-09",
         "total_amount": 100, "manual_entry": True,
-        "details": [{"material_name": "A", "ratio": 100,
-                     "theory_amount": 100, "actual_amount": 100}],
+        "details": [{"material_name": "A", "ratio": 60,
+                     "theory_amount": 60, "actual_amount": 60,
+                     "manual_entry": True},
+                    {"material_name": "B", "ratio": 40,
+                     "theory_amount": 40, "actual_amount": 40}],
     }, headers=headers)
     assert created.status_code == 200, created.text
     assert created.json()["manual_entry"] is True
@@ -201,6 +204,9 @@ def test_blend_manual_entry_flag_route():
     rid = created.json()["id"]
     detail = client.get(f"/api/blend/records/{rid}").json()
     assert detail["manual_entry"] is True
+    # 행 단위: 손입력한 A 만 True
+    flags = {d["material_name"]: d["manual_entry"] for d in detail["details"]}
+    assert flags == {"A": True, "B": False}
 
     # manual_entry 생략 시 기본 False
     c2 = client.post("/api/blend/records", json={

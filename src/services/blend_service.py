@@ -560,8 +560,9 @@ def create_blend_record(
             """
             INSERT INTO blend_details
                 (blend_record_id, material_id, material_code, material_name,
-                 material_lot, ratio, theory_amount, actual_amount, sequence_order, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                 manual_entry, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -573,6 +574,7 @@ def create_blend_record(
                 _opt_num(d.get("theory_amount")),
                 _opt_num(d.get("actual_amount")),
                 int(d.get("sequence_order") or (idx + 1)),
+                1 if d.get("manual_entry") else 0,
                 created_at,
             ),
         )
@@ -621,8 +623,9 @@ def update_blend_record(
             """
             INSERT INTO blend_details
                 (blend_record_id, material_id, material_code, material_name,
-                 material_lot, ratio, theory_amount, actual_amount, sequence_order, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                 manual_entry, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -634,6 +637,7 @@ def update_blend_record(
                 _opt_num(d.get("theory_amount")),
                 _opt_num(d.get("actual_amount")),
                 int(d.get("sequence_order") or (idx + 1)),
+                1 if d.get("manual_entry") else 0,
                 updated_at,
             ),
         )
@@ -723,7 +727,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     details = connection.execute(
         """
         SELECT id, material_id, material_code, material_name, material_lot,
-               ratio, theory_amount, actual_amount, sequence_order
+               ratio, theory_amount, actual_amount, sequence_order, manual_entry
         FROM blend_details
         WHERE blend_record_id = ?
         ORDER BY sequence_order, id
@@ -830,6 +834,7 @@ def _serialize_detail(row: sqlite3.Row) -> dict[str, Any]:
         "variance": variance,
         "variance_pct": variance_pct,
         "sequence_order": int(row["sequence_order"]),
+        "manual_entry": bool(row["manual_entry"]) if "manual_entry" in row.keys() else False,
     }
 
 

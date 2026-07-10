@@ -105,7 +105,8 @@ document.addEventListener("DOMContentLoaded", () => {
           stepRowsAt(i) +
           `<tr><td>${i + 1}</td><td>${esc(d.material_name)}</td>` +
           `<td class="num">${fmt(d.ratio, 2)}</td><td class="num">${fmt(d.theory_amount)}</td>` +
-          `<td class="num">${fmt(d.actual_amount)}</td>` +
+          // 저울 연동 중 손입력한 자재는 실제량 옆에 행별 ⚠ (상세에서만 표시)
+          `<td class="num">${fmt(d.actual_amount)}${d.manual_entry ? ' <span class="manual-entry-mark" title="수동 입력">⚠</span>' : ""}</td>` +
           `<td class="num ${d.variance > 0 ? "var-up" : d.variance < 0 ? "var-down" : ""}">${d.variance == null ? "-" : (d.variance > 0 ? "+" : "") + fmt(d.variance, 2)}</td>` +
           `<td>${esc(d.material_lot || "-")}</td></tr>`,
       )

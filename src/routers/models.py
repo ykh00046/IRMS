@@ -103,6 +103,8 @@ class BlendDetailBody(BaseModel):
     theory_amount: float | None = Field(default=None, ge=0)
     actual_amount: float | None = Field(default=None, ge=0)
     sequence_order: int | None = Field(default=None, ge=0)
+    # 이 자재의 실제량이 저울 연동 중 손입력이었는가(행 단위 추적)
+    manual_entry: bool = False
 
 
 class BlendCreateBody(BaseModel):
