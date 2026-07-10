@@ -126,6 +126,25 @@ def test_cas_garbage_returns_none():
     assert parse_frame("ST,GS", protocol="cas") is None           # 값 필드 없음
 
 
+def test_cas_eb_type_shimadzu():
+    """시마즈 EB type — CBX-22KH 실물 계열. 1문자 안정표시(S/U) + 값 + 단위."""
+    st = parse_frame("S  123.45g", protocol="cas")
+    assert st == {"header": "ST", "stable": True, "overload": False, "value": 123.45, "unit": "g"}
+    us = parse_frame("U  123.45g", protocol="cas")
+    assert us["stable"] is False and us["value"] == 123.45
+    neg = parse_frame(b"S-186.65g\r\n", protocol="cas")
+    assert neg["stable"] is True and neg["value"] == -186.65
+    kg = parse_frame("S  1.2345kg", protocol="cas")
+    assert kg["value"] == 1234.5 and kg["unit"] == "g"
+    # 과부하(값 자리에 OL)
+    ol = parse_frame("S    OL g", protocol="cas")
+    assert ol["overload"] is True
+    # 쓰레기 거부: 값 없음/무게 아님(PCS 등)
+    assert parse_frame("S", protocol="cas") is None
+    assert parse_frame("SI", protocol="cas") is None
+    assert parse_frame("S  12PCS", protocol="cas") is None
+
+
 # ── PRINT 푸시 이벤트 분배 (다중 저울 공용 EventBus) ─────────────
 def _scale(name="GX", protocol="and"):
     bus = EventBus()

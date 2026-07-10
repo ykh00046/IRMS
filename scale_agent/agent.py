@@ -162,14 +162,19 @@ def _parse_sics(text: str) -> dict | None:
 
 
 def _parse_cas(text: str) -> dict | None:
-    """CAS(카스) RS-232C 포맷 — CBX/CBL 정밀 저울 등.
+    """CAS(카스) RS-232C 포맷 — 두 계열을 함께 처리.
 
-    다음 계열을 함께 처리 (모델·설정에 따라 중간 필드 유무가 다름):
+    1) 콤마 구분(구형 CAS 프로토콜):
       "ST,+00123.45 g"          상태,부호+값 단위
       "ST,GS,+00123.45 g"       상태, GS(총중량)/NT(순중량)/TR(용기) 중간 필드 포함
       "US,-0012.3 kg"           불안정, kg → g 환산
-    상태: ST=안정, US=불안정, OL=과부하. GS/NT/TR·G/N/T 중간 필드는 건너뛴다.
+      상태: ST=안정, US=불안정, OL=과부하. GS/NT/TR·G/N/T 중간 필드는 건너뛴다.
+    2) 시마즈 EB type(CBX/CUX 계열 — CBX-22KH 실물, 콤마 없음):
+      "S  123.45g" / "U  123.45g" / "S-186.65g"
+      1문자 안정표시(S=안정/U=불안정) + 부호(양수는 공백) + 우측정렬 값 + 단위.
     """
+    if "," not in text:
+        return _parse_cas_eb(text)
     segs = [p.strip() for p in text.split(",")]
     if len(segs) < 2:
         return None
@@ -206,6 +211,46 @@ def _parse_cas(text: str) -> dict | None:
     return {
         "header": header,
         "stable": header == "ST",
+        "overload": False,
+        "value": value,
+        "unit": unit,
+    }
+
+
+def _parse_cas_eb(text: str) -> dict | None:
+    """시마즈 EB type — 1문자 안정표시 + 부호 + 값 + 단위(g/kg/mg)."""
+    header = text[:1].upper()
+    if header not in ("S", "U"):
+        return None
+    body = text[1:]
+    if not body.strip():
+        return None
+    # 과부하: 값 자리에 OL 표기(숫자 없음)
+    if "OL" in body.upper() and not any(ch.isdigit() for ch in body):
+        return {"header": "OL", "stable": False, "overload": True, "value": 0.0, "unit": "g"}
+    unit = ""
+    number = body
+    for i in range(len(body) - 1, -1, -1):
+        ch = body[i]
+        if ch.isdigit() or ch in "+-.":
+            number = body[: i + 1]
+            unit = body[i + 1:].strip()
+            break
+    number = number.replace(" ", "")
+    try:
+        value = float(number)
+    except ValueError:
+        return None
+    unit = (unit or "g").lower()
+    if unit == "kg":
+        value, unit = value * 1000, "g"
+    elif unit == "mg":
+        value, unit = value / 1000, "g"
+    if unit != "g":
+        return None  # 개수(PCS)·퍼센트 등 무게 아님 → 무시
+    return {
+        "header": "ST" if header == "S" else "US",
+        "stable": header == "S",
         "overload": False,
         "value": value,
         "unit": unit,
