@@ -217,6 +217,18 @@ def test_blend_manual_entry_flag_route():
     }, headers=headers)
     assert c2.json()["manual_entry"] is False
 
+    # 책임자 전용 표시: 비로그인(현장) 조회에서는 배치·행 플래그가 모두 가려진다
+    anon = _client()
+    masked = anon.get(f"/api/blend/records/{rid}").json()
+    assert masked["manual_entry"] is False
+    assert all(d["manual_entry"] is False for d in masked["details"])
+    listed = anon.get("/api/blend/records").json()["items"]
+    assert all(item["manual_entry"] is False for item in listed)
+    # 책임자는 그대로 보인다
+    mgr_detail = client.get(f"/api/blend/records/{rid}").json()
+    assert mgr_detail["manual_entry"] is True
+    assert {d["material_name"]: d["manual_entry"] for d in mgr_detail["details"]} == {"A": True, "B": False}
+
 
 def test_blend_hard_delete_requires_manager():
     client = _client()

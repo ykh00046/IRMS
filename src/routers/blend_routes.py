@@ -58,6 +58,19 @@ def build_router() -> APIRouter:
         touch_worker_session(request)
         return worker
 
+    def _mask_manual_entry(request: Request, record: dict[str, Any]) -> dict[str, Any]:
+        """수동 입력 표시(manual_entry)는 책임자 전용 — 비책임자 응답에서는 False 로 가린다.
+
+        화면 가림이 아니라 응답 자체를 가려 API 직접 조회로도 노출되지 않는다.
+        저장·감사 로그의 원본 값은 불변(조회 표시만 제한)."""
+        user = get_current_user(request, required=False)
+        if user and has_access_level(user, "manager"):
+            return record
+        record["manual_entry"] = False
+        for d in record.get("details", []) or []:
+            d["manual_entry"] = False
+        return record
+
     @router.get("/blend/recipes")
     def blend_recipes(
         dhr: bool = Query(default=False),
@@ -168,6 +181,7 @@ def build_router() -> APIRouter:
 
     @router.get("/blend/records")
     def blend_records(
+        request: Request,
         start_date: str | None = None,
         end_date: str | None = None,
         worker: str | None = None,
@@ -183,6 +197,8 @@ def build_router() -> APIRouter:
             search=search,
             limit=limit,
         )
+        for item in items:
+            _mask_manual_entry(request, item)
         return {"items": items, "total": len(items)}
 
     @router.get("/blend/records/export-all")
@@ -258,6 +274,7 @@ def build_router() -> APIRouter:
     @router.get("/blend/records/{record_id}")
     def blend_record_detail(
         record_id: int,
+        request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         record = blend_service.get_blend_record(connection, record_id)
@@ -278,7 +295,7 @@ def build_router() -> APIRouter:
                 ]
             except sqlite3.OperationalError:
                 pass
-        return record
+        return _mask_manual_entry(request, record)
 
     @router.post("/blend/records/{record_id}/viscosity")
     def blend_add_viscosity(
@@ -333,7 +350,7 @@ def build_router() -> APIRouter:
         )
         connection.commit()
         record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
-        return record
+        return _mask_manual_entry(request, record)
 
     @router.post("/blend/records")
     def blend_create(
@@ -394,7 +411,7 @@ def build_router() -> APIRouter:
             },
         )
         connection.commit()
-        return record
+        return _mask_manual_entry(request, record)
 
     @router.put(
         "/blend/records/{record_id}",
