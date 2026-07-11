@@ -62,10 +62,12 @@ document.addEventListener("DOMContentLoaded", () => {
       items.forEach((r) => {
         const tr = document.createElement("tr");
         tr.className = "blend-row";
-        // 수동 입력 표시는 목록에선 감춤 — 기록 클릭 시 상세에서만 배지로 보임(운영 결정)
+        // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
+        // 목록에 표시해도 책임자 로그인 시에만 보인다.
+        const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}</td>` +
+          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}</td>` +
           `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
