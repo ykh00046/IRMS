@@ -11,21 +11,36 @@
   const IRMS = window.IRMS || {};
   const request = IRMS._core && IRMS._core.request;
   const notify = IRMS.notify || function (m) { console.log(m); };
-  const esc = IRMS.escapeHtml || function (value) {
-    if (value === null || value === undefined) return "";
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  };
+
+  // 순수 헬퍼 라이브러리 — 포맷터/HTML 빌더/수치 계산. 동일 이름으로 분해 할당하여
+  // 기존 호출부를 그대로 유지한다.
+  const {
+    esc,
+    TOLERANCE_G,
+    fmt,
+    todayISO,
+    nowTime,
+    rowVariance,
+    baseTotalValues,
+    materialRowHtml,
+    baseTotalLinksHtml,
+    bulkRowHtml,
+    computeTotals,
+    computeTheoryAmount,
+    varianceDisplay,
+    varianceWarnMessage,
+    badVarianceNames,
+    varianceBlockMessage,
+    option,
+    stepRowsHtml,
+    lotFallbackText,
+    recipeOptionsHtml,
+    loadFailOptionHtml,
+  } = window.IRMS.blendLib;
+
   const $ = (id) => document.getElementById(id);
 
   const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "" };
-
-  // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
-  const TOLERANCE_G = 0.05;
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
   const SCALE_URL = "http://127.0.0.1:8787";
@@ -197,22 +212,6 @@
     return pad;
   }
 
-  function fmt(v, d) {
-    if (v === null || v === undefined || v === "") return "-";
-    // 기본 소수 2자리 — 저울(XP 0.01g) 해상도에 맞춤
-    return Number(v).toFixed(d === undefined ? 2 : d);
-  }
-  function todayISO() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }
-  function nowTime() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, "0");
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-  }
-
   // ── 모드 전환 ──────────────────────────────────────────────
   function setMode(mode) {
     // /blend = 배합 입력, /blend/bulk = 일괄 생성. 기록 조회는 '배합 기록'(/status) 메뉴로 일원화.
@@ -241,29 +240,15 @@
     const dhr = $("bulk-dhr") && $("bulk-dhr").checked;
     try {
       const d = await request(`/blend/recipes${dhr ? "?dhr=1" : ""}`);
-      const items = d.items || [];
-      sel.innerHTML = "";
-      const ph = document.createElement("option");
-      ph.value = "";
-      ph.textContent = items.length ? "레시피 선택…" : (dhr ? "DHR 전용 레시피가 없습니다" : "레시피가 없습니다");
-      sel.appendChild(ph);
-      items.forEach((r) => {
-        const o = document.createElement("option");
-        o.value = String(r.id);
-        o.textContent = r.product_name;
-        sel.appendChild(o);
-      });
+      sel.innerHTML = recipeOptionsHtml(d.items || [], dhr);
     } catch (e) {
-      sel.innerHTML = '<option value="">로드 실패</option>';
+      sel.innerHTML = loadFailOptionHtml();
     }
   }
 
   function addBulkRow() {
     const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td><input class="input bulk-date" type="date" value="${todayISO()}" /></td>` +
-      `<td class="num"><input class="input bulk-total" type="number" step="0.1" min="0" /></td>` +
-      `<td><button class="btn btn-sm bulk-del" type="button">삭제</button></td>`;
+    tr.innerHTML = bulkRowHtml();
     tr.querySelector(".bulk-del").addEventListener("click", () => tr.remove());
     $("bulk-body").appendChild(tr);
   }
@@ -344,25 +329,12 @@
 
   // '기준량' 버튼(최대 3개) — 레시피 관리에서 기준 배합량을 지정한 레시피에서만 노출.
   // (미지정 레시피는 버튼 없음 — 총량은 직접 입력)
-  function baseTotalValues() {
-    if (!state.current) return [];
-    const list = Array.isArray(state.current.default_totals) ? state.current.default_totals : [];
-    return list.filter((v) => Number(v) > 0);
-  }
-
   function renderBaseTotalButton() {
     const wrap = $("blend-base-links");
     if (!wrap) return;
-    const values = baseTotalValues();
+    const values = baseTotalValues(state.current);
     if (!values.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
-    // 1개면 '기준량 N 적용', 여러 개면 '기준량' 라벨 + 압축 표기 값 버튼들
-    const short = (v) => String(Number(v));  // 2000.00 → 2000 (라벨 줄 한 줄 유지)
-    const label = values.length === 1 ? "" : '<span class="blend-base-label">기준량</span>';
-    wrap.innerHTML = label + values.map((v) =>
-      `<button class="blend-base-link" type="button" data-value="${v}" ` +
-      `title="총 배합량에 ${fmt(v)} g 을 채웁니다">` +
-      `${values.length === 1 ? `기준량 ${short(v)} 적용` : short(v)}</button>`
-    ).join("");
+    wrap.innerHTML = baseTotalLinksHtml(values);
     wrap.hidden = false;
   }
 
@@ -378,9 +350,7 @@
   function recomputeTheory() {
     const total = Number($("blend-total").value) || 0;
     state.items.forEach((it) => {
-      // 이론량을 저울/표시 단위(0.01g)로 반올림. 표시값=내부값이라 표시된 이론값을
-      // 그대로 계량하면 편차 0. 허용 편차(±0.05g) 판정과도 같은 눈금.
-      it.theory_amount = Math.round((it.ratio / 100) * total * 100) / 100;
+      it.theory_amount = computeTheoryAmount(it.ratio, total);
     });
   }
 
@@ -403,28 +373,13 @@
     }
     // 공정 설명 줄(레시피 '설명' 열) — 해당 위치에 전폭 안내 행으로 삽입
     const steps = (state.current && state.current.steps) || [];
-    const appendSteps = (position) => {
-      steps.filter((st) => st.position === position).forEach((st) => {
-        const tr = document.createElement("tr");
-        tr.className = "blend-step-row";
-        tr.innerHTML = `<td colspan="7">▸ ${esc(st.note)}</td>`;
-        body.appendChild(tr);
-      });
-    };
     state.items.forEach((it, idx) => {
-      appendSteps(idx);  // 이 자재 앞(=앞선 자재 idx개 뒤)의 설명
+      body.insertAdjacentHTML("beforeend", stepRowsHtml(steps, idx));  // 이 자재 앞(=앞선 자재 idx개 뒤)의 설명
       const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td>${idx + 1}</td>` +
-        `<td>${esc(it.material_name)}</td>` +
-        `<td class="num">${fmt(it.ratio, 2)}</td>` +
-        `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}</td>` +
-        `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
-        `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
-        `<td class="num blend-var" data-idx="${idx}">-</td>`;
+      tr.innerHTML = materialRowHtml(idx, it);
       body.appendChild(tr);
     });
-    appendSteps(state.items.length);  // 마지막 자재 뒤 설명
+    body.insertAdjacentHTML("beforeend", stepRowsHtml(steps, state.items.length));  // 마지막 자재 뒤 설명
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
@@ -477,39 +432,25 @@
     const it = state.items[i];
     const cell = document.querySelector(`.blend-var[data-idx="${i}"]`);
     if (!cell) return;
-    const actual = it.actual_amount === "" ? null : Number(it.actual_amount);
-    if (actual === null || it.theory_amount === null) { cell.textContent = "-"; cell.className = "num blend-var"; return; }
-    const v = Math.round((actual - it.theory_amount) * 1000) / 1000;
-    cell.textContent = (v > 0 ? "+" : "") + fmt(v, 2);
-    // 허용 편차(±0.05g) 이내면 정상 표시, 초과 시에만 색으로 경고
-    cell.className = "num blend-var " + (Math.abs(v) <= TOLERANCE_G + 1e-9 ? "" : v > 0 ? "var-up" : "var-down");
-  }
-
-  function rowVariance(it) {
-    if (!it || it.actual_amount === "" || it.theory_amount == null) return 0;
-    return Math.round((Number(it.actual_amount) - it.theory_amount) * 1000) / 1000;
+    const display = varianceDisplay(it);
+    cell.textContent = display.text;
+    cell.className = display.className;
   }
 
   function warnIfVariance(i) {
     const it = state.items[i];
     const v = rowVariance(it);
     if (Math.abs(v) > TOLERANCE_G + 1e-9) {
-      notify(
-        `허용 편차 초과: ${it.material_name} — 이론 ${fmt(it.theory_amount)} / 실제 ${fmt(it.actual_amount)} `
-        + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${TOLERANCE_G}g). 다시 계량하세요.`,
-        "error",
-      );
+      notify(varianceWarnMessage(it, v), "error");
       return true;
     }
     return false;
   }
 
   function updateTotals() {
-    const theory = state.items.reduce((s, it) => s + (it.theory_amount || 0), 0);
-    const actual = state.items.reduce((s, it) => s + (it.actual_amount === "" ? 0 : Number(it.actual_amount) || 0), 0);
+    const { theory, actual, net } = computeTotals(state.items);
     $("blend-theory-total").textContent = state.items.length ? fmt(theory) : "-";
     $("blend-actual-total").textContent = state.items.length ? fmt(actual) : "-";
-    const net = actual - theory;
     const nv = $("blend-net-var");
     nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, 2) : "-";
   }
@@ -519,14 +460,13 @@
     if (!state.current) { el.textContent = "-"; return; }
     const product = state.current.recipe.product_name;
     const date = $("blend-date").value || todayISO();
-    const yymmdd = date.replace(/-/g, "").slice(2, 8);
     // 저장 시 부여될 실제 순번을 서버에서 받아 표시(리터럴 NN 금지).
     try {
       const data = await request("/blend/next-lot", { query: { product, date } });
       el.textContent = data.next_lot;
     } catch (_e) {
       // 조회 실패 시에도 가짜 NN 은 쓰지 않고 순번 없는 베이스만 표시.
-      el.textContent = `${product}${yymmdd}`;
+      el.textContent = lotFallbackText(product, date);
     }
   }
 
@@ -541,8 +481,7 @@
     // 자재별 허용 편차 ±0.05g — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음)
     const bad = state.items.filter((it) => Math.abs(rowVariance(it)) > TOLERANCE_G + 1e-9);
     if (bad.length) {
-      const names = bad.map((it) => `${it.material_name}(${rowVariance(it) > 0 ? "+" : ""}${fmt(rowVariance(it), 2)}g)`).join(", ");
-      err.textContent = `허용 편차(±${TOLERANCE_G}g)를 초과해 저장할 수 없습니다: ${names}. 해당 자재를 다시 계량하세요.`;
+      err.textContent = varianceBlockMessage(badVarianceNames(bad));
       err.hidden = false;
       notify(`허용 편차 ±${TOLERANCE_G}g 초과 — 저장할 수 없습니다.`, "error");
       return;

@@ -5,6 +5,25 @@
   const request = IRMS._core && IRMS._core.request;
   const notify = IRMS.notify || function (message) { console.log(message); };
 
+  // 순수 헬퍼 라이브러리 — 라이브러리에서 분리된 포맷터/라벨맵/DOM 문자열 빌더.
+  // 동일한 이름으로 분해 할당하므로 기존 호출부는 그대로 동작한다.
+  const {
+    STATUS_LABEL,
+    REASON_LABEL,
+    TREND_LABEL,
+    PERIOD_ALERT_LABEL,
+    fmt,
+    productLabel,
+    linkedReadingsForRecord,
+    latestViscosityLabel,
+    appendTextCell,
+    emptyRow,
+    appendDeltaCell,
+    option,
+    controlSummary,
+    periodChartDatasets,
+  } = window.IRMS.viscLib;
+
   const $ = (id) => document.getElementById(id);
   const isManager = Boolean($("visc-settings-btn"));
 
@@ -20,39 +39,6 @@
     year: null,
     reactor: null,
   };
-
-  const STATUS_LABEL = { normal: "정상", warn: "경고", anomaly: "이상" };
-  const REASON_LABEL = {
-    spec_high: "상한 초과",
-    spec_low: "하한 미만",
-    sigma_high: "+kσ 초과",
-    sigma_low: "-kσ 미만",
-    warn_high: "2σ 경고",
-    warn_low: "2σ 경고",
-  };
-  const TREND_LABEL = {
-    run_up: "연속 상승",
-    run_down: "연속 하락",
-    shift_high: "중심선 상단 치우침",
-    shift_low: "중심선 하단 치우침",
-  };
-  const PERIOD_ALERT_LABEL = {
-    anomaly_spike: (item) => `${item.period} 이상 급증 (${item.prev_count}건 → ${item.anomaly_count}건)`,
-    mean_shift_up: (item) => `${item.period} 평균 상승 (+${fmt(item.delta, 2)})`,
-    mean_shift_down: (item) => `${item.period} 평균 하락 (${fmt(item.delta, 2)})`,
-  };
-
-  function fmt(value, digits) {
-    if (value === null || value === undefined || value === "") return "-";
-    return Number(value).toFixed(digits === undefined ? 1 : digits);
-  }
-
-  function productLabel(product) {
-    if (!product) return "-";
-    return product.name && product.name !== product.code
-      ? `${product.code} · ${product.name}`
-      : product.code;
-  }
 
   function selectedProduct() {
     const input = $("visc-product-select");
@@ -89,14 +75,13 @@
     const list = $("visc-product-names");
     if (list) list.innerHTML = "";
     state.products.forEach((product) => {
-      const option = document.createElement("option");
-      option.value = productLabel(product);
-      if (list) list.appendChild(option);
+      const opt = document.createElement("option");
+      opt.value = productLabel(product);
+      if (list) list.appendChild(opt);
     });
     const current = state.products.find((item) => item.id === state.currentId);
     if (input && current) input.value = productLabel(current);
     if (input._pickerBound) return;
-    input._pickerBound = true;
     // 포커스 시 비움 → datalist 가 현재값으로 필터되지 않고 전체 목록이 뜸.
     // 선택 없이 나가면(blur) 현재 반제품 라벨로 원복.
     input.addEventListener("focus", () => {
@@ -138,10 +123,10 @@
     const years = (state.analysis && state.analysis.available_years) || [];
     select.innerHTML = "";
     years.forEach((year) => {
-      const option = document.createElement("option");
-      option.value = String(year);
-      option.textContent = `${year}년`;
-      select.appendChild(option);
+      const opt = document.createElement("option");
+      opt.value = String(year);
+      opt.textContent = `${year}년`;
+      select.appendChild(opt);
     });
     const all = document.createElement("option");
     all.value = "";
@@ -166,10 +151,10 @@
         all.textContent = "전체(반응기)";
         select.appendChild(all);
         [1, 2, 3, 4].forEach((n) => {
-          const option = document.createElement("option");
-          option.value = String(n);
-          option.textContent = `반응기 ${n}`;
-          select.appendChild(option);
+          const opt = document.createElement("option");
+          opt.value = String(n);
+          opt.textContent = `반응기 ${n}`;
+          select.appendChild(opt);
         });
         select.value = state.reactor == null ? "" : String(state.reactor);
       }
@@ -186,7 +171,7 @@
     $("visc-card-mean").textContent = stats.mean === null ? "-" : `${fmt(stats.center)} ± ${fmt(stats.std)}`;
     $("visc-card-anomaly").textContent = analysis.counts.anomaly;
     $("visc-card-warn").textContent = analysis.counts.warn;
-    $("visc-control-summary").textContent = controlSummary();
+    $("visc-control-summary").textContent = controlSummary(analysis);
   }
 
   function renderCondition() {
@@ -195,20 +180,6 @@
     const rpm = product.rpm != null ? `${fmt(product.rpm, 0)} rpm` : "RPM 미설정";
     const temp = product.temperature != null ? `${fmt(product.temperature)} °C` : "온도 미설정";
     $("visc-cond").textContent = `측정 조건 · ${rpm} · ${temp}`;
-  }
-
-  function controlSummary() {
-    const analysis = state.analysis;
-    if (!analysis) return "관리 기준 -";
-    const stats = analysis.stats;
-    const product = analysis.product;
-    const parts = [];
-    if (stats.center !== null) parts.push(`중심 ${fmt(stats.center)}`);
-    if (stats.lcl !== null && stats.ucl !== null) parts.push(`관리 ${fmt(stats.lcl)}~${fmt(stats.ucl)}`);
-    if (product.lower_limit !== null || product.upper_limit !== null) {
-      parts.push(`규격 ${product.lower_limit ?? "-"}~${product.upper_limit ?? "-"}`);
-    }
-    return parts.length ? `관리 기준 · ${parts.join(" · ")}` : "관리 기준이 아직 없습니다.";
   }
 
   function renderTrendBanner() {
@@ -262,50 +233,10 @@
     renderPeriodChart(periods);
   }
 
-  function appendDeltaCell(row, delta) {
-    const cell = document.createElement("td");
-    cell.className = "num";
-    if (delta === null || delta === undefined) {
-      cell.textContent = "-";
-    } else {
-      const span = document.createElement("span");
-      const isFlat = delta === 0;
-      span.className = isFlat ? "visc-delta-flat" : delta > 0 ? "visc-delta-up" : "visc-delta-down";
-      span.textContent = `${delta > 0 ? "+" : ""}${fmt(delta, 2)}`;
-      cell.appendChild(span);
-    }
-    row.appendChild(cell);
-  }
-
   function renderPeriodChart(periods) {
     const canvas = $("visc-period-chart");
-    const labels = periods.map((period) => period.period);
-    const data = periods.map((period) => period.mean);
-    const colors = periods.map((period) => {
-      if (period.anomaly_count > 0) return getCssVar("--status-error");
-      if (period.warn_count > 0) return getCssVar("--status-warning");
-      return getCssVar("--brand-mid");
-    });
-    const datasets = [{
-      type: "bar",
-      label: "기간 평균",
-      data,
-      backgroundColor: colors,
-      order: 2,
-    }];
     const center = state.analysis.stats.center;
-    if (center !== null && center !== undefined && labels.length) {
-      datasets.push({
-        type: "line",
-        label: "중심",
-        data: labels.map(() => center),
-        borderColor: getCssVar("--status-success"),
-        borderDash: [4, 4],
-        borderWidth: 1,
-        pointRadius: 0,
-        order: 1,
-      });
-    }
+    const { labels, datasets } = periodChartDatasets(periods, center, getCssVar);
     if (state.periodChart) state.periodChart.destroy();
     state.periodChart = new Chart(canvas.getContext("2d"), {
       data: { labels, datasets },
@@ -521,15 +452,6 @@
     return (state.selectedBlendDetail && state.selectedBlendDetail.viscosity) || [];
   }
 
-  function linkedReadingsForRecord(record) {
-    return (record && record.viscosity) || [];
-  }
-
-  function latestViscosityLabel(record) {
-    const linked = linkedReadingsForRecord(record);
-    return linked.length ? fmt(linked[0].viscosity) : "미입력";
-  }
-
   function setSubmitEnabled(enabled) {
     $("visc-submit").disabled = !enabled;
     $("visc-value").disabled = !enabled;
@@ -642,9 +564,9 @@
     if (list) {
       list.innerHTML = "";
       recipeCandidates.forEach((name) => {
-        const option = document.createElement("option");
-        option.value = name;
-        list.appendChild(option);
+        const opt = document.createElement("option");
+        opt.value = name;
+        list.appendChild(opt);
       });
     }
   }
@@ -799,30 +721,6 @@
       $("visc-new-form").addEventListener("submit", createProduct);
       $("visc-export-btn").addEventListener("click", exportCsv);
     }
-  }
-
-  function appendTextCell(row, value, className) {
-    const cell = document.createElement("td");
-    if (className) cell.className = className;
-    cell.textContent = value;
-    row.appendChild(cell);
-  }
-
-  function emptyRow(colSpan, message) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = colSpan;
-    cell.className = "muted";
-    cell.textContent = message;
-    row.appendChild(cell);
-    return row;
-  }
-
-  function option(value, label) {
-    const item = document.createElement("option");
-    item.value = value;
-    item.textContent = label;
-    return item;
   }
 
   function getCssVar(name) {
