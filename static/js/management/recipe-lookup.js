@@ -59,6 +59,122 @@
         dom.lookupDhrBtn.textContent = dhrMode() ? "DHR 전용 해제" : "DHR 전용 지정";
       }
       if (dom.lookupActions) dom.lookupActions.hidden = !recipeId;
+      // 기준 자재 패널 — 선택한 레시피의 현재 기준 자재 표시 + (책임자) 변경.
+      if (dom.lookupAnchor) {
+        if (recipeId) {
+          renderAnchorPanel(recipeId);
+        } else {
+          dom.lookupAnchor.hidden = true;
+          dom.lookupAnchor.innerHTML = "";
+        }
+      }
+    }
+
+    // 기준 자재 패널 렌더 — 선택한 레시피 상세를 가져와 현재 기준 자재를 표시하고,
+    // 책임자면 자재 select + 저장 버튼으로 PUT /api/recipes/{id}/anchor 를 호출한다.
+    async function renderAnchorPanel(recipeId) {
+      const wrap = dom.lookupAnchor;
+      if (!wrap) return;
+      try {
+        const detail = await IRMS.getRecipeDetail(recipeId);
+        const canManage = !!ctx.canManage;
+        const currentName = detail.anchor_material_name || "";
+        const itemNames = (detail.items || [])
+          .map((it) => it.material_name)
+          .filter((n) => !!n);
+        const seen = new Set();
+        const uniq = [];
+        for (const n of itemNames) {
+          if (!seen.has(n)) { seen.add(n); uniq.push(n); }
+        }
+        const currentText = currentName
+          ? IRMS.escapeHtml(currentName)
+          : '<span class="muted">없음</span>';
+        const options =
+          '<option value="">없음</option>' +
+          uniq
+            .map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === currentName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`)
+            .join("");
+        const editor = canManage
+          ? `<select id="lookup-anchor-select" class="input">${options}</select>` +
+            `<button id="lookup-anchor-save" class="btn" type="button">저장</button>`
+          : "";
+        wrap.innerHTML =
+          `<label class="filter-label" for="lookup-anchor-select">기준 자재</label>` +
+          `<span class="muted">현재:</span><span id="lookup-anchor-current">${currentText}</span>` +
+          editor;
+        wrap.hidden = false;
+        if (canManage) {
+          const saveBtn = document.getElementById("lookup-anchor-save");
+          if (saveBtn) saveBtn.addEventListener("click", () => handleSaveAnchor(recipeId));
+        }
+      } catch (error) {
+        wrap.hidden = false;
+        wrap.innerHTML = `<span class="muted">기준 자재 정보를 불러오지 못했습니다: ${IRMS.escapeHtml(error.message || String(error))}</span>`;
+      }
+    }
+
+    // 기준 자재 저장 — 자재 이름을 material_id 로 변환해 PUT /api/recipes/{id}/anchor.
+    // core.js request 와 동일하게 x-csrftoken 헤더를 직접 부착한다(IRMS.request 가 이 화면
+    // 컨트롤러에 노출되지 않으므로 직접 fetch).
+    async function handleSaveAnchor(recipeId) {
+      const sel = document.getElementById("lookup-anchor-select");
+      const saveBtn = document.getElementById("lookup-anchor-save");
+      if (!sel) return;
+      let materialId = null;
+      const chosenName = sel.value.trim();
+      if (chosenName) {
+        try {
+          const detail = await IRMS.getRecipeDetail(recipeId);
+          const match = (detail.items || []).find((it) => it.material_name === chosenName);
+          if (!match || match.material_id == null) {
+            IRMS.notify("선택한 자재의 식별자를 찾을 수 없습니다.", "error");
+            return;
+          }
+          materialId = Number(match.material_id);
+        } catch (error) {
+          IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+          return;
+        }
+      }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/anchor`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ material_id: materialId }),
+        });
+        if (!resp.ok) {
+          let detail = "";
+          try {
+            const payload = await resp.json();
+            const d = payload && payload.detail;
+            detail = d && typeof d === "object" && d.message ? d.message
+              : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+          } catch (_e) {
+            detail = await resp.text().catch(() => `Request failed (${resp.status})`);
+          }
+          throw new Error(String(detail || `Request failed (${resp.status})`));
+        }
+        await resp.json();
+        // 성공 — 현재 값 표시 갱신
+        const cur = document.getElementById("lookup-anchor-current");
+        if (cur) {
+          cur.innerHTML = chosenName ? IRMS.escapeHtml(chosenName) : '<span class="muted">없음</span>';
+        }
+        IRMS.notify(
+          chosenName ? `기준 자재를 '${chosenName}'(으)로 지정했습니다.` : "기준 자재를 해제했습니다.",
+          "success",
+        );
+      } catch (error) {
+        IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
     }
 
     async function handleSetDhr() {

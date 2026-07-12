@@ -121,6 +121,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "WHERE base_total IS NOT NULL AND base_totals IS NULL"
     )
 
+    # 기준 자재(anchor material): 반제품(PB 등) 배합 시 먼저 계량할 자재를 가리킨다.
+    # 이 자재의 실측 중량을 기준으로 다른 자재들의 이론량을 산출(total_amount 기준 대신).
+    # 미지정 시 기존처럼 총량(total_amount) 기준. recipe_items.material_id 중 하나.
+    ensure_column(connection, "recipes", "anchor_material_id", "INTEGER")
+
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고
     # 기존에 정체돼 있던 레시피도 completed 로 전환한다(취소 건은 보존).

@@ -200,8 +200,11 @@ def build_router() -> APIRouter:
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
                        r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
                        r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr,
-                       r.base_total, r.base_totals
+                       r.base_total, r.base_totals,
+                       r.anchor_material_id,
+                       am.name AS anchor_material_name
                 FROM recipes r
+                LEFT JOIN materials am ON am.id = r.anchor_material_id
                 WHERE r.id = ?
                 """,
                 (recipe_id,),

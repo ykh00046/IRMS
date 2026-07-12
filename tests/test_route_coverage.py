@@ -300,3 +300,66 @@ def test_admin_config_routes_require_manager():
     headers = _admin_login(client)
     assert client.put("/api/admin/signature-config", json={},
                       headers=headers).status_code == 200
+
+
+# ── 기준 자재(anchor) 레시피 — 배합 환산·저장 end-to-end ──────────────────────
+
+def test_blend_recipe_with_anchor_save_route():
+    """기준 자재가 지정된 레시피: GET /blend/recipes/{id} 가 is_anchor·anchor_material_id
+    를 반환하고, 도출 총량으로 배합 실적 저장이 정상 동작한다(앵커 우선 계량 흐름)."""
+    client = _client()
+    headers = _admin_login(client)
+    prod = "ANCH" + uuid.uuid4().hex[:5].upper()
+    worker = "기준작업" + uuid.uuid4().hex[:6]
+
+    # 기준 자재 지정 임포트 — 원료A 가 기준
+    raw = f"반제품명\t원료A\t원료B\t원료C\n{prod}\t60\t30\t10"
+    res = client.post("/api/recipes/import",
+                      json={"raw_text": raw, "force": True, "anchor_material": "원료A"},
+                      headers=headers)
+    assert res.status_code == 200, res.text
+    recipe_id = res.json()["created_ids"][0]
+
+    # 배합 환산 API — 기준 자재 정보가 recipe/items 에 반영
+    blend = client.get(f"/api/blend/recipes/{recipe_id}").json()
+    assert blend["recipe"]["anchor_material_id"] is not None
+    flags = {it["material_name"]: it["is_anchor"] for it in blend["items"]}
+    assert flags["원료A"] is True
+    assert flags["원료B"] is False and flags["원료C"] is False
+
+    # 앵커 우선 계량 시뮬레이션 — 앵커(원료A) 실측 60 → 비율(60:30:10) 그대로므로
+    # 이론량도 60/30/10, 도출 총량 100.
+    items = blend["items"]
+    anchor_w = next(it["value_weight"] for it in items if it["is_anchor"])
+    theory = {}
+    for it in items:
+        theory[it["material_name"]] = round(60 * (it["value_weight"] / anchor_w) * 100) / 100 \
+            if not it["is_anchor"] else 60.0
+    derived_total = round(sum(theory.values()), 2)
+
+    # 작업자 세션 확보
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+
+    saved = client.post("/api/blend/records", json={
+        "recipe_id": recipe_id,
+        "product_name": prod, "worker": worker, "work_date": "2026-07-12",
+        "total_amount": derived_total,
+        "details": [
+            {"material_id": it["material_id"], "material_name": it["material_name"],
+             "material_code": it["material_code"], "ratio": it["ratio"],
+             "theory_amount": theory[it["material_name"]],
+             "actual_amount": theory[it["material_name"]]}
+            for it in items
+        ],
+    }, headers=headers)
+    assert saved.status_code == 200, saved.text
+    rec = saved.json()
+    assert rec["total_amount"] == derived_total
+
+    # 저장된 상세의 이론량이 도출값과 일치
+    detail = client.get(f"/api/blend/records/{rec['id']}").json()
+    detail_theory = {d["material_name"]: d["theory_amount"] for d in detail["details"]}
+    for name, val in theory.items():
+        assert detail_theory[name] == val
+

@@ -21,6 +21,8 @@ class ImportRequest(BaseModel):
     base_totals: list[float] | None = Field(default=None, max_length=3)
     # (구) 단일 기준 배합량 — 하위호환용, base_totals 미지정 시 사용.
     base_total: float | None = Field(default=None, gt=0, le=10_000_000)
+    # 기준 자재 이름(선택) — 배합 시 먼저 계량할 자재. 임포트 항목 중 정확히 일치하는 이름이어야 함.
+    anchor_material: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":

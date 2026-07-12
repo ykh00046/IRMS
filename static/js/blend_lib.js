@@ -8,11 +8,12 @@
  * 허용하며, 조회(document.getElementById/querySelector)는 하지 않는다.
  *
  * Exports (window.IRMS.blendLib):
- *   esc, TOLERANCE_G, fmt, todayISO, nowTime, rowVariance,
+ *   esc, TOLERANCE_G, ANCHOR_BADGE, fmt, todayISO, nowTime, rowVariance,
  *   baseTotalValues, materialRowHtml, baseTotalLinksHtml, bulkRowHtml,
  *   computeTotals, computeTheoryAmount, varianceDisplay,
  *   varianceWarnMessage, badVarianceNames, varianceBlockMessage,
- *   option, stepRowsHtml, lotFallbackText
+ *   option, stepRowsHtml, lotFallbackText,
+ *   findAnchorIndex, computeAnchorTheory
  *
  * Side effects: none (window.IRMS.blendLib 에 부착만).
  * Dependencies: window.IRMS namespace (common/core.js 초기화).
@@ -34,6 +35,9 @@
 
   // 자재별 계량 허용 편차(g). 저울 실측 연동 기준 — 서버(blend_service)와 동일 값.
   const TOLERANCE_G = 0.05;
+
+  // 기준 자재 행에 붙는 안내 배지 문구 — 배합 시 이 자재를 먼저 계량함을 표시.
+  const ANCHOR_BADGE = "기준 · 먼저 계량";
 
   function fmt(v, d) {
     if (v === null || v === undefined || v === "") return "-";
@@ -64,13 +68,21 @@
     return list.filter((v) => Number(v) > 0);
   }
 
-  function materialRowHtml(idx, it) {
+  function materialRowHtml(idx, it, opts) {
+    // opts (선택):
+    //   anchor         (bool) 이 행이 기준 자재 — 이름 옆에 안내 배지 표시
+    //   disableActual  (bool) 기준 자재 실측값 입력 전 — 이 행 실제량 입력 비활성화
+    const o = opts || {};
+    const nameCell = o.anchor
+      ? `<td>${esc(it.material_name)} <span class="blend-anchor-badge">${esc(ANCHOR_BADGE)}</span></td>`
+      : `<td>${esc(it.material_name)}</td>`;
+    const actualAttr = o.disableActual ? " disabled" : "";
     return `<td>${idx + 1}</td>` +
-      `<td>${esc(it.material_name)}</td>` +
+      nameCell +
       `<td class="num">${fmt(it.ratio, 2)}</td>` +
       `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}</td>` +
       `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
-      `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
+      `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}"${actualAttr} /></td>` +
       `<td class="num blend-var" data-idx="${idx}">-</td>`;
   }
 
@@ -104,7 +116,47 @@
     return Math.round((ratio / 100) * total * 100) / 100;
   }
 
+  // 기준 자재(anchor) 행 인덱스. is_anchor 가 true 인 첫 행, 없으면 -1.
+  // 순수 함수 — items 배열만 받아 인덱스(정수)를 반환한다.
+  function findAnchorIndex(items) {
+    if (!Array.isArray(items)) return -1;
+    const i = items.findIndex((it) => it && it.is_anchor);
+    return i >= 0 ? i : -1;
+  }
+
+  // 기준 자재 우선 계량 모드의 이론량·총량 재계산(순수).
+  // 각 비기준 자재의 이론량 = round(anchorActual * (해당 value_weight / 기준 value_weight) * 100) / 100,
+  // 기준 자재 이론량 = anchorActual(실측값이 곧 이론값),
+  // 도출 총량 = round(모든 행 이론량 합계, 2).
+  // anchorActual 이 0 이하이거나 기준 자재 value_weight 이 0 이하면 빈 결과(null) 반환 —
+  // 이 경우 blend.js 는 이론량을 모두 null(표시 '-')로 둔다.
+  // 반환: { theoryAmounts: (number|null)[] , total: number } — total 은 도출 총량.
+  function computeAnchorTheory(items, anchorIndex, anchorActual) {
+    const n = Array.isArray(items) ? items.length : 0;
+    const out = new Array(n).fill(null);
+    if (anchorIndex < 0 || anchorIndex >= n) return { theoryAmounts: out, total: 0 };
+    const a = Number(anchorActual);
+    if (!(a > 0)) return { theoryAmounts: out, total: 0 };
+    const anchorW = Number(items[anchorIndex].value_weight);
+    if (!(anchorW > 0)) return { theoryAmounts: out, total: 0 };
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      if (i === anchorIndex) {
+        out[i] = Math.round(a * 100) / 100;
+      } else {
+        const w = Number(items[i] && items[i].value_weight);
+        out[i] = Math.round((a * (w / anchorW)) * 100) / 100;
+      }
+      total += (out[i] || 0);
+    }
+    return { theoryAmounts: out, total: Math.round(total * 100) / 100 };
+  }
+
   function varianceDisplay(it) {
+    // 기준 자재 행은 편차 계량에서 제외 — 항상 '-' 표시(이론=실측이므로 편차 무의미).
+    if (it && it.is_anchor) {
+      return { text: "-", className: "num blend-var" };
+    }
     const actual = it.actual_amount === "" ? null : Number(it.actual_amount);
     if (actual === null || it.theory_amount === null) {
       return { text: "-", className: "num blend-var" };
@@ -168,6 +220,7 @@
   IRMS.blendLib = {
     esc,
     TOLERANCE_G,
+    ANCHOR_BADGE,
     fmt,
     todayISO,
     nowTime,
@@ -187,5 +240,7 @@
     lotFallbackText,
     recipeOptionsHtml,
     loadFailOptionHtml,
+    findAnchorIndex,
+    computeAnchorTheory,
   };
 })();

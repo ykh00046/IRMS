@@ -43,6 +43,11 @@
                 <input id="register-base-total" class="input base-total-input"
                   placeholder="선택 · 쉼표로 최대 3개"
                   title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
+                <label class="filter-label inline-label" for="imp-anchor">기준 자재</label>
+                <select id="imp-anchor" class="input"
+                  title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
+                  <option value="">없음</option>
+                </select>
                 <button id="preview-btn" class="btn accent">검증</button>
                 <button id="register-btn" class="btn success" disabled>등록</button>
                 <button id="clear-btn" class="btn">초기화</button>
@@ -139,6 +144,7 @@
             <div id="lookup-result" class="lookup-result">
               <p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>
             </div>
+            <div id="lookup-anchor" class="lookup-anchor" hidden></div>
             <div id="lookup-actions" class="button-row lookup-actions" hidden>
               <span id="lookup-selected-label" class="muted">선택: 없음</span>
               <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
@@ -207,10 +213,10 @@
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js?v=20260624a"></script>
     <!-- management modules: 5 factories (order-free) → controller last -->
     <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260708a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260708a"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260712b"></script>
+    <script src="/static/js/management/import-validate.js?v=20260712b"></script>
     <script src="/static/js/management/recipe-history.js?v=20260703a"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260707a"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260712b"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
-    <script src="/static/js/management.js?v=20260708a"></script>
+    <script src="/static/js/management.js?v=20260712b"></script>
 {% endblock %}

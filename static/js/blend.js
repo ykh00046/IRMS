@@ -17,6 +17,7 @@
   const {
     esc,
     TOLERANCE_G,
+    ANCHOR_BADGE,
     fmt,
     todayISO,
     nowTime,
@@ -36,11 +37,13 @@
     lotFallbackText,
     recipeOptionsHtml,
     loadFailOptionHtml,
+    findAnchorIndex,
+    computeAnchorTheory,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "" };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", _anchorRecomputing: false };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
   const SCALE_URL = "http://127.0.0.1:8787";
@@ -312,7 +315,12 @@
     if (id === prevId) return;
     const data = await request(`/blend/recipes/${id}`);
     state.current = data;
-    state.items = data.items.map((it) => ({ ...it, actual_amount: "", material_lot: "" }));
+    // value_weight(기준 자재 이론량 산출용)·is_anchor(기준 자재 여부) 보존.
+    state.items = data.items.map((it) => ({
+      ...it, actual_amount: "", material_lot: "",
+    }));
+    state.anchorIndex = findAnchorIndex(state.items);
+    state.prevAnchorActual = "";
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -323,8 +331,32 @@
     renderMatRows();
     renderReactorField();
     renderBaseTotalButton();
+    applyAnchorMode();
     updateLotPreview();
     updateInputGuide();
+  }
+
+  // 기준 자재 모드 적용 — 레시피에 기준 자재가 있으면:
+  //   - 총 배합량 입력 읽기 전용(기준 자재 실측값에서 도출되므로 직접 입력 금지)
+  //   - 기준량 빠른 채우기 버튼 미노출(총량 기반 방식이 아님)
+  // 기준 자재가 없는 레시피는 이 함수가 아무것도 바꾸지 않는다(100% 기존 동작 유지).
+  function applyAnchorMode() {
+    const totalInput = $("blend-total");
+    if (!totalInput) return;
+    if (state.anchorIndex >= 0) {
+      totalInput.readOnly = true;
+      totalInput.placeholder = "기준 자재 계량 후 자동 산출";
+      const links = $("blend-base-links");
+      if (links) { links.hidden = true; links.innerHTML = ""; }
+    } else {
+      totalInput.readOnly = false;
+      totalInput.placeholder = "";
+    }
+  }
+
+  // 기준 자재가 없는 레시피인지 — 기존 총량 기반 흐름 유지.
+  function hasAnchor() {
+    return state.anchorIndex >= 0;
   }
 
   // '기준량' 버튼(최대 3개) — 레시피 관리에서 기준 배합량을 지정한 레시피에서만 노출.
@@ -348,6 +380,9 @@
   }
 
   function recomputeTheory() {
+    // 기준 자재 모드에서는 총량 입력이 읽기 전용 — 이론량은 기준 자재 실측값에서
+    // 도출되므로 이 총량 기반 재계산 경로를 타지 않는다.
+    if (hasAnchor()) return;
     const total = Number($("blend-total").value) || 0;
     state.items.forEach((it) => {
       it.theory_amount = computeTheoryAmount(it.ratio, total);
@@ -373,10 +408,22 @@
     }
     // 공정 설명 줄(레시피 '설명' 열) — 해당 위치에 전폭 안내 행으로 삽입
     const steps = (state.current && state.current.steps) || [];
+    // 기준 자재 모드: 기준 자재의 이론량이 아직 없으면(실측 전) 비기준 자재 입력 잠금.
+    const anchorEntered = hasAnchor()
+      ? state.items[state.anchorIndex].theory_amount != null
+      : false;
     state.items.forEach((it, idx) => {
       body.insertAdjacentHTML("beforeend", stepRowsHtml(steps, idx));  // 이 자재 앞(=앞선 자재 idx개 뒤)의 설명
       const tr = document.createElement("tr");
-      tr.innerHTML = materialRowHtml(idx, it);
+      const opts = {};
+      if (hasAnchor()) {
+        if (idx === state.anchorIndex) {
+          opts.anchor = true;
+        } else if (!anchorEntered) {
+          opts.disableActual = true;  // 기준 자재 계량 전까지 비기준 자재 입력 비활성화
+        }
+      }
+      tr.innerHTML = materialRowHtml(idx, it, opts);
       body.appendChild(tr);
     });
     body.insertAdjacentHTML("beforeend", stepRowsHtml(steps, state.items.length));  // 마지막 자재 뒤 설명
@@ -435,6 +482,71 @@
     const display = varianceDisplay(it);
     cell.textContent = display.text;
     cell.className = display.className;
+    // 기준 자재 행의 실측값 변경(손입력·저울 PRINT 공통) → 이론량·총량 재산출 트리거.
+    // 재진입 가드로 applyAnchorRecompute 내 updateRowVar 호출이 다시 트리거하지 않게 막는다.
+    if (hasAnchor() && i === state.anchorIndex && !state._anchorRecomputing) {
+      state._anchorRecomputing = true;
+      try { applyAnchorRecompute(); } finally { state._anchorRecomputing = false; }
+    }
+  }
+
+  // 기준 자재 우선 계량 — 기준 자재 실측값이 바뀌면(손입력·저울 PRINT 모두) 이론량과
+  // 도출 총량을 다시 산출한다. 입력 경로가 updateRowVar 를 공유하므로, 기준 자재 행의
+  // updateRowVar 호출에서 이 함수를 트리거한다(fillScaleValue 코드 경로는 건드리지 않음).
+  function applyAnchorRecompute() {
+    if (!hasAnchor()) return;
+    const ai = state.anchorIndex;
+    const anchorItem = state.items[ai];
+    const anchorActual = anchorItem ? anchorItem.actual_amount : "";
+    const anchorActualNum = anchorActual === "" ? null : Number(anchorActual);
+
+    // 기준 자재 값이 '변경'된 경우(빈 값이 아니던 상태에서 다른 값으로) 다른 자재 실측값이
+    // 하나라도 있으면 경고 후 비기준 자재 실측값·편차 표시를 모두 지운다.
+    const prev = state.prevAnchorActual;
+    const hadPrev = prev !== "" && prev !== null;
+    const nowHas = anchorActualNum !== null;
+    const changed = hadPrev && nowHas && String(prev) !== String(anchorActual);
+    if (changed) {
+      const othersHaveActual = state.items.some((it, i) => i !== ai && it.actual_amount !== "");
+      if (othersHaveActual) {
+        notify("기준 자재 값이 변경되어 나머지 자재를 다시 계량해야 합니다", "warn");
+        state.items.forEach((it, i) => {
+          if (i === ai) return;
+          it.actual_amount = "";
+          it.manual = false;
+          const inp = document.querySelector(`.blend-actual[data-idx="${i}"]`);
+          if (inp) inp.value = "";
+        });
+      }
+    }
+
+    // 이론량·총량 재산출 — anchorActual 이 0 이하/빈이면 computeAnchorTheory 가 null 배열 반환.
+    const { theoryAmounts, total } = computeAnchorTheory(state.items, ai, anchorActualNum === null ? 0 : anchorActualNum);
+    const anchorEntered = theoryAmounts.some((t) => t !== null);
+    state.items.forEach((it, i) => { it.theory_amount = theoryAmounts[i]; });
+
+    // 총 배합량 입력(읽기 전용)에 도출 총량 기입
+    const totalInput = $("blend-total");
+    if (totalInput) totalInput.value = anchorEntered ? String(total) : "";
+
+    // 이론량 셀·실제량 placeholder·입력 활성화 상태 갱신(재렌더 없이 DOM 갱신 — 포커스 유지)
+    document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
+      const i = Number(cell.dataset.idx);
+      cell.textContent = fmt(state.items[i].theory_amount);
+    });
+    document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
+      const i = Number(act.dataset.idx);
+      const it = state.items[i];
+      if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount);
+      // 기준 자재 입력 전이면 비기준 자재 입력 비활성화, 입력 후면 활성화
+      if (i !== ai) act.disabled = !anchorEntered;
+    });
+    // 각 행 편차 표시 갱신(기준 자재는 항상 '-')
+    state.items.forEach((_, i) => updateRowVar(i));
+    state.prevAnchorActual = anchorActual;
+    updateTotals();
+    updateLotPreview();
+    updateInputGuide();
   }
 
   function warnIfVariance(i) {
@@ -478,8 +590,12 @@
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
-    // 자재별 허용 편차 ±0.05g — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음)
-    const bad = state.items.filter((it) => Math.abs(rowVariance(it)) > TOLERANCE_G + 1e-9);
+    // 자재별 허용 편차 ±0.05g — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음).
+    // 기준 자재는 편차 검사에서 제외(이론=실측이므로 편차가 무의미).
+    const ai = state.anchorIndex;
+    const bad = state.items.filter((it, i) =>
+      i !== ai && Math.abs(rowVariance(it)) > TOLERANCE_G + 1e-9
+    );
     if (bad.length) {
       err.textContent = varianceBlockMessage(badVarianceNames(bad));
       err.hidden = false;
@@ -528,8 +644,15 @@
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
-      // 실제량/LOT 초기화 (연속 작업 편의)
+      // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
+      // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다.
       state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; it.manual = false; });
+      if (hasAnchor()) {
+        state.items.forEach((it) => { it.theory_amount = null; });
+        state.prevAnchorActual = "";
+        const totalInput = $("blend-total");
+        if (totalInput) totalInput.value = "";
+      }
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
     } catch (e) {

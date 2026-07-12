@@ -82,6 +82,23 @@
           ? String(detail.base_totals).split(",").map((t) => t.trim()).join(", ")
           : (detail.base_total != null ? String(detail.base_total) : "");
       }
+      // 기준 자재 후보를 불러온 레시피의 자재로 채우고, 기존 기준 자재를 미리 선택.
+      // 수정 등록은 검증(미리보기)을 거치지 않고 시트를 곧바로 채우므로 여기서 후보를 구성한다.
+      const anchorSel = document.getElementById("imp-anchor");
+      if (anchorSel) {
+        const itemNames = (detail.items || [])
+          .map((it) => it.material_name)
+          .filter((n) => !!n);
+        const seen = new Set();
+        const uniq = [];
+        for (const n of itemNames) {
+          if (!seen.has(n)) { seen.add(n); uniq.push(n); }
+        }
+        anchorSel.innerHTML =
+          '<option value="">없음</option>' +
+          uniq.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("");
+        anchorSel.value = detail.anchor_material_name || "";
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

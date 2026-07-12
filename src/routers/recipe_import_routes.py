@@ -71,9 +71,12 @@ def build_router() -> APIRouter:
             # 승계하지 않으면 새 버전이 일반 레시피가 되어 배합 화면에 노출되는 회귀 발생.
             inherited_is_dhr = 0
             totals = body.base_totals or ([body.base_total] if body.base_total else None)
+            # 기준 자재 승계용 — 요청에 anchor_material 이 없으면 부모의 anchor_material_id 를
+            # 새 버전의 자재 중 일치하는 것이 있을 때만 물려받는다(없으면 NULL).
+            inherited_anchor_material_id: int | None = None
             if body.revision_of is not None:
                 parent_row = connection.execute(
-                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals "
+                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, anchor_material_id "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -86,6 +89,8 @@ def build_router() -> APIRouter:
                             ]
                         elif parent_row["base_total"]:
                             totals = [float(parent_row["base_total"])]
+                    if parent_row["anchor_material_id"] is not None:
+                        inherited_anchor_material_id = int(parent_row["anchor_material_id"])
             # 정수는 '.0' 없이 저장(프리필 표시·비교 편의)
             base_totals_text = (
                 ",".join(str(int(t)) if float(t) == int(t) else str(t) for t in totals[:3])
@@ -93,6 +98,45 @@ def build_router() -> APIRouter:
             )
 
             for parsed_row in parsed["parsed_rows"]:
+                # 기준 자재 결정:
+                # - 요청에 anchor_material 이 있으면 → 임포트 항목 중 이름이 정확히 일치하는
+                #   자재의 id. 일치하는 항목이 없으면 400(잘못된 지정).
+                # - 요청에 없고 수정 등록이면 → 부모의 anchor_material_id 를 새 버전 자재 중
+                #   여전히 존재할 때만 승계(없으면 NULL). 이것이 base_totals 승계 구조와 동일.
+                item_ids = [it["material_id"] for it in parsed_row["items"]]
+                item_id_set = set(item_ids)
+                anchor_material_id: int | None = None
+                if body.anchor_material is not None:
+                    anchor_name = body.anchor_material.strip()
+                    if anchor_name:
+                        # 임포트 항목의 자재 id 로 materials.name 을 조회해 정확히 일치하는 이름을 찾는다.
+                        matched_id = None
+                        if item_id_set:
+                            placeholders = ",".join("?" for _ in item_ids)
+                            name_row = connection.execute(
+                                f"SELECT id FROM materials WHERE id IN ({placeholders}) "
+                                f"AND name = ? LIMIT 1",
+                                (*item_ids, anchor_name),
+                            ).fetchone()
+                            if name_row:
+                                matched_id = int(name_row["id"])
+                        if matched_id is None:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    f"기준 자재 '{anchor_name}'가 임포트 항목에 없습니다. "
+                                    "자재 이름을 확인해 주세요."
+                                ),
+                            )
+                        anchor_material_id = matched_id
+                elif inherited_anchor_material_id is not None:
+                    # 부모의 기준 자재가 새 버전 자재에 여전히 있으면 승계, 아니면 버림(NULL)
+                    anchor_material_id = (
+                        inherited_anchor_material_id
+                        if inherited_anchor_material_id in item_id_set
+                        else None
+                    )
+
                 # 등록 즉시 사용 가능(completed). (구) 계량 워크플로의 pending→진행→완료
                 # 단계는 /blend 전환으로 폐기 — 승인 단계가 없어 pending 은 영구 정체됨.
                 cursor = connection.execute(
@@ -100,8 +144,8 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -119,6 +163,7 @@ def build_router() -> APIRouter:
                         effective_from,
                         inherited_is_dhr,
                         base_totals_text,
+                        anchor_material_id,
                     ),
                 )
                 recipe_id = cursor.lastrowid

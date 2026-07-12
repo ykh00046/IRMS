@@ -71,6 +71,18 @@ def get_recipe_for_blend(
     if not recipe:
         return None
 
+    # 기준 자재(anchor_material_id) — 없는 구버전/테스트 DB 도 대응(try/except 폴백).
+    # 배합 화면은 이 자재를 먼저 계량하고, 그 실측 중량으로 다른 자재들의 이론량을 산출한다.
+    anchor_material_id: int | None = None
+    try:
+        row = connection.execute(
+            "SELECT anchor_material_id FROM recipes WHERE id = ?", (recipe_id,)
+        ).fetchone()
+        if row is not None and row["anchor_material_id"] is not None:
+            anchor_material_id = int(row["anchor_material_id"])
+    except sqlite3.OperationalError:  # anchor_material_id 컬럼이 없는 구버전/테스트 DB
+        anchor_material_id = None
+
     rows = connection.execute(
         """
         SELECT ri.id AS recipe_item_id, ri.material_id, ri.value_weight, ri.value_text,
@@ -99,6 +111,17 @@ def get_recipe_for_blend(
     ratios = compute_ratios(weights)
     theory = scale_theory(weights, total)
 
+    # 방어: 기준 자재가 지정돼 있어도 (1) 해당 자재가 항목에 없거나 (2) 그 자재의
+    # 기준 중량(value_weight)이 0 이하면 기준으로 쓸 수 없다 — anchor 를 무효(None) 처리.
+    effective_anchor = anchor_material_id
+    if effective_anchor is not None:
+        anchor_idx = next(
+            (idx for idx, r in enumerate(rows) if int(r["material_id"]) == effective_anchor),
+            None,
+        )
+        if anchor_idx is None or weights[anchor_idx] <= 0:
+            effective_anchor = None
+
     items = []
     for idx, r in enumerate(rows):
         items.append({
@@ -111,6 +134,9 @@ def get_recipe_for_blend(
             "ratio": ratios[idx],
             "theory_amount": theory[idx],
             "sequence_order": idx + 1,
+            # 기준 자재 여부 — 배합 시 이 자재의 실측값으로 다른 자재 이론량을 산출.
+            "is_anchor": effective_anchor is not None
+            and int(r["material_id"]) == effective_anchor,
         })
     # 기준 배합량(최대 3개): 레시피 관리에서 지정한 레시피만 값 반환(버튼 노출).
     # base_totals(CSV) 우선, 없으면 (구) 단일 base_total 폴백 — 미지정은 빈 목록.
@@ -136,6 +162,8 @@ def get_recipe_for_blend(
             "ink_name": recipe["ink_name"],
             "status": recipe["status"],
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
+            # 기준 자재(방어 처리 후). None 이면 total_amount 기준 기존 동작.
+            "anchor_material_id": effective_anchor,
         },
         "base_total": round(base_total, 3),
         "steps": steps,

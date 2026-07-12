@@ -69,6 +69,31 @@
       dom.previewMeta.innerHTML = badges.join("");
     }
 
+    // 기준 자재 후보를 검증 미리보기의 자재 이름으로 채운다. 없음(빈 값) 옵션은 항상 첫 줄.
+    // 이전 선택값(있으면) 유지 — 시트 수정·재검증 사이에 선택이 풀리지 않게.
+    function populateAnchorOptions(preserveName) {
+      const sel = document.getElementById("imp-anchor");
+      if (!sel) return;
+      const names = [];
+      const seen = new Set();
+      for (const row of (state.currentPreview?.rows || [])) {
+        for (const item of (row.items || [])) {
+          const n = item.materialName;
+          if (n && !seen.has(n)) {
+            seen.add(n);
+            names.push(n);
+          }
+        }
+      }
+      const wanted = preserveName || sel.value || "";
+      sel.innerHTML =
+        '<option value="">없음</option>' +
+        names.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("");
+      if (wanted && names.includes(wanted)) {
+        sel.value = wanted;
+      }
+    }
+
     async function handlePreview() {
       const raw = ctx.spreadsheet.getSpreadsheetDataAsText();
 
@@ -86,6 +111,8 @@
         renderValidationMeta(result);
         renderIssues(result.errors, dom.errorList, "오류 없음");
         renderIssues(result.warnings, dom.warningList, "확인 사항 없음");
+        // 검증 결과(자재 이름)로 기준 자재 후보를 다시 채운다 — 시트가 바뀌면 후보도 바뀐다.
+        populateAnchorOptions(null);
         syncRegisterState();
 
         if (!result.errors.length && result.rows.length > 0) {
@@ -124,7 +151,20 @@
             return;
           }
         }
-        const result = await IRMS.importRecipes(state.confirmedRawText, "레시피 관리", state.pendingRevisionOf, baseTotals);
+        // 기준 자재: 선택한 이름이 있으면 본문에 포함. api-recipes.importRecipes 가
+        // anchor_material 을 받지 않으므로, 기준 자재가 있을 때는 직접 POST 한다
+        // (CSRF 토큰은 core.js 의 request 패턴과 동일하게 x-csrftoken 헤더로 직접 부착).
+        const anchorEl = document.getElementById("imp-anchor");
+        const anchorMaterial = anchorEl ? anchorEl.value.trim() : "";
+        let result;
+        if (anchorMaterial) {
+          result = await importWithAnchor(baseTotals, anchorMaterial);
+        } else {
+          result = await IRMS.importRecipes(
+            state.confirmedRawText, "레시피 관리",
+            state.pendingRevisionOf, baseTotals,
+          );
+        }
         IRMS.notify(
           `${result.created_count}건 레시피를 등록했습니다.`,
           "success",
@@ -138,6 +178,44 @@
       }
     }
 
+    // 기준 자재를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착 패턴으로
+    // /api/recipes/import 에 직접 POST 한다.
+    async function importWithAnchor(baseTotals, anchorMaterial) {
+      const body = {
+        raw_text: state.confirmedRawText,
+        created_by: "레시피 관리",
+      };
+      if (state.pendingRevisionOf != null) {
+        body.revision_of = state.pendingRevisionOf;
+      }
+      if (Array.isArray(baseTotals) && baseTotals.length) {
+        body.base_totals = baseTotals.slice(0, 3);
+      }
+      body.anchor_material = anchorMaterial;
+      const headers = { "Content-Type": "application/json" };
+      const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+      if (token) headers["x-csrftoken"] = token;
+      const resp = await fetch("/api/recipes/import", {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        let detail = "";
+        try {
+          const payload = await resp.json();
+          const d = payload && payload.detail;
+          detail = d && typeof d === "object" && d.message ? d.message
+            : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+        } catch (_e) {
+          detail = await resp.text().catch(() => `Request failed (${resp.status})`);
+        }
+        throw new Error(String(detail || `Request failed (${resp.status})`));
+      }
+      return resp.json();
+    }
+
     function handleClear() {
       state.confirmedRawText = "";
       state.previewIsStale = false;
@@ -145,6 +223,11 @@
       // 수정 등록에서 프리필된 기준 배합량이 다음 신규 등록에 새어들지 않게 비움.
       const baseTotalEl = document.getElementById("register-base-total");
       if (baseTotalEl) baseTotalEl.value = "";
+      // 기준 자재 후보·선택도 초기화 — 다음 등록에 이전 자재가 남지 않게.
+      const anchorEl = document.getElementById("imp-anchor");
+      if (anchorEl) {
+        anchorEl.innerHTML = '<option value="">없음</option>';
+      }
       if (ctx.recipeEditLoader) {
         ctx.recipeEditLoader.clearRevisionBanner();
       }
@@ -166,6 +249,7 @@
       markPreviewStale,
       renderIssues,
       renderValidationMeta,
+      populateAnchorOptions,
       handlePreview,
       handleRegister,
       handleClear,

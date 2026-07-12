@@ -37,6 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
     productList: document.getElementById("product-list"),
     lookupBtn: document.getElementById("lookup-btn"),
     lookupResult: document.getElementById("lookup-result"),
+    lookupAnchor: document.getElementById("lookup-anchor"),
     lookupActions: document.getElementById("lookup-actions"),
     lookupSelectedLabel: document.getElementById("lookup-selected-label"),
     lookupCopyBtn: document.getElementById("lookup-copy-btn"),
