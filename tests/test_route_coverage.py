@@ -363,3 +363,119 @@ def test_blend_recipe_with_anchor_save_route():
     for name, val in theory.items():
         assert detail_theory[name] == val
 
+
+# ── 감사 F-2: soft 취소 무인증 게이트 + 책임자 전용 복원 ──────────────────────
+
+def test_blend_soft_cancel_requires_manager():
+    """[red 재현] 수정 전: 비로그인 soft 취소가 200 으로 통과해 DHR 기록이 숨겨졌다."""
+    client = _client()
+    headers = _admin_login(client)
+    prod = "SC" + uuid.uuid4().hex[:6].upper()
+    worker = "취소작업" + uuid.uuid4().hex[:6]
+    client.post("/api/recipes/import", json={"raw_text": f"반제품명\t원료A\n{prod}\t100",
+                                             "force": True}, headers=headers)
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/auth/logout", headers=headers)  # 관리 세션 종료
+
+    client.get("/api/blend/records")
+    headers = _csrf(client)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-12",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100,
+                     "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers)
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    # 작업자 세션만(책임자 아님) → 403 (수정 전: 200 — red)
+    res = client.request("DELETE", f"/api/blend/records/{rid}", headers=headers)
+    assert res.status_code == 403
+    from src.db import get_connection
+    with get_connection() as conn:
+        assert conn.execute("SELECT status FROM blend_records WHERE id=?",
+                            (rid,)).fetchone()["status"] == "completed"
+
+    # 책임자 → 200, canceled + 감사 로그
+    headers = _admin_login(client)
+    res = client.request("DELETE", f"/api/blend/records/{rid}?reason=test", headers=headers)
+    assert res.status_code == 200
+    with get_connection() as conn:
+        assert conn.execute("SELECT status FROM blend_records WHERE id=?",
+                            (rid,)).fetchone()["status"] == "canceled"
+        assert conn.execute(
+            "SELECT 1 FROM audit_logs WHERE action='blend_record_cancel' AND target_id=?",
+            (str(rid),)).fetchone() is not None
+
+
+def test_blend_restore_is_manager_only_and_restores():
+    client = _client()
+    headers = _admin_login(client)
+    prod = "RS" + uuid.uuid4().hex[:6].upper()
+    worker = "복원작업" + uuid.uuid4().hex[:6]
+    client.post("/api/recipes/import", json={"raw_text": f"반제품명\t원료A\n{prod}\t100",
+                                             "force": True}, headers=headers)
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    rid = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-12",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100,
+                     "theory_amount": 100, "actual_amount": 100}],
+    }, headers=headers).json()["id"]
+    assert client.request("DELETE", f"/api/blend/records/{rid}",
+                          headers=headers).status_code == 200
+
+    # 비로그인 복원 → 401
+    anon = _client()
+    anon.get("/api/blend/records")
+    assert anon.post(f"/api/blend/records/{rid}/restore",
+                     headers=_csrf(anon)).status_code == 401
+    # 책임자 복원 → 200 + completed + 감사 로그 + 취소 아닌 기록은 400
+    res = client.post(f"/api/blend/records/{rid}/restore", headers=headers)
+    assert res.status_code == 200 and res.json()["restored"] == rid
+    from src.db import get_connection
+    with get_connection() as conn:
+        assert conn.execute("SELECT status FROM blend_records WHERE id=?",
+                            (rid,)).fetchone()["status"] == "completed"
+        assert conn.execute(
+            "SELECT 1 FROM audit_logs WHERE action='blend_record_restore' AND target_id=?",
+            (str(rid),)).fetchone() is not None
+    assert client.post(f"/api/blend/records/{rid}/restore",
+                       headers=headers).status_code == 400
+
+
+# ── 감사 F-3: import 미리보기 부작용(자재 영구 커밋) 회귀 ──────────────────────
+
+def test_import_preview_has_no_side_effect_on_materials():
+    """[red 재현] 수정 전: 미리보기만으로 신규 자재가 materials 에 영구 커밋됐다."""
+    client = _client()
+    headers = _admin_login(client)
+    name = "미리보기자재" + uuid.uuid4().hex[:6]
+    prod = "PV" + uuid.uuid4().hex[:6].upper()
+    raw = f"반제품명\t{name}\n{prod}\t12.5"
+
+    res = client.post("/api/recipes/import/preview", json={"raw_text": raw}, headers=headers)
+    assert res.status_code == 200
+    assert any("자동 등록" in w["message"] for w in res.json()["warnings"])
+
+    from src.db import get_connection
+    with get_connection() as conn:  # 수정 전: 행이 존재 → red
+        assert conn.execute("SELECT 1 FROM materials WHERE name = ?",
+                            (name,)).fetchone() is None
+
+    # 반복 미리보기도 무부작용(마스터 오염 누적 없음)
+    client.post("/api/recipes/import/preview", json={"raw_text": raw}, headers=headers)
+    with get_connection() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM materials WHERE name = ?",
+                            (name,)).fetchone()["n"] == 0
+
+    # 실제 임포트는 여전히 자재를 등록하고 레시피를 만든다(회귀 방지)
+    res2 = client.post("/api/recipes/import", json={"raw_text": raw, "force": True},
+                       headers=headers)
+    assert res2.status_code == 200 and res2.json()["created_count"] == 1
+    with get_connection() as conn:
+        assert conn.execute("SELECT 1 FROM materials WHERE name = ?",
+                            (name,)).fetchone() is not None
+

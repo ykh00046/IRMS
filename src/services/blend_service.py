@@ -599,24 +599,42 @@ def create_blend_record(
     reactor 지정 시 실적을 진행한 반응기(1~4)를 기록한다(반응기 진행 반제품).
     manual_entry=True 면 저울 연동 중 수동 입력으로 계량됐음을 기록한다(추적성).
     """
-    product_lot = generate_product_lot(connection, product_name, work_date)
-    cur = connection.execute(
-        """
-        INSERT INTO blend_records
-            (product_lot, recipe_id, product_name, ink_name, position, worker,
-             work_date, work_time, total_amount, scale, status, note,
-             worker_sign, reactor, manual_entry, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
-            work_date, work_time, float(total_amount), scale,
-            (note or "").strip() or None, worker_sign,
-            int(reactor) if reactor is not None else None,
-            1 if manual_entry else 0,
-            created_by, created_at, created_at,
-        ),
-    )
+    # 감사 F-1: 채번+INSERT 원자화. 쓰기 락을 선획득(BEGIN IMMEDIATE)해 동시 요청의
+    # 채번을 직렬화한다(WAL 에서 리더는 라이터를 막지 않으므로 명시 락이 필요).
+    # 이미 트랜잭션 안이면(create_bulk 루프의 2번째 이후 호출 등) 그대로 진행.
+    if not connection.in_transaction:
+        connection.execute("BEGIN IMMEDIATE")
+    # UNIQUE(product_lot) 위반 시 재채번 재시도 — BEGIN IMMEDIATE 하에서는 사실상
+    # 발생하지 않지만(단일 라이터), 교차 프로세스 등 방어적 재시도를 둔다.
+    last_error: sqlite3.IntegrityError | None = None
+    cur = None
+    for _attempt in range(3):
+        product_lot = generate_product_lot(connection, product_name, work_date)
+        try:
+            cur = connection.execute(
+                """
+                INSERT INTO blend_records
+                    (product_lot, recipe_id, product_name, ink_name, position, worker,
+                     work_date, work_time, total_amount, scale, status, note,
+                     worker_sign, reactor, manual_entry, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
+                    work_date, work_time, float(total_amount), scale,
+                    (note or "").strip() or None, worker_sign,
+                    int(reactor) if reactor is not None else None,
+                    1 if manual_entry else 0,
+                    created_by, created_at, created_at,
+                ),
+            )
+            break
+        except sqlite3.IntegrityError as exc:
+            if "product_lot" not in str(exc):
+                raise
+            last_error = exc
+    else:
+        raise last_error  # 3회 모두 위반 — 비정상 상황을 그대로 드러낸다(500)
     record_id = int(cur.lastrowid)
 
     for idx, d in enumerate(details):

@@ -243,9 +243,6 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "ON blend_records(work_date DESC)"
     )
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_blend_records_lot ON blend_records(product_lot)"
-    )
-    connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_recipe ON blend_records(recipe_id)"
     )
     connection.execute(
@@ -393,6 +390,19 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         connection.execute("DROP TABLE IF EXISTS chat_rooms")
         record_migration(connection, "drop_orphan_chat_tables")
 
+    # 감사 F-1: product_lot 전역 유일 봉인 — 채번 경쟁(read-then-write)으로 생겼을 수
+    # 있는 기존 중복을 정리(재채번 + audit_logs 기록)한 뒤 UNIQUE 인덱스를 만든다.
+    # 실패(예: 정리 후에도 위반)하면 init_db 트랜잭션 전체가 롤백되고 서버 기동이
+    # 실패한다 — 조용히 넘어가지 않는다(fail-loud).
+    if not has_migration(connection, "blend_records_product_lot_unique"):
+        dedup_product_lots(connection)
+        connection.execute("DROP INDEX IF EXISTS idx_blend_records_lot")
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_blend_records_lot_unique "
+            "ON blend_records(product_lot)"
+        )
+        record_migration(connection, "blend_records_product_lot_unique")
+
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     if has_migration(connection, "standardize_units_to_grams"):
@@ -431,3 +441,78 @@ def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     )
 
     record_migration(connection, "standardize_units_to_grams")
+
+
+def dedup_product_lots(connection: sqlite3.Connection) -> list[dict]:
+    """중복 product_lot 정리 (감사 F-1 마이그레이션 보조).
+
+    각 중복 그룹에서 최소 id(최초 저장분)의 LOT 은 보존하고, 나머지 행을 재채번한다.
+    - 정규형({product_name}{YYMMDD}{seq}) LOT: 같은 base 의 다음 빈 순번(2자리 zero-pad)
+    - 비정규(레거시) LOT: 원 라벨 뒤에 "-2", "-3" … 접미(라벨 식별성 보존)
+    - 연계 점도: blend_record_id 로 물린 viscosity_readings.lot_no 를 함께 갱신
+    - 모든 변경을 audit_logs(action='product_lot_dedup')에 old→new 로 기록
+    반환: [{"id", "old", "new"}, ...]
+    """
+    from .audit import write_audit_log  # 같은 패키지 — 순환 없음(audit 은 queries/time_utils 만 의존)
+
+    dup_rows = connection.execute(
+        """
+        SELECT id, product_lot, product_name, work_date FROM blend_records
+        WHERE product_lot IN (
+            SELECT product_lot FROM blend_records
+            GROUP BY product_lot HAVING COUNT(*) > 1
+        )
+        ORDER BY product_lot, id
+        """
+    ).fetchall()
+    if not dup_rows:
+        return []
+    taken = {
+        str(r["product_lot"])
+        for r in connection.execute("SELECT product_lot FROM blend_records").fetchall()
+    }
+    keep_seen: set[str] = set()
+    changes: list[dict] = []
+    for row in dup_rows:
+        old = str(row["product_lot"])
+        if old not in keep_seen:
+            keep_seen.add(old)  # 그룹 대표(최소 id) — 원 LOT 유지
+            continue
+        # base 는 generate_product_lot 과 동일 규칙으로 재계산 (제품명 + YYMMDD)
+        digits = "".join(ch for ch in str(row["work_date"]) if ch.isdigit())
+        yymmdd = digits[2:8] if len(digits) >= 8 else digits[-6:]
+        base = f"{str(row['product_name']).strip()}{yymmdd}"
+        suffix = old[len(base):] if old.startswith(base) else None
+        if suffix is not None and suffix.isdigit():
+            seq = int(suffix)
+            while True:
+                seq += 1
+                new = f"{base}{seq:02d}"
+                if new not in taken:
+                    break
+        else:
+            n = 1
+            while True:
+                n += 1
+                new = f"{old}-{n}"
+                if new not in taken:
+                    break
+        taken.add(new)
+        connection.execute(
+            "UPDATE blend_records SET product_lot = ?, updated_at = ? WHERE id = ?",
+            (new, utc_now_text(), int(row["id"])),
+        )
+        connection.execute(
+            "UPDATE viscosity_readings SET lot_no = ? WHERE blend_record_id = ? AND lot_no = ?",
+            (new, int(row["id"]), old),
+        )
+        write_audit_log(
+            connection,
+            action="product_lot_dedup",
+            target_type="blend_record",
+            target_id=int(row["id"]),
+            target_label=new,
+            details={"old": old, "new": new},
+        )
+        changes.append({"id": int(row["id"]), "old": old, "new": new})
+    return changes
