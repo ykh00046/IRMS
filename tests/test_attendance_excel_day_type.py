@@ -55,9 +55,9 @@ class AttendanceWeekday2Tests(unittest.TestCase):
         record = _record(_row("평일2", "17:20"))
 
         with (
-            patch.object(attendance_excel, "_load_workbook", return_value=fake_workbook),
-            patch.object(attendance_excel, "_iter_data_rows", return_value=[object()]),
-            patch.object(attendance_excel, "_row_to_record", return_value=record),
+            patch.object(attendance_excel.parser, "_load_workbook", return_value=fake_workbook),
+            patch.object(attendance_excel.parser, "_iter_data_rows", return_value=[object()]),
+            patch.object(attendance_excel.parser, "_row_to_record", return_value=record),
         ):
             day_type, items = attendance_excel.detect_today_anomalies(
                 "2026-04", "2026-04-24"

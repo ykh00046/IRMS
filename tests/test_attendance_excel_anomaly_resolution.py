@@ -71,8 +71,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         ]
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=records),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=records),
         ):
             items = attendance_excel.detect_month_anomalies("2026-04")
 
@@ -102,8 +102,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         ]
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=records),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=records),
         ):
             items = attendance_excel.detect_month_anomalies("2026-06")
 
@@ -126,8 +126,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         ]
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=records),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=records),
         ):
             items = attendance_excel.detect_month_anomalies("2026-04")
 
@@ -155,9 +155,9 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(row)
 
         with (
-            patch.object(attendance_excel, "_load_workbook", return_value=fake_workbook),
-            patch.object(attendance_excel, "_iter_data_rows", return_value=[object()]),
-            patch.object(attendance_excel, "_row_to_record", return_value=record),
+            patch.object(attendance_excel.parser, "_load_workbook", return_value=fake_workbook),
+            patch.object(attendance_excel.parser, "_iter_data_rows", return_value=[object()]),
+            patch.object(attendance_excel.parser, "_row_to_record", return_value=record),
         ):
             day_type, items = attendance_excel.detect_today_anomalies(
                 "2026-04", "2026-04-24"
@@ -172,8 +172,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(row, emp_id="260445", name="박종휘", shift_time="2교대(주간)")
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
@@ -185,8 +185,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(_row(attendance_code="\uC5F0\uCC28", check_in=None, check_out=None))
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             _day_type, items = attendance_excel.detect_today_anomalies(
                 "2026-04", "2026-04-24"
@@ -201,8 +201,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record["row"].note = "\uC608\uBE44\uAD70_8\uC2DC\uAC04"
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             _day_type, items = attendance_excel.detect_today_anomalies(
                 "2026-04", "2026-04-24"
@@ -215,8 +215,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(row, emp_id="240910", name="박효빈")
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
@@ -233,8 +233,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(row, emp_id="240910", name="박효빈")
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
@@ -252,8 +252,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         record = _record(row, emp_id="260445", name="박종휘")
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
@@ -275,8 +275,8 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
         )
 
         with (
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             items = attendance_excel.detect_month_anomalies("2026-05")
 
@@ -288,12 +288,12 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
 
         with (
             patch.object(
-                attendance_excel,
+                attendance_excel.files,
                 "_alert_reference_datetime",
                 return_value=dt.datetime.fromisoformat(f"{today}T16:00:00"),
             ),
-            patch.object(attendance_excel, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
-            patch.object(attendance_excel, "_records_from_path", return_value=[record]),
+            patch.object(attendance_excel.files, "_month_file_paths_or_raise", return_value=[Path("dummy.xlsx")]),
+            patch.object(attendance_excel.parser, "_records_from_path", return_value=[record]),
         ):
             _day_type, items = attendance_excel.detect_today_anomalies(
                 today[:7], today
@@ -303,9 +303,9 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
 
     def test_alert_year_month_falls_back_to_latest_available_file(self) -> None:
         with (
-            patch.object(attendance_excel, "current_year_month", return_value="2026-05"),
-            patch.object(attendance_excel, "month_file_paths", return_value=[]),
-            patch.object(attendance_excel, "available_months", return_value=["2026-04", "2026-03"]),
+            patch.object(attendance_excel.files, "current_year_month", return_value="2026-05"),
+            patch.object(attendance_excel.files, "month_file_paths", return_value=[]),
+            patch.object(attendance_excel.files, "available_months", return_value=["2026-04", "2026-03"]),
         ):
             self.assertEqual(attendance_excel.alert_year_month(), "2026-04")
 

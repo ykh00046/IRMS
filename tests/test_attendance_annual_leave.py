@@ -52,9 +52,9 @@ class AttendanceAnnualLeaveTests(unittest.TestCase):
         ]
 
         with (
-            patch.object(attendance_excel, "available_months", return_value=["2026-04"]),
+            patch.object(attendance_excel.files, "available_months", return_value=["2026-04"]),
             patch.object(
-                attendance_excel,
+                attendance_excel.summary,
                 "_load_month_rows_for_employee",
                 return_value=(None, rows),
             ),

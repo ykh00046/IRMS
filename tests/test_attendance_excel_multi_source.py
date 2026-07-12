@@ -84,7 +84,7 @@ class AttendanceExcelMultiSourceTests(unittest.TestCase):
             ]
         )
 
-        with patch.object(attendance_excel, "ATTENDANCE_DIR", fake_dir):
+        with patch.object(attendance_excel.files, "ATTENDANCE_DIR", fake_dir):
             paths = attendance_excel.month_file_paths("2026-04")
             months = attendance_excel.available_months()
 
@@ -113,15 +113,15 @@ class AttendanceExcelMultiSourceTests(unittest.TestCase):
             return records[raw[0]]
 
         with (
-            patch.object(attendance_excel, "available_months", return_value=["2026-04"]),
+            patch.object(attendance_excel.files, "available_months", return_value=["2026-04"]),
             patch.object(
-                attendance_excel,
+                attendance_excel.files,
                 "month_file_paths",
                 return_value=[Path("base.xlsx"), Path("colorist.xlsx")],
             ),
-            patch.object(attendance_excel, "_load_workbook", side_effect=load_workbook),
-            patch.object(attendance_excel, "_iter_data_rows", side_effect=iter_rows),
-            patch.object(attendance_excel, "_row_to_record", side_effect=row_to_record),
+            patch.object(attendance_excel.parser, "_load_workbook", side_effect=load_workbook),
+            patch.object(attendance_excel.parser, "_iter_data_rows", side_effect=iter_rows),
+            patch.object(attendance_excel.parser, "_row_to_record", side_effect=row_to_record),
         ):
             employees = attendance_excel.employee_list("2026-04")
             exists = attendance_excel.employee_exists_in_any_month("200")
@@ -155,13 +155,13 @@ class AttendanceExcelMultiSourceTests(unittest.TestCase):
 
         with (
             patch.object(
-                attendance_excel,
+                attendance_excel.files,
                 "month_file_paths",
                 return_value=[Path("base.xlsx"), Path("colorist.xlsx")],
             ),
-            patch.object(attendance_excel, "_load_workbook", side_effect=load_workbook),
-            patch.object(attendance_excel, "_iter_data_rows", side_effect=iter_rows),
-            patch.object(attendance_excel, "_row_to_record", side_effect=row_to_record),
+            patch.object(attendance_excel.parser, "_load_workbook", side_effect=load_workbook),
+            patch.object(attendance_excel.parser, "_iter_data_rows", side_effect=iter_rows),
+            patch.object(attendance_excel.parser, "_row_to_record", side_effect=row_to_record),
         ):
             day_type, items = attendance_excel.detect_today_anomalies("2026-04", "2026-04-24")
 
