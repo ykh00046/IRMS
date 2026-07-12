@@ -389,10 +389,21 @@
     });
   }
 
-  // 순차 입력 안내: 총 배합량(공백) 강조 → 입력되면 작업자 강조
+  // 순차 입력 안내: 입력해야 하는 칸 강조.
+  // 일반 레시피: 총 배합량(공백) → 작업자.
+  // 기준 자재 레시피: 총량은 자동 산출(읽기 전용)이므로 기준 자재 실측 칸부터 → 작업자.
   function updateInputGuide() {
     const total = $("blend-total");
     const worker = $("blend-worker");
+    if (hasAnchor()) {
+      const anchorInput = document.querySelector(`.blend-actual[data-idx="${state.anchorIndex}"]`);
+      const it = state.items[state.anchorIndex];
+      const anchorReady = Boolean(it && it.actual_amount !== "" && Number(it.actual_amount) > 0);
+      total.classList.remove("needs-input");
+      if (anchorInput) anchorInput.classList.toggle("needs-input", !anchorReady);
+      worker.classList.toggle("needs-input", anchorReady && !worker.value.trim());
+      return;
+    }
     const totalReady = Number(total.value) > 0;
     total.classList.toggle("needs-input", !totalReady);
     worker.classList.toggle("needs-input", totalReady && !worker.value.trim());
