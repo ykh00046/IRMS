@@ -28,8 +28,17 @@ def build_router() -> APIRouter:
 
     @router.post("/recipes/import/preview")
     def import_preview(body: ImportRequest) -> dict[str, Any]:
-        with get_connection() as connection:
+        # 감사 F-3: 미리보기는 무부작용이어야 한다. parse_import_text 는 미등록 자재를
+        # 그 자리에서 INSERT 하는데(파싱·등록 결합), sqlite3 Connection 을 `with` 로
+        # 감싸면 정상 종료 시 commit 되어 미리보기만으로 자재가 영구 등록됐다.
+        # → 명시적 rollback 으로 INSERT 를 폐기한다. 실제 등록은 /recipes/import 만.
+        #   (응답의 material_id 는 표시용 임시값 — mappers.js mapPreview 참조)
+        connection = get_connection()
+        try:
             result = parse_import_text(connection, body.raw_text)
+        finally:
+            connection.rollback()
+            connection.close()
         return result
 
     @router.post("/recipes/import")

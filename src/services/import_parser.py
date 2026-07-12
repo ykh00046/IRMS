@@ -181,7 +181,7 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             if not mat:
                 mat = _auto_register_material(connection, header.strip())
                 token_to_material[token] = mat
-                header_warnings.append({"level": 3, "message": f"새 원재료를 자동 등록했습니다: {header.strip()}", "row": current_row_index})
+                header_warnings.append({"level": 3, "message": f"새 원재료가 자동 등록됩니다: {header.strip()}", "row": current_row_index})
             elif mat["id"] not in used_material_ids:
                 header_warnings.append({"level": 3, "message": f"처음 사용하는 원재료입니다: {mat['name']} — 맞는지 확인해 주세요.", "row": current_row_index})
 
