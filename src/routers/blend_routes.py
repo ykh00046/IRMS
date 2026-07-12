@@ -21,7 +21,8 @@ Endpoints:
     GET    /blend/records/dhr-batch           배합일지 일괄 PDF
     GET    /blend/records/{id}                상세(배합상세+편차+점도)
     PUT    /blend/records/{id}                전체 수정 (책임자 전용)
-    DELETE /blend/records/{id}                기록 취소/삭제(hard 는 책임자)
+    DELETE /blend/records/{id}                기록 취소/삭제(soft/hard 모두 책임자 전용)
+    POST   /blend/records/{id}/restore        soft 취소 복원 (책임자 전용)
     POST   /blend/records/{id}/viscosity      점도 등록(배합 연계 — 점도 화면의 저장 경로)
     POST   /blend/records/{id}/approve        결재 기록 (책임자 전용, 현장 미사용)
     GET    /blend/records/{id}/export         실적서 Excel
@@ -612,15 +613,22 @@ def build_router() -> APIRouter:
         record_id: int,
         request: Request,
         hard: bool = Query(default=False),
+        reason: str | None = Query(default=None, max_length=500),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        # 감사 F-2: soft/hard 모두 책임자 전용. soft 취소도 DHR 기록을 목록·출력·
+        # 대시보드에서 숨기는 행위다(종전에는 soft 가 무인증이었다).
+        # 인증을 404 조회보다 먼저 — 비인증 호출자에게 기록 존재 여부를 흘리지 않는다.
+        # 상태 코드는 기존 hard 분기 관례를 보존: 미로그인·비책임자 모두 403.
+        # (get_current_user(required=True)의 401 로 바꾸면 기존
+        #  test_blend_hard_delete_requires_manager 의 403 기대가 깨진다.)
+        current_user = get_current_user(request, required=False)
+        if current_user is None or not has_access_level(current_user, "manager"):
+            raise HTTPException(status_code=403, detail="FORBIDDEN")
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        current_user = get_current_user(request, required=False)
         if hard:
-            if current_user is None or not has_access_level(current_user, "manager"):
-                raise HTTPException(status_code=403, detail="FORBIDDEN")
             result = record_delete_service.delete_blend_record(connection, record_id)
             if result is None:
                 raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
@@ -631,6 +639,7 @@ def build_router() -> APIRouter:
                 target_type="blend_record",
                 target_id=str(result.record_id),
                 target_label=result.product_lot,
+                details={"reason": reason} if reason else None,
             )
             connection.commit()
             return {"deleted": result.record_id}
@@ -646,8 +655,40 @@ def build_router() -> APIRouter:
             target_type="blend_record",
             target_id=str(record_id),
             target_label=record["product_lot"],
+            details={"reason": reason} if reason else None,
         )
         connection.commit()
         return {"canceled": record_id}
+
+    @router.post(
+        "/blend/records/{record_id}/restore",
+        dependencies=[Depends(require_access_level("manager"))],
+    )
+    def blend_restore(
+        record_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """소프트 취소된 배합 기록 복원 (책임자 전용, 감사 F-2)."""
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        if record["status"] != "canceled":
+            raise HTTPException(status_code=400, detail="취소 상태의 기록이 아닙니다.")
+        current_user = get_current_user(request, required=False)
+        connection.execute(
+            "UPDATE blend_records SET status = 'completed', updated_at = ? WHERE id = ?",
+            (utc_now_text(), record_id),
+        )
+        write_audit_log(
+            connection,
+            action="blend_record_restore",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=record["product_lot"],
+        )
+        connection.commit()
+        return {"restored": record_id}
 
     return router
