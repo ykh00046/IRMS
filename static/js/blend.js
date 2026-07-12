@@ -69,6 +69,8 @@
   function fillScaleValue(idx, value) {
     const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
     if (!input) return;
+    // 저울 PRINT 입력은 input 이벤트가 없으므로 저장 후 자동 로그아웃 해제를 직접 호출
+    cancelPostSaveLogout();
     input.value = String(value);
     state.items[idx].actual_amount = input.value;
     state.items[idx].manual = false;  // 저울 입력 — 손입력 표시 해제
@@ -593,6 +595,27 @@
     }
   }
 
+  // ── 저장 후 자동 로그아웃 ─────────────────────────────────
+  // 미저장 입력이 있는 동안은 타임아웃 없음(서버 유휴 12h + 하트비트로 보호).
+  // 저장을 마쳐 폼이 빈 상태로 돌아온 뒤에만 카운트를 걸고, 새 입력이
+  // 시작되면 즉시 해제한다 — 공용 PC에서 저장 후 방치된 세션 정리.
+  const POST_SAVE_LOGOUT_MS = 5 * 60 * 1000;
+
+  function armPostSaveLogout() {
+    cancelPostSaveLogout();
+    state.postSaveTimer = setTimeout(async () => {
+      try { await request("/blend/session/logout", { method: "POST" }); } catch (e) { /* 만료 등 무시 */ }
+      window.location.href = "/blend/login?next=/blend";
+    }, POST_SAVE_LOGOUT_MS);
+  }
+
+  function cancelPostSaveLogout() {
+    if (state.postSaveTimer) {
+      clearTimeout(state.postSaveTimer);
+      state.postSaveTimer = null;
+    }
+  }
+
   async function saveBlend() {
     const err = $("blend-error");
     err.hidden = true;
@@ -666,6 +689,9 @@
       }
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
+      // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)
+      armPostSaveLogout();
+      notify("5분간 새 입력이 없으면 자동 로그아웃됩니다", "warn");
     } catch (e) {
       err.textContent = e.message;
       err.hidden = false;
@@ -743,6 +769,11 @@
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
     $("bulk-add-row").addEventListener("click", addBulkRow);
     $("bulk-create").addEventListener("click", createBulk);
+    // 저장 후 자동 로그아웃 해제 — 어떤 폼 입력이든 새 작업이 시작되면(레시피 선택,
+    // 실제량·LOT 타이핑, 저울 PRINT 입력 포함) 카운트를 멈춘다. capture 단계라
+    // 동적으로 렌더되는 자재 행 입력에도 적용된다.
+    document.addEventListener("input", cancelPostSaveLogout, true);
+    document.addEventListener("change", cancelPostSaveLogout, true);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
