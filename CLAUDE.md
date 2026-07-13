@@ -134,11 +134,14 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 - **운영 환경**: `IRMS_ENV=production` 시 보안 강화 (HSTS, Secure 쿠키, Strict SameSite)
 - **데모 데이터**: 개발 시 `IRMS_SEED_DEMO_DATA=1`로 자동 생성 (운영에서는 반드시 `0`)
 - **Cloudflare Tunnel**: `cloudflared/` + `setup_tunnel.bat`으로 외부 접근 가능
-- **런타임 산출물**: `tmp_*`, `data/`는 gitignore, 소스 기준 아님
+- **런타임 산출물**: `tmp_*`, `data/`는 gitignore, 소스 기준 아님. 테스트·E2E·에이전트
+  산출물(임시 `IRMS_DATA_DIR` 포함)은 반드시 `.tmp-tests/` 하위에 만든다. 루트에 `tmp_*`를
+  새로 만들지 않는다(`tools/check_repo_hygiene.py` 가 루트 1단계 위반을 검사).
 - **트레이 클라이언트**: `tray_client/`에 Windows 알림 트레이 앱 존재
 - **DB 백업**: serve.py 가 매일 1회 + 업데이트 직전 자동 백업(`backups/irms_*.db`,
   SQLite 온라인 백업, 보존 `IRMS_BACKUP_KEEP_DAYS`=30일·최근 5개 항상 유지,
   `IRMS_BACKUP_MIRROR`로 2차 사본 폴더 지정 가능).
+  백업은 생성 직후 자동 검증되며 실패본은 `.corrupt`로 격리됨, 상세는 `docs/ops-backup-restore.md`.
   **복구**: 서버 중지 → `backups/`의 원하는 파일을 `data/irms.db`로 복사 → 서버 시작
 - **의존성 잠금**: 운영은 `requirements-lock.txt`(고정 버전) 우선 설치 — 무통제 업그레이드
   방지. 업그레이드 절차: 개발 PC에서 `pip install -r requirements.txt` → 전체 테스트/smoke
