@@ -74,9 +74,13 @@ def build_router() -> APIRouter:
             # 기준 자재 승계용 — 요청에 anchor_material 이 없으면 부모의 anchor_material_id 를
             # 새 버전의 자재 중 일치하는 것이 있을 때만 물려받는다(없으면 NULL).
             inherited_anchor_material_id: int | None = None
+            # 레시피별 허용 편차 승계용 — 요청에 tolerance_g 가 없으면 부모의 tolerance_g 를
+            # 그대로 물려받는다(base_totals / anchor_material_id 승계 구조와 동일).
+            inherited_tolerance_g: float | None = None
             if body.revision_of is not None:
                 parent_row = connection.execute(
-                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, anchor_material_id "
+                    "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
+                    "anchor_material_id, tolerance_g "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -91,6 +95,15 @@ def build_router() -> APIRouter:
                             totals = [float(parent_row["base_total"])]
                     if parent_row["anchor_material_id"] is not None:
                         inherited_anchor_material_id = int(parent_row["anchor_material_id"])
+                    if parent_row["tolerance_g"] is not None:
+                        try:
+                            inherited_tolerance_g = float(parent_row["tolerance_g"])
+                        except (TypeError, ValueError):
+                            inherited_tolerance_g = None
+            # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
+            effective_tolerance_g = body.tolerance_g
+            if effective_tolerance_g is None:
+                effective_tolerance_g = inherited_tolerance_g
             # 정수는 '.0' 없이 저장(프리필 표시·비교 편의)
             base_totals_text = (
                 ",".join(str(int(t)) if float(t) == int(t) else str(t) for t in totals[:3])
@@ -144,8 +157,8 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals, anchor_material_id
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id, tolerance_g
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -164,6 +177,7 @@ def build_router() -> APIRouter:
                         inherited_is_dhr,
                         base_totals_text,
                         anchor_material_id,
+                        effective_tolerance_g,
                     ),
                 )
                 recipe_id = cursor.lastrowid

@@ -23,6 +23,8 @@ class ImportRequest(BaseModel):
     base_total: float | None = Field(default=None, gt=0, le=10_000_000)
     # 기준 자재 이름(선택) — 배합 시 먼저 계량할 자재. 임포트 항목 중 정확히 일치하는 이름이어야 함.
     anchor_material: str | None = Field(default=None, max_length=200)
+    # 레시피별 계량 허용 편차(g, 선택) — NULL = 기본값 0.05g. 0 < v <= 1000.
+    tolerance_g: float | None = Field(default=None)
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":
@@ -34,6 +36,8 @@ class ImportRequest(BaseModel):
                 if v not in cleaned:
                     cleaned.append(v)
             self.base_totals = cleaned
+        if self.tolerance_g is not None and not (0 < self.tolerance_g <= 1000):
+            raise ValueError("허용 편차는 0 초과 1000 이하여야 합니다.")
         return self
 
 

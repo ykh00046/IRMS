@@ -164,6 +164,8 @@ def get_recipe_for_blend(
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
             # 기준 자재(방어 처리 후). None 이면 total_amount 기준 기존 동작.
             "anchor_material_id": effective_anchor,
+            # 레시피별 허용 편차(EFFECTIVE). tolerance_g 미지정/무효면 기본값 0.05g.
+            "tolerance_g": recipe_tolerance_g(connection, int(recipe["id"])),
         },
         "base_total": round(base_total, 3),
         "steps": steps,
@@ -503,18 +505,52 @@ def generate_product_lot(
 
 # 자재별 계량 허용 편차(g). 저울(A&D GX-10202M) 실측값 연동 기준 —
 # 각 자재는 |실제-이론| ≤ 0.05g 이어야 하고, 배치 합계 편차는 제한하지 않는다.
+# 레시피별 허용 편차가 도입되었어도 이 값은 기본값(DEFAULT) 으로 남는다 — 다른 모듈이
+# WEIGHING_TOLERANCE_G 를 import 하므로 이름은 보존한다.
 WEIGHING_TOLERANCE_G = 0.05
+DEFAULT_WEIGHING_TOLERANCE_G = WEIGHING_TOLERANCE_G  # 동일 기본값의 가독용 별칭
 
 
-def weighing_tolerance_violations(details: list[dict[str, Any]]) -> list[str]:
-    """허용 편차(±0.05g/자재)를 넘는 자재명 목록. 실제량 미입력(None)은 검사 제외."""
+def recipe_tolerance_g(
+    connection: sqlite3.Connection, recipe_id: int | None
+) -> float:
+    """레시피의 유효 허용 편차(g). recipe_id 가 None 이거나, 레시피에 tolerance_g 이
+    없거나 0 이하이면 기본값(0.05g) 반환. 구버전(컬럼 없음) DB 도 방어적 폴백.
+    """
+    if recipe_id is None:
+        return WEIGHING_TOLERANCE_G
+    try:
+        row = connection.execute(
+            "SELECT tolerance_g FROM recipes WHERE id = ?", (int(recipe_id),)
+        ).fetchone()
+    except sqlite3.OperationalError:  # tolerance_g 컬럼이 없는 구버전/테스트 DB
+        return WEIGHING_TOLERANCE_G
+    if row is None:
+        return WEIGHING_TOLERANCE_G
+    try:
+        value = float(row["tolerance_g"]) if row["tolerance_g"] is not None else None
+    except (TypeError, ValueError):
+        return WEIGHING_TOLERANCE_G
+    if value is None or value <= 0:
+        return WEIGHING_TOLERANCE_G
+    return value
+
+
+def weighing_tolerance_violations(
+    details: list[dict[str, Any]], tolerance_g: float | None = None
+) -> list[str]:
+    """허용 편차를 넘는 자재명 목록. 실제량 미입력(None)은 검사 제외.
+
+    tolerance_g 미지정(None) 시 기본값(0.05g) 사용 — 단일 인수 호출은 기존 동작 보존.
+    """
+    tol = WEIGHING_TOLERANCE_G if tolerance_g is None else float(tolerance_g)
     offenders: list[str] = []
     for d in details:
         theory = _opt_num(d.get("theory_amount"))
         actual = _opt_num(d.get("actual_amount"))
         if theory is None or actual is None:
             continue
-        if abs(actual - theory) > WEIGHING_TOLERANCE_G + 1e-9:
+        if abs(actual - theory) > tol + 1e-9:
             offenders.append(str(d.get("material_name") or "?"))
     return offenders
 

@@ -72,6 +72,8 @@
 
     // 기준 자재 패널 렌더 — 선택한 레시피 상세를 가져와 현재 기준 자재를 표시하고,
     // 책임자면 자재 select + 저장 버튼으로 PUT /api/recipes/{id}/anchor 를 호출한다.
+    // 두 번째 줄로 허용 편차(tolerance_g) 표시 + (책임자) 숫자 입력·저장 버튼을
+    // 함께 그린다(PUT /api/recipes/{id}/tolerance).
     async function renderAnchorPanel(recipeId) {
       const wrap = dom.lookupAnchor;
       if (!wrap) return;
@@ -99,14 +101,29 @@
           ? `<select id="lookup-anchor-select" class="input">${options}</select>` +
             `<button id="lookup-anchor-save" class="btn" type="button">저장</button>`
           : "";
+        // 허용 편차 줄 — 현재 값 표시 + (책임자) 숫자 입력·저장. 미지정 시 기본 0.05g.
+        const tolCurrent = detail.tolerance_g != null ? Number(detail.tolerance_g) : null;
+        const tolCurrentText = tolCurrent != null && Number.isFinite(tolCurrent)
+          ? `±${IRMS.escapeHtml(String(tolCurrent))} g`
+          : '<span class="muted">기본 ±0.05 g</span>';
+        const tolEditor = canManage
+          ? `<input id="lookup-tolerance-input" class="input" type="number" step="0.01" min="0" `
+            + `placeholder="선택 · 비우면 기본 0.05" value="${tolCurrent != null && Number.isFinite(tolCurrent) ? IRMS.escapeHtml(String(tolCurrent)) : ""}" />`
+            + `<button id="lookup-tolerance-save" class="btn" type="button">저장</button>`
+          : "";
         wrap.innerHTML =
           `<label class="filter-label" for="lookup-anchor-select">기준 자재</label>` +
           `<span class="muted">현재:</span><span id="lookup-anchor-current">${currentText}</span>` +
-          editor;
+          editor +
+          `<label class="filter-label" for="lookup-tolerance-input">허용 편차</label>` +
+          `<span class="muted">현재:</span><span id="lookup-tolerance-current">${tolCurrentText}</span>` +
+          tolEditor;
         wrap.hidden = false;
         if (canManage) {
           const saveBtn = document.getElementById("lookup-anchor-save");
           if (saveBtn) saveBtn.addEventListener("click", () => handleSaveAnchor(recipeId));
+          const tolSaveBtn = document.getElementById("lookup-tolerance-save");
+          if (tolSaveBtn) tolSaveBtn.addEventListener("click", () => handleSaveTolerance(recipeId));
         }
       } catch (error) {
         wrap.hidden = false;
@@ -172,6 +189,67 @@
         );
       } catch (error) {
         IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    // 허용 편차 저장 — 빈 입력은 null(기본값으로 되돌리기), 숫자면 PUT /api/recipes/{id}/tolerance.
+    // 기준 자재 저장(handleSaveAnchor) 과 동일하게 x-csrftoken 헤더를 직접 부착한다
+    // (IRMS.request 가 이 화면 컨트롤러에 노출되지 않으므로 직접 fetch).
+    async function handleSaveTolerance(recipeId) {
+      const input = document.getElementById("lookup-tolerance-input");
+      const saveBtn = document.getElementById("lookup-tolerance-save");
+      if (!input) return;
+      const raw = (input.value || "").trim();
+      let toleranceG = null;
+      let label;
+      if (raw !== "") {
+        const v = Number(raw);
+        if (!Number.isFinite(v) || !(v > 0)) {
+          IRMS.notify("허용 편차는 0 초과 숫자여야 합니다. (비우면 기본 0.05g)", "error");
+          return;
+        }
+        toleranceG = v;
+        label = `±${v} g`;
+      } else {
+        label = '<span class="muted">기본 ±0.05 g</span>';
+      }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/tolerance`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ tolerance_g: toleranceG }),
+        });
+        if (!resp.ok) {
+          let detail = "";
+          try {
+            const payload = await resp.json();
+            const d = payload && payload.detail;
+            detail = d && typeof d === "object" && d.message ? d.message
+              : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+          } catch (_e) {
+            detail = await resp.text().catch(() => `Request failed (${resp.status})`);
+          }
+          throw new Error(String(detail || `Request failed (${resp.status})`));
+        }
+        await resp.json();
+        // 성공 — 현재 값 표시 갱신
+        const cur = document.getElementById("lookup-tolerance-current");
+        if (cur) cur.innerHTML = label;
+        IRMS.notify(
+          toleranceG != null
+            ? `허용 편차를 ±${toleranceG} g 으로 지정했습니다.`
+            : "허용 편차를 기본값(±0.05 g)으로 되돌렸습니다.",
+          "success",
+        );
+      } catch (error) {
+        IRMS.notify(`허용 편차 저장 실패: ${error.message}`, "error");
       } finally {
         if (saveBtn) IRMS.btnLoading(saveBtn, false);
       }

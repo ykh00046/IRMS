@@ -48,6 +48,10 @@
                   title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
                   <option value="">없음</option>
                 </select>
+                <label class="filter-label inline-label" for="imp-tolerance">허용 편차 (g)</label>
+                <input id="imp-tolerance" class="input" type="number" step="0.01" min="0"
+                  placeholder="선택 · 비우면 기본 0.05"
+                  title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
                 <button id="preview-btn" class="btn accent">검증</button>
                 <button id="register-btn" class="btn success" disabled>등록</button>
                 <button id="clear-btn" class="btn">초기화</button>
@@ -213,10 +217,10 @@
     <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js?v=20260624a"></script>
     <!-- management modules: 5 factories (order-free) → controller last -->
     <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260712b"></script>
-    <script src="/static/js/management/import-validate.js?v=20260712b"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260713a"></script>
+    <script src="/static/js/management/import-validate.js?v=20260713a"></script>
     <script src="/static/js/management/recipe-history.js?v=20260703a"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260712b"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260713a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
     <script src="/static/js/management.js?v=20260712b"></script>
 {% endblock %}

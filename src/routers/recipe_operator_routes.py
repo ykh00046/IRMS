@@ -202,7 +202,8 @@ def build_router() -> APIRouter:
                        r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr,
                        r.base_total, r.base_totals,
                        r.anchor_material_id,
-                       am.name AS anchor_material_name
+                       am.name AS anchor_material_name,
+                       r.tolerance_g
                 FROM recipes r
                 LEFT JOIN materials am ON am.id = r.anchor_material_id
                 WHERE r.id = ?

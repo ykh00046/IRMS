@@ -122,4 +122,60 @@ def build_router() -> APIRouter:
             "anchor_material_id": material_id,
         }
 
+    @router.put("/recipes/{recipe_id}/tolerance")
+    def set_recipe_tolerance(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피의 계량 허용 편차(tolerance_g) 지정/해제 — 책임자 전용.
+
+        body: {"tolerance_g": float | None}. None 이면 기준값(0.05g) 으로 되돌림(clear).
+        값은 0 < v <= 1000 이어야 한다. recipe_anchor_set 와 동일한 헬퍼/패턴 사용.
+        """
+        raw = body.get("tolerance_g")
+        tolerance_g: float | None
+        if raw is None:
+            tolerance_g = None
+        else:
+            try:
+                tolerance_g = float(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400, detail="tolerance_g 는 숫자 또는 null 이어야 합니다."
+                )
+            if not (0 < tolerance_g <= 1000):
+                raise HTTPException(
+                    status_code=400,
+                    detail="허용 편차는 0 초과 1000 이하여야 합니다.",
+                )
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            connection.execute(
+                "UPDATE recipes SET tolerance_g = ? WHERE id = ?",
+                (tolerance_g, recipe_id),
+            )
+            write_audit_log(
+                connection,
+                action="recipe_tolerance_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"tolerance_g": tolerance_g},
+            )
+            connection.commit()
+
+        return {
+            "status": "ok",
+            "recipe_id": recipe_id,
+            "tolerance_g": tolerance_g,
+        }
+
     return router

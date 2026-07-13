@@ -43,7 +43,7 @@
 
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", _anchorRecomputing: false };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
   const SCALE_URL = "http://127.0.0.1:8787";
@@ -317,6 +317,10 @@
     if (id === prevId) return;
     const data = await request(`/blend/recipes/${id}`);
     state.current = data;
+    // 레시피별 허용 편차(EFFECTIVE) 보존 — 레시피에 tolerance_g 이 없으면 기본값(0.05).
+    // 모든 편차 검사·표시는 이 값을 따른다(레시피가 바뀌면 같이 갱신).
+    state.toleranceG = (state.current.recipe && state.current.recipe.tolerance_g) || TOLERANCE_G;
+    renderToleranceLabel();
     // value_weight(기준 자재 이론량 산출용)·is_anchor(기준 자재 여부) 보존.
     state.items = data.items.map((it) => ({
       ...it, actual_amount: "", material_lot: "",
@@ -370,6 +374,16 @@
     if (!values.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
     wrap.innerHTML = baseTotalLinksHtml(values);
     wrap.hidden = false;
+  }
+
+  // 허용 편차 라벨 — 자재 표 위에 현재 적용 중인 레시피 편차를 음소거 라벨로 표시.
+  // 레시피가 없거나 기본값이면 0.05g 표시(기존 동작과 동일한 수치).
+  function renderToleranceLabel() {
+    const el = $("blend-tolerance-label");
+    if (!el) return;
+    const tol = Number.isFinite(Number(state.toleranceG)) && Number(state.toleranceG) > 0
+      ? Number(state.toleranceG) : TOLERANCE_G;
+    el.textContent = `허용 편차 ±${fmt(tol, 2)} g`;
   }
 
   // 반응기 진행 반제품(레시피)일 때만 배합 설정에 반응기 선택을 노출한다.
@@ -450,7 +464,7 @@
         updateTotals();
       })
     );
-    // 실제량 입력 완료(blur) 시 허용 편차(±0.05g) 초과면 경고
+    // 실제량 입력 완료(blur) 시 허용 편차(±state.toleranceG g) 초과면 경고
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("change", () => warnIfVariance(Number(el.dataset.idx)))
     );
@@ -492,7 +506,7 @@
     const it = state.items[i];
     const cell = document.querySelector(`.blend-var[data-idx="${i}"]`);
     if (!cell) return;
-    const display = varianceDisplay(it);
+    const display = varianceDisplay(it, state.toleranceG);
     cell.textContent = display.text;
     cell.className = display.className;
     // 기준 자재 행의 실측값 변경(손입력·저울 PRINT 공통) → 이론량·총량 재산출 트리거.
@@ -565,8 +579,9 @@
   function warnIfVariance(i) {
     const it = state.items[i];
     const v = rowVariance(it);
-    if (Math.abs(v) > TOLERANCE_G + 1e-9) {
-      notify(varianceWarnMessage(it, v), "error");
+    const tol = state.toleranceG;
+    if (Math.abs(v) > tol + 1e-9) {
+      notify(varianceWarnMessage(it, v, tol), "error");
       return true;
     }
     return false;
@@ -624,16 +639,18 @@
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
     if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
-    // 자재별 허용 편차 ±0.05g — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음).
-    // 기준 자재는 편차 검사에서 제외(이론=실측이므로 편차가 무의미).
+    // 자재별 허용 편차 — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음).
+    // 편차는 레시피에서 결정(state.toleranceG). 기준 자재는 편차 검사에서 제외
+    // (이론=실측이므로 편차가 무의미).
     const ai = state.anchorIndex;
+    const tol = state.toleranceG;
     const bad = state.items.filter((it, i) =>
-      i !== ai && Math.abs(rowVariance(it)) > TOLERANCE_G + 1e-9
+      i !== ai && Math.abs(rowVariance(it)) > tol + 1e-9
     );
     if (bad.length) {
-      err.textContent = varianceBlockMessage(badVarianceNames(bad));
+      err.textContent = varianceBlockMessage(badVarianceNames(bad), tol);
       err.hidden = false;
-      notify(`허용 편차 ±${TOLERANCE_G}g 초과 — 저장할 수 없습니다.`, "error");
+      notify(`허용 편차 ±${fmt(tol, 2)}g 초과 — 저장할 수 없습니다.`, "error");
       return;
     }
     // 반응기 진행 반제품은 반응기(1~4) 지정 필수.
@@ -786,6 +803,7 @@
     // 경로로 모드 결정: /blend/bulk = 일괄 생성, 그 외 = 배합 입력
     setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");
     updateInputGuide();
+    renderToleranceLabel();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.

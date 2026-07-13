@@ -10,10 +10,14 @@
  * Exports (window.IRMS.blendLib):
  *   esc, TOLERANCE_G, ANCHOR_BADGE, fmt, todayISO, nowTime, rowVariance,
  *   baseTotalValues, materialRowHtml, baseTotalLinksHtml, bulkRowHtml,
- *   computeTotals, computeTheoryAmount, varianceDisplay,
- *   varianceWarnMessage, badVarianceNames, varianceBlockMessage,
+ *   computeTotals, computeTheoryAmount,
+ *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
+ *   badVarianceNames(bad), varianceBlockMessage(names, toleranceG?),
  *   option, stepRowsHtml, lotFallbackText,
  *   findAnchorIndex, computeAnchorTheory
+ *
+ * variance* 헬퍼는 레시피별 허용 편차(toleranceG) 를 인자로 받는다. 미지정 시
+ * 기본값 TOLERANCE_G(0.05) 로 폴백 — 레시피 편차가 없는 기존 동작 보존.
  *
  * Side effects: none (window.IRMS.blendLib 에 부착만).
  * Dependencies: window.IRMS namespace (common/core.js 초기화).
@@ -152,7 +156,7 @@
     return { theoryAmounts: out, total: Math.round(total * 100) / 100 };
   }
 
-  function varianceDisplay(it) {
+  function varianceDisplay(it, toleranceG) {
     // 기준 자재 행은 편차 계량에서 제외 — 항상 '-' 표시(이론=실측이므로 편차 무의미).
     if (it && it.is_anchor) {
       return { text: "-", className: "num blend-var" };
@@ -161,17 +165,21 @@
     if (actual === null || it.theory_amount === null) {
       return { text: "-", className: "num blend-var" };
     }
+    const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
+      ? Number(toleranceG) : TOLERANCE_G;
     const v = Math.round((actual - it.theory_amount) * 1000) / 1000;
     return {
       text: (v > 0 ? "+" : "") + fmt(v, 2),
-      // 허용 편차(±0.05g) 이내면 정상 표시, 초과 시에만 색으로 경고
-      className: "num blend-var " + (Math.abs(v) <= TOLERANCE_G + 1e-9 ? "" : v > 0 ? "var-up" : "var-down"),
+      // 허용 편차(±tol g) 이내면 정상 표시, 초과 시에만 색으로 경고
+      className: "num blend-var " + (Math.abs(v) <= tol + 1e-9 ? "" : v > 0 ? "var-up" : "var-down"),
     };
   }
 
-  function varianceWarnMessage(it, v) {
+  function varianceWarnMessage(it, v, toleranceG) {
+    const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
+      ? Number(toleranceG) : TOLERANCE_G;
     return `허용 편차 초과: ${it.material_name} — 이론 ${fmt(it.theory_amount)} / 실제 ${fmt(it.actual_amount)} `
-      + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${TOLERANCE_G}g). 다시 계량하세요.`;
+      + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${tol}g). 다시 계량하세요.`;
   }
 
   function badVarianceNames(bad) {
@@ -181,8 +189,10 @@
     }).join(", ");
   }
 
-  function varianceBlockMessage(names) {
-    return `허용 편차(±${TOLERANCE_G}g)를 초과해 저장할 수 없습니다: ${names}. 해당 자재를 다시 계량하세요.`;
+  function varianceBlockMessage(names, toleranceG) {
+    const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
+      ? Number(toleranceG) : TOLERANCE_G;
+    return `허용 편차(±${tol}g)를 초과해 저장할 수 없습니다: ${names}. 해당 자재를 다시 계량하세요.`;
   }
 
   function option(value, label) {

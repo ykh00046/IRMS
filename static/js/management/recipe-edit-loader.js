@@ -99,6 +99,13 @@
           uniq.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("");
         anchorSel.value = detail.anchor_material_name || "";
       }
+      // 허용 편차 프리필 — 수정 등록 시 부모의 tolerance_g 를 미리 채운다.
+      // (서버는 tolerance_g 미지정 시 부모 값을 자동 승계하므로, 빈 칸으로 두면 기본값
+      // 또는 부모 승계로 처리된다. 사용자가 명시한 값이 있으면 그것을 우선.)
+      const toleranceEl = document.getElementById("imp-tolerance");
+      if (toleranceEl) {
+        toleranceEl.value = detail.tolerance_g != null ? String(detail.tolerance_g) : "";
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

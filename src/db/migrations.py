@@ -125,6 +125,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 이 자재의 실측 중량을 기준으로 다른 자재들의 이론량을 산출(total_amount 기준 대신).
     # 미지정 시 기존처럼 총량(total_amount) 기준. recipe_items.material_id 중 하나.
     ensure_column(connection, "recipes", "anchor_material_id", "INTEGER")
+    # 레시피별 계량 허용 편차(g). NULL = 기본값 0.05g 사용(하위호환 — 기존 레시피 동작 불변).
+    ensure_column(connection, "recipes", "tolerance_g", "REAL")
 
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고

@@ -363,14 +363,16 @@ def build_router() -> APIRouter:
         # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
-        # 자재별 허용 편차(±0.05g) 검사 — 합계 편차는 제한 없음.
+        # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
+        # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
+        tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
-            [d.model_dump() for d in body.details]
+            [d.model_dump() for d in body.details], tolerance_g=tolerance
         )
         if offenders:
             raise HTTPException(
                 status_code=400,
-                detail=f"허용 편차(±{blend_service.WEIGHING_TOLERANCE_G}g)를 초과한 자재: "
+                detail=f"허용 편차(±{tolerance}g)를 초과한 자재: "
                 + ", ".join(offenders),
             )
         worker = require_blend_worker(request)
@@ -434,13 +436,15 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        # 자재별 허용 편차 — 편차는 레시피(recipe_id) 에서 결정. 없으면 기본값 0.05g.
+        tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
-            [d.model_dump() for d in body.details]
+            [d.model_dump() for d in body.details], tolerance_g=tolerance
         )
         if offenders:
             raise HTTPException(
                 status_code=400,
-                detail=f"허용 편차(±{blend_service.WEIGHING_TOLERANCE_G}g)를 초과한 자재: "
+                detail=f"허용 편차(±{tolerance}g)를 초과한 자재: "
                 + ", ".join(offenders),
             )
         current_user = get_current_user(request, required=False)

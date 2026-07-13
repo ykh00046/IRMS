@@ -156,9 +156,17 @@
         // (CSRF 토큰은 core.js 의 request 패턴과 동일하게 x-csrftoken 헤더로 직접 부착).
         const anchorEl = document.getElementById("imp-anchor");
         const anchorMaterial = anchorEl ? anchorEl.value.trim() : "";
+        // 허용 편차(tolerance_g): 값이 있을 때만 본문에 포함. 빈 값은 서버 기본값(0.05)
+        // 또는 수정 등록 시 부모 승계. 레시피 편차가 있든 없든 기준 자재 POST 경로와
+        // 동일한 본문을 쓴다(anchor 가 없는 경로로 분기되더라도 tolerance_g 만 있으면
+        // 직접 POST 경로를 탄다 — 검증 일관성).
+        const toleranceEl = document.getElementById("imp-tolerance");
+        const toleranceRaw = toleranceEl ? toleranceEl.value.trim() : "";
+        const toleranceG = toleranceRaw ? Number(toleranceRaw) : null;
+        const hasTolerance = toleranceG != null && Number.isFinite(toleranceG) && toleranceG > 0;
         let result;
-        if (anchorMaterial) {
-          result = await importWithAnchor(baseTotals, anchorMaterial);
+        if (anchorMaterial || hasTolerance) {
+          result = await importWithAnchor(baseTotals, anchorMaterial, hasTolerance ? toleranceG : null);
         } else {
           result = await IRMS.importRecipes(
             state.confirmedRawText, "레시피 관리",
@@ -178,9 +186,9 @@
       }
     }
 
-    // 기준 자재를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착 패턴으로
-    // /api/recipes/import 에 직접 POST 한다.
-    async function importWithAnchor(baseTotals, anchorMaterial) {
+    // 기준 자재·허용 편차를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
+    // 패턴으로 /api/recipes/import 에 직접 POST 한다.
+    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG) {
       const body = {
         raw_text: state.confirmedRawText,
         created_by: "레시피 관리",
@@ -191,7 +199,13 @@
       if (Array.isArray(baseTotals) && baseTotals.length) {
         body.base_totals = baseTotals.slice(0, 3);
       }
-      body.anchor_material = anchorMaterial;
+      if (anchorMaterial) {
+        body.anchor_material = anchorMaterial;
+      }
+      // tolerance_g: 숫자 값만 전송(null 은 미지정과 동일 — 보내지 않음).
+      if (toleranceG != null && Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0) {
+        body.tolerance_g = Number(toleranceG);
+      }
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
       if (token) headers["x-csrftoken"] = token;
@@ -227,6 +241,11 @@
       const anchorEl = document.getElementById("imp-anchor");
       if (anchorEl) {
         anchorEl.innerHTML = '<option value="">없음</option>';
+      }
+      // 허용 편차 입력도 초기화 — 수정 등록 프리필 값이 다음 신규 등록에 남지 않게.
+      const toleranceEl = document.getElementById("imp-tolerance");
+      if (toleranceEl) {
+        toleranceEl.value = "";
       }
       if (ctx.recipeEditLoader) {
         ctx.recipeEditLoader.clearRevisionBanner();
