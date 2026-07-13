@@ -288,8 +288,13 @@ def load_config() -> dict:
         path.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
         return dict(DEFAULT_CONFIG)
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        # utf-8-sig: 메모장이 저장한 BOM(EF BB BF)을 허용한다. utf-8 로 읽으면 BOM 이
+        # 남아 json 파싱이 깨지고, 조용히 기본값(protocol="and", port=None)으로 되돌아가
+        # "설정을 고쳤는데 반영이 안 된다"로 나타난다(2026-07-13 현장 사고).
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, OSError) as exc:
+        # 조용히 기본값으로 떨어지지 않도록 원인을 남긴다.
+        log(f"config.json 을 읽지 못해 기본 설정으로 실행합니다 — {exc}")
         return dict(DEFAULT_CONFIG)
     merged = dict(DEFAULT_CONFIG)
     known = set(DEFAULT_CONFIG) | {"scales"}

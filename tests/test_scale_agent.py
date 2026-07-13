@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
+from scale_agent import agent as scale_agent_module
 from scale_agent.agent import (
     EventBus,
     Scale,
+    load_config,
     parse_frame,
     resolve_comm,
     scale_entries,
@@ -312,3 +316,34 @@ def test_cas_passive_gives_up_after_persistent_denial(monkeypatch):
     scale = _make_cas_scale(monkeypatch, deny=99)
     assert scale.connect() is None
     assert scale._serial is None
+
+
+# ── config.json 인코딩 ──────────────────────────────────────────
+def _write_config(tmp_path, monkeypatch, text: str, encoding: str):
+    path = tmp_path / "config.json"
+    path.write_text(text, encoding=encoding)
+    monkeypatch.setattr(scale_agent_module, "config_path", lambda: path)
+    return path
+
+
+CONFIG_TEXT = json.dumps(
+    {"http_port": 8787, "scales": [{"name": "CAS-CBX", "protocol": "cas", "port": "COM3"}]}
+)
+
+
+def test_load_config_accepts_bom(tmp_path, monkeypatch):
+    """메모장이 붙인 BOM(utf-8-sig)이 있어도 설정이 살아있어야 한다.
+
+    BOM 때문에 파싱이 깨지면 조용히 기본값(protocol='and', port=None)으로 떨어져
+    "cas 로 바꿨는데 로그엔 [and]" 사고가 난다(2026-07-13 현장).
+    """
+    _write_config(tmp_path, monkeypatch, CONFIG_TEXT, "utf-8-sig")
+    entries = scale_entries(load_config())
+    assert [e["protocol"] for e in entries] == ["cas"]
+    assert [e["port"] for e in entries] == ["COM3"]
+
+
+def test_load_config_plain_utf8(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch, CONFIG_TEXT, "utf-8")
+    entries = scale_entries(load_config())
+    assert entries[0]["protocol"] == "cas"
