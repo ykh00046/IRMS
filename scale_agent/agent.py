@@ -406,6 +406,8 @@ class Scale:
         self._unparsed_logged = 0
         self._dropped_logged = 0
         self._rx_buffer = b""
+        self._rx_last = 0.0
+        self._rx_total = 0  # 연결 후 수신한 총 바이트 — /health 진단(0 이면 케이블/설정 문제)
         # 질의 대기자
         self._expect_q = False
         self._q_result: dict | None = None
@@ -697,9 +699,11 @@ class Scale:
         직접 버퍼링해 \\r 또는 \\n 어느 쪽이든 줄 끝으로 인정한다.
         """
         chunk = ser.read(max(1, getattr(ser, "in_waiting", 0) or 1))
-        if not chunk:
-            return []
-        self._rx_buffer += chunk
+        now = time.time()
+        if chunk:
+            self._rx_buffer += chunk
+            self._rx_last = now
+            self._rx_total += len(chunk)
         lines: list[bytes] = []
         while True:
             idx = min(
@@ -711,8 +715,13 @@ class Scale:
             line, self._rx_buffer = self._rx_buffer[:idx], self._rx_buffer[idx + 1:]
             if line.strip():
                 lines.append(line)
-        # 딜리미터 없이 보내는 저울 대비 — 버퍼가 과도하게 크면 통째로 한 줄 취급
-        if len(self._rx_buffer) > 120:
+        # 딜리미터가 없거나(설정 오류) 통신값이 안 맞아 CR/LF 가 안 나오는 경우 대비 —
+        # 수신이 잠시 멎으면(1.5초) 버퍼에 남은 것을 한 줄로 취급해 흘려보낸다.
+        # 이렇게 해야 "바이트는 오는데 로그에 아무것도 안 남는" 상태가 생기지 않는다.
+        if self._rx_buffer and (now - self._rx_last) > 1.5:
+            lines.append(self._rx_buffer)
+            self._rx_buffer = b""
+        elif len(self._rx_buffer) > 120:
             lines.append(self._rx_buffer)
             self._rx_buffer = b""
         return lines
@@ -804,7 +813,12 @@ def build_handler(scales: list, bus: EventBus):
                 self._send(200, {
                     "ok": any(s.port is not None for s in scales),
                     "scales": [
-                        {"name": s.name, "port": s.port, "yielding": s.yielding}
+                        {
+                            "name": s.name, "port": s.port, "yielding": s.yielding,
+                            # 연결 후 이 포트로 실제 들어온 바이트 수. 포트는 열렸는데
+                            # 0 이면 저울이 아무것도 안 보내는 것(케이블·통신 설정 문제).
+                            "rx_bytes": s._rx_total,
+                        }
                         for s in scales
                     ],
                 })
