@@ -404,6 +404,8 @@ class Scale:
         self._conn_error_logged = False
         # 리더가 해석 못 한 수신 라인 로깅 횟수(세션당 상한)
         self._unparsed_logged = 0
+        self._dropped_logged = 0
+        self._rx_buffer = b""
         # 질의 대기자
         self._expect_q = False
         self._q_result: dict | None = None
@@ -687,6 +689,34 @@ class Scale:
         if frame.get("stable") and not frame.get("overload"):
             self._bus.push(frame, self.name)
 
+    def _read_lines(self, ser) -> list[bytes]:
+        """CR·LF·CRLF 어느 딜리미터로도 줄을 자른다.
+
+        pyserial 의 readline() 은 LF 만 기준으로 잘라, CR 만 보내는 저울
+        (시마즈 EB 기본 딜리미터 = CR)에서는 줄이 완성되지 않는다.
+        직접 버퍼링해 \\r 또는 \\n 어느 쪽이든 줄 끝으로 인정한다.
+        """
+        chunk = ser.read(max(1, getattr(ser, "in_waiting", 0) or 1))
+        if not chunk:
+            return []
+        self._rx_buffer += chunk
+        lines: list[bytes] = []
+        while True:
+            idx = min(
+                (i for i in (self._rx_buffer.find(b"\r"), self._rx_buffer.find(b"\n")) if i >= 0),
+                default=-1,
+            )
+            if idx < 0:
+                break
+            line, self._rx_buffer = self._rx_buffer[:idx], self._rx_buffer[idx + 1:]
+            if line.strip():
+                lines.append(line)
+        # 딜리미터 없이 보내는 저울 대비 — 버퍼가 과도하게 크면 통째로 한 줄 취급
+        if len(self._rx_buffer) > 120:
+            lines.append(self._rx_buffer)
+            self._rx_buffer = b""
+        return lines
+
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
             ser = self._serial
@@ -698,19 +728,29 @@ class Scale:
                     self.connect()
                 continue
             try:
-                line = ser.readline()
+                lines = self._read_lines(ser)
             except Exception:  # noqa: BLE001 - 케이블 분리 등
                 self._drop_connection()
                 continue
-            if not line:
-                continue
-            frame = parse_frame(line, self._protocol)
-            if frame:
-                self._handle_frame(frame)
-            elif self._unparsed_logged < 6 and line.strip():
+            for line in lines:
+                self._consume_line(line)
+
+    def _consume_line(self, line: bytes) -> None:
+        frame = parse_frame(line, self._protocol)
+        if frame is None:
+            if self._unparsed_logged < 6:
                 # 해석 못 한 수신(인쇄 템플릿 등) 원본을 남겨 파서 보강 근거로.
                 self._unparsed_logged += 1
                 log(f"[{self.name}] 수신(해석 불가): {bytes(line)!r}")
+            return
+        # 해석은 됐지만 버려지는 경우(불안정·과부하)도 조용히 넘기지 않는다 —
+        # "PRINT 를 눌러도 값이 안 넘어온다"의 원인이 여기인 경우가 있다.
+        if not self._expect_q and (not frame.get("stable") or frame.get("overload")):
+            if self._dropped_logged < 6:
+                self._dropped_logged += 1
+                reason = "과부하" if frame.get("overload") else "불안정(U) 표시"
+                log(f"[{self.name}] 수신했지만 사용하지 않음 — {reason}: {bytes(line)!r}")
+        self._handle_frame(frame)
 
     def close(self) -> None:
         """리더/양보 스레드를 멈추고 포트를 반납한다(통합 앱에서 저울 끄기 시 사용)."""

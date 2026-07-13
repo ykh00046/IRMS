@@ -347,3 +347,55 @@ def test_load_config_plain_utf8(tmp_path, monkeypatch):
     _write_config(tmp_path, monkeypatch, CONFIG_TEXT, "utf-8")
     entries = scale_entries(load_config())
     assert entries[0]["protocol"] == "cas"
+
+
+# ── 수신 리더: CR/LF 딜리미터 ────────────────────────────────────
+class _CRSerial:
+    """CR 만 보내는 저울(시마즈 EB 기본 딜리미터) 모사."""
+
+    def __init__(self, payload: bytes):
+        self._data = payload
+        self.in_waiting = len(payload)
+
+    def read(self, n: int) -> bytes:
+        chunk, self._data = self._data[:n], self._data[n:]
+        self.in_waiting = len(self._data)
+        return chunk
+
+
+def _cas_scale_for_read():
+    bus = EventBus()
+    return Scale({"name": "CAS-CBX", "protocol": "cas", "port": "COM3"}, bus, set()), bus
+
+
+def test_reader_splits_on_cr_only():
+    """CR 만 오는 저울에서도 줄이 완성돼 PRINT 값이 이벤트로 올라간다.
+
+    pyserial readline() 은 LF 만 자르므로 예전엔 값이 넘어오지 않았다(2026-07-13 현장).
+    """
+    scale, bus = _cas_scale_for_read()
+    ser = _CRSerial(b"S  123.45g\rS  -18.60g\r")
+    for line in scale._read_lines(ser):
+        scale._consume_line(line)
+    items, _ = bus.after(0)
+    assert [e["value"] for e in items] == [123.45, -18.6]
+
+
+def test_reader_splits_on_crlf_and_lf():
+    scale, bus = _cas_scale_for_read()
+    ser = _CRSerial(b"S  10.00g\r\nS  20.00g\n")
+    for line in scale._read_lines(ser):
+        scale._consume_line(line)
+    items, _ = bus.after(0)
+    assert [e["value"] for e in items] == [10.0, 20.0]
+
+
+def test_unstable_frame_is_logged_and_not_pushed(monkeypatch):
+    """불안정(U) 프레임은 이벤트로 올리지 않되, 조용히 버리지 않고 로그에 남긴다."""
+    logged: list[str] = []
+    monkeypatch.setattr(scale_agent_module, "log", lambda m: logged.append(m))
+    scale, bus = _cas_scale_for_read()
+    scale._consume_line(b"U  123.45g")
+    items, _ = bus.after(0)
+    assert items == []
+    assert any("사용하지 않음" in m for m in logged)
