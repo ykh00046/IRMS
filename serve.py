@@ -32,6 +32,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+BACKUPS_DIR = ROOT / "backups"
 PORT = os.environ.get("IRMS_PORT", "9000")
 INTERVAL = max(30, int(os.environ.get("IRMS_AUTO_INTERVAL", "600")))
 AUTO = os.environ.get("IRMS_AUTO_UPDATE", "1") != "0"
@@ -110,9 +111,8 @@ def backup_db() -> None:
     db = _db_path()
     if not db.exists():
         return
-    backups = ROOT / "backups"
-    backups.mkdir(exist_ok=True)
-    dest = backups / f"irms_{datetime.now():%Y%m%d_%H%M%S}.db"
+    BACKUPS_DIR.mkdir(exist_ok=True)
+    dest = BACKUPS_DIR / f"irms_{datetime.now():%Y%m%d_%H%M%S}.db"
     try:
         src = sqlite3.connect(str(db))
         dst = sqlite3.connect(str(dest))
@@ -131,8 +131,50 @@ def backup_db() -> None:
         except Exception as exc2:  # noqa: BLE001
             log(f"DB 백업 실패(계속 진행): {exc2}")
             return
-    _mirror_backup(dest)
+    # 생성 직후 검증 — 통과 시 미러·정상 prune 대상, 실패 시 .corrupt 로 격리.
+    if _verify_backup(dest):
+        _mirror_backup(dest)
+    else:
+        corrupt = dest.with_name(dest.name + ".corrupt")
+        try:
+            dest.rename(corrupt)
+        except Exception as exc:  # noqa: BLE001
+            log(f"손상 백업 격리 실패({dest.name}): {exc}")
+        log(f"[경고] 백업 검증 실패 — 오늘 백업을 신뢰하지 마세요: {corrupt.name}")
     prune_backups()
+
+
+# 검증 대상 핵심 테이블 — 하나라도 없으면 불완전 사본으로 판정 (전부 schema/migrations 확인 완료)
+_VERIFY_TABLES = ("recipes", "recipe_items", "blend_records", "blend_details", "workers", "audit_logs")
+
+
+def _verify_backup(dest: Path) -> bool:
+    """백업 사본 무결성 검증 — 읽기 전용(mode=ro)으로 열어 원본·사본 모두 무수정.
+
+    판정: PRAGMA integrity_check == 'ok' AND 핵심 테이블 전부 존재·COUNT 조회 가능.
+    실패 사본은 호출부(backup_db)가 .corrupt 로 격리한다.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{dest.as_posix()}?mode=ro", uri=True)
+        try:
+            if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                return False
+            counts = {}
+            for table in _VERIFY_TABLES:
+                row = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                ).fetchone()
+                if row is None:
+                    log(f"백업 검증: 핵심 테이블 누락 — {table}")
+                    return False
+                counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            log(f"백업 검증 OK: {dest.name} (blend_records={counts['blend_records']}, recipes={counts['recipes']})")
+            return True
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        log(f"백업 검증 중 오류: {exc}")
+        return False
 
 
 def _mirror_backup(dest: Path) -> None:
@@ -149,11 +191,13 @@ def _mirror_backup(dest: Path) -> None:
 
 
 def prune_backups() -> None:
-    """보존일수를 넘긴 백업 삭제 — 단 최근 BACKUP_KEEP_MIN 개는 항상 보존."""
-    backups = ROOT / "backups"
-    if not backups.exists():
+    """보존일수를 넘긴 백업 삭제 — 단 최근 BACKUP_KEEP_MIN 개는 항상 보존.
+
+    검증 실패로 격리된 `.corrupt` 사본은 원인 분석용으로 최근 2개만 보존한다.
+    """
+    if not BACKUPS_DIR.exists():
         return
-    files = sorted(backups.glob("irms_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(BACKUPS_DIR.glob("irms_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
     cutoff = (datetime.now() - timedelta(days=BACKUP_KEEP_DAYS)).timestamp()
     removed = 0
     for old in files[BACKUP_KEEP_MIN:]:
@@ -163,6 +207,14 @@ def prune_backups() -> None:
                 removed += 1
             except Exception as exc:  # noqa: BLE001
                 log(f"백업 정리 실패({old.name}): {exc}")
+    # 격리 사본은 보존일수와 무관하게 최근 2개만 유지 — 검증 실패 원인 분석용.
+    corrupt = sorted(BACKUPS_DIR.glob("irms_*.db.corrupt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in corrupt[2:]:
+        try:
+            old.unlink()
+            removed += 1
+        except Exception as exc:  # noqa: BLE001
+            log(f"손상 백업 정리 실패({old.name}): {exc}")
     if removed:
         log(f"백업 정리: {removed}개 삭제 (보존 {BACKUP_KEEP_DAYS}일, 최소 {BACKUP_KEEP_MIN}개 유지)")
 

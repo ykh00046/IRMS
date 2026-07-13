@@ -24,39 +24,47 @@ def _load_serve():
     return mod
 
 
+def _seed_core_tables(db_path: Path) -> None:
+    """_VERIFY_TABLES 를 갖춘 유효 원본 DB — 검증 통과를 위해."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE recipes (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE recipe_items (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE blend_records (id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("CREATE TABLE blend_details (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE workers (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE audit_logs (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO blend_records (id, v) VALUES (1, 'hello')")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_backup_db_creates_consistent_copy(tmp_path, monkeypatch):
     serve = _load_serve()
-    # ROOT/DATA_DIR 를 임시 경로로 바꿔 실제 저장소를 건드리지 않는다
-    monkeypatch.setattr(serve, "ROOT", tmp_path)
+    # ROOT/BACKUPS_DIR/DATA_DIR 를 임시 경로로 바꿔 실제 저장소를 건드리지 않는다
+    monkeypatch.setattr(serve, "BACKUPS_DIR", tmp_path / "backups")
     monkeypatch.setattr(serve, "BACKUP_MIRROR", "")
     monkeypatch.setenv("IRMS_DATA_DIR", str(tmp_path / "data"))
-    data = tmp_path / "data"
-    data.mkdir()
-    db = data / "irms.db"
-    conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE t (v TEXT)")
-    conn.execute("INSERT INTO t VALUES ('hello')")
-    conn.commit()
-    conn.close()
+    _seed_core_tables(tmp_path / "data" / "irms.db")
 
     serve.backup_db()
 
     backups = list((tmp_path / "backups").glob("irms_*.db"))
     assert len(backups) == 1
     check = sqlite3.connect(backups[0])
-    assert check.execute("SELECT v FROM t").fetchone()[0] == "hello"
+    assert check.execute("SELECT v FROM blend_records").fetchone()[0] == "hello"
     check.close()
 
 
 def test_backup_mirror_copy(tmp_path, monkeypatch):
     serve = _load_serve()
-    monkeypatch.setattr(serve, "ROOT", tmp_path)
+    monkeypatch.setattr(serve, "BACKUPS_DIR", tmp_path / "backups")
     mirror = tmp_path / "mirror-drive"
     monkeypatch.setattr(serve, "BACKUP_MIRROR", str(mirror))
     monkeypatch.setenv("IRMS_DATA_DIR", str(tmp_path / "data"))
-    data = tmp_path / "data"
-    data.mkdir()
-    sqlite3.connect(data / "irms.db").execute("CREATE TABLE t (v)").connection.close()
+    _seed_core_tables(tmp_path / "data" / "irms.db")
 
     serve.backup_db()
 
@@ -65,7 +73,7 @@ def test_backup_mirror_copy(tmp_path, monkeypatch):
 
 def test_prune_backups_keeps_recent_and_minimum(tmp_path, monkeypatch):
     serve = _load_serve()
-    monkeypatch.setattr(serve, "ROOT", tmp_path)
+    monkeypatch.setattr(serve, "BACKUPS_DIR", tmp_path / "backups")
     monkeypatch.setattr(serve, "BACKUP_KEEP_DAYS", 30)
     monkeypatch.setattr(serve, "BACKUP_KEEP_MIN", 3)
     backups = tmp_path / "backups"
