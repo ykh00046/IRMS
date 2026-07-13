@@ -9,6 +9,14 @@ function loadRecipeEditLoader() {
     setTimeout(fn) {
       fn();
     },
+    // 수정 등록 프리필(기준 배합량·기준 자재·허용 편차)이 DOM 을 조회하므로 최소 스텁 제공.
+    // 실제 값 검증은 브라우저 스모크가 담당하고, 여기선 모듈이 죽지 않는 것만 본다.
+    document: {
+      getElementById() { return null; },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      createElement() { return { value: "", textContent: "", appendChild() {} }; },
+    },
     window: {
       IRMS: {
         escapeHtml(value) {

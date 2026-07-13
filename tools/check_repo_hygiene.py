@@ -11,7 +11,13 @@ CI  : .github/workflows/test.yml 스텝 — 커밋된 오염물 유입 차단.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# Windows 기본 콘솔(cp949)에서 한글·em-dash 출력 시 UnicodeEncodeError 로 죽는다.
+# 검사 도구가 결과를 못 찍고 크래시하면 게이트 의미가 없으므로 출력 인코딩을 고정.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
 
