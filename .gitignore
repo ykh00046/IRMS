@@ -16,6 +16,9 @@ data/*.db-wal
 /*.db
 /*.xlsx
 
+# 사내 실데이터(한글 엑셀 수기 원본) — 루트 이탈로 /*.xlsx 규칙이 커버하지 않으므로 명시
+excel/legacy/
+
 # Auto-generated DB backups (kept locally, never pushed)
 backups/*.db
 

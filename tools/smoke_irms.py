@@ -66,7 +66,7 @@ def smoke_import(check_health: bool) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="IRMS smoke check")
     parser.add_argument("--mode", choices=("development", "production"), default="development")
-    parser.add_argument("--data-dir", default=str(ROOT / "tmp_smoke_runtime"))
+    parser.add_argument("--data-dir", default=str(ROOT / ".tmp-tests" / "smoke_runtime"))
     parser.add_argument("--session-secret")
     parser.add_argument("--seed-demo-data", action="store_true")
     parser.add_argument("--check-health", action="store_true")

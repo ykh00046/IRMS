@@ -23,6 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      - name: Repo hygiene check
+        run: python tools/check_repo_hygiene.py
+
       - name: Run pytest
         env:
           IRMS_ENV: test

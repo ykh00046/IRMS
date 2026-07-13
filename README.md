@@ -85,7 +85,7 @@ python tools/smoke_irms.py --mode development --seed-demo-data
 python tools/smoke_irms.py \
   --mode production \
   --session-secret 'replace-with-real-secret' \
-  --data-dir ./tmp_smoke_runtime \
+  --data-dir ./.tmp-tests/smoke_runtime \
   --check-health \
   --clean
 ```
