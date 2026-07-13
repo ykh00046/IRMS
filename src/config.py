@@ -24,6 +24,10 @@ DATA_DIR = Path(os.getenv("IRMS_DATA_DIR", str(BASE_DIR / "data"))).expanduser()
 DATABASE_PATH = DATA_DIR / "irms.db"
 SESSION_COOKIE_NAME = "irms_session"
 SESSION_MAX_AGE = int(os.getenv("IRMS_SESSION_MAX_AGE", str(60 * 60 * 8)))
+# 책임자(로그인 권한) 세션 유휴 만료. 공용 PC 에서 자리를 뜨면 레시피·기록 삭제,
+# 사용자 관리, 감사로그 권한이 열린 채 방치되므로 짧게 끊는다. 배합 작업자
+# 세션(이름만·무비번)은 계량 중 끊기면 안 되므로 별도 규칙([[blend_session]]).
+MANAGER_IDLE_TIMEOUT_SECONDS = int(os.getenv("IRMS_MANAGER_IDLE_TIMEOUT", str(60 * 15)))
 SESSION_SECRET = os.getenv("IRMS_SESSION_SECRET")
 REQUIRE_SESSION_SECRET = _env_flag("IRMS_REQUIRE_SESSION_SECRET", not IS_DEVELOPMENT)
 SEED_DEMO_DATA = _env_flag("IRMS_SEED_DEMO_DATA", IS_DEVELOPMENT)

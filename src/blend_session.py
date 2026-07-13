@@ -9,8 +9,11 @@ SESSION_KEY = "blend_worker"
 # 이미 정리되고, 배합 기록은 작업자 이름 귀속일 뿐 보안 경계가 아니다. 5분 유휴 만료는
 # 현장에서 저울로 몇 분간 계량하는 동안(로컬 저울 통신이라 서버 요청 없음) 세션이 끊겨
 # 저장 시 작업자 입력 화면으로 튕기고 입력 데이터가 날아가는 문제를 유발했다. 근무 시간
-# 단위(12h)로 늘려 근무 중 재로그인을 없앤다. 실질 상한은 세션 쿠키 max_age(8h).
-IDLE_TIMEOUT_SECONDS = 12 * 60 * 60
+# 단위로 늘려 근무 중 재로그인을 없앤다. 값은 세션 쿠키 수명(config.SESSION_MAX_AGE=8h)과
+# 맞춘다 — 예전엔 12h 였지만 쿠키가 8h 라 도달할 수 없는 숫자였다(오해 소지).
+# 공용 PC 정리는 저장 후 5분 자동 로그아웃(blend.js)이 담당하고, 책임자 권한 세션은
+# 별도로 15분 유휴 만료(config.MANAGER_IDLE_TIMEOUT_SECONDS)를 적용한다.
+IDLE_TIMEOUT_SECONDS = 8 * 60 * 60
 
 
 def _utc_now() -> _dt.datetime:

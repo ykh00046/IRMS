@@ -1,8 +1,10 @@
 import secrets
+import time
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 
+from . import config
 from .db import get_connection
 from .security import verify_password
 
@@ -99,7 +101,11 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
 # 관리(책임자) 인증이 세션에 쓰는 키 — 이것만 지운다. 같은 쿠키 세션을 배합 작업자
 # (blend_session)·근태(att_user)도 쓰므로 session.clear() 를 부르면 책임자
 # 로그인/로그아웃이 현장 작업자 세션까지 끊어버린다(배합 재로그인 요구 증상).
-_AUTH_SESSION_KEYS = ("user_id", "session_token", "mgr_worker_id", "mgr_token")
+_AUTH_SESSION_KEYS = ("user_id", "session_token", "mgr_worker_id", "mgr_token", "auth_seen")
+
+# 유휴 기준 시각을 담는 세션 키. 책임자 요청이 들어올 때마다 갱신되고,
+# MANAGER_IDLE_TIMEOUT_SECONDS 를 넘기면 로그인 세션만 끊는다.
+_AUTH_SEEN_KEY = "auth_seen"
 
 
 def _clear_auth_session(request: Request) -> None:
@@ -107,7 +113,49 @@ def _clear_auth_session(request: Request) -> None:
         request.session.pop(key, None)
 
 
+def _now() -> float:
+    """유휴 판정용 시계 — 전역 time 을 직접 쓰지 않고 여기로 모은다.
+
+    (테스트가 time.time 을 통째로 밀면 세션 쿠키 서명 검증까지 만료돼 버려
+     엉뚱한 401 이 난다. 유휴 로직만 따로 흔들 수 있도록 분리.)
+    """
+    return time.time()
+
+
+def _idle_expired(request: Request) -> bool:
+    """책임자 세션이 유휴 만료됐는지. 기준 시각이 없으면(구 세션) 지금으로 본다.
+
+    배합 화면 하트비트(/api/blend/session/me)는 이 함수를 타지 않으므로,
+    화면만 띄워둔 채 방치하면 정상적으로 만료된다(작업자 세션은 영향 없음).
+    """
+    timeout = int(getattr(config, "MANAGER_IDLE_TIMEOUT_SECONDS", 0) or 0)
+    if timeout <= 0:  # 0 이하 = 유휴 만료 비활성(환경변수로 끌 수 있게)
+        return False
+    seen = request.session.get(_AUTH_SEEN_KEY)
+    if not isinstance(seen, (int, float)):
+        return False
+    return (_now() - float(seen)) > timeout
+
+
+def _touch_auth_session(request: Request) -> None:
+    request.session[_AUTH_SEEN_KEY] = _now()
+
+
+def _expire_idle(request: Request, required: bool) -> None:
+    """유휴 만료 처리 — 로그인 세션만 지우고 401. 작업자·근태 세션은 보존."""
+    _clear_auth_session(request)
+    if required:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTH_REQUIRED")
+
+
 def get_current_user(request: Request, required: bool = True) -> dict[str, Any] | None:
+    # 0) 유휴 만료 검사 — 공용 PC 에서 책임자 권한이 열린 채 방치되는 것을 막는다.
+    #    (로그인 세션이 있을 때만 의미가 있으므로 키 존재 여부부터 확인)
+    has_auth_session = bool(request.session.get("mgr_worker_id") or request.session.get("user_id"))
+    if has_auth_session and _idle_expired(request):
+        _expire_idle(request, required)
+        return None
+
     # 1) 이름 기반 책임자(이용자 명단) 세션
     mgr_worker_id = request.session.get("mgr_worker_id")
     if mgr_worker_id:
@@ -119,6 +167,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
                 (int(mgr_worker_id),),
             ).fetchone()
         if row and row["is_active"] and row["is_manager"] and (token or "") == (row["session_token"] or ""):
+            _touch_auth_session(request)  # 활동 있음 → 유휴 카운트 리셋
             return _worker_to_public(row)
         _clear_auth_session(request)
         if required:
@@ -143,6 +192,7 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
             (int(user_id),),
         ).fetchone()
     if row and (cookie_token or "") == (row["session_token"] or ""):
+        _touch_auth_session(request)  # 활동 있음 → 유휴 카운트 리셋
         return to_public_user(row)
 
     _clear_auth_session(request)
@@ -185,6 +235,7 @@ def login_user(request: Request, user: dict[str, Any]) -> None:
     _clear_auth_session(request)  # 배합 작업자·근태 세션은 보존
     request.session["user_id"] = user["id"]
     request.session["session_token"] = token
+    _touch_auth_session(request)
 
 
 def login_manager_worker(request: Request, worker: dict[str, Any]) -> None:
@@ -199,6 +250,7 @@ def login_manager_worker(request: Request, worker: dict[str, Any]) -> None:
     _clear_auth_session(request)  # 배합 작업자·근태 세션은 보존
     request.session["mgr_worker_id"] = worker["id"]
     request.session["mgr_token"] = token
+    _touch_auth_session(request)
 
 
 def logout_user(request: Request) -> None:
