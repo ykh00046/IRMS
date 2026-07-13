@@ -299,6 +299,11 @@ def load_config() -> dict:
     merged = dict(DEFAULT_CONFIG)
     known = set(DEFAULT_CONFIG) | {"scales"}
     merged.update({k: v for k, v in raw.items() if k in known})
+    # 모르는 키(오타 등)는 조용히 버려진다 — "고쳤는데 반영이 안 된다"의 흔한 원인이라 로그로 알린다.
+    # 예: "scale"(s 빠짐), "Protocol"(대문자) → 기본값(protocol="and")으로 실행됨.
+    unknown = [k for k in raw if k not in known]
+    if unknown:
+        log(f"config.json 의 모르는 항목은 무시했습니다: {', '.join(unknown)} (사용 가능: {', '.join(sorted(known))})")
     return merged
 
 
@@ -322,6 +327,22 @@ def scale_entries(config: dict) -> list[dict]:
     single = {k: config.get(k) for k in ("port", "protocol", "baudrate", "bytesize", "parity", "stopbits", "yield_to", "passive")}
     single["name"] = str(config.get("protocol") or "저울1")
     return [single]
+
+
+def log_applied_config(entries: list[dict]) -> None:
+    """실제로 적용된 저울 설정을 로그에 남긴다 — 설정 파일이 반영됐는지 눈으로 확인하는 용도.
+
+    설정을 고쳐도 (BOM·오타·구조 오류로) 조용히 기본값으로 떨어지는 일이 반복돼,
+    "무엇이 적용됐는지"를 매 시작마다 찍는다.
+    """
+    for e in entries:
+        comm = resolve_comm(e)
+        log(
+            f"설정 적용: 이름={e.get('name')} · 프로토콜={e.get('protocol') or 'and(기본값)'}"
+            f" · 포트={e.get('port') or '자동탐지'}"
+            f" · 통신={comm['baudrate']}/{comm['bytesize']}/{comm['parity']}/{comm['stopbits']}"
+            f"  (설정 파일: {config_path()})"
+        )
 
 
 # ── 이벤트 버스: 여러 저울의 PRINT 푸시를 하나의 스트림으로 ──────
@@ -891,7 +912,9 @@ def main() -> None:
     log(f"설정: {config_path()}")
     bus = EventBus()
     taken_ports: set = set()
-    scales = [Scale(entry, bus, taken_ports) for entry in scale_entries(config)]
+    entries = scale_entries(config)
+    log_applied_config(entries)
+    scales = [Scale(entry, bus, taken_ports) for entry in entries]
     for s in scales:
         port = s.connect()
         log(f"[{s.name}] 연결됨: {port}" if port else f"[{s.name}] 저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")

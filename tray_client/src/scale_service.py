@@ -29,12 +29,14 @@ try:
         Scale,
         build_handler,
         load_config as load_scale_config,
+        log_applied_config,
         scale_entries,
     )
 
     _SCALE_IMPORT_ERROR: Exception | None = None
 except Exception as exc:  # noqa: BLE001 - pyserial 미설치 등은 서비스 비활성으로 처리
     EventBus = Scale = build_handler = load_scale_config = scale_entries = None  # type: ignore
+    log_applied_config = None  # type: ignore
     _SCALE_IMPORT_ERROR = exc
 
 
@@ -90,7 +92,11 @@ class ScaleService:
             config = load_scale_config()
             bus = EventBus()
             taken: set = set()
-            self._scales = [Scale(entry, bus, taken) for entry in scale_entries(config)]
+            entries = scale_entries(config)
+            # 실제 적용된 설정(이름/프로토콜/포트/통신값)을 agent.log 에 남긴다 —
+            # 설정 파일이 반영됐는지 현장에서 눈으로 확인하기 위한 진단.
+            log_applied_config(entries)
+            self._scales = [Scale(entry, bus, taken) for entry in entries]
             for s in self._scales:
                 port = s.connect()
                 self._logger.info(
