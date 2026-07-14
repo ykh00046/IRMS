@@ -72,11 +72,16 @@ def _is_repeated_digits(password: str) -> bool:
 
 
 def _is_sequential_digits(password: str) -> bool:
+    """인접 자릿수 차이로 연속 여부 판정 — 9↔0 wrap-around 없음.
+
+    모든 인접 쌍이 +1(오름차순)이거나 모두 -1(내림차순)일 때만 True.
+    책임자 비밀번호 정책(src/routers/models.py._check_manager_password)과
+    동일한 인접-차이 규칙을 사용한다.
+    """
     if not password.isdigit() or len(password) < 4:
         return False
-    ascending = "01234567890123456789"
-    descending = "98765432109876543210"
-    return password in ascending or password in descending
+    diffs = {ord(b) - ord(a) for a, b in zip(password, password[1:])}
+    return diffs in ({1}, {-1})
 
 
 def validate_password_strength(password: str, emp_id: str | None = None) -> None:
