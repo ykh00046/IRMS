@@ -280,9 +280,28 @@ def stop_server(proc: subprocess.Popen | None) -> None:
         proc.kill()
 
 
+def _ensure_runtime_self_healing() -> str:
+    """의존성 설치 — 실패하면 원격 최신을 당겨(pull) 한 번 더 시도한다.
+
+    lock 파일에 잘못된 핀(예: 이 파이썬에서 설치 불가한 버전)이 커밋되면
+    ensure_runtime() 이 죽어 서버가 아예 뜨지 못하고, git pull 단계까지
+    도달하지 못해 **원격에 수정본이 올라와도 자동 복구되지 않는다**
+    (2026-07-14 numpy==2.5.0 / Python 3.11 로 운영 중단). 그래서 설치 실패 시
+    먼저 최신 코드를 당겨보고 재시도한다.
+    """
+    try:
+        return ensure_runtime()
+    except subprocess.CalledProcessError:
+        log("의존성 설치 실패 — 원격 최신을 받아 재시도합니다 (수정본이 올라왔을 수 있음).")
+        if _git("pull", "origin", "main").returncode != 0:
+            log("git pull 도 실패했습니다. 네트워크·자격증명 또는 requirements-lock.txt 를 확인하세요.")
+            raise
+        return ensure_runtime()  # 재시도도 실패하면 그대로 예외(기동 중단 — fail-loud)
+
+
 def main() -> None:
     global PYTHON
-    PYTHON = ensure_runtime()
+    PYTHON = _ensure_runtime_self_healing()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "
         f"{INTERVAL}초 주기, 포트 {PORT}, 백업 보존 {BACKUP_KEEP_DAYS}일"

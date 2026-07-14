@@ -106,3 +106,55 @@ def test_requirements_file_prefers_lock(tmp_path, monkeypatch):
 def test_free_port_exists():
     serve = _load_serve()
     assert callable(serve.free_port)
+
+
+# ── 의존성 설치 실패 시 자기 복구 (2026-07-14 운영 중단 재발 방지) ──
+def test_ensure_runtime_pulls_and_retries_when_install_fails(monkeypatch):
+    """lock 이 깨져 pip 이 죽으면, 원격 최신을 당겨 한 번 더 시도한다.
+
+    이 자기 복구가 없으면 잘못된 핀이 커밋되는 순간 서버는 pip 단계에서 죽고
+    git pull 까지 도달하지 못해, 원격에 수정본이 있어도 영원히 못 뜬다.
+    """
+    import subprocess as sp
+
+    serve = _load_serve()
+    calls = {"install": 0, "pull": 0}
+
+    def fake_ensure_runtime():
+        calls["install"] += 1
+        if calls["install"] == 1:  # 첫 시도 = 깨진 lock 으로 실패
+            raise sp.CalledProcessError(1, ["pip", "install"])
+        return "python.exe"       # pull 이후 재시도는 성공
+
+    def fake_git(*args, capture=False):
+        if args and args[0] == "pull":
+            calls["pull"] += 1
+        return sp.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(serve, "ensure_runtime", fake_ensure_runtime)
+    monkeypatch.setattr(serve, "_git", fake_git)
+
+    assert serve._ensure_runtime_self_healing() == "python.exe"
+    assert calls["pull"] == 1      # 최신을 당겼고
+    assert calls["install"] == 2   # 재시도했다
+
+
+def test_ensure_runtime_fails_loud_when_pull_also_fails(monkeypatch):
+    """pull 도 실패하면 조용히 넘어가지 않고 그대로 기동 중단(fail-loud)."""
+    import subprocess as sp
+
+    serve = _load_serve()
+
+    def fake_ensure_runtime():
+        raise sp.CalledProcessError(1, ["pip", "install"])
+
+    def fake_git(*args, capture=False):
+        return sp.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(serve, "ensure_runtime", fake_ensure_runtime)
+    monkeypatch.setattr(serve, "_git", fake_git)
+
+    import pytest
+
+    with pytest.raises(sp.CalledProcessError):
+        serve._ensure_runtime_self_healing()
