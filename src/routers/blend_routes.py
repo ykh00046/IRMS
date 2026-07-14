@@ -433,6 +433,16 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        # 제품명은 수정 불가 — product_lot 이 {제품명}{YYMMDD}{순번} 이라 제품명만 바꾸면
+        # LOT 접두사가 옛 제품명으로 남아 기록과 어긋난다(감사 F-8). LOT 을 새로 채번하면
+        # 이미 출력·보관된 DHR 문서와 어긋나므로(F-1 이 막으려던 바로 그 오염) 재채번도 안 한다.
+        # 제품을 잘못 등록했으면 이 기록을 취소하고 새로 등록한다.
+        if (body.product_name or "").strip() != (record.get("product_name") or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="제품명은 수정할 수 없습니다(제품 LOT 이 제품명으로 채번됩니다). "
+                "잘못 등록했다면 이 기록을 취소하고 새로 등록하세요.",
+            )
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:

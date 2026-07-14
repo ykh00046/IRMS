@@ -339,10 +339,22 @@ def test_blend_update_route_requires_manager_and_full_edit():
     }, headers=csrf_headers())
     assert blocked.status_code in (401, 403)
 
-    # 책임자(admin) 로그인 후 전체 수정 → 200
     client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+
+    # 제품명 변경은 거부 — product_lot 이 제품명으로 채번되므로 둘이 어긋난다(감사 F-8).
+    renamed = client.request("PUT", f"/api/blend/records/{rid}", json={
+        "product_name": prod + "X", "worker": worker, "work_date": "2026-07-01",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+    }, headers=csrf_headers())
+    assert renamed.status_code == 400, renamed.text
+    assert "제품명" in renamed.json()["detail"]
+    kept = client.get(f"/api/blend/records/{rid}").json()
+    assert kept["product_name"] == prod                     # 거부됐으니 원래대로
+
+    # 제품명을 유지한 전체 수정 → 200
     res = client.request("PUT", f"/api/blend/records/{rid}", json={
-        "product_name": prod + "X", "worker": "책임수정", "work_date": "2026-07-03",
+        "product_name": prod, "worker": "책임수정", "work_date": "2026-07-03",
         "total_amount": 200, "scale": "S9", "note": "정정",
         "details": [
             {"material_name": "A", "ratio": 50, "theory_amount": 100, "actual_amount": 100},
@@ -352,7 +364,7 @@ def test_blend_update_route_requires_manager_and_full_edit():
     assert res.status_code == 200, res.text
     j = res.json()
     assert j["product_lot"] == lot                 # LOT 보존
-    assert j["product_name"] == prod + "X"
+    assert j["product_name"] == prod
     assert j["worker"] == "책임수정"
     assert [d["material_name"] for d in j["details"]] == ["A", "C"]
 
