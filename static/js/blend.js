@@ -320,7 +320,6 @@
     // 레시피별 허용 편차(EFFECTIVE) 보존 — 레시피에 tolerance_g 이 없으면 기본값(0.05).
     // 모든 편차 검사·표시는 이 값을 따른다(레시피가 바뀌면 같이 갱신).
     state.toleranceG = (state.current.recipe && state.current.recipe.tolerance_g) || TOLERANCE_G;
-    renderToleranceLabel();
     // value_weight(기준 자재 이론량 산출용)·is_anchor(기준 자재 여부) 보존.
     state.items = data.items.map((it) => ({
       ...it, actual_amount: "", material_lot: "",
@@ -376,15 +375,9 @@
     wrap.hidden = false;
   }
 
-  // 허용 편차 라벨 — 자재 표 위에 현재 적용 중인 레시피 편차를 음소거 라벨로 표시.
-  // 레시피가 없거나 기본값이면 0.05g 표시(기존 동작과 동일한 수치).
-  function renderToleranceLabel() {
-    const el = $("blend-tolerance-label");
-    if (!el) return;
-    const tol = Number.isFinite(Number(state.toleranceG)) && Number(state.toleranceG) > 0
-      ? Number(state.toleranceG) : TOLERANCE_G;
-    el.textContent = `허용 편차 ±${fmt(tol, 2)} g`;
-  }
+  // 허용 편차는 화면에 상시 표시하지 않는다 — 자재 표 위 라벨은 자리만 차지했다.
+  // 편차는 초과했을 때만 알린다: 실제량 입력 후 행 경고 + 저장 시 서버 400.
+  // 판정 자체는 state.toleranceG(레시피별 tolerance_g, 없으면 기본 0.05g)로 그대로 동작.
 
   // 반응기 진행 반제품(레시피)일 때만 배합 설정에 반응기 선택을 노출한다.
   function renderReactorField() {
@@ -803,7 +796,6 @@
     // 경로로 모드 결정: /blend/bulk = 일괄 생성, 그 외 = 배합 입력
     setMode(location.pathname.replace(/\/+$/, "").endsWith("/bulk") ? "bulk" : "entry");
     updateInputGuide();
-    renderToleranceLabel();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
