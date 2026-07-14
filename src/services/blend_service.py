@@ -530,6 +530,94 @@ def recipe_tolerance_g(
     return value
 
 
+class RecipeRevisedError(Exception):
+    """배합 화면이 들고 있던 레시피가 그 사이 개정됐다 — 옛 배합비로 저장하면 안 된다."""
+
+
+class RecipeMismatchError(Exception):
+    """저장 요청의 자재 구성이 레시피와 다르다."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+def derive_details_from_recipe(
+    connection: sqlite3.Connection,
+    recipe_id: int,
+    total_amount: float,
+    details: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], float]:
+    """비율·이론량을 **서버가 레시피에서 직접 산출**해 상세를 재구성한다 (감사 F-5).
+
+    클라이언트가 보낸 ratio·theory_amount 는 신뢰하지 않고 버린다 — 화면이 오래 열려
+    있었거나 조작됐으면 옛/거짓 배합비가 규제 문서(DHR)에 그대로 실린다. 사람만 알 수
+    있는 값(실제 계량량·자재 LOT·수동입력 여부)만 클라이언트에서 받는다.
+
+    '비교 후 거부'가 아니라 '서버가 산출'인 이유: 반올림·기준자재 파생 때문에 정상
+    저장이 오판으로 막히면 현장이 멈춘다. 비교할 값이 없으면 오판도 없다.
+
+    기준 자재(anchor) 레시피는 총량이 실측에서 파생된다 — 기준 자재의 실제 계량량으로
+    총량을 되돌려 계산하고, 나머지 이론량을 그 총량에 비례 배분한다. 기준 행의 이론량은
+    실측값 자신이므로 편차 0 (기존 화면 규칙과 동일).
+
+    개정 여부는 호출부가 먼저 검사한다(RecipeRevisedError).
+    """
+    recipe = get_recipe_for_blend(connection, recipe_id, total_amount)
+    if not recipe:
+        raise RecipeMismatchError("레시피를 찾을 수 없습니다.")
+
+    items = {str(it["material_name"]): it for it in recipe["items"]}
+    incoming = {str(d.get("material_name") or ""): d for d in details}
+    if set(items) != set(incoming):
+        missing = sorted(set(items) - set(incoming))
+        extra = sorted(set(incoming) - set(items))
+        parts = []
+        if missing:
+            parts.append("누락: " + ", ".join(missing))
+        if extra:
+            parts.append("레시피에 없음: " + ", ".join(extra))
+        raise RecipeMismatchError(
+            "자재 구성이 레시피와 다릅니다 — 화면을 새로고침하세요. (" + " / ".join(parts) + ")"
+        )
+
+    # 기준 자재가 있으면 총량을 실측에서 되돌려 계산 (없으면 작업자가 고른 배치 총량 사용)
+    total = float(total_amount)
+    anchor = next((it for it in recipe["items"] if it.get("is_anchor")), None)
+    if anchor is not None:
+        anchor_actual = _opt_num(incoming[str(anchor["material_name"])].get("actual_amount"))
+        if anchor_actual is None or anchor_actual <= 0:
+            raise RecipeMismatchError(
+                f"기준 자재({anchor['material_name']})를 먼저 계량하세요."
+            )
+        ratio = float(anchor["ratio"] or 0)
+        if ratio <= 0:
+            raise RecipeMismatchError("기준 자재의 레시피 비율이 0 입니다.")
+        total = round(anchor_actual * 100.0 / ratio, 3)
+
+    derived: list[dict[str, Any]] = []
+    for order, item in enumerate(recipe["items"], start=1):
+        name = str(item["material_name"])
+        sent = incoming[name]
+        ratio = float(item["ratio"] or 0)
+        if anchor is not None:
+            theory = anchor_actual if item.get("is_anchor") else round(total * ratio / 100.0, 3)
+        else:
+            theory = float(item["theory_amount"] or 0)
+        derived.append({
+            "material_id": item.get("material_id"),
+            "material_code": item.get("material_code"),
+            "material_name": name,
+            "material_lot": sent.get("material_lot"),        # 사람만 아는 값
+            "actual_amount": _opt_num(sent.get("actual_amount")),
+            "manual_entry": bool(sent.get("manual_entry")),
+            "ratio": ratio,                                   # ← 서버 산출
+            "theory_amount": theory,                          # ← 서버 산출
+            "sequence_order": order,
+        })
+    return derived, total
+
+
 def weighing_tolerance_violations(
     details: list[dict[str, Any]], tolerance_g: float | None = None
 ) -> list[str]:

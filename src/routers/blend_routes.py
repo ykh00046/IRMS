@@ -364,11 +364,30 @@ def build_router() -> APIRouter:
         # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+
+        # 비율·이론량은 서버가 레시피에서 직접 산출한다 — 클라이언트 값은 쓰지 않는다(감사 F-5).
+        # 레시피 없이 저장되는 경로(옛 데이터 이관·수동 입력)는 대조할 근거가 없어 그대로 둔다.
+        details = [d.model_dump() for d in body.details]
+        total_amount = body.total_amount
+        if body.recipe_id:
+            # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
+            if blend_service.resolve_chain_tip(connection, body.recipe_id) != body.recipe_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
+                )
+            try:
+                details, total_amount = blend_service.derive_details_from_recipe(
+                    connection, body.recipe_id, body.total_amount, details
+                )
+            except blend_service.RecipeMismatchError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail) from exc
+
         # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
         # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
-            [d.model_dump() for d in body.details], tolerance_g=tolerance
+            details, tolerance_g=tolerance
         )
         if offenders:
             raise HTTPException(
@@ -388,10 +407,10 @@ def build_router() -> APIRouter:
             worker=worker,
             work_date=body.work_date,
             work_time=body.work_time,
-            total_amount=body.total_amount,
+            total_amount=total_amount,
             scale=body.scale,
             note=body.note,
-            details=[d.model_dump() for d in body.details],
+            details=details,
             created_by=actor,
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
