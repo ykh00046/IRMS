@@ -423,3 +423,65 @@ def test_viscosity_page_open_without_login():
     assert res.status_code == 200
     assert "visc-period-chart" in res.text
     assert client.cookies.get("csrftoken")
+
+
+def test_direct_registration_stores_the_date_used_for_judgement(monkeypatch):
+    """감사 F-9: 라우트가 판정에 쓴 측정일이 그대로 저장돼야 한다 (폴백 1회).
+
+    옛 코드는 라우트에서 resolved_date 로 판정 연도를 정한 뒤, 서비스에는 원본(None)을
+    넘겨 **같은 폴백을 다시** 돌렸다 — 자정 경계에서 판정 연도와 저장 연도가 갈릴 수 있는
+    구조. 측정일 미지정 + LOT 에서 날짜 추론이 되는 경우, 저장된 measured_date 는
+    LOT 이 가리키는 날짜여야 한다(등록일이 아니라).
+    """
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    # 점도 제품 code 는 레시피 제품명과 연동 — 레시피부터 등록한다.
+    product = "F9P" + uuid.uuid4().hex[:6].upper()
+    header_row = "\t".join(["반제품명", "원료A", "원료B"])
+    data_row = "\t".join([product, "60", "40"])
+    raw_text = "\n".join([header_row, data_row])
+    imported = client.post("/api/recipes/import", json={"raw_text": raw_text},
+                           headers=headers)
+    assert imported.status_code == 200, imported.text
+
+    created = client.post("/api/viscosity/products",
+                          json={"code": product, "name": product}, headers=headers)
+    assert created.status_code in (200, 201), created.text
+    pid = created.json()["id"]
+
+    # 두 폴백이 갈리는 지점을 강제한다: 측정일 미지정 + LOT 에서 날짜 추론 불가 →
+    # 라우트는 local_today_text(), 서비스는 date.today() 를 각각 쓴다. 라우트 쪽만
+    # 다른 날짜로 바꿔치면, 옛 코드는 서비스가 '진짜 오늘'로 다시 폴백해 어긋난다.
+    import src.routers.viscosity_routes as vroutes
+
+    monkeypatch.setattr(vroutes, "local_today_text", lambda: "2026-12-31")
+
+    lot = "NODATE" + uuid.uuid4().hex[:6].upper()   # parse_lot_date 가 못 읽는 LOT
+    res = client.post("/api/viscosity/readings", json={
+        "product_id": pid, "lot_no": lot, "viscosity": 12.3,
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+
+    with get_connection() as conn:   # 등록 응답은 분석 결과라 id 가 없다 — LOT 으로 조회
+        row = conn.execute(
+            "SELECT measured_date FROM viscosity_readings WHERE product_id = ? AND lot_no = ?",
+            (pid, lot),
+        ).fetchone()
+    assert row is not None
+    # 판정에 쓴 날짜(라우트가 정한 값)가 그대로 저장돼야 한다 — 서비스가 다시 폴백하면 안 된다
+    assert row["measured_date"] == "2026-12-31"

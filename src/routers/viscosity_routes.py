@@ -109,7 +109,10 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 product_id=product["id"],
                 lot_no=body.lot_no,
                 viscosity=body.viscosity,
-                measured_date=body.measured_date,
+                # 판정에 쓴 날짜를 그대로 저장한다 — 원본(body.measured_date)을 넘기면
+                # 서비스가 같은 폴백을 **다시** 돌려, 자정 경계에서 "A년 표본으로 판정 →
+                # B년으로 저장"이 될 수 있다(감사 F-9). 폴백은 한 번만.
+                measured_date=resolved_date,
                 memo=body.memo,
                 recipe_material=body.recipe_material,
                 material_lot=body.material_lot,
