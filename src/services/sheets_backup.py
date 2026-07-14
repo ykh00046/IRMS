@@ -104,7 +104,15 @@ def build_backup_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def push_records(records: list[dict[str, Any]]) -> tuple[bool, str]:
-    """배합 기록을 Google Sheets에 누적. (성공여부, 메시지)."""
+    """배합 기록을 Google Sheets 로 **미러링**한다 (성공여부, 메시지).
+
+    멱등하다 — 같은 기록으로 두 번 실행해도 시트 내용은 같다. 옛 구현은 매번 전량을
+    append 해서 백업 버튼을 두 번 누르면 모든 기록이 두 벌씩 쌓였고, 그 시트를 정본으로
+    보면 집계·역추적이 오염됐다(감사 F-6).
+
+    누적이 아니라 미러인 이유: 배합 기록은 취소·정정될 수 있어서 '추가만' 하면 시트가
+    DB 와 갈라진다. 매번 DB 의 현재 상태로 덮어써야 시트가 사본으로서 의미를 갖는다.
+    """
     cfg = load_config()
     if not _GSPREAD:
         return False, "gspread/google-auth 미설치 — 'pip install gspread google-auth' 후 사용하세요."
@@ -124,14 +132,14 @@ def push_records(records: list[dict[str, Any]]) -> tuple[bool, str]:
         try:
             ws = ss.worksheet(_WORKSHEET)
         except gspread.exceptions.WorksheetNotFound:
-            ws = ss.add_worksheet(title=_WORKSHEET, rows=1000, cols=len(BACKUP_COLUMNS))
-            ws.append_row(BACKUP_COLUMNS)
-        header = ws.row_values(1)
-        if not header:
-            ws.insert_row(BACKUP_COLUMNS, 1)
-            header = BACKUP_COLUMNS
+            ws = ss.add_worksheet(title=_WORKSHEET, rows=max(1000, len(rows) + 10),
+                                  cols=len(BACKUP_COLUMNS))
+        # 기존 헤더가 있으면 그 열 순서를 존중한다(사람이 열을 옮겨 뒀을 수 있다).
+        header = ws.row_values(1) or list(BACKUP_COLUMNS)
         data = [[r.get(col, "") for col in header] for r in rows]
-        ws.append_rows(data)
-        return True, f"{len(rows)}행을 Google Sheets에 백업했습니다."
+        # 덮어쓰기 = 지우고 헤더+전량 다시 쓰기. append 면 실행할 때마다 두 벌씩 쌓인다.
+        ws.clear()
+        ws.update([header] + data)
+        return True, f"{len(rows)}행을 Google Sheets에 백업했습니다(전체 덮어쓰기)."
     except Exception as exc:  # noqa: BLE001 — 외부 API 다양한 예외를 사용자 메시지로
         return False, f"백업 실패: {exc}"
