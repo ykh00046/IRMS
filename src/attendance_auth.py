@@ -4,8 +4,10 @@ This is a separate credential space from the main IRMS login:
 - Identity is the ERP employee number (사번), stored in ``attendance_users``.
 - Initial/reset credentials use a random temporary password and show a change
   reminder; attendance lookup remains available after login.
-- Brute force guard: 5 failures within the counter window locks the account
-  for 5 minutes.
+- Brute force guard: 5 failures within a rolling 15-minute window lock the
+  account for 5 minutes. A failure older than that window does not count -- the
+  counter restarts, so occasional typos spread over days never accumulate into
+  a lockout.
 - Idle session timeout: 5 minutes of inactivity clears the session.
 
 Managers / admins already authenticated via the main IRMS login bypass the
@@ -29,6 +31,9 @@ SESSION_KEY = "att_user"
 IDLE_TIMEOUT_SECONDS = 5 * 60
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 5 * 60
+# 실패 카운터가 유효한 시간 창 — 마지막 실패가 이보다 오래됐으면 카운터를 1부터 다시 센다.
+# 없으면 며칠에 걸쳐 4번 오타한 사람이 오늘 1번 더 틀렸다고 잠긴다(감사 F-11).
+FAILED_WINDOW_SECONDS = 15 * 60
 MIN_PASSWORD_LENGTH = 8
 TEMP_PASSWORD_BYTES = 18
 
@@ -113,7 +118,8 @@ def _fetch(emp_id: str) -> dict[str, Any] | None:
         row = connection.execute(
             """
             SELECT emp_id, password_hash, password_reset_required,
-                   failed_attempts, locked_until, last_login_at, created_at
+                   failed_attempts, locked_until, last_failed_at,
+                   last_login_at, created_at
             FROM attendance_users
             WHERE emp_id = ?
             """,
@@ -137,12 +143,14 @@ def _create(emp_id: str, password: str, reset_required: int = 1) -> None:
         connection.commit()
 
 
-def _update_failed(emp_id: str, count: int, locked_until: str | None) -> None:
+def _update_failed(
+    emp_id: str, count: int, locked_until: str | None, last_failed_at: str | None = None
+) -> None:
     with get_connection() as connection:
         connection.execute(
             "UPDATE attendance_users "
-            "SET failed_attempts = ?, locked_until = ? WHERE emp_id = ?",
-            (count, locked_until, emp_id),
+            "SET failed_attempts = ?, locked_until = ?, last_failed_at = ? WHERE emp_id = ?",
+            (count, locked_until, last_failed_at, emp_id),
         )
         connection.commit()
 
@@ -151,11 +159,26 @@ def _update_on_success(emp_id: str) -> None:
     with get_connection() as connection:
         connection.execute(
             "UPDATE attendance_users "
-            "SET failed_attempts = 0, locked_until = NULL, last_login_at = ? "
+            "SET failed_attempts = 0, locked_until = NULL, last_failed_at = NULL, "
+            "    last_login_at = ? "
             "WHERE emp_id = ?",
             (utc_now_text(), emp_id),
         )
         connection.commit()
+
+
+def _attempts_within_window(record: dict[str, Any], now: _dt.datetime) -> int:
+    """이번 실패까지 포함한 유효 실패 횟수.
+
+    마지막 실패가 FAILED_WINDOW_SECONDS 를 넘겼거나 기록이 없으면 1부터 다시 센다 —
+    카운터는 시간이 지나면 감쇠한다(감사 F-11).
+    """
+    last_failed = _parse_utc(record.get("last_failed_at"))
+    if last_failed is None:
+        return 1
+    if (now - last_failed).total_seconds() > FAILED_WINDOW_SECONDS:
+        return 1
+    return int(record.get("failed_attempts") or 0) + 1
 
 
 def _log_failed_login(emp_id: str, reason: str, **details: Any) -> None:
@@ -237,10 +260,10 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
         )
 
     if not verify_password(password, record["password_hash"]):
-        attempts = int(record.get("failed_attempts") or 0) + 1
+        attempts = _attempts_within_window(record, now)
         if attempts >= MAX_FAILED_ATTEMPTS:
             lock_until = now + _dt.timedelta(seconds=LOCKOUT_SECONDS)
-            _update_failed(emp_id, 0, _format_utc(lock_until))
+            _update_failed(emp_id, 0, _format_utc(lock_until), None)
             _log_failed_login(
                 emp_id,
                 "invalid_credentials_locked",
@@ -251,7 +274,7 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
                 status_code=status.HTTP_423_LOCKED,
                 extra={"locked_until": _format_utc(lock_until)},
             )
-        _update_failed(emp_id, attempts, None)
+        _update_failed(emp_id, attempts, None, _format_utc(now))
         _log_failed_login(
             emp_id,
             "invalid_credentials",

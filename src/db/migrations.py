@@ -314,6 +314,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "workers", "is_manager", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "workers", "password_hash", "TEXT")
     ensure_column(connection, "workers", "session_token", "TEXT")
+    # 근태 로그인 실패 카운터의 시간 윈도우 기준 시각 — 오래된 실패는 감쇠시킨다(감사 F-11).
+    ensure_column(connection, "attendance_users", "last_failed_at", "TEXT")
     # 기존 사용자 이름을 작업자 명단에 1회 프리필 (로그인 계정과 별개로 선택 편의)
     if not has_migration(connection, "prefill_workers_from_users"):
         now = utc_now_text()
