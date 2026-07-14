@@ -34,6 +34,7 @@ from ..db import (
     write_audit_log,
 )
 from ..services.recipe_helpers import (
+    SUPERSEDED_RECIPE_IDS_SQL,
     fetch_chain,
     fetch_recipe_items,
     find_chain_root,
@@ -113,13 +114,10 @@ def build_router() -> APIRouter:
         current_only: bool = Query(default=True),
         dhr: bool = Query(default=False),
     ) -> dict[str, Any]:
-        # current_only(기본): 옛 버전(다른 리비전의 부모) 숨기고 각 체인의 현재 버전(tip)만.
-        # 개정본이 취소되면 원본이 다시 현재 버전으로 복귀(취소 인지 — 현황·배합과 동일 규칙).
+        # current_only(기본): 옛 버전 숨기고 각 체인의 현재 버전(tip)만.
+        # 판정 규칙은 recipe_helpers 단일 소스 — 현황·배합 목록·배합 귀결이 모두 같은 규칙.
         revision_filter = (
-            "AND r.id NOT IN (SELECT revision_of FROM recipes "
-            "WHERE revision_of IS NOT NULL AND status != 'canceled')"
-            if current_only
-            else ""
+            f"AND r.id NOT IN ({SUPERSEDED_RECIPE_IDS_SQL})" if current_only else ""
         )
         # dhr=False(기본): 일반 레시피만. dhr=True: DHR 전용만 — 둘이 섞이지 않게 분리.
         dhr_filter = "AND COALESCE(r.is_dhr, 0) = 1" if dhr else "AND COALESCE(r.is_dhr, 0) = 0"
@@ -411,12 +409,9 @@ def build_router() -> APIRouter:
         limit: int = Query(default=1000, ge=1, le=5000),
     ) -> dict[str, Any]:
         # 현황에는 각 개정 체인의 최신 버전만 — 수정 등록 때마다 같은 제품이 줄줄이
-        # 늘어나 보이지 않게. 옛 버전은 '버전 이력'에서 조회. (개정본이 취소되면
-        # 원본이 다시 최신으로 복귀)
-        where_parts: list[str] = [
-            "r.id NOT IN (SELECT revision_of FROM recipes "
-            "WHERE revision_of IS NOT NULL AND status != 'canceled')"
-        ]
+        # 늘어나 보이지 않게. 옛 버전은 '버전 이력'에서 조회.
+        # 판정 규칙은 recipe_helpers 단일 소스 (배합 목록·배합 귀결과 동일).
+        where_parts: list[str] = [f"r.id NOT IN ({SUPERSEDED_RECIPE_IDS_SQL})"]
         params: list[Any] = []
 
         if status:

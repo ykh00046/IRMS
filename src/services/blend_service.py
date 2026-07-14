@@ -14,6 +14,8 @@ NOTE: 1차 증분은 기록 중심이다. 자동 재고 차감은 기존 계량(
 import sqlite3
 from typing import Any
 
+from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
+
 
 # ── 비율/이론량 환산 ────────────────────────────────────────────
 def compute_ratios(weights: list[float]) -> list[float]:
@@ -38,19 +40,12 @@ def _resolve_latest_revision(connection: sqlite3.Connection, recipe_id: int) -> 
 
     배합 화면이 오래 열려 있으면(목록은 페이지 로드 때 1회) 개정 전의 옛 id 로
     요청이 올 수 있다 — 서버가 항상 최신 개정판으로 귀결시켜 수정 미반영을 막는다.
+
+    판정은 목록(tip)과 같은 규칙을 쓴다 — 옛 구현은 직계 자식만 따라가서 중간
+    개정본이 취소되면 그 앞에서 멈췄고(목록은 최신본을 계속 노출), 같은 제품이
+    서로 다른 배합 기준으로 저장됐다(감사 F-4). [[recipe_helpers.resolve_chain_tip]]
     """
-    current = int(recipe_id)
-    seen: set[int] = {current}
-    while True:
-        row = connection.execute(
-            "SELECT id FROM recipes WHERE revision_of = ? "
-            "AND status NOT IN ('canceled', 'draft') ORDER BY id DESC LIMIT 1",
-            (current,),
-        ).fetchone()
-        if not row or int(row["id"]) in seen:
-            return current
-        current = int(row["id"])
-        seen.add(current)
+    return resolve_chain_tip(connection, recipe_id)
 
 
 def get_recipe_for_blend(
@@ -461,8 +456,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
         LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
         WHERE r.status NOT IN ('canceled', 'draft')
           AND COALESCE(r.is_dhr, 0) = ?
-          AND r.id NOT IN (SELECT revision_of FROM recipes
-                           WHERE revision_of IS NOT NULL AND status != 'canceled')
+          AND r.id NOT IN (""" + SUPERSEDED_RECIPE_IDS_SQL + """)
         GROUP BY r.id
         HAVING item_count > 0
         ORDER BY r.created_at DESC, r.id DESC

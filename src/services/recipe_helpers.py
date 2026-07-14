@@ -64,6 +64,52 @@ def fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict
     return item_map
 
 
+# 개정 체인의 "현재 버전(tip)" 판정 — 레시피 목록·배합 목록·배합 귀결이 공유하는 단일 규칙.
+#
+# 규칙: 취소(canceled)·초안(draft)은 체인을 **끊지 않고 건너뛴다**. 어떤 레시피에
+# 활성(비취소) **후손이 하나라도 있으면** 그 레시피는 대체된 것(superseded)이라 숨긴다.
+#
+# 옛 규칙은 직계 자식만 봤다("취소되지 않은 자식을 가진 부모만 숨김"). 그래서 A→B→C
+# 체인에서 중간 B만 취소하면 A(자식 B가 취소라 안 숨겨짐)와 C(자식 없음)가 **동시에**
+# tip 으로 노출되고, 배합 귀결은 A에 머물러 옛 배합비로 이론량이 산출됐다(감사 F-4).
+# 후손을 전이적으로 보면 A는 C 때문에 숨겨지고 tip 은 C 하나로 수렴한다.
+# 2세대에서 개정본만 취소된 경우 원본이 복귀하는 기존 동작은 그대로 유지된다.
+SUPERSEDED_RECIPE_IDS_SQL = """
+    WITH RECURSIVE descendants(ancestor, node) AS (
+        SELECT revision_of, id FROM recipes WHERE revision_of IS NOT NULL
+        UNION
+        SELECT d.ancestor, r.id FROM recipes r JOIN descendants d ON r.revision_of = d.node
+    )
+    SELECT DISTINCT d.ancestor FROM descendants d
+    JOIN recipes n ON n.id = d.node
+    WHERE n.status NOT IN ('canceled', 'draft')
+"""
+
+
+def resolve_chain_tip(connection, recipe_id: int) -> int:
+    """주어진 레시피가 속한 체인의 현재 버전(tip) id 를 반환한다.
+
+    자기 자신을 포함한 하위 트리에서 활성(비취소·비초안) 최신본을 고른다 —
+    SUPERSEDED_RECIPE_IDS_SQL 과 같은 규칙이라 목록의 tip 과 항상 일치한다.
+    활성 후보가 없으면(자신도 취소된 말단) 입력 id 를 그대로 돌려준다.
+    """
+    row = connection.execute(
+        """
+        WITH RECURSIVE subtree(node) AS (
+            SELECT id FROM recipes WHERE id = ?
+            UNION
+            SELECT r.id FROM recipes r JOIN subtree s ON r.revision_of = s.node
+        )
+        SELECT id FROM recipes
+        WHERE id IN (SELECT node FROM subtree)
+          AND status NOT IN ('canceled', 'draft')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (int(recipe_id),),
+    ).fetchone()
+    return int(row["id"]) if row else int(recipe_id)
+
+
 def find_chain_root(connection, recipe_id: int) -> int:
     """Walk revision_of upward to find the root recipe of a revision chain."""
     row = connection.execute(

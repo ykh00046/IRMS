@@ -154,6 +154,42 @@ def test_list_recipes_shows_only_latest_revision():
     assert v1 in ids
 
 
+def test_mid_chain_cancel_keeps_single_tip():
+    """감사 F-4: 3세대 체인(v1→v2→v3)에서 중간 v2 만 취소해도 현재 버전은 v3 하나.
+
+    옛 규칙(직계 자식만 확인)은 v1(자식 v2가 취소라 안 숨겨짐)과 v3(자식 없음)를
+    동시에 노출하고, 배합 귀결은 v1 에 머물러 **옛 배합비로 이론량이 산출**됐다.
+    목록 2곳(현황/배합)과 배합 귀결이 모두 v3 로 수렴해야 한다.
+    """
+    from src.db import get_connection
+    from src.services.blend_service import _resolve_latest_revision
+
+    client = _client()
+    headers = _login(client)
+    product = f"PMID{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+    v2 = _import(client, headers, product, 70, 30, revision_of=v1)
+    v3 = _import(client, headers, product, 80, 20, revision_of=v2)
+
+    with get_connection() as conn:  # 중간 세대만 취소 (오등록 정정)
+        conn.execute("UPDATE recipes SET status = 'canceled' WHERE id = ?", (v2,))
+        conn.commit()
+
+    status_ids = [r["id"] for r in client.get(
+        "/api/recipes", params={"search": product}).json()["items"]]
+    assert v3 in status_ids
+    assert v1 not in status_ids and v2 not in status_ids  # 두 줄로 갈라지지 않는다
+
+    blend_ids = [r["id"] for r in client.get("/api/blend/recipes").json()["items"]
+                 if r["product_name"] == product]
+    assert blend_ids == [v3]
+
+    with get_connection() as conn:  # 옛 id 로 들어와도 최신본으로 귀결
+        assert _resolve_latest_revision(conn, v1) == v3
+        assert _resolve_latest_revision(conn, v2) == v3
+        assert _resolve_latest_revision(conn, v3) == v3
+
+
 def test_recipe_steps_between_materials():
     """'설명' 열 — 자재 사이 공정 안내문(체크리스트식). 등록→상세/TSV→개정 왕복 보존,
     배합 API·기록 상세에 노출. 자재로 오등록되지 않아야 한다. 공식 배합일지 미포함."""
