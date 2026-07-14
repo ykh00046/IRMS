@@ -20,6 +20,7 @@ from .config import (
 from .db import init_db, utc_now_text
 from .limiter import limiter
 from .middleware.internal_only import InternalNetworkOnlyMiddleware
+from .middleware.login_origin import LoginOriginMiddleware
 from .middleware.security_headers import SecurityHeadersMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
@@ -46,6 +47,8 @@ def create_app() -> FastAPI:
         cookie_secure=not IS_DEVELOPMENT,
         exempt_urls=[
             re.compile(r"^/health$"),
+            # 로그인은 토큰을 받기 전에 호출되므로 CSRF 토큰 검사에서 면제된다.
+            # 그 대신 LoginOriginMiddleware 가 교차 출처 POST 를 막는다(감사 F-10).
             re.compile(r"^/api/auth/management-login$"),
             re.compile(r"^/api/attendance/login$"),
             re.compile(r"^/api/blend/session/login$"),
@@ -55,6 +58,8 @@ def create_app() -> FastAPI:
             re.compile(r"^/api/blend/session/logout$"),
         ],
     )
+    # CSRF 면제로 뚫린 로그인 경로를 Origin 검사로 막는다 (감사 F-10).
+    app.add_middleware(LoginOriginMiddleware)
     app.add_middleware(
         InternalNetworkOnlyMiddleware,
         protected_prefixes=(
