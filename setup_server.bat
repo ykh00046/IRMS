@@ -6,7 +6,7 @@ echo  IRMS Server Setup (First Time)
 echo ============================================
 echo.
 
-:: ── 1. Check Python ──
+:: -- 1. Check Python --
 echo [1/4] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -24,7 +24,7 @@ if errorlevel 1 (
 python --version
 echo.
 
-:: ── 2. Check Git ──
+:: -- 2. Check Git --
 echo [2/4] Checking Git...
 git --version >nul 2>&1
 if errorlevel 1 (
@@ -41,7 +41,7 @@ if errorlevel 1 (
 git --version
 echo.
 
-:: ── 3. Clone or update project ──
+:: -- 3. Clone or update project --
 echo [3/4] Setting up project...
 set "REPO_URL=https://github.com/ykh00046/IRMS.git"
 set "PROJECT_DIR=%~dp0IRMS"
@@ -63,7 +63,7 @@ if exist "%PROJECT_DIR%\.git" (
 )
 echo.
 
-:: ── 4. Bootstrap (venv + dependencies) ──
+:: -- 4. Bootstrap (venv + dependencies) --
 echo [4/4] Setting up virtual environment and dependencies...
 echo  (This may take a few minutes on first run)
 echo.

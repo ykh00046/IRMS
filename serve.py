@@ -22,6 +22,7 @@ irms_*.db 를 data/irms.db 로 복사 → 서버 시작.
 
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
 import sqlite3
@@ -63,6 +64,21 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def log(message: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}", flush=True)
+
+
+def set_console_title(text: str) -> None:
+    """콘솔 창 제목 — .bat 의 title 명령 대신 여기서 설정한다.
+
+    cmd 는 .bat 파일 바이트를 OEM 코드페이지(cp949)로 읽으므로 UTF-8 로 저장된
+    한글 title/echo 가 깨진다. 파이썬은 SetConsoleTitleW·WriteConsoleW 로 유니코드를
+    콘솔 API 에 직접 넘겨 코드페이지와 무관하게 정상 표시된다(실측 확인).
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.kernel32.SetConsoleTitleW(text)
+    except Exception as exc:  # noqa: BLE001 — 제목은 부가 기능, 실패해도 서버는 뜬다
+        log(f"콘솔 제목 설정 실패(무시): {exc}")
 
 
 def _git(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
@@ -301,6 +317,7 @@ def _ensure_runtime_self_healing() -> str:
 
 def main() -> None:
     global PYTHON
+    set_console_title(f"IRMS 서버 + 자동 업데이트 (포트 {PORT})")
     PYTHON = _ensure_runtime_self_healing()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "

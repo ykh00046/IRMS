@@ -7,7 +7,7 @@ echo  IRMS Cloudflare Tunnel - Initial Setup
 echo ============================================
 echo.
 
-:: ── 1. cloudflared install check ──
+:: -- 1. cloudflared install check --
 where cloudflared >nul 2>&1
 if errorlevel 1 (
   echo [1/5] cloudflared not found. Installing via winget...
@@ -29,7 +29,7 @@ if errorlevel 1 (
 )
 echo.
 
-:: ── 2. login (browser opens) ──
+:: -- 2. login (browser opens) --
 echo [2/5] Browser will open for Cloudflare login.
 echo        Pick the domain you want to use for IRMS.
 cloudflared tunnel login
@@ -40,7 +40,7 @@ if errorlevel 1 (
 )
 echo.
 
-:: ── 3. create tunnel ──
+:: -- 3. create tunnel --
 set /p TUNNEL_NAME=Enter tunnel name (default: irms):
 if "%TUNNEL_NAME%"=="" set "TUNNEL_NAME=irms"
 echo [3/5] Creating tunnel "%TUNNEL_NAME%"...
@@ -50,7 +50,7 @@ if errorlevel 1 (
 )
 echo.
 
-:: ── 4. DNS route ──
+:: -- 4. DNS route --
 set /p HOSTNAME=Enter public hostname (e.g. irms.example.com):
 if "%HOSTNAME%"=="" (
   echo [ERROR] Hostname is required.
@@ -61,7 +61,7 @@ echo [4/5] Routing DNS %HOSTNAME% -> tunnel %TUNNEL_NAME%...
 cloudflared tunnel route dns %TUNNEL_NAME% %HOSTNAME%
 echo.
 
-:: ── 5. next steps ──
+:: -- 5. next steps --
 echo [5/5] Base setup complete.
 echo.
 echo NEXT STEPS:

@@ -1,4 +1,5 @@
 @echo off
+REM ASCII ONLY -- see run_auto.bat for why (cmd reads .bat as cp949).
 setlocal
 
 cd /d "%~dp0"
@@ -8,14 +9,14 @@ echo  IRMS Update and Run
 echo ============================================
 echo.
 
-:: ── 0. Check setup ──
+:: -- 0. Check setup --
 if exist ".venv\Scripts\python.exe" goto setup_ok
 echo [ERROR] Setup not completed. Run setup_server.bat first.
 pause
 exit /b 1
 :setup_ok
 
-:: ── 1. Backup DB before pull ──
+:: -- 1. Backup DB before pull --
 echo [1/4] Backing up database...
 if exist "data\irms.db" goto backup_db
 echo [INFO] No existing DB to back up (first run).
@@ -27,7 +28,7 @@ if errorlevel 1 echo [WARN] DB backup failed, continuing anyway.
 :after_backup
 echo.
 
-:: ── 2. Git Pull ──
+:: -- 2. Git Pull --
 echo [2/4] Checking for updates...
 git pull origin main
 if not errorlevel 1 goto git_ok
@@ -38,7 +39,7 @@ exit /b 1
 :git_ok
 echo.
 
-:: ── 3. Install dependencies (검증된 고정 버전 우선) ──
+:: -- 3. Install dependencies (pinned lock file first) --
 echo [3/4] Installing dependencies...
 if exist requirements-lock.txt (
   .venv\Scripts\python.exe -m pip install -r requirements-lock.txt --quiet
@@ -53,7 +54,7 @@ exit /b 1
 :pip_ok
 echo.
 
-:: ── 2.5. Check .env ──
+:: -- 2.5. Check .env --
 if exist ".env" goto env_ok
   echo [WARN] .env file not found. Running with development defaults.
   echo        For production, copy .env.example to .env and set IRMS_ENV=production
@@ -61,10 +62,10 @@ if exist ".env" goto env_ok
   echo.
 :env_ok
 
-:: ── 2.7. Free port 9000 if already in use ──
+:: -- 2.7. Free port 9000 if already in use --
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=Get-NetTCPConnection -LocalPort 9000 -State Listen -ErrorAction SilentlyContinue; foreach($p in $ports){ Write-Host ('[INFO] Port 9000 is in use by PID ' + $p.OwningProcess + '. Terminating...'); Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }"
 
-:: ── 3. Start server ──
+:: -- 3. Start server --
 set "LOCAL_IP=0.0.0.0"
 
 echo [4/4] Starting IRMS server...
