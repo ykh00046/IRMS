@@ -97,9 +97,12 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("card-blend-count").textContent = fmtNumber(data.blend_count);
     document.getElementById("card-weight").textContent = fmtNumber(data.total_weight_g, 1);
     document.getElementById("card-products").textContent = fmtNumber(data.product_count);
+    // '결재 대기' 카드는 제거됨(결재 현장 미사용) — 요소가 있을 때만 채운다(방어).
     const approval = document.getElementById("card-approval");
-    approval.textContent = fmtNumber(data.approval_pending);
-    approval.style.color = data.approval_pending > 0 ? cssVar("--status-warning", "#c98212") : "";
+    if (approval) {
+      approval.textContent = fmtNumber(data.approval_pending);
+      approval.style.color = data.approval_pending > 0 ? cssVar("--status-warning", "#c98212") : "";
+    }
     const anomaly = document.getElementById("card-visc-anomaly");
     anomaly.textContent = fmtNumber(data.viscosity_anomaly);
     anomaly.style.color = data.viscosity_anomaly > 0 ? cssVar("--status-error", "#d8453f") : "";
@@ -171,6 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
           label: "총 배합량 (g)",
           data: values,
           backgroundColor: cssVar("--brand-mid", "#2c5d9b"),
+          // 항목이 1~2개일 때 가로 막대가 패널 높이를 다 채우는 과대 표시 방지
+          maxBarThickness: 48,
         }],
       },
       options: {
