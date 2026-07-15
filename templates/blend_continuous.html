@@ -20,7 +20,11 @@
                 <datalist id="recipe-names"></datalist>
               </div>
               <div class="blend-field">
-                <label class="filter-label" for="cont-total">총 배합량 (g) · 전 로트 공통</label>
+                <div class="blend-label-row">
+                  <label class="filter-label" for="cont-total">총 배합량 (g)</label>
+                  <!-- 레시피에 지정된 기본 배합량(최대 3개) — 클릭하면 총량에 채움(배합 화면과 동일) -->
+                  <span class="blend-base-links" id="cont-base-links" hidden></span>
+                </div>
                 <input class="input" id="cont-total" type="number" step="0.1" min="0" />
               </div>
               <div class="blend-field">
@@ -92,5 +96,5 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260713a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260715a"></script>
+    <script src="/static/js/blend_continuous.js?v=20260715b"></script>
 {% endblock %}

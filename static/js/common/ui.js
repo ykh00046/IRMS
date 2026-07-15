@@ -64,9 +64,11 @@
     node.className = `toast ${type || "info"}`;
     node.textContent = message;
     root.appendChild(node);
+    // 오류(잘못 계량 등 중대한 실수)는 더 오래 띄운다 — 놓치면 안 되는 메시지.
+    const ttl = type === "error" ? 6000 : 2800;
     window.setTimeout(() => {
       node.remove();
-    }, 2800);
+    }, ttl);
   }
 
   function bindLogoutButton() {

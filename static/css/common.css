@@ -1145,7 +1145,7 @@ tr:hover td.sticky-right {
   flex-direction: column;
   gap: 12px;
   z-index: 9999;
-  max-width: min(420px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
 }
 
 .toast {
@@ -1165,8 +1165,22 @@ tr:hover td.sticky-right {
 .toast.success {
   border-left: 4px solid var(--status-success);
 }
+/* 오류 토스트는 크게 — 잘못 계량 등 중대한 실수는 놓치면 안 되므로 글자·아이콘·
+   테두리를 키우고 붉은 링을 둘러 눈에 띄게 한다(표시 시간도 ui.js 에서 더 길게). */
 .toast.error {
-  border-left: 4px solid var(--status-error);
+  border: 2px solid var(--status-error);
+  border-left-width: 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 1.15rem 1.4rem;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18), var(--shadow-default);
+}
+.toast.error::before {
+  content: "⚠";
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--status-error);
+  flex: 0 0 auto;
 }
 .toast.warn {
   border-left: 4px solid var(--status-warning);

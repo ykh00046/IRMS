@@ -21,6 +21,7 @@
   const {
     esc, TOLERANCE_G, fmt, todayISO, nowTime,
     computeTheoryAmount, findAnchorIndex,
+    baseTotalValues, baseTotalLinksHtml,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -234,6 +235,7 @@
       warn.hidden = true;
     }
     renderReactorField();
+    renderBaseTotals();
     render();
   }
 
@@ -265,6 +267,25 @@
     );
   }
 
+  // 공정 설명 줄 HTML(전폭). position === 자재 인덱스면 그 자재 앞에, === 자재 수면 끝에.
+  // blendLib.stepRowsHtml 은 colspan 이 배합표(7)로 고정이라, 로트 수에 맞춰 별도로 만든다.
+  function contStepRowsHtml(steps, position, colspan) {
+    return (steps || [])
+      .filter((st) => st.position === position)
+      .map((st) => `<tr class="blend-step-row"><td colspan="${colspan}">▸ ${esc(st.note)}</td></tr>`)
+      .join("");
+  }
+
+  // 기본 배합량 버튼(최대 3개) — 레시피 관리에서 지정한 레시피에서만 노출(배합 화면과 동일).
+  function renderBaseTotals() {
+    const wrap = $("cont-base-links");
+    if (!wrap) return;
+    const values = (state.anchorBlocked || !state.current) ? [] : baseTotalValues(state.current);
+    if (!values.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    wrap.innerHTML = baseTotalLinksHtml(values);
+    wrap.hidden = false;
+  }
+
   // ── 렌더 ────────────────────────────────────────────────────
   function render() {
     const head = $("cont-mat-head");
@@ -284,7 +305,12 @@
       + lotHeads.join("")
       + "</tr>";
 
-    const rows = state.materials.map((m, i) => {
+    // 공정 설명 줄(레시피 '설명') — 자재 사이/끝에 전폭 안내 행으로 끼워넣는다.
+    const steps = (state.current && state.current.steps) || [];
+    const colspan = 5 + state.lotCount;
+    const parts = [];
+    state.materials.forEach((m, i) => {
+      parts.push(contStepRowsHtml(steps, i, colspan));  // 이 자재 앞(=앞선 자재 i개 뒤) 설명
       const cells = [];
       for (let j = 0; j < state.lotCount; j++) {
         const cell = state.cells[i][j];
@@ -297,16 +323,17 @@
           + `</td>`
         );
       }
-      return "<tr>"
+      parts.push("<tr>"
         + `<td>${i + 1}</td>`
         + `<td>${esc(m.material_name)}</td>`
         + `<td class="num">${fmt(m.ratio, 2)}</td>`
         + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i])}</td>`
         + `<td><input class="input cont-lot" data-i="${i}" value="${esc(state.sharedLot[i])}" placeholder="LOT" /></td>`
         + cells.join("")
-        + "</tr>";
+        + "</tr>");
     });
-    body.innerHTML = rows.join("");
+    parts.push(contStepRowsHtml(steps, state.materials.length, colspan));  // 마지막 자재 뒤 설명
+    body.innerHTML = parts.join("");
     bindCellEvents();
     // 편차 표시 초기화
     for (let i = 0; i < state.materials.length; i++) {
@@ -539,6 +566,16 @@
       state.total = Number($("cont-total").value) || 0;
       recomputeTheory();
       refreshTheoryCells();
+    });
+    // 기본 배합량 버튼 클릭 → 총량에 채우고 이론량 재산출(배합 화면과 동일 경로).
+    $("cont-base-links").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".blend-base-link");
+      if (!btn) return;
+      const base = Number(btn.dataset.value);
+      if (!(base > 0)) return;
+      const totalInput = $("cont-total");
+      totalInput.value = String(base);
+      totalInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     $("cont-worker").addEventListener("focus", () => { $("cont-worker").value = ""; });
