@@ -297,7 +297,9 @@
     }
     const lotHeads = [];
     for (let j = 0; j < state.lotCount; j++) {
-      lotHeads.push(`<th class="num cont-lot-col">로트 ${j + 1}<br><small class="cont-lot-preview" data-j="${j}">-</small></th>`);
+      // 로트 열마다 색을 순환(cont-lc0~3)해 세로 색띠로 구분 — "지금 몇 번 로트를 재는지" 가독.
+      const lc = `cont-lc${j % 4}${j === 0 ? " cont-first-lot" : ""}`;
+      lotHeads.push(`<th class="num cont-lot-col ${lc}"><span class="cont-lot-chip">로트 ${j + 1}</span><br><small class="cont-lot-preview" data-j="${j}">-</small></th>`);
     }
     head.innerHTML = "<tr>"
       + '<th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론량(g)</th>'
@@ -315,17 +317,19 @@
       for (let j = 0; j < state.lotCount; j++) {
         const cell = state.cells[i][j];
         const ph = state.theory[i] == null ? "" : fmt(state.theory[i]);
+        const lc = `cont-lc${j % 4}${j === 0 ? " cont-first-lot" : ""}`;
         cells.push(
-          `<td class="num cont-cell">`
+          `<td class="num cont-cell ${lc}">`
           + `<input class="input cont-actual" data-i="${i}" data-j="${j}" type="number" step="any" min="0" `
           + `value="${esc(cell.actual)}" placeholder="${ph}" />`
           + `<span class="cont-var" data-i="${i}" data-j="${j}">-</span>`
           + `</td>`
         );
       }
-      parts.push("<tr>"
+      // 자재 행 홀짝 줄무늬(cont-mrow-alt) — 넓은 표에서 같은 원재료 행을 가로로 추적.
+      parts.push(`<tr class="cont-mrow${i % 2 ? " cont-mrow-alt" : ""}">`
         + `<td>${i + 1}</td>`
-        + `<td>${esc(m.material_name)}</td>`
+        + `<td class="cont-matname">${esc(m.material_name)}</td>`
         + `<td class="num">${fmt(m.ratio, 2)}</td>`
         + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i])}</td>`
         + `<td><input class="input cont-lot" data-i="${i}" value="${esc(state.sharedLot[i])}" placeholder="LOT" /></td>`
