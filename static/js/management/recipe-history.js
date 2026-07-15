@@ -85,9 +85,21 @@
 
         if (!rows.length) {
           dom.historyBody.innerHTML =
-            '<tr><td colspan="6"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
+            '<tr><td colspan="7"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
           return;
         }
+
+        // 분류 셀 — 책임자는 목록에서 바로 바꾸는 드롭다운(변경 즉시 저장), 그 외는 텍스트.
+        const CATS = ["약품", "합성", "잉크"];
+        const categoryCell = (recipe) => {
+          const cat = recipe.category || "";
+          if (!ctx.canManage) {
+            return `<td>${cat ? IRMS.escapeHtml(cat) : '<span class="muted">미분류</span>'}</td>`;
+          }
+          const opts = `<option value=""${cat === "" ? " selected" : ""}>미분류</option>`
+            + CATS.map((c) => `<option value="${c}"${c === cat ? " selected" : ""}>${c}</option>`).join("");
+          return `<td><select class="input recipe-cat-select" data-recipe-id="${recipe.id}">${opts}</select></td>`;
+        };
 
         dom.historyBody.innerHTML = rows
           .map(
@@ -95,6 +107,7 @@
               <tr class="history-row" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
                 <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
+                ${categoryCell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
@@ -103,6 +116,37 @@
             `,
           )
           .join("");
+
+        // 분류 드롭다운 — 변경 즉시 PUT /api/recipes/{id}/category. 클릭이 행 확장으로
+        // 번지지 않게 막는다(행 클릭 = 상세 펼침). x-csrftoken 헤더 직접 부착.
+        dom.historyBody.querySelectorAll(".recipe-cat-select").forEach((sel) => {
+          sel.addEventListener("click", (e) => e.stopPropagation());
+          sel.addEventListener("change", async (e) => {
+            e.stopPropagation();
+            const rid = Number(sel.dataset.recipeId);
+            const category = sel.value ? sel.value : null;
+            try {
+              const headers = { "Content-Type": "application/json" };
+              const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+              if (token) headers["x-csrftoken"] = token;
+              const resp = await fetch(`/api/recipes/${rid}/category`, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers,
+                body: JSON.stringify({ category }),
+              });
+              if (!resp.ok) {
+                let msg = `Request failed (${resp.status})`;
+                try { const p = await resp.json(); if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail); } catch (_e) { /* noop */ }
+                throw new Error(msg);
+              }
+              await resp.json();
+              IRMS.notify(category ? `분류를 '${category}'(으)로 지정했습니다.` : "분류를 미분류로 되돌렸습니다.", "success");
+            } catch (err) {
+              IRMS.notify(`분류 저장 실패: ${err.message}`, "error");
+            }
+          });
+        });
 
         // Accordion: row click to expand detail
         dom.historyBody.querySelectorAll(".history-row").forEach((row) => {
@@ -132,7 +176,7 @@
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
               const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
-              detailRow.innerHTML = `<td colspan="6">
+              detailRow.innerHTML = `<td colspan="7">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">

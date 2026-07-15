@@ -64,6 +64,7 @@
       position: row.position,
       inkName: row.ink_name,
       status: row.status,
+      category: row.category || null,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,
