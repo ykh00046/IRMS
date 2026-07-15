@@ -15,9 +15,18 @@
             <h3 class="panel-title">배합 설정</h3>
             <div class="blend-form-grid">
               <div class="blend-field">
+                <label class="filter-label" for="cont-recipe-cat">분류</label>
+                <select class="input" id="cont-recipe-cat">
+                  <option value="">전체</option>
+                  <option value="약품">약품</option>
+                  <option value="합성">합성</option>
+                  <option value="잉크">잉크</option>
+                  <option value="__none__">미분류</option>
+                </select>
+              </div>
+              <div class="blend-field">
                 <label class="filter-label" for="cont-recipe">레시피</label>
-                <input class="input" id="cont-recipe" list="recipe-names" autocomplete="off" placeholder="레시피 검색 (예: sb)" />
-                <datalist id="recipe-names"></datalist>
+                <select class="input" id="cont-recipe"><option value="">레시피 선택…</option></select>
               </div>
               <div class="blend-field">
                 <div class="blend-label-row">
@@ -96,5 +105,5 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260713a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260715c"></script>
+    <script src="/static/js/blend_continuous.js?v=20260715d"></script>
 {% endblock %}

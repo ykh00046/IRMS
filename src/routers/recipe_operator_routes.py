@@ -201,7 +201,7 @@ def build_router() -> APIRouter:
                        r.base_total, r.base_totals,
                        r.anchor_material_id,
                        am.name AS anchor_material_name,
-                       r.tolerance_g
+                       r.tolerance_g, r.category
                 FROM recipes r
                 LEFT JOIN materials am ON am.id = r.anchor_material_id
                 WHERE r.id = ?
@@ -446,7 +446,7 @@ def build_router() -> APIRouter:
         with get_connection() as connection:
             recipe_rows = connection.execute(
                 f"""
-                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.created_by,
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category, r.created_by,
                        r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr
                 FROM recipes r
                 {where_sql}

@@ -41,15 +41,9 @@
   };
 
   function selectedProduct() {
-    const input = $("visc-product-select");
-    const value = input ? input.value.trim().toLowerCase() : "";
-    if (!value) return null;
-    return state.products.find((product) => {
-      const code = String(product.code || "").trim().toLowerCase();
-      const name = String(product.name || "").trim().toLowerCase();
-      const label = productLabel(product).trim().toLowerCase();
-      return value === code || value === name || value === label;
-    }) || null;
+    const sel = $("visc-product-select");
+    if (!sel || !sel.value) return null;
+    return state.products.find((product) => String(product.id) === sel.value) || null;
   }
 
   function currentProduct() {
@@ -71,32 +65,23 @@
   }
 
   function renderProductSelect() {
-    const input = $("visc-product-select");
-    const list = $("visc-product-names");
-    if (list) list.innerHTML = "";
+    // native select — 클릭하면 전체 목록이 즉시 열리고 리셋된다(옛 datalist 는 값을
+    // 지워야 목록이 떠서 불편했다). option value=반제품 id, 표시=반제품 라벨.
+    const sel = $("visc-product-select");
+    if (!sel) return;
+    sel.innerHTML = "";
     state.products.forEach((product) => {
       const opt = document.createElement("option");
-      opt.value = productLabel(product);
-      if (list) list.appendChild(opt);
+      opt.value = String(product.id);
+      opt.textContent = productLabel(product);
+      sel.appendChild(opt);
     });
-    const current = state.products.find((item) => item.id === state.currentId);
-    if (input && current) input.value = productLabel(current);
-    if (input._pickerBound) return;
-    // 포커스 시 비움 → datalist 가 현재값으로 필터되지 않고 전체 목록이 뜸.
-    // 선택 없이 나가면(blur) 현재 반제품 라벨로 원복.
-    input.addEventListener("focus", () => {
-      input.value = "";
-    });
-    input.addEventListener("blur", () => {
-      if (selectedProduct()) return;
-      const cur = state.products.find((item) => item.id === state.currentId);
-      input.value = cur ? productLabel(cur) : "";
-    });
-    input.addEventListener("input", () => {
+    if (state.currentId) sel.value = String(state.currentId);
+    if (sel._pickerBound) return;
+    sel._pickerBound = true;
+    sel.addEventListener("change", () => {
       const product = selectedProduct();
-      if (!product) return;
-      input.blur(); // 선택 확정 — 드롭다운 닫기
-      if (product.id === state.currentId) return;
+      if (!product || product.id === state.currentId) return;
       state.currentId = product.id;
       state.year = product.year;
       state.reactor = null; // 반제품이 바뀌면 반응기 필터 초기화

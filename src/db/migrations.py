@@ -127,6 +127,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "anchor_material_id", "INTEGER")
     # 레시피별 계량 허용 편차(g). NULL = 기본값 0.05g 사용(하위호환 — 기존 레시피 동작 불변).
     ensure_column(connection, "recipes", "tolerance_g", "REAL")
+    # 레시피 분류(약품/합성/잉크). NULL = 미분류(하위호환 — 기존 레시피 동작 불변).
+    # 값 검증은 API에서(여기선 컬럼만). 배합·이어서계량 화면의 2단계 선택(분류→레시피)용.
+    ensure_column(connection, "recipes", "category", "TEXT")
 
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고

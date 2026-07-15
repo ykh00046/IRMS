@@ -29,7 +29,8 @@ def _make_blend_db() -> sqlite3.Connection:
             status TEXT NOT NULL,
             is_dhr INTEGER NOT NULL DEFAULT 0,
             revision_of INTEGER,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            category TEXT
         )
         """
     )

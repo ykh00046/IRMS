@@ -290,22 +290,31 @@
   async function loadRecipes() {
     const data = await request("/blend/recipes");
     state.recipes = data.items || [];
-    // 레시피는 타이핑 필터(datalist): 'sb' 입력 → 후보 좁혀짐 → 선택 시 로드.
-    // 주의: 내용이 같으면 datalist 를 다시 그리지 않는다 — 포커스 재조회 때 재구성하면
-    // 열린 드롭다운이 즉시 닫히는 증상(여러 번 클릭해야 열림)이 생긴다.
-    const dl = $("recipe-names");
-    if (dl) {
-      const html = state.recipes.map((r) => `<option value="${esc(r.product_name)}"></option>`).join("");
-      if (dl.innerHTML !== html) dl.innerHTML = html;
-    }
+    populateRecipeSelect();
   }
 
-  // 입력한 레시피명(대소문자 무시, 정확 일치)을 레시피 id 로 해석. 부분 입력은 미선택.
+  // 분류 → 레시피 2단계 선택. native select 라 클릭하면 전체 목록이 즉시 열리고
+  // 리셋된다(옛 datalist 는 값을 지워야 목록이 떠서 불편했다). 분류로 걸러 목록도 짧아짐.
+  function recipesForCategory() {
+    const cat = $("blend-recipe-cat") ? $("blend-recipe-cat").value : "";
+    if (cat === "") return state.recipes;                       // 전체
+    if (cat === "__none__") return state.recipes.filter((r) => !r.category);  // 미분류
+    return state.recipes.filter((r) => r.category === cat);
+  }
+
+  function populateRecipeSelect() {
+    const sel = $("blend-recipe");
+    if (!sel) return;
+    const prev = sel.value;
+    const list = recipesForCategory();
+    sel.innerHTML = '<option value="">레시피 선택…</option>'
+      + list.map((r) => `<option value="${esc(r.id)}">${esc(r.product_name)}</option>`).join("");
+    if (prev && list.some((r) => String(r.id) === prev)) sel.value = prev;  // 이전 선택 유지
+  }
+
+  // 선택된 레시피 id(옵션 value). 미선택은 "".
   function selectedRecipeId() {
-    const name = $("blend-recipe").value.trim().toLowerCase();
-    if (!name) return "";
-    const hit = state.recipes.find((r) => String(r.product_name || "").trim().toLowerCase() === name);
-    return hit ? String(hit.id) : "";
+    return $("blend-recipe").value || "";
   }
 
   async function onRecipeChange() {
@@ -710,20 +719,16 @@
 
   function bind() {
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
-    const recipeInput = $("blend-recipe");
-    recipeInput.addEventListener("input", onRecipePick);
-    recipeInput.addEventListener("change", onRecipePick);
-    // 포커스 시 비움 → 이미 선택된 이름으로 datalist 가 필터되지 않고 전체 목록 표시.
-    // 선택 없이 나가면 현재 레시피명으로 원복(선택 유지).
-    // 목록도 재조회 — 화면을 계속 띄워두는 단말에서 레시피 수정(개정)이 반영되도록.
-    recipeInput.addEventListener("focus", () => {
-      recipeInput.value = "";
-      loadRecipes().catch(() => {});
-    });
-    recipeInput.addEventListener("blur", () => {
-      if (selectedRecipeId()) return;
-      recipeInput.value = state.current ? state.current.recipe.product_name : "";
-    });
+    const recipeSel = $("blend-recipe");
+    recipeSel.addEventListener("change", onRecipePick);
+    // 화면을 계속 띄워두는 단말에서 레시피 추가/개정이 반영되도록 열 때 목록 재조회.
+    recipeSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
+    // 분류 변경 → 레시피 목록 갱신. 분류 select 도 열 때 최신 목록 반영.
+    const catSel = $("blend-recipe-cat");
+    if (catSel) {
+      catSel.addEventListener("change", () => { populateRecipeSelect(); });
+      catSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
+    }
     $("blend-base-links").addEventListener("click", (ev) => {
       const btn = ev.target.closest(".blend-base-link");
       if (!btn) return;

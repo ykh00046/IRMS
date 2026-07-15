@@ -178,4 +178,51 @@ def build_router() -> APIRouter:
             "tolerance_g": tolerance_g,
         }
 
+    @router.put("/recipes/{recipe_id}/category")
+    def set_recipe_category(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피 분류(약품/합성/잉크) 지정/해제 — 책임자 전용.
+
+        body: {"category": "약품"|"합성"|"잉크"|null}. null 이면 미분류로 되돌림.
+        recipe_tolerance_set 와 동일한 헬퍼/패턴 사용.
+        """
+        ALLOWED = {"약품", "합성", "잉크"}
+        raw = body.get("category")
+        category: str | None
+        if raw is None or raw == "":
+            category = None
+        else:
+            category = str(raw).strip()
+            if category not in ALLOWED:
+                raise HTTPException(
+                    status_code=400,
+                    detail="분류는 약품·합성·잉크 중 하나이거나 null 이어야 합니다.",
+                )
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            connection.execute(
+                "UPDATE recipes SET category = ? WHERE id = ?", (category, recipe_id)
+            )
+            write_audit_log(
+                connection,
+                action="recipe_category_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"category": category},
+            )
+            connection.commit()
+
+        return {"status": "ok", "recipe_id": recipe_id, "category": category}
+
     return router

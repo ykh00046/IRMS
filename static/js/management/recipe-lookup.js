@@ -111,19 +111,37 @@
             + `placeholder="선택 · 비우면 기본 0.05" value="${tolCurrent != null && Number.isFinite(tolCurrent) ? IRMS.escapeHtml(String(tolCurrent)) : ""}" />`
             + `<button id="lookup-tolerance-save" class="btn" type="button">저장</button>`
           : "";
+        // 분류 줄 — 현재 값 표시 + (책임자) 약품/합성/잉크 선택·저장(PUT /api/recipes/{id}/category).
+        // 배합·이어서계량 화면의 2단계 선택(분류→레시피) 필터에 쓰인다.
+        const CATS = ["약품", "합성", "잉크"];
+        const catCurrent = detail.category || "";
+        const catCurrentText = catCurrent
+          ? IRMS.escapeHtml(catCurrent)
+          : '<span class="muted">미분류</span>';
+        const catOptions = '<option value="">미분류</option>'
+          + CATS.map((c) => `<option value="${c}"${c === catCurrent ? " selected" : ""}>${c}</option>`).join("");
+        const catEditor = canManage
+          ? `<select id="lookup-category-select" class="input">${catOptions}</select>`
+            + `<button id="lookup-category-save" class="btn" type="button">저장</button>`
+          : "";
         wrap.innerHTML =
           `<label class="filter-label" for="lookup-anchor-select">기준 자재</label>` +
           `<span class="muted">현재:</span><span id="lookup-anchor-current">${currentText}</span>` +
           editor +
           `<label class="filter-label" for="lookup-tolerance-input">허용 편차</label>` +
           `<span class="muted">현재:</span><span id="lookup-tolerance-current">${tolCurrentText}</span>` +
-          tolEditor;
+          tolEditor +
+          `<label class="filter-label" for="lookup-category-select">분류</label>` +
+          `<span class="muted">현재:</span><span id="lookup-category-current">${catCurrentText}</span>` +
+          catEditor;
         wrap.hidden = false;
         if (canManage) {
           const saveBtn = document.getElementById("lookup-anchor-save");
           if (saveBtn) saveBtn.addEventListener("click", () => handleSaveAnchor(recipeId));
           const tolSaveBtn = document.getElementById("lookup-tolerance-save");
           if (tolSaveBtn) tolSaveBtn.addEventListener("click", () => handleSaveTolerance(recipeId));
+          const catSaveBtn = document.getElementById("lookup-category-save");
+          if (catSaveBtn) catSaveBtn.addEventListener("click", () => handleSaveCategory(recipeId));
         }
       } catch (error) {
         wrap.hidden = false;
@@ -250,6 +268,47 @@
         );
       } catch (error) {
         IRMS.notify(`허용 편차 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    // 분류 저장 — 빈 값은 null(미분류), 아니면 약품/합성/잉크 중 하나. PUT /api/recipes/{id}/category.
+    // 기준 자재/허용 편차 저장과 동일하게 x-csrftoken 헤더를 직접 부착한다.
+    async function handleSaveCategory(recipeId) {
+      const sel = document.getElementById("lookup-category-select");
+      const saveBtn = document.getElementById("lookup-category-save");
+      if (!sel) return;
+      const category = sel.value ? sel.value : null;
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/category`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ category }),
+        });
+        if (!resp.ok) {
+          let detail = "";
+          try {
+            const payload = await resp.json();
+            const d = payload && payload.detail;
+            detail = d && typeof d === "object" && d.message ? d.message
+              : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+          } catch (_e) {
+            detail = await resp.text().catch(() => `Request failed (${resp.status})`);
+          }
+          throw new Error(String(detail || `Request failed (${resp.status})`));
+        }
+        await resp.json();
+        const cur = document.getElementById("lookup-category-current");
+        if (cur) cur.innerHTML = category ? IRMS.escapeHtml(category) : '<span class="muted">미분류</span>';
+        IRMS.notify(category ? `분류를 '${category}'(으)로 지정했습니다.` : "분류를 미분류로 되돌렸습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`분류 저장 실패: ${error.message}`, "error");
       } finally {
         if (saveBtn) IRMS.btnLoading(saveBtn, false);
       }

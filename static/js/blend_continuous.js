@@ -183,18 +183,29 @@
   async function loadRecipes() {
     const data = await request("/blend/recipes");
     state.recipes = data.items || [];
-    const dl = $("recipe-names");
-    if (dl) {
-      const html = state.recipes.map((r) => `<option value="${esc(r.product_name)}"></option>`).join("");
-      if (dl.innerHTML !== html) dl.innerHTML = html;
-    }
+    populateRecipeSelect();
+  }
+
+  // 분류 → 레시피 2단계 선택(배합 화면과 동일). native select 라 클릭 시 즉시 열리고 리셋.
+  function recipesForCategory() {
+    const cat = $("cont-recipe-cat") ? $("cont-recipe-cat").value : "";
+    if (cat === "") return state.recipes;                       // 전체
+    if (cat === "__none__") return state.recipes.filter((r) => !r.category);  // 미분류
+    return state.recipes.filter((r) => r.category === cat);
+  }
+
+  function populateRecipeSelect() {
+    const sel = $("cont-recipe");
+    if (!sel) return;
+    const prev = sel.value;
+    const list = recipesForCategory();
+    sel.innerHTML = '<option value="">레시피 선택…</option>'
+      + list.map((r) => `<option value="${esc(r.id)}">${esc(r.product_name)}</option>`).join("");
+    if (prev && list.some((r) => String(r.id) === prev)) sel.value = prev;
   }
 
   function selectedRecipeId() {
-    const name = $("cont-recipe").value.trim().toLowerCase();
-    if (!name) return "";
-    const hit = state.recipes.find((r) => String(r.product_name || "").trim().toLowerCase() === name);
-    return hit ? String(hit.id) : "";
+    return $("cont-recipe").value || "";
   }
 
   async function onRecipeChange() {
@@ -554,17 +565,14 @@
   // ── 바인딩/초기화 ───────────────────────────────────────────
   function bind() {
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
-    const recipeInput = $("cont-recipe");
-    recipeInput.addEventListener("input", onRecipePick);
-    recipeInput.addEventListener("change", onRecipePick);
-    recipeInput.addEventListener("focus", () => {
-      recipeInput.value = "";
-      loadRecipes().catch(() => {});
-    });
-    recipeInput.addEventListener("blur", () => {
-      if (selectedRecipeId()) return;
-      recipeInput.value = state.current ? state.current.recipe.product_name : "";
-    });
+    const recipeSel = $("cont-recipe");
+    recipeSel.addEventListener("change", onRecipePick);
+    recipeSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
+    const catSel = $("cont-recipe-cat");
+    if (catSel) {
+      catSel.addEventListener("change", () => { populateRecipeSelect(); });
+      catSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
+    }
 
     $("cont-total").addEventListener("input", () => {
       state.total = Number($("cont-total").value) || 0;

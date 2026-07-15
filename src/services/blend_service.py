@@ -449,7 +449,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
     """
     rows = connection.execute(
         """
-        SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+        SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category,
                COUNT(ri.id) AS item_count,
                COALESCE(SUM(ri.value_weight), 0) AS total_weight
         FROM recipes r
@@ -470,6 +470,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
             "position": r["position"],
             "ink_name": r["ink_name"],
             "status": r["status"],
+            "category": r["category"],
             "item_count": int(r["item_count"]),
             "total_weight": round(float(r["total_weight"]), 3),
         }

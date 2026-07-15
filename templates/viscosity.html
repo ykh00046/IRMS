@@ -13,8 +13,7 @@
           <div class="visc-toolbar">
             <div class="visc-product-picker">
               <label class="filter-label" for="visc-product-select">반제품</label>
-              <input class="input" id="visc-product-select" list="visc-product-names" autocomplete="off" placeholder="반제품 검색 (예: sb)" />
-              <datalist id="visc-product-names"></datalist>
+              <select class="input" id="visc-product-select"></select>
             </div>
             <div class="visc-toolbar-actions">
               <label class="filter-label" for="visc-year">연도</label>
@@ -249,5 +248,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260712a"></script>
-    <script src="/static/js/viscosity.js?v=20260712a"></script>
+    <script src="/static/js/viscosity.js?v=20260715a"></script>
 {% endblock %}
