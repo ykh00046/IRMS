@@ -227,6 +227,18 @@ def test_period_key_quarter_and_month():
     assert vs._period_key("bad", "quarter") is None
 
 
+def test_period_key_day_and_week():
+    assert vs._period_key("2026-03-15", "day") == "2026-03-15"
+    # ISO 주차 — 2026-03-15 은 11주차, 다음날은 12주차(주 경계)
+    assert vs._period_key("2026-03-15", "week") == "2026-W11"
+    assert vs._period_key("2026-03-16", "week") == "2026-W12"
+    # 연 초 ISO 주차(=W01), 잘못된 날짜는 None
+    assert vs._period_key("2026-01-01", "week") == "2026-W01"
+    assert vs._period_key("2026-13-40", "day") is None
+    # 알 수 없는 granularity 는 분기로 폴백(기존 기본 동작 보존)
+    assert vs._period_key("2026-03-15", "bogus") == "2026-Q1"
+
+
 def test_quarterly_summary_with_delta():
     """분기별 평균 + 전기대비(mean_delta) 계산."""
     conn = _make_db()
@@ -358,6 +370,19 @@ def test_year_granularity_buckets():
     assert [x["period"] for x in periods] == ["2024", "2025"]
     assert periods[0]["mean"] == 205.0
     assert periods[1]["mean_delta"] == -7.0  # 198 - 205
+
+
+def test_day_and_week_granularity_buckets():
+    conn = _make_db()
+    p = _add_product(conn, "SBCT")
+    _add_dated(conn, p["id"], "a", 200, "2026-03-15")
+    _add_dated(conn, p["id"], "b", 210, "2026-03-15")  # 같은 날 → 한 버킷
+    _add_dated(conn, p["id"], "c", 198, "2026-03-16")  # 다음 주(주 경계)
+    days = vs.analyze_product(conn, p, granularity="day")["periods"]
+    assert [x["period"] for x in days] == ["2026-03-15", "2026-03-16"]
+    assert days[0]["count"] == 2 and days[0]["mean"] == 205.0
+    weeks = vs.analyze_product(conn, p, granularity="week")["periods"]
+    assert [x["period"] for x in weeks] == ["2026-W11", "2026-W12"]
 
 
 # ── 신규 입력 즉시 판정 ─────────────────────────────────────────

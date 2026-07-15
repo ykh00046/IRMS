@@ -73,7 +73,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         product = _require_product(connection, product_id)
-        if granularity not in ("month", "quarter", "year"):
+        if granularity not in ("day", "week", "month", "quarter", "year"):
             granularity = "quarter"
         if reactor is not None and reactor not in (1, 2, 3, 4):
             reactor = None

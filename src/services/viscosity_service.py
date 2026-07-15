@@ -323,7 +323,11 @@ def _trend_alerts(values: list[float], center: float | None) -> list[dict[str, A
 
 
 def _period_key(date_str: str | None, granularity: str) -> str | None:
-    """측정일(ISO date)에서 기간 버킷 키 생성. 'quarter' → '2026-Q1', 'month' → '2026-03'."""
+    """측정일(ISO date)에서 기간 버킷 키 생성.
+
+    'day' → '2026-03-15', 'week' → '2026-W11'(ISO 주차), 'month' → '2026-03',
+    'quarter' → '2026-Q1', 'year' → '2026'. 모든 키는 사전식 정렬=시간순 정렬.
+    """
     if not date_str:
         return None
     try:
@@ -337,6 +341,17 @@ def _period_key(date_str: str | None, granularity: str) -> str | None:
         return f"{year:04d}"
     if granularity == "month":
         return f"{year:04d}-{month:02d}"
+    if granularity in ("day", "week"):
+        # 일/주는 측정일 전체가 필요 — 유효한 날짜인지 확인 후 버킷.
+        try:
+            day = int(date_str[8:10])
+            d = date(year, month, day)
+        except (ValueError, IndexError):
+            return None
+        if granularity == "day":
+            return d.isoformat()                       # 2026-03-15
+        iso = d.isocalendar()                          # (ISO년, ISO주차, 요일)
+        return f"{iso[0]:04d}-W{iso[1]:02d}"           # 2026-W11
     return f"{year}-Q{(month - 1) // 3 + 1}"
 
 
