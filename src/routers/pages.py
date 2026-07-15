@@ -164,6 +164,17 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "blend_worker": worker,
         })
 
+    @router.get("/blend/continuous", response_class=HTMLResponse)
+    def blend_continuous_page(request: Request) -> Response:
+        # 이어서 계량: 한 레시피로 N개 로트를 자재 열 우선으로 연속 계량 → 로트별 기록 N건.
+        worker = current_blend_worker(request)
+        if not worker:
+            return _entry_redirect("/blend/login", request)
+        return _render(templates, request, "blend_continuous.html", {
+            "current_user": get_current_user(request, required=False),
+            "blend_worker": worker,
+        })
+
     @router.get("/blend/login", response_class=HTMLResponse)
     def blend_login_page(request: Request, next: str | None = None) -> Response:
         next_url = _safe_next(next, "/blend")

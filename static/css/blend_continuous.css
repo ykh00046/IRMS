@@ -1,0 +1,27 @@
+/* blend_continuous.css — 이어서 계량(연속 배합) 전용 보강.
+   기본 표/입력/편차 색상(.blend-table/.var-up/.var-down)은 blend.css 재사용. */
+
+/* 로트 수 조절 */
+.cont-lot-controls { display: flex; align-items: center; gap: 0.5rem; }
+.cont-lot-count {
+  min-width: 1.6rem; text-align: center; font-weight: 700; font-size: 1.05rem;
+  color: #111827;
+}
+
+/* 매트릭스 — 로트가 늘면 가로 스크롤(table-wrap 이 overflow-x 담당) */
+.cont-table { min-width: max-content; }
+.cont-table th.cont-lot-col { text-align: right; white-space: nowrap; }
+.cont-lot-preview { color: #6b7280; font-weight: 400; font-size: 0.72rem; }
+
+/* 실제량 셀: 입력 + 편차를 세로로 쌓아 폭을 아낀다 */
+.cont-cell { vertical-align: top; }
+.cont-cell .cont-actual { width: 6.5rem; font-weight: 600; text-align: right; }
+.cont-cell .cont-actual::placeholder { color: #9ca3af; font-weight: 400; }
+.cont-var { display: block; margin-top: 0.15rem; font-size: 0.78rem; text-align: right; color: #9ca3af; }
+.cont-var.var-up { color: #dc2626; font-weight: 600; }
+.cont-var.var-down { color: var(--brand); font-weight: 600; }
+
+.cont-table td.cont-theory { font-weight: 700; color: #111827; }
+.cont-table .cont-lot { width: 7rem; }
+
+.cont-hint { margin-top: 0.6rem; font-size: 0.85rem; }

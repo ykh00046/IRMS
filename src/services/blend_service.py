@@ -874,6 +874,56 @@ def create_bulk(
     return ids
 
 
+def create_continuous(
+    connection: sqlite3.Connection,
+    *,
+    recipe_id: int,
+    product_name: str,
+    ink_name: str | None,
+    position: str | None,
+    worker: str,
+    work_date: str,
+    work_time: str | None,
+    total_amount: float,
+    scale: str | None,
+    note: str | None,
+    lots_details: list[list[dict[str, Any]]],
+    created_by: str | None,
+    created_at: str,
+    worker_sign: str | None = None,
+    reactor: int | None = None,
+) -> list[int]:
+    """이미 서버 도출·편차검사를 통과한 로트별 상세를 순차 저장. record_id 리스트 반환.
+
+    create_blend_record 를 로트마다 호출한다. 첫 호출이 BEGIN IMMEDIATE 로 트랜잭션을
+    열고 이후 호출은 같은 트랜잭션에서 진행되므로(create_bulk 와 동일), generate_product_lot
+    이 직전 로트 INSERT 를 보고 순번({제품명}{YYMMDD}{순번})을 연속 채번한다.
+    """
+    ids: list[int] = []
+    for details in lots_details:
+        rid = create_blend_record(
+            connection,
+            recipe_id=recipe_id,
+            product_name=product_name,
+            ink_name=ink_name,
+            position=position,
+            worker=worker,
+            work_date=work_date,
+            work_time=work_time,
+            total_amount=total_amount,
+            scale=scale,
+            note=note,
+            details=details,
+            created_by=created_by,
+            created_at=created_at,
+            worker_sign=worker_sign,
+            reactor=reactor,
+            manual_entry=any(bool(d.get("manual_entry")) for d in details),
+        )
+        ids.append(rid)
+    return ids
+
+
 def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         """

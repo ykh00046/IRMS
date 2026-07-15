@@ -43,6 +43,7 @@ from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_dele
 from .models import (
     BlendApprovalBody,
     BlendBulkBody,
+    BlendContinuousBody,
     BlendCreateBody,
     BlendViscosityBody,
     actor_name,
@@ -633,6 +634,82 @@ def build_router() -> APIRouter:
             target_id=",".join(str(i) for i in ids),
             target_label=f"{len(ids)}건",
             details={"recipe_id": body.recipe_id, "count": len(ids)},
+        )
+        connection.commit()
+        return {"created": len(ids), "ids": ids, "product_lots": lots}
+
+    @router.post("/blend/records/continuous")
+    def blend_create_continuous(
+        body: BlendContinuousBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """이어서 계량: 한 레시피 · 동일 총량으로 N개 로트를 한 번에 저장.
+
+        각 로트를 기존 단건 저장과 동일하게 서버 도출·편차검사한 뒤, 모두 통과하면 순차
+        저장한다(하나라도 실패하면 아무것도 저장하지 않음). product_lot 은 로트마다 연속 채번.
+        """
+        if not body.lots:
+            raise HTTPException(status_code=400, detail="저장할 로트가 없습니다.")
+        if any(not lot for lot in body.lots):
+            raise HTTPException(status_code=400, detail="자재 상세가 비어 있는 로트가 있습니다.")
+        # 반응기 진행 반제품은 반응기(1~4) 지정 필수 (전 로트 공통).
+        if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
+            raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        # 화면이 열린 사이 개정됐으면 옛 배합비 — 저장 거부(감사 F-5 / 단건과 동일).
+        if blend_service.resolve_chain_tip(connection, body.recipe_id) != body.recipe_id:
+            raise HTTPException(
+                status_code=409,
+                detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
+            )
+        tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
+        # 저장 전 전 로트 도출·편차검사 (원자성: 하나라도 실패하면 중단, 저장 없음)
+        derived_lots: list[list[dict[str, Any]]] = []
+        for lot_no, lot in enumerate(body.lots, start=1):
+            details = [d.model_dump() for d in lot]
+            try:
+                derived, _total = blend_service.derive_details_from_recipe(
+                    connection, body.recipe_id, body.total_amount, details
+                )
+            except blend_service.RecipeMismatchError as exc:
+                raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
+            offenders = blend_service.weighing_tolerance_violations(derived, tolerance_g=tolerance)
+            if offenders:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"로트 {lot_no}: 허용 편차(±{tolerance}g) 초과 — " + ", ".join(offenders),
+                )
+            derived_lots.append(derived)
+        worker = require_blend_worker(request)
+        current_user = get_current_user(request, required=False)
+        actor = actor_name(current_user) if current_user else "현장"
+        ids = blend_service.create_continuous(
+            connection,
+            recipe_id=body.recipe_id,
+            product_name=body.product_name,
+            ink_name=body.ink_name,
+            position=body.position,
+            worker=worker,
+            work_date=body.work_date,
+            work_time=body.work_time,
+            total_amount=body.total_amount,
+            scale=body.scale,
+            note=body.note,
+            lots_details=derived_lots,
+            created_by=actor,
+            created_at=utc_now_text(),
+            worker_sign=body.worker_sign,
+            reactor=body.reactor,
+        )
+        lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
+        write_audit_log(
+            connection,
+            action="blend_record_continuous_create",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=",".join(str(i) for i in ids),
+            target_label=f"{len(ids)}건",
+            details={"recipe_id": body.recipe_id, "count": len(ids), "total_amount": body.total_amount},
         )
         connection.commit()
         return {"created": len(ids), "ids": ids, "product_lots": lots}

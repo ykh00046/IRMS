@@ -1,0 +1,96 @@
+{% extends "_base_app.html" %}
+
+{% block title %}이어서 계량{% endblock %}
+{% block eyebrow %}현장 작업{% endblock %}
+{% block heading %}이어서 계량 (연속 배합){% endblock %}
+
+{% block styles %}
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260711a" />
+    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260715a" />
+{% endblock %}
+
+{% block content %}
+        <div id="cont-mode">
+          <section class="panel">
+            <h3 class="panel-title">배합 설정</h3>
+            <div class="blend-form-grid">
+              <div class="blend-field">
+                <label class="filter-label" for="cont-recipe">레시피</label>
+                <input class="input" id="cont-recipe" list="recipe-names" autocomplete="off" placeholder="레시피 검색 (예: sb)" />
+                <datalist id="recipe-names"></datalist>
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-total">총 배합량 (g) · 전 로트 공통</label>
+                <input class="input" id="cont-total" type="number" step="0.1" min="0" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-worker">작업자 <span class="blend-worker-hint">(클릭해 교대)</span></label>
+                <input class="input" id="cont-worker" value="{{ blend_worker or '' }}" placeholder="이름 선택" list="worker-names" autocomplete="off" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-date">작업일자</label>
+                <input class="input" id="cont-date" type="date" />
+              </div>
+              <div class="blend-field" id="cont-reactor-field" hidden>
+                <label class="filter-label" for="cont-reactor">반응기 (필수)</label>
+                <select class="input" id="cont-reactor">
+                  <option value="">반응기 선택</option>
+                  <option value="1">반응기 1</option>
+                  <option value="2">반응기 2</option>
+                  <option value="3">반응기 3</option>
+                  <option value="4">반응기 4</option>
+                </select>
+              </div>
+              <div class="blend-field">
+                <label class="filter-label">로트 수</label>
+                <div class="cont-lot-controls">
+                  <button class="btn btn-sm" id="cont-lot-minus" type="button" aria-label="로트 제거">−</button>
+                  <span class="cont-lot-count" id="cont-lot-count">2</span>
+                  <button class="btn btn-sm" id="cont-lot-plus" type="button" aria-label="로트 추가">＋ 로트</button>
+                </div>
+              </div>
+            </div>
+            <button class="blend-extra-toggle" id="cont-extra-toggle" type="button" aria-expanded="false">▸ 작업시간 · 저울 변경</button>
+            <div class="blend-form-grid" id="cont-extra" hidden>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-time">작업시간</label>
+                <input class="input" id="cont-time" type="time" step="1" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-scale">저울</label>
+                <input class="input" id="cont-scale" value="M-65" placeholder="예: M-65" />
+              </div>
+            </div>
+            <p class="cont-hint muted" id="cont-hint">레시피와 총 배합량을 정하고 로트 수를 잡으세요. 재료를 로트별로 가로로 연속 계량합니다.</p>
+            <p class="login-error" id="cont-anchor-warn" hidden></p>
+          </section>
+
+          <section class="panel">
+            <div class="table-wrap">
+              <table class="blend-table cont-table" id="cont-mat-table">
+                <thead id="cont-mat-head"></thead>
+                <tbody id="cont-mat-body">
+                  <tr><td class="muted">레시피를 선택하세요.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="blend-actions">
+              <textarea class="input" id="cont-note" rows="1" placeholder="비고 (선택) · 전 로트 공통"></textarea>
+              <div class="blend-sign-field">
+                <span class="filter-label">작성자 서명 (선택) · 전 로트 공통</span>
+                <canvas id="cont-worker-sign" class="blend-sign-pad" width="240" height="70"></canvas>
+                <button class="btn btn-sm" id="cont-worker-sign-clear" type="button">지우기</button>
+              </div>
+              <p class="login-error" id="cont-error" hidden></p>
+              <button class="btn accent" id="cont-save" type="button">전 로트 저장</button>
+            </div>
+          </section>
+        </div>
+
+        <datalist id="worker-names"></datalist>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/js/blend_lib.js?v=20260713a"></script>
+    <script src="/static/js/blend_continuous.js?v=20260715a"></script>
+{% endblock %}

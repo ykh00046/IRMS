@@ -136,6 +136,31 @@ class BlendCreateBody(BaseModel):
         return self
 
 
+class BlendContinuousBody(BaseModel):
+    """이어서 계량(연속 배합): 한 레시피 · 동일 총량으로 N개 로트를 한 번에 저장.
+
+    lots 는 로트별 자재 상세 목록(각 로트 = 자재 전체 목록). 총량·서명·반응기·작업일은
+    전 로트 공유. 자재 LOT·실제량·수동입력 여부만 로트별(사람이 아는 값)로 받는다.
+    """
+    recipe_id: int = Field(gt=0)                  # 연속 배합은 레시피 기반만 허용
+    product_name: str = Field(min_length=1, max_length=200)
+    ink_name: str | None = Field(default=None, max_length=200)
+    position: str | None = Field(default=None, max_length=200)
+    work_date: str = Field(min_length=8, max_length=10)
+    work_time: str | None = Field(default=None, max_length=8)
+    total_amount: float = Field(gt=0, le=10_000_000)   # 전 로트 동일 총량
+    scale: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=1000)
+    reactor: int | None = Field(default=None, ge=1, le=4)
+    worker_sign: str | None = Field(default=None, max_length=300_000)  # 전 로트 동일 서명
+    lots: list[list[BlendDetailBody]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_worker_sign(self) -> "BlendContinuousBody":
+        self.worker_sign = _validate_signature(self.worker_sign)
+        return self
+
+
 class BlendViscosityBody(BaseModel):
     # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요.
     # 반응기는 배합 실적에서 물려받으므로 여기서 입력하지 않는다.

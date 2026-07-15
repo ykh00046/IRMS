@@ -30,6 +30,9 @@
             <a href="/blend" class="side-link{{ ' active' if request.url.path == '/blend' else '' }}">
               <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>배합</span>
             </a>
+            <a href="/blend/continuous" class="side-link{{ ' active' if request.url.path == '/blend/continuous' else '' }}">
+              <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>이어서 계량</span>
+            </a>
             <a href="/viscosity" class="side-link{{ ' active' if request.url.path == '/viscosity' else '' }}">
               <span class="side-ico side-ico-viscosity" aria-hidden="true"></span><span>점도 관리</span>
             </a>
