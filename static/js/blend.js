@@ -338,6 +338,9 @@
     if (id === prevId) return;
     const data = await request(`/blend/recipes/${id}`);
     state.current = data;
+    // 레시피가 선택되면 DHR 카드의 빈 상태 안내를 걷고 LOT·합계를 노출.
+    const dhrCard = document.querySelector(".blend-dhr-card");
+    if (dhrCard) dhrCard.classList.remove("is-empty");
     // 레시피별 허용 편차(EFFECTIVE) 보존 — 레시피에 tolerance_g 이 없으면 기본값(0.05).
     // 모든 편차 검사·표시는 이 값을 따른다(레시피가 바뀌면 같이 갱신).
     state.toleranceG = (state.current.recipe && state.current.recipe.tolerance_g) || TOLERANCE_G;

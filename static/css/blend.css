@@ -75,6 +75,17 @@
   margin-left: 3px;
 }
 .blend-dhr-metric-var .blend-dhr-metric-value { color: #f6a26a; }
+/* 레시피 선택 전 빈 카드가 무겁고 허전해 보이지 않게 안내 문구로 대체 */
+.blend-dhr-empty {
+  display: none;
+  font-size: 13px; line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+  margin: 0.2rem 0 auto;
+}
+.blend-dhr-card.is-empty { gap: 0.6rem; }
+.blend-dhr-card.is-empty .blend-dhr-lot,
+.blend-dhr-card.is-empty .blend-dhr-metrics { display: none; }
+.blend-dhr-card.is-empty .blend-dhr-empty { display: block; }
 
 /* 배합 테이블 */
 .blend-table { width: 100%; border-collapse: collapse; }
@@ -241,9 +252,12 @@
 /* 작업시간·저울 접기 토글 */
 .blend-extra-toggle {
   margin-top: 0.6rem; background: none; border: none; cursor: pointer;
-  color: #6b7280; font-size: 0.85rem; padding: 0.2rem 0;
+  color: #6b7280; font-size: 0.85rem;
+  /* 클릭 타깃 확보(≥36px) — 종전 0.2rem 패딩은 26px 로 작았다 */
+  display: inline-flex; align-items: center; min-height: 36px;
+  padding: 0.3rem 0.5rem; margin-left: -0.5rem; border-radius: var(--radius-sm, 6px);
 }
-.blend-extra-toggle:hover { color: #2563eb; }
+.blend-extra-toggle:hover { color: #2563eb; background: rgba(37, 99, 235, 0.06); }
 /* 이론량 강조 — 값을 잘 보고 실제량을 입력하도록 */
 .blend-table td.blend-theory { font-weight: 700; font-size: 1.05rem; color: #111827; }
 .blend-table td .blend-actual { font-weight: 600; }
