@@ -19,6 +19,15 @@
   gap: 1.5rem;
 }
 
+/* 자재 LOT 추적 — 입력 1칸 + 추적 버튼 + 우측 요약. 4열 필터 그리드를 그대로 쓰면
+   입력이 과도하게 좁아져 전용 3열로 오버라이드 */
+.insight-trace-grid { grid-template-columns: minmax(220px, 320px) auto 1fr; }
+.insight-trace-lot-link { color: var(--accent-primary, #2563eb); text-decoration: none; font-weight: 600; }
+.insight-trace-lot-link:hover { text-decoration: underline; }
+
+/* 지표 카드 — 대시보드 metric-card 와 동일한 차분한 표면. 색 스트라이프(::before)와
+   hover 리프트는 제거: 장식 색띠는 낡은 패턴이고, 클릭되지 않는 카드가 hover 에
+   떠오르면 클릭 가능해 보이는 오신호를 준다. */
 .metric-card {
   background: var(--bg-surface-200);
   border: 1px solid var(--border-subtle);
@@ -27,31 +36,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-
-.metric-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  border-color: var(--border-strong);
-}
-
-.metric-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--accent-primary);
-  opacity: 0.8;
-}
-
-.metric-card:nth-child(2)::before { background: var(--accent-secondary); }
-.metric-card:nth-child(3)::before { background: var(--accent-tertiary); }
-.metric-card:nth-child(4)::before { background: var(--status-success); }
 
 .metric-label {
   color: var(--text-secondary);

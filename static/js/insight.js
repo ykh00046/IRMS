@@ -32,6 +32,48 @@
     };
   }
 
+  // ── 자재 LOT 추적 — 원재료 LOT 이 투입된 배합 기록 역추적(리콜 대응) ──
+  // 기간 필터와 무관하게 전 기간을 뒤진다(추적은 누락이 더 위험).
+  const STATUS_LABEL = { completed: "완료", canceled: "취소" };
+
+  async function traceMaterialLot() {
+    const lot = $("insight-trace-lot").value.trim();
+    const body = $("insight-trace-body");
+    const summary = $("insight-trace-summary");
+    if (!lot) {
+      body.innerHTML = '<tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>';
+      summary.textContent = "";
+      return;
+    }
+    try {
+      const d = await request("/blend/material-lot-trace", { query: { lot } });
+      const items = d.items || [];
+      summary.textContent = items.length
+        ? `배합 ${d.record_count}건 · 자재 행 ${d.total}건`
+        : "";
+      if (!items.length) {
+        body.innerHTML = `<tr><td colspan="8" class="muted">'${esc(lot)}' 이 투입된 배합 기록이 없습니다.</td></tr>`;
+        return;
+      }
+      body.innerHTML = items.map((it) =>
+        "<tr>"
+        + `<td>${esc(it.work_date)}</td>`
+        // 제품 LOT 클릭 → 배합 기록 화면을 그 LOT 으로 필터해 열기(딥링크)
+        + `<td><a class="insight-trace-lot-link" href="/status?search=${encodeURIComponent(it.product_lot)}">${esc(it.product_lot)}</a></td>`
+        + `<td>${esc(it.product_name)}</td>`
+        + `<td>${esc(it.material_name)}</td>`
+        + `<td>${esc(it.material_lot)}</td>`
+        + `<td class="num">${fmt(it.actual_amount, 2)}</td>`
+        + `<td>${esc(it.worker)}</td>`
+        + `<td>${esc(STATUS_LABEL[it.status] || it.status)}</td>`
+        + "</tr>"
+      ).join("");
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="8" class="muted">추적 실패: ${esc(e.message || e)}</td></tr>`;
+      summary.textContent = "";
+    }
+  }
+
   async function loadMaterials() {
     const { start_date: start, end_date: end } = currentRange();
     const body = $("insight-body");
@@ -87,6 +129,8 @@
           data: top.map((it) => it.batch_count),
           backgroundColor: accent,
           borderRadius: 4,
+          // 항목이 1~2개일 때 막대가 화면 절반을 채우는 과대 표시 방지
+          maxBarThickness: 72,
         }],
       },
       options: {
@@ -217,6 +261,10 @@
     $("insight-query").addEventListener("click", loadAll);
     $("insight-product").addEventListener("change", loadDetails);
     $("insight-detail-export").addEventListener("click", exportDetails);
+    $("insight-trace-btn").addEventListener("click", traceMaterialLot);
+    $("insight-trace-lot").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.isComposing) traceMaterialLot();
+    });
     $("insight-from").value = isoDaysAgo(30);
     loadAll();
   });

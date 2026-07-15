@@ -5,7 +5,7 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260703a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260715a" />
 {% endblock %}
 
 {% block content %}
@@ -47,6 +47,47 @@
             <span class="metric-label">제품 종수</span>
             <strong id="metric-products" class="metric-value">-<span class="metric-unit">종</span></strong>
           </article>
+        </section>
+
+        <!-- 자재 LOT 추적 — 원재료 LOT 하나가 어느 배합(제품 LOT)에 투입됐는지 역추적(리콜 대응) -->
+        <section class="panel">
+          <div class="panel-head-row">
+            <div>
+              <h3 class="panel-title">자재 LOT 추적</h3>
+              <p class="panel-subtitle">원재료 LOT 번호로 그 LOT이 투입된 모든 배합 기록을 찾습니다. 부분 입력도 가능합니다.</p>
+            </div>
+          </div>
+          <div class="insight-filter-grid insight-trace-grid">
+            <div class="filter-group">
+              <label class="filter-label" for="insight-trace-lot">자재 LOT</label>
+              <input id="insight-trace-lot" class="input" placeholder="예: RM-2601" />
+            </div>
+            <div class="button-row" style="align-items: flex-end;">
+              <button id="insight-trace-btn" type="button" class="btn accent">추적</button>
+            </div>
+            <div class="button-row" style="margin-left: auto; align-items: center;">
+              <span id="insight-trace-summary" class="muted small"></span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>작업일</th>
+                  <th>제품 LOT</th>
+                  <th>제품</th>
+                  <th>자재</th>
+                  <th>자재 LOT</th>
+                  <th class="num">실제량(g)</th>
+                  <th>작업자</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="insight-trace-body">
+                <tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section class="panel">
@@ -123,5 +164,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260703a"></script>
+    <script src="/static/js/insight.js?v=20260715a"></script>
 {% endblock %}

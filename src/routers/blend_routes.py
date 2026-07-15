@@ -181,6 +181,15 @@ def build_router() -> APIRouter:
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
 
+    @router.get("/blend/material-lot-trace")
+    def blend_material_lot_trace(
+        lot: str = Query(..., min_length=1, max_length=100),
+        limit: int = Query(default=500, ge=1, le=2000),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """자재 LOT 역추적 — 이 LOT 이 들어간 배합 기록·상세(리콜 추적)."""
+        return blend_service.trace_material_lot(connection, lot, limit=limit)
+
     @router.get("/blend/records")
     def blend_records(
         request: Request,

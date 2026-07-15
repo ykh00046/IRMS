@@ -442,6 +442,43 @@ def batch_details(
     }
 
 
+def trace_material_lot(
+    connection: sqlite3.Connection,
+    lot: str,
+    *,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """자재 LOT 역추적 — 이 LOT 이 투입된 배합 기록을 최신 작업일 순으로 반환.
+
+    부분 일치(LIKE %lot%) — 현장에서 접두/접미만 기억하는 경우 대응. 취소 기록도
+    포함하되 status 를 함께 반환해 화면에서 구분한다(리콜 추적은 누락이 더 위험).
+    사용자 입력의 %/_ 는 리터럴로 이스케이프(generate_product_lot 과 동일 패턴).
+    """
+    clean = str(lot).strip()
+    escaped = clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = connection.execute(
+        """
+        SELECT r.id AS record_id, r.product_lot, r.product_name, r.work_date,
+               r.worker, r.status, r.total_amount,
+               d.material_name, d.material_code, d.material_lot,
+               d.actual_amount, d.theory_amount
+        FROM blend_details d
+        JOIN blend_records r ON r.id = d.blend_record_id
+        WHERE d.material_lot LIKE ? ESCAPE '\\'
+        ORDER BY r.work_date DESC, r.id DESC, d.sequence_order
+        LIMIT ?
+        """,
+        (f"%{escaped}%", int(limit)),
+    ).fetchall()
+    items = [dict(r) for r in rows]
+    return {
+        "lot": clean,
+        "items": items,
+        "total": len(items),
+        "record_count": len({it["record_id"] for it in items}),
+    }
+
+
 def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> list[dict[str, Any]]:
     """배합에 쓸 수 있는 레시피 목록 (취소/초안 제외).
 
@@ -976,9 +1013,16 @@ def list_blend_records(
         clauses.append("worker = ?")
         params.append(worker)
     if search:
-        clauses.append("(product_lot LIKE ? OR product_name LIKE ? OR ink_name LIKE ?)")
+        # 자재 LOT 역추적 확장 — 검색어가 어떤 상세 행의 material_lot 에 걸려도
+        # 그 배합 기록을 반환(추적성). 동일 검색어 토큰을 LIKE 파라미터로 재사용.
+        clauses.append(
+            "(product_lot LIKE ? OR product_name LIKE ? OR ink_name LIKE ? "
+            "OR EXISTS (SELECT 1 FROM blend_details d "
+            "WHERE d.blend_record_id = blend_records.id "
+            "AND d.material_lot LIKE ?))"
+        )
         like = f"%{search}%"
-        params.extend([like, like, like])
+        params.extend([like, like, like, like])
     where = " AND ".join(clauses)
     params.append(int(limit))
     rows = connection.execute(

@@ -334,6 +334,11 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.assign(`/api/blend/records/export-all?${q.toString()}`);
   });
 
+  // URL ?search= 지원 — 배합 분석의 자재 LOT 추적 등 다른 화면에서 특정 LOT/제품으로
+  // 바로 필터된 기록을 열 수 있다(딥링크). 값을 검색칸에 채우고 초기 조회에 반영.
+  const urlSearch = new URLSearchParams(window.location.search).get("search");
+  if (urlSearch) $("status-rec-search").value = urlSearch;
+
   loadWorkers();
   loadRecords();
 });
