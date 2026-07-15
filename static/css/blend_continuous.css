@@ -49,6 +49,8 @@
 .cont-var { display: block; margin-top: 0.15rem; font-size: 0.78rem; text-align: right; color: #9ca3af; }
 .cont-var.var-up { color: #dc2626; font-weight: 600; }
 .cont-var.var-down { color: var(--brand); font-weight: 600; }
+/* 편차 0(정확) — 옅은 초록 체크. 시선을 끌지 않으면서 '계량 완료·정확'만 확인 */
+.cont-var.cont-var-ok { color: #86b892; }
 
 .cont-table td.cont-theory { font-weight: 700; color: #111827; }
 .cont-table .cont-lot { width: 7rem; }

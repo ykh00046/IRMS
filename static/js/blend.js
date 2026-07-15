@@ -196,12 +196,24 @@
     const ctx2 = canvas.getContext("2d");
     ctx2.lineWidth = 2; ctx2.lineCap = "round"; ctx2.strokeStyle = "#111";
     let drawing = false, dirty = false;
+    // 빈 서명칸이 깨진 점선 상자처럼 보이지 않게 옅은 안내를 그린다. 첫 획에서 지우고,
+    // 비면 다시 그린다. dirty 로 저장 여부를 판단하므로 안내 텍스트는 서명으로 저장되지 않는다.
+    const drawHint = () => {
+      ctx2.save();
+      ctx2.clearRect(0, 0, canvas.width, canvas.height);
+      ctx2.fillStyle = "#c4c9d4";
+      ctx2.font = "13px Pretendard, sans-serif";
+      ctx2.textAlign = "center"; ctx2.textBaseline = "middle";
+      ctx2.fillText("여기에 서명", canvas.width / 2, canvas.height / 2);
+      ctx2.restore();
+    };
+    drawHint();
     const pos = (e) => {
       const r = canvas.getBoundingClientRect();
       const t = e.touches ? e.touches[0] : e;
       return { x: t.clientX - r.left, y: t.clientY - r.top };
     };
-    const start = (e) => { drawing = true; const p = pos(e); ctx2.beginPath(); ctx2.moveTo(p.x, p.y); e.preventDefault(); };
+    const start = (e) => { if (!dirty) ctx2.clearRect(0, 0, canvas.width, canvas.height); drawing = true; const p = pos(e); ctx2.beginPath(); ctx2.moveTo(p.x, p.y); e.preventDefault(); };
     const move = (e) => { if (!drawing) return; const p = pos(e); ctx2.lineTo(p.x, p.y); ctx2.stroke(); dirty = true; e.preventDefault(); };
     const end = () => { drawing = false; };
     canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move);
@@ -209,7 +221,7 @@
     canvas.addEventListener("touchstart", start); canvas.addEventListener("touchmove", move);
     canvas.addEventListener("touchend", end);
     const pad = {
-      clear() { ctx2.clearRect(0, 0, canvas.width, canvas.height); dirty = false; },
+      clear() { ctx2.clearRect(0, 0, canvas.width, canvas.height); dirty = false; drawHint(); },
       isEmpty() { return !dirty; },
       dataUrl() { return dirty ? canvas.toDataURL("image/png") : null; },
     };

@@ -630,7 +630,8 @@ body {
 }
 
 .topbar-heading {
-  font-size: 19px;
+  /* 페이지 제목은 섹션 제목(.panel-title 20px)보다 커야 위계가 선다 — 19→24px */
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
