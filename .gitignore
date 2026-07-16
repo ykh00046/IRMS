@@ -71,3 +71,6 @@ cloudflared/*.json
 # 저울 에이전트 빌드 산출물
 scale_agent/dist/
 scale_agent/build/
+
+# ERP 품목 마스터 원본(임포트 소스 — 커밋 금지, data/master/ 보관 예정)
+code*.xlsx
