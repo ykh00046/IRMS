@@ -407,17 +407,12 @@
   position: relative;
 }
 
-/* 파트 필터 칩(작업자 로그인) — 선택된 파트만 제안 목록에 표시 */
+/* 파트 선택(작업자 로그인) — 레시피 분류처럼 드롭다운으로 파트 → 이름 2단계 */
 .worker-part-filter {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
   margin: 6px 0 8px;
 }
-.worker-part-filter .btn.active {
-  background: var(--brand, #1b4079);
-  border-color: var(--brand, #1b4079);
-  color: #fff;
+.worker-part-filter select {
+  width: 100%;
 }
 
 .worker-suggest {

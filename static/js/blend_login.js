@@ -8,20 +8,31 @@
   const workerInput = document.getElementById("blend-login-worker");
   const suggestBox = document.getElementById("blend-login-suggest");
   const errorEl = document.getElementById("blend-login-error");
-  const partsBox = document.getElementById("blend-login-parts");
+  const partSelect = document.getElementById("blend-login-part");
   let workers = [];        // [{name, category}] — category 는 파트(약품/합성/잉크/용수 | null)
-  let partFilter = "";     // "" = 전체
 
   if (!form || !request) return;
 
-  // ── 자체 제안 목록: 높이 제한(스크롤) + 타이핑 필터 + 파트 필터 ──
+  function currentPart() {
+    return partSelect ? partSelect.value : "";
+  }
+
+  // ── 자체 제안 목록: 파트 선택 → 그 파트 이름만. 타이핑 검색은 전체에서 동작 ──
   function renderSuggest() {
     if (!suggestBox) return;
     const query = (workerInput.value || "").trim().toLowerCase();
-    // 파트 선택 시 그 파트만(미지정 작업자는 '전체'에서만 노출), 그다음 타이핑 필터
-    const pool = partFilter
-      ? workers.filter((w) => w.category === partFilter)
-      : workers;
+    const part = currentPart();
+    let pool;
+    if (query) {
+      pool = workers;                                        // 타이핑 = 전체 검색
+    } else if (part === "__none__") {
+      pool = workers.filter((w) => !w.category);             // 파트 미지정만
+    } else if (part) {
+      pool = workers.filter((w) => w.category === part);     // 선택한 파트만
+    } else {
+      suggestBox.hidden = true;                              // 파트 미선택 → 목록 없음
+      return;
+    }
     const matches = query
       ? pool.filter((w) => w.name.toLowerCase().includes(query))
       : pool;
@@ -108,17 +119,12 @@
     })
     .catch(() => fillWorkers([]));
   form.addEventListener("submit", submit);
-  // 파트 칩 — 클릭하면 그 파트만 제안 목록에 표시(active 표시 갱신 후 목록 재렌더)
-  if (partsBox) {
-    partsBox.querySelectorAll("button[data-part]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        partFilter = btn.dataset.part || "";
-        partsBox.querySelectorAll("button").forEach((b) =>
-          b.classList.toggle("active", b === btn)
-        );
-        workerInput.focus();
-        renderSuggest();
-      });
+  // 파트 드롭다운 — 고르면 그 파트 명단이 바로 펼쳐진다
+  if (partSelect) {
+    partSelect.addEventListener("change", () => {
+      workerInput.value = "";
+      workerInput.focus();
+      renderSuggest();
     });
   }
   workerInput.addEventListener("focus", renderSuggest);

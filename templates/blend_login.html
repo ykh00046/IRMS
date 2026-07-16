@@ -10,7 +10,7 @@
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260703a" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260716a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260717a" />
   </head>
   <body class="launch-body">
     <main class="login-stage">
@@ -26,14 +26,18 @@
 
         <div class="login-field worker-suggest-anchor">
           <label class="filter-label" for="blend-login-worker">작업자</label>
-          <!-- 파트 필터 — 명단이 길어 파트(약품/합성/잉크/용수)별로 걸러 고른다.
-               파트 미지정 작업자는 '전체'에서 보인다(도입기 하위호환). -->
-          <div class="worker-part-filter" id="blend-login-parts">
-            <button type="button" class="btn btn-sm active" data-part="">전체</button>
-            <button type="button" class="btn btn-sm" data-part="약품">약품</button>
-            <button type="button" class="btn btn-sm" data-part="합성">합성</button>
-            <button type="button" class="btn btn-sm" data-part="잉크">잉크</button>
-            <button type="button" class="btn btn-sm" data-part="용수">용수</button>
+          <!-- 파트 선택 — 레시피 분류처럼 드롭다운으로 파트를 먼저 고르고 이름을 고른다.
+               '전체' 없음: 파트를 골라야 목록이 뜬다(이름 타이핑 검색은 전체에서 동작).
+               파트 미지정 작업자는 '미지정'에서 보인다(도입기 하위호환). -->
+          <div class="worker-part-filter">
+            <select class="input" id="blend-login-part">
+              <option value="">파트 선택…</option>
+              <option value="약품">약품</option>
+              <option value="합성">합성</option>
+              <option value="잉크">잉크</option>
+              <option value="용수">용수</option>
+              <option value="__none__">미지정</option>
+            </select>
           </div>
           <input
             id="blend-login-worker"
@@ -61,6 +65,6 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/blend_login.js?v=20260716a"></script>
+    <script src="/static/js/blend_login.js?v=20260717a"></script>
   </body>
 </html>
