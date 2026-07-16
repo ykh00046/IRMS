@@ -86,10 +86,13 @@ def build_router() -> APIRouter:
             # 레시피별 허용 편차 승계용 — 요청에 tolerance_g 가 없으면 부모의 tolerance_g 를
             # 그대로 물려받는다(base_totals / anchor_material_id 승계 구조와 동일).
             inherited_tolerance_g: float | None = None
+            # 분류(약품/합성/잉크/용수) 승계 — 수정 등록 때마다 분류가 미분류로 리셋되던
+            # 문제 수정(2026-07-16). 부모의 category 를 그대로 물려받는다.
+            inherited_category: str | None = None
             if body.revision_of is not None:
                 parent_row = connection.execute(
                     "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
-                    "anchor_material_id, tolerance_g "
+                    "anchor_material_id, tolerance_g, category "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -109,6 +112,8 @@ def build_router() -> APIRouter:
                             inherited_tolerance_g = float(parent_row["tolerance_g"])
                         except (TypeError, ValueError):
                             inherited_tolerance_g = None
+                    if parent_row["category"]:
+                        inherited_category = str(parent_row["category"])
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -166,8 +171,8 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals, anchor_material_id, tolerance_g
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id, tolerance_g, category
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -187,6 +192,7 @@ def build_router() -> APIRouter:
                         base_totals_text,
                         anchor_material_id,
                         effective_tolerance_g,
+                        inherited_category,
                     ),
                 )
                 recipe_id = cursor.lastrowid

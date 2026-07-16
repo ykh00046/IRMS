@@ -211,6 +211,9 @@ class WorkerCreateBody(BaseModel):
 class WorkerUpdateBody(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     is_active: bool | None = None
+    # 작업자 분류(파트) — 약품/합성/잉크/용수. 라우트에서 허용값 검증.
+    # 규칙: None=변경 안 함(기존 PATCH 규칙과 동일), 빈 문자열 ""=미지정(NULL)으로 해제.
+    category: str | None = Field(default=None, max_length=20)
 
 
 def _check_manager_password(value: str) -> str:

@@ -8,31 +8,37 @@
   const workerInput = document.getElementById("blend-login-worker");
   const suggestBox = document.getElementById("blend-login-suggest");
   const errorEl = document.getElementById("blend-login-error");
-  let workers = [];
+  const partsBox = document.getElementById("blend-login-parts");
+  let workers = [];        // [{name, category}] — category 는 파트(약품/합성/잉크/용수 | null)
+  let partFilter = "";     // "" = 전체
 
   if (!form || !request) return;
 
-  // ── 자체 제안 목록: 높이 제한(스크롤) + 타이핑 필터 ──────────
+  // ── 자체 제안 목록: 높이 제한(스크롤) + 타이핑 필터 + 파트 필터 ──
   function renderSuggest() {
     if (!suggestBox) return;
     const query = (workerInput.value || "").trim().toLowerCase();
-    const matches = query
-      ? workers.filter((name) => name.toLowerCase().includes(query))
+    // 파트 선택 시 그 파트만(미지정 작업자는 '전체'에서만 노출), 그다음 타이핑 필터
+    const pool = partFilter
+      ? workers.filter((w) => w.category === partFilter)
       : workers;
+    const matches = query
+      ? pool.filter((w) => w.name.toLowerCase().includes(query))
+      : pool;
     suggestBox.innerHTML = "";
     if (!matches.length) {
       suggestBox.hidden = true;
       return;
     }
-    matches.forEach((name) => {
+    matches.forEach((w) => {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "worker-suggest-item";
-      item.textContent = name;
+      item.textContent = w.name;
       // blur 보다 먼저 실행되도록 mousedown 사용
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
-        workerInput.value = name;
+        workerInput.value = w.name;
         suggestBox.hidden = true;
         workerInput.focus();
       });
@@ -54,16 +60,19 @@
   }
 
   function fillWorkers(items) {
-    workers = (items || []).map((item) => item.name);
+    workers = (items || []).map((item) => ({
+      name: item.name,
+      category: item.category || null,
+    }));
   }
 
   async function registerWorker(worker) {
-    if (workers.includes(worker)) return true;
+    if (workers.some((w) => w.name === worker)) return true;
     if (!window.confirm(`처음 보는 이름입니다: "${worker}"\n작업자로 등록할까요?`)) {
       return false;
     }
     await request("/workers", { method: "POST", body: { name: worker } });
-    workers.push(worker);
+    workers.push({ name: worker, category: null });
     return true;
   }
 
@@ -99,6 +108,19 @@
     })
     .catch(() => fillWorkers([]));
   form.addEventListener("submit", submit);
+  // 파트 칩 — 클릭하면 그 파트만 제안 목록에 표시(active 표시 갱신 후 목록 재렌더)
+  if (partsBox) {
+    partsBox.querySelectorAll("button[data-part]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        partFilter = btn.dataset.part || "";
+        partsBox.querySelectorAll("button").forEach((b) =>
+          b.classList.toggle("active", b === btn)
+        );
+        workerInput.focus();
+        renderSuggest();
+      });
+    });
+  }
   workerInput.addEventListener("focus", renderSuggest);
   workerInput.addEventListener("input", renderSuggest);
   workerInput.addEventListener("blur", () => {

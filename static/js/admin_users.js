@@ -101,6 +101,14 @@ document.addEventListener("DOMContentLoaded", () => {
           : '<button type="button" class="btn" data-action="activate">활성화</button>'}
         <button type="button" class="btn danger" data-action="delete">삭제</button>
       </div>`;
+    // 파트(약품/합성/잉크/용수) — 변경 즉시 저장. 빈 값 = 미지정(해제).
+    // 작업자 로그인 화면의 파트 필터가 이 값으로 명단을 거른다.
+    const PARTS = ["약품", "합성", "잉크", "용수"];
+    const partCell = `
+      <td><select class="input worker-part-select">
+        <option value=""${!worker.category ? " selected" : ""}>미지정</option>
+        ${PARTS.map((p) => `<option value="${p}"${worker.category === p ? " selected" : ""}>${p}</option>`).join("")}
+      </select></td>`;
     return `
       <tr data-worker-id="${worker.id}" data-name="${esc(worker.name)}">
         <td>
@@ -110,6 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${!worker.is_active ? '<span class="inline-chip inactive">비활성</span>' : ""}
           </span>
         </td>
+        ${partCell}
         <td>${roleChip}</td>
         <td>${managerCell}</td>
         <td>${statusCell}</td>
@@ -119,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderWorkers(items) {
     if (!items.length) {
       workersBody.innerHTML =
-        '<tr><td colspan="4"><div class="empty-state-block">등록된 이용자가 없습니다.</div></td></tr>';
+        '<tr><td colspan="5"><div class="empty-state-block">등록된 이용자가 없습니다.</div></td></tr>';
       return;
     }
     workersBody.innerHTML = items.map(renderWorkerRow).join("");
@@ -330,6 +339,25 @@ document.addEventListener("DOMContentLoaded", () => {
   changePwForm?.addEventListener("submit", handleChangePassword);
   workersRefresh?.addEventListener("click", loadWorkers);
   workersBody?.addEventListener("click", handleWorkerAction);
+  // 파트 변경 즉시 저장 — PATCH /workers/{id} {category}. 빈 값("")은 미지정으로 해제.
+  workersBody?.addEventListener("change", async (event) => {
+    const sel = event.target.closest(".worker-part-select");
+    if (!sel) return;
+    const row = sel.closest("tr[data-worker-id]");
+    if (!row) return;
+    try {
+      await request(`/workers/${row.dataset.workerId}`, {
+        method: "PATCH",
+        body: { category: sel.value },
+      });
+      IRMS.notify(
+        sel.value ? `파트를 '${sel.value}'(으)로 지정했습니다.` : "파트를 미지정으로 되돌렸습니다.",
+        "success",
+      );
+    } catch (error) {
+      IRMS.notify(`파트 저장 실패: ${error.message}`, "error");
+    }
+  });
   auditRefreshBtn?.addEventListener("click", loadAuditLogs);
   auditActionFilter?.addEventListener("change", loadAuditLogs);
   auditLimitFilter?.addEventListener("change", loadAuditLogs);

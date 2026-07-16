@@ -90,7 +90,7 @@
         }
 
         // 분류 셀 — 책임자는 목록에서 바로 바꾸는 드롭다운(변경 즉시 저장), 그 외는 텍스트.
-        const CATS = ["약품", "합성", "잉크"];
+        const CATS = ["약품", "합성", "잉크", "용수"];
         const categoryCell = (recipe) => {
           const cat = recipe.category || "";
           if (!ctx.canManage) {

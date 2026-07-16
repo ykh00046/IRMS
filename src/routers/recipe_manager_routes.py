@@ -184,12 +184,12 @@ def build_router() -> APIRouter:
         body: dict[str, Any],
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        """레시피 분류(약품/합성/잉크) 지정/해제 — 책임자 전용.
+        """레시피 분류(약품/합성/잉크/용수) 지정/해제 — 책임자 전용.
 
-        body: {"category": "약품"|"합성"|"잉크"|null}. null 이면 미분류로 되돌림.
+        body: {"category": "약품"|"합성"|"잉크"|"용수"|null}. null 이면 미분류로 되돌림.
         recipe_tolerance_set 와 동일한 헬퍼/패턴 사용.
         """
-        ALLOWED = {"약품", "합성", "잉크"}
+        ALLOWED = {"약품", "합성", "잉크", "용수"}
         raw = body.get("category")
         category: str | None
         if raw is None or raw == "":
@@ -199,7 +199,7 @@ def build_router() -> APIRouter:
             if category not in ALLOWED:
                 raise HTTPException(
                     status_code=400,
-                    detail="분류는 약품·합성·잉크 중 하나이거나 null 이어야 합니다.",
+                    detail="분류는 약품·합성·잉크·용수 중 하나이거나 null 이어야 합니다.",
                 )
 
         with get_connection() as connection:

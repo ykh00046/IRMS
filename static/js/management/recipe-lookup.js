@@ -113,7 +113,7 @@
           : "";
         // 분류 줄 — 현재 값 표시 + (책임자) 약품/합성/잉크 선택·저장(PUT /api/recipes/{id}/category).
         // 배합·이어서계량 화면의 2단계 선택(분류→레시피) 필터에 쓰인다.
-        const CATS = ["약품", "합성", "잉크"];
+        const CATS = ["약품", "합성", "잉크", "용수"];
         const catCurrent = detail.category || "";
         const catCurrentText = catCurrent
           ? IRMS.escapeHtml(catCurrent)

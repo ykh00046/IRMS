@@ -24,7 +24,8 @@ def _make_db() -> sqlite3.Connection:
             created_at TEXT NOT NULL,
             is_manager INTEGER NOT NULL DEFAULT 0,
             password_hash TEXT,
-            session_token TEXT
+            session_token TEXT,
+            category TEXT
         )
         """
     )

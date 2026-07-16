@@ -74,6 +74,16 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 )
         if body.is_active is not None:
             worker_service.set_active(connection, worker_id, body.is_active)
+        # 분류(파트) 처리 — None 은 "변경 안 함", 빈 문자열은 미지정(NULL) 해제.
+        # worker_service.set_category 가 실제 갱신을 수행한다.
+        if body.category is not None:
+            clean = body.category.strip()
+            if clean and clean not in ("약품", "합성", "잉크", "용수"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="분류는 약품·합성·잉크·용수 중 하나이거나 빈 값이어야 합니다.",
+                )
+            worker_service.set_category(connection, worker_id, clean or None)
         write_audit_log(
             connection,
             action="worker_update",
@@ -83,6 +93,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             details={
                 "name": body.name,
                 "is_active": body.is_active,
+                # 분류(파트) — 요청된 원문(body.category). None=변경 없음, ""=해제.
+                "category": body.category,
                 # 이름 변경 시 과거 배합 기록 동기화 건수(rename 이 함께 갱신)
                 **({"records_updated": rename_result["records_updated"],
                     "old_name": rename_result["old"]} if rename_result else {}),

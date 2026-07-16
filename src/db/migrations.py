@@ -322,6 +322,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "workers", "is_manager", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "workers", "password_hash", "TEXT")
     ensure_column(connection, "workers", "session_token", "TEXT")
+    # 작업자 분류(파트): 약품/합성/잉크/용수. NULL=미지정(하위호환 — 기존 동작 불변).
+    # 레시피 분류와 동일 체계 — 작업자 로그인 화면에서 파트별로 걸러 고르는 용도.
+    ensure_column(connection, "workers", "category", "TEXT")
     # 근태 로그인 실패 카운터의 시간 윈도우 기준 시각 — 오래된 실패는 감쇠시킨다(감사 F-11).
     ensure_column(connection, "attendance_users", "last_failed_at", "TEXT")
     # 기존 사용자 이름을 작업자 명단에 1회 프리필 (로그인 계정과 별개로 선택 편의)

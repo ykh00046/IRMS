@@ -36,7 +36,8 @@ def list_workers(connection: sqlite3.Connection, *, active_only: bool = True) ->
         f"""
         SELECT id, name, is_active, created_at,
                COALESCE(is_manager, 0) AS is_manager,
-               (password_hash IS NOT NULL) AS has_password
+               (password_hash IS NOT NULL) AS has_password,
+               category
         FROM workers {where} ORDER BY name
         """
     ).fetchall()
@@ -45,6 +46,8 @@ def list_workers(connection: sqlite3.Connection, *, active_only: bool = True) ->
             "id": int(r["id"]), "name": r["name"], "is_active": bool(r["is_active"]),
             "created_at": r["created_at"],
             "is_manager": bool(r["is_manager"]) and bool(r["has_password"]),
+            # 분류(파트): 약품/합성/잉크/용수. 미지정 시 NULL.
+            "category": r["category"],
         }
         for r in rows
     ]
@@ -143,6 +146,13 @@ def register(connection: sqlite3.Connection, name: str, created_at: str) -> dict
 def set_active(connection: sqlite3.Connection, worker_id: int, active: bool) -> None:
     connection.execute(
         "UPDATE workers SET is_active = ? WHERE id = ?", (1 if active else 0, worker_id)
+    )
+
+
+def set_category(connection: sqlite3.Connection, worker_id: int, category: str | None) -> None:
+    """분류(파트) 지정/해제 — 단순 UPDATE. 값 검증은 라우트에서."""
+    connection.execute(
+        "UPDATE workers SET category = ? WHERE id = ?", (category, worker_id)
     )
 
 

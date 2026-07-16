@@ -102,6 +102,24 @@ def test_invalid_category_rejected():
     assert res.status_code == 400
 
 
+def test_yongsu_category_accepted():
+    """분류 '용수' 가 허용값에 추가됨 → 200, 관리 목록에 반영."""
+    client = _client()
+    headers = _login(client)
+    product = f"PCAT{_uid()}"
+    rid = _import(client, headers, product, 60, 40)
+
+    res = client.put(
+        f"/api/recipes/{rid}/category", json={"category": "용수"}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["category"] == "용수"
+
+    items = client.get("/api/recipes", params={"search": product}).json()["items"]
+    target = next(it for it in items if it["id"] == rid)
+    assert target["category"] == "용수"
+
+
 def test_non_manager_blocked():
     """미로그인(또는 비책임자) → 401 또는 403. 기존 tolerance/anchor 테스트 기대 코드와 동일."""
     client = _client()
@@ -110,3 +128,37 @@ def test_non_manager_blocked():
     # 쿠키/csrf 없이(미로그인) PUT → 차단
     blocked = client.put(f"/api/recipes/{rid}/category", json={"category": "잉크"})
     assert blocked.status_code in (401, 403)
+
+
+def test_category_inherited_on_revision():
+    """수정 등록(개정) 시 분류 승계 — 수정할 때마다 미분류로 리셋되던 문제 회귀 방지.
+
+    base_totals/anchor/tolerance 승계와 동일 구조: 부모의 category 를 새 버전이
+    그대로 물려받는다(요청에 category 개념이 없으므로 항상 부모 값).
+    """
+    client = _client()
+    headers = _login(client)
+    product = f"PCAT{_uid()}"
+    rid = _import(client, headers, product, 60, 40)
+
+    # 분류 지정 후 수정 등록(revision_of=원본)
+    res = client.put(
+        f"/api/recipes/{rid}/category", json={"category": "용수"}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    body = {
+        "raw_text": f"반제품명\t원료A\t원료B\n{product}\t55\t45",
+        "revision_of": rid,
+    }
+    res2 = client.post("/api/recipes/import", json=body, headers=headers)
+    assert res2.status_code == 200, res2.text
+    new_id = res2.json()["created_ids"][0]
+    assert new_id != rid
+
+    # 새 버전이 분류를 유지해야 한다(관리 목록·배합 목록 모두)
+    items = client.get("/api/recipes").json()["items"]
+    mine = next(r for r in items if r["id"] == new_id)
+    assert mine["category"] == "용수"
+    blend_items = client.get("/api/blend/recipes").json()["items"]
+    mine2 = next(r for r in blend_items if r["id"] == new_id)
+    assert mine2["category"] == "용수"

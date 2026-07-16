@@ -407,6 +407,19 @@
   position: relative;
 }
 
+/* 파트 필터 칩(작업자 로그인) — 선택된 파트만 제안 목록에 표시 */
+.worker-part-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0 8px;
+}
+.worker-part-filter .btn.active {
+  background: var(--brand, #1b4079);
+  border-color: var(--brand, #1b4079);
+  color: #fff;
+}
+
 .worker-suggest {
   position: absolute;
   top: 100%;
