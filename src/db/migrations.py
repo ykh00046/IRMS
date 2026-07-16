@@ -131,6 +131,35 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 값 검증은 API에서(여기선 컬럼만). 배합·이어서계량 화면의 2단계 선택(분류→레시피)용.
     ensure_column(connection, "recipes", "category", "TEXT")
 
+    # ERP 품목코드 도입(item-code P1). 마스터는 item_code_master, 부여된 코드는
+    # materials.code / recipes.product_code. NULL=미부여(하위호환 — 기존 동작 불변).
+    ensure_column(connection, "materials", "code", "TEXT")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_materials_code "
+        "ON materials(code) WHERE code IS NOT NULL"
+    )
+    # 반제품 코드 — 개정 체인이 같은 코드를 공유하므로 UNIQUE 아님.
+    ensure_column(connection, "recipes", "product_code", "TEXT")
+    # ERP 품목 마스터(엑셀 임포트 스크립트 tools/import_item_codes.py 가 채움)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS item_code_master (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            spec TEXT,
+            unit TEXT,
+            kind TEXT NOT NULL CHECK (kind IN ('material', 'product')),
+            category_hint TEXT,
+            source TEXT,
+            imported_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_item_code_master_kind_name "
+        "ON item_code_master(kind, name)"
+    )
+
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고
     # 기존에 정체돼 있던 레시피도 completed 로 전환한다(취소 건은 보존).
