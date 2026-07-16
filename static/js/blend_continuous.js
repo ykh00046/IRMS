@@ -107,6 +107,8 @@
     input.value = String(value);
     state.cells[i][j].actual = input.value;
     state.cells[i][j].manual = false;  // 저울 입력 — 손입력 표시 해제
+    input.classList.remove("manual-warn");
+    input.removeAttribute("title");
     updateCellVar(i, j);
     warnIfVariance(i, j);
     focusNextFrom(i, j);
@@ -384,7 +386,15 @@
       const j = Number(el.dataset.j);
       el.addEventListener("input", () => {
         state.cells[i][j].actual = el.value;
-        if (state.scaleReady) state.cells[i][j].manual = true;
+        // 저울 연결 중 손입력 → 경고 + 주황 표시(수기 제한 전 준비 단계, 셀당 1회 토스트)
+        if (state.scaleReady) {
+          if (!state.cells[i][j].manual) {
+            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn");
+          }
+          state.cells[i][j].manual = true;
+          el.classList.add("manual-warn");
+          el.title = "수기 입력됨 — 저울 PRINT 로 다시 계량하면 해제됩니다";
+        }
         updateCellVar(i, j);
       });
       el.addEventListener("change", () => warnIfVariance(i, j));

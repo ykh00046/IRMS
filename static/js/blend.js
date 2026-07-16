@@ -74,6 +74,8 @@
     input.value = String(value);
     state.items[idx].actual_amount = input.value;
     state.items[idx].manual = false;  // 저울 입력 — 손입력 표시 해제
+    input.classList.remove("manual-warn");
+    input.removeAttribute("title");
     updateRowVar(idx);
     updateTotals();
     warnIfVariance(idx);
@@ -475,8 +477,16 @@
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
         state.items[i].actual_amount = el.value;
-        // 저울 연결 중 손입력 → 이 자재 행을 조용히 '수동 입력'으로 표시
-        if (state.scaleReady) state.items[i].manual = true;
+        // 저울 연결 중 손입력 → '수동 입력' 기록 + 경고(수기 제한 전 준비 단계).
+        // 행당 1회만 토스트(타이핑 키마다 스팸 방지), 칸은 주황 표시로 남긴다.
+        if (state.scaleReady) {
+          if (!state.items[i].manual) {
+            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn");
+          }
+          state.items[i].manual = true;
+          el.classList.add("manual-warn");
+          el.title = "수기 입력됨 — 저울 PRINT 로 다시 계량하면 해제됩니다";
+        }
         updateRowVar(i);
         updateTotals();
       })

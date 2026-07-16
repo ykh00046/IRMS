@@ -263,6 +263,13 @@
 .blend-table td .blend-actual { font-weight: 600; }
 .blend-table td .blend-actual::placeholder { color: #9ca3af; font-weight: 400; }
 
+/* 저울 연결 중 수기 입력 경고(수기 제한 전 준비 단계) — 배합·이어서계량 공용.
+   저울 PRINT 로 다시 계량하면 JS 가 클래스를 제거해 해제된다. */
+.blend-actual.manual-warn, .cont-actual.manual-warn {
+  border-color: #d97706;
+  background: #fef3c7;
+}
+
 @media (max-width: 720px) {
   .ss-modal {
     width: min(100vw - 20px, 520px);
