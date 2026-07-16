@@ -218,10 +218,16 @@ def _parse_cas(text: str) -> dict | None:
 
 
 def _parse_cas_eb(text: str) -> dict | None:
-    """시마즈 EB type — 1문자 안정표시 + 부호 + 값 + 단위(g/kg/mg)."""
+    """시마즈 EB type — 1문자 안정표시 + 부호 + 값 + 단위(g/kg/mg).
+
+    CBX-22KH 실물(2026-07-16 실측)은 안정표시 없이 "     13.0g " 형태로 보낸다 —
+    헤더가 S/U 가 아니면 헤더 없는 EB 프레임으로 재시도한다. 안정 여부를 알 수 없으므로
+    stable 로 취급하되(PRINT/Auto Print 는 안정 시 출력이 기본 동작), 잘못 눌린 값은
+    서버의 자재별 허용 편차 검사가 최종 방어선이 된다.
+    """
     header = text[:1].upper()
     if header not in ("S", "U"):
-        return None
+        return _parse_eb_headless(text)
     body = text[1:]
     if not body.strip():
         return None
@@ -255,6 +261,41 @@ def _parse_cas_eb(text: str) -> dict | None:
         "value": value,
         "unit": unit,
     }
+
+
+def _parse_eb_headless(text: str) -> dict | None:
+    """안정표시 없는 EB 프레임("     13.0g " / "-186.65g" / "OL g") — CBX-22KH 실물 포맷.
+
+    숫자+단위(g/kg/mg)로 끝나는 프레임만 무게로 인정한다. 콤마 포맷(A&D/CAS 구형)은
+    _parse_cas 의 콤마 분기가 먼저 가로채므로 여기 도달하지 않는다.
+    """
+    body = text.strip()
+    if not body:
+        return None
+    # 과부하: 값 자리에 OL 표기(숫자 없음)
+    if "OL" in body.upper() and not any(ch.isdigit() for ch in body):
+        return {"header": "OL", "stable": False, "overload": True, "value": 0.0, "unit": "g"}
+    unit = ""
+    number = body
+    for i in range(len(body) - 1, -1, -1):
+        ch = body[i]
+        if ch.isdigit() or ch in "+-.":
+            number = body[: i + 1]
+            unit = body[i + 1:].strip()
+            break
+    number = number.replace(" ", "")
+    try:
+        value = float(number)
+    except ValueError:
+        return None
+    unit = (unit or "").lower()
+    if unit == "kg":
+        value, unit = value * 1000, "g"
+    elif unit == "mg":
+        value, unit = value / 1000, "g"
+    if unit != "g":
+        return None  # 단위 없는 임의 숫자·개수(PCS) 등은 무게로 받지 않는다(오탐 방지)
+    return {"header": "ST", "stable": True, "overload": False, "value": value, "unit": "g"}
 
 
 def parse_frame(raw: str | bytes, protocol: str = "and") -> dict | None:

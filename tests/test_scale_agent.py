@@ -149,6 +149,26 @@ def test_cas_eb_type_shimadzu():
     assert parse_frame("S  12PCS", protocol="cas") is None
 
 
+def test_cas_eb_headless_shimadzu():
+    """안정표시 없는 EB 프레임 — CBX-22KH 실물(2026-07-16 실측: '     13.0g ').
+
+    안정 여부를 알 수 없으므로 stable 로 취급(PRINT/Auto Print 는 안정 시 출력이 기본).
+    """
+    real = parse_frame(b"      13.0g \r", protocol="cas")
+    assert real == {"header": "ST", "stable": True, "overload": False, "value": 13.0, "unit": "g"}
+    zero = parse_frame("      0.0g ", protocol="cas")
+    assert zero["value"] == 0.0 and zero["stable"] is True
+    neg = parse_frame("-186.65g", protocol="cas")
+    assert neg["value"] == -186.65
+    kg = parse_frame("  1.2345kg", protocol="cas")
+    assert kg["value"] == 1234.5 and kg["unit"] == "g"
+    ol = parse_frame("   OL g", protocol="cas")
+    assert ol["overload"] is True
+    # 단위 없는 임의 숫자·무게 아님(PCS)은 거부 — 오탐 방지
+    assert parse_frame("13.0", protocol="cas") is None
+    assert parse_frame("12PCS", protocol="cas") is None
+
+
 # ── PRINT 푸시 이벤트 분배 (다중 저울 공용 EventBus) ─────────────
 def _scale(name="GX", protocol="and"):
     bus = EventBus()
