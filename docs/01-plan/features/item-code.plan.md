@@ -111,3 +111,16 @@ recipes.product_code TEXT      -- 반제품 코드 (개정 체인이 공유 → 
   + 행 추가. 공정 설명 줄도 행 사이 삽입.
 - 엑셀 붙여넣기(기존 가로 형식) 호환 유지 — 붙여넣으면 세로 목록으로 변환.
 - 등록·수정(개정)·복사 모두 같은 편집기 사용.
+
+### 8.1 사전 조사 결과 (2026-07-16, 구조 분석 완료)
+- **jspreadsheet 의존은 import 탭에 완전 격리** — 다른 화면 무영향.
+- **서버 무변경**: raw_text(TSV) 계약 유지. 프론트 계약 경계는 딱 두 지점 —
+  `spreadsheet-editor.js getSpreadsheetDataAsText()`(편집기→TSV 직렬화)와
+  `recipe-edit-loader.js loadRowsIntoSpreadsheet()`(detail.tsv→편집기 역직렬화).
+  세로 편집기가 동일 TSV 를 산출/소비하면 검증·등록·수정등록·설명 왕복 전 경로 무변경.
+- 유지할 팩토리 인터페이스: getSpreadsheetDataAsText / initSpreadsheet / ctx.onDirty 호출.
+  +행/+열 버튼은 세로 모델에 맞게 재정의(행 추가=자재 한 줄).
+- 클립보드 TSV 붙여넣기는 직접 구현 필요(현재 jspreadsheet 내장 의존).
+- **결정: 편집기는 단일 레시피 모드.** 현장 흐름(등록·수정 모두 단건)에 맞춤.
+  다중 반제품 TSV 붙여넣기가 감지되면 기존 raw textarea 폴백 모드로 안내
+  (파서의 다중 블록 지원은 서버에 그대로 남음 — 대량 이관용).
