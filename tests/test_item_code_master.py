@@ -14,6 +14,7 @@ tmp_path 픽스처로 소형 xlsx 를 openpyxl 로 생성, 실 init_db() 로 스
 from __future__ import annotations
 
 import sqlite3
+import sys
 
 import openpyxl
 import pytest
@@ -292,3 +293,120 @@ def test_item_code_master_kind_check_constraint(tmp_path):
             )
     finally:
         conn.close()
+
+
+# ---------- P6 회귀: --db 비관례 파일명 → 대상에만 스키마/임포트, 관례 DB 무접촉 ----------
+
+def test_import_db_arbitrary_filename_writes_target_not_conventional(tmp_path, monkeypatch):
+    """--db 로 비관례 파일명(rehearsal.db)을 주면 임포트가 *그 파일* 에 적용되고
+    관례 DB(data/irms.db) 는 건드리지 않는다(P6 회귀).
+
+    과거 버그: init_db() 가 관례 DB 에만 스키마를 잡고 대상은 별도 연결(스키마 누락)을
+    열어 — 대상에 item_code_master 가 없거나, 관례 DB 가 오염되었다. _open_target_db 도입으로
+    대상 연결에 직접 apply_schema_migrations 가 적용된다.
+
+    대상 DB 는 운영 스냅샷처럼 '기본 테이블은 있되 item_code_master 미적용' 상태를
+    모방하기 위해, 관례 DB(init_db 완료)를 복사한 뒤 item_code_master 를 DROP 한다.
+    """
+    # 관례 DB(data/irms.db) — init_db() 가 스키마(item_code_master 포함, 빈 행)를 잡는다.
+    conv_dir = tmp_path / "data"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    conv_db = conv_dir / "irms.db"
+    dbconn.DATA_DIR = conv_dir
+    dbconn.DATABASE_PATH = conv_db
+    # main() → _open_target_db 가 os.environ['IRMS_DATA_DIR'] 를 덮어쓸 수 있으므로, monkeypatch
+    # 로 원복 보장(안 하면 이후 테스트의 get_connection 이 엉뚱한 경로를 본다).
+    monkeypatch.setenv("IRMS_DATA_DIR", str(conv_dir))
+    init_db()
+
+    # 임포트 대상 — 비관례 파일명(rehearsal.db). 관례 DB 를 복사해 'pre-P1(마스터 미적용)'
+    # 상태로 준비(item_code_master 를 DROP). 베이스 테이블은 그대로(운영 스냅샷 모방).
+    target_db = tmp_path / "rehearsal.db"
+    import shutil
+    # WAL 모드에서는 변경분이 -wal 에 있으므로 체크포인트 후 복사(메인 DB 로 합치기).
+    with sqlite3.connect(str(conv_db)) as ck:
+        ck.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    shutil.copy2(conv_db, target_db)
+    pre = sqlite3.connect(str(target_db))
+    try:
+        pre.execute("DROP TABLE IF EXISTS item_code_master")
+        pre.commit()
+    finally:
+        pre.close()
+
+    # 소형 code.xlsx — 원자재 1행(prefix AS).
+    xlsx = tmp_path / "code.xlsx"
+    _write_material_xlsx(xlsx, [
+        ("AS0001", "HEMA", "", "g", "1", "원자재", "원자재", "소프트"),
+    ])
+
+    # main() 을 --db <비관례> 로 실행(sys.argv patch).
+    import tools.import_item_codes as imp
+    monkeypatch.setattr(
+        sys, "argv",
+        ["import_item_codes.py", "--material", str(xlsx), "--db", str(target_db)],
+    )
+    rc = imp.main()
+    assert rc == 0
+
+    # (1) 대상 DB 에 item_code_master 가 (재)생기고 임포트 행이 들어갔다.
+    tconn = sqlite3.connect(str(target_db))
+    tconn.row_factory = sqlite3.Row
+    try:
+        # _open_target_db 가 스키마 마이그레이션을 대상 연결에 적용했는지 확인.
+        rows = tconn.execute(
+            "SELECT code, name, kind FROM item_code_master ORDER BY code"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["code"] == "AS0001"
+        assert rows[0]["name"] == "HEMA"
+        assert rows[0]["kind"] == "material"
+    finally:
+        tconn.close()
+
+    # (2) 관례 DB(data/irms.db) 는 임포트로 오염되지 않았다 — item_code_master 0행 유지.
+    cconn = sqlite3.connect(str(conv_db))
+    cconn.row_factory = sqlite3.Row
+    try:
+        n = cconn.execute("SELECT COUNT(*) c FROM item_code_master").fetchone()["c"]
+        assert n == 0  # 임포트 행이 관례 DB 로 새지 않음
+    finally:
+        cconn.close()
+
+
+
+def test_import_db_conventional_irmsdb_uses_get_connection(tmp_path, monkeypatch):
+    """--db 가 관례 파일명(irms.db) 이면 get_connection() 경로로 임포트(마이그레이션 정상).
+    비관례 분기만 바뀐 것이지 관례 경로가 망가지지 않았음을 확인."""
+    conv_dir = tmp_path / "data"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    conv_db = conv_dir / "irms.db"
+    dbconn.DATA_DIR = conv_dir
+    dbconn.DATABASE_PATH = conv_db
+    # main() → _open_target_db(irms.db 분기) 가 os.environ['IRMS_DATA_DIR'] 를 덮어쓰므로
+    # monkeypatch 로 원복 보장(이후 테스트 오염 방지).
+    monkeypatch.setenv("IRMS_DATA_DIR", str(conv_dir))
+    init_db()
+
+    xlsx = tmp_path / "code.xlsx"
+    _write_material_xlsx(xlsx, [
+        ("AS0042", "DMA", "", "g", "1", "원자재", "원자재", "소프트"),
+    ])
+
+    import tools.import_item_codes as imp
+    monkeypatch.setattr(
+        sys, "argv",
+        ["import_item_codes.py", "--material", str(xlsx), "--db", str(conv_db)],
+    )
+    assert imp.main() == 0
+
+    cconn = sqlite3.connect(str(conv_db))
+    cconn.row_factory = sqlite3.Row
+    try:
+        row = cconn.execute(
+            "SELECT name FROM item_code_master WHERE code='AS0042'"
+        ).fetchone()
+        assert row is not None and row["name"] == "DMA"
+    finally:
+        cconn.close()
+

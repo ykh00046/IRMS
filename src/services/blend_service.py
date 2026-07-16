@@ -537,6 +537,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
     rows = connection.execute(
         """
         SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category,
+               r.product_code,
                COUNT(ri.id) AS item_count,
                COALESCE(SUM(ri.value_weight), 0) AS total_weight
         FROM recipes r
@@ -558,6 +559,9 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
             "ink_name": r["ink_name"],
             "status": r["status"],
             "category": r["category"],
+            # 반제품 품목코드(item-code P1). 매칭(P2) 또는 등록(P3)으로 부여.
+            # UI 는 P6 범위 밖이므로 응답 필드만 노출.
+            "product_code": r["product_code"],
             "item_count": int(r["item_count"]),
             "total_weight": round(float(r["total_weight"]), 3),
         }

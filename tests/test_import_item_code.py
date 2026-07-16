@@ -502,3 +502,42 @@ def test_existing_category_not_overwritten_by_hint():
         assert child["product_code"] == prod_code
     finally:
         _cleanup_master()
+
+
+# ---------- P6: 목록 API 응답에 product_code 노출 ----------
+
+def test_list_recipes_and_blend_recipes_expose_product_code():
+    """GET /api/recipes (recipe_operator_routes.list_recipes) 와
+    GET /api/blend/recipes (blend_service.list_blend_recipes) 응답 항목에 product_code
+    필드가 있다. 값은 P3 등록 경로(반제품명 ↔ product 마스터 단일 히트 → 자동 부여).
+
+    UI 변경 없이 응답 필드만 노출하는 P6 범위.
+    """
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        prod_code = f"B{uid}"
+        prod_name = f"PRODLIST{uid}"
+        _seed_master_product(prod_code, prod_name, category_hint="합성")
+
+        body = {"raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40"}
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        rid = res.json()["created_ids"][0]
+        assert _recipe_row(rid)["product_code"] == prod_code  # 부여 전제
+
+        # 1) 레시피 현황 목록 — product_code 필드 존재 + 값 일치
+        items = client.get("/api/recipes").json()["items"]
+        target = next(it for it in items if it["id"] == rid)
+        assert "product_code" in target
+        assert target["product_code"] == prod_code
+
+        # 2) 배합 선택 목록 — product_code 필드 존재 + 값 일치
+        blend_items = client.get("/api/blend/recipes").json()["items"]
+        blend_target = next(it for it in blend_items if it["id"] == rid)
+        assert "product_code" in blend_target
+        assert blend_target["product_code"] == prod_code
+    finally:
+        _cleanup_master()

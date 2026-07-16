@@ -447,7 +447,8 @@ def build_router() -> APIRouter:
             recipe_rows = connection.execute(
                 f"""
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category, r.created_by,
-                       r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr
+                       r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr,
+                       r.product_code
                 FROM recipes r
                 {where_sql}
                 ORDER BY r.created_at DESC, r.id DESC
