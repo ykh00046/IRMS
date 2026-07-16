@@ -127,7 +127,8 @@ document.addEventListener("DOMContentLoaded", () => {
   ctx.switchToImportTab = switchToImportTab;
 
   // ── Module assembly (2-stage wiring; order is convention, see design §5) ──
-  const spreadsheet = IRMS.management.createSpreadsheetEditor(ctx);
+  // 세로 BOM 편집기(item-code P5) — 인터페이스는 구 spreadsheet-editor 와 호환
+  const spreadsheet = IRMS.management.createBomEditor(ctx);
   ctx.spreadsheet = spreadsheet;
 
   const importValidate = IRMS.management.createImportValidate(ctx);
@@ -155,23 +156,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Event bindings ──
   if (canManage) {
     dom.previewBtn.addEventListener("click", importValidate.handlePreview);
-    // 칸 부족 대응: 시트에 행/열 추가 (우클릭 메뉴와 동일 동작의 노출형 버튼)
-    const insertToSheet = (kind) => {
-      const ws = spreadsheet.getActiveWorksheet();
-      if (!ws) {
-        IRMS.notify("텍스트 모드에서는 줄바꿈(행)·탭(열)으로 늘려 입력하세요.", "info");
-        return;
-      }
-      try {
-        if (kind === "row") ws.insertRow();
-        else ws.insertColumn();
-        ctx.onDirty();
-      } catch (e) {
-        IRMS.notify(`추가 실패: ${e.message || e}`, "error");
-      }
-    };
-    dom.addRowBtn?.addEventListener("click", () => insertToSheet("row"));
-    dom.addColBtn?.addEventListener("click", () => insertToSheet("col"));
+    // 세로 편집기: ＋자재 = 자재 행 추가, ＋설명 = 공정 설명 줄 추가
+    dom.addRowBtn?.addEventListener("click", () => spreadsheet.addMaterialRow());
+    dom.addColBtn?.addEventListener("click", () => spreadsheet.addStepRow());
 
     dom.registerBtn.addEventListener("click", importValidate.handleRegister);
     dom.clearBtn.addEventListener("click", importValidate.handleClear);

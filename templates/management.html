@@ -6,9 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/vendor/jspreadsheet/jspreadsheet.min.css?v=20260624a" type="text/css" />
-    <link rel="stylesheet" href="/static/vendor/jsuites/jsuites.min.css?v=20260624a" type="text/css" />
-    <link rel="stylesheet" href="/static/css/management.css?v=20260707a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260716a" />
 {% endblock %}
 
 {% block content %}
@@ -24,9 +22,9 @@
             <div class="input-section">
               <div id="revision-banner" class="revision-banner" hidden></div>
               <p class="import-helper">
-                첫 열은 반제품명, 이후 열은 자재명으로 입력하세요. 비고 열은 선택 사항입니다.
-                칸이 부족하면 <b>＋행/＋열</b> 버튼(또는 시트 우클릭 메뉴)으로 늘릴 수 있고,
-                엑셀 표를 붙여넣으면 자동으로 늘어납니다.
+                <span>반제품명을 입력하고 자재를 한 줄씩 추가하세요(<b>＋ 자재</b>).
+                공정 안내가 필요한 위치에는 <b>＋ 설명</b> 줄을 끼워 넣을 수 있습니다.
+                엑셀 표(기존 가로 형식)를 붙여넣으면 자동으로 자재 목록으로 변환됩니다.</span>
               </p>
               <p class="mode-note">표준 단위: g 고정 · 배합은 '배합' 화면에서 진행</p>
               <div id="spreadsheet" class="spreadsheet-container"></div>
@@ -36,22 +34,30 @@
                 placeholder="스프레드시트 로드 실패 시 여기에 탭/줄바꿈 텍스트를 붙여넣으세요."
                 hidden
               ></textarea>
-              <div class="button-row">
-                <button id="add-row-btn" class="btn" type="button" title="시트 아래에 행 추가">＋행</button>
-                <button id="add-col-btn" class="btn" type="button" title="시트 오른쪽에 열 추가">＋열</button>
-                <label class="filter-label inline-label" for="register-base-total">기준 배합량 (g)</label>
-                <input id="register-base-total" class="input base-total-input"
-                  placeholder="선택 · 쉼표로 최대 3개"
-                  title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
-                <label class="filter-label inline-label" for="imp-anchor">기준 자재</label>
-                <select id="imp-anchor" class="input"
-                  title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
-                  <option value="">없음</option>
-                </select>
-                <label class="filter-label inline-label" for="imp-tolerance">허용 편차 (g)</label>
-                <input id="imp-tolerance" class="input" type="number" step="0.01" min="0"
-                  placeholder="선택 · 비우면 기본 0.05"
-                  title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
+              <div class="button-row imp-row">
+                <button id="add-row-btn" class="btn" type="button" title="자재 행 추가">＋ 자재</button>
+                <button id="add-col-btn" class="btn" type="button" title="공정 설명 줄 추가">＋ 설명</button>
+                <span class="imp-opt">
+                  <label class="filter-label inline-label" for="register-base-total">기준 배합량 (g)</label>
+                  <input id="register-base-total" class="input base-total-input"
+                    placeholder="선택 · 쉼표로 최대 3개"
+                    title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
+                </span>
+                <span class="imp-opt">
+                  <label class="filter-label inline-label" for="imp-anchor">기준 자재</label>
+                  <select id="imp-anchor" class="input"
+                    title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
+                    <option value="">없음</option>
+                  </select>
+                </span>
+                <span class="imp-opt">
+                  <label class="filter-label inline-label" for="imp-tolerance">허용 편차 (g)</label>
+                  <input id="imp-tolerance" class="input" type="number" step="0.01" min="0"
+                    placeholder="선택 · 비우면 기본 0.05"
+                    title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
+                </span>
+              </div>
+              <div class="button-row imp-actions">
                 <button id="preview-btn" class="btn accent">검증</button>
                 <button id="register-btn" class="btn success" disabled>등록</button>
                 <button id="clear-btn" class="btn">초기화</button>
@@ -214,14 +220,14 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/vendor/jsuites/jsuites.min.js?v=20260624a"></script>
-    <script src="/static/vendor/jspreadsheet/jspreadsheet.min.js?v=20260624a"></script>
+    
+    
     <!-- management modules: 5 factories (order-free) → controller last -->
-    <script src="/static/js/management/spreadsheet-editor.js?v=20260630a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260713a"></script>
+    <script src="/static/js/management/bom-editor.js?v=20260716a"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260716a"></script>
     <script src="/static/js/management/import-validate.js?v=20260713a"></script>
     <script src="/static/js/management/recipe-history.js?v=20260716a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
-    <script src="/static/js/management.js?v=20260712b"></script>
+    <script src="/static/js/management.js?v=20260716a"></script>
 {% endblock %}

@@ -17,46 +17,16 @@
     }
 
     function loadRowsIntoSpreadsheet(tsvRows, tsvText) {
-      state.suppressDirtyTracking = true;
-      ctx.spreadsheet.destroySpreadsheet();
-
-      const spreadsheetFactory = ctx.spreadsheet.getSpreadsheetFactory();
-      if (spreadsheetFactory && dom.spreadsheetContainer) {
-        while (tsvRows.length < 15) {
-          tsvRows.push(Array(tsvRows[0]?.length || 10).fill(""));
+      // 세로 BOM 편집기(item-code P5): TSV → 편집기 역직렬화. 다중 반제품 등
+      // 편집기로 담을 수 없는 형태는 loadFromTsvRows 가 raw 텍스트 모드로 폴백한다.
+      if (typeof ctx.spreadsheet.loadFromTsvRows === "function") {
+        if (!ctx.spreadsheet.loadFromTsvRows(tsvRows, tsvText) && dom.rawInput) {
+          dom.rawInput.value = tsvText;
+          ctx.spreadsheet.setRawInputMode(true);
         }
-        for (const row of tsvRows) {
-          while (row.length < 10) row.push("");
-        }
-
-        spreadsheetFactory(dom.spreadsheetContainer, {
-          worksheets: [
-            {
-              data: tsvRows,
-              minDimensions: [Math.max(10, tsvRows[0].length), 15],
-              defaultColWidth: 80,
-              tableOverflow: true,
-              tableWidth: "100%",
-              tableHeight: "300px",
-              rowResize: true,
-              columnDrag: true,
-              contextMenu: true,
-              textOverflow: true,
-              onchange: () => ctx.onDirty(),
-              onafterchanges: () => ctx.onDirty(),
-              onpaste: () => ctx.onDirty(),
-            },
-          ],
-        });
-
-        ctx.spreadsheet.setRawInputMode(false);
-        setTimeout(() => {
-          ctx.spreadsheet.getActiveWorksheet();
-          state.suppressDirtyTracking = false;
-        }, 0);
         return;
       }
-
+      // (안전망) 구 편집기 인터페이스 — raw 텍스트로 폴백
       if (dom.rawInput) {
         dom.rawInput.value = tsvText;
         ctx.spreadsheet.setRawInputMode(true);

@@ -578,3 +578,46 @@
 .compare-table tr.compare-partial td { background: rgba(59, 130, 246, 0.12); }
 .compare-table tr.compare-modified .compare-sticky { background: #fef9c3; }
 .compare-table tr.compare-partial .compare-sticky { background: #dbeafe; }
+
+/* ============================================================
+   세로 BOM 편집기 (item-code P5) — jspreadsheet 시트 대체.
+   자재를 행으로 쌓는 목록: 반제품명 → 자재/설명 행들 → 비고.
+   ============================================================ */
+.bom-editor {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius-md, 10px);
+  padding: 0.9rem 1rem;
+  background: var(--bg-surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.bom-head, .bom-foot { display: flex; align-items: center; gap: 0.6rem; }
+.bom-head .bom-product { max-width: 320px; font-weight: 700; }
+.bom-foot .bom-remark { max-width: 480px; }
+.bom-rows { display: flex; flex-direction: column; gap: 4px; }
+.bom-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(200px, 1fr) 140px auto;
+  gap: 6px;
+  align-items: center;
+}
+.bom-row-step { grid-template-columns: 2rem 1fr auto; }
+.bom-row-step .bom-step-note { color: #4b5563; font-style: italic; }
+.bom-no { text-align: right; color: #94a3b8; font-size: 12px; font-weight: 600; }
+.bom-row .bom-value { text-align: right; }
+.bom-tools { display: inline-flex; gap: 2px; }
+.bom-tools button {
+  border: 1px solid var(--border, #e5e7eb);
+  background: #fff; border-radius: 6px; cursor: pointer;
+  width: 26px; height: 26px; line-height: 1;
+  color: #64748b; font-size: 11px;
+}
+.bom-tools button:hover { background: #f1f5f9; }
+.bom-tools .bom-del:hover { color: #dc2626; border-color: #fca5a5; }
+
+/* BOM 편집기 하단 옵션 행 — 라벨+입력을 한 덩어리로 유지(줄바꿈 어수선 방지) */
+.imp-row { align-items: center; row-gap: 8px; }
+.imp-opt { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.imp-opt .input, .imp-opt select { width: auto; min-width: 150px; }
+.imp-actions { margin-top: 0.6rem; }
