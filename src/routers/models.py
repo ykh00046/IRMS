@@ -25,6 +25,10 @@ class ImportRequest(BaseModel):
     anchor_material: str | None = Field(default=None, max_length=200)
     # 레시피별 계량 허용 편차(g, 선택) — NULL = 기본값 0.05g. 0 < v <= 1000.
     tolerance_g: float | None = Field(default=None)
+    # item-code P3: 마스터에 없는 신규 자재(unknown)를 허용할지.
+    # 기본 False — unknown 이 있으면 차단(errors). True 면 경고(warnings)로 강등하여
+    # 코드 없이 자동 등록한다(명시적 확인 경로, spec §1).
+    allow_unknown_materials: bool = False
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":

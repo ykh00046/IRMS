@@ -18,9 +18,42 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_current_user, require_access_level
-from ..db import get_connection, utc_now_text, write_audit_log
+from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
 from .models import ImportRequest, actor_name
+
+
+def _resolve_product_code(
+    connection, product_name: str
+) -> tuple[str | None, str | None]:
+    """item-code P3: 반제품명 → kind='product' 마스터 단일 히트 매칭.
+
+    반환: (product_code, category_hint). 마스터가 비어 있거나 모호(2코드 이상)·미매칭이면
+    (None, None) — 이때 수정 등록이면 부모 product_code 를 승계한다(호출부에서 처리).
+    match_item_codes.py(P2) 의 레시피 매칭과 동일 규칙(정규화 단일 히트).
+    """
+    rows = connection.execute(
+        "SELECT code, category_hint FROM item_code_master "
+        "WHERE kind='product' AND name=? LIMIT 2",
+        (product_name,),
+    ).fetchall()
+    if len(rows) == 1:
+        r = rows[0]
+        return r["code"], r["category_hint"]
+    # 정규화 매칭 폴백: DB 에 name 이 정확히 일치하지 않아도 정규화 토큰이 같으면 히트.
+    # (마스터 임포트 시 name 이 원문 그대로 들어가므로 보통 위 쿼리로 충분하지만,
+    #  표기 차(공백/대소문자) 대비 폴백.)
+    if not rows:
+        token = normalize_token(product_name)
+        if not token:
+            return None, None
+        norm_rows = connection.execute(
+            "SELECT code, name, category_hint FROM item_code_master WHERE kind='product'"
+        ).fetchall()
+        hits = [r for r in norm_rows if normalize_token(r["name"]) == token]
+        if len(hits) == 1:
+            return hits[0]["code"], hits[0]["category_hint"]
+    return None, None
 
 
 def build_router() -> APIRouter:
@@ -35,7 +68,9 @@ def build_router() -> APIRouter:
         #   (응답의 material_id 는 표시용 임시값 — mappers.js mapPreview 참조)
         connection = get_connection()
         try:
-            result = parse_import_text(connection, body.raw_text)
+            result = parse_import_text(
+                connection, body.raw_text, body.allow_unknown_materials
+            )
         finally:
             connection.rollback()
             connection.close()
@@ -49,7 +84,9 @@ def build_router() -> APIRouter:
         current_user = get_current_user(request)
         creator_name = actor_name(current_user)
         with get_connection() as connection:
-            parsed = parse_import_text(connection, body.raw_text)
+            parsed = parse_import_text(
+                connection, body.raw_text, body.allow_unknown_materials
+            )
             if parsed["errors"]:
                 raise HTTPException(status_code=400, detail={"errors": parsed["errors"]})
 
@@ -89,10 +126,13 @@ def build_router() -> APIRouter:
             # 분류(약품/합성/잉크/용수) 승계 — 수정 등록 때마다 분류가 미분류로 리셋되던
             # 문제 수정(2026-07-16). 부모의 category 를 그대로 물려받는다.
             inherited_category: str | None = None
+            # item-code P3: 반제품 코드(product_code) 승계 — 분류 승계와 같은 자리에서.
+            # 마스터 매칭 실패 시에도 부모 값을 유지; 매칭 성공하면 그 값으로 덮는다(아래 per-row).
+            inherited_product_code: str | None = None
             if body.revision_of is not None:
                 parent_row = connection.execute(
                     "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
-                    "anchor_material_id, tolerance_g, category "
+                    "anchor_material_id, tolerance_g, category, product_code "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -114,6 +154,8 @@ def build_router() -> APIRouter:
                             inherited_tolerance_g = None
                     if parent_row["category"]:
                         inherited_category = str(parent_row["category"])
+                    if parent_row["product_code"]:
+                        inherited_product_code = str(parent_row["product_code"])
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -164,6 +206,21 @@ def build_router() -> APIRouter:
                         else None
                     )
 
+                # item-code P3: 반제품 코드 결정.
+                # - product_name → kind='product' 마스터 단일 히트 → product_code + category_hint.
+                # - 매칭 실패 시 수정 등록이면 부모의 product_code 를 승계(마스터 매칭 성공이 우선).
+                # - category: 마스터 category_hint 를 채움 후보. 단 승계된 category(부모)가 있으면
+                #   그것이 우선(이미 사용자가 지정한 값). 둘 다 없을 때만 hint 로 채운다.
+                matched_code, matched_hint = _resolve_product_code(
+                    connection, parsed_row["product_name"]
+                )
+                effective_product_code = matched_code or inherited_product_code
+                effective_category = inherited_category
+                if effective_category is None and matched_hint:
+                    # 신규(비개정) 임포트에서 승계 category 가 없을 때만 hint 로 채움.
+                    # match_item_codes.py 와 동일 — 비어있을 때만 채운다(기존값 건드리지 않음).
+                    effective_category = matched_hint
+
                 # 등록 즉시 사용 가능(completed). (구) 계량 워크플로의 pending→진행→완료
                 # 단계는 /blend 전환으로 폐기 — 승인 단계가 없어 pending 은 영구 정체됨.
                 cursor = connection.execute(
@@ -171,8 +228,8 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals, anchor_material_id, tolerance_g, category
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id, tolerance_g, category, product_code
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -192,7 +249,8 @@ def build_router() -> APIRouter:
                         base_totals_text,
                         anchor_material_id,
                         effective_tolerance_g,
-                        inherited_category,
+                        effective_category,
+                        effective_product_code,
                     ),
                 )
                 recipe_id = cursor.lastrowid

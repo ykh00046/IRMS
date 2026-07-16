@@ -201,7 +201,7 @@ def build_router() -> APIRouter:
                        r.base_total, r.base_totals,
                        r.anchor_material_id,
                        am.name AS anchor_material_name,
-                       r.tolerance_g, r.category
+                       r.tolerance_g, r.category, r.product_code
                 FROM recipes r
                 LEFT JOIN materials am ON am.id = r.anchor_material_id
                 WHERE r.id = ?

@@ -1,3 +1,4 @@
+import difflib
 import sqlite3
 from typing import Any
 
@@ -5,14 +6,100 @@ from ..db import normalize_token
 from .cell_value_parser import parse_cell
 
 
-def _auto_register_material(connection: sqlite3.Connection, name: str) -> dict[str, Any]:
-    """Register an unknown material and return its payload."""
+# item-code P3 — 유사 후보 추천(difflib) cutoff. match_item_codes.py(P2) 값과 동일.
+_CLOSE_MATCH_CUTOFF = 0.75
+_CLOSE_MATCH_N = 3
+
+
+def _load_master_index(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    """item_code_master 를 kind 별로 정규화 인덱스화.
+
+    반환 구조:
+        {"by_kind": {kind: {norm_name: [code,...]}},
+         "rows":    {code: {name, category_hint, kind}},
+         "norm_names": {kind: [norm_name, ...]},   # 유사 후보 비교 풀
+         "names":   {norm_name: 원문이름}}           # 표시용
+
+    마스터가 0행이면 None 을 반환한다. 이는 "하위호환 모드" — 마스터 미이관 환경에서는
+    3단 판정 전부를 unknown 으로 취급하되 차단하지 않고 기존 동작을 그대로 유지한다(spec §0).
+    match_item_codes.py 의 _build_master_index 와 동일 구조지만 import 경로 의존을 피하려
+    여기에 둔다(tools/ 모듈에 의존하지 않는다).
+    """
+    rows = connection.execute(
+        "SELECT code, name, kind, category_hint FROM item_code_master"
+    ).fetchall()
+    if not rows:
+        return None
+
+    by_kind: dict[str, dict[str, list[str]]] = {"material": {}, "product": {}}
+    table_rows: dict[str, dict[str, Any]] = {}
+    norm_names: dict[str, list[str]] = {"material": [], "product": []}
+    names: dict[str, str] = {}
+    for r in rows:
+        code = r["code"]
+        kind = r["kind"]
+        norm = normalize_token(r["name"])
+        by_kind.setdefault(kind, {})
+        by_kind[kind].setdefault(norm, []).append(code)
+        if norm and norm not in names:
+            names[norm] = r["name"]
+        if norm and norm not in norm_names.get(kind, []):
+            norm_names.setdefault(kind, []).append(norm)
+        table_rows[code] = {
+            "name": r["name"],
+            "category_hint": r["category_hint"],
+            "kind": kind,
+        }
+    return {
+        "by_kind": by_kind,
+        "rows": table_rows,
+        "norm_names": norm_names,
+        "names": names,
+    }
+
+
+def _similar_candidates(token: str, master_index: dict[str, Any] | None, limit: int = _CLOSE_MATCH_N) -> list[str]:
+    """마스터 정규화명 풀에서 유사 후보를 '원문이름(코드)' 형태로 최대 limit 건 반환.
+
+    master_index 가 None(마스터 0행, 하위호환 모드)이면 빈 목록을 반환한다.
+    """
+    if not token or master_index is None:
+        return []
+    pool = master_index["norm_names"].get("material", []) + master_index["norm_names"].get("product", [])
+    # 중복 제거하되 순서 유지
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for n in pool:
+        if n and n not in seen:
+            seen.add(n)
+            deduped.append(n)
+    close = difflib.get_close_matches(token, deduped, n=limit, cutoff=_CLOSE_MATCH_CUTOFF)
+    # '카본블랙(AS00xx)' 형태 — 원문이름 + 대표 코드
+    out: list[str] = []
+    for norm in close:
+        display_name = master_index["names"].get(norm, norm)
+        codes = (
+            master_index["by_kind"].get("material", {}).get(norm, [])
+            + master_index["by_kind"].get("product", {}).get(norm, [])
+        )
+        suffix = f"({codes[0]})" if codes else ""
+        out.append(f"{display_name}{suffix}")
+    return out
+
+
+def _auto_register_material(
+    connection: sqlite3.Connection, name: str, code: str | None = None
+) -> dict[str, Any]:
+    """미등록 자재를 INSERT 하고 payload 반환. code 가 주어지면(마스터 매칭) materials.code 채움.
+
+    item-code P3: status=master 판정 시 호출부가 마스터 코드를 넘겨 자동 부여한다.
+    """
     cursor = connection.execute(
         """
-        INSERT INTO materials (name, unit_type, unit, color_group, category, is_active)
-        VALUES (?, 'weight', 'g', 'none', '미분류', 1)
+        INSERT INTO materials (name, unit_type, unit, color_group, category, is_active, code)
+        VALUES (?, 'weight', 'g', 'none', '미분류', 1, ?)
         """,
-        (name,),
+        (name, code),
     )
     return {
         "id": cursor.lastrowid,
@@ -21,6 +108,7 @@ def _auto_register_material(connection: sqlite3.Connection, name: str) -> dict[s
         "unit": "g",
         "color_group": "none",
         "category": "미분류",
+        "code": code,
     }
 
 
@@ -36,7 +124,11 @@ def _parse_value(raw: str) -> tuple[float | None, str | None]:
     return parse_cell(stripped)
 
 
-def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str, Any]:
+def parse_import_text(
+    connection: sqlite3.Connection,
+    raw_text: str,
+    allow_unknown_materials: bool = False,
+) -> dict[str, Any]:
     lines = [line.rstrip() for line in raw_text.splitlines() if line.strip()]
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
@@ -48,11 +140,12 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             "warnings": [],
             "preview": {"headers": [], "rows": []},
             "parsed_rows": [],
+            "material_matches": [],
         }
 
     material_rows = connection.execute(
         """
-        SELECT m.id, m.name, m.unit_type, m.unit, m.color_group, m.category, a.alias_name
+        SELECT m.id, m.name, m.unit_type, m.unit, m.color_group, m.category, m.code, a.alias_name
         FROM materials m
         LEFT JOIN material_aliases a ON a.material_id = m.id
         WHERE m.is_active = 1
@@ -75,10 +168,16 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             "unit": row["unit"],
             "color_group": row["color_group"],
             "category": row["category"],
+            "code": row["code"],
         }
         token_to_material[normalize_token(row["name"])] = base_payload
         if row["alias_name"]:
             token_to_material[normalize_token(row["alias_name"])] = base_payload
+
+    # item-code P3: 마스터 인덱스 로드. 비어 있으면 None → 하위호환 모드(차단 없음).
+    master_index = _load_master_index(connection)
+    # 자재 3단 판정 결과를 preview 응답에 모아 담는다(spec §1 material_matches).
+    material_matches: list[dict[str, Any]] = []
 
     field_map = {
         "product_name": ["반제품명", "제품명", "레시피명", "PRODUCTNAME", "PRODUCT"],
@@ -179,11 +278,82 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
             mat = token_to_material.get(token)
 
             if not mat:
-                mat = _auto_register_material(connection, header.strip())
-                token_to_material[token] = mat
-                header_warnings.append({"level": 3, "message": f"새 원재료가 자동 등록됩니다: {header.strip()}", "row": current_row_index})
-            elif mat["id"] not in used_material_ids:
-                header_warnings.append({"level": 3, "message": f"처음 사용하는 원재료입니다: {mat['name']} — 맞는지 확인해 주세요.", "row": current_row_index})
+                # item-code P3: 3단 판정. 마스터가 비어 있지 않을 때만 차단 로직이 동작.
+                # master_index 가 None(마스터 0행)이면 기존 동작(코드 없이 자동 등록 + 경고)을
+                # 그대로 유지한다 — 하위호환(spec §0).
+                master_code: str | None = None
+                if master_index is not None:
+                    # 1순위: kind='material' 마스터. 단일 히트면 code 부여, 다중 히트면 unknown 취급.
+                    codes = master_index["by_kind"].get("material", {}).get(token, [])
+                    if not codes:
+                        # 2순위: kind='product' 마스터(반제품을 원료로 쓰는 자재, 예: PB→B0020).
+                        codes = master_index["by_kind"].get("product", {}).get(token, [])
+                    if len(codes) == 1:
+                        master_code = codes[0]
+
+                similar: list[str] = []
+                if master_code:
+                    # status=master: 마스터에만 존재 → 자동 등록 + 코드 부여(경고 아님, 안내).
+                    mat = _auto_register_material(connection, header.strip(), code=master_code)
+                    token_to_material[token] = mat
+                    header_warnings.append({
+                        "level": 3,
+                        "message": f"마스터 품목 자동 등록: {header.strip()} ({master_code})",
+                        "row": current_row_index,
+                    })
+                    material_matches.append({
+                        "name": header.strip(), "status": "master",
+                        "code": master_code, "similar": [],
+                    })
+                else:
+                    # status=unknown: 어디에도 없음. 유사 후보(기존 materials + 마스터 양쪽).
+                    similar = _similar_candidates(token, master_index)
+                    # 마스터가 비어 있으면(하위호환) 차단하지 않고 기존처럼 코드 없이 자동 등록.
+                    if master_index is None:
+                        mat = _auto_register_material(connection, header.strip())
+                        token_to_material[token] = mat
+                        header_warnings.append({
+                            "level": 3,
+                            "message": f"새 원재료가 자동 등록됩니다: {header.strip()}",
+                            "row": current_row_index,
+                        })
+                    elif allow_unknown_materials:
+                        # 명시적 확인 경로: 코드 없이 자동 등록하되 차단을 경고로 강등.
+                        mat = _auto_register_material(connection, header.strip())
+                        token_to_material[token] = mat
+                        similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
+                        header_warnings.append({
+                            "level": 3,
+                            "message": f"마스터에 없는 품목(확인 후 등록): {header.strip()}{similar_txt}",
+                            "row": current_row_index,
+                        })
+                    else:
+                        # 기본 차단: errors 에 추가 → 기존 UI 규칙상 등록 버튼 비활성.
+                        similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
+                        errors.append({
+                            "level": 2,
+                            "message": f"마스터에 없는 품목: {header.strip()}{similar_txt} "
+                            "(확인 후 등록하려면 신규 품목 확인 필요)",
+                            "row": current_row_index,
+                        })
+                        # 차단한 자재도 파싱은 진행(preview 표시용)하되 등록은 막은 상태.
+                        # parsed["errors"] 가 비어있지 않으면 import 엔드포인트가 400 로 거부한다.
+                        mat = _auto_register_material(connection, header.strip())
+                        token_to_material[token] = mat
+                    material_matches.append({
+                        "name": header.strip(), "status": "unknown",
+                        "code": None, "similar": similar,
+                    })
+            else:
+                # status=existing: materials 에 존재 → 기존 material_id. code 있으면 함께 표시.
+                material_matches.append({
+                    "name": header.strip(),
+                    "status": "existing",
+                    "code": mat.get("code"),
+                    "similar": [],
+                })
+                if mat["id"] not in used_material_ids:
+                    header_warnings.append({"level": 3, "message": f"처음 사용하는 원재료입니다: {mat['name']} — 맞는지 확인해 주세요.", "row": current_row_index})
 
             mat_cols.append({"index": idx, "header": header, "material": mat})
 
@@ -341,4 +511,5 @@ def parse_import_text(connection: sqlite3.Connection, raw_text: str) -> dict[str
         "warnings": warnings,
         "preview": {"headers": global_headers, "rows": preview_rows},
         "parsed_rows": parsed_rows,
+        "material_matches": material_matches,
     }

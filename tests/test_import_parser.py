@@ -38,7 +38,8 @@ def _make_db() -> sqlite3.Connection:
             unit TEXT NOT NULL DEFAULT 'g',
             color_group TEXT NOT NULL DEFAULT 'none',
             category TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1
+            is_active INTEGER NOT NULL DEFAULT 1,
+            code TEXT
         );
         CREATE TABLE material_aliases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +50,17 @@ def _make_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             recipe_id INTEGER,
             material_id INTEGER NOT NULL
+        );
+        -- item-code P1: 파서가 item_code_master 를 조회한다(비어 있으면 하위호환 모드).
+        CREATE TABLE item_code_master (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            spec TEXT,
+            unit TEXT,
+            kind TEXT NOT NULL,
+            category_hint TEXT,
+            source TEXT,
+            imported_at TEXT NOT NULL
         );
         """
     )
