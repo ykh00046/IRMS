@@ -78,17 +78,32 @@ def get_recipe_for_blend(
     except sqlite3.OperationalError:  # anchor_material_id 컬럼이 없는 구버전/테스트 DB
         anchor_material_id = None
 
-    rows = connection.execute(
-        """
-        SELECT ri.id AS recipe_item_id, ri.material_id, ri.value_weight, ri.value_text,
-               m.name AS material_name, m.category AS material_code, m.unit AS unit
-        FROM recipe_items ri
-        JOIN materials m ON m.id = ri.material_id
-        WHERE ri.recipe_id = ?
-        ORDER BY ri.id
-        """,
-        (recipe_id,),
-    ).fetchall()
+    # 자재코드(material_code)는 진짜 ERP 품목코드(m.code)를 쓴다(P4). 구버전 DB 처럼
+    # code 컬럼이 없으면 category 로 폴백(기존 동작 보존) — try/except 2단 쿼리.
+    try:
+        rows = connection.execute(
+            """
+            SELECT ri.id AS recipe_item_id, ri.material_id, ri.value_weight, ri.value_text,
+                   m.name AS material_name, m.code AS material_code, m.unit AS unit
+            FROM recipe_items ri
+            JOIN materials m ON m.id = ri.material_id
+            WHERE ri.recipe_id = ?
+            ORDER BY ri.id
+            """,
+            (recipe_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:  # materials.code 컬럼이 없는 구버전/테스트 DB
+        rows = connection.execute(
+            """
+            SELECT ri.id AS recipe_item_id, ri.material_id, ri.value_weight, ri.value_text,
+                   m.name AS material_name, m.category AS material_code, m.unit AS unit
+            FROM recipe_items ri
+            JOIN materials m ON m.id = ri.material_id
+            WHERE ri.recipe_id = ?
+            ORDER BY ri.id
+            """,
+            (recipe_id,),
+        ).fetchall()
 
     # 공정 설명 줄(자재 사이 안내문) — 화면 표시 전용, 계산·집계와 무관
     try:
@@ -172,12 +187,27 @@ def get_recipe_for_blend(
     }
 
 
-def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
-    """자재명 → ERP 품목코드(RM…) 매핑.
+def _material_code_map(connection: sqlite3.Connection) -> dict[str, str]:
+    """자재명 → materials.code(ERP 품목코드) 매핑. P4 최우선 ERP 코드 출처.
 
-    IRMS 의 materials.category 는 분류('기타' 등)라 ERP 코드가 아니다 — 레거시
-    이관이 RM 코드를 material_aliases 에 별칭으로 넣으므로 거기서 찾는다.
-    RM 으로 시작하는 별칭 우선.
+    구버전 DB(materials.code 컬럼 없음)는 빈 맵 폴백 — recipe_tolerance_g 의
+    OperationalError 방어 패턴과 동일. NULL 코드는 제외(미부여=빈 값).
+    """
+    try:
+        rows = connection.execute(
+            "SELECT name, code FROM materials WHERE code IS NOT NULL AND code <> ''"
+        ).fetchall()
+    except sqlite3.OperationalError:  # code 컬럼이 없는 구버전/테스트 DB
+        return {}
+    return {(r["name"] or "").strip(): (r["code"] or "").strip() for r in rows if r["code"]}
+
+
+def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
+    """자재명 → RM 별칭(레거시 ERP 코드) 매핑.
+
+    RM… 코드는 레거시 이관이 material_aliases 에 별칭으로 넣은 것이므로 거기서 찾는다.
+    RM 으로 시작하는 별칭 우선. 별칭은 materials.code 다음 우선순위(자세한 사항은
+    _resolve_erp_code).
     """
     try:
         rows = connection.execute(
@@ -199,16 +229,35 @@ def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
     return mapping
 
 
-def _resolve_erp_code(name: str, code: str, alias_map: dict[str, str]) -> str:
-    """ERP 품목코드 결정: RM 별칭 > RM 형태의 저장 코드 > RM 형태의 자재명 > ''."""
+def _resolve_erp_code(
+    name: str,
+    code: str,
+    alias_map: dict[str, str],
+    material_code_map: dict[str, str] | None = None,
+) -> str:
+    """ERP 품목코드 결정. 우선순위(P4):
+    materials.code > RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명 > 별칭(비RM).
+
+    materials.code 가 도입되기 전 화면 '자재코드'는 materials.category(분류) 였고,
+    이 인자 `code` 는 그 legacy 값을 받는다 — RM 형태인 경우에만 후보로 쓴다.
+    """
+    # 1) materials.code — 정식 ERP 품목코드(P4 최우선)
+    if material_code_map is not None:
+        mc = material_code_map.get(name, "")
+        if mc:
+            return mc
+    # 2) RM 별칭
     alias = alias_map.get(name, "")
     if alias.upper().startswith("RM"):
         return alias
+    # 3) RM 형태의 저장 코드(category 등 legacy)
     if code.upper().startswith("RM"):
         return code
+    # 4) RM 형태의 자재명
     if name.upper().startswith("RM"):
         return name
-    return alias  # RM 형태가 아니어도 별칭이 있으면 제공
+    # 5) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
+    return alias
 
 
 def material_usage_periods(
@@ -252,12 +301,13 @@ def material_usage_periods(
         (start_date, end_date),
     ).fetchall()
     alias_map = _erp_code_map(connection)
+    material_code_map = _material_code_map(connection)
     items = [
         {
             "period": r["period"],
             **({"product_name": r["product_name"]} if by_product else {}),
             "erp_code": _resolve_erp_code(
-                r["material_name"], r["material_code"], alias_map
+                r["material_name"], r["material_code"], alias_map, material_code_map
             ),
             "material_code": r["material_code"],
             "material_name": r["material_name"],
