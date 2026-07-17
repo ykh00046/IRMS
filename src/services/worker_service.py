@@ -118,9 +118,21 @@ def exists(connection: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
-def register(connection: sqlite3.Connection, name: str, created_at: str) -> dict[str, Any]:
-    """이름을 명단에 등록(이미 있으면 그대로). {name, created, reactivated} 반환."""
+def register(
+    connection: sqlite3.Connection,
+    name: str,
+    created_at: str,
+    *,
+    category: str | None = None,
+) -> dict[str, Any]:
+    """이름을 명단에 등록(이미 있으면 그대로). {name, created, reactivated, category} 반환.
+
+    category 는 키워드 전용(하위호환 — 기존 register(conn, name, now) 호출처 unaffected).
+    신규 생성 시 저장하고, 비활성 동명 작업자 재활성화 시에도 category 가 주어지면 갱신한다.
+    값 검증(허용 파트 여부)은 라우트에서, 빈 문자열은 None 으로 정리해서 받는 것을 전제.
+    """
     clean = validate_name(name)
+    clean_category = (category or "").strip() or None
     existing = connection.execute(
         "SELECT id, is_active FROM workers WHERE name = ?", (clean,)
     ).fetchone()
@@ -131,16 +143,27 @@ def register(connection: sqlite3.Connection, name: str, created_at: str) -> dict
             # 비활성화된 책임자 계정이 이름 입력만으로 살아나는 것을 차단).
             connection.execute(
                 "UPDATE workers SET is_active = 1, is_manager = 0, "
-                "password_hash = NULL, session_token = NULL WHERE id = ?",
-                (existing["id"],),
+                "password_hash = NULL, session_token = NULL, "
+                "category = COALESCE(?, category) WHERE id = ?",
+                (clean_category, existing["id"]),
             )
             reactivated = True
-        return {"name": clean, "created": False, "reactivated": reactivated}
+        elif clean_category:
+            # 이미 활성인 동명 작업자가 있어도 category 가 주어지면 갱신(등록 흐름에서
+            # 파트 선택창을 거친 요청이므로 사용자 의도로 본다).
+            connection.execute(
+                "UPDATE workers SET category = ? WHERE id = ?",
+                (clean_category, existing["id"]),
+            )
+        return {"name": clean, "created": False, "reactivated": reactivated,
+                "category": clean_category}
     connection.execute(
-        "INSERT INTO workers (name, is_active, created_at) VALUES (?, 1, ?)",
-        (clean, created_at),
+        "INSERT INTO workers (name, is_active, created_at, category) "
+        "VALUES (?, 1, ?, ?)",
+        (clean, created_at, clean_category),
     )
-    return {"name": clean, "created": True, "reactivated": False}
+    return {"name": clean, "created": True, "reactivated": False,
+            "category": clean_category}
 
 
 def set_active(connection: sqlite3.Connection, worker_id: int, active: bool) -> None:

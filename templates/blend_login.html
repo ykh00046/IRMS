@@ -10,7 +10,7 @@
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260703a" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260717a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260717b" />
   </head>
   <body class="launch-body">
     <main class="login-stage">
@@ -61,10 +61,26 @@
         <p class="login-demo">작업자 세션은 유휴 상태가 지속되면 자동 로그아웃됩니다</p>
         <a href="/" class="login-back">← 처음으로</a>
       </form>
+
+      <!-- 새 작업자 등록 — 파트 선택 모달. confirm() 대체(hidden 속성 방식).
+           공통 단추/라벨 클래스만 사용. 파트 버튼 4개 + 취소. -->
+      <div id="blend-part-dialog" class="part-dialog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="blend-part-dialog-title">
+        <div class="part-dialog">
+          <h2 id="blend-part-dialog-title" class="part-dialog-title">새 작업자 등록</h2>
+          <p id="blend-part-dialog-message" class="part-dialog-message"></p>
+          <div class="part-dialog-buttons">
+            <button type="button" class="btn" data-part="약품">약품</button>
+            <button type="button" class="btn" data-part="합성">합성</button>
+            <button type="button" class="btn" data-part="잉크">잉크</button>
+            <button type="button" class="btn" data-part="용수">용수</button>
+          </div>
+          <button type="button" id="blend-part-dialog-cancel" class="btn part-dialog-cancel">취소</button>
+        </div>
+      </div>
     </main>
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/blend_login.js?v=20260717a"></script>
+    <script src="/static/js/blend_login.js?v=20260717b"></script>
   </body>
 </html>

@@ -36,8 +36,20 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        # category 검증 — None(생략) 은 미지정. 값이 있으면 허용 파트만(PATCH 와 동일).
+        category = None
+        if body.category is not None:
+            clean = body.category.strip()
+            if clean and clean not in ("약품", "합성", "잉크", "용수"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="분류는 약품·합성·잉크·용수 중 하나이거나 빈 값이어야 합니다.",
+                )
+            category = clean or None
         try:
-            result = worker_service.register(connection, body.name, utc_now_text())
+            result = worker_service.register(
+                connection, body.name, utc_now_text(), category=category
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         if result["created"] or result.get("reactivated"):
@@ -47,6 +59,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 actor=get_current_user(request, required=False),
                 target_type="worker",
                 target_label=result["name"],
+                details={"category": result.get("category")},
             )
         connection.commit()
         return result

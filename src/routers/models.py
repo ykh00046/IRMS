@@ -210,6 +210,9 @@ class BlendBulkBody(BaseModel):
 
 class WorkerCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # 작업자 분류(파트) — 약품/합성/잉크/용수. 새 작업자 등록 시 선택.
+    # None(생략) 은 미지정(NULL). 라우트에서 허용값 검증.
+    category: str | None = Field(default=None, max_length=20)
 
 
 class WorkerUpdateBody(BaseModel):

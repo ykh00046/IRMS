@@ -35,9 +35,11 @@ def _make_db() -> sqlite3.Connection:
 def test_register_new_then_existing():
     conn = _make_db()
     r1 = ws.register(conn, "홍길동", "2026-06-24")
-    assert r1 == {"name": "홍길동", "created": True, "reactivated": False}
+    assert r1 == {"name": "홍길동", "created": True, "reactivated": False,
+                  "category": None}
     r2 = ws.register(conn, "홍길동", "2026-06-24")
-    assert r2 == {"name": "홍길동", "created": False, "reactivated": False}
+    assert r2 == {"name": "홍길동", "created": False, "reactivated": False,
+                  "category": None}
     assert ws.worker_names(conn) == ["홍길동"]
 
 

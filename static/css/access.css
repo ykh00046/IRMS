@@ -445,3 +445,53 @@
 .worker-suggest-item:hover {
   background: var(--brand-soft, #eaf1fb);
 }
+
+/* 새 작업자 등록 — 파트 선택 모달(blend_login). hidden 속성 방식.
+   공통 색/단추 클래스(.btn/.input/.filter-label)를 그대로 쓰되, 표시는 [hidden] 토글. */
+.part-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.part-dialog-overlay[hidden] {
+  display: none;
+}
+.part-dialog {
+  width: 100%;
+  max-width: 360px;
+  padding: 22px 22px 18px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(21, 35, 63, 0.22);
+}
+.part-dialog-title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary, #15233f);
+}
+.part-dialog-message {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted, #5a6478);
+  word-break: keep-all;
+}
+.part-dialog-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.part-dialog-buttons .btn {
+  padding: 11px 10px;
+}
+.part-dialog-cancel {
+  display: block;
+  width: 100%;
+}
