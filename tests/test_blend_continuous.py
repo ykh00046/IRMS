@@ -198,3 +198,128 @@ def test_continuous_empty_lots_rejected():
     }, headers=headers)
     assert res.status_code == 400
     assert "로트" in res.json()["detail"]
+
+
+# ── lot_totals: 로트별 총량 오버라이드 (초과 계량 증량) ──────────────────────────
+# 스펙: scratchpad/continuous-rescale-spec.md 골 1.
+# 핵심: 초과가 난 그 로트만 증량(큰 총량)한다. 다른 로트는 기존 총량 그대로.
+
+def test_continuous_lot_totals_omitted_matches_legacy_behavior():
+    """lot_totals 미전송 회귀: 전 로트 total_amount(=100) 기준으로 도출·저장된다.
+
+    이 테스트가 골 1 의 '하위호환' 요건. 기존 동작(로트별 총량 오버라이드 없음)과
+    완전 동일해야 한다 — record.total_amount == total_amount.
+    """
+    client = _client()
+    headers = _manager(client)
+    product = f"CBL{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "lots": [_details(60, 40), _details(60, 40)],
+        # lot_totals 미전송 — 기존 동작
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    j = res.json()
+    assert j["created"] == 2
+    # 두 로트 모두 공용 total_amount(100) 기준 — record.total_amount == 100
+    for rid_ in j["ids"]:
+        rec = client.get(f"/api/blend/records/{rid_}").json()
+        assert rec["total_amount"] == 100
+
+
+def test_continuous_lot_totals_rescales_only_specified_lot():
+    """lot_totals[1]=200: 로트 2만 총량 200 기준 이론으로 편차 통과·record 에 반영.
+
+    로트 1 은 기존 총량(100) 그대로. 레시피 60/40 → 총량 200 은 원료A 120 / 원료B 80.
+    """
+    client = _client()
+    headers = _manager(client)
+    product = f"CBR{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        # 로트 2 만 총량 200 오버라이드 — null 원소는 공용 total_amount 사용(기존 동작)
+        "lot_totals": [None, 200],
+        "lots": [
+            _details(60, 40),    # 로트 1: 총량 100 기준 (이론 60/40) → 편차 0
+            _details(120, 80),   # 로트 2: 총량 200 기준 (이론 120/80) → 편차 0
+        ],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    j = res.json()
+    assert j["created"] == 2
+
+    rec0 = client.get(f"/api/blend/records/{j['ids'][0]}").json()
+    rec1 = client.get(f"/api/blend/records/{j['ids'][1]}").json()
+    # 로트 1 은 공용 총량(100) 그대로
+    assert rec0["total_amount"] == 100
+    by_name0 = {d["material_name"]: d for d in rec0["details"]}
+    assert by_name0["원료A"]["theory_amount"] == 60
+    assert by_name0["원료B"]["theory_amount"] == 40
+    # 로트 2 는 증량 총량(200) — record.total_amount 와 서버 도출 이론량 모두 200 기준
+    assert rec1["total_amount"] == 200
+    by_name1 = {d["material_name"]: d for d in rec1["details"]}
+    assert by_name1["원료A"]["theory_amount"] == 120
+    assert by_name1["원료B"]["theory_amount"] == 80
+
+
+def test_continuous_lot_totals_invalid_rejected_with_422():
+    """lot_totals 검증: 길이 불일치 → 422, 0 이하 값 → 422 (ValueError 경로)."""
+    client = _client()
+    headers = _manager(client)
+    product = f"CBI{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    base = {
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "lots": [_details(60, 40), _details(60, 40)],
+    }
+
+    # (a) 길이 불일치: 로트 2 개인데 lot_totals 1 개
+    bad_len = dict(base, lot_totals=[100])
+    res_len = client.post("/api/blend/records/continuous", json=bad_len, headers=headers)
+    assert res_len.status_code == 422, res_len.text
+
+    # (b) 0 이하 값: lot_totals[1] = 0
+    bad_zero = dict(base, lot_totals=[100, 0])
+    res_zero = client.post("/api/blend/records/continuous", json=bad_zero, headers=headers)
+    assert res_zero.status_code == 422, res_zero.text
+
+
+def test_continuous_lot_totals_variance_checked_against_per_lot_total():
+    """lot_totals 편차검사는 '그 로트의 총량' 기준 — 로트 2 의 실제량이 큰 총량(200)의
+    이론(120/80)이 아니라 기본 총량(100)의 이론(60/40)에 맞춰져 있으면 400 (편차 초과).
+
+    검증이 공용 total_amount 기준이었다면 통과했을 것이다 — 따라서 이 400 은 로트별
+    총량 기준 검사임을 증명한다.
+    """
+    client = _client()
+    headers = _manager(client)
+    product = f"CBT{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "lot_totals": [None, 200],
+        "lots": [
+            _details(60, 40),    # 로트 1: 총량 100 기준 → OK
+            # 로트 2 실제량을 '기본 총량 100' 기준 이론(60/40)에 맞춤.
+            # lot_totals[1]=200 이면 서버 기준 이론은 120/80 → 편차 60g/40g 초과.
+            _details(60, 40),
+        ],
+    }, headers=headers)
+    assert res.status_code == 400, res.text
+    assert "편차" in res.json()["detail"]
+    # 로트 2 에서 걸렸음을 확인
+    assert "로트 2" in res.json()["detail"]

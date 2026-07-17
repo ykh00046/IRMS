@@ -145,6 +145,10 @@ class BlendContinuousBody(BaseModel):
 
     lots 는 로트별 자재 상세 목록(각 로트 = 자재 전체 목록). 총량·서명·반응기·작업일은
     전 로트 공유. 자재 LOT·실제량·수동입력 여부만 로트별(사람이 아는 값)로 받는다.
+
+    lot_totals 미전송 시 전 로트 total_amount(기존 동작). 초과 계량 증량이 발생한 로트만
+    큰 값을 보낸다 — 그 로트는 lot_totals[j] 기준으로 서버 도출·편차검사가 이뤄지고,
+    record.total_amount 도 그 값으로 저장된다.
     """
     recipe_id: int = Field(gt=0)                  # 연속 배합은 레시피 기반만 허용
     product_name: str = Field(min_length=1, max_length=200)
@@ -152,16 +156,33 @@ class BlendContinuousBody(BaseModel):
     position: str | None = Field(default=None, max_length=200)
     work_date: str = Field(min_length=8, max_length=10)
     work_time: str | None = Field(default=None, max_length=8)
-    total_amount: float = Field(gt=0, le=10_000_000)   # 전 로트 동일 총량
+    total_amount: float = Field(gt=0, le=10_000_000)   # 전 로트 동일 총량(기본)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
     worker_sign: str | None = Field(default=None, max_length=300_000)  # 전 로트 동일 서명
     lots: list[list[BlendDetailBody]] = Field(default_factory=list)
+    # 로트별 총량 오버라이드(초과 계량 증량). 미전송·전부 null 이면 기존 동작(total_amount).
+    lot_totals: list[float | None] | None = Field(default=None)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendContinuousBody":
         self.worker_sign = _validate_signature(self.worker_sign)
+        return self
+
+    @model_validator(mode="after")
+    def _check_lot_totals(self) -> "BlendContinuousBody":
+        # lot_totals 가 주어지면 (a) 길이 == 로트 수, (b) 각 값 > 0 · ≤ 10,000,000.
+        # null 원소는 허용(해당 로트는 공용 total_amount 사용) — 기존 동작과 자연 정합.
+        if self.lot_totals is None:
+            return self
+        if len(self.lot_totals) != len(self.lots):
+            raise ValueError("lot_totals 길이가 로트 수와 다릅니다.")
+        for idx, value in enumerate(self.lot_totals):
+            if value is None:
+                continue
+            if not (0 < value <= 10_000_000):
+                raise ValueError(f"lot_totals[{idx}] 는 0 초과 10,000,000 이하여야 합니다.")
         return self
 
 

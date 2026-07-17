@@ -673,12 +673,15 @@ def build_router() -> APIRouter:
             )
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         # 저장 전 전 로트 도출·편차검사 (원자성: 하나라도 실패하면 중단, 저장 없음)
+        # lot_totals 가 있으면 그 로트의 총량 오버라이드를 사용(초과 계량 증량).
         derived_lots: list[list[dict[str, Any]]] = []
+        lot_totals = body.lot_totals or []
         for lot_no, lot in enumerate(body.lots, start=1):
+            lot_total = lot_totals[lot_no - 1] if lot_totals and lot_totals[lot_no - 1] else body.total_amount
             details = [d.model_dump() for d in lot]
             try:
                 derived, _total = blend_service.derive_details_from_recipe(
-                    connection, body.recipe_id, body.total_amount, details
+                    connection, body.recipe_id, lot_total, details
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
@@ -709,6 +712,7 @@ def build_router() -> APIRouter:
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
             reactor=body.reactor,
+            lot_totals=body.lot_totals,
         )
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
         write_audit_log(

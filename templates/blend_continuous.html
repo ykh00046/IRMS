@@ -6,7 +6,7 @@
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/blend.css?v=20260716a" />
-    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260715c" />
+    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260717d" />
 {% endblock %}
 
 {% block content %}
@@ -101,10 +101,35 @@
           </section>
         </div>
 
+        <!-- 초과 계량 증량 제안 모달(로트별 스코프) — 한 로트의 자재를 이론량 초과해 넣었을 때
+             그 로트만 배합량을 증량한다(다른 로트는 불변). 표시/숨김은 hidden 속성 토글로만. -->
+        <div class="ss-modal-overlay" id="cont-rescale-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-rescale-modal-title">
+            <div class="ss-modal-header"><h3 id="cont-rescale-modal-title">로트 배합량 증량</h3></div>
+            <div class="ss-modal-body" id="cont-rescale-modal-body"></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="cont-rescale-cancel" type="button">다시 계량</button>
+              <button class="btn accent" id="cont-rescale-apply" type="button">증량 적용</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 폐기 권장 모달 — 증량 시 그 로트의 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
+        <div class="ss-modal-overlay" id="cont-discard-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-discard-modal-title">
+            <div class="ss-modal-header"><h3 id="cont-discard-modal-title">폐기 권장</h3></div>
+            <div class="ss-modal-body" id="cont-discard-modal-body"></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn rescale-danger" id="cont-discard-force" type="button">그래도 증량</button>
+              <button class="btn accent" id="cont-discard-cancel" type="button" autofocus>증량 취소</button>
+            </div>
+          </div>
+        </div>
+
         <datalist id="worker-names"></datalist>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260713a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260717b"></script>
+    <script src="/static/js/blend_continuous.js?v=20260717c"></script>
 {% endblock %}

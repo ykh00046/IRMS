@@ -984,15 +984,25 @@ def create_continuous(
     created_at: str,
     worker_sign: str | None = None,
     reactor: int | None = None,
+    lot_totals: list[float | None] | None = None,
 ) -> list[int]:
     """이미 서버 도출·편차검사를 통과한 로트별 상세를 순차 저장. record_id 리스트 반환.
 
     create_blend_record 를 로트마다 호출한다. 첫 호출이 BEGIN IMMEDIATE 로 트랜잭션을
     열고 이후 호출은 같은 트랜잭션에서 진행되므로(create_bulk 와 동일), generate_product_lot
     이 직전 로트 INSERT 를 보고 순번({제품명}{YYMMDD}{순번})을 연속 채번한다.
+
+    lot_totals 가 주어지면 해당 로트의 record.total_amount 를 그 값으로 저장한다(초과 계량
+    증량). null 원소 또는 lot_totals 미전송이면 공용 total_amount 를 그대로 쓴다(하위호환).
     """
+    norm_lot_totals = list(lot_totals) if lot_totals else []
     ids: list[int] = []
-    for details in lots_details:
+    for lot_idx, details in enumerate(lots_details):
+        lot_total = (
+            norm_lot_totals[lot_idx]
+            if lot_idx < len(norm_lot_totals) and norm_lot_totals[lot_idx]
+            else total_amount
+        )
         rid = create_blend_record(
             connection,
             recipe_id=recipe_id,
@@ -1002,7 +1012,7 @@ def create_continuous(
             worker=worker,
             work_date=work_date,
             work_time=work_time,
-            total_amount=total_amount,
+            total_amount=lot_total,
             scale=scale,
             note=note,
             details=details,
