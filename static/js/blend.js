@@ -519,6 +519,9 @@
       el.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
+        // Enter(완료)로 계량을 마치는 순간에도 편차 초과를 즉시 알린다 —
+        // change(blur) 이벤트에만 기대면 흐름에 따라 경고가 저장 때까지 밀린다.
+        warnIfVariance(Number(el.dataset.idx));
         const next = Number(el.dataset.idx) + 1;
         if (!focusField(`.blend-lot[data-idx="${next}"]`)) {
           const save = document.getElementById("blend-save");
@@ -612,6 +615,21 @@
       return true;
     }
     return false;
+  }
+
+  // 총량을 나중에 입력/변경하면 이론량이 바뀌어 이미 계량한 값이 초과될 수 있다 —
+  // 그 순간 바로 알린다(저장 때까지 침묵 금지). 초과 1건이면 상세, 여럿이면 묶어서.
+  function warnAllVariance() {
+    const tol = state.toleranceG;
+    const badIdx = [];
+    state.items.forEach((it, i) => {
+      if (i === state.anchorIndex || it.actual_amount === "") return;
+      if (Math.abs(rowVariance(it)) > tol + 1e-9) badIdx.push(i);
+    });
+    if (!badIdx.length) return;
+    if (badIdx.length === 1) { warnIfVariance(badIdx[0]); return; }
+    const names = badIdx.map((i) => state.items[i].material_name).join(", ");
+    notify(`허용 편차(±${tol}g) 초과: ${names}. 해당 자재를 다시 계량하세요.`, "error");
   }
 
   function updateTotals() {
@@ -762,6 +780,7 @@
       const totalInput = $("blend-total");
       totalInput.value = String(base);
       totalInput.dispatchEvent(new Event("input"));  // 이론량 재계산 경로 재사용
+      warnAllVariance();  // 이미 계량된 값이 새 이론량 기준으로 초과면 즉시 경고
     });
     $("blend-total").addEventListener("input", () => {
       recomputeTheory();
@@ -779,6 +798,9 @@
       updateLotPreview();
       updateInputGuide();
     });
+    // 총량 확정(change) 시 — 이미 계량된 자재가 새 이론량 기준으로 초과면 즉시 경고.
+    // input(키 입력마다)이 아닌 change 에 걸어 타이핑 중 토스트 스팸을 막는다.
+    $("blend-total").addEventListener("change", warnAllVariance);
     $("blend-worker").addEventListener("input", updateInputGuide);
     // 교대: 포커스 시 비워 전체 명단 표시(레시피 칸과 동일 UX), 선택/확정 시 세션 전환
     $("blend-worker").addEventListener("focus", () => { $("blend-worker").value = ""; });

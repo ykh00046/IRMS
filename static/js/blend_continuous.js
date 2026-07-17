@@ -401,6 +401,8 @@
       el.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
+        // Enter(완료)로 계량을 마치는 순간에도 즉시 경고 — change(blur)에만 기대지 않는다
+        warnIfVariance(i, j);
         focusNextFrom(i, j);
       });
     });
@@ -455,6 +457,28 @@
       return true;
     }
     return false;
+  }
+
+  // 총량을 나중에 입력/변경하면 이론량이 바뀌어 이미 계량한 셀이 초과될 수 있다 —
+  // 확정(change) 시점에 전 셀을 재검사해 바로 알린다. 여럿이면 묶어서 한 번에.
+  function warnAllVariance() {
+    const tol = state.toleranceG;
+    const bad = [];
+    for (let i = 0; i < state.materials.length; i++) {
+      const th = state.theory[i];
+      if (th == null) continue;
+      for (let j = 0; j < state.lotCount; j++) {
+        const raw = state.cells[i][j].actual;
+        if (raw === "") continue;
+        if (Math.abs(Number(raw) - th) > tol + 1e-9) {
+          bad.push({ i, j });
+        }
+      }
+    }
+    if (!bad.length) return;
+    if (bad.length === 1) { warnIfVariance(bad[0].i, bad[0].j); return; }
+    const names = bad.slice(0, 6).map((b) => `${state.materials[b.i].material_name} 로트 ${b.j + 1}`).join(", ");
+    notify(`허용 편차(±${tol}g) 초과: ${names}${bad.length > 6 ? " 외" : ""}. 해당 셀을 다시 계량하세요.`, "error");
   }
 
   function refreshTheoryCells() {
@@ -608,6 +632,8 @@
       recomputeTheory();
       refreshTheoryCells();
     });
+    // 총량 확정(change) 시 — 이미 계량된 셀이 새 이론량 기준으로 초과면 즉시 경고
+    $("cont-total").addEventListener("change", warnAllVariance);
     // 기본 배합량 버튼 클릭 → 총량에 채우고 이론량 재산출(배합 화면과 동일 경로).
     $("cont-base-links").addEventListener("click", (ev) => {
       const btn = ev.target.closest(".blend-base-link");
@@ -617,6 +643,7 @@
       const totalInput = $("cont-total");
       totalInput.value = String(base);
       totalInput.dispatchEvent(new Event("input", { bubbles: true }));
+      warnAllVariance();  // 이미 계량된 셀이 새 이론량 기준으로 초과면 즉시 경고
     });
 
     $("cont-worker").addEventListener("focus", () => { $("cont-worker").value = ""; });
