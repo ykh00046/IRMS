@@ -481,7 +481,7 @@
         // 행당 1회만 토스트(타이핑 키마다 스팸 방지), 칸은 주황 표시로 남긴다.
         if (state.scaleReady) {
           if (!state.items[i].manual) {
-            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn");
+            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
           }
           state.items[i].manual = true;
           el.classList.add("manual-warn");

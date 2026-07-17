@@ -389,7 +389,7 @@
         // 저울 연결 중 손입력 → 경고 + 주황 표시(수기 제한 전 준비 단계, 셀당 1회 토스트)
         if (state.scaleReady) {
           if (!state.cells[i][j].manual) {
-            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn");
+            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
           }
           state.cells[i][j].manual = true;
           el.classList.add("manual-warn");
