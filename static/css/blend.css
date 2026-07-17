@@ -195,6 +195,41 @@
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
 .blend-worker-hint { font-size: 0.68rem; color: var(--muted, #9ca3af); font-weight: 400; }
 
+/* ── 초과 계량 증량(rescale) UI ────────────────────────────── */
+/* 모달 푸터는 배합 actions 그리드 재사용 — 버튼 한 줄 정렬. */
+.ss-modal-footer { padding: 0.8rem 1.25rem; border-top: 1px solid var(--border, #e5e7eb); }
+.ss-modal-footer.btn-row { justify-content: flex-end; }
+/* 25,000g 초과 '그래도 증량' — 위험 의사결정임을 명확히. */
+.btn.rescale-danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+.btn.rescale-danger:hover { background: #991b1b; }
+/* 증량 제안 모달 본문 — 초과 자재 요약 + 추가분 미리보기 표 */
+.rescale-summary { margin: 0 0 0.7rem; font-size: 0.9rem; color: #374151; }
+.rescale-totals {
+  display: flex; gap: 0.4rem; align-items: baseline; flex-wrap: wrap;
+  margin: 0.4rem 0 0.8rem; font-size: 0.85rem; color: #6b7280;
+}
+.rescale-totals .old { text-decoration: line-through; }
+.rescale-totals .new { color: #b45309; font-weight: 700; font-size: 1rem; }
+.rescale-add-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.rescale-add-table th, .rescale-add-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border, #e5e7eb); text-align: left; }
+.rescale-add-table th.num, .rescale-add-table td.num { text-align: right; }
+.rescale-add-table .add-cell { color: #b45309; font-weight: 700; }
+/* 행 안 추가분 입력 배지(주황 계열) — 클릭하면 인라인 추가 입력 칸으로 전환 */
+.blend-add-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: #fef3c7; color: #92400e; border: 1px solid #fcd34d;
+  border-radius: 999px; padding: 2px 9px; font-size: 0.74rem; font-weight: 700;
+  cursor: pointer; margin-left: 0.4rem; white-space: nowrap;
+}
+.blend-add-badge:hover { background: #fde68a; }
+/* 인라인 추가분 입력 — 작은 input. Enter 로 확정하면 누계(actual) 에 합산. */
+.blend-add-inline {
+  width: 6.5rem; font-size: 0.82rem; padding: 2px 6px; margin-left: 0.4rem;
+  border-color: #f59e0b;
+}
+/* 추가 입력 모드 표식(저울 PRINT 값이 이 행에 추가분으로 합산됨) */
+.blend-actual.add-mode { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45); }
+
 /* 기준량 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
 .blend-label-row {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;

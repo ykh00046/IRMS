@@ -166,11 +166,37 @@
 
         <!-- 기록 조회·상세(DHR)는 '배합 기록'(/status) 화면으로 일원화(2026-07-07 데드코드 정리) -->
         <datalist id="worker-names"></datalist>
+
+        <!-- 초과 계량 증량 제안 모달 — 자재를 이론량 초과해 넣었을 때 배합 전체량 증량 제안.
+             기존 빨간 토스트 위에 추가로 뜬다(−방향 부족 계량 시에는 열리지 않음).
+             표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지). -->
+        <div class="ss-modal-overlay" id="rescale-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="rescale-modal-title">
+            <div class="ss-modal-header"><h3 id="rescale-modal-title">배합량 증량</h3></div>
+            <div class="ss-modal-body" id="rescale-modal-body"></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="rescale-cancel" type="button">다시 계량</button>
+              <button class="btn accent" id="rescale-apply" type="button">증량 적용</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
+        <div class="ss-modal-overlay" id="discard-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
+            <div class="ss-modal-header"><h3 id="discard-modal-title">폐기 권장</h3></div>
+            <div class="ss-modal-body" id="discard-modal-body"></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn rescale-danger" id="discard-force" type="button">그래도 증량</button>
+              <button class="btn accent" id="discard-cancel" type="button" autofocus>증량 취소</button>
+            </div>
+          </div>
+        </div>
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260713a"></script>
-    <script src="/static/js/blend.js?v=20260717b"></script>
+    <script src="/static/js/blend_lib.js?v=20260717c"></script>
+    <script src="/static/js/blend.js?v=20260717d"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

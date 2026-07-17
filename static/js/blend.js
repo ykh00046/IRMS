@@ -39,11 +39,24 @@
     loadFailOptionHtml,
     findAnchorIndex,
     computeAnchorTheory,
+    BATCH_LIMIT_G,
+    requiredTotalForRow,
+    rescalePlan,
+    exceedsBatchLimit,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false };
+  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false,
+    // 초과 계량 증량(rescale). 기준 자재 레시피에서 총량이 기준 자재 실측값으로
+    // 파생되므로 증량분을 별도로 보관 — 유효 총량 = max(기준 파생 총량, rescaleTotalG).
+    // 레시피 변경/저장 후 초기화 시 0(미사용)으로 리셋.
+    rescaleTotalG: 0,
+    // 추가분 입력 모드에 들어간 행 인덱스(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
+    addModeIdx: null,
+    // 보류 중인 증량 제안(newTotal) — discard 모달에서 '그래도 증량' 선택 시 재사용.
+    pendingRescale: null,
+  };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
   const SCALE_URL = "http://127.0.0.1:8787";
@@ -71,6 +84,11 @@
     if (!input) return;
     // 저울 PRINT 입력은 input 이벤트가 없으므로 저장 후 자동 로그아웃 해제를 직접 호출
     cancelPostSaveLogout();
+    // 추가 입력 모드 행이면 PRINT 값을 추가분으로 합산(누계 = 기존 actual + 입력값).
+    if (state.addModeIdx === idx) {
+      applyAddAmount(idx, Number(value));
+      return;
+    }
     input.value = String(value);
     state.items[idx].actual_amount = input.value;
     state.items[idx].manual = false;  // 저울 입력 — 손입력 표시 해제
@@ -352,6 +370,10 @@
     }));
     state.anchorIndex = findAnchorIndex(state.items);
     state.prevAnchorActual = "";
+    // 레시피가 바뀌면 이전 레시피의 증량분을 버린다 — 새 레시피는 새 총량 기준.
+    state.rescaleTotalG = 0;
+    state.addModeIdx = null;
+    state.pendingRescale = null;
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -612,9 +634,235 @@
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
       notify(varianceWarnMessage(it, v, tol), "error");
+      // +방향(초과 계량)일 때만 증량 제안 모달을 띄운다. −방향(부족)은 그 자재를
+      // 더 넣으면 끝이므로 기존 토스트만 유지한다.
+      if (v > 0) {
+        offerRescale();
+      }
       return true;
     }
     return false;
+  }
+
+  // ── 초과 계량 증량(rescale) 통합 ─────────────────────────
+  // 자재를 이론량 초과해 넣었으면 배합 전체를 그 값에 맞춰 증량한다.
+  // rescalePlan(순수) 으로 newTotal 계산 → 25,000g 초과면 #discard-modal,
+  // 아니면 #rescale-modal. [증량 적용]/[그래도 증량] 선택 시 applyRescale.
+  // 반복 초과 시 같은 모달이 다시 뜨고 max 규칙으로 더 커진다.
+  function offerRescale() {
+    // 이미 모달이 열려 있거나 보류 제안이 있으면 중복 트리거 방지(change·Enter·
+    // 총량 변경 경로에서 warnIfVariance 가 여러 번 불릴 수 있다).
+    if (!$("rescale-modal").hidden || !$("discard-modal").hidden) return;
+    if (state.pendingRescale) return;
+    const currentTotal = effectiveCurrentTotal();
+    const plan = rescalePlan(state.items, currentTotal, state.toleranceG);
+    if (!plan.changed) return;
+    state.pendingRescale = plan;
+    if (exceedsBatchLimit(plan.newTotal)) {
+      openDiscardModal(plan);
+    } else {
+      openRescaleModal(plan);
+    }
+  }
+
+  // 증량 계산 기준이 되는 현재 유효 총량.
+  // 일반 레시피: 총량 입력값. 기준 자재 레시피: max(기준 파생 총량, rescaleTotalG).
+  function effectiveCurrentTotal() {
+    if (hasAnchor()) {
+      const derived = Number($("blend-total").value) || 0;
+      return Math.max(derived, state.rescaleTotalG || 0);
+    }
+    return Number($("blend-total").value) || 0;
+  }
+
+  function buildRescaleSummary(plan) {
+    // 초과해 계량된(= addNeeded 산출에 기여한) 행만 추려 미리보기 표에 표시.
+    const overRows = plan.rows.filter((r) => r.addNeeded !== null);
+    let html = "";
+    const over = overRows.map((r) => esc(state.items[r.idx].material_name)).join(", ");
+    if (over) {
+      html += `<p class="rescale-summary">초과 자재: ${over}</p>`;
+    }
+    html += `<div class="rescale-totals">`
+      + `<span>총 배합량</span>`
+      + `<span class="old">${fmt(effectiveCurrentTotal())} g</span>`
+      + `<span>→</span>`
+      + `<span class="new">${fmt(plan.newTotal)} g</span>`
+      + `</div>`;
+    if (overRows.length) {
+      html += `<table class="rescale-add-table"><thead><tr><th>자재</th>`
+        + `<th class="num">현재 실제량</th><th class="num">새 이론량</th>`
+        + `<th class="num">추가로 넣을 양</th></tr></thead><tbody>`;
+      overRows.forEach((r) => {
+        const it = state.items[r.idx];
+        html += `<tr><td>${esc(it.material_name)}</td>`
+          + `<td class="num">${fmt(it.actual_amount)}</td>`
+          + `<td class="num">${fmt(r.newTheory)}</td>`
+          + `<td class="num add-cell">+${fmt(r.addNeeded)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+    return html;
+  }
+
+  function openRescaleModal(plan) {
+    const body = $("rescale-modal-body");
+    if (body) body.innerHTML = buildRescaleSummary(plan);
+    $("rescale-modal").hidden = false;
+  }
+  function closeRescaleModal() { $("rescale-modal").hidden = true; }
+
+  function openDiscardModal(plan) {
+    const body = $("discard-modal-body");
+    if (body) {
+      body.innerHTML = `<p>증량하면 총 배합량이 25,000 g 을 초과합니다 `
+        + `(예상 ${fmt(plan.newTotal)} g). 폐기를 권장합니다.</p>`;
+    }
+    $("discard-modal").hidden = false;
+  }
+  function closeDiscardModal() { $("discard-modal").hidden = true; }
+
+  // 증량 적용 — 모달 [증량 적용] 또는 #discard-modal [그래도 증량].
+  // 일반 레시피: 총량 입력값을 newTotal 로 갱신 후 input 이벤트로 이론 재계산 경로 재사용.
+  // 기준 자재 레시피: state.rescaleTotalG 를 newTotal 로 올려 도출 총량·이론량·추가분을 갱신.
+  // 두 경로 모두 저장 차단·서버 본문은 건드리지 않는다(서버는 총량×비율로 재산출).
+  function applyRescale() {
+    const plan = state.pendingRescale;
+    if (!plan) return;
+    state.pendingRescale = null;
+    closeRescaleModal();
+    closeDiscardModal();
+    if (hasAnchor()) {
+      // 기준 파생 총량을 넘는 증량분을 보관 — applyAnchorRecompute 가 max 로 반영.
+      if (plan.newTotal > (state.rescaleTotalG || 0)) state.rescaleTotalG = plan.newTotal;
+      recomputeAnchorRescale(plan);
+    } else {
+      const totalInput = $("blend-total");
+      totalInput.value = String(plan.newTotal);
+      // 총량 input 이벤트 경로 재사용 — 이론량 재계산·표 갱신.
+      totalInput.dispatchEvent(new Event("input"));
+    }
+    // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
+    renderAddBadges();
+    notify(`배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+  }
+
+  // 기준 자재 레시피 증량 반영 — rescalePlan 의 newTheory/addNeeded 를 각 행에 적용.
+  // 기준 자재 행도 이론량이 newTheory 로 갱신되고 addNeeded 배지가 표시된다
+  // (기준 자재도 추가로 넣어야 총량이 실제로 커진다).
+  function recomputeAnchorRescale(plan) {
+    const totalInput = $("blend-total");
+    if (totalInput) totalInput.value = String(plan.newTotal);
+    plan.rows.forEach((r) => {
+      const it = state.items[r.idx];
+      if (!it || r.newTheory === null) return;
+      it.theory_amount = r.newTheory;
+      const cell = document.querySelector(`.blend-theory[data-idx="${r.idx}"]`);
+      if (cell) cell.textContent = fmt(r.newTheory);
+    });
+    state.items.forEach((_, i) => updateRowVar(i));
+    updateTotals();
+    updateLotPreview();
+  }
+
+  // 행별 잔여 추가분 배지 렌더링 — addNeeded>0 인 계량 행에 주황 배지(클릭 시 인라인 입력).
+  // 추가 후 잔여 ≤ 허용 편차면 배지 제거.
+  function renderAddBadges() {
+    document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
+    const tol = state.toleranceG;
+    const plan = rescalePlan(state.items, effectiveCurrentTotal(), tol);
+    plan.rows.forEach((r) => {
+      if (r.addNeeded === null || r.addNeeded <= tol + 1e-9) return;
+      const td = document.querySelector(`.blend-var[data-idx="${r.idx}"]`);
+      if (!td) return;
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "blend-add-badge";
+      badge.dataset.idx = String(r.idx);
+      badge.textContent = `추가 +${fmt(r.addNeeded)} g`;
+      badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
+      badge.addEventListener("click", () => openAddInline(r.idx));
+      td.appendChild(badge);
+    });
+  }
+
+  // 행 안 인라인 추가분 입력 — 배지를 작은 input 으로 교체. Enter 확정 시 누계 합산.
+  function openAddInline(idx) {
+    const td = document.querySelector(`.blend-var[data-idx="${idx}"]`);
+    if (!td) return;
+    const badge = td.querySelector(".blend-add-badge");
+    if (badge) badge.remove();
+    if (td.querySelector(".blend-add-inline")) return;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.min = "0";
+    input.className = "input blend-add-inline";
+    input.dataset.idx = String(idx);
+    input.placeholder = "추가분 g";
+    input.title = "추가분 입력 후 Enter — 누계로 합산됩니다";
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      const add = Number(input.value);
+      if (!add || !(add > 0)) { input.focus(); return; }
+      // Enter 확정 표시 — 입력칸 제거 시 blur 가 한 번 더 발화해 이중 합산되는 것 차단
+      input._applied = true;
+      applyAddAmount(idx, add);
+    });
+    input.addEventListener("blur", () => {
+      if (input._applied) return;
+      const add = Number(input.value);
+      if (add > 0) { input._applied = true; applyAddAmount(idx, add); return; }
+      // 빈 값으로 벗어나면 취소 — 추가 모드·누계 칸 잠금도 함께 해제해야 한다
+      input.remove();
+      state.addModeIdx = null;
+      const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (actualInput) {
+        actualInput.classList.remove("add-mode");
+        actualInput.readOnly = false;
+      }
+      renderAddBadges();
+    });
+    td.appendChild(input);
+    // 이 행을 추가 입력 모드로 — 저울 PRINT 값이 추가분으로 합산된다.
+    // 실제량(누계) 칸은 잠근다: 추가 모드 중 직접 타이핑하면 누계가 통째로
+    // 덮어써져 기존 계량값이 사라진다(스모크에서 실제 재현된 실수 경로).
+    state.addModeIdx = idx;
+    const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (actualInput) {
+      actualInput.classList.add("add-mode");
+      actualInput.readOnly = true;
+    }
+    input.focus();
+  }
+
+  // 추가분을 행의 누계(actual) 에 합산하고 UI 갱신.
+  function applyAddAmount(idx, add) {
+    const it = state.items[idx];
+    if (!it) return;
+    const prev = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
+    const next = prev + add;
+    it.actual_amount = String(Math.round(next * 1000) / 1000);
+    it.manual = false;
+    const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (input) {
+      input.value = it.actual_amount;
+      input.classList.remove("manual-warn");
+    }
+    // 인라인 입력칸 제거 + 추가 모드 해제(단일 추가 완료). 잔여 배지는 renderAddBadges 가 갱신.
+    const inline = document.querySelector(`.blend-add-inline[data-idx="${idx}"]`);
+    if (inline) inline.remove();
+    state.addModeIdx = null;
+    const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (actualInput) {
+      actualInput.classList.remove("add-mode");
+      actualInput.readOnly = false;
+    }
+    updateRowVar(idx);
+    updateTotals();
+    warnIfVariance(idx);
+    renderAddBadges();
   }
 
   // 총량을 나중에 입력/변경하면 이론량이 바뀌어 이미 계량한 값이 초과될 수 있다 —
@@ -749,6 +997,10 @@
         const totalInput = $("blend-total");
         if (totalInput) totalInput.value = "";
       }
+      // 저장 후 다음 배합은 증량분이 없는 깨끗한 상태에서 시작.
+      state.rescaleTotalG = 0;
+      state.addModeIdx = null;
+      state.pendingRescale = null;
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)
@@ -826,6 +1078,22 @@
     }
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
+    // 증량 모달 버튼 — hidden 속성 토글만으로 열고 닫는다(display 직접 지정 금지).
+    const rescaleApply = $("rescale-apply");
+    if (rescaleApply) rescaleApply.addEventListener("click", applyRescale);
+    const rescaleCancel = $("rescale-cancel");
+    if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
+      state.pendingRescale = null;
+      closeRescaleModal();
+    });
+    const discardForce = $("discard-force");
+    if (discardForce) discardForce.addEventListener("click", applyRescale);
+    const discardCancel = $("discard-cancel");
+    if (discardCancel) discardCancel.addEventListener("click", () => {
+      // 폐기 선택 — 증량을 적용하지 않는다(기존 초과 토스트·저장 차단 상태 유지).
+      state.pendingRescale = null;
+      closeDiscardModal();
+    });
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
