@@ -598,9 +598,18 @@
 .bom-rows { display: flex; flex-direction: column; gap: 4px; }
 .bom-row {
   display: grid;
-  grid-template-columns: 2rem minmax(200px, 1fr) 140px auto;
+  grid-template-columns: 2rem minmax(180px, 1fr) 90px 140px auto;
   gap: 6px;
   align-items: center;
+}
+/* 품목코드 배지 — 등록 자재의 materials.code 상시 표시(모노스페이스, 옅게) */
+.bom-code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .bom-row-step { grid-template-columns: 2rem 1fr auto; }
 .bom-row-step .bom-step-note { color: #4b5563; font-style: italic; }

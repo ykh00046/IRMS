@@ -85,7 +85,7 @@
 
         if (!rows.length) {
           dom.historyBody.innerHTML =
-            '<tr><td colspan="7"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
+            '<tr><td colspan="8"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
           return;
         }
 
@@ -107,6 +107,7 @@
               <tr class="history-row" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
                 <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
+                <td class="recipe-code-cell">${recipe.productCode ? IRMS.escapeHtml(recipe.productCode) : '<span class="muted">-</span>'}</td>
                 ${categoryCell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
@@ -176,7 +177,7 @@
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
               const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
-              detailRow.innerHTML = `<td colspan="7">
+              detailRow.innerHTML = `<td colspan="8">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">

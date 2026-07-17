@@ -53,6 +53,7 @@
       unit: row.unit,
       colorGroup: row.color_group,
       category: row.category,
+      code: row.code || null,  // ERP 품목코드 — BOM 편집기 코드 배지용
       aliases: row.aliases || [],
     };
   }
@@ -65,6 +66,7 @@
       inkName: row.ink_name,
       status: row.status,
       category: row.category || null,
+      productCode: row.product_code || null,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,

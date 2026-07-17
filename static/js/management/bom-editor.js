@@ -38,7 +38,8 @@
 
     // 편집기 상태(단일 레시피)
     const bom = { productName: "", rows: [], remark: "" };
-    let materialNames = [];  // 자재명 자동완성 소스
+    let materialNames = [];        // 자재명 자동완성 소스
+    let materialCodes = {};        // 자재명 → 품목코드(materials.code) — 행 옆 코드 배지용
 
     function dirty() {
       if (!state.suppressDirtyTracking) ctx.onDirty();
@@ -70,6 +71,10 @@
     function initSpreadsheet(materials) {
       state.suppressDirtyTracking = true;
       materialNames = (materials || []).map((m) => m.name).filter(Boolean);
+      materialCodes = {};
+      (materials || []).forEach((m) => {
+        if (m.name && m.code) materialCodes[m.name] = m.code;
+      });
       bom.productName = "";
       bom.remark = "";
       bom.rows = [emptyMaterial(), emptyMaterial(), emptyMaterial()];
@@ -208,9 +213,13 @@
             <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제">✕</button></span>
           </div>`;
         }
+        // 품목코드 배지 — 등록된 자재(materials.code 보유)의 코드를 상시 표시.
+        // 마스터에만 있는 자재는 '검증' 시 자동 등록 안내 메시지에서 코드가 확인된다.
+        const code = materialCodes[row.name.trim()] || "";
         return `<div class="bom-row" data-idx="${i}">
           <span class="bom-no">${matNo(i)}</span>
           <input class="input bom-name" list="bom-material-names" value="${esc(row.name)}" placeholder="자재명" autocomplete="off" />
+          <span class="bom-code" title="품목코드">${esc(code)}</span>
           <input class="input bom-value" value="${esc(row.value)}" placeholder="배합량(g)" inputmode="decimal" />
           <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제">✕</button></span>
         </div>`;
@@ -229,7 +238,7 @@
             <input class="input bom-remark" id="bom-remark" value="${esc(bom.remark)}" placeholder="선택" />
           </div>
           <datalist id="bom-material-names">${materialNames
-            .map((n) => `<option value="${esc(n)}"></option>`).join("")}</datalist>
+            .map((n) => `<option value="${esc(n)}"${materialCodes[n] ? ` label="${esc(materialCodes[n])}"` : ""}></option>`).join("")}</datalist>
         </div>`;
       bind(c);
     }
@@ -243,7 +252,13 @@
       c.querySelectorAll(".bom-row").forEach((rowEl) => {
         const idx = Number(rowEl.dataset.idx);
         const name = rowEl.querySelector(".bom-name");
-        if (name) name.addEventListener("input", () => { bom.rows[idx].name = name.value; dirty(); });
+        if (name) name.addEventListener("input", () => {
+          bom.rows[idx].name = name.value;
+          // 이름이 등록 자재와 일치하면 코드 배지 즉시 갱신
+          const badge = rowEl.querySelector(".bom-code");
+          if (badge) badge.textContent = materialCodes[name.value.trim()] || "";
+          dirty();
+        });
         const value = rowEl.querySelector(".bom-value");
         if (value) {
           value.addEventListener("input", () => { bom.rows[idx].value = value.value; dirty(); });

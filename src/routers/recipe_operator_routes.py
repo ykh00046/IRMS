@@ -68,7 +68,7 @@ def build_router() -> APIRouter:
         with get_connection() as connection:
             rows = connection.execute(
                 """
-                SELECT id, name, unit_type, unit, color_group, category, is_active
+                SELECT id, name, unit_type, unit, color_group, category, code, is_active
                 FROM materials
                 WHERE is_active = 1
                 ORDER BY name
