@@ -14,7 +14,8 @@
  *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
  *   badVarianceNames(bad), varianceBlockMessage(names, toleranceG?),
  *   option, stepRowsHtml, lotFallbackText,
- *   findAnchorIndex, computeAnchorTheory
+ *   findAnchorIndex, computeAnchorTheory,
+ *   BATCH_LIMIT_G, requiredTotalForRow, rescalePlan, exceedsBatchLimit
  *
  * variance* 헬퍼는 레시피별 허용 편차(toleranceG) 를 인자로 받는다. 미지정 시
  * 기본값 TOLERANCE_G(0.05) 로 폴백 — 레시피 편차가 없는 기존 동작 보존.
@@ -156,6 +157,66 @@
     return { theoryAmounts: out, total: Math.round(total * 100) / 100 };
   }
 
+  // 초과 계량 증량(rescale) 상한 — 1회 배합 허용 최대 총량(g).
+  // 초과 시 현장 폐기 권장. 서버(blend_service) 총량 제약과 무관한 UI 전용 상수.
+  const BATCH_LIMIT_G = 25000;
+
+  // 단일 자재의 초과 계량 시 도출 필요 총량.
+  // required_i = actual × 100 / ratio — ratio_i 비율로 actual_i 만 넣었다면
+  // 배합 전체 총량이 이 값이어야 한다는 뜻. ratio<=0 또는 actual 이 유효 숫자가
+  // 아니면(null/빈문자/음수/0) null 반환(증량 계산에서 제외).
+  function requiredTotalForRow(ratio, actual) {
+    const r = Number(ratio);
+    const a = Number(actual);
+    if (!(r > 0) || !Number.isFinite(a) || a <= 0) return null;
+    return a * 100 / r;
+  }
+
+  // 초과 계량 증량 계획 수립(순수). items: [{ratio, actual_amount, theory_amount}],
+  // currentTotal: 현재 배합 총량, toleranceG: 허용 편차(현재 미사용 — 골 B 배지 갱신 용).
+  // 반환: { newTotal, changed, rows: [{idx, newTheory, addNeeded}] }
+  //   - newTotal = max(currentTotal, 이미 계량된(actual_amount!=="", ratio>0) 모든 행의 required)
+  //     단일 max 규칙으로 누적 증량이 자동 성립.
+  //   - changed = newTotal 이 currentTotal 보다 유의미하게 큰가(> 1e-9)
+  //   - rows: 모든 행의 newTheory(round(ratio×newTotal/100, 3)) + 계량 행 addNeeded(max(0,newTheory−actual))
+  //     미계량 행은 addNeeded=null.
+  function rescalePlan(items, currentTotal, toleranceG) {
+    const list = Array.isArray(items) ? items : [];
+    const base = Number(currentTotal);
+    let newTotal = Number.isFinite(base) && base >= 0 ? base : 0;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i] || {};
+      if (it.actual_amount === "" || it.actual_amount === null || it.actual_amount === undefined) continue;
+      const r = Number(it.ratio);
+      if (!(r > 0)) continue;
+      const a = Number(it.actual_amount);
+      if (!Number.isFinite(a) || a <= 0) continue;
+      const required = a * 100 / r;
+      if (required > newTotal) newTotal = required;
+    }
+    const changed = newTotal - (Number.isFinite(base) ? base : 0) > 1e-9;
+    const rows = list.map((it, idx) => {
+      const item = it || {};
+      const r = Number(item.ratio);
+      const newTheory = r > 0 ? Math.round((r / 100) * newTotal * 1000) / 1000 : null;
+      let addNeeded = null;
+      const actualRaw = item.actual_amount;
+      if (actualRaw !== "" && actualRaw !== null && actualRaw !== undefined) {
+        const a = Number(actualRaw);
+        if (Number.isFinite(a)) {
+          addNeeded = newTheory !== null ? Math.max(0, Math.round((newTheory - a) * 1000) / 1000) : 0;
+        }
+      }
+      return { idx, newTheory, addNeeded };
+    });
+    return { newTotal, changed, rows };
+  }
+
+  // 배합 총량이 1회 허용 상한(25,000g)을 초과하는가 — 증량 후 폐기 권장 모달 판정용.
+  function exceedsBatchLimit(total) {
+    return Number(total) > BATCH_LIMIT_G;
+  }
+
   function varianceDisplay(it, toleranceG) {
     // 기준 자재 행은 편차 계량에서 제외 — 항상 '-' 표시(이론=실측이므로 편차 무의미).
     if (it && it.is_anchor) {
@@ -252,5 +313,9 @@
     loadFailOptionHtml,
     findAnchorIndex,
     computeAnchorTheory,
+    BATCH_LIMIT_G,
+    requiredTotalForRow,
+    rescalePlan,
+    exceedsBatchLimit,
   };
 })();
