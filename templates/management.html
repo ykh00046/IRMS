@@ -14,6 +14,7 @@
           <button class="mgmt-tab active" data-tab="history" type="button">레시피 현황</button>
           <button class="mgmt-tab" data-tab="import" type="button" {% if not can_manage %}hidden{% endif %}>레시피 등록·수정</button>
           <button class="mgmt-tab" data-tab="lookup" type="button">버전 비교</button>
+          <button class="mgmt-tab" data-tab="codes" type="button" {% if not can_manage %}hidden{% endif %}>품목코드</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
@@ -167,6 +168,34 @@
           </section>
         </div>
 
+        <!-- ── 품목코드 ── -->
+        <div class="tab-panel" id="tab-codes" {% if not can_manage %}hidden{% endif %}>
+          <section class="panel">
+            <h3 class="panel-title">품목코드 지정</h3>
+            <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 코드는 행에서 직접 입력하거나 마스터에서 선택합니다.</p>
+            <div class="filter-bar">
+              <input id="codes-search" class="input" placeholder="자재명 또는 코드" />
+              <label class="filter-label checkbox-label">
+                <input type="checkbox" id="codes-uncoded" checked /> 코드 없음만
+              </label>
+              <button id="codes-refresh-btn" class="btn" type="button">새로고침</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>자재명</th>
+                    <th>품목코드</th>
+                    <th>분류</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="codes-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <!-- ── 버전 이력 모달 ── -->
         <div id="history-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal ss-modal-wide">
@@ -223,12 +252,13 @@
 {% block scripts %}
     
     
-    <!-- management modules: 5 factories (order-free) → controller last -->
+    <!-- management modules: factories (order-free) → controller last -->
     <script src="/static/js/management/bom-editor.js?v=20260717a"></script>
     <script src="/static/js/management/recipe-edit-loader.js?v=20260716a"></script>
     <script src="/static/js/management/import-validate.js?v=20260713a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260717a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260717b"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
-    <script src="/static/js/management.js?v=20260716a"></script>
+    <script src="/static/js/management/item-codes.js?v=20260717a"></script>
+    <script src="/static/js/management.js?v=20260717b"></script>
 {% endblock %}

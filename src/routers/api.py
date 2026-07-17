@@ -8,6 +8,7 @@ from . import (
     blend_session_routes,
     blend_routes,
     dashboard_routes,
+    item_code_routes,
     public_attendance_alert_routes,
     public_material_usage_routes,
     public_viscosity_reminder_routes,
@@ -36,6 +37,7 @@ def build_router() -> APIRouter:
     blend_session_router = blend_session_routes.build_router()
     worker_open_router, worker_admin_router = worker_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
+    item_code_router = item_code_routes.create_item_code_router()
 
     @public_router.get("/health")
     def health() -> dict[str, str]:
@@ -58,4 +60,5 @@ def build_router() -> APIRouter:
     router.include_router(worker_admin_router)       # worker registry admin (cleanup)
     router.include_router(admin_router)
     router.include_router(dashboard_router)
+    router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
     return router

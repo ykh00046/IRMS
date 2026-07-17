@@ -56,6 +56,10 @@ document.addEventListener("DOMContentLoaded", () => {
     compareModalTitle: document.getElementById("compare-modal-title"),
     compareThead: document.getElementById("compare-thead"),
     compareTbody: document.getElementById("compare-tbody"),
+    codesSearch: document.getElementById("codes-search"),
+    codesUncoded: document.getElementById("codes-uncoded"),
+    codesRefreshBtn: document.getElementById("codes-refresh-btn"),
+    codesBody: document.getElementById("codes-body"),
   };
 
   // ── Tab navigation ──
@@ -63,6 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
     history: { eyebrow: "운영 관리", heading: "레시피 현황" },
     import: { eyebrow: "레시피 관리", heading: "레시피 등록·수정" },
     lookup: { eyebrow: "레시피 관리", heading: "버전 비교" },
+    codes: { eyebrow: "운영 관리", heading: "품목코드" },
   };
   const canManage = dom.shell && dom.shell.dataset.canManage === "1";
 
@@ -80,6 +85,10 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.classList.add("active");
       document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
       syncTopbarTitle(btn.dataset.tab);
+      // 품목코드 탭 진입 시 최초 로드(지연 초기화 — 매번 화면에 들를 때마다 최신화).
+      if (btn.dataset.tab === "codes" && ctx.itemCodes) {
+        ctx.itemCodes.refresh();
+      }
     });
   });
 
@@ -146,6 +155,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const versionCompare = IRMS.management.createVersionCompare(ctx);
   ctx.versionCompare = versionCompare;
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
+
+  // 품목코드 패널(item-code-admin §B2) — 자재 코드 지정/해제. init 으로 필터 이벤트 연결.
+  if (canManage) {
+    const itemCodes = IRMS.management.createItemCodesPanel(ctx);
+    ctx.itemCodes = itemCodes;
+    itemCodes.init();
+  }
 
   async function loadMaterials() {
     if (!canManage) return;

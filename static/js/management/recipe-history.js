@@ -101,13 +101,31 @@
           return `<td><select class="input recipe-cat-select" data-recipe-id="${recipe.id}">${opts}</select></td>`;
         };
 
+        // 품목코드 셀(item-code-admin §B3) — 분류 셀과 동일 방식의 인라인 편집.
+        // canManage 면 코드 표시 + "지정/수정" 작은 버튼. 클릭 시 input + 마스터 제안(A1, kind=product),
+        // Enter/저장 → A4 PUT. 행 확장(accordion) 충돌 방지용 stopPropagation.
+        const productCodeCell = (recipe) => {
+          const code = recipe.productCode || "";
+          if (!ctx.canManage) {
+            return `<td class="recipe-code-cell">${code ? IRMS.escapeHtml(code) : '<span class="muted">-</span>'}</td>`;
+          }
+          const codeHtml = code
+            ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>`
+            : '<span class="muted">-</span>';
+          const btnLabel = code ? "수정" : "지정";
+          return `<td class="recipe-code-cell">
+            ${codeHtml}
+            <button class="btn btn-sm recipe-code-edit-btn" data-recipe-id="${recipe.id}" type="button">${btnLabel}</button>
+          </td>`;
+        };
+
         dom.historyBody.innerHTML = rows
           .map(
             (recipe) => `
               <tr class="history-row" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
                 <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
-                <td class="recipe-code-cell">${recipe.productCode ? IRMS.escapeHtml(recipe.productCode) : '<span class="muted">-</span>'}</td>
+                ${productCodeCell(recipe)}
                 ${categoryCell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
@@ -148,6 +166,136 @@
             }
           });
         });
+
+        // 품목코드 인라인 지정(item-code-admin §B3) — 분류 드롭다운과 동일한 자리/패턴.
+        // 행 확장(accordion) 충돌 방지용 stopPropagation. x-csrftoken 헤더 직접 부착.
+        dom.historyBody.querySelectorAll(".recipe-code-edit-btn").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const cell = btn.closest(".recipe-code-cell");
+            startProductCodeEdit(cell);
+          });
+          btn.addEventListener("mousedown", (e) => e.stopPropagation());
+        });
+
+        async function loadProductCodeSuggestions(q, suggestList, input) {
+          try {
+            const data = await IRMS._core.request("/item-codes/master", {
+              query: { q, kind: "product" },
+            });
+            const items = data.items || [];
+            if (!items.length) {
+              suggestList.hidden = true;
+              suggestList.innerHTML = "";
+              return;
+            }
+            suggestList.innerHTML = items
+              .map(
+                (it) =>
+                  `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}</li>`,
+              )
+              .join("");
+            suggestList.hidden = false;
+            suggestList.querySelectorAll(".code-suggest-item").forEach((li) => {
+              li.addEventListener("mousedown", (ev) => {
+                ev.preventDefault();
+                input.value = li.dataset.code;
+                suggestList.hidden = true;
+                input.focus();
+              });
+            });
+          } catch (_err) {
+            suggestList.hidden = true;
+          }
+        }
+
+        const debouncedProductSuggest = IRMS.debounce(loadProductCodeSuggestions, 300);
+
+        function startProductCodeEdit(cell) {
+          // 이미 편집 중이면 무시(중복 진입 방지)
+          if (cell.querySelector(".code-edit-wrap")) return;
+          const recipeId = Number(cell.querySelector(".recipe-code-edit-btn").dataset.recipeId);
+          const current = cell.querySelector(".code-value");
+          const currentValue = current ? current.textContent.trim() : "";
+
+          cell.innerHTML = `
+            <div class="code-edit-wrap">
+              <input class="input compact code-inline-input" value="${IRMS.escapeHtml(currentValue)}" placeholder="코드 입력 (예: BC0001)" />
+              <button class="btn btn-sm success code-save-btn" type="button">저장</button>
+              <button class="btn btn-sm code-cancel-btn" type="button">취소</button>
+              <ul class="code-suggest-list" hidden></ul>
+            </div>`;
+
+          const input = cell.querySelector(".code-inline-input");
+          const suggestList = cell.querySelector(".code-suggest-list");
+
+          input.focus();
+          input.select();
+          input.addEventListener("input", () => {
+            const q = input.value.trim();
+            if (q.length < 1) {
+              suggestList.hidden = true;
+              return;
+            }
+            debouncedProductSuggest(q, suggestList, input);
+          });
+          input.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") {
+              ev.preventDefault();
+              saveProductCode(recipeId, input.value, cell);
+            } else if (ev.key === "Escape") {
+              ev.preventDefault();
+              renderHistory(); // 원복 — 전체 재렌더로 셀 복구
+            }
+          });
+          input.addEventListener("click", (ev) => ev.stopPropagation());
+
+          cell.querySelector(".code-save-btn").addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            saveProductCode(recipeId, input.value, cell);
+          });
+          cell.querySelector(".code-cancel-btn").addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            renderHistory();
+          });
+        }
+
+        async function saveProductCode(recipeId, rawValue, cell) {
+          const value = String(rawValue || "").trim();
+          const productCode = value === "" ? null : value;
+          try {
+            const headers = { "Content-Type": "application/json" };
+            const token =
+              IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+            if (token) headers["x-csrftoken"] = token;
+            const resp = await fetch(`/api/recipes/${recipeId}/product-code`, {
+              method: "PUT",
+              credentials: "same-origin",
+              headers,
+              body: JSON.stringify({ product_code: productCode }),
+            });
+            if (!resp.ok) {
+              let msg = `Request failed (${resp.status})`;
+              try {
+                const p = await resp.json();
+                if (p && p.detail) {
+                  msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail);
+                }
+              } catch (_e) { /* noop */ }
+              IRMS.notify(`품목코드 저장 실패: ${msg}`, "error");
+              return;
+            }
+            const result = await resp.json();
+            const saved = result.product_code || "";
+            IRMS.notify(
+              saved ? `품목코드를 '${saved}'(으)로 지정했습니다. (체인 ${result.updated}건)` : "품목코드를 해제했습니다.",
+              "success",
+            );
+            renderHistory();
+          } catch (err) {
+            IRMS.notify(`품목코드 저장 실패: ${err.message}`, "error");
+          }
+        }
 
         // Accordion: row click to expand detail
         dom.historyBody.querySelectorAll(".history-row").forEach((row) => {
