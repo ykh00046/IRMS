@@ -286,4 +286,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
   restoreRange();
   loadAll();
+
+  // ── 저울 전용 입력 모드 설정 카드(책임자에게만 템플릿이 노출) ──────
+  // GET 으로 현재 상태를 표시하고, 토글 버튼으로 PUT( x-csrftoken 직접 부착).
+  // 카드가 없는 비책임자 화면에서는 아무 동작도 하지 않는다(방어적 폴백).
+  const scaleOnlyCard = document.getElementById("scale-only-card");
+
+  async function loadScaleOnly() {
+    const statusEl = document.getElementById("scale-only-status");
+    const toggleBtn = document.getElementById("scale-only-toggle");
+    if (!statusEl || !toggleBtn) return;
+    try {
+      const res = await fetch("/api/settings/scale-only-input", { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const enabled = Boolean(data && data.enabled);
+      statusEl.textContent = enabled ? "켜짐" : "꺼짐";
+      toggleBtn.textContent = enabled ? "끄기" : "켜기";
+      toggleBtn.dataset.enabled = enabled ? "1" : "0";
+      toggleBtn.disabled = false;
+    } catch (err) {
+      statusEl.textContent = "상태 조회 실패";
+      IRMS.notify(`저울 전용 입력 상태 조회 실패: ${err.message}`, "error");
+    }
+  }
+
+  if (scaleOnlyCard) {
+    const toggleBtn = document.getElementById("scale-only-toggle");
+    toggleBtn.addEventListener("click", async () => {
+      const next = toggleBtn.dataset.enabled !== "1";
+      toggleBtn.disabled = true;
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const res = await fetch("/api/settings/scale-only-input", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ enabled: next }),
+        });
+        if (!res.ok) {
+          let msg = `HTTP ${res.status}`;
+          try {
+            const p = await res.json();
+            if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail);
+          } catch (_e) { /* noop */ }
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        const enabled = Boolean(data && data.enabled);
+        document.getElementById("scale-only-status").textContent = enabled ? "켜짐" : "꺼짐";
+        toggleBtn.textContent = enabled ? "끄기" : "켜기";
+        toggleBtn.dataset.enabled = enabled ? "1" : "0";
+        IRMS.notify(enabled ? "저울 전용 입력 모드를 켰습니다." : "저울 전용 입력 모드를 껐습니다.", "success");
+      } catch (err) {
+        IRMS.notify(`저울 전용 입력 변경 실패: ${err.message}`, "error");
+      } finally {
+        toggleBtn.disabled = false;
+      }
+    });
+    loadScaleOnly();
+  }
 });

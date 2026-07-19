@@ -57,6 +57,9 @@
     addModeIdx: null,
     // 보류 중인 증량 제안(newTotal) — discard 모달에서 '그래도 증량' 선택 시 재사용.
     pendingRescale: null,
+    // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
+    // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
+    scaleOnlyInput: false,
   };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
@@ -70,6 +73,49 @@
     } catch (_e) {
       state.scaleReady = false;
     }
+    updateScaleOnlyBanner();
+  }
+
+  // ── 저울 전용 입력 모드(scale-only-input) ───────────────────────
+  // 페이지 로드 시 GET 으로 현재 상태를 가져온다(실패 시 false 폴백 — 화면이 죽으면 안 됨).
+  // enabled=true 면 실제량 입력칸(.blend-actual)과 증량 추가분 인라인 입력(.blend-add-inline)을
+  // readonly 로 잠그고(title 안내), 저울 미연결 시 상시 배너를 띄운다.
+  // enabled=false 면 어떤 동작 변화도 없어야 한다(readonly 미적용, 배너 숨김).
+  async function loadScaleOnlyInput() {
+    try {
+      const res = await fetch("/api/settings/scale-only-input", { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.scaleOnlyInput = Boolean(data && data.enabled);
+    } catch (_e) {
+      state.scaleOnlyInput = false;  // 폴백 — 화면이 죽으면 안 됨
+    }
+    applyScaleOnlyToRows();
+    updateScaleOnlyBanner();
+  }
+
+  // 저울 전용 모드일 때 현재 DOM 의 실제량·증량 입력칸에 readonly + title 부여.
+  // 새로 렌더되는 행에도 적용되도록 renderMatRows 직후에도 호출한다.
+  function applyScaleOnlyToRows() {
+    if (!state.scaleOnlyInput) return;
+    const titleText = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
+    document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
+      el.readOnly = true;
+      el.title = titleText;
+    });
+    document.querySelectorAll("#blend-mat-body .blend-add-inline").forEach((el) => {
+      el.readOnly = true;
+      el.title = titleText;
+    });
+  }
+
+  // 저울 전용 모드 + 저울 미연결 → 상시 배너(login-error 스타일 재사용).
+  // 저울 연결 상태(detectScale 주기 갱신)에 따라 자동 토글.
+  function updateScaleOnlyBanner() {
+    const banner = document.getElementById("scale-only-banner");
+    if (!banner) return;
+    const show = state.scaleOnlyInput && !state.scaleReady;
+    banner.hidden = !show;
   }
 
   // 수동 입력 표시(조용히, 자재 행 단위): 저울이 연결된 상태에서 실제량을 손으로
@@ -559,6 +605,8 @@
       })
     );
     updateTotals();
+    // 저울 전용 모드가 켜져 있으면 새로 렌더된 행의 실제량 칸도 readonly 로 잠근다.
+    applyScaleOnlyToRows();
   }
 
   function updateRowVar(i) {
@@ -808,6 +856,11 @@
     input.dataset.idx = String(idx);
     input.placeholder = "추가분 g";
     input.title = "추가분 입력 후 Enter — 누계로 합산됩니다";
+    // 저울 전용 모드면 증량 추가분 인라인 입력도 잠금(저울 PRINT/addMode 합산으로만).
+    if (state.scaleOnlyInput) {
+      input.readOnly = true;
+      input.title = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
+    }
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
       e.preventDefault();
@@ -1130,6 +1183,8 @@
     setInterval(detectScale, 30000);
     // 저울 PRINT 키 이벤트 폴링(0.8초) — 누르면 활성 행 실제량 자동 입력.
     setInterval(pollScaleEvents, 800);
+    // 저울 전용 입력 모드 로드(실패 시 false 폴백). 켜져 있으면 실제량 입력칸 잠금.
+    loadScaleOnlyInput();
     // 작업자 세션 하트비트는 전 화면 공통(common.js)으로 이동 — 배합↔점도↔기록
     // 어디에 있든 세션이 유지된다.
     request("/viscosity/products")
