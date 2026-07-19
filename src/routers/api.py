@@ -15,6 +15,7 @@ from . import (
     recipe_import_routes,
     recipe_manager_routes,
     recipe_operator_routes,
+    settings_routes,
     viscosity_routes,
     worker_routes,
 )
@@ -38,6 +39,7 @@ def build_router() -> APIRouter:
     worker_open_router, worker_admin_router = worker_routes.build_router()
     dashboard_router = dashboard_routes.build_router()
     item_code_router = item_code_routes.create_item_code_router()
+    settings_router = settings_routes.build_router()
 
     @public_router.get("/health")
     def health() -> dict[str, str]:
@@ -61,4 +63,5 @@ def build_router() -> APIRouter:
     router.include_router(admin_router)
     router.include_router(dashboard_router)
     router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
+    router.include_router(settings_router)        # 앱 설정(저울 전용 입력 모드 토글)
     return router

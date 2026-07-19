@@ -432,6 +432,19 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         connection.execute("DROP TABLE IF EXISTS chat_rooms")
         record_migration(connection, "drop_orphan_chat_tables")
 
+    # scale-only-mode: 앱 전역 on/off 설정(키-값). 저울 전용 입력 모드 토글값 보관.
+    # 시드 없음 — 행 부재 = 기본값(false). GET 서비스 헬퍼가 부재/구버전을 기본값 폴밋.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT
+        )
+        """
+    )
+
     # 감사 F-1: product_lot 전역 유일 봉인 — 채번 경쟁(read-then-write)으로 생겼을 수
     # 있는 기존 중복을 정리(재채번 + audit_logs 기록)한 뒤 UNIQUE 인덱스를 만든다.
     # 실패(예: 정리 후에도 위반)하면 init_db 트랜잭션 전체가 롤백되고 서버 기동이
