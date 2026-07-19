@@ -14,7 +14,7 @@
  *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
  *   badVarianceNames(bad), varianceBlockMessage(names, toleranceG?),
  *   option, stepRowsHtml, lotFallbackText,
- *   findAnchorIndex, computeAnchorTheory,
+ *   findAnchorIndex, computeAnchorTheory, theoryFromWeights,
  *   BATCH_LIMIT_G, requiredTotalForRow, rescalePlan, exceedsBatchLimit
  *
  * variance* 헬퍼는 레시피별 허용 편차(toleranceG) 를 인자로 받는다. 미지정 시
@@ -155,6 +155,40 @@
       total += (out[i] || 0);
     }
     return { theoryAmounts: out, total: Math.round(total * 100) / 100 };
+  }
+
+  // 총량 입력에 따른 이론량 재계산(순수) — value_weight 비례 방식.
+  // 서버(blend_service.scale_theory)와 동일 산술: theory_i = value_weight_i / base_sum × total.
+  // 이 경로는 서버가 내려준 반올림된 ratio(4자리) 대신 원값(value_weight) 으로
+  // 계산해 57.99 같은 꼬리를 없앤다. 반환값은 3자리 반올림(증량 rescalePlan 과 동일 단위).
+  //
+  // items: [{value_weight}], total: 총 배합량.
+  // 반환: 각 항목의 round(value_weight/base_sum×total, 3) 배열.
+  //   - total 이 유효 숫자가 아니거나 0 이하 → 전체 null 배열(호출부 ratio 방식 폴백).
+  //   - 어느 한 항목이라도 value_weight 이 null/undefined → 전체 null 배열(옛 데이터 호환 폴백).
+  //     (<=0 인 항목은 base_sum 에서 0 기여할 뿐 폴백 유발은 아님.)
+  //   - base_sum(Σ value_weight>0) 이 0 이하 → 전체 null 배열.
+  // null 배열을 받은 호출부는 기존 computeTheoryAmount(ratio, total) 로 폴백하면 된다.
+  function theoryFromWeights(items, total) {
+    const list = Array.isArray(items) ? items : [];
+    const out = new Array(list.length).fill(null);
+    const t = Number(total);
+    if (!Number.isFinite(t) || !(t > 0)) return out;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i] || {};
+      if (it.value_weight === null || it.value_weight === undefined) return out;
+    }
+    let baseSum = 0;
+    for (let i = 0; i < list.length; i++) {
+      const w = Number(list[i] && list[i].value_weight);
+      if (w > 0) baseSum += w;
+    }
+    if (!(baseSum > 0)) return out;
+    for (let i = 0; i < list.length; i++) {
+      const w = Number(list[i].value_weight);
+      out[i] = Math.round((w / baseSum) * t * 1000) / 1000;
+    }
+    return out;
   }
 
   // 초과 계량 증량(rescale) 상한 — 1회 배합 허용 최대 총량(g).
@@ -313,6 +347,7 @@
     loadFailOptionHtml,
     findAnchorIndex,
     computeAnchorTheory,
+    theoryFromWeights,
     BATCH_LIMIT_G,
     requiredTotalForRow,
     rescalePlan,

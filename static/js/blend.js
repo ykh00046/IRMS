@@ -39,6 +39,7 @@
     loadFailOptionHtml,
     findAnchorIndex,
     computeAnchorTheory,
+    theoryFromWeights,
     BATCH_LIMIT_G,
     requiredTotalForRow,
     rescalePlan,
@@ -441,8 +442,14 @@
     // 도출되므로 이 총량 기반 재계산 경로를 타지 않는다.
     if (hasAnchor()) return;
     const total = Number($("blend-total").value) || 0;
-    state.items.forEach((it) => {
-      it.theory_amount = computeTheoryAmount(it.ratio, total);
+    // value_weight 비례 방식 — 서버(blend_service.scale_theory)와 동일 산술로
+    // 반올림된 ratio(%) 로 인한 57.99 같은 꼬리를 없앤다. value_weight 이 빠진
+    // 옛 레시피는 null 배열 반환 → 기존 computeTheoryAmount(ratio, total) 로 폴백.
+    const byWeights = theoryFromWeights(state.items, total);
+    state.items.forEach((it, i) => {
+      it.theory_amount = byWeights[i] !== null
+        ? byWeights[i]
+        : computeTheoryAmount(it.ratio, total);
     });
   }
 

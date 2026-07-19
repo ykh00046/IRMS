@@ -20,7 +20,7 @@
 
   const {
     esc, TOLERANCE_G, fmt, todayISO, nowTime,
-    computeTheoryAmount, findAnchorIndex,
+    computeTheoryAmount, findAnchorIndex, theoryFromWeights,
     baseTotalValues, baseTotalLinksHtml,
     rescalePlan, exceedsBatchLimit,
   } = window.IRMS.blendLib;
@@ -302,8 +302,15 @@
   }
 
   function recomputeTheory() {
-    state.theory = state.materials.map((m) =>
-      state.total > 0 ? computeTheoryAmount(m.ratio, state.total) : null
+    // value_weight 비례 방식 — 서버(blend_service.scale_theory)와 동일 산술로
+    // 반올림된 ratio(%) 로 인한 꼬리를 없앤다. value_weight 이 빠진 옛 레시피는
+    // null 배열 → 기존 computeTheoryAmount(ratio, total) 로 폴백. total<=0 이면
+    // null 배열 → 폴백도 total>0 검사로 자연히 null(표시 '-').
+    const byWeights = theoryFromWeights(state.materials, state.total);
+    state.theory = state.materials.map((m, i) =>
+      byWeights[i] !== null
+        ? byWeights[i]
+        : (state.total > 0 ? computeTheoryAmount(m.ratio, state.total) : null)
     );
   }
 
@@ -315,12 +322,16 @@
   }
 
   // 자재 i 가 로트 j 에서 가져야 할 이론량(로트별 총량 기준).
-  // lotRescale[j] 가 없으면 state.theory[i] 와 동일 → 기존 동작 완전 보존.
+  // 증량 안 된 로트는 state.theory[i] 그대로(원값 비례 — 정밀), 증량된 로트만
+  // 그 로트의 총량으로 원값 비례 재산출(폴백: 반올림 ratio).
   function theoryFor(i, j) {
     const m = state.materials[i];
     if (!m) return null;
+    if (!(state.lotRescale[j] > 0)) return state.theory[i];
     const total = lotTotal(j);
     if (!(total > 0)) return null;
+    const byWeights = theoryFromWeights(state.materials, total);
+    if (byWeights[i] !== null) return byWeights[i];
     return Math.round((Number(m.ratio) / 100) * total * 1000) / 1000;
   }
 
