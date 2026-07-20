@@ -68,6 +68,7 @@
       category: row.category || null,
       productCode: row.product_code || null,
       useReactor: !!row.use_reactor,
+      isDerived: !!row.is_derived,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,

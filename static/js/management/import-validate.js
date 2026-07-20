@@ -230,14 +230,18 @@
         // 명시적 false 이므로 역시 직접 POST 경로로 보낸다(ImportRequest.use_reactor).
         const useReactorEl = document.getElementById("imp-use-reactor");
         const useReactor = useReactorEl ? !!useReactorEl.checked : false;
+        // 파생(derived): 체크 시 is_derived=true 를 명시 전송(반응기와 독립). ImportRequest.is_derived.
+        const isDerivedEl = document.getElementById("imp-is-derived");
+        const isDerived = isDerivedEl ? !!isDerivedEl.checked : false;
         let result;
-        if (anchorMaterial || hasTolerance || hasProductCode || useReactor) {
+        if (anchorMaterial || hasTolerance || hasProductCode || useReactor || isDerived) {
           result = await importWithAnchor(
             baseTotals,
             anchorMaterial,
             hasTolerance ? toleranceG : null,
             hasProductCode ? productCode : null,
             useReactor,
+            isDerived,
           );
         } else {
           result = await IRMS.importRecipes(
@@ -260,7 +264,7 @@
 
     // 기준 자재·허용 편차·품목코드·반응기를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
     // 패턴으로 /api/recipes/import 에 직접 POST 한다.
-    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode, useReactor) {
+    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode, useReactor, isDerived) {
       const body = {
         raw_text: state.confirmedRawText,
         created_by: "레시피 관리",
@@ -285,6 +289,8 @@
       }
       // use_reactor(reactor-ownership): 항상 명시적으로 전송(체크=true, 해제=false).
       body.use_reactor = !!useReactor;
+      // is_derived(파생): 항상 명시적으로 전송(체크=true, 해제=false). 반응기와 독립.
+      body.is_derived = !!isDerived;
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
       if (token) headers["x-csrftoken"] = token;
@@ -335,6 +341,11 @@
       const useReactorEl = document.getElementById("imp-use-reactor");
       if (useReactorEl) {
         useReactorEl.checked = false;
+      }
+      // 파생 체크도 초기화 — 반응기와 동일.
+      const isDerivedEl = document.getElementById("imp-is-derived");
+      if (isDerivedEl) {
+        isDerivedEl.checked = false;
       }
       if (productCodeSuggest) {
         productCodeSuggest.hidden = true;

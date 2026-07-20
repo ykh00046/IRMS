@@ -464,7 +464,7 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # reactor-ownership: 반응기 사용 여부 소유를 viscosity_products 에서 recipes 로 이전.
     # recipes.use_reactor 가 새 단일 소스(배합 반응기 강제·점도 화면 모두 이 값을 따름).
     ensure_column(connection, "recipes", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
-    # 1회 마이그레이션 — 점도 제품(use_reactor=1)에 매칭되는 반제품명(code 또는 name 일치)의
+    # 1회 마이게이션 — 점도 제품(use_reactor=1)에 매칭되는 반제품명(code 또는 name 일치)의
     # 기존 레시피를 use_reactor=1 로 시드. 이후에는 레시피 등록/PUT 으로만 변경된다.
     if not has_migration(connection, "recipes_use_reactor_from_viscosity"):
         connection.execute(
@@ -479,6 +479,14 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             """
         )
         record_migration(connection, "recipes_use_reactor_from_viscosity")
+
+    # 파생(derived): 이 레시피가 앞 단계의 총량을 그대로 이월받아 다시 계량하지 않는지.
+    # use_reactor(반응기 번호 요구) 와는 독립 — 반응기 전용·파생 전용·둘 다·둘 다 아님 가능.
+    # 파생 여부가 반응기 이월(carry-over) 허용 여부를 결정한다. 데이터 시드 없음 — 사용자가
+    # 레시피마다 지정(기본 0). use_reactor 시드와 달리 마이그레이션 기록만 남긴다(idempotent).
+    ensure_column(connection, "recipes", "is_derived", "INTEGER NOT NULL DEFAULT 0")
+    if not has_migration(connection, "recipes_is_derived"):
+        record_migration(connection, "recipes_is_derived")
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

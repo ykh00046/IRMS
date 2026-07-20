@@ -157,11 +157,15 @@ def build_router() -> APIRouter:
             # reactor-ownership: 반응기 여부 승계 — tolerance_g/category 승계와 같은 자리에서.
             # body.use_reactor 가 명시되지 않았을 때만 부모의 use_reactor 를 물려받는다.
             inherited_use_reactor: int = 0
+            # 파생(derived) 승계 — use_reactor 승계와 동일 구조. body.is_derived 미지정 시
+            # 부모의 is_derived 를 물려받는다(파생 여부는 반응기와 독립적으로 승계).
+            inherited_is_derived: int = 0
             if body.revision_of is not None:
                 parent_row = connection.execute(
                     "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
                     "anchor_material_id, tolerance_g, category, product_code, "
-                    "COALESCE(use_reactor, 0) AS use_reactor "
+                    "COALESCE(use_reactor, 0) AS use_reactor, "
+                    "COALESCE(is_derived, 0) AS is_derived "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -186,8 +190,11 @@ def build_router() -> APIRouter:
                     if parent_row["product_code"]:
                         inherited_product_code = str(parent_row["product_code"])
                     inherited_use_reactor = int(parent_row["use_reactor"])
+                    inherited_is_derived = int(parent_row["is_derived"])
             # reactor-ownership: 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지).
             effective_use_reactor = 1 if body.use_reactor else (1 if inherited_use_reactor else 0)
+            # 파생(derived): 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지) — use_reactor 와 동일.
+            effective_is_derived = 1 if body.is_derived else (1 if inherited_is_derived else 0)
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -281,8 +288,9 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals, anchor_material_id, tolerance_g, category, product_code, use_reactor
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id, tolerance_g, category, product_code, use_reactor,
+                        is_derived
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -305,6 +313,7 @@ def build_router() -> APIRouter:
                         effective_category,
                         effective_product_code,
                         effective_use_reactor,
+                        effective_is_derived,
                     ),
                 )
                 recipe_id = cursor.lastrowid

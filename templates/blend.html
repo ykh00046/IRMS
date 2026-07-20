@@ -7,7 +7,7 @@
 {% block styles %}
     <link rel="stylesheet" href="/static/css/blend.css?v=20260720d" />
     <style>
-      /* 반응기 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
+      /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
       .carry-over-badge { font-size: 0.72rem; }
       .carry-over-btn { padding: 1px 8px; font-size: 0.78rem; }
@@ -222,11 +222,11 @@
           </div>
         </div>
 
-        <!-- 반응기 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '반응기 이월' 버튼을
+        <!-- 파생 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
              누르면 표시. 적용하면 1차 배합 총량을 이 행의 실제량으로 기록(계량 생략). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="carry-over-modal" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="carry-over-modal-title">
-            <div class="ss-modal-header"><h3 id="carry-over-modal-title">반응기 이월</h3></div>
+            <div class="ss-modal-header"><h3 id="carry-over-modal-title">파생 이월</h3></div>
             <div class="ss-modal-body" id="carry-over-modal-body"></div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="carry-over-cancel" type="button">취소</button>

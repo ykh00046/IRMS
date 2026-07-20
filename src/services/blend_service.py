@@ -172,6 +172,8 @@ def get_recipe_for_blend(
             "ink_name": recipe["ink_name"],
             "status": recipe["status"],
             "use_reactor": product_uses_reactor(connection, recipe["product_name"]),
+            # 파생 여부 — use_reactor 와 독립. 반응기 이월(carry-over) 허용 여부를 결정한다.
+            "is_derived": recipe_is_derived(connection, int(recipe["id"])),
             # 기준 자재(방어 처리 후). None 이면 total_amount 기준 기존 동작.
             "anchor_material_id": effective_anchor,
             # 레시피별 허용 편차(EFFECTIVE). tolerance_g 미지정/무효면 기본값 0.05g.
@@ -651,7 +653,8 @@ def enforce_carry_over(
     """반응기 이월(carry-over) 행 검증 + 강제 채움. details 를 제자리(in-place) 수정.
 
     각 상세 행 중 carried_over=true 인 행은 아래 조건을 **모두** 만족해야 한다:
-      1) 레시피가 반응기 진행(use_reactor) 레시피일 것(product_uses_reactor 로 판정).
+      1) 레시피가 파생(is_derived) 레시피일 것(recipe_is_derived 로 판정). use_reactor 와는
+         독립 — 반응기 여부와 무관하게 파생 레시피에서만 이월이 허용된다.
       2) 그 행이 레시피의 기준 자재(anchor) 행일 것.
       3) 그 행의 material_lot 가 완료된 1차 배합 기록(product_name=이 자재명,
          product_lot=그 LOT, status='completed')에 존재할 것.
@@ -663,8 +666,9 @@ def enforce_carry_over(
     if not reactor_rows:
         return  # 이월 행이 없으면 검사 자체를 건너뛴다(기존 동작 100% 유지).
 
+    # 레시피가 파생인지 — use_reactor 와 무관하게 이것이 이월 허용 조건이다.
+    recipe_is_derived_flag = recipe_is_derived(connection, recipe_id)
     # 레시피 기준 자재(material_name)를 미리 뽑아둔다 — 없는 구버전/테스트 DB 도 폴백.
-    recipe_uses_reactor = product_uses_reactor(connection, product_name)
     anchor_name: str | None = None
     if recipe_id:
         try:
@@ -683,9 +687,9 @@ def enforce_carry_over(
     for d in reactor_rows:
         mat_name = str(d.get("material_name") or "").strip()
         lot = (str(d.get("material_lot") or "").strip())
-        if not recipe_uses_reactor:
+        if not recipe_is_derived_flag:
             raise CarryOverError(
-                f"반응기 이월({mat_name})은 반응기 진행 레시피에서만 사용할 수 있습니다."
+                f"파생 이월({mat_name})은 파생 레시피에서만 사용할 수 있습니다."
             )
         if anchor_name is None or mat_name != anchor_name:
             raise CarryOverError(
@@ -837,6 +841,24 @@ def product_uses_reactor(connection: sqlite3.Connection, product_name: str) -> b
         (name, name),
     ).fetchone()
     return bool(row["use_reactor"]) if row else False
+
+
+def recipe_is_derived(connection: sqlite3.Connection, recipe_id: int | None) -> bool:
+    """레시피가 파생(is_derived) 레시피인지 — 앞 단계의 총량을 이월받아 다시 계량하지 않는지.
+
+    use_reactor(반응기 번호 요구)와는 **독립**이다. 파생 여부가 반응기 이월(carry-over)
+    허용 여부를 결정한다. recipe_id 가 None 이거나 컬럼이 없는 구버전/테스트 스키마에서는
+    False(폴백) — anchor_material_id 조회와 동일한 try/except 방어.
+    """
+    if recipe_id is None:
+        return False
+    try:
+        row = connection.execute(
+            "SELECT is_derived FROM recipes WHERE id = ?", (recipe_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:  # is_derived 컬럼이 없는 구버전/테스트 DB
+        return False
+    return bool(row["is_derived"]) if row else False
 
 
 # ── 배합 기록 생성/조회 ─────────────────────────────────────────

@@ -37,6 +37,11 @@ class ImportRequest(BaseModel):
     # None(기본)이면 수정 등록 때 부모 레시피의 use_reactor 를 승계(tolerance_g/category 와 동일),
     # 비개정 신규 레시피면 0(반응기 아님)으로 시작한다.
     use_reactor: bool | None = None
+    # 파생(derived): 앞 단계 총량을 이월받아 다시 계량하지 않는 레시피(recipes.is_derived).
+    # use_reactor 와 독립 — 반응기 이월(carry-over) 허용 여부는 이 값으로 결정된다.
+    # 명시 값이 최우선, None(기본)이면 수정 등록 시 부모 승계(use_reactor 와 동일 구조),
+    # 비개정 신규 레시피면 0(파생 아님)으로 시작한다.
+    is_derived: bool | None = None
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":

@@ -1000,8 +1000,8 @@ def _mgmt_client():
     return client, csrf
 
 
-def _import_recipe(client, csrf, product, materials, *, anchor=None, use_reactor=False):
-    """레시피 1건 등록(반제품명=product, 자재들). anchor_material·use_reactor 지정 가능."""
+def _import_recipe(client, csrf, product, materials, *, anchor=None, use_reactor=False, is_derived=False):
+    """레시피 1건 등록(반제품명=product, 자재들). anchor_material·use_reactor·is_derived 지정 가능."""
     header = "반제품명\t" + "\t".join(m[0] for m in materials)
     row = product + "\t" + "\t".join(str(m[1]) for m in materials)
     body = {"raw_text": f"{header}\n{row}", "force": True}
@@ -1009,6 +1009,8 @@ def _import_recipe(client, csrf, product, materials, *, anchor=None, use_reactor
         body["anchor_material"] = anchor
     if use_reactor:
         body["use_reactor"] = True
+    if is_derived:
+        body["is_derived"] = True
     res = client.post("/api/recipes/import", json=body, headers=csrf())
     assert res.status_code == 200, res.text
     return res.json()["created_ids"][0]
@@ -1041,10 +1043,11 @@ def test_carryover_happy_path_forces_amount_to_stage1_total():
     final = "이월최종" + __import__("uuid").uuid4().hex[:4]
     # 1차 배합 기록(중간체) — 총량 150.
     stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "이월작업", total=150.0)
-    # 2차 레시피 — 반응기 진행, 기준 자재=중간체. 중간체 비율 60, 최종 원료 40.
+    # 2차 레시피 — 파생 레시피(이월은 파생에 걸린다), 기준 자재=중간체. 중간체 비율 60, 최종 원료 40.
+    # 반응기도 함께 지정(실제 SBCT 처럼) — reactor 번호가 유효하도록.
     rid = _import_recipe(client, csrf, final,
                          [(intermediate, 60), ("최종원료", 40)],
-                         anchor=intermediate, use_reactor=True)
+                         anchor=intermediate, use_reactor=True, is_derived=True)
     # 2차 배합 저장 — 기준 자재(중간체) 행을 carried_over=true + 1차 LOT.
     # 클라이언트는 틀린 actual_amount(999)를 보내지만 서버가 1차 총량(150)으로 강제.
     res = client.post("/api/blend/records", json={
@@ -1067,19 +1070,23 @@ def test_carryover_happy_path_forces_amount_to_stage1_total():
     assert rows["최종원료"]["carried_over"] is False          # 일반 행은 그대로
 
 
-def test_carryover_rejected_for_non_reactor_recipe():
-    """반응기 미사용 레시피에서 carried_over=true → 400(자재명 포함)."""
+def test_carryover_rejected_for_non_derived_recipe():
+    """파생이 아닌 레시피에서 carried_over=true → 400. 반응기여도 파생이 아니면 거부(디커플링).
+
+    이월은 반응기가 아니라 '파생' 상태에 걸린다 — use_reactor=True 여도 is_derived 가
+    아니면 이월을 막아야 한다.
+    """
     client, csrf = _mgmt_client()
     intermediate = "NR중간체" + __import__("uuid").uuid4().hex[:4]
     final = "NR최종" + __import__("uuid").uuid4().hex[:4]
     stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "NR작업")
-    # use_reactor=False (기본) — 반응기 레시피가 아님.
+    # 반응기 레시피이지만 파생은 아님(is_derived=False) — 이월 불가여야 한다.
     rid = _import_recipe(client, csrf, final,
                          [(intermediate, 60), ("최종원료", 40)],
-                         anchor=intermediate)
+                         anchor=intermediate, use_reactor=True)
     res = client.post("/api/blend/records", json={
         "recipe_id": rid, "product_name": final, "worker": "NR작업",
-        "work_date": "2026-07-02", "total_amount": 250, "scale": None,
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None, "reactor": 1,
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 150, "carried_over": True},
@@ -1088,7 +1095,36 @@ def test_carryover_rejected_for_non_reactor_recipe():
     }, headers=csrf())
     assert res.status_code == 400
     assert intermediate in res.json()["detail"]
-    assert "반응기" in res.json()["detail"]
+    assert "파생" in res.json()["detail"]
+
+
+def test_carryover_accepted_for_derived_non_reactor_recipe():
+    """파생이지만 반응기가 아닌 레시피에서도 이월이 동작한다(디커플링 반대 방향).
+
+    반응기 번호 없이도(use_reactor=False) is_derived 만으로 이월이 허용돼야 한다.
+    """
+    client, csrf = _mgmt_client()
+    intermediate = "DN중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "DN최종" + __import__("uuid").uuid4().hex[:4]
+    _stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "DN작업", total=150.0)
+    # 파생이지만 반응기는 아님 — reactor 번호 없이 저장.
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, is_derived=True)
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "DN작업",
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot,
+             "actual_amount": 999, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    detail = client.get(f"/api/blend/records/{res.json()['id']}").json()
+    rows = {d["material_name"]: d for d in detail["details"]}
+    assert rows[intermediate]["actual_amount"] == 150.0   # 파생만으로 강제 이월
+    assert rows[intermediate]["carried_over"] is True
 
 
 def test_carryover_rejected_for_non_anchor_row():
@@ -1097,10 +1133,10 @@ def test_carryover_rejected_for_non_anchor_row():
     intermediate = "NA중간체" + __import__("uuid").uuid4().hex[:4]
     final = "NA최종" + __import__("uuid").uuid4().hex[:4]
     stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "NA작업")
-    # 기준 자재=중간체, 반응기 진행.
+    # 기준 자재=중간체, 파생 레시피.
     rid = _import_recipe(client, csrf, final,
                          [(intermediate, 60), ("최종원료", 40)],
-                         anchor=intermediate, use_reactor=True)
+                         anchor=intermediate, use_reactor=True, is_derived=True)
     # carried_over 를 기준 자재가 아닌 '최종원료' 행에 걸면 → 400.
     res = client.post("/api/blend/records", json={
         "recipe_id": rid, "product_name": final, "worker": "NA작업",
@@ -1123,7 +1159,7 @@ def test_carryover_rejected_for_unregistered_lot():
     _stage1_record(client, csrf, intermediate, "UL작업")
     rid = _import_recipe(client, csrf, final,
                          [(intermediate, 60), ("최종원료", 40)],
-                         anchor=intermediate, use_reactor=True)
+                         anchor=intermediate, use_reactor=True, is_derived=True)
     res = client.post("/api/blend/records", json={
         "recipe_id": rid, "product_name": final, "worker": "UL작업",
         "work_date": "2026-07-02", "total_amount": 250, "scale": None, "reactor": 1,
@@ -1146,7 +1182,7 @@ def test_carryover_rejected_in_continuous_route():
     stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "CR작업")
     rid = _import_recipe(client, csrf, final,
                          [(intermediate, 60), ("최종원료", 40)],
-                         anchor=intermediate, use_reactor=True)
+                         anchor=intermediate, use_reactor=True, is_derived=True)
     res = client.post("/api/blend/records/continuous", json={
         "recipe_id": rid, "product_name": final,
         "work_date": "2026-07-02", "total_amount": 250, "reactor": 1,

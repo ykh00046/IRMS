@@ -90,6 +90,11 @@
       if (useReactorEl) {
         useReactorEl.checked = !!detail.use_reactor;
       }
+      // 파생 프리필 — 반응기와 동일 구조(미지정 시 부모 is_derived 승계).
+      const isDerivedEl = document.getElementById("imp-is-derived");
+      if (isDerivedEl) {
+        isDerivedEl.checked = !!detail.is_derived;
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

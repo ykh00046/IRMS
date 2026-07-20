@@ -781,17 +781,18 @@
 
   function closeLotInvalidModal() { $("lot-invalid-modal").hidden = true; }
 
-  // ── 반응기 이월(carry-over): 기준 자재 행만, 반응기 진행 레시피만 ────
+  // ── 파생 이월(carry-over): 기준 자재 행만, 파생 레시피만 ────
   // 1차 배합(반제품)의 총량을 2차 배합 기준 자재의 실제량으로 그대로 가져오는 기능.
   // 반응기에 이미 1차 제품이 남아 있어 2차에서는 다시 계량하지 않는 경우에 쓴다.
   // 서버가 carried_over=true 행의 actual_amount 를 1차 총량으로 강제(변조 방지)하므로,
   // 여기서는 작업자에게 버튼·확인 모달로 흐름을 제공할 뿐이다.
 
-  // 이월 자격 판정 — 현재 기준 자재 행이고 반응기 레시피일 때만.
+  // 이월 자격 판정 — 현재 기준 자재 행이고 파생(is_derived) 레시피일 때만.
+  // 파생은 반응기와 독립: 반응기여도 파생이 아니면 이월 없음(예: SBCT-1 은 반응기이나 시작).
   function carryOverEligible() {
     return Boolean(
       hasAnchor()
-      && state.current && state.current.recipe && state.current.recipe.use_reactor
+      && state.current && state.current.recipe && state.current.recipe.is_derived
     );
   }
 
@@ -830,7 +831,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-sm carry-over-btn";
-      btn.textContent = "반응기 이월";
+      btn.textContent = "파생 이월";
       btn.title = "1차 배합 총량을 이 자재의 실제량으로 가져옵니다";
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -857,7 +858,7 @@
       body.innerHTML = ""
         + `<p><strong>자재명:</strong> ${esc(name)}</p>`
         + `<p><strong>1차 로트:</strong> ${esc(match.lot)}</p>`
-        + `<p>반응기에 이미 1차 배합 제품이 남아 있어 이 자재는 다시 계량하지 않습니다. `
+        + `<p>앞 단계(1차) 제조물을 이어받아 이 자재는 다시 계량하지 않습니다. `
         + `1차 배합의 총량(<strong>${match.total} g</strong>)을 이 자재의 입력량으로 기록합니다.</p>`
         + `<p class="carry-over-caution">실제로 계량하는 경우에는 사용하지 마세요.</p>`;
     }
@@ -1499,7 +1500,7 @@
         input.focus();
       }
     });
-    // 반응기 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
+    // 파생 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
     const coConfirm = $("carry-over-confirm");
     if (coConfirm) coConfirm.addEventListener("click", applyCarryOver);
     const coCancel = $("carry-over-cancel");

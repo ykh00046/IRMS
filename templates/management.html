@@ -76,7 +76,13 @@
                     <label class="filter-label visc-checkbox" for="imp-use-reactor">
                       <input id="imp-use-reactor" type="checkbox" /> 반응기 사용
                     </label>
-                    <p class="imp-attr-desc">반응기에서 진행하는 레시피. 배합 저장 시 반응기 번호를 요구하고, 기준 자재 행에서 반응기 이월 입력을 쓸 수 있습니다.</p>
+                    <p class="imp-attr-desc">반응기에서 진행하는 레시피. 배합 저장 시 반응기 번호를 요구합니다. (이월과 무관 — 이월은 '파생'이 결정)</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label visc-checkbox" for="imp-is-derived">
+                      <input id="imp-is-derived" type="checkbox" /> 파생
+                    </label>
+                    <p class="imp-attr-desc">앞 단계(1차) 총량을 이어받아 다시 계량하지 않는 레시피(예: SBCT-1→SBCT). 기준 자재 행에서 '파생 이월'로 1차 총량을 투입량으로 기록합니다. 반응기 여부와 독립.</p>
                   </div>
                 </div>
               </fieldset>
@@ -149,6 +155,7 @@
                     <th>품목코드</th>
                     <th>분류</th>
                     <th>반응기</th>
+                    <th>파생</th>
                     <th>상태</th>
                     <th>등록자</th>
                     <th>등록일시</th>
@@ -280,9 +287,9 @@
     
     <!-- management modules: factories (order-free) → controller last -->
     <script src="/static/js/management/bom-editor.js?v=20260717a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260720b"></script>
-    <script src="/static/js/management/import-validate.js?v=20260720b"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260720b"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260720c"></script>
+    <script src="/static/js/management/import-validate.js?v=20260720c"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260720c"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
     <script src="/static/js/management/item-codes.js?v=20260720b"></script>

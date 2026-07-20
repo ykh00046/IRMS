@@ -268,4 +268,47 @@ def build_router() -> APIRouter:
 
         return {"status": "ok", "recipe_id": recipe_id, "use_reactor": bool(use_reactor)}
 
+    @router.put("/recipes/{recipe_id}/derived")
+    def set_recipe_is_derived(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피 파생 여부(is_derived) 지정 — 책임자 전용.
+
+        body: {"is_derived": true|false}. recipe_use_reactor_set 와 동일한 헬퍼/패턴.
+        파생 레시피는 앞 단계의 총량을 이월받아 다시 계량하지 않는다 — 반응기 이월(carry-over)
+        허용 여부는 이 값으로 결정된다(use_reactor 와는 독립).
+        """
+        raw = body.get("is_derived")
+        if raw is None or not isinstance(raw, bool):
+            raise HTTPException(
+                status_code=400,
+                detail="is_derived 는 true 또는 false 이어야 합니다.",
+            )
+        is_derived = 1 if raw else 0
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            connection.execute(
+                "UPDATE recipes SET is_derived = ? WHERE id = ?", (is_derived, recipe_id)
+            )
+            write_audit_log(
+                connection,
+                action="recipe_is_derived_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"is_derived": bool(is_derived)},
+            )
+            connection.commit()
+
+        return {"status": "ok", "recipe_id": recipe_id, "is_derived": bool(is_derived)}
+
     return router

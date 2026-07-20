@@ -118,6 +118,15 @@
           return `<td><input type="checkbox" class="recipe-reactor-toggle" data-recipe-id="${recipe.id}"${on ? " checked" : ""} title="반응기 진행 여부" /></td>`;
         };
 
+        // 파생 셀 — 반응기 셀과 동일 패턴, PUT /api/recipes/{id}/derived. 파생=이월 사용 레시피.
+        const derivedCell = (recipe) => {
+          const on = !!recipe.isDerived;
+          if (!ctx.canManage) {
+            return `<td>${on ? "파생" : '<span class="muted">-</span>'}</td>`;
+          }
+          return `<td><input type="checkbox" class="recipe-derived-toggle" data-recipe-id="${recipe.id}"${on ? " checked" : ""} title="파생(이전 총량 이월) 여부" /></td>`;
+        };
+
         dom.historyBody.innerHTML = rows
           .map(
             (recipe) => `
@@ -127,6 +136,7 @@
                 ${productCodeCell(recipe)}
                 ${categoryCell(recipe)}
                 ${reactorCell(recipe)}
+                ${derivedCell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
@@ -196,6 +206,38 @@
               // 저장 실패 시 체크박스를 이전 상태로 되돌려 표시와 서버를 맞춘다.
               cb.checked = !useReactor;
               IRMS.notify(`반응기 저장 실패: ${err.message}`, "error");
+            }
+          });
+        });
+
+        // 파생 토글 — 변경 즉시 PUT /api/recipes/{id}/derived. 반응기 토글과 동일 패턴.
+        dom.historyBody.querySelectorAll(".recipe-derived-toggle").forEach((cb) => {
+          cb.addEventListener("click", (e) => e.stopPropagation());
+          cb.addEventListener("change", async (e) => {
+            e.stopPropagation();
+            const rid = Number(cb.dataset.recipeId);
+            const isDerived = !!cb.checked;
+            try {
+              const headers = { "Content-Type": "application/json" };
+              const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+              if (token) headers["x-csrftoken"] = token;
+              const resp = await fetch(`/api/recipes/${rid}/derived`, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers,
+                body: JSON.stringify({ is_derived: isDerived }),
+              });
+              if (!resp.ok) {
+                let msg = `Request failed (${resp.status})`;
+                try { const p = await resp.json(); if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail); } catch (_e) { /* noop */ }
+                throw new Error(msg);
+              }
+              await resp.json();
+              IRMS.notify(isDerived ? "파생 레시피로 지정했습니다." : "파생 지정을 해제했습니다.", "success");
+            } catch (err) {
+              // 저장 실패 시 체크박스를 이전 상태로 되돌려 표시와 서버를 맞춘다.
+              cb.checked = !isDerived;
+              IRMS.notify(`파생 저장 실패: ${err.message}`, "error");
             }
           });
         });
