@@ -159,11 +159,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function editRow(d) {
-    return `<tr class="edit-row">
-      <td><input class="input e-name" value="${esc(d.material_name || "")}" placeholder="자재명" /></td>
+    // 반응기 이월 행은 표식을 보존하고 실제량을 읽기전용으로 둔다(1차 총량으로 서버가
+    // 강제하므로 수정 무의미). data-carried 로 저장 시 carried_over 를 되돌려보낸다.
+    const carried = d.carried_over ? 1 : 0;
+    const actualAttr = carried
+      ? ' readonly title="반응기 이월 — 1차 총량으로 자동 기록(수정 불가)"'
+      : "";
+    const mark = carried
+      ? ' <span title="반응기 이월 행 — 1차 총량으로 자동 기록" style="margin-left:4px;padding:0 6px;border-radius:8px;background:#2563eb;color:#fff;font-size:0.72rem;font-weight:600;white-space:nowrap;">이월</span>'
+      : "";
+    return `<tr class="edit-row" data-carried="${carried}">
+      <td><input class="input e-name" value="${esc(d.material_name || "")}" placeholder="자재명" />${mark}</td>
       <td><input class="input num e-ratio" type="number" step="0.01" min="0" value="${d.ratio ?? ""}" /></td>
       <td><input class="input num e-theory" type="number" step="0.01" min="0" value="${d.theory_amount ?? ""}" /></td>
-      <td><input class="input num e-actual" type="number" step="0.01" min="0" value="${d.actual_amount ?? ""}" /></td>
+      <td><input class="input num e-actual" type="number" step="0.01" min="0" value="${d.actual_amount ?? ""}"${actualAttr} /></td>
       <td><input class="input e-lot" value="${esc(d.material_lot || "")}" placeholder="LOT(선택)" /></td>
       <td><button class="btn btn-sm danger e-del" type="button" title="행 삭제">×</button></td>
     </tr>`;
@@ -222,10 +231,16 @@ document.addEventListener("DOMContentLoaded", () => {
         theory_amount: numOrNull(".e-theory"),
         actual_amount: numOrNull(".e-actual"),
         material_lot: tr.querySelector(".e-lot").value.trim() || null,
+        // 반응기 이월 표식 보존 — 저장 시 손실되지 않게 되돌려보낸다. 서버가 recipe_id 로
+        // 재검증하고 1차 총량으로 강제한다(create 경로와 동일 불변식).
+        carried_over: tr.dataset.carried === "1",
       };
     }).filter(Boolean);
     const reactorRaw = $("e-reactor").value;
     return {
+      // recipe_id 를 함께 보낸다 — 이월 재검증(파생·기준 자재·1차 LOT)과 레시피별 허용 편차
+      // 적용에 필요. 미전송 시 이월 행이 서버에서 거부(파생 판정 불가)되므로 반드시 포함.
+      recipe_id: currentRecord ? (currentRecord.recipe_id ?? null) : null,
       product_name: $("e-product").value.trim(),
       worker: $("e-worker").value.trim(),
       work_date: $("e-date").value,
