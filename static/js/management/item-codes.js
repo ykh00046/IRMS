@@ -58,10 +58,13 @@
             const codeHtml = code
               ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>`
               : '<span class="muted">-</span>';
-            const actionHtml = code
+            const codeActions = code
               ? `<button class="btn btn-sm code-edit-btn" data-id="${m.id}">수정</button>
                  <button class="btn btn-sm danger code-clear-btn" data-id="${m.id}">해제</button>`
               : `<button class="btn btn-sm accent code-edit-btn" data-id="${m.id}">지정</button>`;
+            // 삭제 버튼은 코드 유무와 무관하게 항상 표시.
+            const actionHtml = `${codeActions}
+              <button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`;
             return `
               <tr class="codes-row" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td>${IRMS.escapeHtml(m.name)}</td>
@@ -92,7 +95,7 @@
       }
     }
 
-    // ── 행 내 이벤트: 지정/수정(인라인 편집), 해제 ──
+    // ── 행 내 이벤트: 지정/수정(인라인 편집), 해제, 삭제 ──
     function bindRowEvents() {
       dom.codesBody.querySelectorAll(".code-edit-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
@@ -106,6 +109,13 @@
           e.stopPropagation();
           const row = btn.closest(".codes-row");
           clearCode(row);
+        });
+      });
+      dom.codesBody.querySelectorAll(".material-delete-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const row = btn.closest(".codes-row");
+          startInlineDeleteConfirm(row);
         });
       });
     }
@@ -266,6 +276,63 @@
         await refresh();
       } catch (err) {
         IRMS.notify(`코드 해제 실패: ${err.message}`, "error");
+      }
+    }
+
+    // ── 자재 삭제: 인라인 확인 ──
+    // window.confirm 금지(spec 제약). 행 안의 action-cell 을
+    // "정말 삭제 [예/아니오]" 두 버튼으로 교체 — 기존 인라인 편집 패턴 재사용.
+    // 편집 중인 행과 충돌하지 않게 stopPropagation 은 호출단에서 이미 처리.
+    function startInlineDeleteConfirm(row) {
+      const id = Number(row.dataset.id);
+      const name = row.dataset.name || "";
+      const cell = row.querySelector(".action-cell");
+      if (!cell) return;
+      // 이미 확인 중이면 토글(재클릭 시 취소).
+      if (cell.querySelector(".material-delete-confirm-wrap")) {
+        refresh();
+        return;
+      }
+      cell.innerHTML = `
+        <div class="material-delete-confirm-wrap">
+          <span class="muted">정말 삭제 ${IRMS.escapeHtml(name)}</span>
+          <button class="btn btn-sm danger material-delete-yes-btn" type="button" data-id="${id}">예</button>
+          <button class="btn btn-sm material-delete-no-btn" type="button">아니오</button>
+        </div>`;
+
+      cell.querySelector(".material-delete-yes-btn").addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        deleteMaterial(row);
+      });
+      cell.querySelector(".material-delete-no-btn").addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        refresh(); // 원래 행으로 복귀
+      });
+    }
+
+    // DELETE fetch — A5. 성공 시 success notify + 목록 새로고침.
+    // 409 는 detail(어떤 레시피가 쓰는지)을 그대로 error notify 로 노출.
+    async function deleteMaterial(row) {
+      const id = Number(row.dataset.id);
+      try {
+        const resp = await fetch(`/api/materials/${id}`, {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { ...csrfHeader() },
+        });
+        if (!resp.ok) {
+          const msg = await detailOf(resp);
+          IRMS.notify(`자재 삭제 실패: ${msg}`, "error");
+          // 409 면 확인 UI 를 유지해 사용자가 메시지를 볼 수 있게 원래 행으로 복귀.
+          if (resp.status === 409) refresh();
+          return;
+        }
+        const result = await resp.json();
+        const deletedName = result.deleted || "";
+        IRMS.notify(`자재 '${deletedName}' 을 삭제했습니다.`, "success");
+        await refresh();
+      } catch (err) {
+        IRMS.notify(`자재 삭제 실패: ${err.message}`, "error");
       }
     }
 

@@ -642,3 +642,145 @@ def test_product_code_set_writes_audit():
     details = row["details_json"] or ""
     assert code in details
     assert str(updated) in details
+
+
+# ---------------- 5. A5: 자재 삭제(DELETE /materials/{id}) ----------------
+
+
+def test_material_delete_non_manager_blocked():
+    """비책임자(또는 비로그인) DELETE → 401/403."""
+    client = _client()
+    res = client.delete("/api/materials/1")
+    assert res.status_code in (401, 403)
+
+
+def test_material_delete_no_references_succeeds():
+    """참조 없는 자재 삭제 → 200 + 행 삭제 + blend_details 링크 NULL + audit 행."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}3"
+    name = f"오등록자재{s}"
+    with get_connection() as conn:
+        mid = _seed_material(conn, name, code=code)
+        # blend_records 부모행 1건 — blend_details.blend_record_id NOT NULL.
+        conn.execute(
+            "INSERT INTO blend_records "
+            "(product_lot, product_name, worker, work_date, total_amount, status, created_at) "
+            "VALUES (?, ?, 't', '2026-07-01', 100, 'completed', '2026-07-01T00:00:00Z')",
+            (f"PL{s}", name),
+        )
+        brid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        # blend_details 링크 2건 — 기록의 텍스트는 보존하되 material_id 만 NULL.
+        conn.execute(
+            "INSERT INTO blend_details "
+            "(blend_record_id, material_id, material_name, material_code, ratio, "
+            " theory_amount, actual_amount, sequence_order, created_at) "
+            "VALUES (?, ?, ?, ?, 0.5, 100, 99, 0, '2026-07-01T00:00:00Z')",
+            (brid, mid, name, code),
+        )
+        conn.execute(
+            "INSERT INTO blend_details "
+            "(blend_record_id, material_id, material_name, material_code, ratio, "
+            " theory_amount, actual_amount, sequence_order, created_at) "
+            "VALUES (?, ?, ?, ?, 0.5, 100, 99, 1, '2026-07-01T00:00:00Z')",
+            (brid, mid, name, code),
+        )
+        # material_aliases 도 1건(FK CASCADE 로 자동 삭제 예상).
+        conn.execute(
+            "INSERT INTO material_aliases (material_id, alias_name) VALUES (?, ?)",
+            (mid, f"별칭{s}"),
+        )
+        conn.commit()
+
+    res = client.delete(f"/api/materials/{mid}", headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "ok"
+    assert body["deleted"] == name
+
+    with get_connection() as conn:
+        # 행이 삭제됨.
+        exists = conn.execute(
+            "SELECT id FROM materials WHERE id = ?", (mid,)
+        ).fetchone()
+        assert exists is None
+        # blend_details 링크만 NULL — 이름/코드 텍스트 보존.
+        links = conn.execute(
+            "SELECT material_id, material_name, material_code FROM blend_details "
+            "WHERE material_name = ?",
+            (name,),
+        ).fetchall()
+        assert len(links) == 2
+        for row in links:
+            assert row["material_id"] is None
+            assert row["material_name"] == name
+            assert row["material_code"] == code
+        # aliases 도 CASCADE 로 정리.
+        aliases = conn.execute(
+            "SELECT id FROM material_aliases WHERE material_id = ?", (mid,)
+        ).fetchall()
+        assert len(aliases) == 0
+        # audit 행 — material_deleted, target_id=str(mid), details 에 code·links 포함.
+        arow = conn.execute(
+            "SELECT action, target_type, target_label, details_json FROM audit_logs "
+            "WHERE action='material_deleted' AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(mid),),
+        ).fetchone()
+    assert arow is not None
+    assert arow["target_type"] == "material"
+    assert arow["target_label"] == name
+    details_json = arow["details_json"] or ""
+    assert code in details_json
+    assert "blend_detail_links" in details_json
+
+
+def test_material_delete_referenced_by_recipe_409():
+    """레시피가 참조하는 자재 → 409 + detail 에 반제품명 + 자재 잔존."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    name = f"참조자재{s}"
+    product_name = f"PB{s}"
+    with get_connection() as conn:
+        mid = _seed_material(conn, name)
+        # recipe + recipe_items 한 건 — material_id 참조.
+        rid = conn.execute(
+            "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at) "
+            "VALUES (?, ?, 'completed', 't', '2026-07-01T00:00:00Z')",
+            (product_name, product_name),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO recipe_items (recipe_id, material_id, value_weight) VALUES (?, ?, 10)",
+            (rid, mid),
+        )
+        conn.commit()
+
+    res = client.delete(f"/api/materials/{mid}", headers=headers)
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert product_name in detail
+    assert "레시피" in detail
+
+    with get_connection() as conn:
+        # 자재는 잔존(삭제 아님, 비활성화도 아님).
+        row = conn.execute(
+            "SELECT id, is_active FROM materials WHERE id = ?", (mid,)
+        ).fetchone()
+    assert row is not None
+    assert row["is_active"] == 1
+
+
+def test_material_delete_not_found_404():
+    """없는 자재 → 404."""
+    client = _client()
+    headers = _login(client)
+
+    res = client.delete("/api/materials/9999999", headers=headers)
+    assert res.status_code == 404

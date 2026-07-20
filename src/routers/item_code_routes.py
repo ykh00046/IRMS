@@ -318,4 +318,78 @@ def create_item_code_router() -> APIRouter:
             "updated": updated,
         }
 
+    # ------------------------------------------------------------------
+    # A5. DELETE /materials/{material_id} — 자재 삭제(레시피 미참조 시)
+    # ------------------------------------------------------------------
+    # tools/apply_manual_item_codes.py 의 DELETE_PLAIN 과 동일 규칙.
+    # recipe_items 가 한 건이라도 참조 중이면 레시피가 깨지므로(Not Null FK)
+    # 409 로 거부 — 비활성화로 대체하지 않고 명시적으로 운영자에게 맡긴다.
+    # 참조 0 이면 blend_details.material_id 를 NULL 로(기록의 이름·수치 보존),
+    # material_aliases 는 FK ON DELETE CASCADE 로 자동 제거, materials 행 삭제.
+    @router.delete("/materials/{material_id}")
+    def delete_material(
+        material_id: int,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+
+            # recipe_items 참조 수 — 이 자재를 쓰는 반제품(레시피)명 최대 5개.
+            ref_rows = connection.execute(
+                """
+                SELECT DISTINCT r.id, r.product_name
+                FROM recipe_items ri
+                JOIN recipes r ON r.id = ri.recipe_id
+                WHERE ri.material_id = ?
+                ORDER BY r.product_name
+                LIMIT 5
+                """,
+                (material_id,),
+            ).fetchall()
+            if ref_rows:
+                names = [r["product_name"] for r in ref_rows if r["product_name"]]
+                names_text = ", ".join(names) if names else "(이름 없음)"
+                detail = (
+                    "레시피가 이 자재를 사용 중입니다: "
+                    f"{names_text} … — 해당 레시피를 수정 등록으로 정리한 뒤 삭제하세요."
+                )
+                raise HTTPException(status_code=409, detail=detail)
+
+            # blend_details 링크 NULL — 기록의 텍스트(material_name 등)는 보존.
+            link_count = (
+                connection.execute(
+                    "SELECT COUNT(*) FROM blend_details WHERE material_id = ?",
+                    (material_id,),
+                ).fetchone()[0]
+                or 0
+            )
+            connection.execute(
+                "UPDATE blend_details SET material_id = NULL WHERE material_id = ?",
+                (material_id,),
+            )
+
+            # material_aliases 는 FK ON DELETE CASCADE 로 자동 제거.
+            # 삭제 시점의 code 를 audit details 에 남긴다(코드 지정 화면 추적용).
+            deleted_code = material_row["code"]
+            connection.execute(
+                "DELETE FROM materials WHERE id = ?", (material_id,)
+            )
+
+            write_audit_log(
+                connection,
+                action="material_deleted",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=material_row["name"],
+                details={"code": deleted_code, "blend_detail_links": link_count},
+            )
+            connection.commit()
+
+        return {"status": "ok", "deleted": material_row["name"]}
+
     return router
