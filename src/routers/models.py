@@ -33,6 +33,10 @@ class ImportRequest(BaseModel):
     # 기본 False — unknown 이 있으면 차단(errors). True 면 경고(warnings)로 강등하여
     # 코드 없이 자동 등록한다(명시적 확인 경로, spec §1).
     allow_unknown_materials: bool = False
+    # reactor-ownership: 반응기 진행 여부(recipes.use_reactor) — 명시 값이 최우선.
+    # None(기본)이면 수정 등록 때 부모 레시피의 use_reactor 를 승계(tolerance_g/category 와 동일),
+    # 비개정 신규 레시피면 0(반응기 아님)으로 시작한다.
+    use_reactor: bool | None = None
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":
@@ -119,6 +123,9 @@ class BlendDetailBody(BaseModel):
     sequence_order: int | None = Field(default=None, ge=0)
     # 이 자재의 실제량이 저울 연동 중 손입력이었는가(행 단위 추적)
     manual_entry: bool = False
+    # 반응기 이월(carry-over) 행 — 1차 배합 총량을 2차 기준 자재 실제량으로 가져온 행.
+    # 서버가 반응기·기준자재·1차 LOT 일치를 모두 검증한 뒤 actual_amount 를 강제 채운다.
+    carried_over: bool = False
 
 
 class BlendCreateBody(BaseModel):

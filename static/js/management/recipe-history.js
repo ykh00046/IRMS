@@ -85,7 +85,7 @@
 
         if (!rows.length) {
           dom.historyBody.innerHTML =
-            '<tr><td colspan="8"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
+            '<tr><td colspan="9"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
           return;
         }
 
@@ -108,6 +108,16 @@
           return `<td class="recipe-code-cell">${code ? IRMS.escapeHtml(code) : '<span class="muted">-</span>'}</td>`;
         };
 
+        // 반응기 셀 — 책임자는 체크박스로 바로 토글(변경 즉시 저장), 그 외는 읽기 전용 텍스트.
+        // 분류 셀 편집 패턴과 동일 — PUT /api/recipes/{id}/use-reactor.
+        const reactorCell = (recipe) => {
+          const on = !!recipe.useReactor;
+          if (!ctx.canManage) {
+            return `<td>${on ? "사용" : '<span class="muted">-</span>'}</td>`;
+          }
+          return `<td><input type="checkbox" class="recipe-reactor-toggle" data-recipe-id="${recipe.id}"${on ? " checked" : ""} title="반응기 진행 여부" /></td>`;
+        };
+
         dom.historyBody.innerHTML = rows
           .map(
             (recipe) => `
@@ -116,6 +126,7 @@
                 <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
                 ${productCodeCell(recipe)}
                 ${categoryCell(recipe)}
+                ${reactorCell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
@@ -156,6 +167,39 @@
           });
         });
 
+        // 반응기 토글 — 변경 즉시 PUT /api/recipes/{id}/use-reactor. 분류 드롭다운과 동일한
+        // CSRF 부착 패턴. 클릭이 행 확장으로 번지지 않게 막는다(행 클릭 = 상세 펼침).
+        dom.historyBody.querySelectorAll(".recipe-reactor-toggle").forEach((cb) => {
+          cb.addEventListener("click", (e) => e.stopPropagation());
+          cb.addEventListener("change", async (e) => {
+            e.stopPropagation();
+            const rid = Number(cb.dataset.recipeId);
+            const useReactor = !!cb.checked;
+            try {
+              const headers = { "Content-Type": "application/json" };
+              const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+              if (token) headers["x-csrftoken"] = token;
+              const resp = await fetch(`/api/recipes/${rid}/use-reactor`, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers,
+                body: JSON.stringify({ use_reactor: useReactor }),
+              });
+              if (!resp.ok) {
+                let msg = `Request failed (${resp.status})`;
+                try { const p = await resp.json(); if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail); } catch (_e) { /* noop */ }
+                throw new Error(msg);
+              }
+              await resp.json();
+              IRMS.notify(useReactor ? "반응기 진행으로 지정했습니다." : "반응기 진행을 해제했습니다.", "success");
+            } catch (err) {
+              // 저장 실패 시 체크박스를 이전 상태로 되돌려 표시와 서버를 맞춘다.
+              cb.checked = !useReactor;
+              IRMS.notify(`반응기 저장 실패: ${err.message}`, "error");
+            }
+          });
+        });
+
         // Accordion: row click to expand detail
         dom.historyBody.querySelectorAll(".history-row").forEach((row) => {
           row.style.cursor = "pointer";
@@ -184,7 +228,7 @@
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
               const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
-              detailRow.innerHTML = `<td colspan="8">
+              detailRow.innerHTML = `<td colspan="9">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">

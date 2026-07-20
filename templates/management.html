@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260717a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260720a" />
 {% endblock %}
 
 {% block content %}
@@ -38,33 +38,48 @@
               <div class="button-row imp-row">
                 <button id="add-row-btn" class="btn" type="button" title="자재 행 추가">＋ 자재</button>
                 <button id="add-col-btn" class="btn" type="button" title="공정 설명 줄 추가">＋ 설명</button>
-                <span class="imp-opt">
-                  <label class="filter-label inline-label" for="register-base-total">기준 배합량 (g)</label>
-                  <input id="register-base-total" class="input base-total-input"
-                    placeholder="선택 · 쉼표로 최대 3개"
-                    title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
-                </span>
-                <span class="imp-opt">
-                  <label class="filter-label inline-label" for="imp-anchor">기준 자재</label>
-                  <select id="imp-anchor" class="input"
-                    title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
-                    <option value="">없음</option>
-                  </select>
-                </span>
-                <span class="imp-opt">
-                  <label class="filter-label inline-label" for="imp-tolerance">허용 편차 (g)</label>
-                  <input id="imp-tolerance" class="input" type="number" step="0.01" min="0"
-                    placeholder="선택 · 비우면 기본 0.05"
-                    title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
-                </span>
-                <span class="imp-opt">
-                  <label class="filter-label inline-label" for="imp-product-code">품목코드</label>
-                  <input id="imp-product-code" class="input" autocomplete="off"
-                    placeholder="선택 · 비우면 자동 인식"
-                    title="반제품 ERP 품목코드. 비우면 반제품명으로 마스터에서 자동 인식, 수정 등록 시 기존 코드 승계. 직접 입력하면 그 값이 우선." />
-                  <ul id="imp-product-code-suggest" class="code-suggest-list" hidden></ul>
-                </span>
               </div>
+              <fieldset class="imp-attrs">
+                <legend class="filter-label">레시피 속성 (선택)</legend>
+                <div class="imp-attrs-grid">
+                  <div class="imp-attr-field">
+                    <label class="filter-label" for="register-base-total">기준 배합량 (g)</label>
+                    <input id="register-base-total" class="input base-total-input"
+                      placeholder="선택 · 쉼표로 최대 3개"
+                      title="배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
+                    <p class="imp-attr-desc">배합 화면 '기준량' 버튼이 채울 총량. 쉼표로 최대 3개(예: 3924.38, 2000). 비우면 버튼 없음.</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label" for="imp-anchor">기준 자재</label>
+                    <select id="imp-anchor" class="input"
+                      title="배합 시 먼저 계량할 기준 자재. 검증 후 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.">
+                      <option value="">없음</option>
+                    </select>
+                    <p class="imp-attr-desc">배합 시 먼저 계량할 기준 자재. 선택하면 이 자재의 실측값으로 다른 자재의 이론량을 산출합니다.</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label" for="imp-tolerance">허용 편차 (g)</label>
+                    <input id="imp-tolerance" class="input" type="number" step="0.01" min="0"
+                      placeholder="선택 · 비우면 기본 0.05"
+                      title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
+                    <p class="imp-attr-desc">레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정.</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label" for="imp-product-code">품목코드</label>
+                    <input id="imp-product-code" class="input" autocomplete="off"
+                      placeholder="선택 · 비우면 자동 인식"
+                      title="반제품 ERP 품목코드. 비우면 반제품명으로 마스터에서 자동 인식, 수정 등록 시 기존 코드 승계. 직접 입력하면 그 값이 우선." />
+                    <ul id="imp-product-code-suggest" class="code-suggest-list" hidden></ul>
+                    <p class="imp-attr-desc">반제품 ERP 품목코드. 비우면 반제품명으로 자동 인식, 수정 등록 시 기존 코드 승계. 직접 입력하면 그 값이 우선.</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label visc-checkbox" for="imp-use-reactor">
+                      <input id="imp-use-reactor" type="checkbox" /> 반응기 사용
+                    </label>
+                    <p class="imp-attr-desc">반응기에서 진행하는 레시피. 배합 저장 시 반응기 번호를 요구하고, 기준 자재 행에서 반응기 이월 입력을 쓸 수 있습니다.</p>
+                  </div>
+                </div>
+              </fieldset>
               <div class="button-row imp-actions">
                 <button id="preview-btn" class="btn accent">검증</button>
                 <button id="register-btn" class="btn success" disabled>등록</button>
@@ -133,6 +148,7 @@
                     <th>반제품명</th>
                     <th>품목코드</th>
                     <th>분류</th>
+                    <th>반응기</th>
                     <th>상태</th>
                     <th>등록자</th>
                     <th>등록일시</th>
@@ -264,9 +280,9 @@
     
     <!-- management modules: factories (order-free) → controller last -->
     <script src="/static/js/management/bom-editor.js?v=20260717a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260720a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260720a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260720a"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260720b"></script>
+    <script src="/static/js/management/import-validate.js?v=20260720b"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260720b"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
     <script src="/static/js/management/item-codes.js?v=20260720b"></script>

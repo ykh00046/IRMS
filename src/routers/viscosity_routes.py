@@ -208,12 +208,15 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     ) -> dict[str, Any]:
         current_user = get_current_user(request, required=False)
         product = _require_product(connection, product_id)
+        # reactor-ownership: use_reactor 의 소유가 recipes 로 이전되어 이 라우트는 더 이상
+        # use_reactor 를 쓰지 않는다. 본문 필드는 API 호환을 위해 그대로 받되 무시한다
+        # — 반응기 설정은 레시피(PUT /recipes/{id}/use-reactor)에서 변경한다.
         connection.execute(
             """
             UPDATE viscosity_products
             SET name = ?, target = ?, lower_limit = ?, upper_limit = ?,
                 sigma_k = ?, rpm = ?, temperature = ?, remind_daily = ?,
-                use_reactor = ?, is_active = ?
+                is_active = ?
             WHERE id = ?
             """,
             (
@@ -225,7 +228,6 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 body.rpm,
                 body.temperature,
                 1 if body.remind_daily else 0,
-                1 if body.use_reactor else 0,
                 1 if body.is_active else 0,
                 product_id,
             ),
@@ -243,7 +245,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 "upper_limit": body.upper_limit,
                 "sigma_k": body.sigma_k,
                 "remind_daily": body.remind_daily,
-                "use_reactor": body.use_reactor,
+                # use_reactor 는 이제 recipes 소유 — 여기서 받아도 기록하지 않는다(무시).
                 "is_active": body.is_active,
             },
         )

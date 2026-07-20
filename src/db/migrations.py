@@ -334,6 +334,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 기록(배치) 단위 + 상세(자재 행) 단위 — 어느 자재가 수동이었는지까지 남긴다.
     ensure_column(connection, "blend_records", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "blend_details", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
+    # 반응기 이월(carry-over) 행 표식 — 반응기 1차 배합의 총량을 2차 기준 자재 실제량으로
+    # 그대로 가져온 행. 서버가 강제 채운 값임을 추적에 남긴다(manual_entry 과 함께 보관).
+    ensure_column(connection, "blend_details", "carried_over", "INTEGER NOT NULL DEFAULT 0")
 
     # auth-simplify: 작업자 명단(비밀번호 없는 이름 등록부). 근태 제외 작업자는 이름만 입력.
     connection.execute(
@@ -457,6 +460,25 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             "ON blend_records(product_lot)"
         )
         record_migration(connection, "blend_records_product_lot_unique")
+
+    # reactor-ownership: 반응기 사용 여부 소유를 viscosity_products 에서 recipes 로 이전.
+    # recipes.use_reactor 가 새 단일 소스(배합 반응기 강제·점도 화면 모두 이 값을 따름).
+    ensure_column(connection, "recipes", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
+    # 1회 마이그레이션 — 점도 제품(use_reactor=1)에 매칭되는 반제품명(code 또는 name 일치)의
+    # 기존 레시피를 use_reactor=1 로 시드. 이후에는 레시피 등록/PUT 으로만 변경된다.
+    if not has_migration(connection, "recipes_use_reactor_from_viscosity"):
+        connection.execute(
+            """
+            UPDATE recipes
+            SET use_reactor = 1
+            WHERE product_name IN (
+                SELECT name FROM viscosity_products WHERE use_reactor = 1
+                UNION
+                SELECT code FROM viscosity_products WHERE use_reactor = 1
+            )
+            """
+        )
+        record_migration(connection, "recipes_use_reactor_from_viscosity")
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

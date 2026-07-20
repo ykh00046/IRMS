@@ -77,7 +77,7 @@ def list_products(connection: sqlite3.Connection, *, active_only: bool = False) 
         ORDER BY is_active DESC, code ASC
         """
     ).fetchall()
-    return [_serialize_product(row) for row in rows]
+    return [_serialize_product(connection, row) for row in rows]
 
 
 def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any] | None:
@@ -89,7 +89,7 @@ def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, An
         """,
         (product_id,),
     ).fetchone()
-    return _serialize_product(row) if row else None
+    return _serialize_product(connection, row) if row else None
 
 
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
@@ -101,7 +101,7 @@ def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, 
         """,
         (code,),
     ).fetchone()
-    return _serialize_product(row) if row else None
+    return _serialize_product(connection, row) if row else None
 
 
 def ensure_product_by_code(
@@ -125,7 +125,33 @@ def ensure_product_by_code(
     return get_product(connection, int(cur.lastrowid))
 
 
-def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
+def _recipe_use_reactor(connection: sqlite3.Connection, code: Any, name: Any) -> bool | None:
+    """반응기 사용 여부를 레시피에서 우선 조회 — code 또는 name 에 매칭되는 최신 completed
+    레시피(recipes.use_reactor)가 있으면 그 값을, 없으면 None(폴백 필요)을 반환.
+
+    소유가 recipes 로 이전되어 점도 제품 행의 use_reactor 열은 레거시 폴백 용도로만 쓰인다.
+    recipes 테이블이 없는 단위 테스트 스키마에서는 폴백(None)으로 간주한다.
+    """
+    candidates = [v for v in (code, name) if v not in (None, "")]
+    if not candidates:
+        return None
+    placeholders = " OR ".join("product_name = ?" for _ in candidates)
+    try:
+        row = connection.execute(
+            f"SELECT use_reactor FROM recipes "
+            f"WHERE ({placeholders}) AND status = 'completed' "
+            f"ORDER BY id DESC LIMIT 1",
+            candidates,
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # recipes 테이블이 없는 스키마(단위 테스트) — 폴백.
+        return None
+    return bool(row["use_reactor"]) if row else None
+
+
+def _serialize_product(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+    # use_reactor 소유 이전: 매칭되는 최신 completed 레시피 값이 우선, 없으면 구 열(폴백).
+    recipe_use = _recipe_use_reactor(connection, row["code"], row["name"])
     return {
         "id": int(row["id"]),
         "code": row["code"],
@@ -137,7 +163,7 @@ def _serialize_product(row: sqlite3.Row) -> dict[str, Any]:
         "rpm": _opt_float(row["rpm"]),
         "temperature": _opt_float(row["temperature"]),
         "remind_daily": bool(row["remind_daily"]),
-        "use_reactor": bool(row["use_reactor"]),
+        "use_reactor": bool(row["use_reactor"]) if recipe_use is None else recipe_use,
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "has_spec": row["lower_limit"] is not None or row["upper_limit"] is not None,

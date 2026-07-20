@@ -634,6 +634,82 @@ class RecipeMismatchError(Exception):
         self.detail = detail
 
 
+class CarryOverError(Exception):
+    """반응기 이월(carry-over) 행의 검증 조건이 하나라도 어긋났다 — 400 으로 되돌린다."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+def enforce_carry_over(
+    connection: sqlite3.Connection,
+    recipe_id: int | None,
+    product_name: str,
+    details: list[dict[str, Any]],
+) -> None:
+    """반응기 이월(carry-over) 행 검증 + 강제 채움. details 를 제자리(in-place) 수정.
+
+    각 상세 행 중 carried_over=true 인 행은 아래 조건을 **모두** 만족해야 한다:
+      1) 레시피가 반응기 진행(use_reactor) 레시피일 것(product_uses_reactor 로 판정).
+      2) 그 행이 레시피의 기준 자재(anchor) 행일 것.
+      3) 그 행의 material_lot 가 완료된 1차 배합 기록(product_name=이 자재명,
+         product_lot=그 LOT, status='completed')에 존재할 것.
+    통과하면 actual_amount 를 그 1차 기록의 total_amount 로 **강제** 덮어쓰고(클라이언트
+    값 무시 — 변조 방지), manual_entry 는 false 로 강제한다. 어긋난 행이 있으면
+    CarryOverError(400) 로 되돌린다(메시지에 자재명 포함).
+    """
+    reactor_rows = [d for d in details if d.get("carried_over")]
+    if not reactor_rows:
+        return  # 이월 행이 없으면 검사 자체를 건너뛴다(기존 동작 100% 유지).
+
+    # 레시피 기준 자재(material_name)를 미리 뽑아둔다 — 없는 구버전/테스트 DB 도 폴백.
+    recipe_uses_reactor = product_uses_reactor(connection, product_name)
+    anchor_name: str | None = None
+    if recipe_id:
+        try:
+            r = connection.execute(
+                "SELECT anchor_material_id FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if r is not None and r["anchor_material_id"] is not None:
+                m = connection.execute(
+                    "SELECT name FROM materials WHERE id = ?", (int(r["anchor_material_id"]),)
+                ).fetchone()
+                if m is not None:
+                    anchor_name = str(m["name"])
+        except sqlite3.OperationalError:
+            anchor_name = None
+
+    for d in reactor_rows:
+        mat_name = str(d.get("material_name") or "").strip()
+        lot = (str(d.get("material_lot") or "").strip())
+        if not recipe_uses_reactor:
+            raise CarryOverError(
+                f"반응기 이월({mat_name})은 반응기 진행 레시피에서만 사용할 수 있습니다."
+            )
+        if anchor_name is None or mat_name != anchor_name:
+            raise CarryOverError(
+                f"반응기 이월은 기준 자재({anchor_name or '없음'}) 행에만 지정할 수 있습니다: {mat_name}"
+            )
+        if not lot:
+            raise CarryOverError(
+                f"반응기 이월({mat_name}) 행에 1차 배합 LOT 가 비어 있습니다."
+            )
+        # 1차 완료 배합 기록 조회 — product_name=자재명, product_lot=LOT, status=completed.
+        row = connection.execute(
+            "SELECT total_amount FROM blend_records "
+            "WHERE product_name = ? AND product_lot = ? AND status = 'completed' LIMIT 1",
+            (mat_name, lot),
+        ).fetchone()
+        if row is None:
+            raise CarryOverError(
+                f"반응기 이월({mat_name}): 등록된 완료 LOT 가 아닙니다 — '{lot}'."
+            )
+        # 통과 — 실제량을 1차 배합 총량으로 강제 덮어쓰기(변조 방지), 수동입력 해제.
+        d["actual_amount"] = float(row["total_amount"] or 0)
+        d["manual_entry"] = False
+
+
 def derive_details_from_recipe(
     connection: sqlite3.Connection,
     recipe_id: int,
@@ -703,6 +779,7 @@ def derive_details_from_recipe(
             "material_lot": sent.get("material_lot"),        # 사람만 아는 값
             "actual_amount": _opt_num(sent.get("actual_amount")),
             "manual_entry": bool(sent.get("manual_entry")),
+            "carried_over": bool(sent.get("carried_over")),  # 반응기 이월 표식(사람이 지정)
             "ratio": ratio,                                   # ← 서버 산출
             "theory_amount": theory,                          # ← 서버 산출
             "sequence_order": order,
@@ -730,15 +807,30 @@ def weighing_tolerance_violations(
 
 
 def product_uses_reactor(connection: sqlite3.Connection, product_name: str) -> bool:
-    """제품명(레시피명)에 해당하는 점도 반제품이 반응기 진행(use_reactor)인지.
+    """제품명(레시피명)이 반응기 진행(use_reactor) 제품인지.
 
-    반응기는 배합 실적을 진행한 위치이고, 반응기 사용 여부는 점도 반제품 설정
-    (viscosity_products.use_reactor)이 소유한다. 실적 저장 시 이 값으로 반응기
-    지정을 강제할지 판단한다.
+    반응기는 배합 실적을 진행한 위치이다. 반응기 사용 여부의 소유는 이제 레시피
+    (recipes.use_reactor)로 이전되었다 — 같은 제품명의 가장 최근 completed 레시피
+    (ORDER BY id DESC LIMIT 1) 값을 따른다. 매칭되는 레시피가 없으면(점도 전용
+    레거시 제품 등) 구 점도 설정(viscosity_products.use_reactor)으로 폴백하여
+    기존 동작을 유지한다. 실적 저장 시 이 값으로 반응기 지정을 강제할지 판단한다.
     """
     name = str(product_name or "").strip()
     if not name:
         return False
+    # recipes.use_reactor 컬럼이 없는 레거시/단위테스트 스키마에서는 점도 폴백으로 간주.
+    try:
+        recipe_row = connection.execute(
+            "SELECT use_reactor FROM recipes "
+            "WHERE product_name = ? AND status = 'completed' "
+            "ORDER BY id DESC LIMIT 1",
+            (name,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        recipe_row = None
+    if recipe_row:
+        return bool(recipe_row["use_reactor"])
+    # 매칭되는 레시피가 없는 점도 전용 레거시 제품 — 구 값으로 폴밭.
     row = connection.execute(
         "SELECT use_reactor FROM viscosity_products "
         "WHERE code = ? OR name = ? ORDER BY use_reactor DESC LIMIT 1",
@@ -817,8 +909,8 @@ def create_blend_record(
             INSERT INTO blend_details
                 (blend_record_id, material_id, material_code, material_name,
                  material_lot, ratio, theory_amount, actual_amount, sequence_order,
-                 manual_entry, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 manual_entry, carried_over, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -831,6 +923,7 @@ def create_blend_record(
                 _opt_num(d.get("actual_amount")),
                 int(d.get("sequence_order") or (idx + 1)),
                 1 if d.get("manual_entry") else 0,
+                1 if d.get("carried_over") else 0,
                 created_at,
             ),
         )
@@ -880,8 +973,8 @@ def update_blend_record(
             INSERT INTO blend_details
                 (blend_record_id, material_id, material_code, material_name,
                  material_lot, ratio, theory_amount, actual_amount, sequence_order,
-                 manual_entry, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 manual_entry, carried_over, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -894,6 +987,7 @@ def update_blend_record(
                 _opt_num(d.get("actual_amount")),
                 int(d.get("sequence_order") or (idx + 1)),
                 1 if d.get("manual_entry") else 0,
+                1 if d.get("carried_over") else 0,
                 updated_at,
             ),
         )
@@ -1043,7 +1137,8 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     details = connection.execute(
         """
         SELECT id, material_id, material_code, material_name, material_lot,
-               ratio, theory_amount, actual_amount, sequence_order, manual_entry
+               ratio, theory_amount, actual_amount, sequence_order, manual_entry,
+               carried_over
         FROM blend_details
         WHERE blend_record_id = ?
         ORDER BY sequence_order, id
@@ -1158,6 +1253,7 @@ def _serialize_detail(row: sqlite3.Row) -> dict[str, Any]:
         "variance_pct": variance_pct,
         "sequence_order": int(row["sequence_order"]),
         "manual_entry": bool(row["manual_entry"]) if "manual_entry" in row.keys() else False,
+        "carried_over": bool(row["carried_over"]) if "carried_over" in row.keys() else False,
     }
 
 

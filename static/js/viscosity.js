@@ -593,7 +593,6 @@
     $("visc-set-rpm").value = product ? (product.rpm ?? "") : "";
     $("visc-set-temp").value = product ? (product.temperature ?? "") : "";
     $("visc-set-remind").checked = Boolean(product && product.remind_daily);
-    $("visc-set-reactor").checked = Boolean(product && product.use_reactor);
     $("visc-set-active").checked = product ? product.is_active : true;
   }
 
@@ -620,7 +619,6 @@
       rpm: numOrNull("visc-set-rpm"),
       temperature: numOrNull("visc-set-temp"),
       remind_daily: $("visc-set-remind").checked,
-      use_reactor: $("visc-set-reactor").checked,
       is_active: $("visc-set-active").checked,
     };
     try {

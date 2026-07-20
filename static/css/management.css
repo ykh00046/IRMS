@@ -630,3 +630,28 @@
 .imp-opt { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .imp-opt .input, .imp-opt select { width: auto; min-width: 150px; }
 .imp-actions { margin-top: 0.6rem; }
+
+/* 레시피 속성(선택) — 기준 배합량/기준 자재/허용 편차/품목코드/반응기를 각각
+   라벨+컨트롤+한 줄 설명으로 갖는 반응형 그리드. hover-only title 대신 보이는 설명. */
+.imp-attrs {
+  margin-top: 0.6rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem 0.9rem;
+}
+.imp-attrs > legend { padding: 0 0.35rem; }
+.imp-attrs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.7rem 1rem;
+}
+.imp-attr-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.imp-attr-field .input,
+.imp-attr-field select { width: 100%; }
+.imp-attr-field .visc-checkbox { display: inline-flex; align-items: center; gap: 0.35rem; }
+.imp-attr-desc {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted, #6b7280);
+}

@@ -154,10 +154,14 @@ def build_router() -> APIRouter:
             # item-code P3: 반제품 코드(product_code) 승계 — 분류 승계와 같은 자리에서.
             # 마스터 매칭 실패 시에도 부모 값을 유지; 매칭 성공하면 그 값으로 덮는다(아래 per-row).
             inherited_product_code: str | None = None
+            # reactor-ownership: 반응기 여부 승계 — tolerance_g/category 승계와 같은 자리에서.
+            # body.use_reactor 가 명시되지 않았을 때만 부모의 use_reactor 를 물려받는다.
+            inherited_use_reactor: int = 0
             if body.revision_of is not None:
                 parent_row = connection.execute(
                     "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
-                    "anchor_material_id, tolerance_g, category, product_code "
+                    "anchor_material_id, tolerance_g, category, product_code, "
+                    "COALESCE(use_reactor, 0) AS use_reactor "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -181,6 +185,9 @@ def build_router() -> APIRouter:
                         inherited_category = str(parent_row["category"])
                     if parent_row["product_code"]:
                         inherited_product_code = str(parent_row["product_code"])
+                    inherited_use_reactor = int(parent_row["use_reactor"])
+            # reactor-ownership: 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지).
+            effective_use_reactor = 1 if body.use_reactor else (1 if inherited_use_reactor else 0)
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -274,8 +281,8 @@ def build_router() -> APIRouter:
                     INSERT INTO recipes (
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
-                        base_totals, anchor_material_id, tolerance_g, category, product_code
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        base_totals, anchor_material_id, tolerance_g, category, product_code, use_reactor
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -297,6 +304,7 @@ def build_router() -> APIRouter:
                         effective_tolerance_g,
                         effective_category,
                         effective_product_code,
+                        effective_use_reactor,
                     ),
                 )
                 recipe_id = cursor.lastrowid

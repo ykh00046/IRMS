@@ -226,13 +226,18 @@
         const productCodeEl = document.getElementById("imp-product-code");
         const productCode = productCodeEl ? productCodeEl.value.trim() : "";
         const hasProductCode = productCode.length > 0;
+        // 반응기 사용(reactor-ownership): 체크 시 본문에 use_reactor=true 포함. 체크 해제는
+        // 명시적 false 이므로 역시 직접 POST 경로로 보낸다(ImportRequest.use_reactor).
+        const useReactorEl = document.getElementById("imp-use-reactor");
+        const useReactor = useReactorEl ? !!useReactorEl.checked : false;
         let result;
-        if (anchorMaterial || hasTolerance || hasProductCode) {
+        if (anchorMaterial || hasTolerance || hasProductCode || useReactor) {
           result = await importWithAnchor(
             baseTotals,
             anchorMaterial,
             hasTolerance ? toleranceG : null,
             hasProductCode ? productCode : null,
+            useReactor,
           );
         } else {
           result = await IRMS.importRecipes(
@@ -253,9 +258,9 @@
       }
     }
 
-    // 기준 자재·허용 편차·품목코드를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
+    // 기준 자재·허용 편차·품목코드·반응기를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
     // 패턴으로 /api/recipes/import 에 직접 POST 한다.
-    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode) {
+    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode, useReactor) {
       const body = {
         raw_text: state.confirmedRawText,
         created_by: "레시피 관리",
@@ -278,6 +283,8 @@
       if (productCode) {
         body.product_code = productCode;
       }
+      // use_reactor(reactor-ownership): 항상 명시적으로 전송(체크=true, 해제=false).
+      body.use_reactor = !!useReactor;
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
       if (token) headers["x-csrftoken"] = token;
@@ -323,6 +330,11 @@
       const productCodeEl = document.getElementById("imp-product-code");
       if (productCodeEl) {
         productCodeEl.value = "";
+      }
+      // 반응기 체크도 초기화 — 수정 등록 프리필 값이 다음 신규 등록에 새어들지 않게.
+      const useReactorEl = document.getElementById("imp-use-reactor");
+      if (useReactorEl) {
+        useReactorEl.checked = false;
       }
       if (productCodeSuggest) {
         productCodeSuggest.hidden = true;

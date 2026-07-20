@@ -225,4 +225,47 @@ def build_router() -> APIRouter:
 
         return {"status": "ok", "recipe_id": recipe_id, "category": category}
 
+    @router.put("/recipes/{recipe_id}/use-reactor")
+    def set_recipe_use_reactor(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피 반응기 진행 여부(use_reactor) 지정 — 책임자 전용.
+
+        body: {"use_reactor": true|false}. recipe_category_set 와 동일한 헬퍼/패턴.
+        반응기 사용 여부의 소유가 recipes 로 이전되어 배합 반응기 강제·점도 화면 모두
+        이 값을 따른다.
+        """
+        raw = body.get("use_reactor")
+        if raw is None or not isinstance(raw, bool):
+            raise HTTPException(
+                status_code=400,
+                detail="use_reactor 는 true 또는 false 이어야 합니다.",
+            )
+        use_reactor = 1 if raw else 0
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            connection.execute(
+                "UPDATE recipes SET use_reactor = ? WHERE id = ?", (use_reactor, recipe_id)
+            )
+            write_audit_log(
+                connection,
+                action="recipe_use_reactor_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"use_reactor": bool(use_reactor)},
+            )
+            connection.commit()
+
+        return {"status": "ok", "recipe_id": recipe_id, "use_reactor": bool(use_reactor)}
+
     return router

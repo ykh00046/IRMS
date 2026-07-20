@@ -67,6 +67,7 @@
       status: row.status,
       category: row.category || null,
       productCode: row.product_code || null,
+      useReactor: !!row.use_reactor,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,

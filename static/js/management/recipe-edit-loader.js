@@ -83,6 +83,13 @@
       if (productCodeEl) {
         productCodeEl.value = detail.product_code || "";
       }
+      // 반응기 프리필(reactor-ownership) — 수정 등록 시 부모의 use_reactor 를 미리 채운다.
+      // 서버는 use_reactor 미지정 시 부모 값을 자동 승계하므로, 체크를 그대로 두면
+      // 부모 값이 유지된다(tolerance_g/product_code 승계와 동일 구조).
+      const useReactorEl = document.getElementById("imp-use-reactor");
+      if (useReactorEl) {
+        useReactorEl.checked = !!detail.use_reactor;
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
