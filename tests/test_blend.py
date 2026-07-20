@@ -793,3 +793,112 @@ def test_reactor_required_route_and_settings_patch():
     )
     assert res.status_code == 400
     assert "반응기" in res.json()["detail"]
+
+
+# ── 반제품 원료 LOT 자동 제안: GET /api/blend/recent-product-lots ──
+def _blend_client():
+    """최소 TestClient + 작업자 세션. recent-product-lots 조회(GET, CSRF 불필요) 용."""
+    import importlib
+    import src.config as cfg
+    import src.main as mainmod
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+    client = TestClient(mainmod.app)
+    # CSRF 쿠키 확보(아무 GET) + 작업자 세션 로그인(배합 기록 POST 에 필요).
+    client.get("/api/blend/records")
+    return client
+
+
+def _create_blend(client, prod, worker, lot_suffix=""):
+    """배합 기록 1건 생성(반제품 제품명=prod). product_lot 은 서버가 자동 채번."""
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+    res = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-01",
+        "total_amount": 100, "scale": None,
+        "details": [
+            {"material_name": "원료1", "ratio": 100, "theory_amount": 100, "actual_amount": 100},
+        ],
+    }, headers=csrf_headers())
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_recent_product_lots_completed_only_latest_first():
+    """완료 2건 + 취소 1건 → 완료분만 최신순(id DESC), 취소 제외, 중복 제거."""
+    client = _blend_client()
+
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+    client.post("/api/workers", json={"name": "제안작업"}, headers=csrf_headers())
+    client.post("/api/blend/session/login", json={"worker": "제안작업"}, headers=csrf_headers())
+
+    prod = "RPL" + __import__("uuid").uuid4().hex[:4]
+    r1 = _create_blend(client, prod, "제안작업")
+    r2 = _create_blend(client, prod, "제안작업")
+    # 취소(soft) 기록 1건 — 책임자 로그인 후 DELETE.
+    r3 = _create_blend(client, prod, "제안작업")
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    canceled = client.request(
+        "DELETE", f"/api/blend/records/{r3['id']}",
+        headers=csrf_headers(),
+    )
+    assert canceled.status_code == 200
+
+    # 완료 기록만 최신순 — r2(최신) → r1. r3(취소) 제외.
+    res = client.get(f"/api/blend/recent-product-lots?names={prod}&limit=5")
+    assert res.status_code == 200, res.text
+    items = res.json()["items"]
+    assert prod in items
+    lots = items[prod]
+    assert r2["product_lot"] == lots[0]   # 최신(id DESC)
+    assert r1["product_lot"] == lots[1]
+    assert r3["product_lot"] not in lots  # 취소 제외
+    assert len(lots) == 2
+
+
+def test_recent_product_lots_limit_clamp():
+    """limit 클램프: 0 → 1(최소), 100 → 20(최대). 둘 다 200 + 유효 개수."""
+    client = _blend_client()
+
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+    client.post("/api/workers", json={"name": "제한작업"}, headers=csrf_headers())
+    client.post("/api/blend/session/login", json={"worker": "제한작업"}, headers=csrf_headers())
+
+    prod = "LMT" + __import__("uuid").uuid4().hex[:4]
+    # 3건 생성(클램프 확인용).
+    for _ in range(3):
+        _create_blend(client, prod, "제한작업")
+
+    # limit=0 → 클램프 1. 정상 200, 1개만.
+    res0 = client.get(f"/api/blend/recent-product-lots?names={prod}&limit=0")
+    assert res0.status_code == 200, res0.text
+    assert len(res0.json()["items"][prod]) == 1
+
+    # limit=100 → 클램프 20. 정상 200(3건 시드라 3개).
+    res100 = client.get(f"/api/blend/recent-product-lots?names={prod}&limit=100")
+    assert res100.status_code == 200, res100.text
+    assert len(res100.json()["items"][prod]) == 3
+
+
+def test_recent_product_lots_unknown_name_omitted():
+    """기록 없는 이름은 응답 items 에 키 자체를 넣지 않는다."""
+    client = _blend_client()
+    unknown = "절대없는제품" + __import__("uuid").uuid4().hex
+    res = client.get(f"/api/blend/recent-product-lots?names={unknown}")
+    assert res.status_code == 200
+    assert res.json()["items"] == {}
+
+
+def test_recent_product_lots_empty_names_returns_empty():
+    """names 빈 값/공백만 → 빈 items(에러 아님)."""
+    client = _blend_client()
+    for q in ("", "   ", ",,,"):
+        res = client.get(f"/api/blend/recent-product-lots?names={q}")
+        assert res.status_code == 200, res.text
+        assert res.json()["items"] == {}

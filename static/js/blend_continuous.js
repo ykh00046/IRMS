@@ -55,6 +55,9 @@
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
+    // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록.
+    // 이어서 계량은 자재 LOT 이 전 로트 공통(.cont-lot 행당 1개) — 동일 적용.
+    lotSuggest: {},
   };
 
   // ── 저울 에이전트(현장 PC 127.0.0.1:8787) — 배합 화면과 동일 연동 ──
@@ -323,6 +326,70 @@
     renderReactorField();
     renderBaseTotals();
     render();
+    loadLotSuggest();
+  }
+
+  // ── 반제품 원료 LOT 자동 제안 ───────────────────────────────
+  // 자재명 전체로 1회 조회 → state.lotSuggest(자재명→[lots]) 보관. 실패는 조용히 무시.
+  async function loadLotSuggest() {
+    const names = state.materials
+      .map((m) => (m.material_name || "").trim())
+      .filter((n) => n);
+    if (!names.length) { state.lotSuggest = {}; return; }
+    try {
+      const data = await request("/blend/recent-product-lots", {
+        query: { names: names.join(","), limit: 5 },
+      });
+      state.lotSuggest = (data && data.items) || {};
+    } catch (_e) {
+      state.lotSuggest = {};
+    }
+  }
+
+  // .cont-lot 칸 아래 제안 목록. native datalist 금지(클릭 불만) — blend_login suggest 패턴.
+  // 항목 mousedown(preventDefault) → LOT 칸 채움 + input 이벤트 + 목록 닫기.
+  function renderLotSuggest(input) {
+    const i = Number(input.dataset.i);
+    const name = (state.materials[i] && state.materials[i].material_name) || "";
+    const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
+    if (!lots.length) { hideLotSuggest(input); return; }
+    const q = (input.value || "").trim().toLowerCase();
+    const matches = q ? lots.filter((l) => String(l).toLowerCase().startsWith(q)) : lots.slice();
+    let box = input._lotBox;
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "lot-suggest";
+      const anchor = input.parentElement || input.parentNode;
+      if (anchor) {
+        anchor.style.position = anchor.style.position || "relative";
+        anchor.appendChild(box);
+      } else {
+        document.body.appendChild(box);
+      }
+      input._lotBox = box;
+    }
+    box.innerHTML = "";
+    matches.forEach((lot) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "lot-suggest-item";
+      item.textContent = lot;
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        input.value = lot;
+        state.sharedLot[i] = lot;
+        input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
+        hideLotSuggest(input);
+        input.focus();
+      });
+      box.appendChild(item);
+    });
+    box.hidden = !matches.length;
+  }
+
+  function hideLotSuggest(input) {
+    if (!input._lotBox) return;
+    input._lotBox.hidden = true;
   }
 
   function renderReactorField() {
@@ -486,8 +553,15 @@
   function bindCellEvents() {
     const body = $("cont-mat-body");
     body.querySelectorAll(".cont-lot").forEach((el) => {
-      el.addEventListener("input", () => { state.sharedLot[Number(el.dataset.i)] = el.value; });
+      el.addEventListener("input", () => {
+        state.sharedLot[Number(el.dataset.i)] = el.value;
+        if (el._lotBox) renderLotSuggest(el);
+      });
+      // 포커스 시 제안 목록 표시(제안이 있는 자재만). blend_login suggest 패턴 재사용.
+      el.addEventListener("focus", () => renderLotSuggest(el));
+      el.addEventListener("blur", () => hideLotSuggest(el));
       el.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && el._lotBox) { hideLotSuggest(el); return; }
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
         focusActual(Number(el.dataset.i), 0);

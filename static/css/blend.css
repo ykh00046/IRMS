@@ -305,6 +305,40 @@
   background: #fef3c7;
 }
 
+/* ── 반제품 원료 LOT 자동 제안(.blend-lot / .cont-lot 칸 아래) ─── */
+/* blend_login 의 .worker-suggest 와 톤 일치 — 작은 div 목록, 항목은 button.
+   native datalist 금지(클릭해도 목록이 안 열리는 기존 불만). */
+.lot-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 216px;
+  overflow-y: auto;
+  margin-top: 4px;
+  border: 1px solid var(--border-strong, #d6dce7);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(21, 35, 63, 0.18);
+}
+.lot-suggest[hidden] { display: none !important; }
+.lot-suggest-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary, #15233f);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+.lot-suggest-item:hover {
+  background: var(--brand-soft, #eaf1fb);
+}
+
 @media (max-width: 720px) {
   .ss-modal {
     width: min(100vw - 20px, 520px);

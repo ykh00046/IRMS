@@ -190,6 +190,56 @@ def build_router() -> APIRouter:
         """자재 LOT 역추적 — 이 LOT 이 들어간 배합 기록·상세(리콜 추적)."""
         return blend_service.trace_material_lot(connection, lot, limit=limit)
 
+    @router.get("/blend/recent-product-lots")
+    def blend_recent_product_lots(
+        names: str = Query(default=""),
+        limit: int = Query(default=5),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """반제품 원료 LOT 자동 제안용 — names 에 든 제품(반제품)명별 최근 product_lot.
+
+        2단 제조(1차 중간체 → 2차 최종)에서 2차 배합의 원료 행(=1차 반제품명) 자재 LOT 칸에
+        1차 배합의 제품 LOT 을 넣어 1차→2차 LOT 연결을 남기는 데 쓴다. 완료(completed) 기록만,
+        최신순(id DESC), 반제품별 limit 개, NULL/빈 LOT·중복 제거. 기록 없는 이름은 키 자체 제외.
+
+        names: 쉼표 구분 제품명(빈 항목 제거, 최대 50 — 초과분 무시).
+        limit: 반제품당 LOT 개수(1~20 클램프, 기본 5). 0 이하→1, 20 초과→20.
+        """
+        # limit 클램프 — FastAPI ge/le 가 422 로 거부하는 대신 1~20 으로 끌어온다(스펙 C.2).
+        limit = max(1, min(20, limit))
+        # names 파싱: strip → 빈 항목 제거 → 순서 보존 중복 제거 → 50개 초과분 무시.
+        raw_names = [n.strip() for n in (names or "").split(",")]
+        seen: set[str] = set()
+        name_list: list[str] = []
+        for n in raw_names:
+            if n and n not in seen:
+                seen.add(n)
+                name_list.append(n)
+            if len(name_list) >= 50:
+                break
+        items: dict[str, list[str]] = {}
+        if not name_list:
+            return {"items": items}
+        # IN (?, ?, ...) 자리표시자 — 제품명 수만큼. limit 은 정수(1~20)로 클램프됨.
+        placeholders = ",".join("?" for _ in name_list)
+        rows = connection.execute(
+            f"SELECT product_name, product_lot FROM blend_records "
+            f"WHERE product_name IN ({placeholders}) AND status = 'completed' "
+            f"ORDER BY id DESC",
+            name_list,
+        ).fetchall()
+        # 반제품별 최신순(id DESC 로 이미 정렬됨)로 순회하며 중복 없이 limit 개씩 채운다.
+        for r in rows:
+            lot_val = (r["product_lot"] or "").strip()
+            if not lot_val:
+                continue
+            lots = items.setdefault(r["product_name"], [])
+            if lot_val in lots:
+                continue
+            if len(lots) < limit:
+                lots.append(lot_val)
+        return {"items": items}
+
     @router.get("/blend/records")
     def blend_records(
         request: Request,

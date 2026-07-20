@@ -49,6 +49,10 @@
   const $ = (id) => document.getElementById(id);
 
   const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false,
+    // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록.
+    // 자재명이 "배합 기록이 있는 반제품명"과 일치하면 그 제품의 최근 LOT 을 제안.
+    // 레시피 선택 시 1회 호출(실패는 조용히 무시 — 제안 없이 기존 동작 유지).
+    lotSuggest: {},
     // 초과 계량 증량(rescale). 기준 자재 레시피에서 총량이 기준 자재 실측값으로
     // 파생되므로 증량분을 별도로 보관 — 유효 총량 = max(기준 파생 총량, rescaleTotalG).
     // 레시피 변경/저장 후 초기화 시 0(미사용)으로 리셋.
@@ -434,6 +438,25 @@
     applyAnchorMode();
     updateLotPreview();
     updateInputGuide();
+    loadLotSuggest();
+  }
+
+  // ── 반제품 원료 LOT 자동 제안 ───────────────────────────────
+  // 자재명 전체로 1회 조회 → state.lotSuggest(자재명→[lots]) 보관. 실패는 조용히 무시
+  // (제안 없이 기존 동작). 렌더는 이미 끝났으므로 포커스 시점에 state 만 읽는다.
+  async function loadLotSuggest() {
+    const names = state.items
+      .map((it) => (it.material_name || "").trim())
+      .filter((n) => n);
+    if (!names.length) { state.lotSuggest = {}; return; }
+    try {
+      const data = await request("/blend/recent-product-lots", {
+        query: { names: names.join(","), limit: 5 },
+      });
+      state.lotSuggest = (data && data.items) || {};
+    } catch (_e) {
+      state.lotSuggest = {};  // 실패 — 제안 없이 기존 동작 유지
+    }
   }
 
   // 기준 자재 모드 적용 — 레시피에 기준 자재가 있으면:
@@ -570,9 +593,22 @@
     body.querySelectorAll(".blend-actual").forEach((el) =>
       el.addEventListener("change", () => warnIfVariance(Number(el.dataset.idx)))
     );
-    body.querySelectorAll(".blend-lot").forEach((el) =>
-      el.addEventListener("input", () => { state.items[Number(el.dataset.idx)].material_lot = el.value; })
-    );
+    body.querySelectorAll(".blend-lot").forEach((el) => {
+      el.addEventListener("input", () => {
+        state.items[Number(el.dataset.idx)].material_lot = el.value;
+        // 타이핑 중이면 제안 목록을 입력값으로 시작하는 것만 필터링해 다시 그린다.
+        if (el._lotBox) renderLotSuggest(el);
+      });
+      // 포커스 시 제안 목록 표시(제안이 있는 자재만). blend_login suggest 패턴 재사용.
+      el.addEventListener("focus", () => renderLotSuggest(el));
+      // blur 보다 먼저 클릭이 처리되도록 목록 항목은 mousedown 으로 채운다(아래 renderLotSuggest).
+      // 여기 blur 는 목록 닫기만 — mousedown 의 preventDefault 가 blur 자체를 막지는 않으므로
+      // 약간의 지연을 줘 클릭 핸들러가 먼저 끝나도록 한다(blend_login 과 동일 주의).
+      el.addEventListener("blur", () => hideLotSuggest(el));
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && el._lotBox) { hideLotSuggest(el); }
+      });
+    });
     // 키보드 흐름(LOT 먼저): LOT Enter → 같은 행 실제량, 실제량 Enter → 다음 품목 LOT(마지막이면 저장)
     const focusField = (selector) => {
       const t = body.querySelector(selector);
@@ -607,6 +643,58 @@
     updateTotals();
     // 저울 전용 모드가 켜져 있으면 새로 렌더된 행의 실제량 칸도 readonly 로 잠근다.
     applyScaleOnlyToRows();
+  }
+
+  // ── 반제품 원료 LOT 제안 목록(.blend-lot 칸 아래) ───────────────
+  // native datalist 는 '클릭해도 목록이 안 열리는' 기존 불만이 있어 쓰지 않는다.
+  // blend_login.js 의 suggest 목록 패턴: 입력칸 바로 아래 작은 div, 항목은 button.
+  // 항목 mousedown(preventDefault) → LOT 칸 채움 + input 이벤트(state 반영) + 목록 닫기.
+  // mousedown 을 쓰는 이유: click 은 blur 보다 늦어 클릭이 blur 에 먹힌다.
+  function renderLotSuggest(input) {
+    const idx = Number(input.dataset.idx);
+    const name = (state.items[idx] && state.items[idx].material_name) || "";
+    const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
+    if (!lots.length) { hideLotSuggest(input); return; }  // 제안 없는 자재 = 변화 없음
+    // 타이핑 필터: 입력값으로 시작하는 LOT 만(빈 값이면 전체). 첫 항목이 최신 LOT.
+    const q = (input.value || "").trim().toLowerCase();
+    const matches = q ? lots.filter((l) => String(l).toLowerCase().startsWith(q)) : lots.slice();
+    let box = input._lotBox;
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "lot-suggest";
+      // 입력칸의 부모(td) 를 position:relative 기준으로 삼아 바로 아래에 띄운다.
+      const anchor = input.parentElement || input.parentNode;
+      if (anchor) {
+        anchor.style.position = anchor.style.position || "relative";
+        anchor.appendChild(box);
+      } else {
+        document.body.appendChild(box);
+      }
+      input._lotBox = box;
+    }
+    box.innerHTML = "";
+    matches.forEach((lot) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "lot-suggest-item";
+      item.textContent = lot;
+      // blur 보다 먼저 실행되도록 mousedown + preventDefault(blend_login 과 동일 주의).
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        input.value = lot;
+        state.items[idx].material_lot = lot;
+        input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
+        hideLotSuggest(input);
+        input.focus();
+      });
+      box.appendChild(item);
+    });
+    box.hidden = !matches.length;
+  }
+
+  function hideLotSuggest(input) {
+    if (!input._lotBox) return;
+    input._lotBox.hidden = true;
   }
 
   function updateRowVar(i) {
