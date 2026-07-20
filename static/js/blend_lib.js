@@ -186,7 +186,8 @@
     if (!(baseSum > 0)) return out;
     for (let i = 0; i < list.length; i++) {
       const w = Number(list[i].value_weight);
-      out[i] = Math.round((w / baseSum) * t * 1000) / 1000;
+      // 저울 해상도(2자리)에 맞춰 반올림 — 3자리 목표는 저울로 맞출 수 없다.
+      out[i] = Math.round((w / baseSum) * t * 100) / 100;
     }
     return out;
   }
@@ -207,17 +208,25 @@
   }
 
   // 초과 계량 증량 계획 수립(순수). items: [{ratio, actual_amount, theory_amount}],
-  // currentTotal: 현재 배합 총량, toleranceG: 허용 편차(현재 미사용 — 골 B 배지 갱신 용).
+  // currentTotal: 현재 배합 총량, toleranceG: 허용 편차.
   // 반환: { newTotal, changed, rows: [{idx, newTheory, addNeeded}] }
-  //   - newTotal = max(currentTotal, 이미 계량된(actual_amount!=="", ratio>0) 모든 행의 required)
-  //     단일 max 규칙으로 누적 증량이 자동 성립.
+  //   - newTotal = max(currentTotal, '목표를 허용 편차 이상 초과한' 계량 행의 required)
+  //     ※ 목표(=비율×현재총량) 대비 tol 이내의 편차는 총량을 바꾸지 않는다 — 편차는
+  //       정해진 총량 안에서 흡수된다("편차가 있다고 총 배합량이 바뀌면 안 된다").
+  //       이 게이팅이 없으면 '실제>목표'(0.001g만 넘어도) 이면 required>현재총량 이 되어
+  //       미세 편차가 ×100/비율 로 증폭돼 총량을 밀어 올리고, 작은 비율 자재를 먼저
+  //       계량하면 다른 행 목표가 흔들린다(계량 순서 의존 버그). tol 게이팅으로 이를 없앤다.
   //   - changed = newTotal 이 currentTotal 보다 유의미하게 큰가(> 1e-9)
-  //   - rows: 모든 행의 newTheory(round(ratio×newTotal/100, 3)) + 계량 행 addNeeded(max(0,newTheory−actual))
+  //   - 모든 반올림은 저울 해상도(2자리)에 맞춘다 — 3자리 목표는 저울로 맞출 수 없다.
+  //   - rows: 모든 행의 newTheory(round(ratio×newTotal/100, 2)) + 계량 행 addNeeded(max(0,newTheory−actual))
   //     미계량 행은 addNeeded=null.
   function rescalePlan(items, currentTotal, toleranceG) {
     const list = Array.isArray(items) ? items : [];
     const base = Number(currentTotal);
-    let newTotal = Number.isFinite(base) && base >= 0 ? base : 0;
+    const baseTotal = Number.isFinite(base) && base >= 0 ? base : 0;
+    const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
+      ? Number(toleranceG) : TOLERANCE_G;
+    let newTotal = baseTotal;
     for (let i = 0; i < list.length; i++) {
       const it = list[i] || {};
       if (it.actual_amount === "" || it.actual_amount === null || it.actual_amount === undefined) continue;
@@ -225,20 +234,27 @@
       if (!(r > 0)) continue;
       const a = Number(it.actual_amount);
       if (!Number.isFinite(a) || a <= 0) continue;
+      // 이 행의 현재 목표(=비율×현재총량). 저장된 theory_amount 가 있으면 그것을 쓴다
+      // (작업자가 보는 목표와 동일 기준으로 편차를 판정).
+      const th = Number(it.theory_amount);
+      const currentTheory = Number.isFinite(th) ? th : (r / 100) * baseTotal;
+      // 목표를 허용 편차 이내로만 넘었으면 총량 불변(편차 흡수). 그 이상 초과해야 증량.
+      if (a - currentTheory <= tol + 1e-9) continue;
       const required = a * 100 / r;
       if (required > newTotal) newTotal = required;
     }
-    const changed = newTotal - (Number.isFinite(base) ? base : 0) > 1e-9;
+    newTotal = Math.round(newTotal * 100) / 100;  // 저울 해상도(2자리)
+    const changed = newTotal - baseTotal > 1e-9;
     const rows = list.map((it, idx) => {
       const item = it || {};
       const r = Number(item.ratio);
-      const newTheory = r > 0 ? Math.round((r / 100) * newTotal * 1000) / 1000 : null;
+      const newTheory = r > 0 ? Math.round((r / 100) * newTotal * 100) / 100 : null;
       let addNeeded = null;
       const actualRaw = item.actual_amount;
       if (actualRaw !== "" && actualRaw !== null && actualRaw !== undefined) {
         const a = Number(actualRaw);
         if (Number.isFinite(a)) {
-          addNeeded = newTheory !== null ? Math.max(0, Math.round((newTheory - a) * 1000) / 1000) : 0;
+          addNeeded = newTheory !== null ? Math.max(0, Math.round((newTheory - a) * 100) / 100) : 0;
         }
       }
       return { idx, newTheory, addNeeded };

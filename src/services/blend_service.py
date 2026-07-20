@@ -31,7 +31,8 @@ def scale_theory(weights: list[float], total_amount: float) -> list[float]:
     base_total = sum(w or 0 for w in weights)
     if base_total <= 0:
         return [0.0 for _ in weights]
-    return [round((w or 0) / base_total * total_amount, 3) for w in weights]
+    # 저울 해상도(2자리)에 맞춰 반올림 — 3자리 이론 계량량은 저울로 맞출 수 없다.
+    return [round((w or 0) / base_total * total_amount, 2) for w in weights]
 
 
 # ── 레시피 → 배합 입력용 환산 ──────────────────────────────────
@@ -773,7 +774,8 @@ def derive_details_from_recipe(
         sent = incoming[name]
         ratio = float(item["ratio"] or 0)
         if anchor is not None:
-            theory = anchor_actual if item.get("is_anchor") else round(total * ratio / 100.0, 3)
+            # 저울 해상도(2자리) — 기준 자재 파생 이론량도 2자리로 맞춘다.
+            theory = anchor_actual if item.get("is_anchor") else round(total * ratio / 100.0, 2)
         else:
             theory = float(item["theory_amount"] or 0)
         derived.append({

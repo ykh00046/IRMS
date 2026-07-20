@@ -65,6 +65,12 @@
     addModeIdx: null,
     // 보류 중인 증량 제안(newTotal) — discard 모달에서 '그래도 증량' 선택 시 재사용.
     pendingRescale: null,
+    // 증량 후 각 행의 '더 넣어야 할 양'(idx→addNeeded>tol). 편차 셀에 음수(부족) 대신
+    // 배지로 넣을 양(양수)만 보이도록 하는 판정에 쓴다. renderAddBadges 가 매번 갱신.
+    addPending: {},
+    // 증량이 한 번이라도 적용됐는가. true 인 동안만 계량 변경 시 '추가 +X' 배지를 갱신한다
+    // (증량 전 일반 계량에서는 미달 행에 배지를 띄우지 않고 음수 편차 그대로 둔다).
+    rescaleActive: false,
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
@@ -429,6 +435,8 @@
     state.rescaleTotalG = 0;
     state.addModeIdx = null;
     state.pendingRescale = null;
+    state.addPending = {};
+    state.rescaleActive = false;
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -591,6 +599,9 @@
         }
         updateRowVar(i);
         updateTotals();
+        // 증량이 적용된 상태에서 계량하면 '추가 +X'(양수) 배지를 갱신 — 증량 후 채우는
+        // 행도 음수 편차 대신 넣을 양이 양수로 보이게 한다. 증량 전에는 갱신하지 않는다.
+        if (state.rescaleActive) renderAddBadges();
       })
     );
     // 실제량 입력 완료(blur) 시 허용 편차(±state.toleranceG g) 초과면 경고
@@ -929,9 +940,16 @@
     const it = state.items[i];
     const cell = document.querySelector(`.blend-var[data-idx="${i}"]`);
     if (!cell) return;
-    const display = varianceDisplay(it, state.toleranceG);
+    // 증량 대기 행(더 넣어야 할 양이 있는 행)은 음수 편차 대신 '추가 +X' 배지만 보인다
+    // (마이너스 표시는 오해의 여지 — 넣을 양은 양수 배지로만). 배지는 renderAddBadges 가 부착.
+    const badge = cell.querySelector(".blend-add-badge");
+    const pending = state.addPending && state.addPending[i];
+    const display = (pending != null && pending > state.toleranceG + 1e-9)
+      ? { text: "", className: "num blend-var" }   // 배지가 넣을 양(양수)을 대신 표시
+      : varianceDisplay(it, state.toleranceG);
     cell.textContent = display.text;
     cell.className = display.className;
+    if (badge) cell.appendChild(badge);  // textContent 대입이 배지를 지우므로 다시 붙인다
     // 기준 자재 행의 실측값 변경(손입력·저울 PRINT 공통) → 이론량·총량 재산출 트리거.
     // 재진입 가드로 applyAnchorRecompute 내 updateRowVar 호출이 다시 트리거하지 않게 막는다.
     if (hasAnchor() && i === state.anchorIndex && !state._anchorRecomputing) {
@@ -1113,6 +1131,8 @@
       // 총량 input 이벤트 경로 재사용 — 이론량 재계산·표 갱신.
       totalInput.dispatchEvent(new Event("input"));
     }
+    // 증량 활성 — 이후 계량 변경 시 '추가 +X' 배지를 갱신한다(양수 표시).
+    state.rescaleActive = true;
     // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
     renderAddBadges();
     notify(`배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
@@ -1142,10 +1162,16 @@
     document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
     const tol = state.toleranceG;
     const plan = rescalePlan(state.items, effectiveCurrentTotal(), tol);
+    // 넣어야 할 양이 있는 행 집합을 새로 만든다(편차 셀 음수 숨김 판정용).
+    state.addPending = {};
     plan.rows.forEach((r) => {
       if (r.addNeeded === null || r.addNeeded <= tol + 1e-9) return;
       const td = document.querySelector(`.blend-var[data-idx="${r.idx}"]`);
       if (!td) return;
+      state.addPending[r.idx] = r.addNeeded;
+      // 음수 편차 텍스트를 지우고 배지(넣을 양 양수)만 남긴다.
+      td.textContent = "";
+      td.className = "num blend-var";
       const badge = document.createElement("button");
       badge.type = "button";
       badge.className = "blend-add-badge";
@@ -1394,6 +1420,8 @@
       state.rescaleTotalG = 0;
       state.addModeIdx = null;
       state.pendingRescale = null;
+      state.addPending = {};
+      state.rescaleActive = false;
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)
