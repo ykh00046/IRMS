@@ -5,7 +5,7 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260707b" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260720a" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
@@ -44,6 +44,19 @@
               <button id="cpw-submit" type="submit" class="btn accent">변경</button>
             </div>
           </form>
+        </section>
+
+        <!-- 저울 전용 입력 모드 설정 카드 — 이 페이지 자체가 책임자 전용(서버도 PUT 권한 검증) -->
+        <section class="panel" id="scale-only-card">
+          <span class="kicker">현장 설정</span>
+          <h3 class="panel-title">저울 전용 입력</h3>
+          <div class="scale-only-row">
+            <div class="scale-only-desc">
+              현재 상태: <strong id="scale-only-status">불러오는 중…</strong>
+              <p class="scale-only-help muted small">켜면 배합·이어서 계량에서 실제량 수기 입력이 차단되고 저울 PRINT 로만 입력됩니다.</p>
+            </div>
+            <button class="btn accent" id="scale-only-toggle" type="button" disabled>켜기</button>
+          </div>
         </section>
 
         <section class="admin-secondary-grid">
@@ -250,5 +263,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260716a"></script>
+    <script src="/static/js/admin_users.js?v=20260720a"></script>
 {% endblock %}

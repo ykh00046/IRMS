@@ -106,19 +106,6 @@
           </div>
         </section>
 
-        {% if can_manage %}
-        <!-- 저울 전용 입력 모드 설정 카드 — 책임자에게만 노출(서버도 PUT 권한 검증) -->
-        <section class="panel" id="scale-only-card">
-          <h3 class="panel-title">저울 전용 입력</h3>
-          <div class="scale-only-row">
-            <div class="scale-only-desc">
-              현재 상태: <strong id="scale-only-status">불러오는 중…</strong>
-              <p class="scale-only-help muted small">켜면 배합·이어서 계량에서 실제량 수기 입력이 차단되고 저울 PRINT 로만 입력됩니다.</p>
-            </div>
-            <button class="btn accent" id="scale-only-toggle" type="button" disabled>켜기</button>
-          </div>
-        </section>
-        {% endif %}
 {% endblock %}
 
 {% block scripts %}

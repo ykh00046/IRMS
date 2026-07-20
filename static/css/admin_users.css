@@ -270,3 +270,22 @@
     overflow-x: auto;
   }
 }
+
+/* 저울 전용 입력 설정 카드(대시보드에서 이전) — 상태 표시 + 토글 버튼 한 줄 */
+.scale-only-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.scale-only-desc {
+  flex: 1;
+  min-width: 220px;
+}
+
+.scale-only-help {
+  margin: 0.35rem 0 0;
+  line-height: 1.4;
+}
