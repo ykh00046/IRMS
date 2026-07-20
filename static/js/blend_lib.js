@@ -163,7 +163,7 @@
   // 계산해 57.99 같은 꼬리를 없앤다. 반환값은 3자리 반올림(증량 rescalePlan 과 동일 단위).
   //
   // items: [{value_weight}], total: 총 배합량.
-  // 반환: 각 항목의 round(value_weight/base_sum×total, 3) 배열.
+  // 반환: 각 항목의 round(value_weight/base_sum×total, 2) 배열.
   //   - total 이 유효 숫자가 아니거나 0 이하 → 전체 null 배열(호출부 ratio 방식 폴백).
   //   - 어느 한 항목이라도 value_weight 이 null/undefined → 전체 null 배열(옛 데이터 호환 폴백).
   //     (<=0 인 항목은 base_sum 에서 0 기여할 뿐 폴백 유발은 아님.)

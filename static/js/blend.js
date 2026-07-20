@@ -1245,7 +1245,8 @@
     if (!it) return;
     const prev = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
     const next = prev + add;
-    it.actual_amount = String(Math.round(next * 1000) / 1000);
+    // 저울 해상도(2자리)로 누계 — 3자리가 실제량에 스며드는 것을 막는다.
+    it.actual_amount = String(Math.round(next * 100) / 100);
     it.manual = false;
     const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
     if (input) {
