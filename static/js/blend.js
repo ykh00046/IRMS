@@ -71,6 +71,9 @@
     // 증량이 한 번이라도 적용됐는가. true 인 동안만 계량 변경 시 '추가 +X' 배지를 갱신한다
     // (증량 전 일반 계량에서는 미달 행에 배지를 띄우지 않고 음수 편차 그대로 둔다).
     rescaleActive: false,
+    // '방금 증량 취소'용 스냅샷(증량 직전 총량·이론량). 추가분을 넣기 시작하거나
+    // 레시피 변경·저장 시 무효화(null). 있으면 #rescale-undo 버튼이 보인다.
+    rescaleUndo: null,
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
@@ -437,6 +440,8 @@
     state.pendingRescale = null;
     state.addPending = {};
     state.rescaleActive = false;
+    state.rescaleUndo = null;
+    hideRescaleUndo();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -783,7 +788,7 @@
       body.innerHTML = ""
         + `<p><strong>자재명:</strong> ${esc(name)}</p>`
         + `<p><strong>입력한 로트:</strong> ${esc(lot)}</p>`
-        + `<p>등록되지 않은 로트입니다. 다시 확인해주세요.</p>`;
+        + `<p>등록되지 않은 로트입니다. 1차 배합 기록이 저장되었는지, LOT 번호가 맞는지 확인하세요.</p>`;
     }
     // 확인 버튼이 눌릴 때 값을 비우고 다시 포커스하기 위해 현재 입력칸을 기억해둔다.
     $("lot-invalid-modal")._lotInput = input || null;
@@ -818,16 +823,16 @@
     return lots.find((e) => e && String(e.lot) === v) || null;
   }
 
-  // 기준 자재 행의 LOT 칸(<td>) 아래에 이월 컨트롤(배지 + 버튼)을 띄운다/숨긴다.
-  // 1차 LOT 가 선택돼 있을 때만 보이고, 그렇지 않으면 숨긴다.
+  // 기준 자재 행의 LOT 칸(<td>) 아래 이월 컨트롤. 파생 레시피의 기준 자재 행에서:
+  //  - 로트 선택 전: 안내 힌트("반응기 1차 제품 — 로트를 선택하세요")로 이월을 유도(발견성).
+  //  - 등록된 1차 로트 입력 후: '1차 총량 N g' 배지 + [파생 이월] 버튼.
+  // 파생이 아닌 레시피/일반 행에서는 아무것도 띄우지 않는다.
   function refreshCarryOverControl() {
     const lotInput = document.querySelector(`.blend-lot[data-idx="${state.anchorIndex}"]`);
     if (!lotInput) return;
     const cell = lotInput.parentElement || lotInput.parentNode;  // <td>
     let wrap = cell.querySelector(".carry-over-wrap");
-    const match = carryOverEligible() ? findStage1Match(lotInput.value) : null;
-    if (!match) {
-      // 자격이 없거나 1차 LOT 가 아니면 컨트롤 숨김(이미 적용된 이월도 여기서 취소된다).
+    if (!carryOverEligible()) {
       if (wrap) wrap.hidden = true;
       return;
     }
@@ -835,10 +840,16 @@
     if (!wrap) {
       wrap = document.createElement("span");
       wrap.className = "carry-over-wrap";
+      // 로트 선택 전 안내 힌트(발견성) — 파생 레시피 첫 작업자가 중간체를 그냥 계량하지
+      // 않도록 "이건 반응기에 있으니 이월하라"고 먼저 알린다.
+      const hint = document.createElement("span");
+      hint.className = "carry-over-hint";
+      hint.style.cssText = "font-size:0.72rem;color:#64748b;";
+      hint.textContent = "반응기 1차 제품 — 로트를 선택해 이월하세요";
       // '1차 총량 N g' 안내 배지
       const badge = document.createElement("span");
       badge.className = "carry-over-badge muted";
-      // 이월 토글 버튼
+      // 이월 버튼
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-sm carry-over-btn";
@@ -848,12 +859,28 @@
         e.stopPropagation();
         openCarryOverModal();
       });
+      wrap.appendChild(hint);
       wrap.appendChild(badge);
       wrap.appendChild(btn);
       cell.appendChild(wrap);
     }
+    const hint = wrap.querySelector(".carry-over-hint");
     const badge = wrap.querySelector(".carry-over-badge");
-    if (badge) badge.textContent = `1차 총량 ${match.total} g`;
+    const btn = wrap.querySelector(".carry-over-btn");
+    const applied = Boolean(state.items[state.anchorIndex] && state.items[state.anchorIndex].carried_over);
+    const match = findStage1Match(lotInput.value);
+    // 이미 이월 적용됨 → 실제량 칸의 '이월' 태그가 상태를 표시하므로 컨트롤 숨김.
+    if (applied) { wrap.hidden = true; return; }
+    if (match) {
+      if (hint) hint.hidden = true;
+      if (badge) { badge.hidden = false; badge.textContent = `1차 총량 ${match.total} g`; }
+      if (btn) btn.hidden = false;
+    } else {
+      // 로트 미선택/미등록 → 힌트만.
+      if (hint) hint.hidden = false;
+      if (badge) badge.hidden = true;
+      if (btn) btn.hidden = true;
+    }
     wrap.hidden = false;
   }
 
@@ -1121,6 +1148,14 @@
     state.pendingRescale = null;
     closeRescaleModal();
     closeDiscardModal();
+    // 되돌리기용 스냅샷(증량 직전 상태) — '방금 증량 취소' 1회 제공. 실수로 증량이 걸렸을 때
+    // 레시피를 다시 고르지 않고 이전 총량·이론량으로 복원한다. 추가분을 넣기 시작하면 무효화.
+    const totalEl = $("blend-total");
+    state.rescaleUndo = {
+      total: totalEl ? totalEl.value : "",
+      theories: state.items.map((it) => it.theory_amount),
+      rescaleTotalG: state.rescaleTotalG || 0,
+    };
     if (hasAnchor()) {
       // 기준 파생 총량을 넘는 증량분을 보관 — applyAnchorRecompute 가 max 로 반영.
       if (plan.newTotal > (state.rescaleTotalG || 0)) state.rescaleTotalG = plan.newTotal;
@@ -1135,7 +1170,42 @@
     state.rescaleActive = true;
     // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
     renderAddBadges();
+    showRescaleUndo();
     notify(`배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+  }
+
+  // ── 증량 되돌리기(방금 증량 취소) ─────────────────────────────
+  // 증량 직전 스냅샷으로 총량·이론량·증량 상태를 복원한다. 추가분을 넣기 전까지만 유효.
+  function showRescaleUndo() {
+    const btn = $("rescale-undo");
+    if (btn) btn.hidden = false;
+  }
+  function hideRescaleUndo() {
+    const btn = $("rescale-undo");
+    if (btn) btn.hidden = true;
+  }
+  function restoreRescaleUndo() {
+    const snap = state.rescaleUndo;
+    if (!snap) { hideRescaleUndo(); return; }
+    state.rescaleTotalG = snap.rescaleTotalG || 0;
+    state.rescaleActive = false;
+    state.addPending = {};
+    state.pendingRescale = null;
+    state.items.forEach((it, i) => { it.theory_amount = snap.theories[i]; });
+    const totalEl = $("blend-total");
+    if (totalEl) totalEl.value = snap.total;
+    // 추가분 배지 제거 + 이론 셀·편차·합계 갱신.
+    document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
+    document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
+      const i = Number(cell.dataset.idx);
+      if (state.items[i]) cell.textContent = fmt(state.items[i].theory_amount);
+    });
+    state.items.forEach((_, i) => updateRowVar(i));
+    updateTotals();
+    updateLotPreview();
+    state.rescaleUndo = null;
+    hideRescaleUndo();
+    notify("증량을 취소하고 이전 배합량으로 되돌렸습니다.", "warn");
   }
 
   // 기준 자재 레시피 증량 반영 — rescalePlan 의 newTheory/addNeeded 를 각 행에 적용.
@@ -1273,6 +1343,9 @@
     updateTotals();
     warnIfVariance(idx);
     renderAddBadges();
+    // 추가분을 넣기 시작했으면 증량 되돌리기는 위험(추가 실제량과 이전 이론량이 어긋남) — 무효화.
+    state.rescaleUndo = null;
+    hideRescaleUndo();
   }
 
   // 총량을 나중에 입력/변경하면 이론량이 바뀌어 이미 계량한 값이 초과될 수 있다 —
@@ -1430,6 +1503,8 @@
       state.pendingRescale = null;
       state.addPending = {};
       state.rescaleActive = false;
+      state.rescaleUndo = null;
+      hideRescaleUndo();
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)
@@ -1523,6 +1598,9 @@
       state.pendingRescale = null;
       closeDiscardModal();
     });
+    // 방금 증량 취소 — 증량 직전 상태로 복원(추가분 넣기 전까지만 노출).
+    const rescaleUndoBtn = $("rescale-undo");
+    if (rescaleUndoBtn) rescaleUndoBtn.addEventListener("click", restoreRescaleUndo);
     // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
     const lotConfirm = $("lot-invalid-confirm");
     if (lotConfirm) lotConfirm.addEventListener("click", () => {

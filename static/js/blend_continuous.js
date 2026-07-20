@@ -456,7 +456,7 @@
       body.innerHTML = ""
         + `<p><strong>자재명:</strong> ${esc(name)}</p>`
         + `<p><strong>입력한 로트:</strong> ${esc(lot)}</p>`
-        + `<p>등록되지 않은 로트입니다. 다시 확인해주세요.</p>`;
+        + `<p>등록되지 않은 로트입니다. 1차 배합 기록이 저장되었는지, LOT 번호가 맞는지 확인하세요.</p>`;
     }
     // 확인 버튼이 눌릴 때 값을 비우고 다시 포커스하기 위해 현재 입력칸을 기억해둔다.
     $("cont-lot-invalid-modal")._lotInput = input || null;
