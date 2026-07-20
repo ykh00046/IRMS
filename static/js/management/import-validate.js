@@ -22,6 +22,63 @@
   IRMS.management.createImportValidate = function (ctx) {
     const { dom, state } = ctx;
 
+    // 품목코드 마스터 제안(code-edit-relocate §2) — item-codes.js 의 제안 패턴 재사용.
+    // GET /api/item-codes/master (kind=product), 300ms 디바운스, 클릭 시 코드 채움.
+    // 입력칸·제안 목록은 management.html 의 #imp-product-code · #imp-product-code-suggest.
+    const productCodeInput = document.getElementById("imp-product-code");
+    const productCodeSuggest = document.getElementById("imp-product-code-suggest");
+
+    async function loadProductCodeSuggestions(q) {
+      if (!productCodeSuggest || !productCodeInput) return;
+      try {
+        const data = await IRMS._core.request("/item-codes/master", {
+          query: { q, kind: "product" },
+        });
+        const items = data.items || [];
+        if (!items.length) {
+          productCodeSuggest.hidden = true;
+          productCodeSuggest.innerHTML = "";
+          return;
+        }
+        productCodeSuggest.innerHTML = items
+          .map(
+            (it) =>
+              `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}</li>`,
+          )
+          .join("");
+        productCodeSuggest.hidden = false;
+        productCodeSuggest.querySelectorAll(".code-suggest-item").forEach((li) => {
+          li.addEventListener("mousedown", (ev) => {
+            ev.preventDefault(); // input blur 보존
+            productCodeInput.value = li.dataset.code;
+            productCodeSuggest.hidden = true;
+            productCodeInput.focus();
+          });
+        });
+      } catch (_err) {
+        productCodeSuggest.hidden = true;
+      }
+    }
+
+    const debouncedProductSuggest = IRMS.debounce(loadProductCodeSuggestions, 300);
+
+    if (productCodeInput) {
+      productCodeInput.addEventListener("input", () => {
+        const q = productCodeInput.value.trim();
+        if (q.length < 1) {
+          if (productCodeSuggest) productCodeSuggest.hidden = true;
+          return;
+        }
+        debouncedProductSuggest(q);
+      });
+      // 포커스 벗어나면 제안 목록 닫기(blur 이후 클릭이 먼저 처리되도록 약간 지연).
+      productCodeInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (productCodeSuggest) productCodeSuggest.hidden = true;
+        }, 150);
+      });
+    }
+
     function syncRegisterState() {
       const canRegister =
         Boolean(state.currentPreview) &&
@@ -164,9 +221,19 @@
         const toleranceRaw = toleranceEl ? toleranceEl.value.trim() : "";
         const toleranceG = toleranceRaw ? Number(toleranceRaw) : null;
         const hasTolerance = toleranceG != null && Number.isFinite(toleranceG) && toleranceG > 0;
+        // 품목코드(code-edit-relocate §2): 값이 있을 때만 본문에 product_code 포함(strip).
+        // 빈 값은 미포함 — 기존 자동 인식/승계 동작 유지.
+        const productCodeEl = document.getElementById("imp-product-code");
+        const productCode = productCodeEl ? productCodeEl.value.trim() : "";
+        const hasProductCode = productCode.length > 0;
         let result;
-        if (anchorMaterial || hasTolerance) {
-          result = await importWithAnchor(baseTotals, anchorMaterial, hasTolerance ? toleranceG : null);
+        if (anchorMaterial || hasTolerance || hasProductCode) {
+          result = await importWithAnchor(
+            baseTotals,
+            anchorMaterial,
+            hasTolerance ? toleranceG : null,
+            hasProductCode ? productCode : null,
+          );
         } else {
           result = await IRMS.importRecipes(
             state.confirmedRawText, "레시피 관리",
@@ -186,9 +253,9 @@
       }
     }
 
-    // 기준 자재·허용 편차를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
+    // 기준 자재·허용 편차·품목코드를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
     // 패턴으로 /api/recipes/import 에 직접 POST 한다.
-    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG) {
+    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode) {
       const body = {
         raw_text: state.confirmedRawText,
         created_by: "레시피 관리",
@@ -205,6 +272,11 @@
       // tolerance_g: 숫자 값만 전송(null 은 미지정과 동일 — 보내지 않음).
       if (toleranceG != null && Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0) {
         body.tolerance_g = Number(toleranceG);
+      }
+      // product_code(code-edit-relocate §2): 값이 있을 때만 전송. 빈 값은 미지정과
+      // 동일 — 기존 자동 인식/승계 동작 유지.
+      if (productCode) {
+        body.product_code = productCode;
       }
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
@@ -246,6 +318,15 @@
       const toleranceEl = document.getElementById("imp-tolerance");
       if (toleranceEl) {
         toleranceEl.value = "";
+      }
+      // 품목코드 입력도 초기화 — 수정 등록 프리필 값이 다음 신규 등록에 남지 않게.
+      const productCodeEl = document.getElementById("imp-product-code");
+      if (productCodeEl) {
+        productCodeEl.value = "";
+      }
+      if (productCodeSuggest) {
+        productCodeSuggest.hidden = true;
+        productCodeSuggest.innerHTML = "";
       }
       if (ctx.recipeEditLoader) {
         ctx.recipeEditLoader.clearRevisionBanner();

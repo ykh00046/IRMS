@@ -57,6 +57,13 @@
                     placeholder="선택 · 비우면 기본 0.05"
                     title="레시피별 계량 허용 편차(g). 비우면 기본 0.05g. 0.1g 해상도 저울로 큰 배치를 계량할 때 넉넉히 지정" />
                 </span>
+                <span class="imp-opt">
+                  <label class="filter-label inline-label" for="imp-product-code">품목코드</label>
+                  <input id="imp-product-code" class="input" autocomplete="off"
+                    placeholder="선택 · 비우면 자동 인식"
+                    title="반제품 ERP 품목코드. 비우면 반제품명으로 마스터에서 자동 인식, 수정 등록 시 기존 코드 승계. 직접 입력하면 그 값이 우선." />
+                  <ul id="imp-product-code-suggest" class="code-suggest-list" hidden></ul>
+                </span>
               </div>
               <div class="button-row imp-actions">
                 <button id="preview-btn" class="btn accent">검증</button>
@@ -178,6 +185,9 @@
               <label class="filter-label checkbox-label">
                 <input type="checkbox" id="codes-uncoded" checked /> 코드 없음만
               </label>
+              <label class="filter-label checkbox-label">
+                <input type="checkbox" id="codes-cleanup" /> 정리 모드(삭제 표시)
+              </label>
               <button id="codes-refresh-btn" class="btn" type="button">새로고침</button>
             </div>
             <div class="table-wrap">
@@ -254,11 +264,11 @@
     
     <!-- management modules: factories (order-free) → controller last -->
     <script src="/static/js/management/bom-editor.js?v=20260717a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260716a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260713a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260717b"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260720a"></script>
+    <script src="/static/js/management/import-validate.js?v=20260720a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260720a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
-    <script src="/static/js/management/item-codes.js?v=20260720a"></script>
+    <script src="/static/js/management/item-codes.js?v=20260720b"></script>
     <script src="/static/js/management.js?v=20260717b"></script>
 {% endblock %}

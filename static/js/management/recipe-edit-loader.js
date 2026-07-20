@@ -76,6 +76,13 @@
       if (toleranceEl) {
         toleranceEl.value = detail.tolerance_g != null ? String(detail.tolerance_g) : "";
       }
+      // 품목코드 프리필(code-edit-relocate §2) — 수정 등록 시 부모의 product_code 를
+      // 미리 채운다. 레시피 상세 응답에 product_code 가 있음(mapRecipe.productCode 와
+      // 동일 필드). 빈 칸으로 두면 서버가 부모 값을 자동 승계한다.
+      const productCodeEl = document.getElementById("imp-product-code");
+      if (productCodeEl) {
+        productCodeEl.value = detail.product_code || "";
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

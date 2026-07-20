@@ -541,3 +541,174 @@ def test_list_recipes_and_blend_recipes_expose_product_code():
         assert blend_target["product_code"] == prod_code
     finally:
         _cleanup_master()
+
+
+# ---------- code-edit-relocate §3: 명시 product_code 우선 ----------
+
+
+def test_explicit_product_code_overrides_master_match():
+    """등록 body 에 product_code 명시 → 자동 인식(마스터 매칭)을 무시하고 그 값 저장.
+
+    반제품명이 product 마스터와 단일 히트(자동 인식값=마스터 코드)여도, 요청이
+    명시한 product_code 가 우선한다.
+    """
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        master_code = f"B{uid}"
+        prod_name = f"PRODEXP{uid}"
+        _seed_master_product(master_code, prod_name, category_hint="합성")
+
+        # 명시 코드는 마스터 코드와 다른 값
+        explicit_code = f"BC{uid}"
+        body = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40",
+            "product_code": explicit_code,
+        }
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        rid = res.json()["created_ids"][0]
+        row = _recipe_row(rid)
+        assert row["product_code"] == explicit_code  # 마스터 코드(master_code) 무시
+    finally:
+        _cleanup_master()
+
+
+def test_explicit_product_code_normalized_uppercase():
+    """소문자로 보내도 대문자로 정규화 저장(PUT product-code 와 동일)."""
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        prod_name = f"PRODUPPER{uid}"
+        body = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40",
+            "product_code": f"bc{uid}",
+        }
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        rid = res.json()["created_ids"][0]
+        assert _recipe_row(rid)["product_code"] == f"BC{uid}"
+    finally:
+        _cleanup_master()
+
+
+def test_explicit_product_code_invalid_format_400():
+    """명시 product_code 형식(영문2+영숫자2~8) 위반 → 400."""
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        prod_name = f"PRODFMT{uid}"
+        body = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40",
+            "product_code": "1234",  # 영문 prefix 없음
+        }
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 400, res.text
+    finally:
+        _cleanup_master()
+
+
+def test_explicit_product_code_duplicate_in_other_chain_409():
+    """다른 체인의 레시피가 같은 product_code 사용 중 → 409(반제품명 포함)."""
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        # 선점 체인 — 명시 코드로 먼저 등록
+        first_name = f"PRODFIRST{uid}"
+        explicit_code = f"BC{uid}"
+        body1 = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{first_name}\t60\t40",
+            "product_code": explicit_code,
+        }
+        res1 = client.post("/api/recipes/import", json=body1, headers=headers)
+        assert res1.status_code == 200, res1.text
+
+        # 다른 반제품을 같은 코드로 등록 시도 → 409
+        second_name = f"PRODSECOND{uid}"
+        body2 = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{second_name}\t60\t40",
+            "product_code": explicit_code,
+        }
+        res2 = client.post("/api/recipes/import", json=body2, headers=headers)
+        assert res2.status_code == 409, res2.text
+        detail = res2.json()["detail"]
+        # 반제품명이 detail 에 포함되어야 한다(PUT product-code 와 동일 메시지 형식).
+        assert first_name in detail
+    finally:
+        _cleanup_master()
+
+
+def test_explicit_product_code_revision_overrides_inherited():
+    """수정 등록 시 부모의 product_code 가 있어도 명시 값이 우선(승계 무시)."""
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        parent_code = f"B{uid}"
+        prod_name = f"PRODREVEXP{uid}"
+        _seed_master_product(parent_code, prod_name, category_hint="합성")
+
+        # 원본 등록 → 마스터 매칭으로 parent_code 부여
+        body = {"raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40"}
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        parent_id = res.json()["created_ids"][0]
+        assert _recipe_row(parent_id)["product_code"] == parent_code
+
+        # 수정 등록 — 명시 코드가 부모 승계(parent_code)보다 우선
+        explicit_code = f"BC{uid}"
+        body2 = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t55\t45",
+            "revision_of": parent_id,
+            "product_code": explicit_code,
+        }
+        res2 = client.post("/api/recipes/import", json=body2, headers=headers)
+        assert res2.status_code == 200, res2.text
+        child_id = res2.json()["created_ids"][0]
+        assert _recipe_row(child_id)["product_code"] == explicit_code
+    finally:
+        _cleanup_master()
+
+
+def test_explicit_product_code_empty_falls_back_to_auto():
+    """product_code 미포함(또는 빈 문자열) → 기존 자동 인식 동작 유지(회귀).
+
+    마스터 매칭값이 그대로 저장되어야 한다 — 명시 값이 없으면 자동 인식이 우선.
+    """
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+    try:
+        _seed_filler_materials()
+        master_code = f"B{uid}"
+        prod_name = f"PRODEMPTY{uid}"
+        _seed_master_product(master_code, prod_name, category_hint="합성")
+
+        # product_code 를 빈 문자열로 명시 → 자동 인식 경로
+        body = {
+            "raw_text": f"반제품명\t원료A\t원료B\n{prod_name}\t60\t40",
+            "product_code": "",
+        }
+        res = client.post("/api/recipes/import", json=body, headers=headers)
+        assert res.status_code == 200, res.text
+        rid = res.json()["created_ids"][0]
+        assert _recipe_row(rid)["product_code"] == master_code  # 자동 인식값
+
+        # product_code 필드 자체를 생략해도 동일(기존 동작 회귀)
+        prod_name2 = f"PRODNONE{uid}"
+        body2 = {"raw_text": f"반제품명\t원료A\t원료B\n{prod_name2}\t60\t40"}
+        res2 = client.post("/api/recipes/import", json=body2, headers=headers)
+        assert res2.status_code == 200, res2.text
+        # 마스터에 없는 이름 → product_code NULL (자동 인식 경로 회귀)
+        assert _recipe_row(res2.json()["created_ids"][0])["product_code"] is None
+    finally:
+        _cleanup_master()

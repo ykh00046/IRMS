@@ -20,7 +20,32 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
+from .item_code_routes import _CODE_PATTERN
 from .models import ImportRequest, actor_name
+
+
+def _normalize_explicit_product_code(raw: Any) -> str | None:
+    """code-edit-relocate §3: 요청 본문 product_code 정규화·검증.
+
+    반환:
+        None  → 명시 값 없음(빈 문자열 또는 None). 자동 인식·승계 경로 유지.
+        str   → strip+upper 한 코드.
+
+    item_code_routes 의 완화 형식(^[A-Z]{2}[A-Z0-9]{2,8}$)에 맞지 않으면 400.
+    PUT /recipes/{id}/product-code 의 _validate_code 와 동일 규칙.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text == "":
+        return None
+    code = text.upper()
+    if not _CODE_PATTERN.match(code):
+        raise HTTPException(
+            status_code=400,
+            detail="품목코드 형식이 올바르지 않습니다. (영문 2자 + 영문/숫자 2~8자)",
+        )
+    return code
 
 
 def _resolve_product_code(
@@ -160,6 +185,23 @@ def build_router() -> APIRouter:
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
                 effective_tolerance_g = inherited_tolerance_g
+            # code-edit-relocate §3: 명시 product_code 가 자동 인식·승계보다 우선.
+            # 값이 있으면 strip+upper + 형식 검사(불일치 400). 다른 체인이 같은 코드를
+            # 쓰고 있으면 409(반제품명 포함) — PUT product-code 와 동일 규칙.
+            explicit_product_code = _normalize_explicit_product_code(body.product_code)
+            if explicit_product_code is not None:
+                conflict_row = connection.execute(
+                    "SELECT product_name FROM recipes WHERE product_code = ? LIMIT 1",
+                    (explicit_product_code,),
+                ).fetchone()
+                if conflict_row:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"이미 다른 반제품({conflict_row['product_name']})이"
+                            " 사용 중인 코드입니다."
+                        ),
+                    )
             # 정수는 '.0' 없이 저장(프리필 표시·비교 편의)
             base_totals_text = (
                 ",".join(str(int(t)) if float(t) == int(t) else str(t) for t in totals[:3])
@@ -206,15 +248,19 @@ def build_router() -> APIRouter:
                         else None
                     )
 
-                # item-code P3: 반제품 코드 결정.
-                # - product_name → kind='product' 마스터 단일 히트 → product_code + category_hint.
-                # - 매칭 실패 시 수정 등록이면 부모의 product_code 를 승계(마스터 매칭 성공이 우선).
+                # item-code P3 + code-edit-relocate §3: 반제품 코드 결정.
+                # - 명시 product_code(요청 본문) → 최우선. 자동 인식·승계 무시.
+                # - 명시 값이 없으면 product_name → kind='product' 마스터 단일 히트.
+                # - 그래도 없으면 수정 등록 시 부모의 product_code 승계.
                 # - category: 마스터 category_hint 를 채움 후보. 단 승계된 category(부모)가 있으면
                 #   그것이 우선(이미 사용자가 지정한 값). 둘 다 없을 때만 hint 로 채운다.
                 matched_code, matched_hint = _resolve_product_code(
                     connection, parsed_row["product_name"]
                 )
-                effective_product_code = matched_code or inherited_product_code
+                if explicit_product_code is not None:
+                    effective_product_code = explicit_product_code
+                else:
+                    effective_product_code = matched_code or inherited_product_code
                 effective_category = inherited_category
                 if effective_category is None and matched_hint:
                     # 신규(비개정) 임포트에서 승계 category 가 없을 때만 hint 로 채움.

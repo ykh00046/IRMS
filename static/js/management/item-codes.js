@@ -41,6 +41,14 @@
       };
     }
 
+    // 정리 모드(code-edit-relocate §4): 기본 해제. 해제 상태에서는 행의 삭제 버튼을
+    // 표시하지 않는다(지정/수정/해제만). 체크 시 기존 삭제 버튼(인라인 예/아니오 확인
+    // 포함)이 표시되고 동작은 기존 그대로.
+    function cleanupMode() {
+      const cb = document.getElementById("codes-cleanup");
+      return !!(cb && cb.checked);
+    }
+
     async function refresh() {
       if (!dom.codesBody) return;
       const filters = activeFilters();
@@ -62,9 +70,11 @@
               ? `<button class="btn btn-sm code-edit-btn" data-id="${m.id}">수정</button>
                  <button class="btn btn-sm danger code-clear-btn" data-id="${m.id}">해제</button>`
               : `<button class="btn btn-sm accent code-edit-btn" data-id="${m.id}">지정</button>`;
-            // 삭제 버튼은 코드 유무와 무관하게 항상 표시.
-            const actionHtml = `${codeActions}
-              <button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`;
+            // 삭제 버튼은 정리 모드일 때만 표시(기본 해제).
+            const deleteBtn = cleanupMode()
+              ? `<button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`
+              : "";
+            const actionHtml = `${codeActions}${deleteBtn}`;
             return `
               <tr class="codes-row" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td>${IRMS.escapeHtml(m.name)}</td>
@@ -89,6 +99,10 @@
       }
       if (dom.codesUncoded) {
         dom.codesUncoded.addEventListener("change", refresh);
+      }
+      const cleanupCb = document.getElementById("codes-cleanup");
+      if (cleanupCb) {
+        cleanupCb.addEventListener("change", refresh);
       }
       if (dom.codesRefreshBtn) {
         dom.codesRefreshBtn.addEventListener("click", refresh);
