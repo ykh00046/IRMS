@@ -240,6 +240,34 @@ def build_router() -> APIRouter:
                 lots.append(lot_val)
         return {"items": items}
 
+    @router.get("/blend/product-lot-exists")
+    def blend_product_lot_exists(
+        name: str = Query(default=""),
+        lot: str = Query(default=""),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """반제품 원료 LOT 미등록 차단용 — 주어진 제품명/LOT 의 완료 기록 존재 여부.
+
+        2단 제조(1차 중간체 → 2차 최종)에서 2차 배합의 원료 행(=1차 반제품명) 자재 LOT 칸에
+        입력된 값이 실제 1차 배합의 완료(completed) 기록에 존재하는 LOT 인지 검증하여,
+        등록되지 않은 LOT 의 입력을 막는 데 쓴다. 양쪽 값은 strip 후 정확히 일치하는
+        product_name·product_lot 이며 status='completed' 인 행이 있어야 exists=true.
+
+        name: 검증할 제품(반제품)명(빈 값 → exists=false).
+        lot: 검증할 LOT(빈 값 → exists=false).
+        """
+        name = (name or "").strip()
+        lot = (lot or "").strip()
+        if not name or not lot:
+            return {"exists": False}
+        # 정확 일치 — strip 된 name/lot 으로 파라미터화 WHERE. status='completed' 한정.
+        row = connection.execute(
+            "SELECT 1 FROM blend_records "
+            "WHERE product_name = ? AND product_lot = ? AND status = 'completed' LIMIT 1",
+            (name, lot),
+        ).fetchone()
+        return {"exists": row is not None}
+
     @router.get("/blend/records")
     def blend_records(
         request: Request,

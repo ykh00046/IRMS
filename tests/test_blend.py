@@ -902,3 +902,76 @@ def test_recent_product_lots_empty_names_returns_empty():
         res = client.get(f"/api/blend/recent-product-lots?names={q}")
         assert res.status_code == 200, res.text
         assert res.json()["items"] == {}
+
+
+# ── 반제품 원료 LOT 미등록 차단: GET /api/blend/product-lot-exists ──
+def _ple_client_and_product():
+    """product-lot-exists 테스트용 최소 TestClient + 작업자 세션. 제품명은 충돌 방지용 난수."""
+    client = _blend_client()
+
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.post("/api/workers", json={"name": "LOT검증"}, headers=csrf_headers())
+    client.post("/api/blend/session/login", json={"worker": "LOT검증"}, headers=csrf_headers())
+    prod = "PLE" + __import__("uuid").uuid4().hex[:6]
+    return client, prod, csrf_headers
+
+
+def test_product_lot_exists_true_for_completed_record():
+    """완료 기록의 product_lot → exists=true."""
+    client, prod, csrf_headers = _ple_client_and_product()
+    rec = _create_blend(client, prod, "LOT검증")
+    res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot={rec['product_lot']}")
+    assert res.status_code == 200, res.text
+    assert res.json()["exists"] is True
+
+
+def test_product_lot_exists_false_for_unknown_lot():
+    """존재하지 않는 LOT → exists=false."""
+    client, prod, _ = _ple_client_and_product()
+    res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot=절대없는LOT")
+    assert res.status_code == 200, res.text
+    assert res.json()["exists"] is False
+
+
+def test_product_lot_exists_false_for_cancelled_record():
+    """취소(soft delete) 기록에만 있는 LOT → exists=false (status='completed' 한정)."""
+    client, prod, csrf_headers = _ple_client_and_product()
+    rec = _create_blend(client, prod, "LOT검증")
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    canceled = client.request(
+        "DELETE", f"/api/blend/records/{rec['id']}", headers=csrf_headers())
+    assert canceled.status_code == 200
+    # 취소된 기록의 LOT → 더 이상 completed 가 아니므로 false.
+    res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot={rec['product_lot']}")
+    assert res.status_code == 200, res.text
+    assert res.json()["exists"] is False
+
+
+def test_product_lot_exists_false_when_name_or_lot_empty():
+    """name 또는 lot 이 빈 값/공백 → exists=false (에러 아님)."""
+    client, prod, _ = _ple_client_and_product()
+    rec = _create_blend(client, prod, "LOT검증")
+    lot = rec["product_lot"]
+    # name 빈/공백, lot 정상.
+    for q in ("", "   "):
+        res = client.get(f"/api/blend/product-lot-exists?name={q}&lot={lot}")
+        assert res.status_code == 200, res.text
+        assert res.json()["exists"] is False
+    # lot 빈/공백, name 정상.
+    for q in ("", "   "):
+        res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot={q}")
+        assert res.status_code == 200, res.text
+        assert res.json()["exists"] is False
+
+
+def test_product_lot_exists_trims_surrounding_whitespace():
+    """LOT 좌우 공백은 strip 후 정확 일치 → exists=true."""
+    client, prod, _ = _ple_client_and_product()
+    rec = _create_blend(client, prod, "LOT검증")
+    padded = f"  {rec['product_lot']}  "
+    res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot={padded}")
+    assert res.status_code == 200, res.text
+    assert res.json()["exists"] is True

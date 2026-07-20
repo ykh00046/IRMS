@@ -53,6 +53,10 @@
     // 자재명이 "배합 기록이 있는 반제품명"과 일치하면 그 제품의 최근 LOT 을 제안.
     // 레시피 선택 시 1회 호출(실패는 조용히 무시 — 제안 없이 기존 동작 유지).
     lotSuggest: {},
+    // 미등록 LOT 차단 — (자재명\u0000LOT) → true(등록됨)/false(미등록) 캐시.
+    // 동일 (name, lot) 조합의 중복 조회를 막기 위해 한 번 판정하면 보관한다.
+    // 레시피가 바뀌면 lotSuggest 와 함께 새로 채워지므로 여기서는 만료 처리하지 않는다.
+    lotChecked: {},
     // 초과 계량 증량(rescale). 기준 자재 레시피에서 총량이 기준 자재 실측값으로
     // 파생되므로 증량분을 별도로 보관 — 유효 총량 = max(기준 파생 총량, rescaleTotalG).
     // 레시피 변경/저장 후 초기화 시 0(미사용)으로 리셋.
@@ -608,6 +612,9 @@
       el.addEventListener("keydown", (e) => {
         if (e.key === "Escape" && el._lotBox) { hideLotSuggest(el); }
       });
+      // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 검증.
+      // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #lot-invalid-modal 표시 후 값을 비운다.
+      el.addEventListener("change", () => validateLotInput(el));
     });
     // 키보드 흐름(LOT 먼저): LOT Enter → 같은 행 실제량, 실제량 Enter → 다음 품목 LOT(마지막이면 저장)
     const focusField = (selector) => {
@@ -696,6 +703,64 @@
     if (!input._lotBox) return;
     input._lotBox.hidden = true;
   }
+
+  // ── 미등록 LOT 차단(반제품 자재만) ─────────────────────────────
+  // 제안(state.lotSuggest)이 있는 자재 = 완료 배합 기록이 있는 반제품. 이 자재의 LOT 칸은
+  // 반드시 그 반제품의 실제 product_lot 중 하나여야 한다. 그렇지 않으면(직접 타이핑 오타 등)
+  // #lot-invalid-modal 로 막고 값을 비운다. 일반 자재(제안 없음)는 100% 기존 동작 유지.
+  //
+  // 판정 우선순위: 빈 값(공백 trim) → 통과 / 제안 목록에 있는 값 → 통과 /
+  // 그 외 → 서버 /blend/product-lot-exists 로 확인(캐시 state.lotChecked[name\u0000lot] 사용).
+  // 네트워크 오류는 통과(loadLotSuggest 와 동일한 fail-open 철학 — 현장 입력을 막지 않는다).
+  async function checkLotRegistered(name, lot) {
+    if (!lot) return true;
+    const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
+    if (lots.indexOf(lot) >= 0) return true;
+    const key = name + "\u0000" + lot;
+    if (Object.prototype.hasOwnProperty.call(state.lotChecked, key)) {
+      return !!state.lotChecked[key];
+    }
+    try {
+      const data = await request("/blend/product-lot-exists", { query: { name, lot } });
+      const ok = Boolean(data && data.exists);
+      state.lotChecked[key] = ok;
+      return ok;
+    } catch (_e) {
+      // 조회 실패 — 통과(기존 동작 유지). loadLotSuggest 의 fail-open 철학과 동일.
+      return true;
+    }
+  }
+
+  // .blend-lot 입력칸 하나 검증 — 미등록이면 모달을 띄우고 값·state 를 비운 뒤 다시 포커스.
+  async function validateLotInput(input) {
+    const idx = Number(input.dataset.idx);
+    const item = state.items[idx];
+    if (!item) return;
+    const name = (item.material_name || "").trim();
+    // 제안이 없는 자재(일반 원료)는 검증하지 않는다 — 기존 동작 유지.
+    if (!state.lotSuggest || !state.lotSuggest[name]) return;
+    const lot = (input.value || "").trim();
+    input.value = lot;  // trim 반영
+    state.items[idx].material_lot = lot;
+    if (await checkLotRegistered(name, lot)) return;  // 등록됨 → 통과
+    // 미등록 — 모달 표시. 확인 버튼(hideLotInvalidModal 핸들러)이 값 비우기를 맡는다.
+    openLotInvalidModal(name, lot, input);
+  }
+
+  function openLotInvalidModal(name, lot, input) {
+    const body = $("lot-invalid-modal-body");
+    if (body) {
+      body.innerHTML = ""
+        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
+        + `<p><strong>입력한 로트:</strong> ${esc(lot)}</p>`
+        + `<p>등록되지 않은 로트입니다. 다시 확인해주세요.</p>`;
+    }
+    // 확인 버튼이 눌릴 때 값을 비우고 다시 포커스하기 위해 현재 입력칸을 기억해둔다.
+    $("lot-invalid-modal")._lotInput = input || null;
+    $("lot-invalid-modal").hidden = false;
+  }
+
+  function closeLotInvalidModal() { $("lot-invalid-modal").hidden = true; }
 
   function updateRowVar(i) {
     const it = state.items[i];
@@ -1104,6 +1169,20 @@
     }
     // 작업자 칸이 세션과 다르면 먼저 교대(오귀속 방지) — 실패 시 저장 중단
     if (worker !== state.sessionWorker && !(await switchWorker(worker))) return;
+    // 미등록 LOT 차단 — 반제품(제안 있는 자재) 행의 비어있지 않은 LOT 를 순차 검증.
+    // 하나라도 미등록이면 첫 미등록 행의 모달을 띄우고 저장을 중단한다(일반 자재는 제외).
+    for (let i = 0; i < state.items.length; i++) {
+      const it = state.items[i];
+      const name = (it.material_name || "").trim();
+      if (!state.lotSuggest || !state.lotSuggest[name]) continue;
+      const lot = (it.material_lot || "").trim();
+      if (!lot) continue;
+      if (!(await checkLotRegistered(name, lot))) {
+        const input = document.querySelector(`.blend-lot[data-idx="${i}"]`);
+        openLotInvalidModal(name, lot, input || null);
+        return;
+      }
+    }
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
     const body = {
@@ -1241,6 +1320,19 @@
       // 폐기 선택 — 증량을 적용하지 않는다(기존 초과 토스트·저장 차단 상태 유지).
       state.pendingRescale = null;
       closeDiscardModal();
+    });
+    // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
+    const lotConfirm = $("lot-invalid-confirm");
+    if (lotConfirm) lotConfirm.addEventListener("click", () => {
+      const modal = $("lot-invalid-modal");
+      const input = modal && modal._lotInput;
+      closeLotInvalidModal();
+      if (input) {
+        const idx = Number(input.dataset.idx);
+        if (state.items[idx]) state.items[idx].material_lot = "";
+        input.value = "";
+        input.focus();
+      }
     });
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");

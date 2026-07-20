@@ -195,11 +195,23 @@
             </div>
           </div>
         </div>
+
+        <!-- 미등록 LOT 차단 모달 — 반제품(중간체) 자재 LOT 칸에 완료 기록에 없는 LOT 가 들어오면
+             표시. 확인 버튼으로 닫으면 해당 LOT 칸을 비우고 다시 포커스. hidden 토글 전용. -->
+        <div class="ss-modal-overlay" id="lot-invalid-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="lot-invalid-modal-title">
+            <div class="ss-modal-header"><h3 id="lot-invalid-modal-title">등록되지 않은 로트</h3></div>
+            <div class="ss-modal-body" id="lot-invalid-modal-body"></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn accent" id="lot-invalid-confirm" type="button">확인</button>
+            </div>
+          </div>
+        </div>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260720a"></script>
-    <script src="/static/js/blend.js?v=20260720c"></script>
+    <script src="/static/js/blend.js?v=20260720d"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
