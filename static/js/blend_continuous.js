@@ -357,8 +357,9 @@
     const name = (state.materials[i] && state.materials[i].material_name) || "";
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
     if (!lots.length) { hideLotSuggest(input); return; }
+    // 각 항목은 {lot, total} — total(1차 배치 총량)은 회색 접미로 같이 표시(클릭은 LOT 만).
     const q = (input.value || "").trim().toLowerCase();
-    const matches = q ? lots.filter((l) => String(l).toLowerCase().startsWith(q)) : lots.slice();
+    const matches = q ? lots.filter((l) => String(l.lot).toLowerCase().startsWith(q)) : lots.slice();
     let box = input._lotBox;
     if (!box) {
       box = document.createElement("div");
@@ -373,14 +374,22 @@
       input._lotBox = box;
     }
     box.innerHTML = "";
-    matches.forEach((lot) => {
+    matches.forEach((entry) => {
+      const lot = entry.lot;
       const item = document.createElement("button");
       item.type = "button";
       item.className = "lot-suggest-item";
+      // LOT 텍스트 + 회색 '· N g' 총량 접미(클릭 시 LOT 만 채운다).
       item.textContent = lot;
+      if (entry.total != null) {
+        const suf = document.createElement("span");
+        suf.className = "lot-suggest-total";
+        suf.textContent = ` · ${entry.total} g`;
+        item.appendChild(suf);
+      }
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
-        input.value = lot;
+        input.value = lot;  // LOT 만 채운다(총량은 표시 전용).
         state.sharedLot[i] = lot;
         input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
         hideLotSuggest(input);
@@ -408,7 +417,8 @@
   async function checkLotRegistered(name, lot) {
     if (!lot) return true;
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
-    if (lots.indexOf(lot) >= 0) return true;
+    // 제안 항목이 이제 {lot, total} 객체이므로 .lot 값으로 비교한다(즉시 통과 판정).
+    if (lots.some((e) => String(e && e.lot) === lot)) return true;
     const key = name + "\u0000" + lot;
     if (Object.prototype.hasOwnProperty.call(state.lotChecked, key)) {
       return !!state.lotChecked[key];

@@ -338,6 +338,57 @@
 .lot-suggest-item:hover {
   background: var(--brand-soft, #eaf1fb);
 }
+/* 제안 항목의 1차 총량 접미 — 회색으로 LOT 뒤에 붙는다(클릭은 LOT 만 채움). */
+.lot-suggest-total {
+  color: var(--text-muted, #6b7688);
+  font-size: 0.82rem;
+}
+
+/* ── 반응기 이월(carry-over) 컨트롤 ─────────────────────────── */
+/* 기준 자재 LOT 칸 아래에 붙는 '1차 총량 N g' 배지 + [반응기 이월] 버튼. */
+.carry-over-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.carry-over-wrap[hidden] { display: none !important; }
+.carry-over-badge {
+  font-size: 0.8rem;
+  color: var(--text-muted, #6b7688);
+  white-space: nowrap;
+}
+.btn.btn-sm.carry-over-btn {
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+/* 이월 적용된 실제량 칸 — 계량값이 아니라 이월값임을 색으로 구분. */
+.blend-actual.carried-over {
+  background: #eef6ff;
+  color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+/* 실제량 칸 옆 '이월' 태그 — 클릭하면 취소. */
+.carry-over-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.carry-over-tag:hover { background: #1d4ed8; }
+/* 이월 확인 모달의 주의 문구 — 붉게 강조. */
+.carry-over-caution {
+  color: var(--danger, #dc2626);
+  font-weight: 600;
+}
 
 @media (max-width: 720px) {
   .ss-modal {

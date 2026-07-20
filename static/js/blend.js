@@ -599,9 +599,16 @@
     );
     body.querySelectorAll(".blend-lot").forEach((el) => {
       el.addEventListener("input", () => {
-        state.items[Number(el.dataset.idx)].material_lot = el.value;
+        const idx = Number(el.dataset.idx);
+        state.items[idx].material_lot = el.value;
         // 타이핑 중이면 제안 목록을 입력값으로 시작하는 것만 필터링해 다시 그린다.
         if (el._lotBox) renderLotSuggest(el);
+        // 기준 자재 행의 LOT 편집 — 이미 적용된 이월은 값이 바뀌었으므로 취소하고,
+        // 새 값이 등록된 1차 LOT 이면 이월 컨트롤을 (다시) 노출한다.
+        if (idx === state.anchorIndex) {
+          if (state.items[idx].carried_over) clearCarryOver();
+          refreshCarryOverControl();
+        }
       });
       // 포커스 시 제안 목록 표시(제안이 있는 자재만). blend_login suggest 패턴 재사용.
       el.addEventListener("focus", () => renderLotSuggest(el));
@@ -650,6 +657,8 @@
     updateTotals();
     // 저울 전용 모드가 켜져 있으면 새로 렌더된 행의 실제량 칸도 readonly 로 잠근다.
     applyScaleOnlyToRows();
+    // 기준 자재 행의 LOT 가 이미 1차 LOT 이면 이월 컨트롤을 노출(수정 등록 프리필 등).
+    refreshCarryOverControl();
   }
 
   // ── 반제품 원료 LOT 제안 목록(.blend-lot 칸 아래) ───────────────
@@ -663,8 +672,9 @@
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
     if (!lots.length) { hideLotSuggest(input); return; }  // 제안 없는 자재 = 변화 없음
     // 타이핑 필터: 입력값으로 시작하는 LOT 만(빈 값이면 전체). 첫 항목이 최신 LOT.
+    // 각 항목은 {lot, total} — total(1차 배치 총량)은 이월 채움 기준값으로 회색으로 같이 표시.
     const q = (input.value || "").trim().toLowerCase();
-    const matches = q ? lots.filter((l) => String(l).toLowerCase().startsWith(q)) : lots.slice();
+    const matches = q ? lots.filter((l) => String(l.lot).toLowerCase().startsWith(q)) : lots.slice();
     let box = input._lotBox;
     if (!box) {
       box = document.createElement("div");
@@ -680,15 +690,23 @@
       input._lotBox = box;
     }
     box.innerHTML = "";
-    matches.forEach((lot) => {
+    matches.forEach((entry) => {
+      const lot = entry.lot;
       const item = document.createElement("button");
       item.type = "button";
       item.className = "lot-suggest-item";
+      // LOT 텍스트 + 회색 '· N g' 총량 접미(클릭 시 LOT 만 채운다).
       item.textContent = lot;
+      if (entry.total != null) {
+        const suf = document.createElement("span");
+        suf.className = "lot-suggest-total";
+        suf.textContent = ` · ${entry.total} g`;
+        item.appendChild(suf);
+      }
       // blur 보다 먼저 실행되도록 mousedown + preventDefault(blend_login 과 동일 주의).
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
-        input.value = lot;
+        input.value = lot;  // LOT 만 채운다(총량은 표시 전용).
         state.items[idx].material_lot = lot;
         input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
         hideLotSuggest(input);
@@ -715,7 +733,8 @@
   async function checkLotRegistered(name, lot) {
     if (!lot) return true;
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
-    if (lots.indexOf(lot) >= 0) return true;
+    // 제안 항목이 이제 {lot, total} 객체이므로 .lot 값으로 비교한다(즉시 통과 판정).
+    if (lots.some((e) => String(e && e.lot) === lot)) return true;
     const key = name + "\u0000" + lot;
     if (Object.prototype.hasOwnProperty.call(state.lotChecked, key)) {
       return !!state.lotChecked[key];
@@ -761,6 +780,149 @@
   }
 
   function closeLotInvalidModal() { $("lot-invalid-modal").hidden = true; }
+
+  // ── 반응기 이월(carry-over): 기준 자재 행만, 반응기 진행 레시피만 ────
+  // 1차 배합(반제품)의 총량을 2차 배합 기준 자재의 실제량으로 그대로 가져오는 기능.
+  // 반응기에 이미 1차 제품이 남아 있어 2차에서는 다시 계량하지 않는 경우에 쓴다.
+  // 서버가 carried_over=true 행의 actual_amount 를 1차 총량으로 강제(변조 방지)하므로,
+  // 여기서는 작업자에게 버튼·확인 모달로 흐름을 제공할 뿐이다.
+
+  // 이월 자격 판정 — 현재 기준 자재 행이고 반응기 레시피일 때만.
+  function carryOverEligible() {
+    return Boolean(
+      hasAnchor()
+      && state.current && state.current.recipe && state.current.recipe.use_reactor
+    );
+  }
+
+  // 기준 자재명의 등록된 1차 LOT 중 현재 LOT 값과 정확히 일치하는 항목을 찾는다.
+  // 반환: {lot, total} 또는 null. (제안이 없거나 일치 항목이 없으면 null)
+  function findStage1Match(lotValue) {
+    if (!hasAnchor()) return null;
+    const name = (state.items[state.anchorIndex].material_name || "").trim();
+    const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
+    const v = (lotValue || "").trim();
+    if (!v) return null;
+    return lots.find((e) => e && String(e.lot) === v) || null;
+  }
+
+  // 기준 자재 행의 LOT 칸(<td>) 아래에 이월 컨트롤(배지 + 버튼)을 띄운다/숨긴다.
+  // 1차 LOT 가 선택돼 있을 때만 보이고, 그렇지 않으면 숨긴다.
+  function refreshCarryOverControl() {
+    const lotInput = document.querySelector(`.blend-lot[data-idx="${state.anchorIndex}"]`);
+    if (!lotInput) return;
+    const cell = lotInput.parentElement || lotInput.parentNode;  // <td>
+    let wrap = cell.querySelector(".carry-over-wrap");
+    const match = carryOverEligible() ? findStage1Match(lotInput.value) : null;
+    if (!match) {
+      // 자격이 없거나 1차 LOT 가 아니면 컨트롤 숨김(이미 적용된 이월도 여기서 취소된다).
+      if (wrap) wrap.hidden = true;
+      return;
+    }
+    // 컨트롤이 없으면 한 번 만든다(재렌더 후에도 살아남도록 cell 에 부착).
+    if (!wrap) {
+      wrap = document.createElement("span");
+      wrap.className = "carry-over-wrap";
+      // '1차 총량 N g' 안내 배지
+      const badge = document.createElement("span");
+      badge.className = "carry-over-badge muted";
+      // 이월 토글 버튼
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-sm carry-over-btn";
+      btn.textContent = "반응기 이월";
+      btn.title = "1차 배합 총량을 이 자재의 실제량으로 가져옵니다";
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openCarryOverModal();
+      });
+      wrap.appendChild(badge);
+      wrap.appendChild(btn);
+      cell.appendChild(wrap);
+    }
+    const badge = wrap.querySelector(".carry-over-badge");
+    if (badge) badge.textContent = `1차 총량 ${match.total} g`;
+    wrap.hidden = false;
+  }
+
+  // 이월 확인 모달 — 1차 총량을 기준 자재 실제량으로 기록함을 안내.
+  function openCarryOverModal() {
+    if (!hasAnchor()) return;
+    const lotInput = document.querySelector(`.blend-lot[data-idx="${state.anchorIndex}"]`);
+    const match = findStage1Match(lotInput ? lotInput.value : "");
+    if (!match) return;
+    const name = (state.items[state.anchorIndex].material_name || "").trim();
+    const body = $("carry-over-modal-body");
+    if (body) {
+      body.innerHTML = ""
+        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
+        + `<p><strong>1차 로트:</strong> ${esc(match.lot)}</p>`
+        + `<p>반응기에 이미 1차 배합 제품이 남아 있어 이 자재는 다시 계량하지 않습니다. `
+        + `1차 배합의 총량(<strong>${match.total} g</strong>)을 이 자재의 입력량으로 기록합니다.</p>`
+        + `<p class="carry-over-caution">실제로 계량하는 경우에는 사용하지 마세요.</p>`;
+    }
+    $("carry-over-modal").hidden = false;
+  }
+
+  function closeCarryOverModal() { $("carry-over-modal").hidden = true; }
+
+  // 이월 적용 — carried_over=true, 1차 총량을 실제량으로 채우고 읽기 전용 표시.
+  // 기준 자재 실측값이 바뀐 것과 동일하게 이론/총량 재산출(applyAnchorRecompute) 경로를 탄다.
+  function applyCarryOver() {
+    if (!hasAnchor()) return;
+    const ai = state.anchorIndex;
+    const lotInput = document.querySelector(`.blend-lot[data-idx="${ai}"]`);
+    const match = findStage1Match(lotInput ? lotInput.value : "");
+    if (!match) return;
+    const item = state.items[ai];
+    item.carried_over = true;
+    item.actual_amount = String(match.total);
+    item.manual = false;  // 이월은 계량이 아니므로 수동 입력 표시 해제
+    const actualInput = document.querySelector(`.blend-actual[data-idx="${ai}"]`);
+    if (actualInput) {
+      actualInput.value = String(match.total);
+      actualInput.readOnly = true;
+      actualInput.classList.add("carried-over");
+      actualInput.classList.remove("manual-warn");
+      // '이월' 표식 태그 — 클릭하면 이월을 취소(toggle off) 한다.
+      let tag = actualInput.parentElement.querySelector(".carry-over-tag");
+      if (!tag) {
+        tag = document.createElement("span");
+        tag.className = "carry-over-tag";
+        tag.textContent = "이월";
+        tag.title = "클릭하면 이월을 취소하고 다시 계량할 수 있습니다";
+        tag.addEventListener("click", () => { clearCarryOver(); });
+        actualInput.parentElement.appendChild(tag);
+      }
+    }
+    // 기준 자재 실측값 변경과 동일한 재산출 경로 — 이론량·도출 총량·비기준 자재 잠금 해제.
+    state._anchorRecomputing = true;
+    try { applyAnchorRecompute(); } finally { state._anchorRecomputing = false; }
+    closeCarryOverModal();
+  }
+
+  // 이월 취소 — carried_over=false, 읽기 전용·표식 제거, 강제 실제량 비움.
+  // LOT 변경/삭제 또는 '이월' 태그 클릭 시 호출. 다시 손/저울로 계량할 수 있게 된다.
+  function clearCarryOver() {
+    if (!hasAnchor()) return;
+    const ai = state.anchorIndex;
+    const item = state.items[ai];
+    if (!item) return;
+    item.carried_over = false;
+    item.actual_amount = "";
+    item.manual = false;
+    const actualInput = document.querySelector(`.blend-actual[data-idx="${ai}"]`);
+    if (actualInput) {
+      actualInput.value = "";
+      // 저울 전용 모드가 켜져 있지 않을 때만 readonly 를 푼다(그 모드는 모든 실제량이 읽기 전용).
+      if (!state.scaleOnlyInput) actualInput.readOnly = false;
+      actualInput.classList.remove("carried-over");
+      const tag = actualInput.parentElement.querySelector(".carry-over-tag");
+      if (tag) tag.remove();
+    }
+    state._anchorRecomputing = true;
+    try { applyAnchorRecompute(); } finally { state._anchorRecomputing = false; }
+  }
 
   function updateRowVar(i) {
     const it = state.items[i];
@@ -1210,14 +1372,17 @@
         material_lot: it.material_lot || null,
         sequence_order: idx + 1,
         manual_entry: it.manual === true,
+        carried_over: it.carried_over === true,
       })),
     };
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
-      // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다.
-      state.items.forEach((it) => { it.actual_amount = ""; it.material_lot = ""; it.manual = false; });
+      // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다. 이월 표식도 함께 지운다.
+      state.items.forEach((it) => {
+        it.actual_amount = ""; it.material_lot = ""; it.manual = false; it.carried_over = false;
+      });
       if (hasAnchor()) {
         state.items.forEach((it) => { it.theory_amount = null; });
         state.prevAnchorActual = "";
@@ -1333,6 +1498,14 @@
         input.value = "";
         input.focus();
       }
+    });
+    // 반응기 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
+    const coConfirm = $("carry-over-confirm");
+    if (coConfirm) coConfirm.addEventListener("click", applyCarryOver);
+    const coCancel = $("carry-over-cancel");
+    if (coCancel) coCancel.addEventListener("click", closeCarryOverModal);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$("carry-over-modal").hidden) closeCarryOverModal();
     });
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");

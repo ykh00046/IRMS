@@ -63,7 +63,8 @@ def _make_db() -> sqlite3.Connection:
             material_code TEXT, material_name TEXT NOT NULL, material_lot TEXT,
             ratio REAL, theory_amount REAL, actual_amount REAL,
             sequence_order INTEGER NOT NULL DEFAULT 0,
-            manual_entry INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+            manual_entry INTEGER NOT NULL DEFAULT 0,
+            carried_over INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
         );
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,

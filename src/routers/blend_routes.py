@@ -202,6 +202,9 @@ def build_router() -> APIRouter:
         1차 배합의 제품 LOT 을 넣어 1차→2차 LOT 연결을 남기는 데 쓴다. 완료(completed) 기록만,
         최신순(id DESC), 반제품별 limit 개, NULL/빈 LOT·중복 제거. 기록 없는 이름은 키 자체 제외.
 
+        각 항목은 {lot, total} — total 은 그 1차 배합 기록의 total_amount(1차 배치 총량)로,
+        반응기 이월(carry-over) 입력이 채울 기준값으로 화면에 같이 보여준다.
+
         names: 쉼표 구분 제품명(빈 항목 제거, 최대 50 — 초과분 무시).
         limit: 반제품당 LOT 개수(1~20 클램프, 기본 5). 0 이하→1, 20 초과→20.
         """
@@ -217,27 +220,27 @@ def build_router() -> APIRouter:
                 name_list.append(n)
             if len(name_list) >= 50:
                 break
-        items: dict[str, list[str]] = {}
+        items: dict[str, list[dict[str, Any]]] = {}
         if not name_list:
             return {"items": items}
-        # IN (?, ?, ...) 자리표시자 — 제품명 수만큼. limit 은 정수(1~20)로 클램프됨.
+        # IN (?, ?, ...) 자리표시자 — 제품명 수만큼. total_amount 까지 함께 가져온다(이월 채움용).
         placeholders = ",".join("?" for _ in name_list)
         rows = connection.execute(
-            f"SELECT product_name, product_lot FROM blend_records "
+            f"SELECT product_name, product_lot, total_amount FROM blend_records "
             f"WHERE product_name IN ({placeholders}) AND status = 'completed' "
             f"ORDER BY id DESC",
             name_list,
         ).fetchall()
-        # 반제품별 최신순(id DESC 로 이미 정렬됨)로 순회하며 중복 없이 limit 개씩 채운다.
+        # 반제품별 최신순(id DESC 로 이미 정렬됨)로 순회하며 LOT 단위 중복 제거해 limit 개씩 채운다.
         for r in rows:
             lot_val = (r["product_lot"] or "").strip()
             if not lot_val:
                 continue
             lots = items.setdefault(r["product_name"], [])
-            if lot_val in lots:
+            if any(it["lot"] == lot_val for it in lots):
                 continue
             if len(lots) < limit:
-                lots.append(lot_val)
+                lots.append({"lot": lot_val, "total": float(r["total_amount"] or 0)})
         return {"items": items}
 
     @router.get("/blend/product-lot-exists")
@@ -457,6 +460,15 @@ def build_router() -> APIRouter:
         # 레시피 없이 저장되는 경로(옛 데이터 이관·수동 입력)는 대조할 근거가 없어 그대로 둔다.
         details = [d.model_dump() for d in body.details]
         total_amount = body.total_amount
+        # 반응기 이월(carry-over) 검증·강제 채움 — derive 보다 먼저. 이월 행의 actual_amount
+        # 를 1차 배합 총량으로 덮어쓰므로, 그 뒤 derive 가 올바른 기준 실측값으로 이론·총량을
+        # 산출하게 한다(잘못된 클라이언트 값이 편차·총량에 스며드는 것을 막는다).
+        try:
+            blend_service.enforce_carry_over(
+                connection, body.recipe_id, body.product_name, details
+            )
+        except blend_service.CarryOverError as exc:
+            raise HTTPException(status_code=400, detail=exc.detail) from exc
         if body.recipe_id:
             # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
             if blend_service.resolve_chain_tip(connection, body.recipe_id) != body.recipe_id:
@@ -740,6 +752,12 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="저장할 로트가 없습니다.")
         if any(not lot for lot in body.lots):
             raise HTTPException(status_code=400, detail="자재 상세가 비어 있는 로트가 있습니다.")
+        # 반응기 이월(carry-over)은 단일 배합 화면 전용 — 연속(다중 로트) 화면에서는 거부.
+        if any(d.carried_over for lot in body.lots for d in lot):
+            raise HTTPException(
+                status_code=400,
+                detail="반응기 이월은 단일 배합 화면에서만 사용할 수 있습니다.",
+            )
         # 반응기 진행 반제품은 반응기(1~4) 지정 필수 (전 로트 공통).
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")

@@ -49,7 +49,8 @@ def _make_db() -> sqlite3.Connection:
             material_code TEXT, material_name TEXT NOT NULL, material_lot TEXT,
             ratio REAL, theory_amount REAL, actual_amount REAL,
             sequence_order INTEGER NOT NULL DEFAULT 0,
-            manual_entry INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+            manual_entry INTEGER NOT NULL DEFAULT 0,
+            carried_over INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
         );
         CREATE TABLE viscosity_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT,
@@ -848,16 +849,20 @@ def test_recent_product_lots_completed_only_latest_first():
     )
     assert canceled.status_code == 200
 
-    # 완료 기록만 최신순 — r2(최신) → r1. r3(취소) 제외.
+    # 완료 기록만 최신순 — r2(최신) → r1. r3(취소) 제외. 각 항목은 {lot, total}.
     res = client.get(f"/api/blend/recent-product-lots?names={prod}&limit=5")
     assert res.status_code == 200, res.text
     items = res.json()["items"]
     assert prod in items
     lots = items[prod]
-    assert r2["product_lot"] == lots[0]   # 최신(id DESC)
-    assert r1["product_lot"] == lots[1]
-    assert r3["product_lot"] not in lots  # 취소 제외
+    # 모양 검증 — 각 원소는 {"lot": str, "total": float}.
+    assert all(isinstance(it, dict) and "lot" in it and "total" in it for it in lots)
+    assert lots[0]["lot"] == r2["product_lot"]   # 최신(id DESC)
+    assert lots[1]["lot"] == r1["product_lot"]
+    assert r3["product_lot"] not in [it["lot"] for it in lots]  # 취소 제외
     assert len(lots) == 2
+    # total 은 그 기록의 total_amount(=100, _create_blend 기본값).
+    assert lots[0]["total"] == 100.0
 
 
 def test_recent_product_lots_limit_clamp():
@@ -975,3 +980,183 @@ def test_product_lot_exists_trims_surrounding_whitespace():
     res = client.get(f"/api/blend/product-lot-exists?name={prod}&lot={padded}")
     assert res.status_code == 200, res.text
     assert res.json()["exists"] is True
+
+
+# ── 반응기 이월(carry-over): POST /api/blend/records ──────────────
+def _mgmt_client():
+    """책임자 로그인 + CSRF 헤더를 갖춘 TestClient(레시피 등록·반응기 설정용)."""
+    import importlib
+    import src.config as cfg
+    import src.main as mainmod
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+    client = TestClient(mainmod.app)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+
+    def csrf():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+    return client, csrf
+
+
+def _import_recipe(client, csrf, product, materials, *, anchor=None, use_reactor=False):
+    """레시피 1건 등록(반제품명=product, 자재들). anchor_material·use_reactor 지정 가능."""
+    header = "반제품명\t" + "\t".join(m[0] for m in materials)
+    row = product + "\t" + "\t".join(str(m[1]) for m in materials)
+    body = {"raw_text": f"{header}\n{row}", "force": True}
+    if anchor:
+        body["anchor_material"] = anchor
+    if use_reactor:
+        body["use_reactor"] = True
+    res = client.post("/api/recipes/import", json=body, headers=csrf())
+    assert res.status_code == 200, res.text
+    return res.json()["created_ids"][0]
+
+
+def _stage1_record(client, csrf, intermediate, worker, total=150.0):
+    """1차 배합 기록 1건 생성(반제품명=intermediate, 총량=total). 반환: (id, product_lot)."""
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    res = client.post("/api/blend/records", json={
+        "product_name": intermediate, "worker": worker, "work_date": "2026-07-01",
+        "total_amount": total, "scale": None, "reactor": None,
+        "details": [
+            {"material_name": "원료1", "ratio": 100, "theory_amount": total, "actual_amount": total},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    j = res.json()
+    return j["id"], j["product_lot"]
+
+
+def test_carryover_happy_path_forces_amount_to_stage1_total():
+    """반응기 이월 happy path — actual_amount 가 1차 배합 총량으로 강제 덮어쓰기된다.
+
+    클라이언트가 다른 숫자를 보내도 서버가 1차 기록의 total_amount 로 강제(변조 방지).
+    manual_entry=false, carried_over=true 가 저장되고 상세 응답에 노출된다.
+    """
+    client, csrf = _mgmt_client()
+    intermediate = "이월중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "이월최종" + __import__("uuid").uuid4().hex[:4]
+    # 1차 배합 기록(중간체) — 총량 150.
+    stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "이월작업", total=150.0)
+    # 2차 레시피 — 반응기 진행, 기준 자재=중간체. 중간체 비율 60, 최종 원료 40.
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, use_reactor=True)
+    # 2차 배합 저장 — 기준 자재(중간체) 행을 carried_over=true + 1차 LOT.
+    # 클라이언트는 틀린 actual_amount(999)를 보내지만 서버가 1차 총량(150)으로 강제.
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "이월작업",
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot,
+             "actual_amount": 999, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    rec_id = res.json()["id"]
+    # 상세 조회 — 이월 행의 actual_amount 가 1차 총량(150)으로 강제됐는지 확인.
+    detail = client.get(f"/api/blend/records/{rec_id}").json()
+    rows = {d["material_name"]: d for d in detail["details"]}
+    assert rows[intermediate]["actual_amount"] == 150.0       # ← 강제값(999 무시)
+    assert rows[intermediate]["carried_over"] is True         # ← 표식 저장
+    assert rows[intermediate]["manual_entry"] is False        # ← 강제 해제
+    assert rows["최종원료"]["carried_over"] is False          # 일반 행은 그대로
+
+
+def test_carryover_rejected_for_non_reactor_recipe():
+    """반응기 미사용 레시피에서 carried_over=true → 400(자재명 포함)."""
+    client, csrf = _mgmt_client()
+    intermediate = "NR중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "NR최종" + __import__("uuid").uuid4().hex[:4]
+    stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "NR작업")
+    # use_reactor=False (기본) — 반응기 레시피가 아님.
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate)
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "NR작업",
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot,
+             "actual_amount": 150, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400
+    assert intermediate in res.json()["detail"]
+    assert "반응기" in res.json()["detail"]
+
+
+def test_carryover_rejected_for_non_anchor_row():
+    """기준 자재가 아닌 행에 carried_over=true → 400(자재명 포함)."""
+    client, csrf = _mgmt_client()
+    intermediate = "NA중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "NA최종" + __import__("uuid").uuid4().hex[:4]
+    stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "NA작업")
+    # 기준 자재=중간체, 반응기 진행.
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, use_reactor=True)
+    # carried_over 를 기준 자재가 아닌 '최종원료' 행에 걸면 → 400.
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "NA작업",
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot, "actual_amount": 150},
+            {"material_name": "최종원료", "actual_amount": 100, "carried_over": True},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400
+    assert "최종원료" in res.json()["detail"]
+    assert "기준 자재" in res.json()["detail"]
+
+
+def test_carryover_rejected_for_unregistered_lot():
+    """기준 자재 행이지만 1차 완료 기록에 없는 LOT → 400(자재명 + LOT 포함)."""
+    client, csrf = _mgmt_client()
+    intermediate = "UL중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "UL최종" + __import__("uuid").uuid4().hex[:4]
+    _stage1_record(client, csrf, intermediate, "UL작업")
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, use_reactor=True)
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "UL작업",
+        "work_date": "2026-07-02", "total_amount": 250, "scale": None, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": "절대없는LOT",
+             "actual_amount": 150, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400
+    assert intermediate in res.json()["detail"]
+    assert "LOT" in res.json()["detail"]
+
+
+def test_carryover_rejected_in_continuous_route():
+    """연속(다중 로트) 화면에서 carried_over=true → 400(단일 배합 전용 메시지)."""
+    client, csrf = _mgmt_client()
+    intermediate = "CR중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "CR최종" + __import__("uuid").uuid4().hex[:4]
+    stage1_id, stage1_lot = _stage1_record(client, csrf, intermediate, "CR작업")
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, use_reactor=True)
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": final,
+        "work_date": "2026-07-02", "total_amount": 250, "reactor": 1,
+        "lots": [
+            [
+                {"material_name": intermediate, "material_lot": stage1_lot,
+                 "actual_amount": 150, "carried_over": True},
+                {"material_name": "최종원료", "actual_amount": 100},
+            ],
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400
+    assert res.json()["detail"] == "반응기 이월은 단일 배합 화면에서만 사용할 수 있습니다."
