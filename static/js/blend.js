@@ -1162,6 +1162,8 @@
     document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
     const tol = state.toleranceG;
     const plan = rescalePlan(state.items, effectiveCurrentTotal(), tol);
+    // 직전 대기 집합을 기억 — 이번에 빠진(충족된) 행은 편차 표시를 복원해야 한다.
+    const prevPending = state.addPending || {};
     // 넣어야 할 양이 있는 행 집합을 새로 만든다(편차 셀 음수 숨김 판정용).
     state.addPending = {};
     plan.rows.forEach((r) => {
@@ -1180,6 +1182,11 @@
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => openAddInline(r.idx));
       td.appendChild(badge);
+    });
+    // 이전에 대기였다가 이번에 충족된 행 — 빈칸으로 남지 않게 편차 표시를 다시 그린다.
+    Object.keys(prevPending).forEach((k) => {
+      const i = Number(k);
+      if (!(i in state.addPending)) updateRowVar(i);
     });
   }
 

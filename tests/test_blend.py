@@ -1070,6 +1070,56 @@ def test_carryover_happy_path_forces_amount_to_stage1_total():
     assert rows["최종원료"]["carried_over"] is False          # 일반 행은 그대로
 
 
+def test_carryover_enforced_on_update_path():
+    """편집(PUT) 경로도 이월을 검증·강제한다 — create 와 대칭(변조 방지).
+
+    책임자 정정 저장에서 (1) 이월 행 actual 은 1차 총량으로 강제되고, (2) 기준 자재가
+    아닌 행의 carried_over=true 는 400 으로 거부된다(create 경로와 동일 불변식).
+    """
+    client, csrf = _mgmt_client()
+    intermediate = "UP중간체" + __import__("uuid").uuid4().hex[:4]
+    final = "UP최종" + __import__("uuid").uuid4().hex[:4]
+    _sid, stage1_lot = _stage1_record(client, csrf, intermediate, "UP작업", total=150.0)
+    rid = _import_recipe(client, csrf, final,
+                         [(intermediate, 60), ("최종원료", 40)],
+                         anchor=intermediate, use_reactor=True, is_derived=True)
+    # 먼저 정상 저장.
+    rec_id = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": final, "worker": "UP작업",
+        "work_date": "2026-07-02", "total_amount": 250, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot,
+             "actual_amount": 150, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf()).json()["id"]
+    # (1) 편집 저장 — 이월 행에 틀린 actual(888)을 보내도 1차 총량(150)으로 강제.
+    up = client.request("PUT", f"/api/blend/records/{rec_id}", json={
+        "recipe_id": rid, "product_name": final, "worker": "UP작업",
+        "work_date": "2026-07-02", "total_amount": 250, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot,
+             "actual_amount": 888, "carried_over": True},
+            {"material_name": "최종원료", "actual_amount": 100},
+        ],
+    }, headers=csrf())
+    assert up.status_code == 200, up.text
+    rows = {d["material_name"]: d for d in client.get(f"/api/blend/records/{rec_id}").json()["details"]}
+    assert rows[intermediate]["actual_amount"] == 150.0   # 편집에서도 강제
+    assert rows[intermediate]["carried_over"] is True
+    # (2) 편집으로 기준 자재가 아닌 행에 carried_over=true → 400.
+    bad = client.request("PUT", f"/api/blend/records/{rec_id}", json={
+        "recipe_id": rid, "product_name": final, "worker": "UP작업",
+        "work_date": "2026-07-02", "total_amount": 250, "reactor": 1,
+        "details": [
+            {"material_name": intermediate, "material_lot": stage1_lot, "actual_amount": 150},
+            {"material_name": "최종원료", "actual_amount": 100, "carried_over": True},
+        ],
+    }, headers=csrf())
+    assert bad.status_code == 400
+    assert "최종원료" in bad.json()["detail"]
+
+
 def test_carryover_rejected_for_non_derived_recipe():
     """파생이 아닌 레시피에서 carried_over=true → 400. 반응기여도 파생이 아니면 거부(디커플링).
 

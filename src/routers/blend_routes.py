@@ -566,10 +566,20 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
+        details = [d.model_dump() for d in body.details]
+        # 반응기 이월(carry-over) 검증·강제 채움 — create 경로와 대칭. carried_over=true 행은
+        # 파생 레시피의 기준 자재 + 등록된 1차 LOT 이어야 하고, actual_amount 는 1차 총량으로
+        # 강제 덮어써진다(변조 방지). 정정 저장에서도 이 불변식을 지킨다.
+        try:
+            blend_service.enforce_carry_over(
+                connection, body.recipe_id, body.product_name, details
+            )
+        except blend_service.CarryOverError as exc:
+            raise HTTPException(status_code=400, detail=exc.detail) from exc
         # 자재별 허용 편차 — 편차는 레시피(recipe_id) 에서 결정. 없으면 기본값 0.05g.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
-            [d.model_dump() for d in body.details], tolerance_g=tolerance
+            details, tolerance_g=tolerance
         )
         if offenders:
             raise HTTPException(
@@ -590,7 +600,7 @@ def build_router() -> APIRouter:
             total_amount=body.total_amount,
             scale=body.scale,
             note=body.note,
-            details=[d.model_dump() for d in body.details],
+            details=details,
             reactor=body.reactor,
             updated_at=utc_now_text(),
         )

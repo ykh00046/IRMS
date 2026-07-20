@@ -766,7 +766,9 @@ def derive_details_from_recipe(
         ratio = float(anchor["ratio"] or 0)
         if ratio <= 0:
             raise RecipeMismatchError("기준 자재의 레시피 비율이 0 입니다.")
-        total = round(anchor_actual * 100.0 / ratio, 3)
+        # 저울 해상도(2자리) — 기준 자재 실측에서 파생하는 배치 총량도 2자리로 맞춘다
+        # (자재 이론량은 2자리인데 총량만 3자리로 남는 불일치 방지).
+        total = round(anchor_actual * 100.0 / ratio, 2)
 
     derived: list[dict[str, Any]] = []
     for order, item in enumerate(recipe["items"], start=1):
