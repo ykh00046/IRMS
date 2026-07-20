@@ -25,6 +25,10 @@ class ImportRequest(BaseModel):
     anchor_material: str | None = Field(default=None, max_length=200)
     # 레시피별 계량 허용 편차(g, 선택) — NULL = 기본값 0.05g. 0 < v <= 1000.
     tolerance_g: float | None = Field(default=None)
+    # 반제품 ERP 품목코드(code-edit-relocate §3) — 명시 값이 자동 인식·승계보다 우선.
+    # 비면 기존 동작(반제품명 → product 마스터 단일 히트 자동 인식, 수정 등록 시 부모 승계).
+    # 형식 검사(^[A-Z]{2}[A-Z0-9]{2,8}$)와 체인 중복(409)은 라우트에서 처리.
+    product_code: str | None = Field(default=None, max_length=20)
     # item-code P3: 마스터에 없는 신규 자재(unknown)를 허용할지.
     # 기본 False — unknown 이 있으면 차단(errors). True 면 경고(warnings)로 강등하여
     # 코드 없이 자동 등록한다(명시적 확인 경로, spec §1).
