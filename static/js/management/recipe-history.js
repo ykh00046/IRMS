@@ -85,7 +85,7 @@
 
         if (!rows.length) {
           dom.historyBody.innerHTML =
-            '<tr><td colspan="9"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
+            '<tr><td colspan="11"><div class="empty-state">조건에 맞는 레시피가 없습니다.</div></td></tr>';
           return;
         }
 
@@ -127,6 +127,18 @@
           return `<td><input type="checkbox" class="recipe-derived-toggle" data-recipe-id="${recipe.id}"${on ? " checked" : ""} title="파생(이전 총량 이월) 여부" /></td>`;
         };
 
+        // 1차 셀 — 책임자는 드롭다운으로 개정 없이 이 레시피(2차)의 1차를 바로 지정
+        // (PUT /api/recipes/{id}/stage1). 그 외는 연결된 1차명 텍스트. 옵션은 포커스 시
+        // 채운다(행마다 전체 목록을 미리 그리면 N² DOM 이 되므로 지연 로드).
+        const stage1Cell = (recipe) => {
+          if (!ctx.canManage) {
+            return `<td>${recipe.stage1ProductName ? IRMS.escapeHtml(recipe.stage1ProductName) : '<span class="muted">-</span>'}</td>`;
+          }
+          const cur = recipe.stage1RecipeId != null ? String(recipe.stage1RecipeId) : "";
+          const label = cur ? IRMS.escapeHtml(recipe.stage1ProductName || cur) : "없음";
+          return `<td><select class="input recipe-stage1-select" data-recipe-id="${recipe.id}" data-cur="${cur}" title="이 레시피(2차)의 1차 레시피 — 개정 없이 바로 지정"><option value="${cur}">${label}</option></select></td>`;
+        };
+
         // 한 레시피 행 — stagePin('1차'/'2차') 이 있으면 가족 멤버로 표시.
         const rowHtml = (recipe, stagePin) => {
           const pin = stagePin
@@ -140,6 +152,7 @@
                 ${categoryCell(recipe)}
                 ${reactorCell(recipe)}
                 ${derivedCell(recipe)}
+                ${stage1Cell(recipe)}
                 <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
@@ -151,7 +164,7 @@
         // 가족은 먼저 등장한 멤버 위치에 나타나고(최신순 반영), 다른 멤버는 그 자리로 끌어온다.
         const byId = new Map(rows.map((r) => [r.id, r]));
         const emitted = new Set();
-        const COLSPAN = 10;
+        const COLSPAN = 11;
         const parts = [];
         rows.forEach((r) => {
           if (emitted.has(r.id)) return;
@@ -271,6 +284,50 @@
           });
         });
 
+        // 1차 지정 드롭다운 — 포커스 시 후보 채움(지연), 변경 즉시 PUT /api/recipes/{id}/stage1.
+        // 개정을 만들지 않고 바로 연결/해제하고 가족 묶음을 다시 그린다. 클릭이 행 확장으로
+        // 번지지 않게 막는다. 반응기/파생 토글과 동일한 CSRF 부착 패턴.
+        dom.historyBody.querySelectorAll(".recipe-stage1-select").forEach((sel) => {
+          sel.addEventListener("click", (e) => e.stopPropagation());
+          sel.addEventListener("focus", () => {
+            if (sel.dataset.filled) return;
+            const rid = Number(sel.dataset.recipeId);
+            const cur = sel.dataset.cur || "";
+            sel.innerHTML = `<option value=""${cur === "" ? " selected" : ""}>없음</option>`
+              + rows.filter((o) => o.id !== rid)
+                  .map((o) => `<option value="${o.id}"${String(o.id) === cur ? " selected" : ""}>${IRMS.escapeHtml(o.productName)}</option>`)
+                  .join("");
+            sel.dataset.filled = "1";
+          });
+          sel.addEventListener("change", async (e) => {
+            e.stopPropagation();
+            const rid = Number(sel.dataset.recipeId);
+            const val = sel.value ? Number(sel.value) : null;
+            try {
+              const headers = { "Content-Type": "application/json" };
+              const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+              if (token) headers["x-csrftoken"] = token;
+              const resp = await fetch(`/api/recipes/${rid}/stage1`, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers,
+                body: JSON.stringify({ stage1_recipe_id: val }),
+              });
+              if (!resp.ok) {
+                let msg = `Request failed (${resp.status})`;
+                try { const p = await resp.json(); if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail); } catch (_e) { /* noop */ }
+                throw new Error(msg);
+              }
+              await resp.json();
+              IRMS.notify(val ? "1차 레시피를 연결했습니다." : "1차 연결을 해제했습니다.", "success");
+              renderHistory();  // 가족 묶음 즉시 반영
+            } catch (err) {
+              IRMS.notify(`1차 연결 실패: ${err.message}`, "error");
+              renderHistory();  // 실패 시 서버 값으로 다시 그림
+            }
+          });
+        });
+
         // Accordion: row click to expand detail
         dom.historyBody.querySelectorAll(".history-row").forEach((row) => {
           row.style.cursor = "pointer";
@@ -299,7 +356,7 @@
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
               const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
-              detailRow.innerHTML = `<td colspan="9">
+              detailRow.innerHTML = `<td colspan="11">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
                   <div class="detail-actions">
