@@ -28,22 +28,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import require_access_level
 from ..db import get_connection, utc_now_text, write_audit_log
 
-# 품목코드 형식 — 원재료/반제품이 코드 체계가 다르다(사용자 확인 2026-07-21).
-#  · 원재료(materials.code): 보통 A로 시작하는 **영문 2자** + 영숫자 (AC0101 등) → 엄격 유지.
-#  · 반제품(recipes.product_code): **B로 시작**, B 단독(B0082) 또는 BC/BW 등 → 앞 영문 1~2자 허용.
+# 품목코드 형식 — 자재·반제품 모두 영문 1~2자 접두 + 영숫자(사용자 확인 2026-07-21).
+#  · 자재(materials.code): 본래 영문 2자(AC0101) 였으나, 반제품(PB/B0020 등)이 자재로
+#    함께 쓰이며 B-계열 단일 접두 코드도 자재에 부여될 수 있어 영문 1~2자로 완화.
+#  · 반제품(recipes.product_code): B 단독(B0082) 또는 BC/BW 등 영문 1~2자.
 # 마스터 존재 여부는 강제하지 않는다(운영자 직접 입력 허용).
-_CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{2,8}$")            # 원재료(재료) 코드 — 영문 2자
-_PRODUCT_CODE_PATTERN = re.compile(r"^[A-Z]{1,2}[A-Z0-9]{2,8}$")  # 반제품 코드 — 영문 1~2자(B0082 허용)
+_PRODUCT_CODE_PATTERN = re.compile(r"^[A-Z]{1,2}[A-Z0-9]{2,8}$")  # 자재·반제품 공통 — 영문 1~2자
 
 
 def _validate_code(raw: Any) -> str | None:
-    """요청 본문의 code 값을 정규화·검증.
+    """요청 본문의 code(자재 품목코드) 값을 정규화·검증.
 
     반환:
         None  → 코드 해제(NULL 저장). raw 가 None 이거나 빈 문자열인 경우.
         str   → 대문자로 정규화된 코드.
 
     검증 형식에 맞지 않으면 HTTPException(400) 를 발생시킨다.
+    자재 코드는 반제품(B-계열) 코드와 동일한 영문 1~2자 패턴을 허용한다 — 반제품이
+    자재로 전용되어 B-단일 접두 코드를 가지는 경우(예: PB/B0020) UI 재지정이 막히지 않도록.
     """
     if raw is None:
         return None
@@ -51,12 +53,70 @@ def _validate_code(raw: Any) -> str | None:
     if text == "":
         return None
     code = text.upper()
-    if not _CODE_PATTERN.match(code):
+    if not _PRODUCT_CODE_PATTERN.match(code):
         raise HTTPException(
             status_code=400,
-            detail="품목코드 형식이 올바르지 않습니다. (영문 2자 + 영문/숫자 2~8자)",
+            detail="품목코드 형식이 올바르지 않습니다. (영문 1~2자 + 영문/숫자 2~8자)",
         )
     return code
+
+
+def _validate_product_code(raw: Any) -> str | None:
+    """요청 본문의 product_code(반제품 품목코드) 값을 정규화·검증.
+
+    _validate_code 와 동일 패턴(영문 1~2자 접두 + 영숫자)을 쓴다. 별개 함수로 둔 것은
+    의미론적 구분(자재 vs 반제품)과 향후 패턴 분리 가능성 때문. 현재는 같은 정규식.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text == "":
+        return None
+    code = text.upper()
+    if not _PRODUCT_CODE_PATTERN.match(code):
+        raise HTTPException(
+            status_code=400,
+            detail="품목코드 형식이 올바르지 않습니다. (영문 1~2자 + 영문/숫자 2~8자)",
+        )
+    return code
+
+
+def _revision_chain_ids(connection: sqlite3.Connection, recipe_id: int) -> list[int]:
+    """recipe_id 가 속한 개정 체인의 전체 id 목록(자신 포함) 반환.
+
+    revision_of 를 루트까지 올라간 뒤(visited-set 순환 가드), 루트에서 파생된 모든
+    자손을 재귀 CTE 로 수집. PUT product-code(A4) 와 revision 등록(BUG 1)이 같은 체인
+    정의를 공유하도록 모듈 단위 헬퍼로 뽑았다.
+    """
+    root_id = recipe_id
+    visited: set[int] = set()
+    cursor = connection.execute(
+        "SELECT id, revision_of FROM recipes WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    while cursor is not None and cursor["revision_of"] is not None:
+        parent_id = int(cursor["revision_of"])
+        if parent_id in visited or parent_id == int(cursor["id"]):
+            break  # 순환 가드
+        visited.add(parent_id)
+        cursor = connection.execute(
+            "SELECT id, revision_of FROM recipes WHERE id = ?", (parent_id,)
+        ).fetchone()
+        if cursor is None:
+            break
+        root_id = cursor["id"]
+
+    chain_rows = connection.execute(
+        """
+        WITH RECURSIVE chain(id) AS (
+            SELECT ?
+            UNION ALL
+            SELECT r.id FROM recipes r JOIN chain c ON r.revision_of = c.id
+        )
+        SELECT id FROM chain
+        """,
+        (root_id,),
+    ).fetchall()
+    return [int(r["id"]) for r in chain_rows]
 
 
 def _escape_like(text: str) -> str:
@@ -205,6 +265,9 @@ def create_item_code_router() -> APIRouter:
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
         code = _validate_code(body.get("code"))
+        # force=true → 코드 충돌 시 기존 보유 자재에서 코드를 빼고(이동) 이 자재에 부여.
+        # 비활성 자재가 코드를 쥐고 있어도 목록에 안 보여 빠져나가지 못하는 사태를 해소.
+        force = bool(body.get("force"))
 
         with get_connection() as connection:
             material_row = connection.execute(
@@ -213,17 +276,39 @@ def create_item_code_router() -> APIRouter:
             if not material_row:
                 raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
 
-            # 동일 code 를 가진 다른 자재가 있으면 충돌(자재명 포함)
+            # 동일 code 를 가진 다른 자재가 있으면 충돌. is_active 필터 없음(비활성도 이동 대상).
+            moved_from_name: str | None = None
             if code is not None:
                 other = connection.execute(
-                    "SELECT name FROM materials WHERE code = ? AND id != ? LIMIT 1",
+                    "SELECT id, name FROM materials WHERE code = ? AND id != ? LIMIT 1",
                     (code, material_id),
                 ).fetchone()
                 if other:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
+                    if not force:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
+                        )
+                    # force=true — 같은 트랜잭션에서 기존 보유 자재의 코드를 NULL 로.
+                    # audit(details) 에 이동 사실을 남긴다(아래 material_code_cleared · set).
+                    connection.execute(
+                        "UPDATE materials SET code = NULL WHERE code = ? AND id != ?",
+                        (code, material_id),
                     )
+                    write_audit_log(
+                        connection,
+                        action="material_code_cleared",
+                        actor=current_user,
+                        target_type="material",
+                        target_id=other["id"],
+                        target_label=other["name"],
+                        details={
+                            "code": code,
+                            "moved_to_material_id": material_id,
+                            "moved_to_name": material_row["name"],
+                        },
+                    )
+                    moved_from_name = other["name"]
 
             connection.execute(
                 "UPDATE materials SET code = ? WHERE id = ?", (code, material_id)
@@ -254,7 +339,8 @@ def create_item_code_router() -> APIRouter:
                 target_type="material",
                 target_id=material_id,
                 target_label=material_row["name"],
-                details={"code": code},
+                # moved_from_name 은 이동이 일어난 경우에만(그 외 None).
+                details={"code": code, "moved_from_name": moved_from_name},
             )
             connection.commit()
 
@@ -263,6 +349,7 @@ def create_item_code_router() -> APIRouter:
             "material_id": material_id,
             "code": code,
             "master_name": master_name,
+            "moved_from": moved_from_name,
         }
 
     # ------------------------------------------------------------------
@@ -274,7 +361,7 @@ def create_item_code_router() -> APIRouter:
         body: dict[str, Any],
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        product_code = _validate_code(body.get("product_code"))
+        product_code = _validate_product_code(body.get("product_code"))
 
         with get_connection() as connection:
             recipe_row = connection.execute(
@@ -284,35 +371,8 @@ def create_item_code_router() -> APIRouter:
             if not recipe_row:
                 raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
 
-            # 체인 루트 탐색: revision_of 를 끝까지 올라감.
-            root_id = recipe_row["id"]
-            visited: set[int] = set()
-            cursor = recipe_row
-            while cursor is not None and cursor["revision_of"] is not None:
-                parent_id = int(cursor["revision_of"])
-                if parent_id in visited or parent_id == int(cursor["id"]):
-                    break  # 순환 가드
-                visited.add(parent_id)
-                cursor = connection.execute(
-                    "SELECT id, revision_of FROM recipes WHERE id = ?", (parent_id,)
-                ).fetchone()
-                if cursor is None:
-                    break
-                root_id = cursor["id"]
-
-            # 루트에서 파생된 전체 체인(재귀 CTE).
-            chain_rows = connection.execute(
-                """
-                WITH RECURSIVE chain(id) AS (
-                    SELECT ?
-                    UNION ALL
-                    SELECT r.id FROM recipes r JOIN chain c ON r.revision_of = c.id
-                )
-                SELECT id FROM chain
-                """,
-                (root_id,),
-            ).fetchall()
-            chain_ids = [int(r["id"]) for r in chain_rows]
+            # 이 레시피가 속한 개정 체인 전체(_revision_chain_ids 와 동일 정의).
+            chain_ids = _revision_chain_ids(connection, recipe_id)
             placeholders = ",".join("?" for _ in chain_ids)
 
             # 다른 체인의 레시피가 같은 product_code 를 쓰고 있으면 충돌(반제품명 포함).
@@ -371,6 +431,7 @@ def create_item_code_router() -> APIRouter:
     # 임포트로 만들어진 자재와 동일하게 취급되도록.
     # 자재명은 대소문자 무시 중복 금지, code 는 _validate_code 경유(없어도 등록 가능)하되
     # 다른 자재가 이미 쓰고 있으면 409(자재명 포함) — A3(set_material_code) 규칙과 동일.
+    # force=true 메 기존 보유 자재에서 코드를 빼고(이동) 새 자재에 부여(A3 과 동일 규칙).
     @router.post("/materials")
     def create_material(
         body: dict[str, Any],
@@ -381,6 +442,8 @@ def create_item_code_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="자재명을 입력하세요.")
 
         code = _validate_code(body.get("code"))
+        # force=true → 코드 충돌 시 기존 보유 자재에서 코드를 빼고(이동) 새 자재에 부여.
+        force = bool(body.get("force"))
 
         with get_connection() as connection:
             # 자재명 중복 — 대소문자 무시.
@@ -394,15 +457,36 @@ def create_item_code_router() -> APIRouter:
                 )
 
             # code 중복 — 다른 자재가 이미 쓰고 있으면 409(자재명 포함). A3 과 동일 규칙.
+            # is_active 필터 없음(비활성도 이동 대상). force=true 면 코드를 이동.
+            moved_from_name: str | None = None
             if code is not None:
                 other = connection.execute(
-                    "SELECT name FROM materials WHERE code = ? LIMIT 1", (code,)
+                    "SELECT id, name FROM materials WHERE code = ? LIMIT 1", (code,)
                 ).fetchone()
                 if other:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
+                    if not force:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
+                        )
+                    connection.execute(
+                        "UPDATE materials SET code = NULL WHERE code = ?",
+                        (code,),
                     )
+                    write_audit_log(
+                        connection,
+                        action="material_code_cleared",
+                        actor=current_user,
+                        target_type="material",
+                        target_id=other["id"],
+                        target_label=other["name"],
+                        details={
+                            "code": code,
+                            "moved_to_name": name,
+                            "moved_to_material_id": None,
+                        },
+                    )
+                    moved_from_name = other["name"]
 
             cursor = connection.execute(
                 """
@@ -424,11 +508,17 @@ def create_item_code_router() -> APIRouter:
                 target_type="material",
                 target_id=new_id,
                 target_label=name,
-                details={"code": code},
+                details={"code": code, "moved_from_name": moved_from_name},
             )
             connection.commit()
 
-        return {"status": "ok", "id": new_id, "name": name, "code": code}
+        return {
+            "status": "ok",
+            "id": new_id,
+            "name": name,
+            "code": code,
+            "moved_from": moved_from_name,
+        }
 
     # ------------------------------------------------------------------
     # A5. DELETE /materials/{material_id} — 자재 삭제(레시피 미참조 시)

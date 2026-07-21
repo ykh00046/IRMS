@@ -40,6 +40,19 @@
     const bom = { productName: "", rows: [], remark: "" };
     let materialNames = [];        // 자재명 자동완성 소스
     let materialCodes = {};        // 자재명 → 품목코드(materials.code) — 행 옆 코드 배지용
+    let materialCodesLower = {};   // 소문자 키 자재명 → 품목코드(대소문자 무시 매칭용)
+
+    // 코드 배지 조회 — 입력된 자재명(공백 제거)으로 코드를 찾는다.
+    // 1) 정확명(trim) 매칭, 2) 소문자 키 매칭 — 사용자가 대소문자를 다르게 입력해도
+    // 등록 자재면 코드 배지가 보이도록. datalist 옵션 라벨은 정확명을 그대로 쓴다.
+    function codeFor(name) {
+      const trimmed = String(name || "").trim();
+      if (!trimmed) return "";
+      if (Object.prototype.hasOwnProperty.call(materialCodes, trimmed)) {
+        return materialCodes[trimmed] || "";
+      }
+      return materialCodesLower[trimmed.toLowerCase()] || "";
+    }
 
     function dirty() {
       if (!state.suppressDirtyTracking) ctx.onDirty();
@@ -70,17 +83,52 @@
 
     function initSpreadsheet(materials) {
       state.suppressDirtyTracking = true;
-      materialNames = (materials || []).map((m) => m.name).filter(Boolean);
-      materialCodes = {};
-      (materials || []).forEach((m) => {
-        if (m.name && m.code) materialCodes[m.name] = m.code;
-      });
+      rebuildMaterialIndex(materials);
       bom.productName = "";
       bom.remark = "";
       bom.rows = [emptyMaterial(), emptyMaterial(), emptyMaterial()];
       setRawInputMode(false);
       render();
       state.suppressDirtyTracking = false;
+    }
+
+    // 자재명/코드 색인 재구축 — initSpreadsheet 와 updateMaterialIndex 공용.
+    // materialCodes(정확명) 와 materialCodesLower(소문자 키)를 함께 채운다.
+    function rebuildMaterialIndex(materials) {
+      materialNames = (materials || []).map((m) => m.name).filter(Boolean);
+      materialCodes = {};
+      materialCodesLower = {};
+      (materials || []).forEach((m) => {
+        if (m.name && m.code) {
+          materialCodes[m.name] = m.code;
+          materialCodesLower[String(m.name).toLowerCase()] = m.code;
+        }
+      });
+    }
+
+    // 자재명/코드 색인만 갱신 — 편집 중인 BOM(productName/rows/remark)은 건드리지 않는다.
+    // 품목코드 탭에서 코드를 새로 부여/해제한 뒤, 사용자가 편집 중이던 내용을 잃지 않고
+    // 배지·datalist 만 최신화하기 위해 쓴다. initSpreadsheet(상태 리셋)와 다르게
+    // 입력 요소를 재생성하지 않고 포커스도 빼앗지 않는다.
+    function updateMaterialIndex(materials) {
+      rebuildMaterialIndex(materials);
+      const c = dom.spreadsheetContainer;
+      if (!c) return;
+      // datalist 옵션만 다시 그린다 — 라벨은 정확명 그대로.
+      const dl = c.querySelector("#bom-material-names");
+      if (dl) {
+        dl.innerHTML = materialNames
+          .map((n) => `<option value="${esc(n)}"${materialCodes[n] ? ` label="${esc(materialCodes[n])}"` : ""}></option>`)
+          .join("");
+      }
+      // 현재 행들의 이름으로 배지만 최신화(입력값·포커스는 그대로).
+      c.querySelectorAll(".bom-row").forEach((rowEl) => {
+        const name = rowEl.querySelector(".bom-name");
+        const badge = rowEl.querySelector(".bom-code");
+        if (name && badge) {
+          badge.textContent = codeFor(name.value);
+        }
+      });
     }
 
     function emptyMaterial() {
@@ -215,7 +263,7 @@
         }
         // 품목코드 배지 — 등록된 자재(materials.code 보유)의 코드를 상시 표시.
         // 마스터에만 있는 자재는 '검증' 시 자동 등록 안내 메시지에서 코드가 확인된다.
-        const code = materialCodes[row.name.trim()] || "";
+        const code = codeFor(row.name);
         return `<div class="bom-row" data-idx="${i}">
           <span class="bom-no">${matNo(i)}</span>
           <input class="input bom-name" list="bom-material-names" value="${esc(row.name)}" placeholder="자재명" autocomplete="off" />
@@ -256,7 +304,7 @@
           bom.rows[idx].name = name.value;
           // 이름이 등록 자재와 일치하면 코드 배지 즉시 갱신
           const badge = rowEl.querySelector(".bom-code");
-          if (badge) badge.textContent = materialCodes[name.value.trim()] || "";
+          if (badge) badge.textContent = codeFor(name.value);
           dirty();
         });
         const value = rowEl.querySelector(".bom-value");
@@ -300,6 +348,7 @@
       destroySpreadsheet,
       getActiveWorksheet,
       initSpreadsheet,
+      updateMaterialIndex,
       getSpreadsheetDataAsText,
       loadFromTsvRows,
       addMaterialRow,

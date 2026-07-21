@@ -349,7 +349,12 @@ def test_material_same_code_same_material_idempotent():
 
 
 def test_material_invalid_code_format_400():
-    """형식(영문2자+영숫자2~8자) 위반 → 400."""
+    """형식(영문 1~2자 + 영문/숫자 2~8자) 위반 → 400.
+
+    BUG 3 으로 자재 코드 패턴이 영문 1~2자 접두로 완화되어, AS1(총 3자) 은 이제
+    유효(B-단일 접두 자재 코드 지원)하다. 따라서 형식 가드 테스트는 새 규칙에서도
+    명백히 위반되는 값(숫자만 / 한글 포함 / 영문 접두 없는 2자)만 쓴다.
+    """
     client = _client()
     headers = _login(client)
 
@@ -358,7 +363,7 @@ def test_material_invalid_code_format_400():
     with get_connection() as conn:
         mid = _seed_material(conn, f"자재{_uid()}")
 
-    # 숫자로만 — prefix 영문 2자 없음
+    # 숫자로만 — 영문 접두 없음
     res = client.put(f"/api/materials/{mid}/code", json={"code": "1234"}, headers=headers)
     assert res.status_code == 400
 
@@ -366,8 +371,8 @@ def test_material_invalid_code_format_400():
     res = client.put(f"/api/materials/{mid}/code", json={"code": "AS한글"}, headers=headers)
     assert res.status_code == 400
 
-    # 너무 짧음(총 3자)
-    res = client.put(f"/api/materials/{mid}/code", json={"code": "AS1"}, headers=headers)
+    # 영문 접두 없는 2자 숫자/기호 혼합 — 접두 영문 1~2자 요건 위반
+    res = client.put(f"/api/materials/{mid}/code", json={"code": "12"}, headers=headers)
     assert res.status_code == 400
 
 
@@ -794,3 +799,207 @@ def test_material_delete_not_found_404():
 
     res = client.delete("/api/materials/9999999", headers=headers)
     assert res.status_code == 404
+
+
+# ---------------- 6. A3 force=true — 코드 이동 지정 ----------------
+
+
+def test_material_set_code_force_moves_code():
+    """(a) PUT force=true → 코드를 이전 보유 자재에서 빼고 대상에 부여(이동).
+
+    대상 자재가 코드를 갖고, 이전 보유 자재의 code 는 NULL. 응답 moved_from 은 이전
+    보유 자재명. audit: material_code_cleared(이전 보유) + material_code_set(대상).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}1"
+    holder_name = f"이전보유{s}"
+    target_name = f"이동대상{s}"
+    with get_connection() as conn:
+        holder_id = _seed_material(conn, holder_name, code=code)
+        target_id = _seed_material(conn, target_name)
+
+    res = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["code"] == code
+    assert body["moved_from"] == holder_name
+
+    with get_connection() as conn:
+        # 대상이 코드 보유, 이전 보유는 NULL.
+        assert conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (target_id,)
+        ).fetchone()["code"] == code
+        assert conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (holder_id,)
+        ).fetchone()["code"] is None
+        # audit: material_code_cleared(이전 보유).
+        cleared = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action='material_code_cleared' AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(holder_id),),
+        ).fetchone()
+        assert cleared is not None
+        assert code in (cleared["details_json"] or "")
+        assert str(target_id) in (cleared["details_json"] or "")
+        # audit: material_code_set(대상) — moved_from_name 포함.
+        setrow = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action='material_code_set' AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(target_id),),
+        ).fetchone()
+        assert setrow is not None
+        assert holder_name in (setrow["details_json"] or "")
+
+
+def test_material_set_code_force_moves_code_from_inactive_holder():
+    """(b) PUT force=true — 비활성(is_active=0) 보유 자재에서도 코드 이동.
+
+    비활성 자재는 GET /item-codes/materials(is_active=1 필터) 에 안 보여 빠져나가지
+    못하지만, force 이동은 is_active 와 무관해야 한다.
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}2"
+    holder_name = f"비활성보유{s}"
+    target_name = f"이동대상{s}"
+    with get_connection() as conn:
+        # 비활성 보유 자재 — is_active=0 으로 직접 INSERT.
+        holder_id = conn.execute(
+            "INSERT INTO materials (name, unit_type, unit, color_group, is_active, code) "
+            "VALUES (?, 'weight', 'g', 'none', 0, ?)",
+            (holder_name, code),
+        ).lastrowid
+        target_id = _seed_material(conn, target_name)
+        conn.commit()
+
+    res = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["code"] == code
+    assert body["moved_from"] == holder_name
+
+    with get_connection() as conn:
+        assert conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (target_id,)
+        ).fetchone()["code"] == code
+        assert conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (holder_id,)
+        ).fetchone()["code"] is None
+
+
+def test_material_set_code_without_force_still_409():
+    """(c) PUT force 없이 코드 충돌 → 종전대로 409(회귀 가드)."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}3"
+    holder_name = f"보유자재{s}"
+    with get_connection() as conn:
+        _seed_material(conn, holder_name, code=code)
+        target_id = _seed_material(conn, f"대상{s}")
+
+    # force 생략 → 409
+    res = client.put(
+        f"/api/materials/{target_id}/code", json={"code": code}, headers=headers
+    )
+    assert res.status_code == 409
+    assert holder_name in res.json()["detail"]
+
+    # 명시적으로 force=false → 여전히 409
+    res = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": False},
+        headers=headers
+    )
+    assert res.status_code == 409
+
+
+# ---------------- 7. BUG 2/3 — 코드 형식 완화(B-단일 접두 허용) ----------------
+
+
+def test_recipe_product_code_accepts_single_letter_prefix():
+    """(3) BUG 2: PUT /recipes/{id}/product-code 가 B0082(영문 1자 접두)를 수용.
+
+    종전에는 _validate_code(영문 2자) 를 써 B0082/BC/BW 가 400 로 거절됐다.
+    _validate_product_code(영문 1~2자) 도입 후 현황 인라인 지정이 동작해야 한다.
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    product = f"PB{_uid()}"
+    with get_connection() as conn:
+        v1, v2, v3 = _build_chain(conn, product)
+
+    # B0082 형태(영문 1자 접두) — 종전 400, 수정 후 200.
+    code = f"B{_short(4)}"
+    res = client.put(
+        f"/api/recipes/{v1}/product-code",
+        json={"product_code": code},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["product_code"] == code
+
+
+def test_material_code_accepts_single_letter_prefix():
+    """(4) BUG 3: PUT /materials/{id}/code 가 B0020(반제품계 자재 코드)을 수용.
+
+    반제품(PB/B0020)이 자재로 전용되어 B-단일 접두 코드를 가질 때 UI 재지정이
+    막히지 않도록 _validate_code 를 영문 1~2자 패턴으로 완화.
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    with get_connection() as conn:
+        mid = _seed_material(conn, f"반제품자재{s}")
+
+    code = f"B{s}020"[:7]  # B + 영숫자 — 영문 1자 접두
+    res = client.put(
+        f"/api/materials/{mid}/code", json={"code": code}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["code"] == code
+
+
+def test_material_code_format_guard_still_rejects_a1():
+    """(5) 형식 가드 유지 — 너무 짧은 코드(예: A1)는 여전히 400.
+
+    접두 완화가 무분별한 값을 허용하지 않음을 확인(영문 1~2자 + 영숫자 2~8자).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        mid = _seed_material(conn, f"가드자재{_uid()}")
+
+    res = client.put(
+        f"/api/materials/{mid}/code", json={"code": "A1"}, headers=headers
+    )
+    assert res.status_code == 400

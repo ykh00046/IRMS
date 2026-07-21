@@ -370,3 +370,87 @@ def test_status_migration_converts_pending_to_completed():
         }
     assert rows[pend] == "completed"
     assert rows[canc] == "canceled"  # 취소는 보존
+
+
+# ---------------- BUG 1: 수정 등록(revision_of) 시 부모 체인 product_code 충돌 회귀 ----------------
+
+
+def _import_with_code(client, headers, product, a, b, product_code=None, revision_of=None, force=None):
+    """product_code/revision_of/force 를 명시적으로 받는 import 헬퍼."""
+    body = {"raw_text": f"반제품명\t원료A\t원료B\n{product}\t{a}\t{b}"}
+    if product_code is not None:
+        body["product_code"] = product_code
+    if revision_of is not None:
+        body["revision_of"] = revision_of
+    if force is not None:
+        body["force"] = force
+    res = client.post("/api/recipes/import", json=body, headers=headers)
+    return res
+
+
+def test_revision_same_explicit_product_code_as_parent_succeeds():
+    """(1) BUG 1: 수정 등록(revision_of) 시 부모와 동일 product_code 명시 → 성공.
+
+    종전: 수정 UI 가 부모 코드를 프리필해 두면, revision 등록이 자기 부모 체인의
+    코드와 충돌해 409 로 막혔다(UAPB/B0082 시나리오). 부모 체인 id 를 충돌 조회에서
+    제외하도록 고친 뒤 성공해야 한다.
+    """
+    client = _client()
+    headers = _login(client)
+
+    suffix = _uid()
+    product = f"REVSCEN{suffix}"
+    code = f"BC{suffix[:5]}"  # 영문 2자 접두 + 영숫자
+
+    # 원본을 명시 product_code 로 등록.
+    base_res = _import_with_code(client, headers, product, 60, 40, product_code=code)
+    assert base_res.status_code == 200, base_res.text
+    base_id = base_res.json()["created_ids"][0]
+
+    # 수정 등록 — 부모와 *동일* product_code 를 명시적으로 다시 준다(프리필 흉내).
+    rev_res = _import_with_code(
+        client, headers, product + "v2", 70, 30,
+        product_code=code, revision_of=base_id,
+    )
+    assert rev_res.status_code == 200, rev_res.text
+    rev_id = rev_res.json()["created_ids"][0]
+
+    # 두 버전 모두 같은 코드를 가져야 한다(같은 체인은 코드 공유).
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        codes = {
+            r["id"]: r["product_code"]
+            for r in conn.execute(
+                "SELECT id, product_code FROM recipes WHERE id IN (?, ?)",
+                (base_id, rev_id),
+            ).fetchall()
+        }
+    assert codes[base_id] == code
+    assert codes[rev_id] == code
+
+
+def test_revision_explicit_product_code_held_by_other_chain_still_409():
+    """(2) BUG 1 회귀 가드: 다른 체인이 쓰는 코드로 수정 등록 → 여전히 409.
+
+    부모 체인 제외가 '모든 충돌 무시'로 번지지 않았음을 확인 — 제3 체인의 코드는
+    여전히 충돌한다.
+    """
+    client = _client()
+    headers = _login(client)
+
+    suffix = _uid()
+    code = f"BC{suffix[:5]}"
+    # A 체인이 code 를 선점.
+    holder = f"OTHERCHAIN{suffix}"
+    holder_res = _import_with_code(client, headers, holder, 50, 50, product_code=code)
+    assert holder_res.status_code == 200, holder_res.text
+
+    # B 체인 원본 등록(코드 없음) 후, B 의 수정 등록에 A 의 코드를 명시 → 409.
+    base2 = _import(client, headers, f"MYCHAIN{suffix}", 60, 40)
+    rev_res = _import_with_code(
+        client, headers, f"MYCHAIN{suffix}v2", 70, 30,
+        product_code=code, revision_of=base2,
+    )
+    assert rev_res.status_code == 409
+    assert holder in rev_res.json()["detail"]

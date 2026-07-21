@@ -142,17 +142,30 @@
             headers: { "Content-Type": "application/json", ...csrfHeader() },
             body: JSON.stringify({ code }),
           });
+          let result;
           if (!resp.ok) {
-            IRMS.notify(`코드 저장 실패: ${await detailOf(resp)}`, "error");
-            return;
+            const detail = await detailOf(resp);
+            if (resp.status === 409) {
+              // 코드 충돌이면 confirmMoveOn409 가 force:true 재시도로 코드를 이동한다.
+              const moved = await confirmMoveOn409(detail, `/api/materials/${id}/code`, "PUT", { code });
+              if (moved === null) return; // 취소 또는 자재명 중복 — 추가 notify 없음.
+              result = moved;
+            } else {
+              IRMS.notify(`코드 저장 실패: ${detail}`, "error");
+              return;
+            }
+          } else {
+            result = await resp.json();
           }
-          const result = await resp.json();
-          IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.`, "success");
+          const moveNote = result.moved_from ? ` (기존 '${result.moved_from}'에서 해제)` : "";
+          IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.${moveNote}`, "success");
           nameEl.value = "";
           codeEl.value = "";
           nameEl.focus();
           await refresh();
           loadMaterialIndex();
+          // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
+          if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
         } catch (err) {
           IRMS.notify(`코드 저장 실패: ${err.message}`, "error");
         }
@@ -175,13 +188,30 @@
           headers: { "Content-Type": "application/json", ...csrfHeader() },
           body: JSON.stringify({ name, code: code || null }),
         });
+        let result;
         if (!resp.ok) {
-          IRMS.notify(`자재 등록 실패: ${await detailOf(resp)}`, "error");
-          return;
+          const detail = await detailOf(resp);
+          if (resp.status === 409) {
+            // 409 는 자재명 중복일 수도 있고 코드 충돌일 수도 있음 — 코드 충돌만 force:true 이동 제안.
+            const moved = await confirmMoveOn409(detail, `/api/materials`, "POST", { name, code: code || null });
+            if (moved === null) {
+              // 코드 충돌(취소) 이면 종료; 자재명 중복이면 일반 에러 notify.
+              if (!detail.includes("사용 중인 코드")) {
+                IRMS.notify(`자재 등록 실패: ${detail}`, "error");
+              }
+              return;
+            }
+            result = moved;
+          } else {
+            IRMS.notify(`자재 등록 실패: ${detail}`, "error");
+            return;
+          }
+        } else {
+          result = await resp.json();
         }
-        const result = await resp.json();
+        const moveNote = result.moved_from ? ` (기존 '${result.moved_from}'에서 해제)` : "";
         const successMsg = code
-          ? `자재 '${result.name || name}' 을(를) 등록하고 품목코드 '${result.code || code}' 을(를) 지정했습니다.`
+          ? `자재 '${result.name || name}' 을(를) 등록하고 품목코드 '${result.code || code}' 을(를) 지정했습니다.${moveNote}`
           : `자재 '${result.name || name}' 을(를) 등록했습니다.`;
         IRMS.notify(successMsg, "success");
         nameEl.value = "";
@@ -189,6 +219,8 @@
         nameEl.focus();
         await refresh();
         loadMaterialIndex();
+        // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
       } catch (err) {
         IRMS.notify(`자재 등록 실패: ${err.message}`, "error");
       }
@@ -367,19 +399,31 @@
           },
           body: JSON.stringify({ code }),
         });
+        let result;
         if (!resp.ok) {
-          const msg = await detailOf(resp);
-          IRMS.notify(`코드 저장 실패: ${msg}`, "error");
-          return;
+          const detail = await detailOf(resp);
+          if (resp.status === 409) {
+            // 코드 충돌이면 confirmMoveOn409 가 force:true 재시도로 코드를 이동한다.
+            const moved = await confirmMoveOn409(detail, `/api/materials/${id}/code`, "PUT", { code });
+            if (moved === null) return; // 취소 또는 자재명 중복 — 추가 notify 없음.
+            result = moved;
+          } else {
+            IRMS.notify(`코드 저장 실패: ${detail}`, "error");
+            return;
+          }
+        } else {
+          result = await resp.json();
         }
-        const result = await resp.json();
         const saved = result.code || "";
         editingMaterialId = null;
+        const moveNote = result.moved_from ? ` (기존 '${result.moved_from}'에서 해제)` : "";
         IRMS.notify(
-          saved ? `품목코드를 '${saved}'(으)로 지정했습니다.` : "품목코드를 해제했습니다.",
+          saved ? `품목코드를 '${saved}'(으)로 지정했습니다.${moveNote}` : "품목코드를 해제했습니다.",
           "success",
         );
         await refresh();
+        // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
       } catch (err) {
         IRMS.notify(`코드 저장 실패: ${err.message}`, "error");
       }
@@ -406,6 +450,8 @@
         }
         IRMS.notify("품목코드를 해제했습니다.", "success");
         await refresh();
+        // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
       } catch (err) {
         IRMS.notify(`코드 해제 실패: ${err.message}`, "error");
       }
@@ -463,6 +509,8 @@
         const deletedName = result.deleted || "";
         IRMS.notify(`자재 '${deletedName}' 을 삭제했습니다.`, "success");
         await refresh();
+        // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
       } catch (err) {
         IRMS.notify(`자재 삭제 실패: ${err.message}`, "error");
       }
@@ -483,6 +531,29 @@
         }
       } catch (_e) { /* noop */ }
       return `Request failed (${resp.status})`;
+    }
+
+    // 409 코드 충돌 시 "코드 이동" 확인 → force:true 재시도.
+    // detail 은 호출부에서 이미 뽑은 값(본문은 한 번만 읽도록). 코드 충돌(“사용 중인 코드”)
+    // 일 때만 확인창을 띄운다 — POST /materials 의 409 는 자재명 중복일 수도 있어 detail 로 걸른다.
+    // 반환: { result } (이동 성공 응답 본문) | null (사용자 취소 또는 코드 충돌 아님).
+    // 사용자가 취소하거나 자재명 중복 등이면 null — 호출부는 추가 notify 없이 그냥 return.
+    async function confirmMoveOn409(detail, url, method, baseBody) {
+      if (!detail.includes("사용 중인 코드")) return null; // 코드 충돌 아님.
+      const ok = window.confirm(
+        `${detail}\n이 자재로 코드를 옮길까요? (기존 자재에서는 해제됩니다)`,
+      );
+      if (!ok) return null; // 취소 — 추가 notify 없음.
+      const retryResp = await fetch(url, {
+        method,
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...csrfHeader() },
+        body: JSON.stringify({ ...baseBody, force: true }),
+      });
+      if (!retryResp.ok) {
+        throw new Error(await detailOf(retryResp));
+      }
+      return retryResp.json();
     }
 
     return { init, refresh };

@@ -284,6 +284,68 @@ def test_create_material_duplicate_code_409():
     assert other_name in res.json()["detail"]
 
 
+# ---------------- (g) POST /materials force=true → 코드 이동 등록 ----------------
+
+
+def test_create_material_force_moves_code_from_previous_holder():
+    """(d) POST /materials force=true → 새 자재 생성 + 기존 보유 자재 코드 해제.
+
+    새 자재가 코드를 갖고, 이전 보유 자재의 code 는 NULL. 응답 moved_from 은 이전
+    보유 자재명. audit: material_code_cleared(이전 보유) + material_created(새 자재).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}8"
+    holder_name = f"기존보유{s}"
+    with get_connection() as conn:
+        holder_id = _seed_material(conn, holder_name, code=code)
+
+    new_name = f"이동신규{s}"
+    res = client.post(
+        "/api/materials",
+        json={"name": new_name, "code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["name"] == new_name
+    assert body["code"] == code
+    assert body["moved_from"] == holder_name
+    new_id = body["id"]
+
+    with get_connection() as conn:
+        # 새 자재가 코드 보유.
+        new_row = conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (new_id,)
+        ).fetchone()
+        assert new_row["code"] == code
+        # 이전 보유 자재는 코드 해제(NULL).
+        holder_row = conn.execute(
+            "SELECT code FROM materials WHERE id = ?", (holder_id,)
+        ).fetchone()
+        assert holder_row["code"] is None
+        # audit: material_code_cleared(이전 보유, target_id=holder_id).
+        cleared = conn.execute(
+            "SELECT action, details_json FROM audit_logs "
+            "WHERE action='material_code_cleared' AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(holder_id),),
+        ).fetchone()
+        assert cleared is not None
+        assert code in (cleared["details_json"] or "")
+        # audit: material_created(새 자재).
+        created = conn.execute(
+            "SELECT action, details_json FROM audit_logs "
+            "WHERE action='material_created' AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(new_id),),
+        ).fetchone()
+        assert created is not None
+        assert holder_name in (created["details_json"] or "")
+
+
 # ---------------- item_code_master 동기화(A6/A3/A4 → _ensure_master_entry) ----------------
 
 

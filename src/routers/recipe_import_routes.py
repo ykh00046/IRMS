@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
-from .item_code_routes import _PRODUCT_CODE_PATTERN
+from .item_code_routes import _PRODUCT_CODE_PATTERN, _revision_chain_ids
 from .models import ImportRequest, actor_name
 
 
@@ -210,11 +210,23 @@ def build_router() -> APIRouter:
             # code-edit-relocate §3: 명시 product_code 가 자동 인식·승계보다 우선.
             # 값이 있으면 strip+upper + 형식 검사(불일치 400). 다른 체인이 같은 코드를
             # 쓰고 있으면 409(반제품명 포함) — PUT product-code 와 동일 규칙.
+            # 수정 등록(revision_of) 시 부모 체인은 같은 코드를 공유하므로, 체인 id 를
+            # 충돌 조회에서 제외한다(BUG 1: 자기 부모 코드로 자신이 409 되는 회귀 방지).
             explicit_product_code = _normalize_explicit_product_code(body.product_code)
             if explicit_product_code is not None:
+                exclude_clause = ""
+                exclude_params: list[Any] = []
+                if body.revision_of is not None:
+                    chain_ids = _revision_chain_ids(connection, int(body.revision_of))
+                    # 부모 체인이 있으면 그 id 들을 제외(자기 체인은 충돌 아님).
+                    if chain_ids:
+                        placeholders = ",".join("?" for _ in chain_ids)
+                        exclude_clause = f" AND id NOT IN ({placeholders})"
+                        exclude_params = list(chain_ids)
                 conflict_row = connection.execute(
-                    "SELECT product_name FROM recipes WHERE product_code = ? LIMIT 1",
-                    (explicit_product_code,),
+                    f"SELECT product_name FROM recipes "
+                    f"WHERE product_code = ?{exclude_clause} LIMIT 1",
+                    [explicit_product_code, *exclude_params],
                 ).fetchone()
                 if conflict_row:
                     raise HTTPException(

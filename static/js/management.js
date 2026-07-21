@@ -169,6 +169,15 @@ document.addEventListener("DOMContentLoaded", () => {
     spreadsheet.initSpreadsheet(ctx.state.materials);
   }
 
+  // 자재 색인만 최신화 — 품목코드 탭에서 코드를 새로 부여/등록/해제한 직후,
+  // 편집 중인 BOM 을 리셋하지 않고 자재명→코드 배지/datalist 만 갱신한다.
+  // initSpreadsheet(상태 리셋)가 아니라 updateMaterialIndex(인플레이스 갱신) 호출.
+  ctx.refreshMaterials = async function refreshMaterials() {
+    if (!canManage) return;
+    ctx.state.materials = await IRMS.getMaterials();
+    spreadsheet.updateMaterialIndex(ctx.state.materials);
+  };
+
   // ── Event bindings ──
   if (canManage) {
     dom.previewBtn.addEventListener("click", importValidate.handlePreview);
