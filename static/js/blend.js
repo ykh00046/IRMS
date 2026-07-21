@@ -767,6 +767,28 @@
     const totalReady = Number(total.value) > 0;
     total.classList.toggle("needs-input", !totalReady);
     worker.classList.toggle("needs-input", totalReady && !worker.value.trim());
+    updateNextWeighGuide();
+  }
+
+  // 계량 순서 안내 — 다음에 계량할 자재(실제량이 빈 첫 행)를 강조한다. 기준 자재 레시피는
+  // 기준 자재를 먼저. 저울/클릭 입력 작업자에게 다음 순서를 시각적으로 알려준다.
+  function updateNextWeighGuide() {
+    const body = $("blend-mat-body");
+    if (!body) return;
+    body.querySelectorAll("tr.row-next").forEach((tr) => tr.classList.remove("row-next"));
+    const empty = (v) => v === "" || v == null;
+    // 총량 미입력(일반 레시피)·기준 자재 미계량 전에는 행 강조를 하지 않는다(안내가 앞서지 않게).
+    if (!hasAnchor() && !(Number($("blend-total").value) > 0)) return;
+    let nextIdx = -1;
+    if (hasAnchor() && empty(state.items[state.anchorIndex] && state.items[state.anchorIndex].actual_amount)) {
+      nextIdx = state.anchorIndex;
+    } else {
+      nextIdx = state.items.findIndex((it) => empty(it.actual_amount));
+    }
+    if (nextIdx < 0) return;  // 모두 계량됨
+    const inp = document.querySelector(`.blend-actual[data-idx="${nextIdx}"]`);
+    const tr = inp && inp.closest("tr");
+    if (tr) tr.classList.add("row-next");
   }
 
   function renderMatRows() {
@@ -817,6 +839,7 @@
         // 증량이 적용된 상태에서 계량하면 '추가 +X'(양수) 배지를 갱신 — 증량 후 채우는
         // 행도 음수 편차 대신 넣을 양이 양수로 보이게 한다. 증량 전에는 갱신하지 않는다.
         if (state.rescaleActive) renderAddBadges();
+        updateNextWeighGuide();  // 다음 계량 행 강조 갱신
         scheduleDraftSave();  // 진행분 임시 저장(복구용)
       })
     );
