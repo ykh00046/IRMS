@@ -1673,6 +1673,15 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("carry-over-modal").hidden) closeCarryOverModal();
     });
+    // 총 배합량 입력 후 Enter → 첫 자재 LOT 칸으로 커서 이동(계량은 LOT 먼저가 의도).
+    // 강제는 아니며 Tab 으로 다른 칸에 갈 수도 있다.
+    const totalKb = $("blend-total");
+    if (totalKb) totalKb.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const firstLot = document.querySelector("#blend-mat-body .blend-lot");
+      if (firstLot) firstLot.focus();
+    });
     state.workerPad = attachSignaturePad($("blend-worker-sign"));
     const wclr = $("blend-worker-sign-clear");
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
