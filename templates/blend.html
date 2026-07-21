@@ -28,6 +28,20 @@
       /* 미등록 LOT '사유 적고 진행' 입력칸 */
       .lot-override-box { margin: 8px 0 4px; }
       .lot-override-box[hidden] { display: none; }
+      /* 반응기 현황판 */
+      .reactor-board { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin: 0 0 12px; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+      .reactor-board[hidden] { display: none; }
+      .reactor-board-title { font-size: 0.78rem; font-weight: 700; color: #475569; white-space: nowrap; }
+      .reactor-board-cells { display: flex; gap: 8px; flex-wrap: wrap; }
+      .reactor-cell { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px;
+        background: #fff; border: 1px solid #e2e8f0; font-size: 0.78rem; }
+      .reactor-cell.occupied { border-color: #cbd5e1; }
+      .reactor-cell.anchor-match { border-color: #2563eb; background: #eff6ff; cursor: pointer; }
+      .reactor-anchor-tag { color: #2563eb; font-weight: 600; font-size: 0.72rem; }
+      .reactor-empty-btn { padding: 0 6px; font-size: 0.7rem; border: 1px solid #cbd5e1; border-radius: 6px;
+        background: #fff; color: #64748b; cursor: pointer; }
+      .reactor-empty-btn:hover { background: #f1f5f9; }
     </style>
 {% endblock %}
 
@@ -37,6 +51,12 @@
           <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
                blend.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
           <p class="login-error scale-only-banner" id="scale-only-banner" hidden>저울 전용 입력 모드가 켜져 있습니다 — 저울이 연결되지 않아 실제량을 입력할 수 없습니다. (해제는 운영 대시보드)</p>
+          <!-- 반응기 현황판 — 각 반응기(1~4)에 지금 무엇이 들어있나. 파생 레시피일 때
+               이 레시피의 1차를 가진 반응기가 강조되고, 클릭하면 이월 로트가 채워진다. -->
+          <div class="reactor-board" id="reactor-board" hidden>
+            <span class="reactor-board-title">반응기 현황</span>
+            <div class="reactor-board-cells" id="reactor-board-cells"></div>
+          </div>
           <div class="blend-top-grid">
             <section class="panel">
               <h3 class="panel-title">배합 설정</h3>
@@ -256,7 +276,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend.js?v=20260720l"></script>
+    <script src="/static/js/blend.js?v=20260720m"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
