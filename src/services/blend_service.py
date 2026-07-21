@@ -953,7 +953,112 @@ def create_blend_record(
                 created_at,
             ),
         )
+    # 반응기 현황판 동기화 — reactor 지정 시 그 반응기를 이 배치로 채우고,
+    # 파생 이월(carried_over) 행의 1차 LOT 가 어떤 반응기에 있으면 그 칸은 비운다(소비).
+    sync_reactor_slot(
+        connection,
+        reactor=reactor,
+        product_name=product_name.strip(),
+        product_lot=product_lot,
+        amount=float(total_amount),
+        blend_record_id=record_id,
+        details=details,
+        filled_by=(created_by or worker),
+        filled_at=created_at,
+    )
     return record_id
+
+
+# ── 반응기 현황판(reactor status board) ─────────────────────────
+# 각 반응기(1~4)에 현재 무엇이 있는지 추적. 배합 실적 저장 시 채워지고, 파생 2차 이월 시
+# 1차가 있던 칸은 비워지며, 수동 비우기(POST /reactors/{n}/empty)로 해제된다.
+def sync_reactor_slot(
+    connection: sqlite3.Connection,
+    *,
+    reactor: int | None,
+    product_name: str,
+    product_lot: str,
+    amount: float,
+    blend_record_id: int,
+    details: list[dict[str, Any]],
+    filled_by: str | None,
+    filled_at: str,
+) -> None:
+    """반응기 현황판 동기화 — 1) 파생 이월으로 소비된 1차 LOT 칸 비우기, 2) 이 배치로 채우기.
+
+    1) details 중 carried_over=true 인 행의 material_lot(=1차 product_lot) 가 비어있지 않으면,
+       그 LOT 가 어떤 반응기에 있든 그 칸을 지운다(1차 제품이 반응기에서 소비됨).
+    2) reactor 가 지정됐으면 그 반응기를 이 배치로 덮어쓴다(INSERT OR REPLACE).
+    reactor_slots 테이블이 없는 구버전/테스트 DB 에서는 조용히 no-op(OperationalError 폴백).
+    """
+    try:
+        # (1) 파생 이월 — carried_over 행의 1차 LOT 가 점유한 반응기 칸을 모두 비운다.
+        for d in details or []:
+            if d.get("carried_over"):
+                lot = d.get("material_lot")
+                if lot not in (None, ""):
+                    connection.execute(
+                        "DELETE FROM reactor_slots WHERE product_lot = ?", (str(lot),)
+                    )
+        # (2) 이 배치가 반응기를 지정했으면 그 반응기를 이 배치로 채운다.
+        if reactor is not None:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO reactor_slots
+                    (reactor, product_name, product_lot, amount,
+                     blend_record_id, filled_by, filled_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(reactor), product_name, product_lot, float(amount),
+                 int(blend_record_id), filled_by, filled_at),
+            )
+    except sqlite3.OperationalError:
+        # reactor_slots 테이블이 없는 구버전/단위테스트 스키마 — 조용히 무시(anchor_material_id
+        # 폴백과 동일 방어). 현황판 기능만 빠질 뿐 배합 저장 자체는 영향 없음.
+        return
+
+
+def list_reactor_slots(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+    """반응기 1~4 의 현재 점유 상태. 항상 4개 항목(빈 칸은 occupied=False + 나머지 None).
+
+    reactor_slots 테이블이 없는 구버전/테스트 DB → 4개의 빈 항목 반환(OperationalError 폴백).
+    """
+    rows: dict[int, sqlite3.Row] = {}
+    try:
+        for r in connection.execute(
+            "SELECT reactor, product_name, product_lot, amount, filled_by, filled_at "
+            "FROM reactor_slots"
+        ).fetchall():
+            rows[int(r["reactor"])] = r
+    except sqlite3.OperationalError:
+        rows = {}
+    out: list[dict[str, Any]] = []
+    for n in (1, 2, 3, 4):
+        r = rows.get(n)
+        if r is None:
+            out.append({
+                "reactor": n, "occupied": False,
+                "product_name": None, "product_lot": None, "amount": None,
+                "filled_at": None, "filled_by": None,
+            })
+        else:
+            out.append({
+                "reactor": n, "occupied": True,
+                "product_name": r["product_name"],
+                "product_lot": r["product_lot"],
+                "amount": float(r["amount"]) if r["amount"] is not None else None,
+                "filled_at": r["filled_at"],
+                "filled_by": r["filled_by"],
+            })
+    return out
+
+
+def empty_reactor_slot(connection: sqlite3.Connection, reactor: int) -> None:
+    """지정 반응기 칸 비우기(수동 해제). reactor_slots 없는 DB 에서는 no-op."""
+    try:
+        connection.execute("DELETE FROM reactor_slots WHERE reactor = ?", (int(reactor),))
+    except sqlite3.OperationalError:
+        return
 
 
 def update_blend_record(
