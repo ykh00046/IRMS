@@ -18,6 +18,9 @@
           <span class="brand-logo login-logo">IR</span>
           <h1 class="login-title">근태 확인</h1>
           <p class="login-subtitle">사번으로 로그인해 월별 근태를 조회합니다</p>
+          <!-- 책임자는 사번 없이 책임자 모드로 근태를 볼 수 있다 — blend_login 의 진입
+               링크와 동일 패턴. 로그인 후 next 로 근태 화면 복귀(/attendance 는 admin_mode 허용). -->
+          <a href="/management/login?next=/attendance" class="login-back">책임자 · 관리자 로그인 →</a>
         </div>
 
         <div class="login-field">

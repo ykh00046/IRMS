@@ -186,10 +186,13 @@
 .manual-entry-mark { color: #f59e0b; font-weight: 700; font-size: 0.85em; }
 .manual-entry-dot { color: #f59e0b; font-weight: 700; }
 
-/* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함) */
+/* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함)
+   작업자가 반드시 읽어야 하는 안내라 오렌지 강조 + 확대(사용자 요청 2026-07-21).
+   배합·이어서 계량 두 화면이 이 클래스를 공유한다. */
 .blend-step-row td {
-  background: #f8fafc; color: #334155; font-size: 0.85rem; font-weight: 600;
-  border-left: 3px solid var(--accent, #2563eb); padding: 0.4rem 0.7rem;
+  background: var(--accent-secondary-light, rgba(244, 124, 38, 0.12));
+  color: var(--text-primary, #1f2937); font-size: 1.05rem; font-weight: 700;
+  border-left: 4px solid var(--accent-secondary, #f47c26); padding: 0.6rem 0.8rem;
 }
 
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
