@@ -57,6 +57,10 @@
     // 동일 (name, lot) 조합의 중복 조회를 막기 위해 한 번 판정하면 보관한다.
     // 레시피가 바뀌면 lotSuggest 와 함께 새로 채워지므로 여기서는 만료 처리하지 않는다.
     lotChecked: {},
+    // 미등록 LOT '사유 입력 후 진행' 승인 — (자재명\u0000LOT) → 사유. 승인된 조합은
+    // 검증·저장에서 통과시키고, 사유는 저장 시 비고에 남겨 책임자가 사후 확인한다.
+    // 레시피 변경·저장 시 초기화.
+    lotOverrides: {},
     // 초과 계량 증량(rescale). 기준 자재 레시피에서 총량이 기준 자재 실측값으로
     // 파생되므로 증량분을 별도로 보관 — 유효 총량 = max(기준 파생 총량, rescaleTotalG).
     // 레시피 변경/저장 후 초기화 시 0(미사용)으로 리셋.
@@ -441,6 +445,7 @@
     state.addPending = {};
     state.rescaleActive = false;
     state.rescaleUndo = null;
+    state.lotOverrides = {};
     hideRescaleUndo();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
@@ -777,9 +782,27 @@
     const lot = (input.value || "").trim();
     input.value = lot;  // trim 반영
     state.items[idx].material_lot = lot;
+    if (lotOverrideKey(name, lot) in state.lotOverrides) return;  // 사유 입력 후 진행 승인됨 → 통과
     if (await checkLotRegistered(name, lot)) return;  // 등록됨 → 통과
     // 미등록 — 모달 표시. 확인 버튼(hideLotInvalidModal 핸들러)이 값 비우기를 맡는다.
     openLotInvalidModal(name, lot, input);
+  }
+
+  function lotOverrideKey(name, lot) { return `${name}\u0000${lot}`; }
+
+  // 저장 시 비고에 남길 미등록 LOT 진행 사유 — 실제로 저장에 포함된 승인 조합만.
+  function buildOverrideNote() {
+    const parts = [];
+    state.items.forEach((it) => {
+      const name = (it.material_name || "").trim();
+      const lot = (it.material_lot || "").trim();
+      if (!lot) return;
+      const key = lotOverrideKey(name, lot);
+      if (key in state.lotOverrides) {
+        parts.push(`[미등록 LOT 진행] ${name}/${lot}: ${state.lotOverrides[key]}`);
+      }
+    });
+    return parts.join("\n");
   }
 
   function openLotInvalidModal(name, lot, input) {
@@ -788,11 +811,19 @@
       body.innerHTML = ""
         + `<p><strong>자재명:</strong> ${esc(name)}</p>`
         + `<p><strong>입력한 로트:</strong> ${esc(lot)}</p>`
-        + `<p>등록되지 않은 로트입니다. 1차 배합 기록이 저장되었는지, LOT 번호가 맞는지 확인하세요.</p>`;
+        + `<p>등록되지 않은 로트입니다. 1차 배합 기록이 저장되었는지, LOT 번호가 맞는지 확인하세요.</p>`
+        + `<p class="muted small">1차 기록이 아직 없는 정당한 경우에는 아래에 사유를 적고 진행할 수 있습니다(사유는 기록에 남습니다).</p>`;
     }
-    // 확인 버튼이 눌릴 때 값을 비우고 다시 포커스하기 위해 현재 입력칸을 기억해둔다.
-    $("lot-invalid-modal")._lotInput = input || null;
-    $("lot-invalid-modal").hidden = false;
+    // 우회 사유 입력칸 초기화(닫혀 있는 기본 상태로).
+    const box = $("lot-override-box");
+    const reason = $("lot-override-reason");
+    if (reason) reason.value = "";
+    if (box) box.hidden = true;
+    const modal = $("lot-invalid-modal");
+    modal._lotInput = input || null;
+    modal._lotName = name;
+    modal._lotValue = lot;
+    modal.hidden = false;
   }
 
   function closeLotInvalidModal() { $("lot-invalid-modal").hidden = true; }
@@ -1447,12 +1478,15 @@
       if (!state.lotSuggest || !state.lotSuggest[name]) continue;
       const lot = (it.material_lot || "").trim();
       if (!lot) continue;
+      if (lotOverrideKey(name, lot) in state.lotOverrides) continue;  // 사유 입력 후 진행 승인됨
       if (!(await checkLotRegistered(name, lot))) {
         const input = document.querySelector(`.blend-lot[data-idx="${i}"]`);
         openLotInvalidModal(name, lot, input || null);
         return;
       }
     }
+    // 승인된 미등록 LOT 이 실제로 저장에 포함되면 사유를 비고 앞에 남긴다(책임자 사후 확인).
+    const overrideNote = buildOverrideNote();
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
     const body = {
@@ -1465,7 +1499,7 @@
       work_time: $("blend-time").value || nowTime(),
       total_amount: total,
       scale: $("blend-scale").value.trim() || null,
-      note: $("blend-note").value.trim() || null,
+      note: [overrideNote, $("blend-note").value.trim()].filter(Boolean).join("\n") || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
       // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
@@ -1504,6 +1538,7 @@
       state.addPending = {};
       state.rescaleActive = false;
       state.rescaleUndo = null;
+      state.lotOverrides = {};
       hideRescaleUndo();
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
@@ -1601,7 +1636,7 @@
     // 방금 증량 취소 — 증량 직전 상태로 복원(추가분 넣기 전까지만 노출).
     const rescaleUndoBtn = $("rescale-undo");
     if (rescaleUndoBtn) rescaleUndoBtn.addEventListener("click", restoreRescaleUndo);
-    // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
+    // 미등록 LOT '다시 확인' — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
     const lotConfirm = $("lot-invalid-confirm");
     if (lotConfirm) lotConfirm.addEventListener("click", () => {
       const modal = $("lot-invalid-modal");
@@ -1613,6 +1648,22 @@
         input.value = "";
         input.focus();
       }
+    });
+    // 미등록 LOT '사유 적고 진행'(안전밸브) — 1클릭: 사유칸 표시 / 2클릭(사유 입력됨):
+    // 그 (자재,LOT) 조합을 통과 처리하고 사유 보관(저장 시 비고에 남김). 값은 그대로 둔다.
+    const lotProceed = $("lot-invalid-proceed");
+    if (lotProceed) lotProceed.addEventListener("click", () => {
+      const box = $("lot-override-box");
+      const reason = $("lot-override-reason");
+      if (box && box.hidden) { box.hidden = false; if (reason) reason.focus(); return; }
+      const text = (reason && reason.value.trim()) || "";
+      if (!text) { notify("진행 사유를 입력하세요.", "error"); if (reason) reason.focus(); return; }
+      const modal = $("lot-invalid-modal");
+      const name = modal._lotName, lot = modal._lotValue, input = modal._lotInput;
+      state.lotOverrides[lotOverrideKey(name, lot)] = text;
+      closeLotInvalidModal();
+      if (input) input.focus();
+      notify("사유를 남기고 진행합니다 — 이 로트는 기록에 '미등록 진행'으로 남습니다.", "warn");
     });
     // 파생 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
     const coConfirm = $("carry-over-confirm");

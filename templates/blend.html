@@ -25,6 +25,9 @@
         color: #b45309; font-size: 0.75rem; font-weight: 600; text-decoration: underline;
       }
       .blend-undo-link[hidden] { display: none; }
+      /* 미등록 LOT '사유 적고 진행' 입력칸 */
+      .lot-override-box { margin: 8px 0 4px; }
+      .lot-override-box[hidden] { display: none; }
     </style>
 {% endblock %}
 
@@ -224,8 +227,15 @@
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="lot-invalid-modal-title">
             <div class="ss-modal-header"><h3 id="lot-invalid-modal-title">등록되지 않은 로트</h3></div>
             <div class="ss-modal-body" id="lot-invalid-modal-body"></div>
+            <!-- 사유 입력 후 진행(안전밸브) — 1차 기록이 아직 없는 정당한 경우 라인이 멈추지 않게.
+                 사유는 저장 기록의 비고에 남아 책임자가 나중에 확인한다. -->
+            <div class="lot-override-box" id="lot-override-box" hidden>
+              <label class="filter-label" for="lot-override-reason">진행 사유 (책임자 확인용)</label>
+              <textarea class="input" id="lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
+            </div>
             <div class="ss-modal-footer blend-actions">
-              <button class="btn accent" id="lot-invalid-confirm" type="button">확인</button>
+              <button class="btn" id="lot-invalid-proceed" type="button">사유 적고 진행</button>
+              <button class="btn accent" id="lot-invalid-confirm" type="button">다시 확인</button>
             </div>
           </div>
         </div>
@@ -246,7 +256,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend.js?v=20260720j"></script>
+    <script src="/static/js/blend.js?v=20260720k"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
