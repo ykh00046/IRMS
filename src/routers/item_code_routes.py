@@ -28,9 +28,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import require_access_level
 from ..db import get_connection, write_audit_log
 
-# 품목코드 완화 형식 — ERP 마스터에 없는 코드(BT000 등)도 운영자가 직접 넣을 수 있도록
-# '2자리 영문 + 2~8자리 영숫자(총 4~10자)' 만 검사. 마스터 존재 여부는 강제하지 않는다.
-_CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{2,8}$")
+# 품목코드 형식 — 원재료/반제품이 코드 체계가 다르다(사용자 확인 2026-07-21).
+#  · 원재료(materials.code): 보통 A로 시작하는 **영문 2자** + 영숫자 (AC0101 등) → 엄격 유지.
+#  · 반제품(recipes.product_code): **B로 시작**, B 단독(B0082) 또는 BC/BW 등 → 앞 영문 1~2자 허용.
+# 마스터 존재 여부는 강제하지 않는다(운영자 직접 입력 허용).
+_CODE_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{2,8}$")            # 원재료(재료) 코드 — 영문 2자
+_PRODUCT_CODE_PATTERN = re.compile(r"^[A-Z]{1,2}[A-Z0-9]{2,8}$")  # 반제품 코드 — 영문 1~2자(B0082 허용)
 
 
 def _validate_code(raw: Any) -> str | None:

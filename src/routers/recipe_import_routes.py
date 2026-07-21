@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
-from .item_code_routes import _CODE_PATTERN
+from .item_code_routes import _PRODUCT_CODE_PATTERN
 from .models import ImportRequest, actor_name
 
 
@@ -40,10 +40,10 @@ def _normalize_explicit_product_code(raw: Any) -> str | None:
     if text == "":
         return None
     code = text.upper()
-    if not _CODE_PATTERN.match(code):
+    if not _PRODUCT_CODE_PATTERN.match(code):
         raise HTTPException(
             status_code=400,
-            detail="품목코드 형식이 올바르지 않습니다. (영문 2자 + 영문/숫자 2~8자)",
+            detail="반제품 품목코드 형식이 올바르지 않습니다. (영문 1~2자로 시작 + 영문/숫자 2~8자, 예: B0082, BC1234)",
         )
     return code
 

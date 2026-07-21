@@ -34,6 +34,9 @@
     // 활성 편집 행 추적 — 같은 행 중복 편집 방지.
     let editingMaterialId = null;
 
+    // 맨 위 빠른 지정용 자재명→id 색인(datalist 원본). 필터와 무관하게 전체를 담는다.
+    let matNameToId = {};
+
     function activeFilters() {
       return {
         uncoded: dom.codesUncoded && dom.codesUncoded.checked ? "1" : undefined,
@@ -90,7 +93,87 @@
       }
     }
 
+    // 맨 위 빠른 지정 — 전체 자재를 한 번 불러 datalist(자재명)와 이름→id 색인을 채운다.
+    // 필터("코드 없음만")와 무관하게 전체를 담아, 이미 코드가 있는 자재도 위에서 수정 가능.
+    async function loadMaterialIndex() {
+      const dl = document.getElementById("codes-mat-datalist");
+      try {
+        const data = await IRMS._core.request("/item-codes/materials", { query: {} });
+        const items = data.items || [];
+        matNameToId = {};
+        items.forEach((m) => {
+          matNameToId[String(m.name).trim().toLowerCase()] = m.id;
+        });
+        if (dl) {
+          dl.innerHTML = items
+            .map((m) => `<option value="${IRMS.escapeHtml(m.name)}"></option>`)
+            .join("");
+        }
+      } catch (_e) {
+        /* 색인 실패는 조용히 — 아래 표는 정상 동작 */
+      }
+    }
+
+    async function quickAssign() {
+      const nameEl = document.getElementById("codes-quick-name");
+      const codeEl = document.getElementById("codes-quick-code");
+      if (!nameEl || !codeEl) return;
+      const name = String(nameEl.value || "").trim();
+      const code = String(codeEl.value || "").trim();
+      if (!name) {
+        IRMS.notify("자재명을 입력하세요.", "error");
+        nameEl.focus();
+        return;
+      }
+      const id = matNameToId[name.toLowerCase()];
+      if (!id) {
+        IRMS.notify("그 자재명을 찾을 수 없습니다. 목록에서 선택하세요.", "error");
+        nameEl.focus();
+        return;
+      }
+      if (!code) {
+        IRMS.notify("코드를 입력하세요.", "error");
+        codeEl.focus();
+        return;
+      }
+      try {
+        const resp = await fetch(`/api/materials/${id}/code`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({ code }),
+        });
+        if (!resp.ok) {
+          IRMS.notify(`코드 저장 실패: ${await detailOf(resp)}`, "error");
+          return;
+        }
+        const result = await resp.json();
+        IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.`, "success");
+        nameEl.value = "";
+        codeEl.value = "";
+        nameEl.focus();
+        await refresh();
+        loadMaterialIndex();
+      } catch (err) {
+        IRMS.notify(`코드 저장 실패: ${err.message}`, "error");
+      }
+    }
+
     function init() {
+      loadMaterialIndex();
+      const quickBtn = document.getElementById("codes-quick-assign-btn");
+      if (quickBtn) {
+        quickBtn.addEventListener("click", quickAssign);
+      }
+      const quickCode = document.getElementById("codes-quick-code");
+      if (quickCode) {
+        quickCode.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            quickAssign();
+          }
+        });
+      }
       if (dom.codesSearch) {
         dom.codesSearch.addEventListener(
           "input",
