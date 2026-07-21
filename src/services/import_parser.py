@@ -176,6 +176,19 @@ def parse_import_text(
 
     # item-code P3: 마스터 인덱스 로드. 비어 있으면 None → 하위호환 모드(차단 없음).
     master_index = _load_master_index(connection)
+    # 1차→2차 연계 자재 인식용 — completed 레시피 product_name 의 정규화 집합을 1회 로드.
+    # 2차 레시피의 자재 중 마스터에 없어도 우리가 만드는 1차 반제품(레시피 product_name)이면
+    # 정상 자재로 인식한다(unknown 차단 우회). 품명이 같은 완료 레시피가 하나라도 있으면 매칭.
+    completed_recipe_names: set[str] = set()
+    try:
+        for row in connection.execute(
+            "SELECT product_name FROM recipes WHERE status = 'completed'"
+        ).fetchall():
+            name = row["product_name"]
+            if name not in (None, ""):
+                completed_recipe_names.add(normalize_token(str(name)))
+    except sqlite3.OperationalError:
+        completed_recipe_names = set()  # recipes 테이블 없는 구버전/테스트 스키마
     # 자재 3단 판정 결과를 preview 응답에 모아 담는다(spec §1 material_matches).
     material_matches: list[dict[str, Any]] = []
 
@@ -308,42 +321,58 @@ def parse_import_text(
                 else:
                     # status=unknown: 어디에도 없음. 유사 후보(기존 materials + 마스터 양쪽).
                     similar = _similar_candidates(token, master_index)
-                    # 마스터가 비어 있으면(하위호환) 차단하지 않고 기존처럼 코드 없이 자동 등록.
-                    if master_index is None:
+                    # 1차→2차 연계 자재 인식(unknown 차단보다 먼저) — 마스터에 없어도 우리가 만드는
+                    # 1차 반제품(completed 레시피 product_name)이면 정상 자재로 인식한다. 코드 없이
+                    # 자동 등록하고 안내(level-3)만 남긴다 — allow_unknown_materials 와 무관하게 정상 매칭.
+                    if token in completed_recipe_names:
                         mat = _auto_register_material(connection, header.strip())
                         token_to_material[token] = mat
                         header_warnings.append({
                             "level": 3,
-                            "message": f"새 원재료가 자동 등록됩니다: {header.strip()}",
+                            "message": f"자체 제조 반제품(1차) 연계: {header.strip()}",
                             "row": current_row_index,
                         })
-                    elif allow_unknown_materials:
-                        # 명시적 확인 경로: 코드 없이 자동 등록하되 차단을 경고로 강등.
-                        mat = _auto_register_material(connection, header.strip())
-                        token_to_material[token] = mat
-                        similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
-                        header_warnings.append({
-                            "level": 3,
-                            "message": f"마스터에 없는 품목(확인 후 등록): {header.strip()}{similar_txt}",
-                            "row": current_row_index,
+                        material_matches.append({
+                            "name": header.strip(), "status": "recipe",
+                            "code": None, "similar": [],
                         })
                     else:
-                        # 기본 차단: errors 에 추가 → 기존 UI 규칙상 등록 버튼 비활성.
-                        similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
-                        errors.append({
-                            "level": 2,
-                            "message": f"마스터에 없는 품목: {header.strip()}{similar_txt} "
-                            "(확인 후 등록하려면 신규 품목 확인 필요)",
-                            "row": current_row_index,
+                        # 마스터가 비어 있으면(하위호환) 차단하지 않고 기존처럼 코드 없이 자동 등록.
+                        if master_index is None:
+                            mat = _auto_register_material(connection, header.strip())
+                            token_to_material[token] = mat
+                            header_warnings.append({
+                                "level": 3,
+                                "message": f"새 원재료가 자동 등록됩니다: {header.strip()}",
+                                "row": current_row_index,
+                            })
+                        elif allow_unknown_materials:
+                            # 명시적 확인 경로: 코드 없이 자동 등록하되 차단을 경고로 강등.
+                            mat = _auto_register_material(connection, header.strip())
+                            token_to_material[token] = mat
+                            similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
+                            header_warnings.append({
+                                "level": 3,
+                                "message": f"마스터에 없는 품목(확인 후 등록): {header.strip()}{similar_txt}",
+                                "row": current_row_index,
+                            })
+                        else:
+                            # 기본 차단: errors 에 추가 → 기존 UI 규칙상 등록 버튼 비활성.
+                            similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
+                            errors.append({
+                                "level": 2,
+                                "message": f"마스터에 없는 품목: {header.strip()}{similar_txt} "
+                                "(확인 후 등록하려면 신규 품목 확인 필요)",
+                                "row": current_row_index,
+                            })
+                            # 차단한 자재도 파싱은 진행(preview 표시용)하되 등록은 막은 상태.
+                            # parsed["errors"] 가 비어있지 않으면 import 엔드포인트가 400 로 거부한다.
+                            mat = _auto_register_material(connection, header.strip())
+                            token_to_material[token] = mat
+                        material_matches.append({
+                            "name": header.strip(), "status": "unknown",
+                            "code": None, "similar": similar,
                         })
-                        # 차단한 자재도 파싱은 진행(preview 표시용)하되 등록은 막은 상태.
-                        # parsed["errors"] 가 비어있지 않으면 import 엔드포인트가 400 로 거부한다.
-                        mat = _auto_register_material(connection, header.strip())
-                        token_to_material[token] = mat
-                    material_matches.append({
-                        "name": header.strip(), "status": "unknown",
-                        "code": None, "similar": similar,
-                    })
             else:
                 # status=existing: materials 에 존재 → 기존 material_id. code 있으면 함께 표시.
                 material_matches.append({

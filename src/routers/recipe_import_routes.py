@@ -160,12 +160,16 @@ def build_router() -> APIRouter:
             # 파생(derived) 승계 — use_reactor 승계와 동일 구조. body.is_derived 미지정 시
             # 부모의 is_derived 를 물려받는다(파생 여부는 반응기와 독립적으로 승계).
             inherited_is_derived: int = 0
+            # 1차→2차 연계 승계 — body.stage1_recipe_id 미지정 시 부모의 stage1_recipe_id 를 물려받는다
+            # (anchor_material_id 승계와 동일 구조 — nullable 정수).
+            inherited_stage1_recipe_id: int | None = None
             if body.revision_of is not None:
                 parent_row = connection.execute(
                     "SELECT COALESCE(is_dhr, 0) AS is_dhr, base_total, base_totals, "
                     "anchor_material_id, tolerance_g, category, product_code, "
                     "COALESCE(use_reactor, 0) AS use_reactor, "
-                    "COALESCE(is_derived, 0) AS is_derived "
+                    "COALESCE(is_derived, 0) AS is_derived, "
+                    "stage1_recipe_id "
                     "FROM recipes WHERE id = ?",
                     (body.revision_of,),
                 ).fetchone()
@@ -191,10 +195,14 @@ def build_router() -> APIRouter:
                         inherited_product_code = str(parent_row["product_code"])
                     inherited_use_reactor = int(parent_row["use_reactor"])
                     inherited_is_derived = int(parent_row["is_derived"])
+                    if parent_row["stage1_recipe_id"] is not None:
+                        inherited_stage1_recipe_id = int(parent_row["stage1_recipe_id"])
             # reactor-ownership: 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지).
             effective_use_reactor = 1 if body.use_reactor else (1 if inherited_use_reactor else 0)
             # 파생(derived): 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지) — use_reactor 와 동일.
             effective_is_derived = 1 if body.is_derived else (1 if inherited_is_derived else 0)
+            # 1차→2차 연계: 명시 값 우선, 없으면 부모 승계(비개정 신규면 None).
+            effective_stage1_recipe_id = body.stage1_recipe_id if body.stage1_recipe_id is not None else inherited_stage1_recipe_id
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -289,8 +297,8 @@ def build_router() -> APIRouter:
                         product_name, position, ink_name, status, created_by, created_at, completed_at,
                         raw_input_hash, raw_input_text, revision_of, remark, effective_from, is_dhr,
                         base_totals, anchor_material_id, tolerance_g, category, product_code, use_reactor,
-                        is_derived
-                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        is_derived, stage1_recipe_id
+                    ) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         parsed_row["product_name"],
@@ -314,6 +322,7 @@ def build_router() -> APIRouter:
                         effective_product_code,
                         effective_use_reactor,
                         effective_is_derived,
+                        effective_stage1_recipe_id,
                     ),
                 )
                 recipe_id = cursor.lastrowid

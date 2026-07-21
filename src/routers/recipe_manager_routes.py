@@ -311,4 +311,72 @@ def build_router() -> APIRouter:
 
         return {"status": "ok", "recipe_id": recipe_id, "is_derived": bool(is_derived)}
 
+    @router.put("/recipes/{recipe_id}/stage1")
+    def set_recipe_stage1(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피 1차 연계(stage1_recipe_id) 지정/해제 — 책임자 전용.
+
+        body: {"stage1_recipe_id": int|null}. null 은 링크 해제. recipe_is_derived_set 와 동일한
+        헬퍼/패턴. stage1_recipe_id 가 지정되면 그 레시피가 존재해야 하고, 자기 자신이면 400.
+        """
+        raw = body.get("stage1_recipe_id")
+        if raw is None or raw == "":
+            stage1_recipe_id: int | None = None
+        else:
+            # 정수(id) 또는 숫자 문자열만 허용 — 그 외는 400.
+            try:
+                stage1_recipe_id = int(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail="stage1_recipe_id 는 정수 또는 null 이어야 합니다.",
+                )
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            if stage1_recipe_id is not None:
+                # 자기 자신을 1차로 지정 불가 — 순환/무의미.
+                if stage1_recipe_id == recipe_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="레시피는 자기 자신을 1차로 지정할 수 없습니다.",
+                    )
+                # 대상 1차 레시피가 존재해야 함.
+                target = connection.execute(
+                    "SELECT product_name FROM recipes WHERE id = ?", (stage1_recipe_id,)
+                ).fetchone()
+                if not target:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="지정한 1차 레시피를 찾을 수 없습니다.",
+                    )
+                target_label = str(target["product_name"])
+            else:
+                target_label = None
+
+            connection.execute(
+                "UPDATE recipes SET stage1_recipe_id = ? WHERE id = ?",
+                (stage1_recipe_id, recipe_id),
+            )
+            write_audit_log(
+                connection,
+                action="recipe_stage1_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"stage1_recipe_id": stage1_recipe_id, "stage1_product_name": target_label},
+            )
+            connection.commit()
+
+        return {"status": "ok", "recipe_id": recipe_id, "stage1_recipe_id": stage1_recipe_id}
+
     return router

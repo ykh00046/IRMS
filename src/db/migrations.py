@@ -488,6 +488,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     if not has_migration(connection, "recipes_is_derived"):
         record_migration(connection, "recipes_is_derived")
 
+    # 1차→2차 레시피 연계 — 2차 레시피가 명시적으로 자신의 1차 레시피를 가리킨다(recipes.stage1_recipe_id).
+    # NULL = 단일 단계 레시피(1차 링크 없음). use_reactor/is_derived 와 동일한 ensure_column 패턴.
+    # 데이터 시드 없음 — 사용자가 2차 레시피마다 지정(기본 NULL).
+    ensure_column(connection, "recipes", "stage1_recipe_id", "INTEGER")
+    if not has_migration(connection, "recipes_stage1_recipe_id"):
+        record_migration(connection, "recipes_stage1_recipe_id")
+
     # 반응기 현황판(reactor_slots)은 도입 후 제거됨(현장 요청) — 이미 만들어진 DB 는 정리한다.
     # 파생 이월·반응기 번호 저장 등 나머지 기능은 그대로. 고아 테이블 DROP 패턴.
     if not has_migration(connection, "drop_reactor_slots"):

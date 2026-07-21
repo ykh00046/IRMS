@@ -203,9 +203,12 @@ def build_router() -> APIRouter:
                        am.name AS anchor_material_name,
                        r.tolerance_g, r.category, r.product_code,
                        COALESCE(r.use_reactor, 0) AS use_reactor,
-                       COALESCE(r.is_derived, 0) AS is_derived
+                       COALESCE(r.is_derived, 0) AS is_derived,
+                       r.stage1_recipe_id,
+                       s.product_name AS stage1_product_name
                 FROM recipes r
                 LEFT JOIN materials am ON am.id = r.anchor_material_id
+                LEFT JOIN recipes s ON s.id = r.stage1_recipe_id
                 WHERE r.id = ?
                 """,
                 (recipe_id,),
@@ -290,6 +293,8 @@ def build_router() -> APIRouter:
                 "is_root": rec.get("revision_of") is None,
                 "use_reactor": bool(rec.get("use_reactor", 0)),
                 "is_derived": bool(rec.get("is_derived", 0)),
+                "stage1_recipe_id": rec.get("stage1_recipe_id"),
+                "stage1_product_name": rec.get("stage1_product_name"),
             })
         return {"root_id": root_id, "current_id": current_id, "items": items}
 
@@ -453,8 +458,11 @@ def build_router() -> APIRouter:
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category, r.created_by,
                        r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr,
                        r.product_code, COALESCE(r.use_reactor, 0) AS use_reactor,
-                       COALESCE(r.is_derived, 0) AS is_derived
+                       COALESCE(r.is_derived, 0) AS is_derived,
+                       r.stage1_recipe_id,
+                       s.product_name AS stage1_product_name
                 FROM recipes r
+                LEFT JOIN recipes s ON s.id = r.stage1_recipe_id
                 {where_sql}
                 ORDER BY r.created_at DESC, r.id DESC
                 LIMIT ?

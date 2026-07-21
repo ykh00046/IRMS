@@ -42,6 +42,10 @@ class ImportRequest(BaseModel):
     # 명시 값이 최우선, None(기본)이면 수정 등록 시 부모 승계(use_reactor 와 동일 구조),
     # 비개정 신규 레시피면 0(파생 아님)으로 시작한다.
     is_derived: bool | None = None
+    # 1차→2차 레시피 연계(recipes.stage1_recipe_id) — 2차 레시피가 명시적으로 자신의 1차 레시피를
+    # 가리킨다. None(기본)이면 수정 등록 시 부모 승계(use_reactor/is_derived 와 동일 구조),
+    # 비개정 신규 레시피면 NULL(1차 링크 없음).
+    stage1_recipe_id: int | None = None
 
     @model_validator(mode="after")
     def _check_base_totals(self) -> "ImportRequest":
