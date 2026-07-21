@@ -95,6 +95,10 @@
       if (isDerivedEl) {
         isDerivedEl.checked = !!detail.is_derived;
       }
+      // 1차 레시피 프리필 — 목록을 다시 채우며 부모의 stage1_recipe_id 를 선택.
+      if (ctx.importValidate.populateStage1Options) {
+        ctx.importValidate.populateStage1Options(detail.stage1_recipe_id != null ? detail.stage1_recipe_id : "");
+      }
       ctx.importValidate.renderValidationMeta({ rows: [], warnings: [], errors: [] });
       ctx.importValidate.renderIssues([], dom.errorList, "오류 없음");
       ctx.importValidate.renderIssues([], dom.warningList, "확인 사항 없음");

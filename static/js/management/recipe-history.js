@@ -127,12 +127,15 @@
           return `<td><input type="checkbox" class="recipe-derived-toggle" data-recipe-id="${recipe.id}"${on ? " checked" : ""} title="파생(이전 총량 이월) 여부" /></td>`;
         };
 
-        dom.historyBody.innerHTML = rows
-          .map(
-            (recipe) => `
-              <tr class="history-row" data-recipe-id="${recipe.id}">
+        // 한 레시피 행 — stagePin('1차'/'2차') 이 있으면 가족 멤버로 표시.
+        const rowHtml = (recipe, stagePin) => {
+          const pin = stagePin
+            ? `<span class="stage-pin ${stagePin === "1차" ? "one" : "two"}">${stagePin}</span> `
+            : "";
+          return `
+              <tr class="history-row${stagePin ? " family-member" : ""}" data-recipe-id="${recipe.id}">
                 <td>${recipe.id}</td>
-                <td class="product-cell">${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
+                <td class="product-cell">${pin}${IRMS.escapeHtml(recipe.productName)}${recipe.isDhr ? ' <span class="chip-dhr">DHR 전용</span>' : ''}</td>
                 ${productCodeCell(recipe)}
                 ${categoryCell(recipe)}
                 ${reactorCell(recipe)}
@@ -141,10 +144,36 @@
                 <td>${IRMS.escapeHtml(recipe.createdBy || "-")}</td>
                 <td>${IRMS.formatDateTime(recipe.createdAt)}</td>
                 <td>${(recipe.items || []).length}</td>
-              </tr>
-            `,
-          )
-          .join("");
+              </tr>`;
+        };
+
+        // 1차/2차 가족 묶음 — 2차(stage1RecipeId 지정) 와 그 1차를 인접 그룹으로 묶어 표시.
+        // 가족은 먼저 등장한 멤버 위치에 나타나고(최신순 반영), 다른 멤버는 그 자리로 끌어온다.
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        const emitted = new Set();
+        const COLSPAN = 10;
+        const parts = [];
+        rows.forEach((r) => {
+          if (emitted.has(r.id)) return;
+          let two = null;
+          let one = null;
+          if (r.stage1RecipeId && byId.has(r.stage1RecipeId)) {
+            two = r; one = byId.get(r.stage1RecipeId);           // r = 2차
+          } else {
+            const child = rows.find((x) => x.stage1RecipeId === r.id);
+            if (child) { one = r; two = child; }                 // r = 1차(2차가 뒤에 있음)
+          }
+          if (two && one) {
+            parts.push(`<tr class="family-head-row"><td colspan="${COLSPAN}">◆ ${IRMS.escapeHtml(two.productName)} · 2단 제조 가족</td></tr>`);
+            parts.push(rowHtml(one, "1차"));
+            parts.push(rowHtml(two, "2차"));
+            emitted.add(one.id); emitted.add(two.id);
+          } else {
+            parts.push(rowHtml(r));
+            emitted.add(r.id);
+          }
+        });
+        dom.historyBody.innerHTML = parts.join("");
 
         // 분류 드롭다운 — 변경 즉시 PUT /api/recipes/{id}/category. 클릭이 행 확장으로
         // 번지지 않게 막는다(행 클릭 = 상세 펼침). x-csrftoken 헤더 직접 부착.

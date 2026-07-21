@@ -69,6 +69,8 @@
       productCode: row.product_code || null,
       useReactor: !!row.use_reactor,
       isDerived: !!row.is_derived,
+      stage1RecipeId: row.stage1_recipe_id != null ? Number(row.stage1_recipe_id) : null,
+      stage1ProductName: row.stage1_product_name || null,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,
       createdAt: row.created_at,

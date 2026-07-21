@@ -233,8 +233,11 @@
         // 파생(derived): 체크 시 is_derived=true 를 명시 전송(반응기와 독립). ImportRequest.is_derived.
         const isDerivedEl = document.getElementById("imp-is-derived");
         const isDerived = isDerivedEl ? !!isDerivedEl.checked : false;
+        // 1차 레시피 연계(stage1): 고르면 stage1_recipe_id 전송(현황 가족 묶음 + 재료 인식).
+        const stage1El = document.getElementById("imp-stage1");
+        const stage1RecipeId = stage1El && stage1El.value ? Number(stage1El.value) : null;
         let result;
-        if (anchorMaterial || hasTolerance || hasProductCode || useReactor || isDerived) {
+        if (anchorMaterial || hasTolerance || hasProductCode || useReactor || isDerived || stage1RecipeId) {
           result = await importWithAnchor(
             baseTotals,
             anchorMaterial,
@@ -242,6 +245,7 @@
             hasProductCode ? productCode : null,
             useReactor,
             isDerived,
+            stage1RecipeId,
           );
         } else {
           result = await IRMS.importRecipes(
@@ -264,7 +268,7 @@
 
     // 기준 자재·허용 편차·품목코드·반응기를 포함해 임포트 — core.js 의 request 와 동일한 CSRF 부착
     // 패턴으로 /api/recipes/import 에 직접 POST 한다.
-    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode, useReactor, isDerived) {
+    async function importWithAnchor(baseTotals, anchorMaterial, toleranceG, productCode, useReactor, isDerived, stage1RecipeId) {
       const body = {
         raw_text: state.confirmedRawText,
         created_by: "레시피 관리",
@@ -291,6 +295,10 @@
       body.use_reactor = !!useReactor;
       // is_derived(파생): 항상 명시적으로 전송(체크=true, 해제=false). 반응기와 독립.
       body.is_derived = !!isDerived;
+      // stage1_recipe_id(1차 연계): 고른 값이 있을 때만 전송(없음=미지정, 수정 등록 시 부모 승계).
+      if (stage1RecipeId) {
+        body.stage1_recipe_id = stage1RecipeId;
+      }
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
       if (token) headers["x-csrftoken"] = token;
@@ -347,6 +355,11 @@
       if (isDerivedEl) {
         isDerivedEl.checked = false;
       }
+      // 1차 레시피 선택도 초기화(수정 프리필 값이 신규 등록에 새어들지 않게).
+      const stage1El = document.getElementById("imp-stage1");
+      if (stage1El) {
+        stage1El.value = "";
+      }
       if (productCodeSuggest) {
         productCodeSuggest.hidden = true;
         productCodeSuggest.innerHTML = "";
@@ -367,12 +380,26 @@
       syncRegisterState();
     }
 
+    // 1차 레시피 드롭다운 채우기 — 완료 레시피 목록. selectedId 지정 시 그 값 선택.
+    // 조회 실패는 조용히(없음만). 수정 프리필에서 다시 호출해 값 반영.
+    async function populateStage1Options(selectedId) {
+      const sel = document.getElementById("imp-stage1");
+      if (!sel) return;
+      let recipes = [];
+      try { recipes = await IRMS.getRecipes({ status: "completed" }); } catch (_e) { recipes = []; }
+      const cur = selectedId != null ? String(selectedId) : sel.value;
+      sel.innerHTML = '<option value="">없음</option>'
+        + recipes.map((r) => `<option value="${r.id}"${String(r.id) === cur ? " selected" : ""}>${IRMS.escapeHtml(r.productName)}</option>`).join("");
+    }
+    populateStage1Options();  // 최초 1회 채움
+
     return {
       syncRegisterState,
       markPreviewStale,
       renderIssues,
       renderValidationMeta,
       populateAnchorOptions,
+      populateStage1Options,
       handlePreview,
       handleRegister,
       handleClear,

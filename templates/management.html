@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260720a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260721a" />
 {% endblock %}
 
 {% block content %}
@@ -83,6 +83,11 @@
                       <input id="imp-is-derived" type="checkbox" /> 파생
                     </label>
                     <p class="imp-attr-desc">앞 단계(1차) 총량을 이어받아 다시 계량하지 않는 레시피(예: SBCT-1→SBCT). 기준 자재 행에서 '파생 이월'로 1차 총량을 투입량으로 기록합니다. 반응기 여부와 독립.</p>
+                  </div>
+                  <div class="imp-attr-field">
+                    <label class="filter-label" for="imp-stage1">1차 레시피</label>
+                    <select id="imp-stage1" class="input"><option value="">없음</option></select>
+                    <p class="imp-attr-desc">이 레시피(2차)의 1차 레시피를 고릅니다. 지정하면 현황에서 1차/2차가 한 가족으로 묶이고, 재료로 넣은 1차 반제품(예: SBCT-1)은 코드 없이도 정상 인식됩니다.</p>
                   </div>
                 </div>
               </fieldset>
@@ -287,9 +292,9 @@
     
     <!-- management modules: factories (order-free) → controller last -->
     <script src="/static/js/management/bom-editor.js?v=20260717a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260720c"></script>
-    <script src="/static/js/management/import-validate.js?v=20260720c"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260720c"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260721a"></script>
+    <script src="/static/js/management/import-validate.js?v=20260721a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260721a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
     <script src="/static/js/management/item-codes.js?v=20260720b"></script>
