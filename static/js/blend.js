@@ -461,7 +461,6 @@
     updateLotPreview();
     updateInputGuide();
     loadLotSuggest();
-    loadReactorBoard();  // 레시피 로드 시 현황판·1차 반응기 강조 갱신
   }
 
   // ── 반제품 원료 LOT 자동 제안 ───────────────────────────────
@@ -480,95 +479,6 @@
     } catch (_e) {
       state.lotSuggest = {};  // 실패 — 제안 없이 기존 동작 유지
     }
-  }
-
-  // ── 반응기 현황판 ───────────────────────────────────────────
-  // GET /reactors 로 4개 반응기 점유 상태를 받아 스트립으로 렌더. 파생 레시피면 이 레시피의
-  // 1차(기준 자재)를 가진 반응기를 강조하고, 클릭하면 기준 자재 LOT 을 채운다(→ 이월 유도).
-  // 조회 실패는 조용히 숨김(현황판 없이 기존 동작).
-  async function loadReactorBoard() {
-    const board = $("reactor-board");
-    const cells = $("reactor-board-cells");
-    if (!board || !cells) return;
-    let slots;
-    try {
-      const data = await request("/reactors");
-      slots = (data && data.slots) || [];
-    } catch (_e) { board.hidden = true; return; }
-    if (!slots.length) { board.hidden = true; return; }
-    board.hidden = false;
-    cells.innerHTML = "";
-    slots.forEach((s) => {
-      const cell = document.createElement("div");
-      cell.className = "reactor-cell" + (s.occupied ? " occupied" : "");
-      cell.dataset.reactor = String(s.reactor);
-      cell.dataset.product = s.occupied ? (s.product_name || "") : "";
-      cell.dataset.lot = s.occupied ? (s.product_lot || "") : "";
-      if (s.occupied) {
-        cell.innerHTML = `<b>반응기 ${s.reactor}</b> <span>${esc(s.product_name || "")} · ${esc(s.product_lot || "")} · ${fmt(s.amount)} g</span>`;
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "reactor-empty-btn";
-        btn.textContent = "비움";
-        btn.addEventListener("click", (e) => { e.stopPropagation(); emptyReactor(s.reactor); });
-        cell.appendChild(btn);
-      } else {
-        cell.innerHTML = `<b>반응기 ${s.reactor}</b> <span class="muted">비어있음</span>`;
-      }
-      cells.appendChild(cell);
-    });
-    highlightAnchorReactor();
-  }
-
-  async function emptyReactor(n) {
-    if (!window.confirm(`반응기 ${n} 을(를) 비웁니다. 맞습니까?`)) return;
-    try {
-      await request(`/reactors/${n}/empty`, { method: "POST" });
-      notify(`반응기 ${n} 을(를) 비웠습니다.`, "success");
-      loadReactorBoard();
-    } catch (e) {
-      notify(`반응기 비우기 실패: ${e.message}`, "error");
-    }
-  }
-
-  // 파생 레시피면 이 레시피의 1차(기준 자재명)를 가진 반응기 칸을 강조하고 클릭 가능하게 한다.
-  function highlightAnchorReactor() {
-    const cells = document.querySelectorAll("#reactor-board-cells .reactor-cell");
-    cells.forEach((c) => {
-      c.classList.remove("anchor-match");
-      const tag = c.querySelector(".reactor-anchor-tag");
-      if (tag) tag.remove();
-      c.onclick = null;
-    });
-    if (!carryOverEligible()) return;
-    const anchorName = (state.items[state.anchorIndex].material_name || "").trim();
-    if (!anchorName) return;
-    cells.forEach((c) => {
-      if (c.dataset.product && c.dataset.product === anchorName) {
-        c.classList.add("anchor-match");
-        const tag = document.createElement("span");
-        tag.className = "reactor-anchor-tag";
-        tag.textContent = "← 이 레시피 1차 (클릭해 이월)";
-        c.appendChild(tag);
-        c.onclick = (e) => {
-          if (e.target.closest(".reactor-empty-btn")) return;  // 비움 버튼은 제외
-          fillAnchorFromReactor(c.dataset.lot);
-        };
-      }
-    });
-  }
-
-  // 반응기 칸 클릭 → 기준 자재 LOT 을 그 반응기의 1차 로트로 채우고 이월 컨트롤을 띄운다.
-  // 실제 이월 적용은 [파생 이월] 버튼·확인 모달을 거친다(자동 적용하지 않음 — 안전).
-  function fillAnchorFromReactor(lot) {
-    if (!hasAnchor() || !lot) return;
-    const input = document.querySelector(`.blend-lot[data-idx="${state.anchorIndex}"]`);
-    if (!input) return;
-    input.value = lot;
-    state.items[state.anchorIndex].material_lot = lot;
-    input.dispatchEvent(new Event("input"));  // refreshCarryOverControl → [파생 이월] 노출
-    input.focus();
-    notify("반응기의 1차 로트를 채웠습니다 — [파생 이월]을 눌러 적용하세요.", "warn");
   }
 
   // ── 배합 임시 저장·복구 ──────────────────────────────────────
@@ -1751,7 +1661,6 @@
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       clearDraft();  // 저장 완료 → 임시 저장 삭제
-      loadReactorBoard();  // 저장으로 반응기 점유가 바뀌었을 수 있으니 현황판 갱신
       // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
       // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다. 이월 표식도 함께 지운다.
       state.items.forEach((it) => {
@@ -1938,7 +1847,6 @@
     updateInputGuide();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
-    loadReactorBoard();  // 반응기 현황판 초기 로드
     offerRestore();      // 작성 중이던 배합이 있으면 이어서 할지 배너로 제안
     const restoreYes = $("blend-restore-yes");
     if (restoreYes) restoreYes.addEventListener("click", () => { restoreDraft().catch((e) => notify(e.message, "error")); });

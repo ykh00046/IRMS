@@ -190,34 +190,6 @@ def build_router() -> APIRouter:
     def blend_workers(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
         return {"items": blend_service.list_workers(connection)}
 
-    # ── 반응기 현황판(reactor status board) ──
-    # 각 반응기(1~4)의 현재 점유 상태 조회 + 수동 비우기. 배합 실적 저장(POST /blend/records,
-    # reactor 지정) 시 자동으로 채워지고(blend_service.create_blend_record → sync_reactor_slot),
-    # 파생 2차 이월 시 1차가 있던 칸은 비워진다. PUT(전체 수정) 경로는 현황판을 건드리지 않는다.
-    @router.get("/reactors")
-    def reactor_slots(connection: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
-        return {"slots": blend_service.list_reactor_slots(connection)}
-
-    @router.post("/reactors/{reactor}/empty")
-    def reactor_empty(
-        reactor: int,
-        request: Request,
-        connection: sqlite3.Connection = Depends(get_db),
-    ) -> dict[str, Any]:
-        worker = require_blend_worker(request)  # 작업자 세션 필요(401 if 없음)
-        if not (1 <= reactor <= 4):
-            raise HTTPException(status_code=400, detail="반응기 번호는 1~4 이어야 합니다.")
-        blend_service.empty_reactor_slot(connection, reactor)
-        write_audit_log(
-            connection,
-            action="reactor_emptied",
-            target_type="reactor",
-            target_id=reactor,
-            details={"by": worker},
-        )
-        connection.commit()
-        return {"status": "ok", "reactor": reactor}
-
     @router.get("/blend/material-lot-trace")
     def blend_material_lot_trace(
         lot: str = Query(..., min_length=1, max_length=100),

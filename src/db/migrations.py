@@ -488,20 +488,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     if not has_migration(connection, "recipes_is_derived"):
         record_migration(connection, "recipes_is_derived")
 
-    # 반응기 현황판(reactor status board) — 각 반응기(1~4)에 현재 무엇이 있는지 추적.
-    # 행이 있으면 점유됨, 없으면 빈 칸. 배합 실적 저장(reactor 지정) 시 채워지고,
-    # 파생 2차 이월 시 1차가 있던 칸은 비워진다(sync_reactor_slot). 수동 비우기 엔드포인트로 해제.
-    if not has_migration(connection, "reactor_slots_table"):
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reactor_slots (
-              reactor INTEGER PRIMARY KEY CHECK (reactor BETWEEN 1 AND 4),
-              product_name TEXT, product_lot TEXT, amount REAL,
-              blend_record_id INTEGER, filled_by TEXT, filled_at TEXT
-            )
-            """
-        )
-        record_migration(connection, "reactor_slots_table")
+    # 반응기 현황판(reactor_slots)은 도입 후 제거됨(현장 요청) — 이미 만들어진 DB 는 정리한다.
+    # 파생 이월·반응기 번호 저장 등 나머지 기능은 그대로. 고아 테이블 DROP 패턴.
+    if not has_migration(connection, "drop_reactor_slots"):
+        connection.execute("DROP TABLE IF EXISTS reactor_slots")
+        record_migration(connection, "drop_reactor_slots")
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
