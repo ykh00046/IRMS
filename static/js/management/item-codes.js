@@ -126,36 +126,71 @@
         return;
       }
       const id = matNameToId[name.toLowerCase()];
-      if (!id) {
-        IRMS.notify("그 자재명을 찾을 수 없습니다. 목록에서 선택하세요.", "error");
-        nameEl.focus();
+
+      // 기존 자재(name 이 색인에 있음) → 코드 지정 경로. 동작은 종전과 동일.
+      // 코드는 이 경로에서만 필수(새 자재 등록 경로는 코드 없이도 가능).
+      if (id) {
+        if (!code) {
+          IRMS.notify("코드를 입력하세요.", "error");
+          codeEl.focus();
+          return;
+        }
+        try {
+          const resp = await fetch(`/api/materials/${id}/code`, {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", ...csrfHeader() },
+            body: JSON.stringify({ code }),
+          });
+          if (!resp.ok) {
+            IRMS.notify(`코드 저장 실패: ${await detailOf(resp)}`, "error");
+            return;
+          }
+          const result = await resp.json();
+          IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.`, "success");
+          nameEl.value = "";
+          codeEl.value = "";
+          nameEl.focus();
+          await refresh();
+          loadMaterialIndex();
+        } catch (err) {
+          IRMS.notify(`코드 저장 실패: ${err.message}`, "error");
+        }
         return;
       }
-      if (!code) {
-        IRMS.notify("코드를 입력하세요.", "error");
-        codeEl.focus();
-        return;
+
+      // 미등록 자재명 → 새 자재로 등록(코드는 있어도/없어도 됨).
+      // 운영자가 Excel 재임포트 없이 단건 ERP 자재를 화면에서 바로 등록.
+      let confirmMsg = `'${name}' 은(는) 등록되지 않은 자재입니다. 새 자재로 등록할까요?`;
+      if (code) {
+        confirmMsg += ` (품목코드 ${code} 지정)`;
+      }
+      if (!window.confirm(confirmMsg)) {
+        return; // 취소 → 입력 그대로 유지
       }
       try {
-        const resp = await fetch(`/api/materials/${id}/code`, {
-          method: "PUT",
+        const resp = await fetch(`/api/materials`, {
+          method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json", ...csrfHeader() },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({ name, code: code || null }),
         });
         if (!resp.ok) {
-          IRMS.notify(`코드 저장 실패: ${await detailOf(resp)}`, "error");
+          IRMS.notify(`자재 등록 실패: ${await detailOf(resp)}`, "error");
           return;
         }
         const result = await resp.json();
-        IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.`, "success");
+        const successMsg = code
+          ? `자재 '${result.name || name}' 을(를) 등록하고 품목코드 '${result.code || code}' 을(를) 지정했습니다.`
+          : `자재 '${result.name || name}' 을(를) 등록했습니다.`;
+        IRMS.notify(successMsg, "success");
         nameEl.value = "";
         codeEl.value = "";
         nameEl.focus();
         await refresh();
         loadMaterialIndex();
       } catch (err) {
-        IRMS.notify(`코드 저장 실패: ${err.message}`, "error");
+        IRMS.notify(`자재 등록 실패: ${err.message}`, "error");
       }
     }
 

@@ -24,7 +24,10 @@ def _cleanup_test_master():
 
     테스트 DB(.tmp-tests/pytest-data/irms.db)는 실행 간 유지되므로, 마스터 행을
     남기면 import_parser 의 마스터 존재 판정이 바뀌어 다른 테스트(미리보기 자동
-    등록 경고 등)가 회귀한다. source='test_item_code_admin' 으로 표시된 행만 지운다.
+    등록 경고 등)가 회귀한다. 다음 두 source 의 행을 지운다:
+      - 'test_item_code_admin': _seed_master_row 로 직접 심은 ERP 시뮬레이션 행.
+      - 'manual': A3(set_material_code)·A4(set_recipe_product_code) 가
+        _ensure_master_entry 를 경유해 새 코드를 부여할 때 자동으로 들어가는 행.
     """
     yield
     _cleanup_test_master_rows()
@@ -102,12 +105,19 @@ def _seed_master_row(conn, code, name, kind, category_hint=None):
 
 
 def _cleanup_test_master_rows():
-    """이 모듈이 심은 item_code_master 행만 삭제 — DB 오염 방지."""
+    """이 모듈이 남긴 item_code_master 행 삭제 — DB 오염 방지.
+
+    직접 심은 행(source='test_item_code_admin')과, A3/A4 PUT 이
+    _ensure_master_entry 로 자동 생성한 행(source='manual')을 함께 지운다.
+    manual 행을 남기면 test_route_coverage 의 미리보기 자동 등록 정책 판정이
+    바뀌어 회귀한다.
+    """
     from src.db import get_connection
 
     with get_connection() as conn:
         conn.execute(
-            "DELETE FROM item_code_master WHERE source = 'test_item_code_admin'"
+            "DELETE FROM item_code_master "
+            "WHERE source IN ('test_item_code_admin', 'manual')"
         )
         conn.commit()
 

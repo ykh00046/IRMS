@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
-from ..db import get_connection, write_audit_log
+from ..db import get_connection, utc_now_text, write_audit_log
 
 # 품목코드 형식 — 원재료/반제품이 코드 체계가 다르다(사용자 확인 2026-07-21).
 #  · 원재료(materials.code): 보통 A로 시작하는 **영문 2자** + 영숫자 (AC0101 등) → 엄격 유지.
@@ -62,6 +62,35 @@ def _validate_code(raw: Any) -> str | None:
 def _escape_like(text: str) -> str:
     r"""LIKE 패턴용 이스케이프 — %, _, \ 를 리터럴로 취급."""
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _ensure_master_entry(
+    connection: sqlite3.Connection, code: str, name: str, kind: str
+) -> None:
+    """코드가 item_code_master 에 없을 때만 manual 행을 채운다.
+
+    품목코드 관리 화면에서 운영자가 새 코드를 부여·등록하면, ERP Excel 재임포트
+    없이도 마스터 제안(검색)에 노출되도록 같은 코드의 마스터 행을 보충한다.
+
+    - INSERT OR IGNORE: 이미 코드가 있으면(ERP Excel 임포트분 포함) 아무것도 하지
+      않는다. ERP 데이터가 권위(authoritative)를 가지므로 운영자 입력으로 기존
+      name/source/category_hint 를 덮어쓰지 않는다.
+    - 새 행은 source='manual', spec/unit/category_hint=NULL, imported_at=now 로
+      기록되어 임포트분과 구분된다.
+    - 마이그 전 DB(item_code_master 테이블 없음)에서는 500 없이 조용히 무시한다
+      — search_item_code_master 와 동일한 방어 패턴.
+    """
+    try:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO item_code_master
+                (code, name, spec, unit, kind, category_hint, source, imported_at)
+            VALUES (?, ?, NULL, NULL, ?, NULL, 'manual', ?)
+            """,
+            (code, name, kind, utc_now_text()),
+        )
+    except sqlite3.OperationalError:
+        pass
 
 
 def create_item_code_router() -> APIRouter:
@@ -200,6 +229,12 @@ def create_item_code_router() -> APIRouter:
                 "UPDATE materials SET code = ? WHERE id = ?", (code, material_id)
             )
 
+            # 새 코드면 item_code_master 에도 manual 행을 채운다(재임포트 면역).
+            if code is not None:
+                _ensure_master_entry(
+                    connection, code, material_row["name"], "material"
+                )
+
             # master_name 은 참고용 — 마스터 조회 실패는 무시하고 null.
             master_name: str | None = None
             if code is not None:
@@ -303,6 +338,12 @@ def create_item_code_router() -> APIRouter:
                 [product_code, *chain_ids],
             ).rowcount
 
+            # 새 코드면 item_code_master 에도 manual 행을 채운다(재임포트 면역).
+            if product_code is not None:
+                _ensure_master_entry(
+                    connection, product_code, recipe_row["product_name"], "product"
+                )
+
             write_audit_log(
                 connection,
                 action="recipe_product_code_set",
@@ -320,6 +361,74 @@ def create_item_code_router() -> APIRouter:
             "product_code": product_code,
             "updated": updated,
         }
+
+    # ------------------------------------------------------------------
+    # A6. POST /materials — 신규 자재 등록(코드 지정 화면)
+    # ------------------------------------------------------------------
+    # 품목코드 관리 화면에서 운영자가 직접 새 자재를 만들 수 있게 한다.
+    # INSERT 기본값은 import_parser._auto_register_material 과 동일(unit_type='weight',
+    # unit='g', color_group='none', category='미분류', is_active=1) — 화면에서 만든 자재가
+    # 임포트로 만들어진 자재와 동일하게 취급되도록.
+    # 자재명은 대소문자 무시 중복 금지, code 는 _validate_code 경유(없어도 등록 가능)하되
+    # 다른 자재가 이미 쓰고 있으면 409(자재명 포함) — A3(set_material_code) 규칙과 동일.
+    @router.post("/materials")
+    def create_material(
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        name = str(body.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="자재명을 입력하세요.")
+
+        code = _validate_code(body.get("code"))
+
+        with get_connection() as connection:
+            # 자재명 중복 — 대소문자 무시.
+            dup = connection.execute(
+                "SELECT id FROM materials WHERE lower(name) = lower(?) LIMIT 1",
+                (name,),
+            ).fetchone()
+            if dup:
+                raise HTTPException(
+                    status_code=409, detail="이미 등록된 자재명입니다."
+                )
+
+            # code 중복 — 다른 자재가 이미 쓰고 있으면 409(자재명 포함). A3 과 동일 규칙.
+            if code is not None:
+                other = connection.execute(
+                    "SELECT name FROM materials WHERE code = ? LIMIT 1", (code,)
+                ).fetchone()
+                if other:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
+                    )
+
+            cursor = connection.execute(
+                """
+                INSERT INTO materials (name, unit_type, unit, color_group, category, is_active, code)
+                VALUES (?, 'weight', 'g', 'none', '미분류', 1, ?)
+                """,
+                (name, code),
+            )
+            new_id = cursor.lastrowid
+
+            # 새 코드면 item_code_master 에도 manual 행을 채운다(재임포트 면역).
+            if code is not None:
+                _ensure_master_entry(connection, code, name, "material")
+
+            write_audit_log(
+                connection,
+                action="material_created",
+                actor=current_user,
+                target_type="material",
+                target_id=new_id,
+                target_label=name,
+                details={"code": code},
+            )
+            connection.commit()
+
+        return {"status": "ok", "id": new_id, "name": name, "code": code}
 
     # ------------------------------------------------------------------
     # A5. DELETE /materials/{material_id} — 자재 삭제(레시피 미참조 시)
