@@ -42,6 +42,12 @@
       .reactor-empty-btn { padding: 0 6px; font-size: 0.7rem; border: 1px solid #cbd5e1; border-radius: 6px;
         background: #fff; color: #64748b; cursor: pointer; }
       .reactor-empty-btn:hover { background: #f1f5f9; }
+      /* 배합 임시 저장 복구 배너 */
+      .blend-restore-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        margin: 0 0 12px; padding: 8px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+        font-size: 0.85rem; color: #92400e; }
+      .blend-restore-banner[hidden] { display: none; }
+      .blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
     </style>
 {% endblock %}
 
@@ -51,6 +57,14 @@
           <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
                blend.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
           <p class="login-error scale-only-banner" id="scale-only-banner" hidden>저울 전용 입력 모드가 켜져 있습니다 — 저울이 연결되지 않아 실제량을 입력할 수 없습니다. (해제는 운영 대시보드)</p>
+          <!-- 배합 임시 저장 복구 배너 — 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. -->
+          <div class="blend-restore-banner" id="blend-restore-banner" hidden>
+            <span id="blend-restore-label">작성 중이던 배합이 있습니다.</span>
+            <span class="blend-restore-actions">
+              <button type="button" class="btn btn-sm accent" id="blend-restore-yes">이어서 하기</button>
+              <button type="button" class="btn btn-sm" id="blend-restore-no">버리기</button>
+            </span>
+          </div>
           <!-- 반응기 현황판 — 각 반응기(1~4)에 지금 무엇이 들어있나. 파생 레시피일 때
                이 레시피의 1차를 가진 반응기가 강조되고, 클릭하면 이월 로트가 채워진다. -->
           <div class="reactor-board" id="reactor-board" hidden>
@@ -276,7 +290,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend.js?v=20260720m"></script>
+    <script src="/static/js/blend.js?v=20260720n"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

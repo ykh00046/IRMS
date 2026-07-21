@@ -571,6 +571,121 @@
     notify("반응기의 1차 로트를 채웠습니다 — [파생 이월]을 눌러 적용하세요.", "warn");
   }
 
+  // ── 배합 임시 저장·복구 ──────────────────────────────────────
+  // 공용 PC 에서 배합 중 자동 로그아웃·창 닫힘으로 계량값이 날아가는 것을 막는다.
+  // 진행 중 입력을 이 PC 의 localStorage 에 저장하고(서버·다른 작업 무관), 다음 진입 시
+  // 이어서 할지 배너로 묻는다. 저장 완료·버리기 시 삭제. 24시간 지난 초안은 제안 안 함.
+  const DRAFT_KEY = "irms.blend.draft";
+  let _draftTimer = null;
+
+  function currentDraft() {
+    if (!state.current || !state.current.recipe) return null;
+    const hasInput = state.items.some((it) =>
+      (it.actual_amount !== "" && it.actual_amount != null) || (it.material_lot || "").trim());
+    if (!hasInput) return null;  // 의미 있는 입력이 없으면 초안 없음
+    return {
+      recipe_id: state.current.recipe.id,
+      product_name: state.current.recipe.product_name,
+      total: $("blend-total").value,
+      date: $("blend-date").value,
+      time: $("blend-time").value,
+      scale: $("blend-scale").value,
+      note: $("blend-note").value,
+      reactor: $("blend-reactor").value,
+      rescaleTotalG: state.rescaleTotalG || 0,
+      lotOverrides: state.lotOverrides || {},
+      items: state.items.map((it) => ({
+        material_lot: it.material_lot || "",
+        actual_amount: (it.actual_amount === "" || it.actual_amount == null) ? "" : String(it.actual_amount),
+        carried_over: it.carried_over === true,
+        manual: it.manual === true,
+      })),
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  function scheduleDraftSave() {
+    if (_draftTimer) clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(() => {
+      try {
+        const d = currentDraft();
+        if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      } catch (_e) { /* 저장공간 없음 등 무시 */ }
+    }, 600);
+  }
+
+  function clearDraft() {
+    if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_e) { /* 무시 */ }
+  }
+
+  function readDraft() {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      // 24시간 지난 초안은 무시(오래된 잔여 방지).
+      if (d && d.savedAt && (Date.now() - Date.parse(d.savedAt)) > 24 * 3600 * 1000) return null;
+      return d;
+    } catch (_e) { return null; }
+  }
+
+  // 진입 시 초안이 있으면 배너로 이어서 할지 묻는다(폼이 비어 있을 때만).
+  function offerRestore() {
+    const banner = $("blend-restore-banner");
+    if (!banner) return;
+    const draft = readDraft();
+    if (!draft || !draft.recipe_id) { banner.hidden = true; return; }
+    const label = $("blend-restore-label");
+    if (label) {
+      const when = draft.savedAt ? draft.savedAt.slice(0, 16).replace("T", " ") : "";
+      label.textContent = `작성 중이던 '${draft.product_name || ""}' 배합이 있습니다${when ? ` (${when})` : ""} — 이어서 하시겠어요?`;
+    }
+    banner.hidden = false;
+  }
+
+  async function restoreDraft() {
+    const draft = readDraft();
+    if (!draft || !draft.recipe_id) return;
+    const recipeSel = $("blend-recipe");
+    recipeSel.value = String(draft.recipe_id);
+    await onRecipeChange();  // 레시피 로드 + 렌더(빈 상태) — 이후 초안 값을 덮어씌운다.
+    if (draft.date) $("blend-date").value = draft.date;
+    if (draft.time) $("blend-time").value = draft.time;
+    if (draft.scale) $("blend-scale").value = draft.scale;
+    if (draft.note) $("blend-note").value = draft.note;
+    if (draft.reactor) $("blend-reactor").value = draft.reactor;
+    state.lotOverrides = draft.lotOverrides || {};
+    state.rescaleTotalG = draft.rescaleTotalG || 0;
+    if (state.rescaleTotalG > 0) state.rescaleActive = true;
+    (draft.items || []).forEach((di, i) => {
+      if (!state.items[i]) return;
+      state.items[i].material_lot = di.material_lot || "";
+      state.items[i].actual_amount = di.actual_amount === "" ? "" : di.actual_amount;
+      state.items[i].carried_over = di.carried_over === true;
+      state.items[i].manual = di.manual === true;
+    });
+    if (!hasAnchor() && draft.total) $("blend-total").value = draft.total;
+    renderMatRows();  // state 값으로 다시 그림(actual/lot 표시)
+    if (hasAnchor()) {
+      // 기준 자재 값에서 이론·총량 재산출. prevAnchorActual="" 로 두어 '값 변경→나머지 초기화'
+      // 경로를 타지 않게 한다(복원은 변경이 아님).
+      state.prevAnchorActual = "";
+      state._anchorRecomputing = true;
+      try { applyAnchorRecompute(); } finally { state._anchorRecomputing = false; }
+    } else if (draft.total) {
+      $("blend-total").dispatchEvent(new Event("input"));
+    }
+    state.items.forEach((_, i) => updateRowVar(i));
+    updateTotals();
+    updateLotPreview();
+    updateInputGuide();
+    if (state.rescaleActive) renderAddBadges();
+    const banner = $("blend-restore-banner");
+    if (banner) banner.hidden = true;
+    notify("작성 중이던 배합을 복원했습니다.", "success");
+  }
+
   // 기준 자재 모드 적용 — 레시피에 기준 자재가 있으면:
   //   - 총 배합량 입력 읽기 전용(기준 자재 실측값에서 도출되므로 직접 입력 금지)
   //   - 기준량 빠른 채우기 버튼 미노출(총량 기반 방식이 아님)
@@ -702,6 +817,7 @@
         // 증량이 적용된 상태에서 계량하면 '추가 +X'(양수) 배지를 갱신 — 증량 후 채우는
         // 행도 음수 편차 대신 넣을 양이 양수로 보이게 한다. 증량 전에는 갱신하지 않는다.
         if (state.rescaleActive) renderAddBadges();
+        scheduleDraftSave();  // 진행분 임시 저장(복구용)
       })
     );
     // 실제량 입력 완료(blur) 시 허용 편차(±state.toleranceG g) 초과면 경고
@@ -720,6 +836,7 @@
           if (state.items[idx].carried_over) clearCarryOver();
           refreshCarryOverControl();
         }
+        scheduleDraftSave();  // 진행분 임시 저장(복구용)
       });
       // 포커스 시 제안 목록 표시(제안이 있는 자재만). blend_login suggest 패턴 재사용.
       el.addEventListener("focus", () => renderLotSuggest(el));
@@ -1610,6 +1727,7 @@
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
+      clearDraft();  // 저장 완료 → 임시 저장 삭제
       loadReactorBoard();  // 저장으로 반응기 점유가 바뀌었을 수 있으니 현황판 갱신
       // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
       // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다. 이월 표식도 함께 지운다.
@@ -1798,6 +1916,20 @@
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
     loadReactorBoard();  // 반응기 현황판 초기 로드
+    offerRestore();      // 작성 중이던 배합이 있으면 이어서 할지 배너로 제안
+    const restoreYes = $("blend-restore-yes");
+    if (restoreYes) restoreYes.addEventListener("click", () => { restoreDraft().catch((e) => notify(e.message, "error")); });
+    const restoreNo = $("blend-restore-no");
+    if (restoreNo) restoreNo.addEventListener("click", () => {
+      clearDraft();
+      const banner = $("blend-restore-banner"); if (banner) banner.hidden = true;
+    });
+    // 총량·비고·반응기 변경도 임시 저장에 반영.
+    ["blend-total", "blend-note"].forEach((id) => {
+      const el = $(id); if (el) el.addEventListener("input", scheduleDraftSave);
+    });
+    const reactorEl = $("blend-reactor");
+    if (reactorEl) reactorEl.addEventListener("change", scheduleDraftSave);
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
     detectScale();
     setInterval(detectScale, 30000);
