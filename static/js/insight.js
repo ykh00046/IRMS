@@ -233,9 +233,31 @@
     window.location.href = `/api/blend/batch-details/export${qs ? `?${qs}` : ""}`;
   }
 
+  // 이상 통계(수동 입력·취소) — 작업자별·자재별 표 채우기. 위 기간 필터 공통.
+  async function loadMistakes() {
+    const { start_date: start, end_date: end } = currentRange();
+    const wbody = $("insight-mistake-worker");
+    const mbody = $("insight-mistake-material");
+    try {
+      const d = await request("/blend/mistake-stats", { query: { start_date: start, end_date: end } });
+      const workers = (d && d.by_worker) || [];
+      const materials = (d && d.by_material) || [];
+      wbody.innerHTML = workers.length
+        ? workers.map((w) => `<tr><td>${esc(w.worker || "")}</td><td class="num">${w.records}</td><td class="num">${w.manual_records}</td><td class="num">${w.manual_rate}%</td><td class="num">${w.canceled_records}</td></tr>`).join("")
+        : '<tr><td colspan="5" class="muted">해당 기간 기록 없음</td></tr>';
+      mbody.innerHTML = materials.length
+        ? materials.map((m) => `<tr><td>${esc(m.material_name || "")}</td><td class="num">${m.rows}</td><td class="num">${m.manual_rows}</td><td class="num">${m.manual_rate}%</td></tr>`).join("")
+        : '<tr><td colspan="4" class="muted">수동 입력 없음 — 모두 저울로 계량됨</td></tr>';
+    } catch (e) {
+      wbody.innerHTML = `<tr><td colspan="5" class="muted">조회 실패: ${esc(e.message)}</td></tr>`;
+      mbody.innerHTML = "";
+    }
+  }
+
   function loadAll() {
     loadMaterials();
     loadProducts().then(loadDetails);
+    loadMistakes();
   }
 
   document.addEventListener("DOMContentLoaded", () => {

@@ -49,6 +49,33 @@
           </article>
         </section>
 
+        <!-- 이상 통계 — 배합은 편차를 허용치 내로 강제하므로, 편차 대신 '수동 입력(저울 미사용)'과
+             '취소'를 이상 신호로 본다. 작업자별·자재별로 집계(위 기간 필터 공통). -->
+        <section class="panel">
+          <h3 class="panel-title">이상 통계 (수동 입력·취소)</h3>
+          <p class="filter-summary muted small">배합은 계량 편차를 허용치 내로 강제합니다. 여기서는 저울을 쓰지 않은 <b>수동 입력</b>과 <b>취소</b> 건을 이상 신호로 봅니다.</p>
+          <div class="insight-mistake-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px;">
+            <div>
+              <h4 class="filter-label">작업자별</h4>
+              <div class="table-wrap">
+                <table class="blend-table">
+                  <thead><tr><th>작업자</th><th class="num">완료</th><th class="num">수동</th><th class="num">수동%</th><th class="num">취소</th></tr></thead>
+                  <tbody id="insight-mistake-worker"><tr><td colspan="5" class="muted">조회하세요.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h4 class="filter-label">자재별 (수동 입력)</h4>
+              <div class="table-wrap">
+                <table class="blend-table">
+                  <thead><tr><th>자재</th><th class="num">계량행</th><th class="num">수동</th><th class="num">수동%</th></tr></thead>
+                  <tbody id="insight-mistake-material"><tr><td colspan="4" class="muted">조회하세요.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- 자재 LOT 추적 — 원재료 LOT 하나가 어느 배합(제품 LOT)에 투입됐는지 역추적(리콜 대응) -->
         <section class="panel">
           <div class="panel-head-row">
@@ -164,5 +191,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260715a"></script>
+    <script src="/static/js/insight.js?v=20260721a"></script>
 {% endblock %}

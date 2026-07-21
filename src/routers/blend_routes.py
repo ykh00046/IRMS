@@ -120,6 +120,15 @@ def build_router() -> APIRouter:
         """제품별 배합 빈도 분석(기간 내 제품별 배치 수·총 배합량·최근 작업일)."""
         return blend_service.product_usage(connection, start_date or None, end_date or None)
 
+    @router.get("/blend/mistake-stats")
+    def blend_mistake_stats(
+        start_date: str = "",
+        end_date: str = "",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """작업자·자재별 이상(수동 입력·취소) 통계 — 편차 강제로 편차 대신 이 신호를 본다."""
+        return blend_service.mistake_stats(connection, start_date or None, end_date or None)
+
     @router.get("/blend/batch-details")
     def blend_batch_details(
         start_date: str = "",

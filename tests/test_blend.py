@@ -646,6 +646,48 @@ def test_product_usage_counts_batches():
     assert bs.product_usage(conn)["product_count"] == 1
 
 
+def test_mistake_stats_manual_and_canceled():
+    """작업자·자재별 이상 통계 — 수동 입력·취소 집계(편차 아님)."""
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    # 홍: 완료 2건(그중 1건 수동 입력), 취소 1건. 김: 완료 1건(수동 아님).
+    def rec(worker, d, manual, status="completed", mat_manual=False):
+        rowid = bs.create_blend_record(
+            conn, recipe_id=rid, product_name="제품A", ink_name=None, position=None,
+            worker=worker, work_date=d, work_time=None, total_amount=100, scale=None, note=None,
+            details=[{
+                "material_name": "원료1", "material_lot": "L1", "ratio": 100.0,
+                "theory_amount": 100, "actual_amount": 100,
+                "manual_entry": mat_manual,
+            }],
+            created_by="t", created_at=f"{d}T00:00:00Z", manual_entry=manual,
+        )
+        if status != "completed":
+            conn.execute("UPDATE blend_records SET status = ? WHERE id = ?", (status, rowid))
+        return rowid
+
+    rec("홍", "2026-06-20", manual=True, mat_manual=True)
+    rec("홍", "2026-06-21", manual=False)
+    rec("홍", "2026-06-22", manual=False, status="canceled")
+    rec("김", "2026-06-21", manual=False)
+
+    stats = bs.mistake_stats(conn)
+    by_worker = {w["worker"]: w for w in stats["by_worker"]}
+    assert by_worker["홍"]["records"] == 2          # 완료 2건
+    assert by_worker["홍"]["manual_records"] == 1   # 수동 1건
+    assert by_worker["홍"]["canceled_records"] == 1 # 취소 1건
+    assert by_worker["홍"]["manual_rate"] == 50.0
+    assert by_worker["김"]["manual_records"] == 0
+    # 자재별: 수동 입력 행이 있는 자재만 노출.
+    by_mat = {m["material_name"]: m for m in stats["by_material"]}
+    assert "원료1" in by_mat
+    assert by_mat["원료1"]["manual_rows"] == 1
+    # 기간 필터 — 6/21 이후면 홍의 수동(6/20)은 빠진다.
+    later = bs.mistake_stats(conn, start_date="2026-06-21")
+    lw = {w["worker"]: w for w in later["by_worker"]}
+    assert lw["홍"]["manual_records"] == 0
+
+
 def test_batch_details_variance_and_product_filter():
     conn = _make_db()
     rid = _seed_recipe(conn)

@@ -431,6 +431,86 @@ def product_usage(
     }
 
 
+def mistake_stats(
+    connection: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """작업자·자재별 이상(異常) 통계.
+
+    배합은 계량 편차를 허용치(레시피별, 기본 0.05g) 이내로 강제(초과 시 저장 차단)하므로
+    편차 자체는 이상 신호가 되지 못한다. 대신 실질적 이상 신호 두 가지를 집계한다:
+      - 수동 입력(manual_entry): 저울 PRINT 가 아닌 손입력으로 계량된 것(저울 미사용).
+      - 취소(status='canceled'): 잘못 등록해 취소된 기록.
+    작업자별은 기록 단위(manual_entry 는 배치 플래그), 자재별은 상세 행 단위로 센다.
+    """
+    def _date_clause(col: str) -> tuple[str, list[Any]]:
+        parts: list[str] = []
+        vals: list[Any] = []
+        if start_date:
+            parts.append(f"{col} >= ?")
+            vals.append(start_date)
+        if end_date:
+            parts.append(f"{col} <= ?")
+            vals.append(end_date)
+        return ((" AND " + " AND ".join(parts)) if parts else ""), vals
+
+    wclause, wparams = _date_clause("work_date")
+    worker_rows = connection.execute(
+        f"""
+        SELECT worker,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS records,
+               SUM(CASE WHEN status = 'completed' AND manual_entry = 1 THEN 1 ELSE 0 END) AS manual_records,
+               SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_records
+        FROM blend_records
+        WHERE 1 = 1 {wclause}
+        GROUP BY worker
+        HAVING records > 0 OR canceled_records > 0
+        ORDER BY manual_records DESC, canceled_records DESC, worker ASC
+        """,
+        wparams,
+    ).fetchall()
+    by_worker = []
+    for r in worker_rows:
+        records = int(r["records"] or 0)
+        manual = int(r["manual_records"] or 0)
+        by_worker.append({
+            "worker": r["worker"],
+            "records": records,
+            "manual_records": manual,
+            "canceled_records": int(r["canceled_records"] or 0),
+            "manual_rate": round(manual / records * 100, 1) if records else 0.0,
+        })
+
+    mclause, mparams = _date_clause("r.work_date")
+    material_rows = connection.execute(
+        f"""
+        SELECT d.material_name AS material_name,
+               COUNT(*) AS rows_count,
+               SUM(CASE WHEN d.manual_entry = 1 THEN 1 ELSE 0 END) AS manual_rows
+        FROM blend_details d
+        JOIN blend_records r ON r.id = d.blend_record_id
+        WHERE r.status = 'completed' {mclause}
+        GROUP BY d.material_name
+        ORDER BY manual_rows DESC, d.material_name ASC
+        """,
+        mparams,
+    ).fetchall()
+    by_material = []
+    for r in material_rows:
+        rows_count = int(r["rows_count"] or 0)
+        manual = int(r["manual_rows"] or 0)
+        if manual == 0:
+            continue  # 수동 입력이 한 번도 없는 자재는 이상 통계에 노출하지 않는다.
+        by_material.append({
+            "material_name": r["material_name"],
+            "rows": rows_count,
+            "manual_rows": manual,
+            "manual_rate": round(manual / rows_count * 100, 1) if rows_count else 0.0,
+        })
+    return {"by_worker": by_worker, "by_material": by_material}
+
+
 def batch_details(
     connection: sqlite3.Connection,
     start_date: str | None = None,
