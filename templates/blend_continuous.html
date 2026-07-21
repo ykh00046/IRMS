@@ -135,8 +135,14 @@
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-lot-invalid-modal-title">
             <div class="ss-modal-header"><h3 id="cont-lot-invalid-modal-title">등록되지 않은 로트</h3></div>
             <div class="ss-modal-body" id="cont-lot-invalid-modal-body"></div>
+            <!-- 사유 입력 후 진행(안전밸브) — 배합 화면과 동일. 사유는 전 로트 공통 비고에 남는다. -->
+            <div class="lot-override-box" id="cont-lot-override-box" hidden style="margin:8px 0 4px;">
+              <label class="filter-label" for="cont-lot-override-reason">진행 사유 (책임자 확인용)</label>
+              <textarea class="input" id="cont-lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
+            </div>
             <div class="ss-modal-footer blend-actions">
-              <button class="btn accent" id="cont-lot-invalid-confirm" type="button">확인</button>
+              <button class="btn" id="cont-lot-invalid-proceed" type="button">사유 적고 진행</button>
+              <button class="btn accent" id="cont-lot-invalid-confirm" type="button">다시 확인</button>
             </div>
           </div>
         </div>
@@ -146,5 +152,5 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend_continuous.js?v=20260720e"></script>
+    <script src="/static/js/blend_continuous.js?v=20260720f"></script>
 {% endblock %}
