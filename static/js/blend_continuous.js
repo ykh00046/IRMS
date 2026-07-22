@@ -698,8 +698,13 @@
       el.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
-        // Enter(완료)로 계량을 마치는 순간에도 즉시 경고 — change(blur)에만 기대지 않는다
-        warnIfVariance(i, j);
+        // Enter(완료)로 계량을 마치는 순간에도 즉시 경고 — change(blur)에만 기대지 않는다.
+        // 허용 편차를 벗어난 값이 들어있는 채로는 다음 칸으로 내려가지 않는다(2026-07-22).
+        if (warnIfVariance(i, j)) {
+          el.focus();
+          try { el.select(); } catch (_e) { /* number select 미지원 무시 */ }
+          return;
+        }
         focusNextFrom(i, j);
       });
     });
@@ -759,8 +764,19 @@
       _lastVarWarn = { key, at: now };
       notify(`허용 편차 초과: ${state.materials[i].material_name} 로트 ${j + 1} — `
         + `이론 ${fmt(th)} / 실제 ${fmt(Number(raw))} (편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${tol}g). 다시 계량하세요.`, "error");
-      // 초과(+) 방향일 때만 그 로트 증량 제안 모달을 띄운다 — 부족(-)은 다시 계량해야 한다.
-      if (v > 0) offerContRescale(j);
+      // 초과(+) 방향일 때만 그 로트 증량 제안 모달을 띄운다.
+      if (v > 0) {
+        offerContRescale(j);
+      } else {
+        // 부족(-): 토스트만으론 지나치기 쉬워 팝업으로 부족량을 명시(2026-07-22).
+        window.alert(
+          `부족 계량: ${state.materials[i].material_name} (로트 ${j + 1})
+`
+          + `이론 ${fmt(th)} g / 실제 ${fmt(Number(raw))} g
+`
+          + `${fmt(Math.abs(v), 2)} g 을 더 넣으세요.`
+        );
+      }
       return true;
     }
     return false;

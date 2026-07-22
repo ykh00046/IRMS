@@ -170,7 +170,12 @@
     input.removeAttribute("title");
     updateRowVar(idx);
     updateTotals();
-    warnIfVariance(idx);
+    // 저울 PRINT 값이 허용 편차를 벗어나면 다음 LOT 로 넘어가지 않는다 — 해당 실제량
+    // 칸에 머물러 재계량(부족: 더 넣기 / 초과: 증량 제안)을 유도.
+    if (warnIfVariance(idx)) {
+      if (input) { input.focus(); if (input.select) input.select(); }
+      return;
+    }
     const nextLot = document.querySelector(`.blend-lot[data-idx="${idx + 1}"]`);
     if (nextLot) {
       nextLot.focus();
@@ -815,7 +820,13 @@
         e.preventDefault();
         // Enter(완료)로 계량을 마치는 순간에도 편차 초과를 즉시 알린다 —
         // change(blur) 이벤트에만 기대면 흐름에 따라 경고가 저장 때까지 밀린다.
-        warnIfVariance(Number(el.dataset.idx));
+        // 초과·부족 어느 쪽이든 허용 편차를 벗어난 값이 들어있는 채로는 다음 LOT 로
+        // 내려가지 않는다(2026-07-22 현장 요구) — 현재 칸에 머물러 재계량/증량을 유도.
+        if (warnIfVariance(Number(el.dataset.idx))) {
+          el.focus();
+          if (el.select) el.select();
+          return;
+        }
         const next = Number(el.dataset.idx) + 1;
         if (!focusField(`.blend-lot[data-idx="${next}"]`)) {
           const save = document.getElementById("blend-save");
@@ -1241,10 +1252,20 @@
       if (_lastVarWarn.key === key && now - _lastVarWarn.at < 1500) return true;
       _lastVarWarn = { key, at: now };
       notify(varianceWarnMessage(it, v, tol), "error");
-      // +방향(초과 계량)일 때만 증량 제안 모달을 띄운다. −방향(부족)은 그 자재를
-      // 더 넣으면 끝이므로 기존 토스트만 유지한다.
       if (v > 0) {
+        // +방향(초과 계량): 증량 제안 모달.
         offerRescale();
+      } else {
+        // −방향(부족): 토스트만으론 지나치기 쉬워 팝업으로 부족량을 명시(2026-07-22).
+        // window.alert 는 포커스 복귀가 자연스럽고 입력 흐름을 확실히 멈춘다.
+        const shortage = Math.abs(v);
+        window.alert(
+          `부족 계량: ${it.material_name}
+`
+          + `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g
+`
+          + `${fmt(shortage, 2)} g 을 더 넣으세요.`
+        );
       }
       return true;
     }
