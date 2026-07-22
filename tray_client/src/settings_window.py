@@ -34,6 +34,7 @@ class SettingsWindow:
         self._win: Any = None
         self._att_var: Any = None
         self._vis_var: Any = None
+        self._rescale_var: Any = None
         self._scale_var: Any = None
         self._autostart_var: Any = None
         self._server_var: Any = None
@@ -67,6 +68,7 @@ class SettingsWindow:
 
         self._att_var = tk.BooleanVar(value=bool(cfg.attendance_alerts_enabled))
         self._vis_var = tk.BooleanVar(value=bool(cfg.viscosity_alerts_enabled))
+        self._rescale_var = tk.BooleanVar(value=bool(cfg.rescale_alerts_enabled))
         self._scale_var = tk.BooleanVar(value=bool(cfg.scale_enabled))
         self._autostart_var = tk.BooleanVar(value=autostart.is_enabled())
         self._server_var = tk.StringVar(value=str(cfg.server_url or ""))
@@ -75,6 +77,7 @@ class SettingsWindow:
         self._section(pad, "알림")
         self._check(pad, "근태 알림 받기", self._att_var)
         self._check(pad, "점도 알림 받기", self._vis_var)
+        self._check(pad, "증량 확인 알림 받기", self._rescale_var)
 
         # ── 저울 연동 ──
         self._section(pad, "저울 연동")
@@ -160,6 +163,7 @@ class SettingsWindow:
             self._app.apply_settings(
                 attendance_alerts=bool(self._att_var.get()),
                 viscosity_alerts=bool(self._vis_var.get()),
+                rescale_alerts=bool(self._rescale_var.get()),
                 scale_enabled=bool(self._scale_var.get()),
                 server_url=str(self._server_var.get()),
                 autostart_enabled=bool(self._autostart_var.get()),

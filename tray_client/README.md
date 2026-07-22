@@ -31,7 +31,7 @@
 
 ### 설치
 
-1. 관리자가 배포한 `IRMS-Notice-Setup-3.1.3.exe` 더블클릭
+1. 관리자가 배포한 `IRMS-Notice-Setup-3.1.5.exe` 더블클릭
 2. Windows가 "알 수 없는 게시자" 경고를 띄우면 **"추가 정보" → "실행"**
 3. 한국어 설치 마법사에서 **다음 → 다음 → 설치**
 4. "Windows 시작 시 자동 실행" 체크(기본)
@@ -103,11 +103,11 @@ build\build.bat
 
 산출물:
 - `tray_client\dist\IRMS-Notice\` — 실행 파일 폴더 (수동 복사용)
-- `tray_client\build\Output\IRMS-Notice-Setup-3.1.3.exe` — **배포용 설치 파일**
+- `tray_client\build\Output\IRMS-Notice-Setup-3.1.5.exe` — **배포용 설치 파일**
 
 ### 2.2 현장 PC 7대 설치
 
-1. `IRMS-Notice-Setup-3.1.3.exe`를 USB / 공유 폴더로 복사
+1. `IRMS-Notice-Setup-3.1.5.exe`를 USB / 공유 폴더로 복사
 2. 각 PC에서 더블클릭 → 다음 → 다음 → 설치 (이전 버전 위에 덮어쓰기)
 3. 설치 직후 자동 실행됨. 트레이 아이콘 확인
 4. 우클릭 → "근태 알림 바로 확인"으로 실제 이상자 조회와 팝업 동작 확인

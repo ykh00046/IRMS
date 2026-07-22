@@ -46,6 +46,7 @@ class Config:
     # 기본: 근태·점도 알림 켜짐, 저울은 저울이 연결된 현장 PC에서만 켜서 쓴다.
     attendance_alerts_enabled: bool = True
     viscosity_alerts_enabled: bool = True
+    rescale_alerts_enabled: bool = True
     scale_enabled: bool = False
 
     @classmethod
@@ -77,6 +78,7 @@ class Config:
             master = bool(raw.get("alerts_enabled"))
             cleaned.setdefault("attendance_alerts_enabled", master)
             cleaned.setdefault("viscosity_alerts_enabled", master)
+            cleaned.setdefault("rescale_alerts_enabled", master)
 
         # 서버 이전 이관: 옛 기본값(.147)이 그대로 저장돼 있으면 새 기본값(.194)으로 갱신.
         # (사용자가 직접 지정한 다른 주소는 건드리지 않는다 — 정확히 옛 기본값일 때만.)

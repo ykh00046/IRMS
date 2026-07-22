@@ -168,6 +168,10 @@ class BlendCreateBody(BaseModel):
     # 미등록 LOT '사유 적고 진행' 승인을 서버 백업 검증용으로 구조화 전달(None=미전송).
     # 클라이언트 검증이 네트워크 장애로 우회(fail-open)될 수 있어 서버가 재확인한다.
     lot_overrides: list[LotOverrideBody] | None = Field(default=None)
+    # 증량(rescale) 이벤트 — {before_total, after_total, approval_id?, absence_reason?, worker_confirmed?}.
+    # None/빈 리스트면 미증량(기존 동작). 최대 2건 — 각 건마다 책임자 승인(approval_id) 또는
+    # 미승인 사유(absence_reason) 가 필요하다(서비스 validate_rescale_events 가 검증).
+    rescale_events: list[dict[str, Any]] | None = Field(default=None)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":

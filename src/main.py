@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
             "/api/public/attendance-alerts",
             "/api/public/material-usage",
             "/api/public/viscosity-reminders",
+            "/api/public/rescale-alerts",
         ),
         api_token=TRAY_API_TOKEN,
         require_api_token=REQUIRE_TRAY_API_TOKEN,

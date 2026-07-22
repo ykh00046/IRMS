@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from ..db import utc_now_text
 from . import (
     admin_routes,
+    blend_rescale_ack_routes,
     attendance_routes,
     auth_routes,
     blend_session_routes,
@@ -10,6 +11,7 @@ from . import (
     dashboard_routes,
     item_code_routes,
     public_attendance_alert_routes,
+    public_rescale_alert_routes,
     public_material_usage_routes,
     public_viscosity_reminder_routes,
     recipe_import_routes,
@@ -63,5 +65,7 @@ def build_router() -> APIRouter:
     router.include_router(admin_router)
     router.include_router(dashboard_router)
     router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
+    router.include_router(blend_rescale_ack_routes.build_router())   # 증량 사후 확인(책임자)
+    router.include_router(public_rescale_alert_routes.build_router())  # 증량 트레이 알림(내부망 공개)
     router.include_router(settings_router)        # 앱 설정(저울 전용 입력 모드 토글)
     return router

@@ -237,6 +237,70 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  // ── 미확인 증량 카드(책임자 전용) ─────────────────────────────
+  // 카드 요소는 책임자에게만 렌더링(can_manage) — 비책임자는 아예 없어 401 호출을 피한다.
+  async function loadRescaleAlert() {
+    const valueEl = document.getElementById("card-rescale-unacked");
+    const listEl = document.getElementById("rescale-alert-list");
+    if (!valueEl || !listEl) return;
+    try {
+      const data = await fetchJSON("/api/blend/rescales/unacked");
+      const items = data.items || [];
+      const total = data.total || 0;
+      valueEl.textContent = fmtNumber(total);
+      valueEl.style.color =
+        total > 0 ? cssVar("--status-error", "#d8453f") : cssVar("--text-muted", "#94a3b8");
+      const card = document.getElementById("rescale-alert-card");
+      if (card) card.classList.toggle("has-unacked", total > 0);
+      if (!items.length) {
+        listEl.innerHTML = '<li class="rescale-empty muted">미확인 증량이 없습니다.</li>';
+        return;
+      }
+      listEl.innerHTML = items
+        .slice(0, 6)
+        .map((r) => {
+          const date =
+            (r.work_date || "-").length === 10 ? r.work_date.slice(5) : r.work_date || "-";
+          return `
+            <li class="rescale-item">
+              <span class="rescale-item-info">
+                <b>${IRMS.escapeHtml(r.product_lot || "-")}</b>
+                <span class="muted">·</span> ${IRMS.escapeHtml(r.product_name || "-")}
+                <span class="muted">·</span> ${IRMS.escapeHtml(r.worker || "-")}
+                <span class="muted">·</span> ${IRMS.escapeHtml(date)}
+              </span>
+              <button class="btn btn-sm accent rescale-ack-btn" type="button" data-id="${r.id}">확인</button>
+            </li>`;
+        })
+        .join("");
+    } catch (error) {
+      listEl.innerHTML = `<li class="rescale-empty muted">불러오기 실패: ${IRMS.escapeHtml(
+        error.message || String(error),
+      )}</li>`;
+    }
+  }
+
+  // 확인(ack) — 쓰기 요청. IRMS._core.request 가 x-csrftoken 을 부착한다(base 에서 core.js 로드).
+  async function ackRescale(id, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      await IRMS._core.request(`/blend/records/${id}/rescale-ack`, { method: "POST" });
+      IRMS.notify("증량을 확인 처리했습니다.", "success");
+      await loadRescaleAlert();
+    } catch (error) {
+      IRMS.notify(`확인 실패: ${error.message || error}`, "error");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  const rescaleListEl = document.getElementById("rescale-alert-list");
+  if (rescaleListEl) {
+    rescaleListEl.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".rescale-ack-btn");
+      if (btn) ackRescale(Number(btn.dataset.id), btn);
+    });
+  }
+
   function persistRange(range) {
     try {
       localStorage.setItem(PREF_KEY, JSON.stringify(range));
@@ -286,4 +350,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   restoreRange();
   loadAll();
+  loadRescaleAlert();
 });

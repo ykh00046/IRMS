@@ -333,6 +333,26 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 수동 입력 여부: 저울 연동 중 계량값을 직접 입력했는가(추적성).
     # 기록(배치) 단위 + 상세(자재 행) 단위 — 어느 자재가 수동이었는지까지 남긴다.
     ensure_column(connection, "blend_records", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
+    # 증량 승인제(rescale-approval 2026-07-22): 증량 이력 JSON([{before_total, after_total,
+    # approved_by|absence, at}]) · 횟수(최대 2회) · 책임자 미확인(부재 진행) 플래그.
+    ensure_column(connection, "blend_records", "rescale_events_json", "TEXT")
+    ensure_column(connection, "blend_records", "rescale_count", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "blend_records", "rescale_unacked", "INTEGER NOT NULL DEFAULT 0")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_rescale_unacked "
+        "ON blend_records(rescale_unacked) WHERE rescale_unacked = 1"
+    )
+    # 즉석 승인 토큰(세션 미생성 1회 인증): 발급 후 저장 시 1회 소비.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_rescale_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            approver TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
     ensure_column(connection, "blend_details", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
     # 반응기 이월(carry-over) 행 표식 — 반응기 1차 배합의 총량을 2차 기준 자재 실제량으로
     # 그대로 가져온 행. 서버가 강제 채운 값임을 추적에 남긴다(manual_entry 과 함께 보관).

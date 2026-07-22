@@ -41,6 +41,7 @@ from .attendance_alerts import AttendanceAlertPoller, today_iso
 from .attendance_popup import AttendanceAlertPopupManager, PopupPayload
 from .config import Config, logs_dir
 from .logger import setup_logger
+from .rescale_alerts import RescaleAlertPoller
 from .scale_service import ScaleService
 from .settings_window import SettingsWindow
 from .viscosity_alerts import ViscosityAlertPoller
@@ -84,6 +85,11 @@ def viscosity_page_url(server_url: str) -> str:
     return f"{server_url.rstrip('/')}/viscosity"
 
 
+def blend_records_page_url(server_url: str) -> str:
+    # 배합 기록(현황) — 책임자가 미확인 증량을 여기서 확인 처리한다.
+    return f"{server_url.rstrip('/')}/status"
+
+
 def home_page_url(server_url: str) -> str:
     # 공용 홈(런처) — 여기서 근태·반제품 제조·점도로 이동한다.
     return f"{server_url.rstrip('/')}/"
@@ -115,6 +121,12 @@ class TrayApp:
             present_alert=self.alert_popup.show,
             is_enabled_getter=self._viscosity_active,
         )
+        # 증량 미확인은 슬롯이 아니라 완만한 주기(기본 10분)로 폴링해, 미확인이 남는 동안 반복 알림.
+        self.rescale_poller = RescaleAlertPoller(
+            config=self.config,
+            present_alert=self.alert_popup.show,
+            is_enabled_getter=self._rescale_active,
+        )
         # 저울은 포트·HTTP 서버를 잡으므로 토글 시 실제 start/stop 한다.
         self.scale = ScaleService(self.logger)
         # 흩어진 토글/버튼을 모은 단일 설정 창(팝업 UI 스레드에서 생성).
@@ -127,16 +139,17 @@ class TrayApp:
                 "Install test dependencies with `pip install -r requirements-dev.txt`."
             ) from _PYSTRAY_IMPORT_ERROR
         self.logger.info(
-            "starting %s (server=%s, attendance=%s, viscosity=%s, scale=%s)",
+            "starting %s (server=%s, attendance=%s, viscosity=%s, rescale=%s, scale=%s)",
             APP_TITLE, self.config.server_url,
             self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
-            self.config.scale_enabled,
+            self.config.rescale_alerts_enabled, self.config.scale_enabled,
         )
         autostart.ensure_default_on_first_run()
 
         self.alert_popup.start()
         self.alert_poller.start()
         self.viscosity_poller.start()
+        self.rescale_poller.start()
         if self.config.scale_enabled:
             self.scale.start()
 
@@ -153,6 +166,7 @@ class TrayApp:
             self.alert_popup.stop()
             self.alert_poller.stop()
             self.viscosity_poller.stop()
+            self.rescale_poller.stop()
             self.scale.stop()
 
     # ── 알림 on/off 상태 ─────────────────────────────────────────
@@ -168,8 +182,15 @@ class TrayApp:
     def _viscosity_active(self) -> bool:
         return self.config.viscosity_alerts_enabled and self._alerts_enabled_today()
 
+    def _rescale_active(self) -> bool:
+        return self.config.rescale_alerts_enabled and self._alerts_enabled_today()
+
     def _any_alert_enabled(self) -> bool:
-        return self.config.attendance_alerts_enabled or self.config.viscosity_alerts_enabled
+        return (
+            self.config.attendance_alerts_enabled
+            or self.config.viscosity_alerts_enabled
+            or self.config.rescale_alerts_enabled
+        )
 
     def _save_config(self) -> None:
         try:
@@ -192,6 +213,7 @@ class TrayApp:
             ),
             MenuItem("근태 알림 바로 확인", self._show_attendance_anomalies),
             MenuItem("점도 알림 바로 확인", self._show_viscosity_reminders),
+            MenuItem("증량 알림 바로 확인", self._show_rescale_alerts),
             Menu.SEPARATOR,
             MenuItem("설정…", self._open_settings),
             MenuItem("종료", self._quit),
@@ -207,6 +229,7 @@ class TrayApp:
         *,
         attendance_alerts: bool,
         viscosity_alerts: bool,
+        rescale_alerts: bool,
         scale_enabled: bool,
         server_url: str,
         autostart_enabled: bool,
@@ -214,6 +237,7 @@ class TrayApp:
         """설정 창의 '저장'에서 호출 — 값 반영·저장·저울 lifecycle·자동실행 일괄 적용."""
         self.config.attendance_alerts_enabled = bool(attendance_alerts)
         self.config.viscosity_alerts_enabled = bool(viscosity_alerts)
+        self.config.rescale_alerts_enabled = bool(rescale_alerts)
         cleaned_url = (server_url or "").strip()
         if cleaned_url:
             self.config.server_url = cleaned_url
@@ -237,9 +261,9 @@ class TrayApp:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("autostart set failed: %s", exc)
         self.logger.info(
-            "settings applied: attendance=%s viscosity=%s scale=%s server=%s",
+            "settings applied: attendance=%s viscosity=%s rescale=%s scale=%s server=%s",
             self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
-            self.config.scale_enabled, self.config.server_url,
+            self.config.rescale_alerts_enabled, self.config.scale_enabled, self.config.server_url,
         )
         if self._icon is not None:
             self._icon.update_menu()
@@ -279,9 +303,16 @@ class TrayApp:
         self.logger.info("manual viscosity reminder check requested")
         self.viscosity_poller.trigger_once()
 
+    def _show_rescale_alerts(self, _icon, _item) -> None:
+        self.logger.info("manual rescale alert check requested")
+        self.rescale_poller.trigger_once()
+
     def _open_popup_target(self, payload: PopupPayload) -> None:
         if payload.action_key == "viscosity":
             self._open_viscosity()
+            return
+        if payload.action_key == "rescale":
+            self._open_blend_records()
             return
         self._open_attendance()
 
@@ -300,6 +331,14 @@ class TrayApp:
             self.logger.info("viscosity page opened: %s", url)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("open viscosity failed: %s", exc)
+
+    def _open_blend_records(self) -> None:
+        url = blend_records_page_url(self.config.server_url)
+        try:
+            open_in_browser(url)
+            self.logger.info("blend records page opened: %s", url)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("open blend records failed: %s", exc)
 
     def _open_home(self, _icon, _item) -> None:
         # 공용 홈 하나로 이동 — 근태·반제품 제조·점도는 여기서 골라 들어간다.

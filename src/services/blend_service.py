@@ -11,7 +11,9 @@ NOTE: 1차 증분은 기록 중심이다. 자동 재고 차감은 기존 계량(
 방지하기 위해 후속 단계에서 통합한다.
 """
 
+import json
 import sqlite3
+from datetime import datetime, timezone
 from typing import Any
 
 from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
@@ -1463,3 +1465,147 @@ def _variance_summary(details: list[dict[str, Any]]) -> dict[str, Any]:
         "net_variance": round(actual_total - theory_total, 3),
         "abs_variance": round(abs_var, 3),
     }
+
+
+# ── 증량(rescale) 승인 — 책임자 인증 토큰 발급·소비 ─────────────
+_RESCALE_APPROVAL_TTL_MINUTES = 30  # 승인 유효 시간(분) — 30분 내 저장에만 쓸 수 있다.
+
+
+def create_rescale_approval(connection: sqlite3.Connection, approver: str) -> dict[str, Any]:
+    """책임자 인증 성공 시 blend_rescale_approvals 행을 INSERT 하고 {id, approver} 반환.
+
+    증량(rescale) 은 2회까지 책임자 현장 인증으로 허용되며, 그 인증 토큰을 발급한다.
+    실제 소비(used=1 표시)는 저장 시 validate_rescale_events 에서 이루어진다.
+    """
+    from ..db.time_utils import utc_now_text
+
+    cursor = connection.execute(
+        "INSERT INTO blend_rescale_approvals (approver, created_at, used) VALUES (?, ?, 0)",
+        (approver, utc_now_text()),
+    )
+    return {"approval_id": cursor.lastrowid, "approver": approver}
+
+
+class RescaleApprovalError(Exception):
+    """증량 승인 검증 실패 — detail 메시지를 그대로 400 으로 반환한다."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+def _iso_to_dt(text: str) -> datetime | None:
+    """ISO 형식 문자열 → datetime(파싱 실패/빈 값 → None). 승인 만료 판정용."""
+    if not text:
+        return None
+    try:
+        # utc_now_text 가 'YYYY-MM-DDTHH:MM:SS...Z' 형태 — Z 를 +00:00 로 정규화.
+        norm = text.replace("Z", "+00:00")
+        return datetime.fromisoformat(norm)
+    except (ValueError, TypeError):
+        return None
+
+
+def validate_rescale_events(
+    connection: sqlite3.Connection,
+    events: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """저장 본문의 rescale_events 를 검증·정규화 → 저장용 딕셔너리 반환(또는 None).
+
+    각 event 는 {before_total, after_total, approval_id?, absence_reason?, worker_confirmed?}:
+      - approval_id 가 있으면: 미사용(used=0)·30분 이내 행이어야 한다. 통과 시 used=1
+        표시하고 approver(책임자 표시명) 를 event 에 채운다.
+      - approval_id 가 없으면 absence_reason(비어있지 않은 사유) 이 필수 — 그 event 는
+        미승인(absence) 으로 기록되어 rescale_unacked=1 을 유발한다.
+      - 둘 다 없거나 approval_id 가 유효하지 않으면 RescaleApprovalError(400).
+
+    반환: {events_json, count, unacked} — events_json 은 정규화된 event 목록의 JSON 문자열,
+    count 는 event 수, unacked 는 미승인(absence) event 가 하나라도 있으면 1 아니면 0.
+    events 가 None/빈 리스트면 None 반환(기존 저장 동작 100% 유지 — 컬럼 기본값 유지).
+    """
+    if not events:
+        return None
+    if len(events) > 2:
+        raise RescaleApprovalError(
+            "3회 증량은 불가합니다 — 책임자와 폐기 여부를 협의하세요."
+        )
+
+    from ..db.time_utils import utc_now_text
+
+    now = utc_now_text()
+    now_dt = _iso_to_dt(now) or datetime.now(timezone.utc)
+    normalized: list[dict[str, Any]] = []
+    totals: list[dict[str, Any]] = []
+    has_absence = False
+    unapproved = 0
+
+    for ev in events:
+        approval_id = ev.get("approval_id")
+        absence_reason = str(ev.get("absence_reason") or "").strip()
+        norm_ev: dict[str, Any] = {
+            "before_total": ev.get("before_total"),
+            "after_total": ev.get("after_total"),
+            "worker_confirmed": bool(ev.get("worker_confirmed")),
+        }
+        if approval_id is not None:
+            # 승인 행 조회 — used=0 이고 30분 이내여야 한다.
+            row = connection.execute(
+                "SELECT id, approver, created_at, used FROM blend_rescale_approvals WHERE id = ?",
+                (int(approval_id),),
+            ).fetchone()
+            if not row or row["used"]:
+                raise RescaleApprovalError(
+                    "증량 승인이 유효하지 않습니다 — 다시 인증하세요."
+                )
+            created_dt = _iso_to_dt(row["created_at"])
+            if created_dt is None or (now_dt - created_dt).total_seconds() > _RESCALE_APPROVAL_TTL_MINUTES * 60:
+                raise RescaleApprovalError(
+                    "증량 승인이 유효하지 않습니다 — 다시 인증하세요."
+                )
+            # 소비 표시 — 같은 approval_id 재사용 방지.
+            connection.execute(
+                "UPDATE blend_rescale_approvals SET used = 1 WHERE id = ?",
+                (int(approval_id),),
+            )
+            norm_ev["approval_id"] = int(row["id"])
+            norm_ev["approver"] = row["approver"]
+        elif absence_reason:
+            # 미승인(absence) — 책임자 없이 진행한 경우, 사유 필수.
+            norm_ev["absence_reason"] = absence_reason
+            has_absence = True
+            unapproved += 1
+        else:
+            raise RescaleApprovalError(
+                "증량 승인이 유효하지 않습니다 — 다시 인증하세요."
+            )
+        normalized.append(norm_ev)
+        totals.append(
+            {"before_total": norm_ev["before_total"], "after_total": norm_ev["after_total"]}
+        )
+
+    return {
+        "events_json": json.dumps(normalized, ensure_ascii=False),
+        "events": normalized,
+        "count": len(normalized),
+        "unacked": 1 if has_absence else 0,
+        "unapproved": unapproved,
+        "totals": totals,
+    }
+
+
+def apply_rescale_to_record(
+    connection: sqlite3.Connection,
+    record_id: int,
+    validated: dict[str, Any],
+) -> None:
+    """검증된 증량(rescale) 정보를 blend_records 행에 기록한다.
+
+    validate_rescale_events 가 돌려준 딕셔너리(events_json/count/unacked)를 받아
+    rescale_events_json·rescale_count·rescale_unacked 컬럼을 갱신한다. 이벤트가 없어
+    validated=None 인 경우 호출부에서 건너뛰므로(컬럼 기본값 0 유지) 여기선 항상 값이 있다.
+    """
+    connection.execute(
+        "UPDATE blend_records SET rescale_events_json = ?, rescale_count = ?, "
+        "rescale_unacked = ? WHERE id = ?",
+        (validated["events_json"], validated["count"], validated["unacked"], record_id),
+    )

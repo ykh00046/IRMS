@@ -271,6 +271,24 @@
 .rescale-applied-title { font-weight: 700; }
 .rescale-applied-item { white-space: nowrap; }
 
+/* 증량 책임자 승인 모달 — 상단 승인(강조) + 하단 '책임자 부재 시'(muted 보조). */
+.rescale-approve-lead { margin: 0 0 0.9rem; font-size: 0.9rem; color: #374151; line-height: 1.5; }
+#rescale-approve-modal .blend-field { margin-bottom: 0.7rem; }
+.btn.rescale-approve-btn { width: 100%; }
+#rescale-approve-modal .login-error { margin: 0 0 0.6rem; }
+.rescale-approve-divider {
+  border: 0; border-top: 1px solid var(--border, #e5e7eb); margin: 1.1rem 0 0.9rem;
+}
+/* 보조 섹션 — 승인보다 약하게(muted) 보이도록 */
+.rescale-absence { opacity: 0.9; }
+.rescale-absence-title {
+  margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 700; color: var(--muted, #6b7280);
+}
+.rescale-absence-warn {
+  margin: 0.65rem 0 0; font-size: 0.8rem; color: #b45309; line-height: 1.5;
+}
+.rescale-absence-warn strong { color: #92400e; }
+
 /* 추가 계량 모달 — 큰 남은 양 숫자 중심 레이아웃. 기존 .ss-modal/*.btn 클래스 재사용. */
 .add-weigh-modal { text-align: center; min-width: 320px; }
 .add-weigh-remaining {
@@ -471,3 +489,35 @@
     width: min(240px, 100%);
   }
 }
+
+/* 증량 승인제 — 배합 기록 배지·상세 이력(rescale-approval 2026-07-22) */
+.rescale-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #eef2f7;
+  color: #475569;
+  border: 1px solid #dbe2ea;
+  vertical-align: middle;
+}
+.rescale-badge.unacked {
+  background: #fdecec;
+  color: #c0322c;
+  border-color: #f3c3c0;
+}
+.blend-rescale-block {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid #f0d9b5;
+  background: #fdf6ea;
+  border-radius: 8px;
+}
+.blend-rescale-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.blend-rescale-list li { margin: 2px 0; }

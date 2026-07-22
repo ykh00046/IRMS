@@ -59,12 +59,20 @@ ACCENT_TOKENS = {
         "primary_fg": "#ffffff",
         "primary_active": "#115e59",
     },
+    "rescale": {
+        "dot": "#ea580c",
+        "badge_bg": "#ffedd5",
+        "badge_fg": "#c2410c",
+        "primary_bg": "#ea580c",
+        "primary_fg": "#ffffff",
+        "primary_active": "#c2410c",
+    },
 }
 
-# 알림 종류(action_key) → 섹션 라벨 / 표시 순서. 근태·점도가 같이 오면 한 창에 이 순서로 쌓는다.
-KIND_LABEL = {"attendance": "근태", "viscosity": "점도"}
-KIND_ORDER = ("attendance", "viscosity")
-KIND_SECTION_TITLE = {"attendance": "근태 확인", "viscosity": "점도 입력"}
+# 알림 종류(action_key) → 섹션 라벨 / 표시 순서. 근태·점도·증량이 같이 오면 한 창에 이 순서로 쌓는다.
+KIND_LABEL = {"attendance": "근태", "viscosity": "점도", "rescale": "증량"}
+KIND_ORDER = ("attendance", "viscosity", "rescale")
+KIND_SECTION_TITLE = {"attendance": "근태 확인", "viscosity": "점도 입력", "rescale": "증량 확인"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +195,36 @@ def build_viscosity_popup_payload(payload: dict[str, Any]) -> PopupPayload:
         accent="viscosity",
         action_key="viscosity",
         confirm_text="점도 등록",
+    )
+
+
+def build_rescale_popup_payload(payload: dict[str, Any]) -> PopupPayload:
+    """책임자 미확인 증량(rescale_unacked) 알림 — 최대 3건의 LOT 를 나열한다.
+
+    count>0 인 동안 폴링 주기마다 반복 표시되므로(사후 확인 독려), 별도 중복 억제
+    없이 매번 최신 목록으로 그린다.
+    """
+    items = list(payload.get("items") or [])
+    count = max(int(payload.get("count") or len(items)), len(items))
+    lines: list[str] = []
+    for item in items[:POPUP_MAX_NAMES]:
+        product = str(item.get("product_name") or "").strip()
+        lot = str(item.get("product_lot") or "").strip()
+        label = f"{product} ({lot})" if lot else product or lot or "증량 기록"
+        lines.append(f"{label} 증량 확인 필요")
+    remaining = max(0, count - len(lines))
+    if remaining > 0:
+        lines.append(f"+{remaining}건")
+    if not lines:
+        lines.append("미확인 증량이 없습니다.")
+    return PopupPayload(
+        title="미확인 증량",
+        badge_text=f"{count}건" if count else "확인",
+        summary="미확인 증량이 있습니다 — 배합 기록에서 확인하세요.",
+        lines=lines,
+        accent="rescale",
+        action_key="rescale",
+        confirm_text="배합 기록 열기",
     )
 
 

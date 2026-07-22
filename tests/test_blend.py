@@ -1448,3 +1448,232 @@ def test_raw_material_lot_unaffected():
                      "actual_amount": 50, "material_lot": "아무LOT"}],
     }, headers=csrf())
     assert res.status_code == 200, res.text
+
+
+# ── 증량(rescale) 승인제 — 현장 인증·저장 검증 ────────────────────────────
+def _rescale_client():
+    """증량 라우트 테스트용 앱 클라이언트(매번 새 앱 + csrf 쿠키 확보)."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    client.get("/api/blend/records")  # csrf 쿠키 확보
+    return client
+
+
+def _rescale_csrf(client):
+    tok = client.cookies.get("csrftoken")
+    return {"x-csrftoken": tok} if tok else {}
+
+
+def _rescale_login_worker(client, worker):
+    h = _rescale_csrf(client)
+    client.post("/api/workers", json={"name": worker}, headers=h)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=h)
+
+
+def _rescale_record_payload(prod, worker, **extra):
+    payload = {
+        "product_name": prod,
+        "worker": worker,
+        "work_date": "2026-07-22",
+        "total_amount": 100,
+        "details": [
+            {"material_name": "일반원료", "ratio": 100, "theory_amount": 100,
+             "actual_amount": 100, "material_lot": "L1"},
+        ],
+    }
+    payload.update(extra)
+    return payload
+
+
+def test_rescale_manager_verify_wrong_password_401_and_audit():
+    import uuid
+
+    client = _rescale_client()
+    res = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "definitely-wrong-" + uuid.uuid4().hex[:6]},
+        headers=_rescale_csrf(client),
+    )
+    assert res.status_code == 401, res.text
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'blend_rescale_approve_denied'"
+        ).fetchone()
+    assert row["n"] >= 1
+
+
+def test_rescale_verify_then_save_marks_columns_and_consumes_approval():
+    import uuid
+
+    client = _rescale_client()
+    worker = "증량작업" + uuid.uuid4().hex[:6]
+    prod = "RSC" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    verify = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "admin"},
+        headers=_rescale_csrf(client),
+    )
+    assert verify.status_code == 200, verify.text
+    approval_id = verify.json()["approval_id"]
+    assert verify.json()["approver"]
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{"before_total": 100, "after_total": 120, "approval_id": approval_id}],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        rec = conn.execute(
+            "SELECT rescale_count, rescale_unacked, rescale_events_json "
+            "FROM blend_records WHERE id = ?",
+            (rid,),
+        ).fetchone()
+        appr = conn.execute(
+            "SELECT used, approver FROM blend_rescale_approvals WHERE id = ?",
+            (approval_id,),
+        ).fetchone()
+    assert rec["rescale_count"] == 1
+    assert rec["rescale_unacked"] == 0
+    assert appr["used"] == 1
+    # 정규화된 이벤트에 책임자 표시명이 채워졌다.
+    assert appr["approver"] in (rec["rescale_events_json"] or "")
+
+
+def test_rescale_approval_reuse_rejected():
+    import uuid
+
+    client = _rescale_client()
+    worker = "재사용" + uuid.uuid4().hex[:6]
+    prod = "RSU" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    approval_id = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "admin"},
+        headers=_rescale_csrf(client),
+    ).json()["approval_id"]
+
+    first = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{"before_total": 100, "after_total": 130, "approval_id": approval_id}],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert first.status_code == 200, first.text
+
+    # 같은 approval_id 재사용 → 400
+    second = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod + "2", worker,
+            rescale_events=[{"before_total": 100, "after_total": 130, "approval_id": approval_id}],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert second.status_code == 400, second.text
+    assert "증량 승인" in second.json()["detail"]
+
+
+def test_rescale_absence_reason_saved_unacked():
+    import uuid
+
+    client = _rescale_client()
+    worker = "부재진행" + uuid.uuid4().hex[:6]
+    prod = "RAB" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{"before_total": 100, "after_total": 115,
+                             "absence_reason": "책임자 부재 — 야간조 단독"}],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        rec = conn.execute(
+            "SELECT rescale_count, rescale_unacked, rescale_events_json "
+            "FROM blend_records WHERE id = ?",
+            (rid,),
+        ).fetchone()
+    assert rec["rescale_count"] == 1
+    assert rec["rescale_unacked"] == 1
+    assert "부재" in (rec["rescale_events_json"] or "")
+
+
+def test_rescale_three_events_rejected():
+    import uuid
+
+    client = _rescale_client()
+    worker = "삼회증량" + uuid.uuid4().hex[:6]
+    prod = "R3X" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[
+                {"before_total": 100, "after_total": 110, "absence_reason": "a"},
+                {"before_total": 110, "after_total": 120, "absence_reason": "b"},
+                {"before_total": 120, "after_total": 130, "absence_reason": "c"},
+            ],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 400, created.text
+    assert "3회 증량은 불가합니다" in created.json()["detail"]
+
+
+def test_rescale_save_without_events_keeps_defaults():
+    import uuid
+
+    client = _rescale_client()
+    worker = "무증량" + uuid.uuid4().hex[:6]
+    prod = "RNO" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(prod, worker),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        rec = conn.execute(
+            "SELECT rescale_count, rescale_unacked, rescale_events_json "
+            "FROM blend_records WHERE id = ?",
+            (rid,),
+        ).fetchone()
+    assert rec["rescale_count"] == 0
+    assert rec["rescale_unacked"] == 0
+    assert rec["rescale_events_json"] is None

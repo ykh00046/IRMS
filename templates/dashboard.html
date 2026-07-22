@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260720b" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260722a" />
 {% endblock %}
 
 {% block content %}
@@ -57,6 +57,23 @@
             <div class="metric-unit" id="card-visc-due-codes">알림 대상 기준</div>
           </div>
         </section>
+
+        {% if can_manage %}
+        <section class="dashboard-rescale-alert">
+          <div class="panel rescale-alert-card" id="rescale-alert-card">
+            <div class="rescale-alert-head">
+              <div class="rescale-alert-metric">
+                <div class="metric-label">미확인 증량</div>
+                <div class="metric-value" id="card-rescale-unacked">-</div>
+              </div>
+              <div class="metric-unit">건 · 책임자 확인 필요</div>
+            </div>
+            <ul class="rescale-alert-list" id="rescale-alert-list">
+              <li class="rescale-empty muted">불러오는 중…</li>
+            </ul>
+          </div>
+        </section>
+        {% endif %}
 
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
@@ -110,5 +127,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260720b"></script>
+    <script src="/static/js/dashboard.js?v=20260722a"></script>
 {% endblock %}

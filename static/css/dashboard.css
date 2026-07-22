@@ -55,3 +55,39 @@
 }
 
 /* (저울 전용 입력 설정 카드는 사용자 관리 페이지로 이전 — admin_users.css) */
+
+/* 미확인 증량 카드(책임자 전용) — rescale-approval 2026-07-22 */
+.dashboard-rescale-alert { margin-bottom: 18px; }
+.rescale-alert-card { padding: 16px 20px; }
+.rescale-alert-card.has-unacked {
+  border-color: #f3c3c0;
+  background: #fdf7f6;
+}
+.rescale-alert-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rescale-alert-metric { display: flex; align-items: baseline; gap: 8px; }
+.rescale-alert-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rescale-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--bg-surface, #fff);
+  font-size: 0.85rem;
+}
+.rescale-item-info { min-width: 0; overflow-wrap: anywhere; }
+.rescale-empty { padding: 6px 2px; font-size: 0.85rem; }

@@ -36,9 +36,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth import get_current_user, has_access_level, require_access_level
+from ..auth import (
+    authenticate_manager_worker,
+    authenticate_user,
+    get_current_user,
+    has_access_level,
+    require_access_level,
+)
 from ..blend_session import current_blend_worker, touch_worker_session
 from ..db import get_db, utc_now_text, write_audit_log
+from ..limiter import limiter
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
 from .models import (
     BlendApprovalBody,
@@ -453,6 +460,62 @@ def build_router() -> APIRouter:
         record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
         return _mask_manual_entry(request, record)
 
+    # ── 증량(rescale) 책임자 현장 인증 — 세션 생성 없이 자격 증명만 확인 ──
+    # 저장 시 approval_id 로 소비되는 1회용 승인 토큰을 발급한다. 비밀번호 검증은
+    # 기존 authenticate_user 를 재사용(해시 로직 중복 금지). management-login 과 동일
+    # slowapi 레이트리밋(5/분) 으로 무차별 대입을 막는다.
+    @router.post("/blend/manager-verify")
+    @limiter.limit("5/minute")
+    def blend_manager_verify(
+        request: Request,
+        body: dict[str, Any],
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        # management-login 과 동일한 순서로 책임자 자격을 검증한다(해시 로직 중복 금지):
+        # 이름 기반 책임자(workers.is_manager) 우선, 없으면 레거시 admin(users) 폴백.
+        user = authenticate_manager_worker(username, password)
+        non_manager = False
+        denied_actor: dict[str, Any] | None = None
+        if user is None:
+            legacy = authenticate_user(username, password)
+            if legacy is not None:
+                if has_access_level(legacy, "manager"):
+                    user = legacy
+                else:
+                    # 유효한 계정이지만 책임자 권한이 아님 → 403.
+                    non_manager = True
+                    denied_actor = legacy
+        if user is None:
+            write_audit_log(
+                connection,
+                action="blend_rescale_approve_denied",
+                actor=denied_actor,
+                target_type="rescale_approval",
+                target_label=username or "(빈 이름)",
+                details={"reason": "not_manager" if non_manager else "invalid_credentials"},
+            )
+            connection.commit()
+            raise HTTPException(
+                status_code=403 if non_manager else 401,
+                detail="FORBIDDEN" if non_manager else "INVALID_CREDENTIALS",
+            )
+        # 통과 — 승인 토큰 발급(approver=표시명).
+        approver = user.get("display_name") or user.get("username") or "책임자"
+        result = blend_service.create_rescale_approval(connection, approver)
+        write_audit_log(
+            connection,
+            action="blend_rescale_approved",
+            actor=user,
+            target_type="rescale_approval",
+            target_id=str(result["approval_id"]),
+            target_label=approver,
+            details={},
+        )
+        connection.commit()
+        return result
+
     @router.post("/blend/records")
     def blend_create(
         body: BlendCreateBody,
@@ -528,6 +591,13 @@ def build_router() -> APIRouter:
                 detail=f"허용 편차(±{tolerance}g)를 초과한 자재: "
                 + ", ".join(offenders),
             )
+        # 증량(rescale) 이벤트 검증·승인 소비 — create 직전 확정(같은 트랜잭션).
+        # 유효 승인 토큰(approval_id)은 used=1 로 소비되고, 부재 사유(absence_reason)는
+        # 미확인으로 기록된다. 3회 이상·무효/재사용/만료 토큰은 400.
+        try:
+            rescale = blend_service.validate_rescale_events(connection, body.rescale_events)
+        except blend_service.RescaleApprovalError as exc:
+            raise HTTPException(status_code=400, detail=exc.detail) from exc
         worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
@@ -551,6 +621,22 @@ def build_router() -> APIRouter:
             manual_entry=body.manual_entry,
         )
         record = blend_service.get_blend_record(connection, record_id)
+        # 증량 이벤트가 있으면 컬럼 기록 + 감사. 없으면(rescale=None) 기존 동작 유지(컬럼 기본값 0).
+        if rescale is not None:
+            blend_service.apply_rescale_to_record(connection, record_id, rescale)
+            write_audit_log(
+                connection,
+                action="blend_rescale_saved",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record["product_lot"],
+                details={
+                    "count": rescale["count"],
+                    "unapproved": rescale["unapproved"],
+                    "totals": rescale["totals"],
+                },
+            )
         write_audit_log(
             connection,
             action="blend_record_create",

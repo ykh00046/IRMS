@@ -86,6 +86,11 @@
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
+    // 증량 승인 이벤트 목록 — 증량 1회당 1건. 책임자 승인({approval_id, approver}) 또는
+    // 책임자 부재 진행({absence_reason})으로 구분. 저장 payload(rescale_events)로 전송.
+    // 레시피 변경·저장 시 [] 로 초기화, '방금 증량 취소' 시 마지막 1건 pop.
+    // length>=2 이면 3회째 증량 제안 자체가 차단된다(책임자 폐기 협의 유도).
+    rescaleEvents: [],
   };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
@@ -472,6 +477,7 @@
     state.rescaleActive = false;
     state.rescaleAppliedPlan = null;
     state.rescaleUndo = null;
+    state.rescaleEvents = [];  // 레시피 변경 → 증량 승인 이력 초기화(총 배합량 잠금도 함께 해제)
     state.lotOverrides = {};
     hideRescaleUndo();
     clearRescaleSummary();
@@ -1348,10 +1354,17 @@
     // 이미 모달이 열려 있거나 보류 제안이 있으면 중복 트리거 방지(change·Enter·
     // 총량 변경 경로에서 warnIfVariance 가 여러 번 불릴 수 있다).
     if (!$("rescale-modal").hidden || !$("discard-modal").hidden) return;
+    if (!$("rescale-approve-modal").hidden || !$("rescale-block-modal").hidden) return;
     if (state.pendingRescale) return;
     const currentTotal = effectiveCurrentTotal();
     const plan = rescalePlan(state.items, currentTotal, state.toleranceG);
     if (!plan.changed) return;
+    // 3회 금지 — 이미 2회 증량된 배합은 3회째 제안 자체를 막고 폐기 협의를 유도한다.
+    // pendingRescale 을 설정하지 않으므로 승인 경로 자체가 도달 불가능해진다.
+    if (state.rescaleEvents.length >= 2) {
+      openRescaleBlockModal();
+      return;
+    }
     state.pendingRescale = plan;
     if (exceedsBatchLimit(plan.newTotal)) {
       openDiscardModal(plan);
@@ -1416,6 +1429,125 @@
     $("discard-modal").hidden = false;
   }
   function closeDiscardModal() { $("discard-modal").hidden = true; }
+
+  // ── 증량 승인 게이트(책임자 승인 없이는 증량 불가) ─────────────────
+  // 증량 적용/그래도 증량 클릭 → 즉시 적용하지 않고 이 모달을 띄운다.
+  // [승인]: /api/blend/manager-verify 200 → applyRescale + 승인 이벤트 기록.
+  // [부재로 진행]: 사유 필수 + 재확인 → applyRescale + '미승인 증량' 이벤트 기록.
+  // 부족 채우기(추가 계량)는 이 경로를 타지 않는다 — 승인 불필요.
+  function csrfToken() {
+    if (IRMS._core && IRMS._core.getCsrfToken) {
+      const t = IRMS._core.getCsrfToken();
+      if (t) return t;
+    }
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  function openRescaleApproveModal() {
+    // 제안/폐기 모달을 닫고 승인 모달을 연다(pendingRescale 은 그대로 보존).
+    closeRescaleModal();
+    closeDiscardModal();
+    const modal = $("rescale-approve-modal");
+    if (!modal) return;
+    const nameEl = $("rescale-approve-name");
+    const pwEl = $("rescale-approve-pw");
+    const reasonEl = $("rescale-absence-reason");
+    if (nameEl) nameEl.value = "";
+    if (pwEl) pwEl.value = "";
+    if (reasonEl) reasonEl.value = "";
+    hideApproveError();
+    modal.hidden = false;
+    if (nameEl) nameEl.focus();
+  }
+
+  function closeRescaleApproveModal() {
+    const modal = $("rescale-approve-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  // 승인/부재 모달을 취소(Escape/overlay) — 보류 중인 증량 제안을 버린다.
+  // 초과 계량 상태는 그대로라 다음 change/Enter 에서 다시 제안이 뜬다.
+  function cancelRescaleApprove() {
+    state.pendingRescale = null;
+    closeRescaleApproveModal();
+  }
+
+  function showApproveError(msg) {
+    const err = $("rescale-approve-error");
+    if (err) { err.textContent = msg; err.hidden = false; }
+  }
+  function hideApproveError() {
+    const err = $("rescale-approve-error");
+    if (err) { err.hidden = true; err.textContent = ""; }
+  }
+
+  // 증량 확정 — pendingRescale 소비 전에 before/after 총량을 잡아 이벤트를 기록한다.
+  // applyRescale 이 state.pendingRescale 을 null 로 만들므로 순서가 중요하다.
+  function finalizeRescale(meta) {
+    const plan = state.pendingRescale;
+    if (!plan) return;
+    const before_total = effectiveCurrentTotal();
+    const after_total = plan.newTotal;
+    applyRescale();  // 기존 직접 경로가 쓰던 바로 그 함수(총량·이론량·배지 갱신)
+    const ev = { before_total, after_total };
+    if (meta && meta.approval_id != null) ev.approval_id = meta.approval_id;
+    if (meta && meta.approver != null) ev.approver = meta.approver;
+    if (meta && meta.absence_reason != null) ev.absence_reason = meta.absence_reason;
+    state.rescaleEvents.push(ev);
+  }
+
+  async function submitManagerApproval() {
+    const nameEl = $("rescale-approve-name");
+    const pwEl = $("rescale-approve-pw");
+    const name = nameEl ? nameEl.value.trim() : "";
+    const pw = pwEl ? pwEl.value : "";
+    if (!name) { showApproveError("책임자 이름을 입력하세요."); if (nameEl) nameEl.focus(); return; }
+    if (!pw) { showApproveError("비밀번호를 입력하세요."); if (pwEl) pwEl.focus(); return; }
+    hideApproveError();
+    const btn = $("rescale-approve-submit");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/blend/manager-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({ username: name, password: pw }),
+      });
+      if (res.status === 401) { showApproveError("비밀번호가 올바르지 않습니다."); return; }
+      if (res.status === 403) { showApproveError("책임자 권한이 없습니다."); return; }
+      if (!res.ok) { showApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요."); return; }
+      const data = await res.json().catch(() => ({}));
+      closeRescaleApproveModal();
+      finalizeRescale({ approval_id: data.approval_id, approver: data.approver || name });
+      notify(`책임자 승인 완료 (${data.approver || name}) — 증량을 적용합니다.`, "success");
+    } catch (_e) {
+      showApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function submitAbsenceProceed() {
+    const reasonEl = $("rescale-absence-reason");
+    const reason = reasonEl ? reasonEl.value.trim() : "";
+    if (!reason) { showApproveError("책임자 부재 사유를 입력하세요."); if (reasonEl) reasonEl.focus(); return; }
+    if (!window.confirm("책임자 승인 없이 증량을 적용합니다.\n기록에 '미승인 증량'으로 표시되고 책임자 확인 알림이 반복됩니다.")) return;
+    hideApproveError();
+    closeRescaleApproveModal();
+    finalizeRescale({ absence_reason: reason });
+    notify("미승인 증량으로 적용했습니다 — 책임자 확인 전까지 알림이 반복됩니다.", "warn");
+  }
+
+  function openRescaleBlockModal() {
+    const modal = $("rescale-block-modal");
+    if (modal) { modal.hidden = false; return; }
+    notify("3회 증량은 불가합니다 — 이 배합은 책임자와 폐기 여부를 협의하세요.", "error big");
+  }
+  function closeRescaleBlockModal() {
+    const modal = $("rescale-block-modal");
+    if (modal) modal.hidden = true;
+  }
 
   // 증량 적용 — 모달 [증량 적용] 또는 #discard-modal [그래도 증량].
   // 일반 레시피: 총량 입력값을 newTotal 로 갱신 후 input 이벤트로 이론 재계산 경로 재사용.
@@ -1485,6 +1617,7 @@
     state.rescaleActive = false;
     state.addPending = {};
     state.pendingRescale = null;
+    state.rescaleEvents.pop();  // 방금 증량의 승인 이벤트도 함께 되돌린다
     state.items.forEach((it, i) => { it.theory_amount = snap.theories[i]; });
     const totalEl = $("blend-total");
     if (totalEl) totalEl.value = snap.total;
@@ -1788,6 +1921,31 @@
     $("blend-actual-total").textContent = state.items.length ? fmt(actual) : "-";
     const nv = $("blend-net-var");
     nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, 2) : "-";
+    updateTotalLock();
+  }
+
+  // 총 배합량 잠금 — 자재 실제량이 하나라도 입력되면 총 배합량을 바꿀 수 없다
+  // (변경은 승인된 증량으로만 — applyRescale 은 프로그램적으로 .value 를 갱신하므로
+  // readOnly 여도 계속 동작한다). 기준 자재 레시피는 이미 총량이 읽기 전용이라 제외.
+  // 잠금 중에는 기준량 빠른 채우기 버튼도 비활성화한다. 초기화/레시피 변경 시 자동 해제.
+  function updateTotalLock() {
+    const totalInput = $("blend-total");
+    if (!totalInput) return;
+    const anyActual = state.items.some(
+      (it) => it.actual_amount !== "" && it.actual_amount != null
+    );
+    const links = $("blend-base-links");
+    if (links) {
+      links.querySelectorAll(".blend-base-link").forEach((b) => { b.disabled = anyActual; });
+    }
+    if (hasAnchor()) return;  // 기준 자재 레시피는 applyAnchorMode 가 이미 읽기 전용 처리
+    if (anyActual) {
+      totalInput.readOnly = true;
+      totalInput.title = "계량 시작 후에는 총 배합량을 바꿀 수 없습니다 (변경은 승인된 증량으로만)";
+    } else {
+      totalInput.readOnly = false;
+      totalInput.removeAttribute("title");
+    }
   }
 
   async function updateLotPreview() {
@@ -1910,6 +2068,9 @@
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
       // 서버 백업: 미등록 LOT 사유를 구조화해 보내 클라이언트 fail-open 구멍을 막는다.
       lot_overrides: lotOverrides.length ? lotOverrides : null,
+      // 증량 승인 이력 — 각 증량의 before/after 총량 + 승인(approval_id/approver) 또는
+      // 부재 진행(absence_reason). 없으면 null. 서버가 유효성(승인 실재 여부)을 재검증한다.
+      rescale_events: state.rescaleEvents.length ? state.rescaleEvents : null,
       // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
       manual_entry: state.items.some((it) => it.manual === true),
       details: state.items.map((it, idx) => ({
@@ -1947,6 +2108,7 @@
       state.addPending = {};
       state.rescaleActive = false;
       state.rescaleUndo = null;
+      state.rescaleEvents = [];  // 저장 완료 → 증량 승인 이력 초기화(총 배합량 잠금 해제)
       state.lotOverrides = {};
       hideRescaleUndo();
       clearRescaleSummary();
@@ -2028,15 +2190,41 @@
     $("blend-date").addEventListener("change", updateLotPreview);
     $("blend-save").addEventListener("click", () => saveBlend());
     // 증량 모달 버튼 — hidden 속성 토글만으로 열고 닫는다(display 직접 지정 금지).
+    // [증량 적용]/[그래도 증량] 은 즉시 적용하지 않고 책임자 승인 모달을 띄운다.
     const rescaleApply = $("rescale-apply");
-    if (rescaleApply) rescaleApply.addEventListener("click", applyRescale);
+    if (rescaleApply) rescaleApply.addEventListener("click", openRescaleApproveModal);
     const rescaleCancel = $("rescale-cancel");
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
       state.pendingRescale = null;
       closeRescaleModal();
     });
     const discardForce = $("discard-force");
-    if (discardForce) discardForce.addEventListener("click", applyRescale);
+    if (discardForce) discardForce.addEventListener("click", openRescaleApproveModal);
+    // 증량 승인 모달 — [승인](책임자 검증) / [부재로 진행](사유+재확인). Esc/overlay=취소.
+    const approveSubmit = $("rescale-approve-submit");
+    if (approveSubmit) approveSubmit.addEventListener("click", () => submitManagerApproval());
+    const approvePw = $("rescale-approve-pw");
+    if (approvePw) approvePw.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      submitManagerApproval();
+    });
+    const absenceSubmit = $("rescale-absence-submit");
+    if (absenceSubmit) absenceSubmit.addEventListener("click", submitAbsenceProceed);
+    const approveModal = $("rescale-approve-modal");
+    if (approveModal) approveModal.addEventListener("click", (e) => {
+      if (e.target === approveModal) cancelRescaleApprove();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && approveModal && !approveModal.hidden) cancelRescaleApprove();
+    });
+    // 3회 증량 차단 모달 — 확인만.
+    const blockClose = $("rescale-block-close");
+    if (blockClose) blockClose.addEventListener("click", closeRescaleBlockModal);
+    const blockModal = $("rescale-block-modal");
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && blockModal && !blockModal.hidden) closeRescaleBlockModal();
+    });
     const discardCancel = $("discard-cancel");
     if (discardCancel) discardCancel.addEventListener("click", () => {
       // 폐기 선택 — 증량을 적용하지 않는다(기존 초과 토스트·저장 차단 상태 유지).

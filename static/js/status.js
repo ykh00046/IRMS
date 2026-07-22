@@ -18,6 +18,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }[c]));
   let detailId = null;
   let currentRecord = null;
+  // 증량 요약 맵(record_id → {rescale_count, rescale_unacked, rescale_events}).
+  // 목록/상세 응답에 rescale 필드가 없어 자체 요약 엔드포인트로 병합 안전하게 채운다.
+  let rescaleMap = {};
+
+  async function loadRescaleMap() {
+    try {
+      const data = await request("/blend/rescales/summary");
+      const map = {};
+      (data.items || []).forEach((it) => { map[it.id] = it; });
+      rescaleMap = map;
+    } catch (_e) {
+      rescaleMap = {};
+    }
+  }
+
+  // 목록 배지 — 증량이 있으면 표시, 미승인(책임자 부재 진행)은 빨간 배지.
+  function rescaleBadge(id) {
+    const info = rescaleMap[id];
+    if (!info || !info.rescale_count) return "";
+    if (info.rescale_unacked)
+      return ' <span class="rescale-badge unacked" title="책임자 미승인 증량">미승인 증량</span>';
+    return ` <span class="rescale-badge" title="증량 승인됨">증량 ${info.rescale_count}회</span>`;
+  }
+
+  // 상세 모달 — 증량 이력(전 총량→후 총량, 승인자 또는 부재 사유).
+  function rescaleBlock(id) {
+    const info = rescaleMap[id];
+    const events = (info && info.rescale_events) || [];
+    if (!events.length) return "";
+    const rows = events
+      .map((e, i) => {
+        const who = e.approver
+          ? `승인자: ${esc(e.approver)}`
+          : e.absence_reason
+            ? `책임자 부재: ${esc(e.absence_reason)}`
+            : "책임자 부재";
+        return `<li>${i + 1}. ${fmt(e.before_total)} g → ${fmt(e.after_total)} g <span class="muted small">(${who})</span></li>`;
+      })
+      .join("");
+    const unackedTag = info.rescale_unacked
+      ? ' <span class="rescale-badge unacked">미승인</span>'
+      : "";
+    return `<div class="blend-rescale-block"><b>증량 이력${unackedTag}</b><ul class="blend-rescale-list">${rows}</ul></div>`;
+  }
 
   async function deleteRecord(recordId) {
     await request(`/blend/records/${recordId}`, {
@@ -50,7 +94,10 @@ document.addEventListener("DOMContentLoaded", () => {
       search: $("status-rec-search").value.trim() || undefined,
     };
     try {
-      const data = await request("/blend/records", { query });
+      const [data] = await Promise.all([
+        request("/blend/records", { query }),
+        loadRescaleMap(),
+      ]);
       const items = data.items || [];
       if (!items.length) {
         body.innerHTML = '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
@@ -67,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}</td>` +
+          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${rescaleBadge(r.id)}</td>` +
           `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
@@ -135,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
       </div>
+      ${rescaleBlock(rec.id)}
       <div class="table-wrap"><table class="blend-table">
         <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
         <tbody>${rows}</tbody>
