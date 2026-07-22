@@ -53,6 +53,9 @@
     lotRescalePlan: [],
     // 추가분 입력 모드에 들어간 셀(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
     addModeCell: null,     // {i,j} 또는 null
+    // 증량(rescale) 후 추가 대기 셀 — blend.js state.addPending 의 셀(i:j) 버전.
+    // 대기 중인 셀은 편차 경고·음수 표시 대신 '추가 +X' 배지만 보인다.
+    addPendingCells: {},   // {"i:j": addNeeded}
     // 보류 중인 로트별 증량 제안({j, plan}) — discard 모달 '그래도 증량' 시 재사용.
     pendingContRescale: null,
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
@@ -153,8 +156,12 @@
     } catch (_e) { /* 폴링 실패는 조용히 */ }
   }
 
-  // PRINT 가 들어갈 셀: 커서가 있는 실제량 셀 우선, 없으면 첫 미입력 셀(재료→로트 순)
+  // PRINT 가 들어갈 셀: 추가(합산) 모드 중이면 무조건 그 셀(배합 화면 activeScaleRow 와
+  // 동일). 인라인 추가 입력칸은 cont-actual 클래스가 아니어서 포커스 감지에 안 걸리고,
+  // 그 셀의 actual 은 이미 채워져 있어 폴백도 건너뛰었다 — 부족 보충 PRINT 가 엉뚱한
+  // 빈 셀로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 커서 우선 → 첫 미입력 셀 폴백.
   function activeScaleCell() {
+    if (state.addModeCell) return state.addModeCell;
     const focused = document.activeElement;
     if (focused && focused.classList && focused.classList.contains("cont-actual")) {
       return { i: Number(focused.dataset.i), j: Number(focused.dataset.j) };
@@ -321,6 +328,7 @@
     state.lotOverrides = {};        // 레시피 변경 → 미등록 LOT 진행 승인 리셋
     state.lotRescale = [];          // 레시피 변경 → 증량 오버라이드 전부 리셋(스펙)
     state.lotRescalePlan = [];      // 레시피 변경 → 증량 요약줄도 리셋
+    state.addPendingCells = {};     // 레시피 변경 → 증량 대기 셀 억제도 리셋
     rebuildCells();
     rebuildLotRescale();
     clearContRescaleSummary();
@@ -550,7 +558,7 @@
     if (!(total > 0)) return null;
     const byWeights = theoryFromWeights(state.materials, total);
     if (byWeights[i] !== null) return byWeights[i];
-    return Math.round((Number(m.ratio) / 100) * total * 1000) / 1000;
+    return Math.round((Number(m.ratio) / 100) * total * 100) / 100;
   }
 
   // lotRescale(과 lotRescalePlan)을 lotCount 에 맞춘다 — 기존 값 보존, 늘어난 칸은 null.
@@ -730,11 +738,14 @@
   function updateCellVar(i, j) {
     const span = document.querySelector(`.cont-var[data-i="${i}"][data-j="${j}"]`);
     if (!span) return;
+    // 증량 후 추가 대기 셀은 음수 편차 대신 배지(renderAddBadges)가 넣을 양을 안내 —
+    // 여기서 편차 텍스트를 덮어쓰지 않는다(blend.js addPending 과 동일 규칙).
+    if (state.addPendingCells && state.addPendingCells[`${i}:${j}`] != null) return;
     const th = theoryFor(i, j);
     const raw = state.cells[i][j].actual;
     const act = raw === "" ? null : Number(raw);
     if (act === null || th == null) { span.textContent = "-"; span.className = "cont-var"; return; }
-    const v = Math.round((act - th) * 1000) / 1000;
+    const v = Math.round((act - th) * 100) / 100;
     const tol = state.toleranceG;
     // 편차 0(정확히 계량)은 "0.00" 반복 노이즈 대신 옅은 체크로 — 넓은 매트릭스가 차분해진다.
     // 편차가 있으면 부호 포함 숫자(허용 내는 중립색, 초과는 var-up/down 색).
@@ -752,10 +763,13 @@
   let _lastVarWarn = { key: "", at: 0 };
 
   function warnIfVariance(i, j) {
+    // 증량 대기 셀(추가 배지 표시 중)은 편차 경고 대상이 아니다 — 증량으로 이론량이
+    // 커져 생긴 '아직 안 넣은 양'이지 잘못 계량한 게 아니다(blend.js addPending 과 동일).
+    if (state.addPendingCells && state.addPendingCells[`${i}:${j}`] != null) return false;
     const th = theoryFor(i, j);
     const raw = state.cells[i][j].actual;
     if (raw === "" || th == null) return false;
-    const v = Math.round((Number(raw) - th) * 1000) / 1000;
+    const v = Math.round((Number(raw) - th) * 100) / 100;
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
       const key = `${i}:${j}:${raw}`;
@@ -1014,10 +1028,22 @@
       theory_amount: theoryFor(i, j),
     }));
     const plan = rescalePlan(items, lotTotal(j), tol);
+    // 직전 대기 집합(이 lot 만) 기억 — 이번에 빠진(충족된) 셀은 편차 표시를 복원해야 한다.
+    const prevPending = {};
+    Object.keys(state.addPendingCells || {}).forEach((k) => {
+      const parts = k.split(":");
+      if (Number(parts[1]) === j) prevPending[k] = state.addPendingCells[k];
+    });
     plan.rows.forEach((r) => {
       if (r.addNeeded === null || r.addNeeded <= tol + 1e-9) return;
+      const key = `${r.idx}:${j}`;
+      // 대기 셀로 등록 — updateCellVar/warnIfVariance 가 이 셀을 억제한다.
+      state.addPendingCells[key] = r.addNeeded;
       const td = document.querySelector(`.cont-var[data-i="${r.idx}"][data-j="${j}"]`);
       if (!td) return;
+      // 음수 편차 텍스트를 지우고 배지만 남긴다.
+      td.textContent = "";
+      td.className = "cont-var";
       const badge = document.createElement("button");
       badge.type = "button";
       badge.className = "blend-add-badge";
@@ -1027,6 +1053,13 @@
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => openAddInline(r.idx, j));
       td.appendChild(badge);
+    });
+    // 이전에 대기였다가 이번에 충족된 셀 — 빈칸으로 남지 않게 편차 표시를 다시 그린다.
+    Object.keys(prevPending).forEach((k) => {
+      if (!(k in state.addPendingCells)) {
+        const parts = k.split(":");
+        updateCellVar(Number(parts[0]), Number(parts[1]));
+      }
     });
   }
 
@@ -1097,8 +1130,11 @@
     if (!cell) return;
     const prev = cell.actual === "" ? 0 : (Number(cell.actual) || 0);
     const next = prev + Number(add);
-    cell.actual = String(Math.round(next * 1000) / 1000);
+    // 저울 해상도(2자리)로 누계 — 배합 화면(blend.js)/rescalePlan 과 동일 단위 통일.
+    cell.actual = String(Math.round(next * 100) / 100);
     cell.manual = false;
+    // 추가 적용 셀은 더 이상 대기 상태가 아니다 — 억제 해제(편차·배지가 실제 상태 반영).
+    if (state.addPendingCells) delete state.addPendingCells[`${i}:${j}`];
     const input = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
     if (input) {
       input.value = cell.actual;

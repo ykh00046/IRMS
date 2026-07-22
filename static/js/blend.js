@@ -34,7 +34,6 @@
     varianceBlockMessage,
     missingLotNames,
     missingLotBlockMessage,
-    appliedRescaleRowHtml,
     option,
     stepRowsHtml,
     lotFallbackText,
@@ -51,7 +50,7 @@
 
   const $ = (id) => document.getElementById(id);
 
-  const state = { recipes: [], current: null, items: [], detailId: null, viscProducts: [], lotMap: {}, workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false,
+  const state = { recipes: [], current: null, items: [], viscProducts: [], workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false,
     // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록.
     // 자재명이 "배합 기록이 있는 반제품명"과 일치하면 그 제품의 최근 LOT 을 제안.
     // 레시피 선택 시 1회 호출(실패는 조용히 무시 — 제안 없이 기존 동작 유지).
@@ -1259,7 +1258,11 @@
     // 증량 대기 행(추가 배지 표시 중)은 편차 경고 대상이 아니다 — 증량으로 이론량이
     // 커져 생긴 '아직 안 넣은 양'이지 잘못 계량한 게 아니다(오탐 신고 2026-07-22:
     // 정확히 계량한 행이 증량 직후 "-3.00g 초과"로 경고). 배지가 넣을 양을 안내한다.
-    if (state.addPending && state.addPending[i] != null) return false;
+    // 단, 전면 억제는 과했다 — 증량 이후 '새로 계량하다 부족하게 찍은' 행은 팝업이
+    // 떠야 한다(현장 신고 2026-07-22: 배지만 생기고 팝업 없음). 일괄 재검사
+    // (warnAllVariance — 총량 변경 경로)는 루프에서 addPending 행을 건너뛰므로
+    // 오탐 방지는 그대로 유지되고, 여기(직접 입력 경로)서는 팝업을 막지 않는다.
+    // 합산 입력 중(addModeIdx)의 반복 팝업은 아래 부족 분기의 가드가 막는다.
     const v = rowVariance(it);
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
@@ -1439,22 +1442,8 @@
   // 저장 성공·초기화·레시피 변경 전까지 유지(타이핑 중에는 사라지지 않는다).
   function renderRescaleSummary(plan) {
     // 상단 요약줄은 시선 밖이라 폐기(2026-07-22) — 목표·추가분은 각 행 편차 셀의
-    // 배지("목표 Y · 추가 +X")가 상시 표시한다. 함수는 호출부 보존을 위해 남긴다.
-    const el = $("rescale-applied-summary");
-    if (el) { el.hidden = true; el.innerHTML = ""; }
-    return;
-    /* eslint-disable no-unreachable */
-    if (!el || !plan) { if (el) el.hidden = true; return; }
-    const parts = [];
-    plan.rows.forEach((r) => {
-      if (r.addNeeded != null && Number(r.addNeeded) > 0) {
-        const name = state.items[r.idx] ? state.items[r.idx].material_name : "";
-        parts.push(appliedRescaleRowHtml(name, r));
-      }
-    });
-    if (!parts.length) { el.hidden = true; return; }
-    el.innerHTML = `<span class="rescale-applied-title">증량 적용 (목표 ${fmt(plan.newTotal, 1)}g):</span>` + parts.join("");
-    el.hidden = false;
+    // 배지("목표 Y · 추가 +X")가 상시 표시한다. 함수는 호출부 보존을 위해 no-op 으로 남긴다.
+    void plan;
   }
   function clearRescaleSummary() {
     const el = $("rescale-applied-summary");
@@ -1667,11 +1656,14 @@
     _addWeighIdx = idx;
     // 헤더 자재명 + 목표/현재/남은 렌더.
     $("add-weigh-title").textContent = `추가 계량 — ${it.material_name}`;
-    refreshAddWeighModal(idx);
     // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산).
     const row = $("add-weigh-input-row");
     if (row) row.hidden = Boolean(state.scaleOnlyInput);
+    // 반드시 '모달을 연 뒤' 숫자를 그린다 — refreshAddWeighModal 은 닫힌 모달이면
+    // 갱신을 건너뛰므로, 열기 전에 부르면 목표/현재/남은이 초기 "-" 로 남는다
+    // (현장 신고 2026-07-22: 추가 계량 화면 목표값이 "-" 표시).
     $("add-weigh-modal").hidden = false;
+    refreshAddWeighModal(idx);
     const input = $("add-weigh-input");
     if (input) { input.value = ""; if (!state.scaleOnlyInput) input.focus(); }
   }
