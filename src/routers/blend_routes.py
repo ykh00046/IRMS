@@ -502,6 +502,20 @@ def build_router() -> APIRouter:
                 detail="자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
             )
 
+        # 미등록 자가 반제품 LOT 서버 백업 검증 — 클라이언트 fail-open 구멍 방지.
+        # 사유(lot_overrides) 전달 시 통과, 아니면 차단.
+        unregistered = blend_service.unregistered_product_lots(
+            connection, details, body.lot_overrides
+        )
+        if unregistered:
+            shown = unregistered[:5]
+            suffix = " …" if len(unregistered) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
+                + ", ".join(shown) + suffix,
+            )
+
         # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
         # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
@@ -818,6 +832,18 @@ def build_router() -> APIRouter:
                 raise HTTPException(
                     status_code=400,
                     detail=f"로트 {lot_no}: 자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
+                )
+            # 미등록 자가 반제품 LOT 서버 백업 검증(단건과 동일 규칙, 사유 전달 시 통과).
+            unregistered = blend_service.unregistered_product_lots(
+                connection, derived, body.lot_overrides
+            )
+            if unregistered:
+                shown = unregistered[:5]
+                suffix = " …" if len(unregistered) > 5 else ""
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"로트 {lot_no}: 등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
+                    + ", ".join(shown) + suffix,
                 )
             offenders = blend_service.weighing_tolerance_violations(derived, tolerance_g=tolerance)
             if offenders:

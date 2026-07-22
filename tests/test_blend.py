@@ -1351,3 +1351,100 @@ def test_bulk_create_without_lots_still_works():
     rec = bs.get_blend_record(conn, ids[0])
     # bulk 는 서버가 레시피에서 자재명·이론량을 채우되 material_lot 는 비워둔다.
     assert all(d["material_lot"] in (None, "") for d in rec["details"])
+
+
+# ── 미등록 자가 반제품 LOT 서버 백업 검증(unregistered_product_lots) ──
+def _seed_own_product(client, csrf, product, worker):
+    """product 를 자가 반제품으로 만든다 — completed 배합 기록 1건 생성 → (id, product_lot).
+
+    이후 다른 배합에서 product 를 원료(material_name)로 쓰면 서버가 자가 반제품으로
+    인식해 material_lot 검증을 건다.
+    """
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    res = client.post("/api/blend/records", json={
+        "product_name": product, "worker": worker, "work_date": "2026-07-01",
+        "total_amount": 100,
+        "details": [{"material_name": "원료1", "ratio": 100, "theory_amount": 100,
+                     "actual_amount": 100, "material_lot": "L1"}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    j = res.json()
+    return j["id"], j["product_lot"]
+
+
+def test_own_product_registered_lot_saves():
+    """(a) 자가 반제품 행에 '등록된' LOT → 저장 성공."""
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNP{suffix}"
+    worker = "LOT작업"
+    _pid, plot = _seed_own_product(client, csrf, product, worker)
+    # product 를 원료로 쓰되 등록된 product_lot 를 material_lot 로 — 통과해야 한다.
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": plot}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+
+
+def test_own_product_unregistered_lot_blocked_400():
+    """(b) 자가 반제품 행에 미등록 LOT → 400 + name/LOT 노출."""
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNP{suffix}"
+    worker = "LOT작업"
+    _seed_own_product(client, csrf, product, worker)
+    bad_lot = "절대없는LOT"
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": bad_lot}],
+    }, headers=csrf())
+    assert res.status_code == 400, res.text
+    detail = res.json()["detail"]
+    assert "등록되지 않은 LOT" in detail
+    assert f"{product}/{bad_lot}" in detail
+
+
+def test_own_product_unregistered_lot_with_override_saves():
+    """(c) 자가 반제품 미등록 LOT + matching lot_overrides(사유) → 저장 성공."""
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNP{suffix}"
+    worker = "LOT작업"
+    _seed_own_product(client, csrf, product, worker)
+    bad_lot = "절대없는LOT"
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": bad_lot}],
+        "lot_overrides": [{"material_name": product, "material_lot": bad_lot,
+                           "reason": "1차 배합 종이 기록만 있음"}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+
+
+def test_raw_material_lot_unaffected():
+    """(d) 일반 원료(완료 기록 없는 product_name)는 LOT 등록 검증 대상 아님 → 저장 성공."""
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    worker = "LOT작업"
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    # '일반원료' 는 completed 배합 기록이 없으므로 자가 반제품 아님 — 아무 LOT 나 OK.
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": "일반원료", "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": "아무LOT"}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text

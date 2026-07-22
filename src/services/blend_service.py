@@ -818,6 +818,73 @@ def missing_lot_names(details: list[dict[str, Any]]) -> list[str]:
     return missing
 
 
+def unregistered_product_lots(
+    connection: sqlite3.Connection,
+    details: list[dict[str, Any]],
+    overrides: list[dict[str, Any]] | None,
+) -> list[str]:
+    """미등록 반제품(자가 제품) LOT 가 있는지 서버 백업 검증 → 위반 "name/LOT" 목록.
+
+    배합 화면은 자가 반제품(=완료 배합 기록이 있는 product_name)을 원료로 쓸 때 그
+    material_lot 가 실제 완료 기록의 product_lot 인지 GET /blend/product-lot-exists 로
+    확인한다. 미등록이면 '사유 적고 진행' 모달로 통과시킬 수 있으나, 클라이언트 검증은
+    네트워크 장애 시 fail-open 으로 우회될 수 있고 서버는 재확인하지 않았다 — 오타 LOT 가
+    그대로 저장되는 구멍. 이 함수가 저장 직전 서버에서 같은 규칙으로 재검증해 그 구멍을
+    막는다(2026-07-22 사용자 결정: 사유 전달 시 통과, 아니면 차단).
+
+    규칙(GET /blend/product-lot-exists 와 동일):
+      - material_lot 가 비어있지 않은 행 중, material_name 이 completed 배합 기록의
+        product_name 으로 존재하면(=자가 반제품) 그 LOT 도 completed 기록의 product_lot
+        로 존재해야 한다.
+      - carried_over 행은 enforce_carry_over 가 이미 1차 LOT 일치를 검증했으므로 제외.
+      - overrides 에 (material_name, material_lot) 가 사유(reason 비어있지 않음) 와 함께
+        있으면 그 행은 통과(운영자가 사유를 남긴 정당한 진행).
+    반환: 위반 "name/LOT" 문자열 목록. 호출부는 비어있지 않으면 400 으로 되돌린다.
+    """
+    # 사유 승인 집합 — (name, lot) → reason. reason 이 빈 값이면 승인 아님.
+    override_keys: set[tuple[str, str]] = set()
+    for ov in overrides or []:
+        try:
+            ov_name = str(ov.get("material_name") or "").strip()
+            ov_lot = str(ov.get("material_lot") or "").strip()
+            ov_reason = str(ov.get("reason") or "").strip()
+        except AttributeError:
+            # Pydantic 모델 인스턴스인 경우 속성 접근.
+            ov_name = str(getattr(ov, "material_name", "") or "").strip()
+            ov_lot = str(getattr(ov, "material_lot", "") or "").strip()
+            ov_reason = str(getattr(ov, "reason", "") or "").strip()
+        if ov_name and ov_lot and ov_reason:
+            override_keys.add((ov_name, ov_lot))
+
+    offending: list[str] = []
+    for d in details:
+        if d.get("carried_over"):
+            continue  # enforce_carry_over 가 이미 검증.
+        name = str(d.get("material_name") or "").strip()
+        lot = str(d.get("material_lot") or "").strip()
+        if not name or not lot:
+            continue
+        # 자가 반제품 여부 — completed 배합 기록에 이 product_name 이 있는가.
+        is_own = connection.execute(
+            "SELECT 1 FROM blend_records "
+            "WHERE product_name = ? AND status = 'completed' LIMIT 1",
+            (name,),
+        ).fetchone()
+        if not is_own:
+            continue  # 일반 원료 — LOT 등록 검증 대상 아님.
+        if (name, lot) in override_keys:
+            continue  # 사유 승인됨.
+        # 자가 반제품이면 이 LOT 가 completed 기록의 product_lot 인지 확인.
+        registered = connection.execute(
+            "SELECT 1 FROM blend_records "
+            "WHERE product_name = ? AND product_lot = ? AND status = 'completed' LIMIT 1",
+            (name, lot),
+        ).fetchone()
+        if not registered:
+            offending.append(f"{name}/{lot}")
+    return offending
+
+
 def derive_details_from_recipe(
     connection: sqlite3.Connection,
     recipe_id: int,

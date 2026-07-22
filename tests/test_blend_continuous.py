@@ -351,3 +351,48 @@ def test_continuous_missing_lot_returns_400():
     assert "로트 1" in detail
     assert "자재 LOT 를 입력하세요" in detail
     assert "원료B" in detail
+
+
+def test_continuous_unregistered_own_product_lot_blocked_400():
+    """(e) 연속 배합에서 자가 반제품 미등록 LOT → 400 + name/LOT 노출.
+
+    단건과 동일 규칙 — 클라이언트 fail-open 구멍을 서버가 막는다.
+    """
+    client = _client()
+    headers = _manager(client)
+    # 1) 자가 반제품(중간체) completed 기록 1건 생성 → 이 이름은 자가 반제품이 된다.
+    intermediate = f"CONTINTER{_uid()}"
+    worker = "LOT연속"
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    seed = client.post("/api/blend/records", json={
+        "product_name": intermediate, "worker": worker, "work_date": "2026-07-01",
+        "total_amount": 100,
+        "details": [{"material_name": "원료A", "ratio": 100, "theory_amount": 100,
+                     "actual_amount": 100, "material_lot": "LA"}],
+    }, headers=headers)
+    assert seed.status_code == 200, seed.text
+
+    # 2) 중간체를 원료로 포함하는 2차 레시피 등록(중간체 60 : 원료B 40).
+    final = f"CONTFINAL{_uid()}"
+    raw = f"반제품명\t{intermediate}\t원료B\n{final}\t60\t40"
+    rimp = client.post("/api/recipes/import", json={"raw_text": raw, "force": True}, headers=headers)
+    assert rimp.status_code == 200, rimp.text
+    rid = rimp.json()["created_ids"][0]
+
+    # 3) 연속 배합 저장 — 중간체의 material_lot 가 미등록 → 400.
+    bad_lot = "절대없는LOT"
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": final, "work_date": "2026-07-02",
+        "total_amount": 100,
+        "lots": [[
+            {"material_name": intermediate, "ratio": 60, "theory_amount": 60,
+             "actual_amount": 60, "material_lot": bad_lot},
+            {"material_name": "원료B", "ratio": 40, "theory_amount": 40,
+             "actual_amount": 40, "material_lot": "LB"},
+        ]],
+    }, headers=headers)
+    assert res.status_code == 400, res.text
+    detail = res.json()["detail"]
+    assert "등록되지 않은 LOT" in detail
+    assert f"{intermediate}/{bad_lot}" in detail

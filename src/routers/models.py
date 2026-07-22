@@ -137,6 +137,18 @@ class BlendDetailBody(BaseModel):
     carried_over: bool = False
 
 
+class LotOverrideBody(BaseModel):
+    """미등록 반제품 LOT '사유 적고 진행' 승인 한 건(서버 백업 검증용).
+
+    클라이언트는 미등록 LOT 를 사유 입력으로 통과시킬 수 있으나, 네트워크 장애 시
+    fail-open 우회가 가능해 서버가 같은 조건으로 재확인한다. 이 모델은 그 사유를
+    구조화해 전달한다.
+    """
+    material_name: str = Field(min_length=1, max_length=200)
+    material_lot: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class BlendCreateBody(BaseModel):
     recipe_id: int | None = Field(default=None, gt=0)
     product_name: str = Field(min_length=1, max_length=200)
@@ -153,6 +165,9 @@ class BlendCreateBody(BaseModel):
     # 저울 연동 중 '수동 입력' 토글로 계량값을 직접 입력했는가(추적성 — 기록에 표시).
     manual_entry: bool = False
     details: list[BlendDetailBody] = Field(default_factory=list)
+    # 미등록 LOT '사유 적고 진행' 승인을 서버 백업 검증용으로 구조화 전달(None=미전송).
+    # 클라이언트 검증이 네트워크 장애로 우회(fail-open)될 수 있어 서버가 재확인한다.
+    lot_overrides: list[LotOverrideBody] | None = Field(default=None)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":
@@ -181,6 +196,8 @@ class BlendContinuousBody(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
     worker_sign: str | None = Field(default=None, max_length=300_000)  # 전 로트 동일 서명
+    # 미등록 LOT '사유 적고 진행' 승인 — 전 로트 공통 비고처럼 전 로트에 동일 적용.
+    lot_overrides: list[LotOverrideBody] | None = Field(default=None)
     lots: list[list[BlendDetailBody]] = Field(default_factory=list)
     # 로트별 총량 오버라이드(초과 계량 증량). 미전송·전부 null 이면 기존 동작(total_amount).
     lot_totals: list[float | None] | None = Field(default=None)

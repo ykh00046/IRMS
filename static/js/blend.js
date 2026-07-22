@@ -979,6 +979,23 @@
     return parts.join("\n");
   }
 
+  // 서버 백업 검증용 구조화 미등록 LOT 사유 — state.lotOverrides(자재명\u0000LOT → 사유)를
+  // {material_name, material_lot, reason} 목록으로 풀어 보낸다. 클라이언트 검증이
+  // 네트워크 장애로 우회(fail-open)될 수 있어 서버가 같은 규칙으로 재확인한다.
+  function buildLotOverrides() {
+    const out = [];
+    Object.keys(state.lotOverrides || {}).forEach((key) => {
+      const sep = key.indexOf("\u0000");
+      if (sep < 0) return;
+      const material_name = key.slice(0, sep);
+      const material_lot = key.slice(sep + 1);
+      const reason = String(state.lotOverrides[key] || "").trim();
+      if (!material_name || !material_lot || !reason) return;
+      out.push({ material_name, material_lot, reason });
+    });
+    return out;
+  }
+
   function openLotInvalidModal(name, lot, input) {
     const body = $("lot-invalid-modal-body");
     if (body) {
@@ -1875,6 +1892,7 @@
     }
     // 승인된 미등록 LOT 이 실제로 저장에 포함되면 사유를 비고 앞에 남긴다(책임자 사후 확인).
     const overrideNote = buildOverrideNote();
+    const lotOverrides = buildLotOverrides();
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
     const body = {
@@ -1890,6 +1908,8 @@
       note: [overrideNote, $("blend-note").value.trim()].filter(Boolean).join("\n") || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
+      // 서버 백업: 미등록 LOT 사유를 구조화해 보내 클라이언트 fail-open 구멍을 막는다.
+      lot_overrides: lotOverrides.length ? lotOverrides : null,
       // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
       manual_entry: state.items.some((it) => it.manual === true),
       details: state.items.map((it, idx) => ({
