@@ -36,12 +36,24 @@
 
 ### 1.2 업데이트 반영 순서 (`serve.py:apply_update`)
 
-`DB 백업 → git pull origin main → pip install → (전부 성공 시) 서버 재시작`.
+`DB 백업 → (백업 게이트) → git pull origin main → pip install → (전부 성공 시) 서버 재시작`.
 어느 한 단계라도 실패하면 **재시작을 건너뛴다**. 기존 서버는 메모리에 올라간 옛 코드로
 계속 돌기 때문에 **무중단**이며, 다음 주기에 자동 재시도된다.
 
+- **백업 게이트**: `backup_db()` 가 실패(`BACKUP_FAILED`)하거나 검증에 걸려 격리
+  (`BACKUP_CORRUPT`)되면 pull 로 넘어가지 않고 **업데이트를 보류**한다("그날 신뢰할 백업
+  없이 코드만 갱신"되는 위험 차단). DB 파일이 없을 때(`BACKUP_SKIPPED_MISSING`)는 경고만
+  남기고 진행한다(신규 설치 등 정상 가능).
+- **git pull 실패 복구**(`serve.py:_recover_and_retry_pull`): 실패가 **로컬 추적/미추적 파일
+  변경**으로 인한 것이면 `git stash push --include-untracked -m serve-auto-<타임스탬프>` 로
+  안전 보관 후 pull 을 1회 재시도한다. 성공하면 **stash 는 자동 삭제하지 않고**(운영자 데이터
+  보존) 위치를 로그로 남긴다(`git stash list` / `git stash apply stash@{0}`). 로컬 변경이
+  원인이 아니거나(네트워크·자격증명·충돌) stash 후에도 실패하면 **매 주기 `[CRITICAL] 자동
+  업데이트가 멈춰 있습니다`** 경고를 내며 옛 버전으로 계속 서비스한다.
+- **상태 파일**: 매 시도 결과를 `<IRMS_DATA_DIR>/update-status.json`(`{ok, last_error, at}`)에
+  기록한다 — 콘솔 로그를 놓쳐도 자동 업데이트가 살아있는지 파일로 점검 가능.
 - `serve.py` 자체가 갱신돼도 **실행 중에는 옛 serve.py 로 계속 감시**한다(무한 로딩 방지).
-  서버 코드(`src/*`)는 매 재시작마다 반영된다(docstring `serve.py` 19~20행).
+  서버 코드(`src/*`)는 매 재시작마다 반영된다(docstring `serve.py` 참조).
 
 ### 1.3 `update_and_run.bat` 을 쓸 때 주의
 
@@ -67,9 +79,14 @@
 
 - **시점**: 매일 1회(감시 루프) + 업데이트 직전(`apply_update()` 안).
 - **방식**: SQLite **온라인 백업 API**(`src.backup(dst)`) — 서버 가동 중에도 트랜잭션
-  일관된 사본. 실패 시 `shutil.copy2` 단순 복사로 폴백(`serve.py:backup_db` 143~148행).
-- **대상 DB 경로**: `serve.py:_db_path()` 가 `IRMS_DATA_DIR`(상대경로는 프로젝트 루트 기준,
-  미설정 시 `data/`)에서 `irms.db` 를 찾는다.
+  일관된 사본. 실패 시 `shutil.copy2` 단순 복사로 폴백.
+- **대상 DB 경로**: `serve.py:_db_path()`(→ `_data_dir()`)가 `IRMS_DATA_DIR`(상대경로는 프로젝트
+  루트 기준, 미설정 시 `data/`)에서 `irms.db` 를 찾는다. `serve.py` 는 기동 시 `.env` 를
+  로드하므로(§4·`serve.py:load_env`) 이 경로가 서버 자식과 일치한다.
+- **결과 코드**: `backup_db()` 는 `BACKUP_OK`/`BACKUP_CORRUPT`/`BACKUP_FAILED`/
+  `BACKUP_SKIPPED_MISSING` 을 돌려주고, `apply_update` 의 백업 게이트(§1.2)가 이를 읽는다.
+  **DB 파일이 없으면** 조용히 return 하지 않고 `[경고] 백업 대상 DB 가 없습니다 …
+  IRMS_DATA_DIR 설정을 확인하세요` 를 남긴다(경로 오설정으로 백업이 무음 스킵되는 것 방지).
 
 ### 2.2 자동 검증·격리 (`serve.py:_verify_backup`)
 
@@ -145,21 +162,24 @@
 ## 4. 환경변수 전수표
 
 `.env`(프로젝트 루트) + `src/config.py` 에서 읽는다(환경변수가 `.env` 보다 우선).
-`.env.example` 를 복사해 `.env` 를 만든다. 값이 없을 때의 **폴백**과 **운영 필수** 여부:
+**`serve.py` 도 기동 시 같은 `.env` 를 로드**한다(`serve.py:load_env`, python-dotenv
+`override=False` — 실제 환경변수 우선). 따라서 서버측·serve.py측 변수를 `.env` 한 곳에
+써도 부모/자식이 같은 값을 본다. `.env.example` 를 복사해 `.env` 를 만든다.
+값이 없을 때의 **폴백**과 **운영 필수** 여부:
 
 | 변수 | 읽는 곳 | 기본값 | 운영 필수 | 설명 |
 |------|---------|--------|:---:|------|
-| `IRMS_ENV` | `config.py:21` | `development` | **필수** | `production` 이어야 보안 강화(HSTS·Secure 쿠키·strict). 누락 시 개발 모드로 **조용히** 떨어짐(§7 위험) |
+| `IRMS_ENV` | `config.py:21`, `serve.py:warn_if_not_production` | `development` | **필수** | `production` 이어야 보안 강화(HSTS·Secure 쿠키·strict). 누락 시 개발 모드로 떨어지며, serve.py 가 기동 시 눈에 띄는 경고 블록을 출력(동작 변경 없음, §7-5) |
 | `IRMS_SESSION_SECRET` | `config.py:31` | 랜덤 생성 | **필수** | 세션 서명 키. 미설정 시 매 기동 랜덤 → 재시작마다 전 세션 무효화. 운영에선 미설정 시 기동 거부(아래) |
 | `IRMS_REQUIRE_SESSION_SECRET` | `config.py:32` | 운영=true | 자동 | true 인데 시크릿 없으면 `RuntimeError` 로 기동 거부(안전장치) |
-| `IRMS_DATA_DIR` | `config.py:23`, `serve.py:120` | `./data` | 선택 | DB·백업 기준 폴더. §7-폴백 주의(serve.py 는 `.env` 를 안 읽음) |
+| `IRMS_DATA_DIR` | `config.py:23`, `serve.py:_data_dir` | `./data` | 선택 | DB·백업·`update-status.json` 기준 폴더. serve.py 도 `.env` 를 로드하므로 서버와 일치 |
 | `IRMS_SESSION_MAX_AGE` | `config.py:26` | 28800(8h) | 선택 | 세션 쿠키 수명(초) |
 | `IRMS_MANAGER_IDLE_TIMEOUT` | `config.py:30` | 900(15분) | 선택 | 책임자 세션 유휴 만료(공용 PC 방치 대비) |
 | `IRMS_SEED_DEMO_DATA` | `config.py:33`, `schema.py:122` | 개발=true | **0 필수** | 데모 계정(알려진 비번) 시드. 운영에서 반드시 `0`/false. `production` 이면 켜져 있어도 예외로 차단 |
 | `IRMS_TRAY_API_TOKEN` | `config.py:34` | 없음 | **필수** | 트레이·공개 API(`/public/*`) 토큰. 운영에서 미설정 시 기동 거부 |
 | `IRMS_REQUIRE_TRAY_API_TOKEN` | `config.py:36` | 운영=true | 자동 | true 인데 토큰 없으면 `RuntimeError` |
 | `IRMS_TRUSTED_ORIGINS` | `login_origin.py:57` | 없음 | 선택 | 리버스 프록시가 Host 를 바꿔 로그인이 막힐 때의 **탈출구**(쉼표 구분 호스트). 터널 정상 설정 시 불필요 |
-| `IRMS_PORT` | `serve.py:37` | 9000 | 선택 | serve.py 서버 포트. `.env` 로만 바꾸면 serve.py 가 못 읽음(§7) |
+| `IRMS_PORT` | `serve.py` | 9000 | 선택 | serve.py 서버 포트. serve.py 가 `.env` 를 로드하므로 `.env` 로만 지정해도 반영됨 |
 | `IRMS_AUTO_INTERVAL` | `serve.py:38` | 600 | 선택 | 업데이트 확인 주기(초). 최소 30 |
 | `IRMS_AUTO_UPDATE` | `serve.py:39` | 1(ON) | 선택 | `0` 이면 감시 없이 서버만 |
 | `IRMS_BACKUP_KEEP_DAYS` | `serve.py:40` | 30 | 선택 | 백업 보존 일수(최소 1, 최근 5개는 항상 유지) |
@@ -167,7 +187,9 @@
 | `IRMS_PUBLIC_HOST` | (문서/로그 전용) | — | 선택 | 런타임에서 읽지 않음(`.env.example` 37~39행 명시) |
 
 > `run_auto.bat` 은 `IRMS_PORT=9000`·`IRMS_AUTO_INTERVAL=600` 을 배치에서 직접 `set` 하므로
-> 이 둘은 `.env` 없이도 값이 잡힌다(`run_auto.bat` 23~24행). 나머지 서버측 변수는 `.env` 로 준다.
+> 이 둘은 `.env` 없이도 값이 잡힌다(`run_auto.bat` 23~24행). 배치 `set` 은 실제 환경변수라
+> `.env` 보다 우선하므로, 이 둘을 `.env` 로 바꾸려면 `run_auto.bat` 의 `set` 을 지워야 한다.
+> 나머지 서버·백업 변수는 `.env` 로 주면 serve.py 와 서버가 함께 읽는다.
 
 ---
 
@@ -249,39 +271,39 @@
 > 아래는 현재 코드 동작에서 확인된 위험 지점이다. 즉시 수정 지시가 아니라 운영자가
 > 인지·모니터링할 항목 + 개발 시 검토 후보다.
 
-1. **[BUG 후보] `serve.py` 가 `.env` 를 읽지 않는다.**
-   `config.py` 는 `python-dotenv` 로 `.env` 를 로드하지만(`config.py:5~8`), `serve.py` 는
-   `os.environ` 만 본다(로더 없음). 따라서 `IRMS_DATA_DIR`·`IRMS_PORT`·`IRMS_BACKUP_*` 를
-   **`.env` 로만 지정하면 serve.py(부모)는 못 읽는다** → 백업 대상 DB 경로·포트 정리 대상이
-   실제 서버와 어긋날 수 있다. `IRMS_PORT` 는 `run_auto.bat` 이 `set` 으로 보완(23행)하지만,
-   `IRMS_DATA_DIR` 을 `.env` 로만 바꾸면 **serve.py 는 `data/` 를 백업하는데 서버는 다른
-   폴더를 쓰는** 정합성 사고가 가능. → 운영 변수는 `.env` 뿐 아니라 배치/시스템 환경변수로도
-   일치시키거나, serve.py 에 dotenv 로드를 추가하는 것이 안전.
+1. **[해결됨] `serve.py` 가 `.env` 를 읽지 않던 문제.**
+   ~~`serve.py` 는 `os.environ` 만 봤다~~ → **`serve.py:load_env` 가 기동 시 프로젝트 `.env`
+   를 로드**한다(`config.py` 와 동일: python-dotenv `override=False` 라 실제 환경변수 우선).
+   이제 `IRMS_DATA_DIR`·`IRMS_PORT`·`IRMS_BACKUP_*` 를 `.env` 로만 지정해도 serve.py(부모)와
+   서버(자식)가 같은 값을 봐, "백업 대상 DB 경로·포트가 실제 서버와 어긋나는" 정합성 사고가
+   제거됐다. 단 `run_auto.bat` 이 `set` 하는 `IRMS_PORT`/`IRMS_AUTO_INTERVAL` 은 실제
+   환경변수라 여전히 `.env` 보다 우선한다(§4 각주).
 
-2. **[BUG 후보] git pull 충돌 시 자동 업데이트 영구 정체(무음).**
-   `serve.py:apply_update`(266행)는 `git pull` returncode≠0 이면 로그만 남기고 다음 주기
-   재시도한다. **운영 PC 의 추적 파일이 런타임에 수정되면**(로컬 변경) pull 이 계속 거부돼
-   자동 업데이트가 영원히 멈춘다 — 콘솔 로그 외 알림 없음. (이 저장소 `git status` 에도
-   `M .codegraph/.gitignore`, `M docs/.bkit-memory.json` 처럼 추적 파일 수정이 존재.)
-   → 운영 트리를 깨끗이 유지하거나(런타임 산출물은 gitignore), pull 실패가 N회 이상
-   지속되면 눈에 띄는 경고를 내는 보강 검토.
+2. **[해결됨] git pull 충돌 시 자동 업데이트 무음 정체.**
+   `serve.py:apply_update`→`_recover_and_retry_pull` 로 보강. `git pull` 실패 시 (a) git 출력을
+   포함한 **여러 줄 경고 블록**을 남기고, (b) 실패가 **로컬(추적/미추적) 파일 변경** 때문이면
+   `git stash push --include-untracked -m serve-auto-<타임스탬프>` 로 안전 보관 후 pull 1회
+   재시도 — 성공하면 stash 를 **drop 하지 않고**(운영자 데이터 보존) 위치를 로그로 남긴다.
+   로컬 변경이 원인이 아니거나 stash 후에도 실패하면 **매 주기 `[CRITICAL] 자동 업데이트가
+   멈춰 있습니다`** 경고를 반복하며 옛 버전으로 계속 서비스한다. (c) 상태는
+   `<IRMS_DATA_DIR>/update-status.json` 에 기록.
 
-3. **[GAP] 백업 실패해도 업데이트가 진행된다.**
-   `apply_update`(265행)는 `backup_db()` 의 성공 여부를 확인하지 않고 곧장 pull 로 넘어간다.
-   `backup_db` 는 온라인+복사 폴백이 모두 실패해도 로그만 남기고 return(148행), 검증 실패
-   시에도 `.corrupt` 격리 후 계속 진행한다. → "그날 신뢰할 백업이 없는 채로 코드가 갱신"될
-   여지. 백업 검증 실패 시 업데이트를 보류하는 게이트를 둘지 검토.
+3. **[해결됨] 백업 실패해도 업데이트가 진행되던 문제.**
+   `apply_update` 에 **백업 게이트** 추가. `backup_db()` 가 `BACKUP_FAILED`/`BACKUP_CORRUPT`
+   를 돌려주면 pull 로 넘어가지 않고 업데이트를 보류(경고 블록 + `update-status.json` 기록,
+   옛 서버 유지). DB 미존재(`BACKUP_SKIPPED_MISSING`)는 경고만 하고 진행(신규 설치 등).
+   → "그날 신뢰할 백업 없이 코드만 갱신"되는 위험 차단.
 
-4. **[GAP] `IRMS_DATA_DIR` 오설정/부재 시 백업이 조용히 스킵.**
-   `serve.py:backup_db`(128~129행)는 `_db_path()` 가 가리키는 파일이 없으면 그냥 return.
-   경로를 잘못 주면 "매일 백업하는 줄 알았는데 한 건도 안 만들어진" 상태가 무음으로 지속.
-   → 정기적으로 `dir backups\irms_*.db /O-D` 로 최신 백업 날짜를 눈으로 확인(품목코드 문서 §1 습관).
+4. **[해결됨] `IRMS_DATA_DIR` 오설정/부재 시 백업 무음 스킵.**
+   `serve.py:backup_db` 는 대상 DB 가 없으면 **`[경고] 백업 대상 DB 가 없습니다 …
+   IRMS_DATA_DIR 설정을 확인하세요`** 를 남기고 `BACKUP_SKIPPED_MISSING` 을 돌려준다(조용한
+   return 제거). 여전히 정기적으로 `dir backups\irms_*.db /O-D` 로 최신 백업 날짜 육안 확인 권장.
 
-5. **[GAP] `IRMS_ENV` 누락 = 조용한 개발 모드.**
-   `config.py:21~22` 는 미설정 시 `development` 로 판정 → HSTS·Secure 쿠키·strict SameSite
-   **꺼짐**, `IRMS_SESSION_SECRET` 필수 아님(랜덤), `IRMS_SEED_DEMO_DATA` 기본 true.
-   운영에서 `.env` 를 빠뜨리면 `update_and_run.bat` 은 WARN 만 출력하고(59행) 그대로 뜬다.
-   → 운영 PC 의 `.env` 에 `IRMS_ENV=production` 이 실제로 들어갔는지 배포 체크리스트로 확인.
+5. **[해결됨/부분] `IRMS_ENV` 누락 = 조용한 개발 모드.**
+   `serve.py:warn_if_not_production` 이 기동 시 `IRMS_ENV != production` 이면 **눈에 띄는 경고
+   블록**(개발 모드로 기동 중 — HSTS·Secure 쿠키·strict 꺼짐)을 출력한다(경고만, **동작 변경
+   없음**). `config.py` 폴백 자체는 그대로이므로 운영 PC `.env` 에 `IRMS_ENV=production` 이
+   실제로 들어갔는지는 여전히 배포 체크리스트로 확인.
 
 6. **[GAP] 마이그레이션 실패 시 크래시 루프.**
    init_db 예외 → `create_app()` 실패 → uvicorn 부팅 실패 → serve.py 루프가 "서버가

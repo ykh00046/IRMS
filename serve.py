@@ -5,12 +5,18 @@ origin/main 을 확인해 새 커밋이 있으면 DB 백업 → git pull → pip
 재시작한다. 창 하나로 서버 실행 + 자동 업데이트를 모두 처리한다.
 
 실행:  .venv\\Scripts\\python.exe serve.py   (보통 run_auto.bat 이 대신 실행)
-설정(환경변수):
+설정(환경변수): 프로젝트 루트 .env 를 먼저 로드한다(src/config.py 와 동일 우선순위 —
+실제 환경변수가 .env 보다 우선). 따라서 IRMS_DATA_DIR·IRMS_PORT·IRMS_BACKUP_* 를 .env
+로만 지정해도 serve.py(부모)와 서버(자식)가 같은 값을 본다.
     IRMS_PORT              서버 포트 (기본 9000)
     IRMS_AUTO_INTERVAL     업데이트 확인 주기(초, 기본 600 = 10분)
     IRMS_AUTO_UPDATE       0 이면 업데이트 감시 없이 서버만 실행
     IRMS_BACKUP_KEEP_DAYS  백업 보존 일수 (기본 30 — 오래된 백업 자동 삭제, 최근 5개는 항상 보존)
     IRMS_BACKUP_MIRROR     백업 2차 사본 폴더 (예: D:\\irms-backup — 미설정 시 로컬 backups/ 만)
+
+자동 업데이트 상태는 <IRMS_DATA_DIR>/update-status.json 에 기록된다({ok,last_error,at}) —
+콘솔을 못 봐도 마지막 업데이트 성패를 파일로 확인할 수 있다. git pull 이 로컬 변경으로
+막히면 stash 로 안전 보관 후 재시도하고, 그래도 실패하면 매 주기 CRITICAL 경고를 낸다.
 
 백업: 업데이트 반영 직전 + 매일 1회(감시 루프) 자동 백업. SQLite 온라인 백업
 API 사용(서버 가동 중에도 일관된 사본). 복구: 서버 중지 → backups/ 의 원하는
@@ -23,6 +29,7 @@ irms_*.db 를 data/irms.db 로 복사 → 서버 시작.
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import shutil
 import sqlite3
@@ -33,6 +40,28 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+
+def load_env() -> None:
+    """프로젝트 루트 .env 를 로드 — src/config.py 와 동일 우선순위.
+
+    python-dotenv 의 기본 override=False 라 **이미 설정된 os.environ 값(실제 환경변수)이
+    .env 보다 우선**한다(config.py:5~8 과 동일 규칙). 이걸로 IRMS_DATA_DIR·IRMS_PORT·
+    IRMS_BACKUP_* 를 .env 로만 줘도 serve.py(부모)가 서버 자식과 같은 값을 읽어,
+    "백업 대상 DB 경로/포트가 실제 서버와 어긋나는" 정합성 사고를 막는다.
+
+    아직 의존성 설치 전(부트스트랩 직전)이라 python-dotenv 가 없으면 조용히 건너뛴다
+    (그 경우 os.environ 만 사용 — 종전 동작과 동일).
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(ROOT / ".env")
+
+
+load_env()
+
 BACKUPS_DIR = ROOT / "backups"
 PORT = os.environ.get("IRMS_PORT", "9000")
 INTERVAL = max(30, int(os.environ.get("IRMS_AUTO_INTERVAL", "600")))
@@ -115,18 +144,73 @@ def has_update() -> bool:
         return False
 
 
+def _data_dir() -> Path:
+    """운영 데이터 폴더 — IRMS_DATA_DIR 환경변수를 따른다(상대경로는 ROOT 기준)."""
+    raw = os.environ.get("IRMS_DATA_DIR", "").strip()
+    return (Path(raw) if Path(raw).is_absolute() else ROOT / raw) if raw else ROOT / "data"
+
+
 def _db_path() -> Path:
     """운영 DB 경로 — IRMS_DATA_DIR 환경변수를 따른다(상대경로는 ROOT 기준)."""
-    raw = os.environ.get("IRMS_DATA_DIR", "").strip()
-    data_dir = (Path(raw) if Path(raw).is_absolute() else ROOT / raw) if raw else ROOT / "data"
-    return data_dir / "irms.db"
+    return _data_dir() / "irms.db"
 
 
-def backup_db() -> None:
-    """SQLite 온라인 백업 — 서버 가동 중에도 트랜잭션 일관된 사본을 만든다."""
+# 자동 업데이트 상태 파일(운영자가 콘솔을 못 봐도 마지막 성패를 파일로 점검).
+UPDATE_STATUS_FILE = "update-status.json"
+
+
+def write_update_status(ok: bool, last_error: str | None = None) -> None:
+    """자동 업데이트 상태를 <IRMS_DATA_DIR>/update-status.json 에 기록.
+
+    {ok, last_error, at} — 콘솔 로그를 놓쳐도 자동 업데이트가 살아있는지/멈췄는지
+    파일 하나로 확인할 수 있다. 기록 실패는 부가 기능이므로 무시(운영 중단 없음).
+    """
+    payload = {
+        "ok": bool(ok),
+        "last_error": last_error,
+        "at": datetime.now().isoformat(timespec="seconds"),
+    }
+    try:
+        target = _data_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        (target / UPDATE_STATUS_FILE).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001 — 상태 파일 기록 실패는 치명적 아님
+        log(f"업데이트 상태 파일 기록 실패(무시): {exc}")
+
+
+def _loud(lines: list[str]) -> None:
+    """여러 줄 경고 블록 — 콘솔에서 눈에 띄게(ASCII 배너 + 각 줄 접두)."""
+    bar = "!" * 68
+    log(bar)
+    for line in lines:
+        log(f"!! {line}")
+    log(bar)
+
+
+# backup_db() 결과 코드 — apply_update 의 게이트 판정에 쓴다.
+BACKUP_OK = "ok"
+BACKUP_CORRUPT = "corrupt"
+BACKUP_FAILED = "failed"
+BACKUP_SKIPPED_MISSING = "skipped_missing"
+
+
+def backup_db() -> str:
+    """SQLite 온라인 백업 — 서버 가동 중에도 트랜잭션 일관된 사본을 만든다.
+
+    반환값(apply_update 게이트용):
+      BACKUP_OK              생성·검증 통과(미러/보존 처리 완료)
+      BACKUP_CORRUPT         생성됐으나 검증 실패 → .corrupt 격리
+      BACKUP_FAILED          온라인·복사 폴백 모두 실패(사본 없음)
+      BACKUP_SKIPPED_MISSING DB 파일이 없어 백업 대상 없음(경로 오설정 가능)
+    """
     db = _db_path()
     if not db.exists():
-        return
+        # 조용히 return 하지 않는다 — IRMS_DATA_DIR 오설정 시 "매일 백업하는 줄 알았는데
+        # 한 건도 없던" 무음 사고를 막기 위해 경고로 남긴다.
+        log(f"[경고] 백업 대상 DB 가 없습니다: {db} — IRMS_DATA_DIR 설정을 확인하세요(오설정이면 백업이 계속 스킵됨).")
+        return BACKUP_SKIPPED_MISSING
     BACKUPS_DIR.mkdir(exist_ok=True)
     dest = BACKUPS_DIR / f"irms_{datetime.now():%Y%m%d_%H%M%S}.db"
     try:
@@ -146,11 +230,13 @@ def backup_db() -> None:
             log(f"DB 백업(복사 폴백): {dest.name} — 온라인 백업 실패: {exc}")
         except Exception as exc2:  # noqa: BLE001
             log(f"DB 백업 실패(계속 진행): {exc2}")
-            return
+            return BACKUP_FAILED
     # 생성 직후 검증 — 통과 시 미러·정상 prune 대상, 실패 시 .corrupt 로 격리.
+    result = BACKUP_OK
     if _verify_backup(dest):
         _mirror_backup(dest)
     else:
+        result = BACKUP_CORRUPT
         corrupt = dest.with_name(dest.name + ".corrupt")
         try:
             dest.rename(corrupt)
@@ -158,6 +244,7 @@ def backup_db() -> None:
             log(f"손상 백업 격리 실패({dest.name}): {exc}")
         log(f"[경고] 백업 검증 실패 — 오늘 백업을 신뢰하지 마세요: {corrupt.name}")
     prune_backups()
+    return result
 
 
 # 검증 대상 핵심 테이블 — 하나라도 없으면 불완전 사본으로 판정 (전부 schema/migrations 확인 완료)
@@ -255,25 +342,121 @@ def free_port() -> None:
         log(f"포트 정리 실패(계속 진행): {exc}")
 
 
+def _git_output(cp: subprocess.CompletedProcess) -> str:
+    """CompletedProcess 의 stdout+stderr 를 합쳐 정리(로그용)."""
+    return ((cp.stdout or "") + (cp.stderr or "")).strip()
+
+
+def _is_local_changes_failure(output: str) -> bool:
+    """git pull 실패가 '로컬(추적/미추적) 파일 변경'으로 인한 것인지 판정.
+
+    이 경우에 한해 stash 로 안전 보관 후 재시도한다(다른 사유 — 충돌·네트워크·
+    자격증명 — 는 자동 복구 대상 아님).
+    """
+    markers = (
+        "your local changes to the following files would be overwritten",
+        "please commit your changes or stash them",
+        "commit your changes or stash",
+        "would be overwritten by merge",
+        "would be overwritten by checkout",
+        "the following untracked working tree files would be overwritten",
+    )
+    low = output.lower()
+    return any(m in low for m in markers)
+
+
+def _recover_and_retry_pull(failed: subprocess.CompletedProcess) -> bool:
+    """git pull 실패 복구 — 로컬 변경이 원인이면 stash 후 1회 재시도.
+
+    반환: 복구(재시도 pull 성공) 시 True, 아니면 False.
+    - 로컬 변경이 원인이 아니면(네트워크·충돌 등) 복구하지 않고 CRITICAL.
+    - stash 는 재시도 성공 여부와 무관하게 **절대 drop 하지 않는다**(운영자 데이터 보존).
+    - 실패가 지속되면 apply_update 가 매 주기 다시 호출되므로 CRITICAL 이 매 주기 반복된다.
+    """
+    output = _git_output(failed)
+    _loud([
+        "git pull 실패 — 자동 업데이트가 진행되지 못했습니다.",
+        "git 출력:",
+        *(output.splitlines() or ["(출력 없음)"]),
+    ])
+    if not _is_local_changes_failure(output):
+        _loud([
+            "[CRITICAL] 자동 업데이트가 멈춰 있습니다.",
+            "로컬 변경이 원인이 아니라 자동 복구 대상이 아닙니다(네트워크·자격증명·충돌 확인 필요).",
+            "옛 버전으로 계속 서비스합니다.",
+        ])
+        write_update_status(False, f"git_pull_failed: {output[:500]}")
+        return False
+
+    stamp = f"{datetime.now():%Y%m%d_%H%M%S}"
+    stash_name = f"serve-auto-{stamp}"
+    log(f"로컬 변경이 pull 을 막고 있습니다 → 안전 보관(stash) 후 재시도: {stash_name}")
+    stash = _git("stash", "push", "--include-untracked", "-m", stash_name, capture=True)
+    if stash.returncode != 0:
+        _loud([
+            "[CRITICAL] 자동 업데이트가 멈춰 있습니다.",
+            f"stash 실패로 자동 복구 불가: {_git_output(stash)[:300]}",
+            "운영자가 직접 작업트리를 정리해야 합니다. 옛 버전으로 계속 서비스합니다.",
+        ])
+        write_update_status(False, "git_stash_failed")
+        return False
+
+    retry = _git("pull", "origin", "main", capture=True)
+    if retry.returncode == 0:
+        # 성공 — stash 는 남겨둔다(drop 금지). 운영자가 나중에 apply 로 복원할 수 있게.
+        log(f"stash 후 pull 성공 — 보관한 로컬 변경은 stash '{stash_name}' 로 남겨둡니다(자동 삭제 안 함).")
+        log("확인: git stash list   /   복원: git stash apply stash@{0}")
+        write_update_status(True, f"recovered_via_stash: {stash_name}")
+        return True
+
+    _loud([
+        "[CRITICAL] 자동 업데이트가 멈춰 있습니다.",
+        "로컬 변경을 stash 로 치웠는데도 pull 이 실패했습니다(충돌·네트워크 가능).",
+        f"보관된 변경: stash '{stash_name}' (git stash list 로 확인, 자동 삭제 안 함).",
+        f"git 출력: {_git_output(retry)[:300]}",
+        "옛 버전으로 계속 서비스합니다.",
+    ])
+    write_update_status(False, f"git_pull_failed_after_stash: {stash_name}")
+    return False
+
+
 def apply_update() -> bool:
     """DB 백업 → git pull → pip install. 전부 성공하면 True.
 
     실패 시 False 를 돌려주고 호출부가 재시작을 건너뛴다(기존 서버는 메모리의
     옛 코드로 계속 동작하므로 무중단). 다음 주기에 자동 재시도된다.
+
+    - 백업 게이트: 신뢰할 백업을 못 만들었으면(BACKUP_FAILED/BACKUP_CORRUPT) 갱신을
+      **보류**한다("그날 신뢰할 백업 없이 코드만 갱신"되는 위험 차단).
+    - git pull 이 로컬 변경으로 막히면 _recover_and_retry_pull 로 stash 후 재시도.
     """
     log("새 업데이트 발견 → 반영 중 (DB 백업 → git pull → pip install)...")
-    backup_db()
-    if _git("pull", "origin", "main").returncode != 0:
-        log("git pull 실패 — 이번 주기는 건너뛰고 다음에 재시도합니다.")
+    backup = backup_db()
+    if backup in (BACKUP_FAILED, BACKUP_CORRUPT):
+        reason = "백업 생성 실패" if backup == BACKUP_FAILED else "백업 검증 실패(.corrupt 격리)"
+        _loud([
+            "자동 업데이트 보류 — 신뢰할 백업을 만들지 못했습니다.",
+            f"사유: {reason}. 코드 갱신 없이 기존(옛) 서버로 계속 운영합니다.",
+            "backups\\ 폴더와 IRMS_DATA_DIR 을 점검해 원인을 제거하세요.",
+        ])
+        write_update_status(False, f"backup_{backup}")
         return False
+    # BACKUP_OK 또는 BACKUP_SKIPPED_MISSING(경고는 backup_db 가 이미 출력) → 진행
+
+    pull = _git("pull", "origin", "main", capture=True)
+    if pull.returncode != 0 and not _recover_and_retry_pull(pull):
+        return False
+
     pip = subprocess.run(
         [PYTHON, "-m", "pip", "install", "-r", _requirements_file(), "--quiet"],
         cwd=ROOT,
     )
     if pip.returncode != 0:
         log("pip install 실패 — 서버 재시작을 건너뜁니다(다음 주기에 재시도).")
+        write_update_status(False, "pip_install_failed")
         return False
     log("업데이트 반영 완료.")
+    write_update_status(True, None)
     return True
 
 
@@ -315,9 +498,27 @@ def _ensure_runtime_self_healing() -> str:
         return ensure_runtime()  # 재시도도 실패하면 그대로 예외(기동 중단 — fail-loud)
 
 
+def warn_if_not_production() -> None:
+    """운영 기동인데 IRMS_ENV 가 production 이 아니면 눈에 띄는 경고(동작 변경 없음).
+
+    누락/오설정 시 개발 모드로 조용히 떨어져 HSTS·Secure 쿠키·strict SameSite 가 꺼지고
+    세션 시크릿이 랜덤, 데모 시드가 기본 ON 이 되는 위험을 콘솔에서 인지시키기 위함.
+    """
+    env = os.environ.get("IRMS_ENV", "").strip().lower()
+    if env == "production":
+        return
+    _loud([
+        "개발 모드로 기동 중 — 운영 보안 기능이 꺼져 있습니다.",
+        f"IRMS_ENV = {env or '(미설정)'} (production 아님).",
+        "HSTS·Secure 쿠키·strict SameSite 비활성 · 세션 시크릿 랜덤 · 데모 시드 기본 ON.",
+        "운영 PC 라면 .env 의 IRMS_ENV=production 이 실제로 들어갔는지 확인하세요.",
+    ])
+
+
 def main() -> None:
     global PYTHON
     set_console_title(f"IRMS 서버 + 자동 업데이트 (포트 {PORT})")
+    warn_if_not_production()
     PYTHON = _ensure_runtime_self_healing()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "
