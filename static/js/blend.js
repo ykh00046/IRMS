@@ -185,8 +185,14 @@
     }
   }
 
-  // PRINT 키 입력이 들어갈 행: 커서가 있는 행(LOT/실제량) 우선, 없으면 첫 미입력 행
+  // PRINT 키 입력이 들어갈 행: 합산 모드 행 > 커서가 있는 행(LOT/실제량) > 첫 미입력 행
   function activeScaleRow() {
+    // 추가(합산) 모드 중이면 PRINT 는 무조건 그 행으로. 인라인 추가 입력칸은
+    // blend-actual/blend-lot 클래스가 아니어서 포커스 감지에 안 걸리고, 그 행의
+    // actual 은 이미 채워져 있어 폴백도 그 행을 건너뛰었다 — 부족 보충 PRINT 가
+    // 엉뚱한 빈 행으로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 저울 전용 모드의
+    // 부족 복구(타이핑 불가)도 이 라우팅이 있어야 성립한다.
+    if (state.addModeIdx != null) return state.addModeIdx;
     const focused = document.activeElement;
     if (
       focused && focused.classList
@@ -197,7 +203,17 @@
     const idx = state.items.findIndex(
       (it) => it.actual_amount === "" && it.theory_amount != null
     );
-    return idx >= 0 ? idx : null;
+    if (idx >= 0) return idx;
+    // 기준 자재 레시피는 기준 계량 전 모든 이론이 null — 위 폴백이 못 찾아 PRINT 가
+    // 무시되던 공백(GAP-3). 기준 자재 행이 비어 있으면 그 행으로 라우팅한다.
+    if (
+      state.anchorIndex >= 0
+      && state.items[state.anchorIndex]
+      && state.items[state.anchorIndex].actual_amount === ""
+    ) {
+      return state.anchorIndex;
+    }
+    return null;
   }
 
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
