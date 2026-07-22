@@ -1256,26 +1256,51 @@
         // +방향(초과 계량): 증량 제안 모달.
         offerRescale();
       } else if (state.addModeIdx !== i) {
-        // −방향(부족): 팝업으로 부족량 명시 + '추가 계량' 제안(2026-07-22).
+        // −방향(부족): 부족량 모달로 '추가로 채우기(합산)' 또는 '다시 계량' 제안.
         // 실수로 저울 영점을 눌러 값이 부족하게 찍힌 경우, 처음부터 재계량이 아니라
-        // 추가로 올리는 무게를 합산해 목표를 맞추면 된다 — 확인 시 그 행에 합산 입력을
-        // 연다(저울 PRINT 도 합산). 이미 합산 입력 중(addModeIdx)이면 팝업 생략.
+        // 추가로 올리는 무게를 합산해 목표를 맞추면 된다 — 추가 버튼 시 그 행에 합산 입력을
+        // 연다(저울 PRINT 도 합산). 이미 합산 입력 중(addModeIdx)이면 모달 생략.
         const shortage = Math.abs(v);
-        const wantAdd = window.confirm(
-          `부족 계량: ${it.material_name}
-`
-          + `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g — ${fmt(shortage, 2)} g 부족
-
-`
-          + `[확인] 추가 계량으로 채우기 — 더 올리는 무게(입력 또는 저울 PRINT)가 현재 값에 합산됩니다.
-`
-          + `[취소] 처음부터 다시 계량`
-        );
-        if (wantAdd) openAddInline(i);
+        showShortageModal(i, shortage);
       }
       return true;
     }
     return false;
+  }
+
+  // ── 부족 계량 모달(shortage) ────────────────────────────────
+  // window.confirm([확인]/[취소]) 대신 의미가 적힌 두 버튼 모달. 확인/취소가 뭘
+  // 의미하는지 모르던 문제 해결. '추가로 채우기' → 그 행에 합산 입력(openAddInline),
+  // '다시 계량'(또는 Esc/overlay) → 해당 실제량 칸 포커스+선택.
+  let _shortageIdx = null;  // 모달이 열려 있는 동안 대상 행 인덱스 보관.
+
+  function showShortageModal(i, shortage) {
+    const it = state.items[i];
+    if (!it) return;
+    _shortageIdx = i;
+    const text = $("shortage-modal-text");
+    if (text) {
+      text.textContent =
+        `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g — ${fmt(shortage, 2)} g 부족`
+        + "\n추가로 채우기: 더 올리는 무게(입력·저울 PRINT)가 현재 값에 합산됩니다.";
+    }
+    $("shortage-modal").hidden = false;
+  }
+  function closeShortageModal() {
+    $("shortage-modal").hidden = true;
+    _shortageIdx = null;
+  }
+  function shortageChooseAdd() {
+    const idx = _shortageIdx;
+    closeShortageModal();
+    if (idx != null) openAddInline(idx);
+  }
+  function shortageChooseReweigh() {
+    const idx = _shortageIdx;
+    closeShortageModal();
+    if (idx == null) return;
+    const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (input) { input.focus(); input.select(); }
   }
 
   // ── 초과 계량 증량(rescale) 통합 ─────────────────────────
@@ -1912,6 +1937,18 @@
     if (coCancel) coCancel.addEventListener("click", closeCarryOverModal);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("carry-over-modal").hidden) closeCarryOverModal();
+    });
+    // 부족 계량 모달 — 추가로 채우기(합산) / 다시 계량. Esc/overlay 도 '다시 계량'과 동일.
+    const shortageAdd = $("shortage-add-btn");
+    if (shortageAdd) shortageAdd.addEventListener("click", shortageChooseAdd);
+    const shortageReweigh = $("shortage-reweigh-btn");
+    if (shortageReweigh) shortageReweigh.addEventListener("click", shortageChooseReweigh);
+    const shortageOverlay = $("shortage-modal");
+    if (shortageOverlay) shortageOverlay.addEventListener("click", (e) => {
+      if (e.target === shortageOverlay) shortageChooseReweigh();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$("shortage-modal").hidden) shortageChooseReweigh();
     });
     // 총 배합량 입력 후 Enter → 첫 자재 LOT 칸으로 커서 이동(계량은 LOT 먼저가 의도).
     // 강제는 아니며 Tab 으로 다른 칸에 갈 수도 있다.

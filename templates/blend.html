@@ -230,6 +230,20 @@
           </div>
         </div>
 
+        <!-- 부족 계량 모달 — 자재를 이론량보다 적게 계량했을 때 '추가로 채우기(합산)' 또는
+             '다시 계량' 중 선택. 확인/취소의 의미가 헷갈리던 window.confirm 을 대체.
+             표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지) — rescale 모달과 동일 패턴. -->
+        <div class="ss-modal-overlay" id="shortage-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="shortage-modal-title">
+            <div class="ss-modal-header"><h3 id="shortage-modal-title">부족 계량</h3></div>
+            <div class="ss-modal-body"><p id="shortage-modal-text"></p></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn accent" id="shortage-add-btn" type="button">추가로 채우기 (합산 입력)</button>
+              <button class="btn" id="shortage-reweigh-btn" type="button">다시 계량</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
         <div class="ss-modal-overlay" id="discard-modal" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -277,7 +291,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723b"></script>
+    <script src="/static/js/blend.js?v=20260723c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
