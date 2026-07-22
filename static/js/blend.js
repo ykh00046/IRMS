@@ -86,6 +86,9 @@
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
+    // 저울 전용 모드 수기 입력 승인 — 책임자 승인 시 {approver}. 이 배합에 한해 실제량
+    // 손입력을 허용(잠금 해제)한다. 저장 완료·초기화·레시피 변경 시 null 로 되돌려 재잠금.
+    manualApproved: null,
     // 증량 승인 이벤트 목록 — 증량 1회당 1건. 책임자 승인({approval_id, approver}) 또는
     // 책임자 부재 진행({absence_reason})으로 구분. 저장 payload(rescale_events)로 전송.
     // 레시피 변경·저장 시 [] 로 초기화, '방금 증량 취소' 시 마지막 1건 pop.
@@ -127,16 +130,18 @@
 
   // 저울 전용 모드일 때 현재 DOM 의 실제량·증량 입력칸에 readonly + title 부여.
   // 새로 렌더되는 행에도 적용되도록 renderMatRows 직후에도 호출한다.
+  // 책임자 수기 입력 승인(state.manualApproved)이 있으면 이 배합에 한해 잠금을 해제한다.
   function applyScaleOnlyToRows() {
-    if (!state.scaleOnlyInput) return;
+    if (!state.scaleOnlyInput) return;  // 모드 아니면 손대지 않음(기본 동작)
+    const lock = !state.manualApproved;
     const titleText = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
     document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
-      el.readOnly = true;
-      el.title = titleText;
+      el.readOnly = lock;
+      if (lock) el.title = titleText; else el.removeAttribute("title");
     });
     document.querySelectorAll("#blend-mat-body .blend-add-inline").forEach((el) => {
-      el.readOnly = true;
-      el.title = titleText;
+      el.readOnly = lock;
+      if (lock) el.title = titleText; else el.removeAttribute("title");
     });
   }
 
@@ -147,6 +152,93 @@
     if (!banner) return;
     const show = state.scaleOnlyInput && !state.scaleReady;
     banner.hidden = !show;
+    updateManualEntryControl();
+  }
+
+  // 저울 전용 모드 수기 입력 승인 컨트롤 — 모드가 켜져 있을 때만 노출. 승인 전에는
+  // '수기 입력 승인 요청' 버튼, 승인 후에는 승인자 안내 텍스트만(버튼 숨김).
+  function updateManualEntryControl() {
+    const box = $("scale-only-control");
+    if (!box) return;
+    box.hidden = !state.scaleOnlyInput;
+    if (!state.scaleOnlyInput) return;
+    const text = $("scale-only-control-text");
+    const btn = $("manual-entry-request-btn");
+    if (state.manualApproved) {
+      if (text) text.textContent = `수기 입력 승인됨 — 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
+      if (btn) btn.hidden = true;
+      box.classList.add("is-approved");
+    } else {
+      if (text) text.textContent = "저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.";
+      if (btn) btn.hidden = false;
+      box.classList.remove("is-approved");
+    }
+  }
+
+  // ── 저울 전용 모드 수기 입력 승인 게이트 ───────────────────────
+  // '수기 입력 승인 요청' → /api/blend/manager-verify(purpose=manual) 200 → 이 배합에 한해
+  // 손입력 허용. 부재 경로 없음(승인만). 저장·초기화·레시피 변경 시 재잠금.
+  function openManualApproveModal() {
+    const modal = $("manual-approve-modal");
+    if (!modal) return;
+    const nameEl = $("manual-approve-name");
+    const pwEl = $("manual-approve-pw");
+    if (nameEl) nameEl.value = "";
+    if (pwEl) pwEl.value = "";
+    hideManualApproveError();
+    modal.hidden = false;
+    if (nameEl) nameEl.focus();
+  }
+  function closeManualApproveModal() {
+    const modal = $("manual-approve-modal");
+    if (modal) modal.hidden = true;
+  }
+  function showManualApproveError(msg) {
+    const err = $("manual-approve-error");
+    if (err) { err.textContent = msg; err.hidden = false; }
+  }
+  function hideManualApproveError() {
+    const err = $("manual-approve-error");
+    if (err) { err.hidden = true; err.textContent = ""; }
+  }
+
+  async function submitManualApproval() {
+    const nameEl = $("manual-approve-name");
+    const pwEl = $("manual-approve-pw");
+    const name = nameEl ? nameEl.value.trim() : "";
+    const pw = pwEl ? pwEl.value : "";
+    if (!name) { showManualApproveError("책임자 이름을 입력하세요."); if (nameEl) nameEl.focus(); return; }
+    if (!pw) { showManualApproveError("비밀번호를 입력하세요."); if (pwEl) pwEl.focus(); return; }
+    hideManualApproveError();
+    const btn = $("manual-approve-submit");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/blend/manager-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({ username: name, password: pw, purpose: "manual" }),
+      });
+      if (res.status === 401) { showManualApproveError("비밀번호가 올바르지 않습니다."); return; }
+      if (res.status === 403) { showManualApproveError("책임자 권한이 없습니다."); return; }
+      if (!res.ok) { showManualApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요."); return; }
+      const data = await res.json().catch(() => ({}));
+      const approver = data.approver || name;
+      state.manualApproved = { approver };
+      closeManualApproveModal();
+      applyScaleOnlyToRows();      // 이 배합의 실제량 입력칸 잠금 해제
+      updateManualEntryControl();  // 배너 텍스트를 승인 안내로 전환(버튼 숨김)
+      notify(`수기 입력 승인 완료 (${approver}) — 이 배합에 한해 손입력이 허용됩니다.`, "success");
+    } catch (_e) {
+      showManualApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // 저장 시 비고에 남길 수기 입력 승인 표시(미등록 LOT 사유와 동일 방식으로 append).
+  function buildManualApprovalNote() {
+    return state.manualApproved ? `[수기 입력 승인] 승인자: ${state.manualApproved.approver}` : "";
   }
 
   // 수동 입력 표시(조용히, 자재 행 단위): 저울이 연결된 상태에서 실제량을 손으로
@@ -479,6 +571,7 @@
     state.rescaleUndo = null;
     state.rescaleEvents = [];  // 레시피 변경 → 증량 승인 이력 초기화(총 배합량 잠금도 함께 해제)
     state.lotOverrides = {};
+    state.manualApproved = null;  // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
     hideRescaleUndo();
     clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
@@ -494,6 +587,7 @@
     applyAnchorMode();
     updateLotPreview();
     updateInputGuide();
+    updateManualEntryControl();  // 승인 해제 반영(배너 텍스트·버튼 복귀)
     loadLotSuggest();
   }
 
@@ -2184,7 +2278,7 @@
       work_time: $("blend-time").value || nowTime(),
       total_amount: total,
       scale: $("blend-scale").value.trim() || null,
-      note: [overrideNote, $("blend-note").value.trim()].filter(Boolean).join("\n") || null,
+      note: [overrideNote, buildManualApprovalNote(), $("blend-note").value.trim()].filter(Boolean).join("\n") || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
       // 서버 백업: 미등록 LOT 사유를 구조화해 보내 클라이언트 fail-open 구멍을 막는다.
@@ -2231,10 +2325,12 @@
       state.rescaleUndo = null;
       state.rescaleEvents = [];  // 저장 완료 → 증량 승인 이력 초기화(총 배합량 잠금 해제)
       state.lotOverrides = {};
+      state.manualApproved = null;  // 저장 완료 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
       hideRescaleUndo();
       clearRescaleSummary();
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
+      updateManualEntryControl();  // 승인 해제 반영(배너 텍스트·버튼 복귀)
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)
       armPostSaveLogout();
       notify("5분간 새 입력이 없으면 자동 로그아웃됩니다", "warn");
@@ -2361,6 +2457,26 @@
     if (approveReweigh) approveReweigh.addEventListener("click", dismissApproveWithReweigh);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && approveModal && !approveModal.hidden) dismissApproveWithReweigh();
+    });
+    // 저울 전용 모드 수기 입력 승인 — 요청 버튼/모달 [승인]·[취소]·Enter·Esc.
+    const manualReq = $("manual-entry-request-btn");
+    if (manualReq) manualReq.addEventListener("click", openManualApproveModal);
+    const manualSubmit = $("manual-approve-submit");
+    if (manualSubmit) manualSubmit.addEventListener("click", () => submitManualApproval());
+    const manualCancel = $("manual-approve-cancel");
+    if (manualCancel) manualCancel.addEventListener("click", closeManualApproveModal);
+    const manualPw = $("manual-approve-pw");
+    if (manualPw) manualPw.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      submitManualApproval();
+    });
+    const manualModal = $("manual-approve-modal");
+    if (manualModal) manualModal.addEventListener("click", (e) => {
+      if (e.target === manualModal) closeManualApproveModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && manualModal && !manualModal.hidden) closeManualApproveModal();
     });
     // 3회 증량 차단 모달 — 확인만.
     const blockClose = $("rescale-block-close");

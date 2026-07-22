@@ -1512,6 +1512,44 @@ def test_rescale_manager_verify_wrong_password_401_and_audit():
     assert row["n"] >= 1
 
 
+def test_manual_entry_verify_success_audits_new_action():
+    """purpose='manual' 승인 성공 → 새 감사 action(blend_manual_entry_approved) + 토큰 반환."""
+    client = _rescale_client()
+    res = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "admin", "purpose": "manual"},
+        headers=_rescale_csrf(client),
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["approver"]
+    assert body["approval_id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'blend_manual_entry_approved'"
+        ).fetchone()
+    assert row["n"] >= 1
+
+
+def test_manual_entry_verify_wrong_password_401():
+    """purpose='manual' 이어도 틀린 비밀번호는 401(승인 우회 불가)."""
+    import uuid
+
+    client = _rescale_client()
+    res = client.post(
+        "/api/blend/manager-verify",
+        json={
+            "username": "admin",
+            "password": "definitely-wrong-" + uuid.uuid4().hex[:6],
+            "purpose": "manual",
+        },
+        headers=_rescale_csrf(client),
+    )
+    assert res.status_code == 401, res.text
+
+
 def test_rescale_verify_then_save_marks_columns_and_consumes_approval():
     import uuid
 

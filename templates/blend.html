@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260723b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260723c" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -46,6 +46,13 @@
           <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
                blend.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
           <p class="login-error scale-only-banner" id="scale-only-banner" hidden>저울 전용 입력 모드가 켜져 있습니다 — 저울이 연결되지 않아 실제량을 입력할 수 없습니다. (해제는 운영 대시보드)</p>
+          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 — 모드가 켜져 있을 때만 노출.
+               책임자 승인을 받으면 이 배합에 한해 실제량 손입력을 허용한다(저장·초기화·레시피 변경 시 재잠금).
+               blend.js updateManualEntryControl 이 텍스트·버튼 노출을 갱신. -->
+          <div class="scale-only-control" id="scale-only-control" hidden>
+            <span id="scale-only-control-text">저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.</span>
+            <button type="button" class="btn btn-sm accent" id="manual-entry-request-btn">수기 입력 승인 요청</button>
+          </div>
           <!-- 배합 임시 저장 복구 배너 — 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. -->
           <div class="blend-restore-banner" id="blend-restore-banner" hidden>
             <span id="blend-restore-label">작성 중이던 배합이 있습니다.</span>
@@ -307,6 +314,31 @@
           </div>
         </div>
 
+        <!-- 수기 입력 책임자 승인 모달 — 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
+             책임자 이름+비밀번호로 /api/blend/manager-verify(purpose=manual) 검증 후 이 배합에 한해
+             손입력을 허용한다. 부재 경로 없음(승인만). hidden 토글 전용. -->
+        <div class="ss-modal-overlay" id="manual-approve-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="manual-approve-title">
+            <div class="ss-modal-header"><h3 id="manual-approve-title">수기 입력 책임자 승인</h3></div>
+            <div class="ss-modal-body">
+              <p class="rescale-approve-lead">저울 전용 모드에서 수기 입력을 허용하려면 책임자 승인이 필요합니다. 승인은 <strong>이 배합에 한해</strong> 적용됩니다.</p>
+              <div class="blend-field">
+                <label class="filter-label" for="manual-approve-name">책임자 이름</label>
+                <input class="input" id="manual-approve-name" autocomplete="off" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="manual-approve-pw">비밀번호</label>
+                <input class="input" id="manual-approve-pw" type="password" autocomplete="off" />
+              </div>
+              <p class="login-error" id="manual-approve-error" hidden></p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="manual-approve-cancel" type="button">취소</button>
+              <button class="btn accent" id="manual-approve-submit" type="button">승인</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 3회 증량 차단 모달 — 이미 2회 증량된 배합에서 3회째 증량 제안이 뜨려 하면
              제안 대신 이 모달로 막는다(폐기 협의 유도). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="rescale-block-modal" hidden>
@@ -354,7 +386,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723l"></script>
+    <script src="/static/js/blend.js?v=20260723m"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

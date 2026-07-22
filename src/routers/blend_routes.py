@@ -464,6 +464,15 @@ def build_router() -> APIRouter:
     # 저장 시 approval_id 로 소비되는 1회용 승인 토큰을 발급한다. 비밀번호 검증은
     # 기존 authenticate_user 를 재사용(해시 로직 중복 금지). management-login 과 동일
     # slowapi 레이트리밋(5/분) 으로 무차별 대입을 막는다.
+    #
+    # purpose: "rescale"(기본) | "manual".
+    #   - "rescale": 초과 계량 증량 승인. 성공 감사=blend_rescale_approved.
+    #   - "manual": 저울 전용 모드에서 이 배합에 한해 수기 입력 허용 승인.
+    #     성공 감사=blend_manual_entry_approved. 승인 토큰(approval_id)은 반환하되
+    #     증량처럼 저장 시 소비(used=1)를 강제하지 않는다 — 서버는 실제 입력이 저울인지
+    #     손인지 구분할 수 없으므로, 통제는 '책임자 승인 + 기록의 수동 입력 표시(manual_entry)'
+    #     로 이루어진다(기존 manual_entry 설계와 일관). 거부 감사는 증량과 동일하게
+    #     blend_rescale_approve_denied 를 쓰되 details 에 purpose 를 남긴다.
     @router.post("/blend/manager-verify")
     @limiter.limit("5/minute")
     def blend_manager_verify(
@@ -473,6 +482,8 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         username = str(body.get("username") or "").strip()
         password = str(body.get("password") or "")
+        purpose = str(body.get("purpose") or "rescale").strip() or "rescale"
+        is_manual = purpose == "manual"
         # management-login 과 동일한 순서로 책임자 자격을 검증한다(해시 로직 중복 금지):
         # 이름 기반 책임자(workers.is_manager) 우선, 없으면 레거시 admin(users) 폴백.
         user = authenticate_manager_worker(username, password)
@@ -494,7 +505,10 @@ def build_router() -> APIRouter:
                 actor=denied_actor,
                 target_type="rescale_approval",
                 target_label=username or "(빈 이름)",
-                details={"reason": "not_manager" if non_manager else "invalid_credentials"},
+                details={
+                    "reason": "not_manager" if non_manager else "invalid_credentials",
+                    "purpose": purpose,
+                },
             )
             connection.commit()
             raise HTTPException(
@@ -506,12 +520,12 @@ def build_router() -> APIRouter:
         result = blend_service.create_rescale_approval(connection, approver)
         write_audit_log(
             connection,
-            action="blend_rescale_approved",
+            action="blend_manual_entry_approved" if is_manual else "blend_rescale_approved",
             actor=user,
             target_type="rescale_approval",
             target_id=str(result["approval_id"]),
             target_label=approver,
-            details={},
+            details={"purpose": purpose} if is_manual else {},
         )
         connection.commit()
         return result
