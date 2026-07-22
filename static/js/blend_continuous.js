@@ -132,6 +132,185 @@
     banner.hidden = !show;
   }
 
+  // ── 이어서 계량 임시 저장·복구 ────────────────────────────────
+  // 공용 PC 에서 연속 배합 중 자동 로그아웃·창 닫힘으로 계량값(승인된 증량 이력 포함)이
+  // 날아가는 것을 막는다. 진행 중 입력을 이 PC 의 localStorage 에 저장하고(서버·다른 작업
+  // 무관), 다음 진입 시 이어서 할지 배너로 묻는다. 저장 완료·버리기 시 삭제. 24시간 지난
+  // 초안은 제안하지 않는다. (단건 배합 blend.js "irms.blend.draft" 의 이어서 계량 버전 —
+  // 셀 매트릭스·로트별 증량에 맞춰 확장.)
+  const DRAFT_KEY = "irms.blend.cont.draft";
+  let _draftTimer = null;
+
+  function currentDraft() {
+    if (!state.current || !state.current.recipe) return null;
+    // 의미 있는 입력이 있을 때만 초안을 만든다: 실제량을 넣은 셀이 있거나 자재 LOT 을 적었을 때.
+    const hasCell = state.cells.some((row) =>
+      row && row.some((c) => c && c.actual !== "" && c.actual != null));
+    const hasLot = (state.sharedLot || []).some((l) => (l || "").trim());
+    if (!hasCell && !hasLot) return null;
+    return {
+      recipe_id: state.current.recipe.id,
+      product_name: state.current.recipe.product_name,
+      lotCount: state.lotCount,
+      total: $("cont-total").value,
+      date: $("cont-date").value,
+      time: $("cont-time").value,
+      scale: $("cont-scale").value,
+      note: $("cont-note").value,
+      reactor: $("cont-reactor").value,
+      lotOverrides: state.lotOverrides || {},
+      // 자재 LOT 은 전 로트 공통(재료당 1개) — state.sharedLot 그대로.
+      sharedLot: (state.sharedLot || []).map((l) => l || ""),
+      // 셀 매트릭스 — cells[i][j] = {actual, manual}. actual 은 문자열로 통일.
+      cells: state.cells.map((row) => (row || []).map((c) => ({
+        actual: (c.actual === "" || c.actual == null) ? "" : String(c.actual),
+        manual: c.manual === true,
+      }))),
+      // 로트별 증량 상태 — override 총량·요약 plan·승인 이벤트(깊은 복사). 반드시 함께
+      // 보관해야 복구 후 저장 payload(lot_totals·lot_rescale_events)로 전송돼 추적성이
+      // 유지된다(누락 시 서버가 '증량 없음'으로 조용히 저장 — 추적 구멍).
+      lotRescale: (state.lotRescale || []).map((v) => v || null),
+      lotRescalePlan: (state.lotRescalePlan || []).map((p) => p || null),
+      lotRescaleEvents: (state.lotRescaleEvents || []).map((e) =>
+        e && e.length ? e.map((ev) => ({ ...ev })) : null),
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  function scheduleDraftSave() {
+    if (_draftTimer) clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(() => {
+      try {
+        const d = currentDraft();
+        if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      } catch (_e) { /* 저장공간 없음 등 무시 */ }
+    }, 600);
+  }
+
+  function clearDraft() {
+    if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_e) { /* 무시 */ }
+  }
+
+  function readDraft() {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      // 24시간 지난 초안은 무시(오래된 잔여 방지).
+      if (d && d.savedAt && (Date.now() - Date.parse(d.savedAt)) > 24 * 3600 * 1000) return null;
+      return d;
+    } catch (_e) { return null; }
+  }
+
+  // 진입 시 초안이 있으면 배너로 이어서 할지 묻는다.
+  function offerRestore() {
+    const banner = $("cont-restore-banner");
+    if (!banner) return;
+    const draft = readDraft();
+    if (!draft || !draft.recipe_id) { banner.hidden = true; return; }
+    const label = $("cont-restore-label");
+    if (label) {
+      const when = draft.savedAt ? draft.savedAt.slice(0, 16).replace("T", " ") : "";
+      label.textContent = `작성 중이던 '${draft.product_name || ""}' 이어서 계량이 있습니다${when ? ` (${when})` : ""} — 이어서 하시겠어요?`;
+    }
+    banner.hidden = false;
+  }
+
+  async function restoreDraft() {
+    const draft = readDraft();
+    if (!draft || !draft.recipe_id) return;
+    // 레시피 목록이 아직이면 먼저 로드해 select 옵션이 존재하게 한다(값 세팅이 붙도록).
+    if (!state.recipes.length) {
+      try { await loadRecipes(); } catch (_e) { /* onRecipeChange 가 id 로 직접 조회 */ }
+    }
+    // 로트 수를 먼저 맞춰야 onRecipeChange 의 rebuildCells 가 올바른 매트릭스를 만든다.
+    if (draft.lotCount) {
+      state.lotCount = Math.max(MIN_LOTS, Math.min(MAX_LOTS, Number(draft.lotCount) || 2));
+      $("cont-lot-count").textContent = String(state.lotCount);
+    }
+    const recipeSel = $("cont-recipe");
+    recipeSel.value = String(draft.recipe_id);
+    await onRecipeChange();  // 레시피 로드 + 초기화 + 빈 렌더 — 이후 초안 값을 덮어씌운다.
+    // 기준 자재 레시피면 이어서 계량 자체가 불가 — 복구 중단(빈 상태 유지, 초안 폐기).
+    if (state.anchorBlocked) {
+      notify("이 레시피는 기준 자재 방식이라 이어서 계량 복구를 지원하지 않습니다.", "warn");
+      clearDraft();
+      const banner = $("cont-restore-banner"); if (banner) banner.hidden = true;
+      return;
+    }
+    if (draft.date) $("cont-date").value = draft.date;
+    if (draft.time) $("cont-time").value = draft.time;
+    if (draft.scale) $("cont-scale").value = draft.scale;
+    if (draft.note) $("cont-note").value = draft.note;
+    if (draft.reactor) $("cont-reactor").value = draft.reactor;
+    state.lotOverrides = draft.lotOverrides || {};
+    // 총 배합량 복구 → 이론량 재산출(placeholder·편차 기준).
+    if (draft.total) {
+      $("cont-total").value = draft.total;
+      state.total = Number(draft.total) || 0;
+      recomputeTheory();
+    }
+    // 자재 LOT(전 로트 공통) 복구.
+    (draft.sharedLot || []).forEach((lot, i) => {
+      if (i < state.sharedLot.length) state.sharedLot[i] = lot || "";
+    });
+    // 셀 매트릭스 복구(actual/manual).
+    (draft.cells || []).forEach((row, i) => {
+      (row || []).forEach((c, j) => {
+        if (state.cells[i] && state.cells[i][j]) {
+          state.cells[i][j].actual = (c.actual === "" || c.actual == null) ? "" : c.actual;
+          state.cells[i][j].manual = c.manual === true;
+        }
+      });
+    });
+    // 로트별 증량 상태 복구 — onRecipeChange 가 이미 [] 로 리셋했으므로 초안 값으로 되살린다.
+    // (깊은 복사로 원본 초안 객체와 분리.)
+    state.lotRescale = Array.isArray(draft.lotRescale) ? draft.lotRescale.slice() : [];
+    state.lotRescalePlan = Array.isArray(draft.lotRescalePlan) ? draft.lotRescalePlan.slice() : [];
+    state.lotRescaleEvents = Array.isArray(draft.lotRescaleEvents)
+      ? draft.lotRescaleEvents.map((e) => (e && e.length ? e.map((ev) => ({ ...ev })) : null))
+      : [];
+    state.addPendingCells = {};  // renderAddBadges 가 로트별로 다시 채운다.
+    rebuildLotRescale();  // 현재 lotCount 에 맞춰 패딩(값 보존).
+    render();  // 복구된 state 값으로 표를 다시 그린다(실제량·LOT·이론·편차·총량 잠금).
+    // 증량된 로트는 요약줄·추가 배지를 명시적으로 다시 그린다.
+    renderContRescaleSummary();
+    for (let j = 0; j < state.lotCount; j++) {
+      if (state.lotRescale[j] > 0) renderAddBadges(j);
+    }
+    updateContTotalLock();  // 실측이 있으면 공용 총 배합량 잠금 재적용.
+    const banner = $("cont-restore-banner");
+    if (banner) banner.hidden = true;
+    notify("작성 중이던 이어서 계량을 복원했습니다.", "success");
+    // 증량 이력이 있으면 1회 안내(blend.js 와 동일 취지).
+    if (state.lotRescaleEvents.some((e) => e && e.length)) {
+      notify("복구된 계량에 증량 이력이 포함되어 있습니다.", "warn");
+    }
+    // anti-cheat: 승인 대기 중 새로고침으로 증량 승인 게이트를 우회하지 못하게 한다.
+    reofferPendingRescaleAfterRestore();
+  }
+
+  // 복구 직후 +방향 허용 편차 초과 셀(=미승인 증량 대기 상태로 창을 닫았던 경우)이 남아 있으면
+  // 즉시 그 로트의 증량 제안/승인 모달을 다시 띄운다 — 깨끗한 화면 대신 곧장 승인 게이트로.
+  // 이미 승인·적용된 로트의 셀은 renderAddBadges 로 addPending 처리돼 여기서 걸러진다(재트리거 안 함).
+  function reofferPendingRescaleAfterRestore() {
+    const tol = state.toleranceG;
+    for (let i = 0; i < state.materials.length; i++) {
+      for (let j = 0; j < state.lotCount; j++) {
+        if (state.addPendingCells && state.addPendingCells[`${i}:${j}`] != null) continue;
+        const th = theoryFor(i, j);
+        const raw = state.cells[i][j].actual;
+        if (raw === "" || th == null) continue;
+        if (Number(raw) - th > tol + 1e-9) {
+          // warnIfVariance(+방향) → offerContRescale(j) → 제안/승인 모달. 첫 초과 셀 하나면 충분.
+          warnIfVariance(i, j);
+          return;
+        }
+      }
+    }
+  }
+
   let scaleEventLast = 0;
   let scaleEventSynced = false;
 
@@ -194,6 +373,7 @@
     input.removeAttribute("title");
     updateCellVar(i, j);
     warnIfVariance(i, j);
+    scheduleDraftSave();  // 저울 PRINT 입력분도 임시 저장(복구용)
     focusNextFrom(i, j);
   }
 
@@ -683,6 +863,7 @@
       el.addEventListener("input", () => {
         state.sharedLot[Number(el.dataset.i)] = el.value;
         if (el._lotBox) renderLotSuggest(el);
+        scheduleDraftSave();  // 진행분 임시 저장(복구용)
       });
       // 포커스 시 제안 목록 표시(제안이 있는 자재만). blend_login suggest 패턴 재사용.
       el.addEventListener("focus", () => renderLotSuggest(el));
@@ -713,6 +894,7 @@
           el.title = "수기 입력됨 — 저울 PRINT 로 다시 계량하면 해제됩니다";
         }
         updateCellVar(i, j);
+        scheduleDraftSave();  // 진행분 임시 저장(복구용)
       });
       el.addEventListener("change", () => warnIfVariance(i, j));
       el.addEventListener("keydown", (e) => {
@@ -880,6 +1062,7 @@
     rebuildLotRescale();   // 로트 수 변경 → lotRescale 을 새 lotCount 에 맞춘다(기존 값 보존)
     render();
     renderContRescaleSummary();  // 로트 수 변경 → 요약줄도 새 lotCount 에 맞춰 갱신
+    scheduleDraftSave();         // 로트 수 변경도 임시 저장(복구용)
   }
 
   // ── 초과 계량 증량(rescale) — 로트별 스코프 ─────────────────
@@ -990,6 +1173,7 @@
     renderAddBadges(j);
     renderContRescaleSummary();
     updateContTotalLock();  // 증량은 lotRescale[j] 만 바꾸므로 잠금 상태는 유지 — 방어적 재적용.
+    scheduleDraftSave();    // 증량 적용(override 총량·plan) 도 임시 저장(복구용)
     notify(`로트 ${j + 1} 배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
   }
 
@@ -1092,6 +1276,7 @@
     if (meta && meta.absence_reason != null) ev.absence_reason = meta.absence_reason;
     if (!state.lotRescaleEvents[j]) state.lotRescaleEvents[j] = [];
     state.lotRescaleEvents[j].push(ev);
+    scheduleDraftSave();  // 증량 승인 이벤트가 반드시 초안에 남도록 즉시 갱신(추적성)
   }
 
   async function submitContManagerApproval() {
@@ -1349,6 +1534,7 @@
     warnIfVariance(i, j);
     renderAddBadges(j);
     updateContTotalLock();  // 추가분 합산으로 실제량이 채워진 경우도 총량 잠금 유지
+    scheduleDraftSave();    // 추가분 합산 결과도 임시 저장(복구용)
   }
 
   // ── 저장 ────────────────────────────────────────────────────
@@ -1490,10 +1676,21 @@
     }
     try {
       const res = await request("/blend/records/continuous", { method: "POST", body });
+      clearDraft();  // 저장 완료 → 임시 저장 삭제(복구 배너가 다시 뜨지 않게)
       notify(`${res.created}개 로트 저장 완료: ${(res.product_lots || []).join(", ")} — 배합 기록으로 이동합니다.`, "success");
       setTimeout(() => window.location.assign("/status"), 900);
     } catch (e) {
-      fail(err, e.message);
+      const msg = (e && e.message) || "";
+      // 복구된 초안의 증량 승인(approval_id)은 30분 경과 시 서버(validate_rescale_events)에서
+      // 만료된다. 단건 배합(blend.js)의 저장 시점 재인증 전체 플로우는 이어서 계량에 아직 없다 —
+      // 대신 만료가 확인되면 초과 계량 증량을 다시 승인받도록 명확히 안내한다(간소 정책).
+      // 해당 로트의 초과 셀을 다시 확정(Enter/blur)하면 offer→승인 모달이 다시 뜬다.
+      if (msg.includes("증량 승인이 유효하지 않습니다")) {
+        notify("증량 승인이 만료되었습니다 — 초과 계량 증량을 다시 승인받으세요(책임자 재인증 필요). "
+          + "해당 로트의 초과 셀 값을 다시 확정하면 승인 창이 다시 뜹니다.", "error big");
+        return fail(err, "증량 승인이 만료되었습니다(30분 경과). 초과 계량 증량을 다시 승인받은 뒤 저장하세요 — 책임자 재인증 필요.");
+      }
+      fail(err, msg);
     }
   }
 
@@ -1518,7 +1715,15 @@
       state.total = Number($("cont-total").value) || 0;
       recomputeTheory();
       refreshTheoryCells();
+      scheduleDraftSave();  // 총 배합량 변경도 임시 저장(복구용)
     });
+    // 비고·반응기·저울 변경도 임시 저장에 반영(단건 배합 blend.js 와 동일).
+    const noteEl = $("cont-note");
+    if (noteEl) noteEl.addEventListener("input", scheduleDraftSave);
+    const reactorEl = $("cont-reactor");
+    if (reactorEl) reactorEl.addEventListener("change", scheduleDraftSave);
+    const scaleEl = $("cont-scale");
+    if (scaleEl) scaleEl.addEventListener("input", scheduleDraftSave);
     // 총량 확정(change) 시 — 이미 계량된 셀이 새 이론량 기준으로 초과면 즉시 경고
     $("cont-total").addEventListener("change", warnAllVariance);
     // 기본 배합량 버튼 클릭 → 총량에 채우고 이론량 재산출(배합 화면과 동일 경로).
@@ -1544,7 +1749,7 @@
       if (!$("cont-worker").value.trim()) $("cont-worker").value = state.sessionWorker;
     });
 
-    $("cont-date").addEventListener("change", updateLotPreview);
+    $("cont-date").addEventListener("change", () => { updateLotPreview(); scheduleDraftSave(); });
     $("cont-lot-plus").addEventListener("click", () => setLotCount(state.lotCount + 1));
     $("cont-lot-minus").addEventListener("click", () => setLotCount(state.lotCount - 1));
     $("cont-save").addEventListener("click", () => save());
@@ -1559,6 +1764,15 @@
         extraToggle.textContent = (open ? "▾" : "▸") + " 작업시간 · 저울 변경";
       });
     }
+
+    // 임시 저장 복구 배너 — [이어서 하기]=초안 복원 / [버리기]=초안 삭제.
+    const restoreYes = $("cont-restore-yes");
+    if (restoreYes) restoreYes.addEventListener("click", () => { restoreDraft().catch((e) => notify(e.message, "error")); });
+    const restoreNo = $("cont-restore-no");
+    if (restoreNo) restoreNo.addEventListener("click", () => {
+      clearDraft();
+      const banner = $("cont-restore-banner"); if (banner) banner.hidden = true;
+    });
 
     state.workerPad = attachSignaturePad($("cont-worker-sign"));
     const wclr = $("cont-worker-sign-clear");
@@ -1594,6 +1808,7 @@
     const approveModal = $("cont-rescale-approve-modal");
     // 바깥 클릭으로는 닫히지 않는다 — 미해소 초과 누적 방지(blend.js 와 동일 정책).
     function dismissContApproveWithReweigh() {
+      if (!window.confirm("입력한 초과값을 비우고 다시 계량합니다. 계속할까요?")) return;
       state.pendingContRescale = null;
       closeContRescaleApproveModal();
       clearOverContActuals();
@@ -1636,6 +1851,7 @@
       if (!text) { notify("진행 사유를 입력하세요.", "error"); if (reason) reason.focus(); return; }
       const modal = $("cont-lot-invalid-modal");
       state.lotOverrides[lotOverrideKey(modal._lotName, modal._lotValue)] = text;
+      scheduleDraftSave();  // 미등록 LOT 진행 승인·사유도 임시 저장(복구용)
       const input = modal._lotInput;
       closeContLotInvalidModal();
       if (input) input.focus();
@@ -1653,6 +1869,7 @@
     bind();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
+    offerRestore();  // 작성 중이던 이어서 계량이 있으면 이어서 할지 배너로 제안
     detectScale();
     setInterval(detectScale, 30000);
     setInterval(pollScaleEvents, 800);

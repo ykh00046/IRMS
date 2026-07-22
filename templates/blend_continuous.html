@@ -7,6 +7,14 @@
 {% block styles %}
     <link rel="stylesheet" href="/static/css/blend.css?v=20260723d" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260717d" />
+    <style>
+      /* 이어서 계량 임시 저장 복구 배너 — 배합 화면(blend.html)과 동일 스타일. */
+      .blend-restore-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        margin: 0 0 12px; padding: 8px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+        font-size: 0.85rem; color: #92400e; }
+      .blend-restore-banner[hidden] { display: none; }
+      .blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
+    </style>
 {% endblock %}
 
 {% block content %}
@@ -14,6 +22,14 @@
           <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
                blend_continuous.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
           <p class="login-error scale-only-banner" id="cont-scale-only-banner" hidden>저울 전용 입력 모드가 켜져 있습니다 — 저울이 연결되지 않아 실제량을 입력할 수 없습니다. (해제는 운영 대시보드)</p>
+          <!-- 이어서 계량 임시 저장 복구 배너 — 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. -->
+          <div class="blend-restore-banner" id="cont-restore-banner" hidden>
+            <span id="cont-restore-label">작성 중이던 이어서 계량이 있습니다.</span>
+            <span class="blend-restore-actions">
+              <button type="button" class="btn btn-sm accent" id="cont-restore-yes">이어서 하기</button>
+              <button type="button" class="btn btn-sm" id="cont-restore-no">버리기</button>
+            </span>
+          </div>
           <section class="panel">
             <h3 class="panel-title">배합 설정</h3>
             <div class="blend-form-grid">
@@ -202,5 +218,5 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend_continuous.js?v=20260723e"></script>
+    <script src="/static/js/blend_continuous.js?v=20260723g"></script>
 {% endblock %}

@@ -650,6 +650,18 @@
     } else if (state.rescaleActive) {
       renderAddBadges();
     }
+    // 승인 회피 방지(사용자 요구 2026-07-22): 승인 모달이 떠 있는 상태에서 새로고침/창
+    // 재실행으로 빠져나가도, 복구 직후 미해소 초과(+허용편차 초과) 행이 있으면 즉시
+    // 증량 제안→승인 게이트를 다시 띄운다. 새로고침이 승인 우회 수단이 될 수 없다.
+    const tol = state.toleranceG;
+    const overIdx = state.items.findIndex((it, i) =>
+      i !== state.anchorIndex && it.actual_amount !== ""
+      && !(state.addPending && state.addPending[i] != null)
+      && rowVariance(it) > tol + 1e-9);
+    if (overIdx >= 0) {
+      notify("복구된 배합에 미해소 초과 계량이 있습니다 — 증량 승인 또는 다시 계량이 필요합니다.", "error");
+      warnIfVariance(overIdx);
+    }
   }
 
   // 기준 자재 모드 적용 — 레시피에 기준 자재가 있으면:
@@ -2333,6 +2345,8 @@
     // 나가는 길은 [승인]/[부재로 진행]/[다시 계량](Esc 동일) 세 가지뿐.
     function dismissApproveWithReweigh() {
       if (_rescaleReauthPending) { cancelRescaleApprove(); return; }
+      // 실수 클릭 보험 — 비워지는 건 방금 입력한 초과값이지만 확인 한 번은 거친다.
+      if (!window.confirm("입력한 초과값을 비우고 다시 계량합니다. 계속할까요?")) return;
       state.pendingRescale = null;
       closeRescaleApproveModal();
       clearOverActuals();
