@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260722d" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260723a" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -244,6 +244,28 @@
           </div>
         </div>
 
+        <!-- 추가 계량 모달 — 부족분을 한눈에 보면서 합산 입력. 큰 남은 양 숫자 + 목표/현재.
+             저울 PRINT 도 addModeIdx 경로로 자동 합산(수동 입력칸은 저울 전용 모드에선 숨김).
+             hidden 토글 전용 — rescale/shortage 모달과 동일 패턴. -->
+        <div class="ss-modal-overlay" id="add-weigh-modal" hidden>
+          <div class="ss-modal add-weigh-modal" role="dialog" aria-modal="true" aria-labelledby="add-weigh-title">
+            <div class="ss-modal-header"><h3 id="add-weigh-title">추가 계량</h3></div>
+            <div class="ss-modal-body">
+              <div class="add-weigh-remaining" id="add-weigh-remaining">+0 g</div>
+              <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
+              <div class="add-weigh-input-row" id="add-weigh-input-row">
+                <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="추가분 g" autofocus />
+                <button class="btn" id="add-weigh-add-btn" type="button">더하기</button>
+              </div>
+              <p class="muted add-weigh-note">저울 PRINT 를 누르면 자동으로 합산됩니다.</p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn accent" id="add-weigh-done-btn" type="button">완료</button>
+              <button class="btn" id="add-weigh-reweigh-btn" type="button">다시 계량</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
         <div class="ss-modal-overlay" id="discard-modal" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
@@ -291,7 +313,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723d"></script>
+    <script src="/static/js/blend.js?v=20260723e"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

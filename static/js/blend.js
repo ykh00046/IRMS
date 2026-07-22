@@ -1309,7 +1309,7 @@
   function shortageChooseAdd() {
     const idx = _shortageIdx;
     closeShortageModal();
-    if (idx != null) openAddInline(idx);
+    if (idx != null) openAddWeighModal(idx);
   }
   function shortageChooseReweigh() {
     const idx = _shortageIdx;
@@ -1542,7 +1542,7 @@
         ? `목표 ${fmt(r.newTheory)} · 추가 +${fmt(r.addNeeded)} g`
         : `추가 +${fmt(r.addNeeded)} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
-      badge.addEventListener("click", () => openAddInline(r.idx));
+      badge.addEventListener("click", () => openAddWeighModal(r.idx));
       td.appendChild(badge);
     });
     // 이전에 대기였다가 이번에 충족된 행 — 빈칸으로 남지 않게 편차 표시를 다시 그린다.
@@ -1638,6 +1638,123 @@
     // 추가분을 넣기 시작했으면 증량 되돌리기는 위험(추가 실제량과 이전 이론량이 어긋남) — 무효화.
     state.rescaleUndo = null;
     hideRescaleUndo();
+    // 추가 계량 모달이 이 행에 열려 있으면 큰 숫자(남은 양) 갱신 + 자동 완료 판정.
+    refreshAddWeighModal(idx);
+  }
+
+  // ── 추가 계량 모달(add-weigh) ───────────────────────────────
+  // 인라인 추가 입력(openAddInline) 대신 큰 남은 양 숫자를 보며 합산. 저울 PRINT 는
+  // addModeIdx 경로(fillScaleValue→applyAddAmount)로 자동 합산 — 모달이 열려 있으면
+  // applyAddAmount 끝의 refreshAddWeighModal 이 숫자를 갱신한다.
+  // _addWeighIdx 는 모달이 열려 있는 대상 행(addModeIdx 와 별개 — applyAddAmount 가
+  // addModeIdx 를 null 로 되돌려도 모달 갱신 판정은 _addWeighIdx 로 한다).
+  let _addWeighIdx = null;
+
+  function addWeighRemaining(idx) {
+    const it = state.items[idx];
+    if (!it) return 0;
+    const target = Number(it.theory_amount) || 0;
+    const cur = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
+    return Math.max(0, Math.round((target - cur) * 100) / 100);
+  }
+
+  function openAddWeighModal(idx) {
+    // 모달 요소가 없으면(옛 템플릿) 기존 인라인 추가 입력으로 폴백.
+    if (!$("add-weigh-modal")) { openAddInline(idx); return; }
+    const it = state.items[idx];
+    if (!it) return;
+    state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
+    _addWeighIdx = idx;
+    // 헤더 자재명 + 목표/현재/남은 렌더.
+    $("add-weigh-title").textContent = `추가 계량 — ${it.material_name}`;
+    refreshAddWeighModal(idx);
+    // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산).
+    const row = $("add-weigh-input-row");
+    if (row) row.hidden = Boolean(state.scaleOnlyInput);
+    $("add-weigh-modal").hidden = false;
+    const input = $("add-weigh-input");
+    if (input) { input.value = ""; if (!state.scaleOnlyInput) input.focus(); }
+  }
+
+  // 모달 숫자(남은 양/목표·현재) 갱신 + 자동 완료(목표 도달 시 자동 닫기).
+  function refreshAddWeighModal(idx) {
+    const modal = $("add-weigh-modal");
+    if (!modal || modal.hidden) return;
+    if (_addWeighIdx !== idx) return;
+    const it = state.items[idx];
+    if (!it) return;
+    const target = Number(it.theory_amount) || 0;
+    const cur = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
+    const remaining = addWeighRemaining(idx);
+    const remEl = $("add-weigh-remaining");
+    if (remEl) remEl.textContent = `+${fmt(remaining, 1)} g`;
+    const subEl = $("add-weigh-sub");
+    if (subEl) subEl.textContent = `목표 ${fmt(target, 1)} g · 현재 ${fmt(cur, 1)} g`;
+    // 자동 완료 — 남은 양이 허용 편차 이내면 성공 안내 후 닫고 다음 LOT 로.
+    if (remaining <= state.toleranceG + 1e-9) {
+      notify(`${it.material_name} 추가 계량 완료`, "success");
+      finishAddWeighModal(idx);
+    }
+  }
+
+  // 더하기/Enter — 값 합산 후 입력칸 비우고 포커스(모달 숫자는 applyAddAmount 끝에서 갱신).
+  function applyAddWeighInput(idx) {
+    const input = $("add-weigh-input");
+    if (!input) return;
+    const add = Number(input.value);
+    if (!add || !(add > 0)) { input.focus(); return; }
+    input.value = "";
+    applyAddAmount(idx, add);
+    // applyAddAmount 가 addModeIdx 를 null 로 되돌리므로 모달 진행 중엔 다시 올린다.
+    state.addModeIdx = idx;
+    if (!state.scaleOnlyInput) input.focus();
+  }
+
+  // 자동 완료 — 값 유지한 채 모달 닫고 다음 LOT 칸(또는 저장 버튼)으로 포커스 이동.
+  function finishAddWeighModal(idx) {
+    $("add-weigh-modal").hidden = true;
+    _addWeighIdx = null;
+    state.addModeIdx = null;
+    const inline = document.querySelector(`.blend-add-inline[data-idx="${idx}"]`);
+    if (inline) inline.remove();
+    const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    if (actualInput) { actualInput.classList.remove("add-mode"); actualInput.readOnly = false; }
+    renderAddBadges();
+    // 다음 자재의 LOT 칸으로 — 없으면(마지막 행) 저장 버튼.
+    const next = idx + 1;
+    const nextLot = document.querySelector(`.blend-lot[data-idx="${next}"]`);
+    if (nextLot) nextLot.focus();
+    else { const save = $("blend-save"); if (save) save.focus(); }
+  }
+
+  // 수동 닫기 — 완료(값 유지) 또는 다시 계량(실제량 비움). addModeIdx 해제·배지 갱신.
+  function closeAddWeighModal(idx, keepValue) {
+    $("add-weigh-modal").hidden = true;
+    _addWeighIdx = null;
+    state.addModeIdx = null;
+    if (!keepValue && idx != null) {
+      const it = state.items[idx];
+      if (it) it.actual_amount = "";
+      const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (actualInput) {
+        actualInput.value = "";
+        actualInput.classList.remove("add-mode");
+        actualInput.readOnly = false;
+        actualInput.focus();
+        if (typeof actualInput.select === "function") {
+          try { actualInput.select(); } catch (_e) { /* noop */ }
+        }
+      }
+      updateRowVar(idx);
+      updateTotals();
+    } else {
+      // 완료 — 잔여 인라인 입력 칸·배지 정리. 편차는 다음 상호작용 때 warn 흐름에 맡긴다.
+      const inline = document.querySelector(`.blend-add-inline[data-idx="${idx}"]`);
+      if (inline) inline.remove();
+      const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (actualInput) { actualInput.classList.remove("add-mode"); actualInput.readOnly = false; }
+    }
+    renderAddBadges();
   }
 
   // 총량을 나중에 입력/변경하면 이론량이 바뀌어 이미 계량한 값이 초과될 수 있다 —
@@ -1965,6 +2082,34 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("shortage-modal").hidden) shortageChooseReweigh();
+    });
+    // 추가 계량 모달 — 더하기/Enter 합산, 완료(값 유지), 다시 계량(비움). Esc/overlay=완료.
+    const awModal = $("add-weigh-modal");
+    const awAdd = $("add-weigh-add-btn");
+    if (awAdd) awAdd.addEventListener("click", () => {
+      if (_addWeighIdx != null) applyAddWeighInput(_addWeighIdx);
+    });
+    const awInput = $("add-weigh-input");
+    if (awInput) awInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      if (_addWeighIdx != null) applyAddWeighInput(_addWeighIdx);
+    });
+    const awDone = $("add-weigh-done-btn");
+    if (awDone) awDone.addEventListener("click", () => {
+      if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ true);
+    });
+    const awReweigh = $("add-weigh-reweigh-btn");
+    if (awReweigh) awReweigh.addEventListener("click", () => {
+      if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ false);
+    });
+    if (awModal) awModal.addEventListener("click", (e) => {
+      if (e.target === awModal && _addWeighIdx != null) closeAddWeighModal(_addWeighIdx, true);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && awModal && !awModal.hidden && _addWeighIdx != null) {
+        closeAddWeighModal(_addWeighIdx, true);
+      }
     });
     // 총 배합량 입력 후 Enter → 첫 자재 LOT 칸으로 커서 이동(계량은 LOT 먼저가 의도).
     // 강제는 아니며 Tab 으로 다른 칸에 갈 수도 있다.

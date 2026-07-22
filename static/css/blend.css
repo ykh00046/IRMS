@@ -271,6 +271,18 @@
 .rescale-applied-title { font-weight: 700; }
 .rescale-applied-item { white-space: nowrap; }
 
+/* 추가 계량 모달 — 큰 남은 양 숫자 중심 레이아웃. 기존 .ss-modal/*.btn 클래스 재사용. */
+.add-weigh-modal { text-align: center; min-width: 320px; }
+.add-weigh-remaining {
+  font-size: 2.5rem; font-weight: 800; color: #b45309; line-height: 1.1;
+  margin: 0.25rem 0 0.1rem;
+}
+.add-weigh-sub { font-size: 0.9rem; color: var(--muted, #6b7280); margin: 0 0 0.75rem; }
+.add-weigh-input-row { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 0.4rem; }
+.add-weigh-input-row .input { max-width: 9rem; }
+.add-weigh-input-row[hidden] { display: none; }
+.add-weigh-note { font-size: 0.78rem; }
+
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
