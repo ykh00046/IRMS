@@ -1037,6 +1037,32 @@
 
   // 승인/부재 모달 취소(Escape/overlay) — 보류 중인 증량 제안을 버린다. 초과 계량 상태는
   // 그대로라 다음 change/Enter 에서 다시 제안이 뜬다.
+  // 허용 편차를 +방향으로 벗어난 셀의 실제량을 모두 비운다 — 증량 제안/승인 거절
+  // (다시 계량) 시 초과 상태가 남아 누적되던 사고 방지(blend.js clearOverActuals 동일).
+  function clearOverContActuals() {
+    const tol = state.toleranceG;
+    let firstEl = null;
+    state.materials.forEach((_, i) => {
+      state.cells[i].forEach((cell, j) => {
+        const th = theoryFor(i, j);
+        if (cell.actual === "" || th == null) return;
+        const v = Number(cell.actual) - th;
+        if (v > tol + 1e-9) {
+          cell.actual = "";
+          const el = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
+          if (el) { el.value = ""; if (!firstEl) firstEl = el; }
+          updateCellVar(i, j);
+        }
+      });
+    });
+    updateContTotalLock();  // 셀 비움 후 잠금 상태 재평가(별도 합계 함수 없음)
+    if (firstEl) {
+      firstEl.focus();
+      try { firstEl.select(); } catch (_e) { /* noop */ }
+      notify("초과 계량 값을 비웠습니다 — 다시 계량하세요.", "warn");
+    }
+  }
+
   function cancelContRescaleApprove() {
     state.pendingContRescale = null;
     closeContRescaleApproveModal();
@@ -1566,8 +1592,16 @@
     const absenceSubmit = $("cont-rescale-absence-submit");
     if (absenceSubmit) absenceSubmit.addEventListener("click", submitContAbsenceProceed);
     const approveModal = $("cont-rescale-approve-modal");
+    // 바깥 클릭으로는 닫히지 않는다 — 미해소 초과 누적 방지(blend.js 와 동일 정책).
+    function dismissContApproveWithReweigh() {
+      state.pendingContRescale = null;
+      closeContRescaleApproveModal();
+      clearOverContActuals();
+    }
     if (approveModal) approveModal.addEventListener("click", (e) => {
-      if (e.target === approveModal) cancelContRescaleApprove();
+      if (e.target === approveModal) {
+        showContApproveError("승인, 부재로 진행, 또는 Esc(다시 계량) 중에서 선택하세요.");
+      }
     });
     // 3회 증량 차단 모달 — 확인만.
     const blockClose = $("cont-rescale-block-close");
@@ -1575,7 +1609,7 @@
     const blockModal = $("cont-rescale-block-modal");
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
-      if (approveModal && !approveModal.hidden) { cancelContRescaleApprove(); return; }
+      if (approveModal && !approveModal.hidden) { dismissContApproveWithReweigh(); return; }
       if (blockModal && !blockModal.hidden) { closeContRescaleBlockModal(); return; }
     });
     // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.

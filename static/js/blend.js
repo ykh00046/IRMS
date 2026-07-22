@@ -1359,6 +1359,30 @@
     closeShortageModal();
     if (idx != null) openAddWeighModal(idx);
   }
+  // 허용 편차를 +방향으로 벗어난 행의 실제량을 모두 비운다 — 증량 제안/승인을
+  // 거절(다시 계량)했을 때 초과 상태가 화면에 남아, 다음 자재로 넘어가며 누적되고
+  // 마지막 승인 한 번에 뭉뚱그려 재계산되던 사고 방지(현장 신고 2026-07-22).
+  function clearOverActuals() {
+    const tol = state.toleranceG;
+    let first = null;
+    state.items.forEach((it, i) => {
+      if (i === state.anchorIndex || it.actual_amount === "") return;
+      if (rowVariance(it) > tol + 1e-9) {
+        it.actual_amount = "";
+        const input = document.querySelector(`.blend-actual[data-idx="${i}"]`);
+        if (input) input.value = "";
+        updateRowVar(i);
+        if (first == null) first = i;
+      }
+    });
+    updateTotals();
+    if (first != null) {
+      const input = document.querySelector(`.blend-actual[data-idx="${first}"]`);
+      if (input) { input.focus(); if (input.select) input.select(); }
+      notify("초과 계량 값을 비웠습니다 — 다시 계량하세요.", "warn");
+    }
+  }
+
   function shortageChooseReweigh() {
     const idx = _shortageIdx;
     closeShortageModal();
@@ -2290,6 +2314,7 @@
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
       state.pendingRescale = null;
       closeRescaleModal();
+      clearOverActuals();  // 닫기만 하면 초과 상태가 남아 누적된다 — 즉시 해소.
     });
     const discardForce = $("discard-force");
     if (discardForce) discardForce.addEventListener("click", openRescaleApproveModal);
@@ -2304,12 +2329,24 @@
     });
     const absenceSubmit = $("rescale-absence-submit");
     if (absenceSubmit) absenceSubmit.addEventListener("click", submitAbsenceProceed);
+    // 승인 모달은 바깥 클릭으로 빠져나갈 수 없다 — 미해소 초과가 누적되는 사고 방지.
+    // 나가는 길은 [승인]/[부재로 진행]/[다시 계량](Esc 동일) 세 가지뿐.
+    function dismissApproveWithReweigh() {
+      if (_rescaleReauthPending) { cancelRescaleApprove(); return; }
+      state.pendingRescale = null;
+      closeRescaleApproveModal();
+      clearOverActuals();
+    }
     const approveModal = $("rescale-approve-modal");
     if (approveModal) approveModal.addEventListener("click", (e) => {
-      if (e.target === approveModal) cancelRescaleApprove();
+      if (e.target === approveModal) {
+        showApproveError("승인, 부재로 진행, 또는 [다시 계량] 중에서 선택하세요.");
+      }
     });
+    const approveReweigh = $("rescale-approve-reweigh");
+    if (approveReweigh) approveReweigh.addEventListener("click", dismissApproveWithReweigh);
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && approveModal && !approveModal.hidden) cancelRescaleApprove();
+      if (e.key === "Escape" && approveModal && !approveModal.hidden) dismissApproveWithReweigh();
     });
     // 3회 증량 차단 모달 — 확인만.
     const blockClose = $("rescale-block-close");

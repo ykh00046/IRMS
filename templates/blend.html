@@ -300,6 +300,7 @@
                   <input class="input" id="rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="rescale-absence-submit" type="button">부재로 진행</button>
+              <button class="btn" id="rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 기록은 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
             </div>
@@ -353,7 +354,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723i"></script>
+    <script src="/static/js/blend.js?v=20260723j"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
