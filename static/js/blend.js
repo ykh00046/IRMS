@@ -1255,17 +1255,23 @@
       if (v > 0) {
         // +방향(초과 계량): 증량 제안 모달.
         offerRescale();
-      } else {
-        // −방향(부족): 토스트만으론 지나치기 쉬워 팝업으로 부족량을 명시(2026-07-22).
-        // window.alert 는 포커스 복귀가 자연스럽고 입력 흐름을 확실히 멈춘다.
+      } else if (state.addModeIdx !== i) {
+        // −방향(부족): 팝업으로 부족량 명시 + '추가 계량' 제안(2026-07-22).
+        // 실수로 저울 영점을 눌러 값이 부족하게 찍힌 경우, 처음부터 재계량이 아니라
+        // 추가로 올리는 무게를 합산해 목표를 맞추면 된다 — 확인 시 그 행에 합산 입력을
+        // 연다(저울 PRINT 도 합산). 이미 합산 입력 중(addModeIdx)이면 팝업 생략.
         const shortage = Math.abs(v);
-        window.alert(
+        const wantAdd = window.confirm(
           `부족 계량: ${it.material_name}
 `
-          + `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g
+          + `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g — ${fmt(shortage, 2)} g 부족
+
 `
-          + `${fmt(shortage, 2)} g 을 더 넣으세요.`
+          + `[확인] 추가 계량으로 채우기 — 더 올리는 무게(입력 또는 저울 PRINT)가 현재 값에 합산됩니다.
+`
+          + `[취소] 처음부터 다시 계량`
         );
+        if (wantAdd) openAddInline(i);
       }
       return true;
     }

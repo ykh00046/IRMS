@@ -768,13 +768,15 @@
       if (v > 0) {
         offerContRescale(j);
       } else {
-        // 부족(-): 토스트만으론 지나치기 쉬워 팝업으로 부족량을 명시(2026-07-22).
+        // 부족(-): 팝업으로 부족량 명시. 영점 실수 등은 추가로 올린 무게를 더한
+        // '합계'를 다시 입력해 맞춘다(이어서 계량은 행별 합산 모드가 없어 합계 재입력 방식).
         window.alert(
           `부족 계량: ${state.materials[i].material_name} (로트 ${j + 1})
 `
-          + `이론 ${fmt(th)} g / 실제 ${fmt(Number(raw))} g
+          + `이론 ${fmt(th)} g / 실제 ${fmt(Number(raw))} g — ${fmt(Math.abs(v), 2)} g 부족
+
 `
-          + `${fmt(Math.abs(v), 2)} g 을 더 넣으세요.`
+          + `저울을 다시 올려 채운 뒤, 최종 무게(합계)를 이 칸에 다시 입력하세요.`
         );
       }
       return true;
