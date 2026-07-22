@@ -98,7 +98,7 @@
     $("visc-period-alert").hidden = true;
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
-    blendBody.appendChild(emptyRow(5, "반제품을 선택하면 배합 기록이 표시됩니다."));
+    blendBody.appendChild(emptyRow(6, "반제품을 선택하면 배합 기록이 표시됩니다."));
     $("visc-record-count").textContent = "0건";
     $("visc-blend-record").value = "";
     $("visc-selected-row").textContent = "반제품을 선택하세요.";
@@ -382,7 +382,7 @@
       ? `${records.length} / ${state.blendRecords.length}건`
       : "0건";
     if (!records.length) {
-      body.appendChild(emptyRow(5, "이 반제품의 배합 기록이 없습니다."));
+      body.appendChild(emptyRow(6, "이 반제품의 배합 기록이 없습니다."));
       return;
     }
     records.forEach((record) => {
@@ -394,8 +394,32 @@
       appendTextCell(row, record.worker || "-");
       appendTextCell(row, record.total_amount == null ? "-" : `${fmt(record.total_amount)} g`, "num");
       appendViscosityCell(row, record);
+      appendStatusCell(row, record);
       body.appendChild(row);
     });
+  }
+
+  // 상태 열 — 행별 판정을 별도 열로 상시 표시(값 옆 배지는 수십 행에서 안 보임 — 사용자 요청).
+  function appendStatusCell(row, record) {
+    const cell = document.createElement("td");
+    const linked = linkedReadingsForRecord(record);
+    if (!linked.length) {
+      cell.className = "muted";
+      cell.textContent = "-";
+      row.appendChild(cell);
+      return;
+    }
+    const status = statusForLot(linked[0].lot_no);
+    const badge = document.createElement("span");
+    if (status === "anomaly" || status === "warn") {
+      badge.className = `visc-status ${status}`;
+      badge.textContent = status === "anomaly" ? "이상" : "경고";
+    } else {
+      badge.className = "visc-status normal";
+      badge.textContent = "정상";
+    }
+    cell.appendChild(badge);
+    row.appendChild(cell);
   }
 
   function appendViscosityCell(row, record) {
@@ -415,14 +439,6 @@
     value.className = "visc-reading-value";
     value.textContent = fmt(reading.viscosity);
     cell.appendChild(value);
-    const status = statusForLot(reading.lot_no);
-    if (status === "anomaly" || status === "warn") {
-      const badge = document.createElement("span");
-      badge.className = `visc-status ${status}`;
-      badge.style.marginLeft = "6px";
-      badge.textContent = status === "anomaly" ? "이상" : "경고";
-      cell.appendChild(badge);
-    }
     if (reading.measured_date) {
       const date = document.createElement("span");
       date.className = "muted small";
