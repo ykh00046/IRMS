@@ -1229,6 +1229,10 @@
 
   function warnIfVariance(i) {
     const it = state.items[i];
+    // 증량 대기 행(추가 배지 표시 중)은 편차 경고 대상이 아니다 — 증량으로 이론량이
+    // 커져 생긴 '아직 안 넣은 양'이지 잘못 계량한 게 아니다(오탐 신고 2026-07-22:
+    // 정확히 계량한 행이 증량 직후 "-3.00g 초과"로 경고). 배지가 넣을 양을 안내한다.
+    if (state.addPending && state.addPending[i] != null) return false;
     const v = rowVariance(it);
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
@@ -1575,6 +1579,7 @@
     const badIdx = [];
     state.items.forEach((it, i) => {
       if (i === state.anchorIndex || it.actual_amount === "") return;
+      if (state.addPending && state.addPending[i] != null) return;  // 증량 대기 — 배지가 안내
       if (Math.abs(rowVariance(it)) > tol + 1e-9) badIdx.push(i);
     });
     if (!badIdx.length) return;
