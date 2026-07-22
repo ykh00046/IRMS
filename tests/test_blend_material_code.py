@@ -165,6 +165,42 @@ def test_material_usage_periods_prefers_materials_code_over_alias():
     }
 
 
+def test_material_usage_periods_resolves_code_across_name_normalization():
+    """자재명과 기록의 material_name 이 대소문자/공백만 달라도 materials.code 가 잡힌다(GAP).
+
+    자재 'HEMA (Lotte)'(code AS0055) 에 대해, 기록에는 공백이 다른 'HEMA(Lotte)' 로
+    남아도 normalize_token 키가 같아 1순위 materials.code 로 해석돼야 한다. 정규화 전
+    (raw strip 키)에는 매핑이 누락돼 erp_code 가 빈 값/하위 폴백으로 떨어졌다.
+    """
+    conn = _make_db()
+    conn.execute(
+        "INSERT INTO materials (name, unit_type, unit, category, code) "
+        "VALUES ('HEMA (Lotte)', 'weight', 'g', '원료', 'AS0055')"
+    )
+    # 기록 스냅샷의 이름은 공백이 다른 변형(HEMA(Lotte)).
+    _seed_usage(conn, "HEMA(Lotte)", material_code="")
+
+    res = bs.material_usage_periods(
+        conn, start_date="2026-07-01", end_date="2026-07-31"
+    )
+    assert len(res["items"]) == 1
+    assert res["items"][0]["erp_code"] == "AS0055"
+
+
+def test_material_code_map_keys_by_normalize_token():
+    """_material_code_map 은 normalize_token 키를 쓴다(해석 사슬 전반과 일치)."""
+    conn = _make_db()
+    conn.execute(
+        "INSERT INTO materials (name, unit_type, unit, category, code) "
+        "VALUES ('HEMA (Lotte)', 'weight', 'g', '원료', 'AS0055')"
+    )
+    mapping = bs._material_code_map(conn)
+    from src.db.queries import normalize_token
+
+    assert mapping.get(normalize_token("HEMA(Lotte)")) == "AS0055"
+    assert mapping.get(normalize_token("hema  (lotte)")) == "AS0055"
+
+
 def test_material_usage_periods_falls_back_to_alias_when_no_code():
     """code 없고 RM 별칭만 있으면 별칭(기존 동작 보존)."""
     conn = _make_db()

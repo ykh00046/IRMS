@@ -445,6 +445,140 @@ def test_existing_master_row_not_modified_on_assign():
     assert n == 1
 
 
+def test_create_material_force_move_audit_carries_new_material_id():
+    """BUG 수정: A6 force 이동의 material_code_cleared audit 이 새 자재 id 를 담는다.
+
+    종전엔 INSERT 가 audit 뒤라 moved_to_material_id=None 이었다. INSERT 를 앞으로
+    옮겨 new_id 를 채운다 — 이동 원본→대상 연결을 id 로 추적할 수 있어야 한다.
+    """
+    import json
+
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}9"
+    holder_name = f"이전보유{s}"
+    with get_connection() as conn:
+        holder_id = _seed_material(conn, holder_name, code=code)
+
+    new_name = f"이동대상{s}"
+    res = client.post(
+        "/api/materials",
+        json={"name": new_name, "code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    new_id = res.json()["id"]
+
+    with get_connection() as conn:
+        cleared = conn.execute(
+            "SELECT details_json FROM audit_logs WHERE action='material_code_cleared' "
+            "AND target_id=? ORDER BY id DESC LIMIT 1",
+            (str(holder_id),),
+        ).fetchone()
+    assert cleared is not None
+    details = json.loads(cleared["details_json"])
+    assert details["moved_to_material_id"] == new_id
+    assert details["moved_to_name"] == new_name
+
+
+def test_delete_material_cleans_orphan_manual_master():
+    """A5 삭제로 코드 참조가 사라지면 manual 마스터 유령 행이 정리된다."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}A"
+    name = f"고아자재{s}"
+
+    created = client.post("/api/materials", json={"name": name, "code": code}, headers=headers)
+    assert created.status_code == 200, created.text
+    mid = created.json()["id"]
+    with get_connection() as conn:
+        assert _master_row(conn, code) is not None  # manual 행 생성 확인
+
+    res = client.delete(f"/api/materials/{mid}", headers=headers)
+    assert res.status_code == 200, res.text
+    with get_connection() as conn:
+        assert _master_row(conn, code) is None  # 참조 소멸 → 정리됨
+
+
+def test_clear_material_code_cleans_manual_master_but_keeps_erp():
+    """A3 코드 해제: manual 마스터는 정리, ERP(source!='manual') 마스터는 보존."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    manual_code = f"AS{s}B"
+    erp_code = f"AS{s}C"
+    manual_name = f"수동{s}"
+    erp_name = f"ERP{s}"
+
+    m = client.post(
+        "/api/materials", json={"name": manual_name, "code": manual_code}, headers=headers
+    )
+    assert m.status_code == 200, m.text
+    mid_manual = m.json()["id"]
+
+    with get_connection() as conn:
+        _seed_master(conn, erp_code, erp_name, "material", source="erp")
+        mid_erp = _seed_material(conn, f"{erp_name}자재")
+    assign = client.put(
+        f"/api/materials/{mid_erp}/code", json={"code": erp_code}, headers=headers
+    )
+    assert assign.status_code == 200, assign.text
+
+    # 두 코드 모두 해제.
+    assert client.put(
+        f"/api/materials/{mid_manual}/code", json={"code": None}, headers=headers
+    ).status_code == 200
+    assert client.put(
+        f"/api/materials/{mid_erp}/code", json={"code": None}, headers=headers
+    ).status_code == 200
+
+    with get_connection() as conn:
+        assert _master_row(conn, manual_code) is None  # manual 정리됨
+        erp_row = _master_row(conn, erp_code)
+    assert erp_row is not None
+    assert erp_row["source"] == "erp"  # ERP 권위 데이터 보존
+
+
+def test_force_move_keeps_manual_master_since_code_still_used():
+    """A3 force 이동은 코드가 새 자재로 옮겨가 여전히 쓰이므로 manual 마스터를 지우지 않는다."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}D"
+    holder_name = f"보유{s}"
+
+    created = client.post(
+        "/api/materials", json={"name": holder_name, "code": code}, headers=headers
+    )
+    assert created.status_code == 200, created.text
+
+    with get_connection() as conn:
+        target_id = _seed_material(conn, f"이동받는{s}")
+    moved = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": True},
+        headers=headers,
+    )
+    assert moved.status_code == 200, moved.text
+
+    with get_connection() as conn:
+        assert _master_row(conn, code) is not None  # 코드 여전히 사용 중 → 보존
+
+
 def test_set_recipe_product_code_inserts_product_master_row():
     """(d) set_recipe_product_code(A4) + 새 product_code → master 행 추가(kind='product')."""
     client = _client()

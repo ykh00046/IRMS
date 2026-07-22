@@ -126,7 +126,7 @@ BRM 에는 서로 **다른 자격증명 공간**을 쓰는 세 인증 체계가 
   으로 리다이렉트. **`/admin/users` 만** 이 방식(`pages.py:admin_users_page`).
 - `_app_page_response` — **인증 확인 없이 렌더**. `/management`, `/dashboard`,
   `/insight`, `/status` 가 이 방식. 즉 화면 HTML/JS 자체는 누구나 받고, **보안은 그
-  뒤의 API 등급 게이트가 담당**한다(레시피 쓰기 = manager, 읽기 = 개방). §8 GAP-1 참고.
+  뒤의 API 등급 게이트가 담당**한다(레시피·점도 관리 쓰기 = manager, 읽기 = 개방). §8 GAP-1 참고.
 
 ---
 
@@ -195,7 +195,8 @@ BRM 은 공용 현장 PC 를 전제로 **역할마다 다른 유휴 정책**을 
 | `PATCH/DELETE /api/workers/*`, `/manager` | manager | 필수 | 없음 | 없음 |
 | 레시피 쓰기(`recipe_manager_routes`, `recipe_import`, `item_code`) | manager | 필수 | 없음 | 없음 |
 | 레시피/대시보드/점도 **읽기** | 없음(개방) | — (GET) | 없음 | 없음 |
-| 점도 쓰기(`POST/PATCH/DELETE /viscosity/*`) | **없음(개방)** | 필수 | 없음 | 없음 |
+| 점도 **측정 등록**(`POST /viscosity/readings`) | 없음(개방·현장) | 필수 | 없음 | 없음 |
+| 점도 **관리 쓰기**(제품 생성/수정, 측정 삭제, CSV export) | **manager**(정책 ⓑ) | 필수 | 없음 | 없음 |
 | `PUT /api/settings/scale-only-input` | manager | 필수 | 없음 | 없음 |
 | 관리자 사용자/서명/시트(`/api/admin/*`) | manager(라우터 전체) | 필수 | 없음 | 없음 |
 
@@ -319,11 +320,12 @@ loopback 이라 사설로 판정되므로, 공개 API 4종의 실질 방어는 *
 발급자가 의도와 다른 기록의 증량에 소비할 여지가 있다(저장 시 used=1 소비되므로 재사용
 불가). 감사로그가 있어 사후 추적은 가능. 위험 낮음.
 
-### GAP-5 (심각도 하) — 문서상 점도 권한과 코드 불일치
-프로젝트 메모리/CLAUDE 상 점도는 "등록=작업자, 설정=관리자" 로 기술되나, 코드상
-`op_router`/`mgr_router` **둘 다 무인증**(`viscosity_routes.py:5,48-52` 및 docstring
-"모두 무인증"). 제품 생성/삭제(`POST/DELETE /viscosity/products`)까지 무로그인 개방.
-공용 단말 개방 설계와는 일관되나, 문서화된 권한 정책과 어긋난다 — 의도 재확인 필요.
+### GAP-5 (심각도 하) — 문서상 점도 권한과 코드 불일치 — ✅ 해결(2026-07-22, 정책 ⓑ)
+"등록=작업자, 설정=관리자" 라는 문서 정책에 코드를 맞췄다. `op_router`(열람·측정 등록)는
+개방 유지, `mgr_router`(제품 생성/수정, 측정 삭제, CSV export)는 `api.py` include 에
+`dependencies=[Depends(require_access_level("manager"))]` 로 **책임자 강제**
+(`src/routers/api.py`, `viscosity_routes.py` docstring 갱신). 이제 문서 정책과 서버 강제가
+일치한다. 회귀 방지 `tests/test_viscosity.py` 의 anonymous 거부/개방 유지 테스트.
 
 ### POLISH-1 (심각도 정보) — 잔존 주석의 수명값 불일치
 `static/js/blend.js:2287` 주석이 "서버 유휴 12h" 라 하지만 실제

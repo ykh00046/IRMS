@@ -450,6 +450,139 @@ def test_viscosity_page_open_without_login():
     assert client.cookies.get("csrftoken")
 
 
+# ── GAP-3: anomaly_spike 완화 게이트 ────────────────────────────
+def test_period_anomaly_spike_gated_to_coarse():
+    """일/주 단위에서는 anomaly_spike 가 뜨지 않고 월/분기/연에서만 뜬다(GAP-3).
+
+    mean_shift 만 coarse 게이트에 있고 anomaly_spike 는 제한이 없어, 일/주 조회 시
+    한 버킷에 이상 2건만 몰려도 경보가 뜨던 과민을 mean_shift 와 동일하게 막는다.
+    """
+    periods = [
+        {"period": "2026-01-01", "anomaly_count": 0, "mean_delta": None},
+        {"period": "2026-01-02", "anomaly_count": 3, "mean_delta": 0.0},
+    ]
+    for gran in ("day", "week"):
+        alerts = vs._period_alerts(periods, 1.0, gran)
+        assert not any(a["type"] == "anomaly_spike" for a in alerts), gran
+    for gran in ("month", "quarter", "year"):
+        alerts = vs._period_alerts(periods, 1.0, gran)
+        assert any(a["type"] == "anomaly_spike" for a in alerts), gran
+
+
+# ── POLISH-2: 경고 밴드 붕괴 ─────────────────────────────────────
+def test_warn_band_collapses_when_sigma_k_le_warn_sigma():
+    """sigma_k <= WARN_SIGMA(2) 이면 경고 밴드(uwl/lwl)가 None 이 되어 경고가 사라진다.
+
+    kσ(UCL) 가 2σ(UWL) 안쪽/동일이라 경고가 이상보다 바깥에 놓이는 역전을 차단.
+    """
+    conn = _make_db()
+    p2 = _add_product(conn, "PBK2", sigma_k=2)
+    _seed(conn, p2["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0])
+    res2 = vs.analyze_product(conn, p2)
+    assert res2["stats"]["std"] > 0
+    assert res2["stats"]["uwl"] is None
+    assert res2["stats"]["lwl"] is None
+    # 경고(warn) 판정 자체가 나오지 않는다 — 정상/이상만.
+    assert all(r["status"] != "warn" for r in res2["readings"])
+
+    # 대조군: sigma_k=3 이면 경고 밴드가 존재한다.
+    p3 = _add_product(conn, "PBK3", sigma_k=3)
+    _seed(conn, p3["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0], start_seq=100)
+    res3 = vs.analyze_product(conn, p3)
+    assert res3["stats"]["uwl"] is not None
+    assert res3["stats"]["lwl"] is not None
+
+
+# ── 정책 ⓑ: management 성격 점도 쓰기 서버 강제 ──────────────────
+def _visc_client():
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    return TestClient(mainmod.app)
+
+
+def test_viscosity_manager_writes_denied_when_anonymous():
+    """제품 생성/수정, 측정 삭제, CSV export 는 비로그인에서 거부(401/403)."""
+    client = _visc_client()
+    # CSRF 토큰만 확보(로그인 안 함) — CSRF 를 통과해도 인증 게이트에서 막혀야 한다.
+    client.get("/viscosity")
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    r = client.post("/api/viscosity/products", json={"code": "ZZ", "name": "ZZ"}, headers=headers)
+    assert r.status_code in (401, 403), r.text
+    r = client.patch("/api/viscosity/products/1", json={"name": "x"}, headers=headers)
+    assert r.status_code in (401, 403), r.text
+    r = client.delete("/api/viscosity/readings/1", headers=headers)
+    assert r.status_code in (401, 403), r.text
+    # export 는 GET(CSRF 무관) — 인증만으로 막힌다.
+    r = client.get("/api/viscosity/products/1/export")
+    assert r.status_code in (401, 403), r.text
+
+
+def test_viscosity_reads_and_registration_stay_open():
+    """정책 ⓑ 이후에도 조회(overview/products)는 무로그인 200 유지."""
+    client = _visc_client()
+    assert client.get("/api/viscosity/overview").status_code == 200
+    assert client.get("/api/viscosity/products").status_code == 200
+
+
+def test_viscosity_export_status_uses_year_filter():
+    """GAP-2: CSV export 가 year 파라미터를 analyze_product 로 넘겨 화면과 같은
+    연도 표본으로 판정·필터한다 — year 지정 시 해당 연도 측정만 CSV 에 나온다."""
+    import csv as _csv
+    import io as _io
+    import uuid
+
+    client = _visc_client()
+    login = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    assert login.status_code == 200, login.text
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    product = "YRP" + uuid.uuid4().hex[:6].upper()
+    header_row = "\t".join(["반제품명", "원료A", "원료B"])
+    data_row = "\t".join([product, "60", "40"])
+    imported = client.post(
+        "/api/recipes/import", json={"raw_text": "\n".join([header_row, data_row])},
+        headers=headers,
+    )
+    assert imported.status_code == 200, imported.text
+    created = client.post(
+        "/api/viscosity/products", json={"code": product, "name": product}, headers=headers
+    )
+    assert created.status_code in (200, 201), created.text
+    pid = created.json()["id"]
+
+    # 2025 3건 + 2026 2건 등록(등록 경로는 개방이지만 세션 있어도 무방).
+    seq = 0
+    for d in ("2025-03-01", "2025-03-02", "2025-03-03", "2026-04-01", "2026-04-02"):
+        seq += 1
+        res = client.post("/api/viscosity/readings", json={
+            "product_id": pid, "lot_no": f"{product}L{seq}", "viscosity": 50.0 + seq,
+            "measured_date": d,
+        }, headers=headers)
+        assert res.status_code == 200, res.text
+
+    def _years(resp):
+        assert resp.status_code == 200, resp.text
+        reader = _csv.DictReader(_io.StringIO(resp.text))
+        return sorted({row["measured_date"][:4] for row in reader})
+
+    assert _years(client.get(f"/api/viscosity/products/{pid}/export?year=2026")) == ["2026"]
+    assert _years(client.get(f"/api/viscosity/products/{pid}/export?year=2025")) == ["2025"]
+    # year 미지정 = 전체 연도.
+    assert _years(client.get(f"/api/viscosity/products/{pid}/export")) == ["2025", "2026"]
+
+
 def test_direct_registration_stores_the_date_used_for_judgement(monkeypatch):
     """감사 F-9: 라우트가 판정에 쓴 측정일이 그대로 저장돼야 한다 (폴백 1회).
 

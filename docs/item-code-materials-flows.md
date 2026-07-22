@@ -182,7 +182,8 @@ category='미분류', is_active=1`.
 대시보드에 자재 불출량을 넘긴다. 각 항목의 `erp_code` 는 `blend_service._resolve_erp_code`
 (`blend_service.py:237`)가 결정하며 우선순위(P4)는:
 
-1. **`materials.code`** — 정식 ERP 품목코드(최우선). `_material_code_map`(`:~200`)이 자재명→code.
+1. **`materials.code`** — 정식 ERP 품목코드(최우선). `_material_code_map`(`:~200`)이
+   `normalize_token(자재명)→code` (대소문자/공백 변형에도 매칭; §8 GAP 해결).
 2. **RM 별칭** — `material_aliases` 중 `RM` 으로 시작하는 별칭(`_erp_code_map :210`).
 3. **RM 형태 저장 코드** — legacy `code` 인자(materials.category 였던 값)가 `RM…` 이면.
 4. **RM 형태 자재명** — 이름 자체가 `RM…` 이면.
@@ -231,29 +232,33 @@ category='미분류', is_active=1`.
 
 ## 8. 검토 중 발견한 결함/갭 (코드 수정 없음 — 보고용)
 
-### BUG — 코드 이동 이력이 신규 등록 경로에서 대상 id 를 잃음
-`item_code_routes.py:486` (A6 `create_material`, force 이동)
-- A3(set_material_code)의 이동 audit 은 `material_code_cleared.details.moved_to_material_id` 에
-  대상 material_id 를 넣는다(`:307`). 그러나 A6 은 INSERT 가 audit **뒤**에 일어나 new_id 가 아직
-  없어 `moved_to_material_id: None` 로 남긴다(`:486`). 이동 원본→대상 연결을 id 로 추적할 수 없다
-  (이름 `moved_to_name` 만 있음). audit 만으로 "이 코드가 어디로 갔는가"를 id 로 잇는 자동 추적에
-  공백. → INSERT 를 audit 앞으로 옮기고 new_id 를 채우면 해소.
+### BUG — 코드 이동 이력이 신규 등록 경로에서 대상 id 를 잃음 — ✅ 해결(2026-07-22)
+`item_code_routes.py` (A6 `create_material`, force 이동)
+- 이제 기존 보유 자재의 code 를 NULL 로 비우는 UPDATE 는 그대로 INSERT 앞에 두되(부분 UNIQUE
+  회피), `material_code_cleared` **audit 을 INSERT 뒤로 옮겨** `moved_to_material_id` 에 새 자재
+  `new_id` 를 채운다. 이동 원본→대상을 id 로 추적 가능. 회귀 방지 `test_material_create.py::
+  test_create_material_force_move_audit_carries_new_material_id`.
+  (과거: INSERT 가 audit 뒤라 `moved_to_material_id: None` 이었다.)
 
-### GAP — 마스터 orphan: 자재 삭제/해제 후 manual 행 잔존
-`item_code_routes.py:531` (A5 delete), `:313` (A3 해제/이동)
-- `_ensure_master_entry` 는 부여 시 `source='manual'` 행을 만들지만, 이후 그 자재가 **삭제**되거나
-  코드가 **해제/이동**돼도 마스터 manual 행은 지워지지 않는다. 그 코드는 계속 A1 제안 검색
-  (`search_item_code_master`)과 임포트 미리보기 인덱스(`_load_master_index`)에 남아, 실제로는 어떤
-  자재도 쓰지 않는 코드를 "존재하는 품목"으로 제안한다. ERP 임포트분(authoritative)은 유지가
-  옳지만 manual 행은 참조 소멸 시 정리 후보. (설계상 의도일 수 있으나 문서화되지 않음.)
+### GAP — 마스터 orphan: 자재 삭제/해제 후 manual 행 잔존 — ✅ 해결(2026-07-22)
+`item_code_routes.py` (A5 delete, A3 해제/이동) — 헬퍼 `_cleanup_orphan_master`
+- 자재가 **삭제**(A5)되거나 코드가 **해제/다른 코드로 교체**(A3)되어 그 코드를
+  `materials.code`·`recipes.product_code` 어디에서도 안 쓰게 되면, `source='manual'` 마스터 행을
+  삭제한다. **ERP 임포트분(source != 'manual')은 권위 데이터라 건드리지 않는다.** force 이동은
+  코드가 새 자재로 옮겨가 여전히 쓰이므로 정리 대상이 아니다. 마이그 전 DB 는 조용히 무시.
+  회귀 방지 `test_material_create.py::test_delete_material_cleans_orphan_manual_master`,
+  `::test_clear_material_code_cleans_manual_master_but_keeps_erp`,
+  `::test_force_move_keeps_manual_master_since_code_still_used`.
 
-### GAP — erp_code 해석 키가 정규화 불일치
-`blend_service.py:207` (`_material_code_map`) ↔ `:251` (`_resolve_erp_code`)
-- `_material_code_map` 은 `materials.name.strip()` **원문·대소문자 그대로** 를 키로 만들고,
-  `_resolve_erp_code` 는 `blend_details.material_name` 원문으로 `.get(name)` 한다. 반면 마스터
-  매칭 전반은 `normalize_token`(공백·기호 제거, 대문자)을 쓴다. 기록의 material_name 이 자재명과
-  대소문자/내부 공백만 달라도(예: `HEMA (Lotte)` vs `HEMA(Lotte)`) **1순위 materials.code 매핑이
-  누락**되어 우선순위가 RM 별칭 등 하위로 떨어진다. → 두 맵도 `normalize_token` 키로 통일 권장.
+### GAP — erp_code 해석 키가 정규화 불일치 — ✅ 해결(2026-07-22)
+`blend_service.py` (`_material_code_map` ↔ `_resolve_erp_code`)
+- `_material_code_map` 이 이제 `normalize_token(name)`(대문자화 + 공백·기호 제거)을 키로 만들고,
+  `_resolve_erp_code` 도 `normalize_token(name)`으로 조회한다 — 마스터 매칭 전반과 같은 정규화.
+  기록의 material_name 이 자재명과 대소문자/내부 공백만 달라도(`HEMA (Lotte)` vs `HEMA(Lotte)`)
+  1순위 materials.code 매핑이 잡힌다. 회귀 방지 `test_blend_material_code.py::
+  test_material_usage_periods_resolves_code_across_name_normalization`,
+  `::test_material_code_map_keys_by_normalize_token`.
+  (별칭 맵 `_erp_code_map` 은 이번 범위 밖 — 원문 name 키 유지.)
 
 ### GAP — 신규 등록 중복 검사가 별칭·정규화를 보지 않음
 `item_code_routes.py:449-457` (A6 `create_material`)

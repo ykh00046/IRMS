@@ -769,7 +769,17 @@
 
   function exportCsv() {
     if (!state.currentId) return;
-    window.location.assign(`/api/viscosity/products/${state.currentId}/export`);
+    // GAP-2: CSV 판정을 화면과 같은 필터(연도/반응기)로 맞추기 위해 현재 state 를 쿼리로
+    // 넘긴다. 직접 다운로드(GET 내비게이션)라 CSRF 헤더는 불필요하고, 관리 세션 쿠키가
+    // export 의 책임자 강제(정책 ⓑ)를 통과시킨다.
+    const params = new URLSearchParams();
+    if (state.year !== null && state.year !== undefined) params.set("year", String(state.year));
+    if (state.reactor !== null && state.reactor !== undefined) {
+      params.set("reactor", String(state.reactor));
+    }
+    const qs = params.toString();
+    const url = `/api/viscosity/products/${state.currentId}/export${qs ? `?${qs}` : ""}`;
+    window.location.assign(url);
   }
 
   function bind() {

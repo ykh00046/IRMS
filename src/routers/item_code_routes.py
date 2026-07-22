@@ -153,6 +153,38 @@ def _ensure_master_entry(
         pass
 
 
+def _cleanup_orphan_master(connection: sqlite3.Connection, code: Any) -> None:
+    """코드가 어느 자재/반제품에도 더 이상 안 쓰이면 manual 마스터 행을 정리한다.
+
+    _ensure_master_entry 가 코드 부여 시 source='manual' 행을 보충하는데, 그 코드가
+    자재 삭제(A5)·해제/이동(A3)으로 어디에도 안 남으면 A1 제안 검색·임포트 미리보기
+    인덱스에 '유령 코드'로 계속 뜬다. 참조가 사라진 manual 행만 지워 이를 막는다.
+
+    - ERP 임포트분(source != 'manual')은 권위(authoritative) 데이터라 절대 건드리지 않는다.
+    - materials.code · recipes.product_code 어느 한쪽이라도 아직 코드를 쥐고 있으면 보존.
+    - 마이그 전 DB(테이블/컬럼 없음)는 조용히 무시(_ensure_master_entry 와 동일 방어).
+    """
+    if not code:
+        return
+    try:
+        holder = connection.execute(
+            "SELECT 1 FROM materials WHERE code = ? LIMIT 1", (code,)
+        ).fetchone()
+        if holder:
+            return
+        holder = connection.execute(
+            "SELECT 1 FROM recipes WHERE product_code = ? LIMIT 1", (code,)
+        ).fetchone()
+        if holder:
+            return
+        connection.execute(
+            "DELETE FROM item_code_master WHERE code = ? AND source = 'manual'",
+            (code,),
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 def create_item_code_router() -> APIRouter:
     router = APIRouter()
 
@@ -310,6 +342,7 @@ def create_item_code_router() -> APIRouter:
                     )
                     moved_from_name = other["name"]
 
+            old_code = material_row["code"]
             connection.execute(
                 "UPDATE materials SET code = ? WHERE id = ?", (code, material_id)
             )
@@ -319,6 +352,12 @@ def create_item_code_router() -> APIRouter:
                 _ensure_master_entry(
                     connection, code, material_row["name"], "material"
                 )
+
+            # 이 자재가 쥐고 있던 옛 코드가 풀렸다면(해제 또는 다른 코드로 교체) 참조가
+            # 사라진 manual 마스터 행을 정리한다. force 이동으로 비운 다른 자재의 코드는
+            # 곧바로 이 자재에 재부여되므로 여전히 쓰여 정리 대상이 아니다.
+            if old_code and old_code != code:
+                _cleanup_orphan_master(connection, old_code)
 
             # master_name 은 참고용 — 마스터 조회 실패는 무시하고 null.
             master_name: str | None = None
@@ -458,7 +497,13 @@ def create_item_code_router() -> APIRouter:
 
             # code 중복 — 다른 자재가 이미 쓰고 있으면 409(자재명 포함). A3 과 동일 규칙.
             # is_active 필터 없음(비활성도 이동 대상). force=true 면 코드를 이동.
+            # 기존 보유 자재의 code 를 NULL 로 비우는 UPDATE 는 INSERT 앞에 있어야 한다
+            # (materials.code 부분 UNIQUE — 새 행이 같은 코드를 넣기 전에 비워야 충돌 없음).
+            # 다만 material_code_cleared audit 은 INSERT 뒤로 미뤄, 새 자재 id 를
+            # moved_to_material_id 에 담는다(BUG: 종전엔 INSERT 전이라 None 이었다).
             moved_from_name: str | None = None
+            cleared_other_id: int | None = None
+            cleared_other_name: str | None = None
             if code is not None:
                 other = connection.execute(
                     "SELECT id, name FROM materials WHERE code = ? LIMIT 1", (code,)
@@ -473,19 +518,8 @@ def create_item_code_router() -> APIRouter:
                         "UPDATE materials SET code = NULL WHERE code = ?",
                         (code,),
                     )
-                    write_audit_log(
-                        connection,
-                        action="material_code_cleared",
-                        actor=current_user,
-                        target_type="material",
-                        target_id=other["id"],
-                        target_label=other["name"],
-                        details={
-                            "code": code,
-                            "moved_to_name": name,
-                            "moved_to_material_id": None,
-                        },
-                    )
+                    cleared_other_id = other["id"]
+                    cleared_other_name = other["name"]
                     moved_from_name = other["name"]
 
             cursor = connection.execute(
@@ -500,6 +534,22 @@ def create_item_code_router() -> APIRouter:
             # 새 코드면 item_code_master 에도 manual 행을 채운다(재임포트 면역).
             if code is not None:
                 _ensure_master_entry(connection, code, name, "material")
+
+            # 이동 audit — 이제 new_id 가 있으므로 moved_to_material_id 를 채운다.
+            if cleared_other_id is not None:
+                write_audit_log(
+                    connection,
+                    action="material_code_cleared",
+                    actor=current_user,
+                    target_type="material",
+                    target_id=cleared_other_id,
+                    target_label=cleared_other_name,
+                    details={
+                        "code": code,
+                        "moved_to_name": name,
+                        "moved_to_material_id": new_id,
+                    },
+                )
 
             write_audit_log(
                 connection,
@@ -580,6 +630,9 @@ def create_item_code_router() -> APIRouter:
             connection.execute(
                 "DELETE FROM materials WHERE id = ?", (material_id,)
             )
+
+            # 삭제로 코드 참조가 사라졌으면 manual 마스터 유령 행 정리(ERP 행은 보존).
+            _cleanup_orphan_master(connection, deleted_code)
 
             write_audit_log(
                 connection,

@@ -47,6 +47,17 @@ def _parse_events(raw: Any) -> list[dict[str, Any]]:
     return [e for e in parsed if isinstance(e, dict)]
 
 
+# 개방 요약(/blend/rescales/summary)에서 가릴 개인정보 성격 필드(정책 ⓑ). 승인 책임자
+# 표시명(approver)과 부재 진행 사유(absence_reason)는 무로그인 화면에 노출하지 않는다.
+# 책임자 전용 unacked 엔드포인트는 전체 detail 을 그대로 유지한다.
+_SUMMARY_PRIVATE_EVENT_KEYS = ("approver", "absence_reason")
+
+
+def _strip_private_event(event: dict[str, Any]) -> dict[str, Any]:
+    """개방 요약용으로 이벤트에서 approver/absence_reason 을 제거한 사본을 반환."""
+    return {k: v for k, v in event.items() if k not in _SUMMARY_PRIVATE_EVENT_KEYS}
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
@@ -125,6 +136,8 @@ def build_router() -> APIRouter:
     # blend_records 목록/상세(blend_service·blend_routes)는 다른 에이전트가 편집 중이라
     # 그 응답에 rescale 필드를 얹지 않고, 여기서 rescale_count>0 인 기록만 별도로 노출한다.
     # 무로그인 개방 화면(/status)이 소비하므로 권한 의존성을 두지 않는다.
+    # 개방 payload 라 이벤트의 approver(책임자명)·absence_reason(부재 사유)은 가린다(정책 ⓑ).
+    # 상세가 필요한 책임자는 /blend/rescales/unacked(책임자 전용)에서 전체를 본다.
     @router.get("/blend/rescales/summary")
     def rescales_summary(
         connection: sqlite3.Connection = Depends(get_db),
@@ -143,7 +156,10 @@ def build_router() -> APIRouter:
                 "id": int(r["id"]),
                 "rescale_count": int(r["rescale_count"] or 0),
                 "rescale_unacked": bool(r["rescale_unacked"]),
-                "rescale_events": _parse_events(r["rescale_events_json"]),
+                "rescale_events": [
+                    _strip_private_event(e)
+                    for e in _parse_events(r["rescale_events_json"])
+                ],
             }
             for r in rows
         ]

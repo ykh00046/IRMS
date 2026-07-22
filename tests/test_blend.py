@@ -761,6 +761,8 @@ def test_reactor_required_route_and_settings_patch():
     from fastapi.testclient import TestClient
 
     client = TestClient(mainmod.app)
+    # 점도 제품 생성/수정은 정책 ⓑ 로 책임자 강제 — 책임자 세션으로 로그인한다.
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
     client.get("/viscosity")  # csrftoken 쿠키 확보
     token = client.cookies.get("csrftoken")
     headers = {"x-csrftoken": token} if token else {}

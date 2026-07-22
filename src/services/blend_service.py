@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from ..db.queries import normalize_token
 from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
 
 
@@ -193,10 +194,14 @@ def get_recipe_for_blend(
 
 
 def _material_code_map(connection: sqlite3.Connection) -> dict[str, str]:
-    """자재명 → materials.code(ERP 품목코드) 매핑. P4 최우선 ERP 코드 출처.
+    """normalize_token(자재명) → materials.code(ERP 품목코드) 매핑. P4 최우선 ERP 코드 출처.
 
     구버전 DB(materials.code 컬럼 없음)는 빈 맵 폴백 — recipe_tolerance_g 의
     OperationalError 방어 패턴과 동일. NULL 코드는 제외(미부여=빈 값).
+
+    키는 normalize_token(대문자화 + 공백/기호 제거)으로 잡는다 — 마스터 매칭 전반과
+    같은 정규화. 기록의 material_name 이 자재명과 대소문자/내부 공백만 달라도(예:
+    'HEMA (Lotte)' vs 'HEMA(Lotte)') 1순위 materials.code 매핑이 누락되지 않게 한다(GAP).
     """
     try:
         rows = connection.execute(
@@ -204,7 +209,11 @@ def _material_code_map(connection: sqlite3.Connection) -> dict[str, str]:
         ).fetchall()
     except sqlite3.OperationalError:  # code 컬럼이 없는 구버전/테스트 DB
         return {}
-    return {(r["name"] or "").strip(): (r["code"] or "").strip() for r in rows if r["code"]}
+    return {
+        normalize_token(r["name"] or ""): (r["code"] or "").strip()
+        for r in rows
+        if r["code"] and (r["name"] or "").strip()
+    }
 
 
 def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
@@ -246,9 +255,9 @@ def _resolve_erp_code(
     materials.code 가 도입되기 전 화면 '자재코드'는 materials.category(분류) 였고,
     이 인자 `code` 는 그 legacy 값을 받는다 — RM 형태인 경우에만 후보로 쓴다.
     """
-    # 1) materials.code — 정식 ERP 품목코드(P4 최우선)
+    # 1) materials.code — 정식 ERP 품목코드(P4 최우선). 맵과 같은 정규화 키로 조회.
     if material_code_map is not None:
-        mc = material_code_map.get(name, "")
+        mc = material_code_map.get(normalize_token(name or ""), "")
         if mc:
             return mc
     # 2) RM 별칭

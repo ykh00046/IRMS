@@ -224,3 +224,42 @@ def test_summary_lists_only_rescaled_records():
     assert by_id[rid]["rescale_count"] == 2
     assert by_id[rid]["rescale_unacked"] is True
     assert isinstance(by_id[rid]["rescale_events"], list)
+
+
+# ---------------- 7. 개방 summary 개인정보 마스킹(정책 ⓑ) ----------------
+
+
+def test_summary_strips_approver_and_absence_reason_but_unacked_keeps_them():
+    """개방 summary 는 approver(책임자명)/absence_reason(부재 사유)을 가린다.
+
+    책임자 전용 unacked 엔드포인트는 전체 detail 을 그대로 유지한다(정책 ⓑ 프라이버시).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    product = f"RESCTEST{_uid()}"
+    events = [
+        {"before_total": 24000, "after_total": 25000, "approver": "책임자김"},
+        {"before_total": 24000, "after_total": 25500, "absence_reason": "야간 무인"},
+    ]
+    with get_connection() as conn:
+        rid = _seed_record(conn, product=product, unacked=1, count=2, events=events)
+
+    # 개방 summary — 개인정보 필드 제거, 수치(before/after)는 유지.
+    res = client.get("/api/blend/rescales/summary")
+    assert res.status_code == 200, res.text
+    item = next(it for it in res.json()["items"] if it["id"] == rid)
+    for ev in item["rescale_events"]:
+        assert "approver" not in ev
+        assert "absence_reason" not in ev
+    assert item["rescale_events"][0]["after_total"] == 25000
+
+    # 책임자 unacked — 전체 detail 유지.
+    res2 = client.get("/api/blend/rescales/unacked", headers=headers)
+    assert res2.status_code == 200, res2.text
+    item2 = next(it for it in res2.json()["items"] if it["id"] == rid)
+    joined = json.dumps(item2["rescale_events"], ensure_ascii=False)
+    assert "책임자김" in joined
+    assert "야간 무인" in joined

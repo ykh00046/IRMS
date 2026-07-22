@@ -1,21 +1,25 @@
 """합성 점도 등록·추세·이상 분석 라우트.
 
-접근: 로그인 없이 누구나 열람·등록·설정 가능(사내 공용 단말 운영 편의). 등록/변경
-시 로그인 사용자가 있으면 그 이름으로, 없으면 '현장' 으로 created_by/audit 에 기록.
-(op_router/mgr_router 둘 다 무인증 — 코드 구조 유지를 위해 두 라우터로 분리만 유지)
+접근(정책 ⓑ, 2026-07-22):
+  - op_router(열람·측정 등록): 로그인 없이 누구나 — 사내 공용 단말 현장 등록 편의.
+    등록 시 로그인 사용자가 있으면 그 이름으로, 없으면 '현장' 으로 created_by/audit 기록.
+  - mgr_router(제품 생성/수정, 측정 삭제, CSV export): 관리(management) 성격의 쓰기라
+    책임자 권한을 서버에서 강제한다. 의존성은 api.py 에서 mgr_router include 시
+    require_access_level("manager") 로 건다(라우터 단위 wiring). 화면은 설정/삭제 버튼을
+    can_manage 로 숨기므로, 관리 세션에서는 이 강제가 투명하다.
 
 Plan:   docs/01-plan/features/viscosity-analysis.plan.md
 Design: docs/02-design/features/viscosity-analysis.design.md
 
-Endpoints (모두 무인증):
-    GET    /viscosity/overview
-    GET    /viscosity/products
-    GET    /viscosity/products/{id}             분석 포함
-    POST   /viscosity/readings
-    POST   /viscosity/products
-    PATCH  /viscosity/products/{id}
-    DELETE /viscosity/readings/{id}
-    GET    /viscosity/products/{id}/export      CSV
+Endpoints:
+    GET    /viscosity/overview                  (개방)
+    GET    /viscosity/products                  (개방)
+    GET    /viscosity/products/{id}             분석 포함 (개방)
+    POST   /viscosity/readings                  (개방 — 현장 등록)
+    POST   /viscosity/products                  (책임자)
+    PATCH  /viscosity/products/{id}             (책임자)
+    DELETE /viscosity/readings/{id}             (책임자)
+    GET    /viscosity/products/{id}/export      CSV (책임자)
 """
 
 import csv
@@ -46,8 +50,9 @@ def _require_product(connection: sqlite3.Connection, product_id: int) -> dict[st
 
 
 def build_router() -> tuple[APIRouter, APIRouter]:
-    # 점도 화면은 로그인 없이 누구나 열람·등록·설정 가능(사내 공용 단말 운영 편의).
-    # 등록/변경 시 로그인 사용자가 있으면 그 이름으로, 없으면 '현장' 으로 기록.
+    # op_router: 열람·측정 등록은 로그인 없이 누구나(현장 편의). 등록 시 로그인 사용자가
+    # 있으면 그 이름으로, 없으면 '현장' 으로 기록. mgr_router: 제품 설정·측정 삭제·export 는
+    # 책임자 전용 — api.py 에서 require_access_level("manager") 의존성을 라우터에 건다(정책 ⓑ).
     op_router = APIRouter()
     mgr_router = APIRouter()
 
@@ -280,10 +285,20 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     @mgr_router.get("/viscosity/products/{product_id}/export")
     def viscosity_export(
         product_id: int,
+        year: int | None = None,
+        reactor: int | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
         product = _require_product(connection, product_id)
-        analysis = viscosity_service.analyze_product(connection, product)
+        # GAP-2: CSV 의 status 는 화면과 같은 필터(연도/반응기)로 판정해야 한다. year/reactor
+        # 없이 전 연도 표본으로 판정하면 같은 측정이 화면=정상, CSV=경고/이상으로 갈리는
+        # 불일치가 생긴다(제품별로 연도마다 점도 대역이 다르다는 이 도메인 전제와 상충).
+        # product 상세 라우트와 동일하게 reactor 는 1~4 밖이면 무시.
+        if reactor is not None and reactor not in (1, 2, 3, 4):
+            reactor = None
+        analysis = viscosity_service.analyze_product(
+            connection, product, year=year, reactor=reactor
+        )
 
         def _csv_safe(value: Any) -> Any:
             if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):

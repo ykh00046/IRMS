@@ -246,8 +246,13 @@ def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, A
     if center is not None and std > 0:
         ucl = center + sigma_k * std
         lcl = center - sigma_k * std
-        uwl = center + WARN_SIGMA * std
-        lwl = center - WARN_SIGMA * std
+        # 경고 밴드 붕괴 방지(POLISH-2): sigma_k <= WARN_SIGMA 면 kσ(UCL) 가 2σ(UWL)
+        # 안쪽에 놓여, 2σ 초과 값이 warn 이 아니라 곧바로 anomaly 로 걸려 '경고' 가
+        # 실질적으로 사라진다(_classify 는 anomaly 를 먼저 반환). 이 경우 경고 밴드를
+        # 아예 없애(None) 두어 '경고 > 이상' 역전을 원천 차단한다 — 경고 없이 정상↔이상만.
+        if sigma_k > WARN_SIGMA:
+            uwl = center + WARN_SIGMA * std
+            lwl = center - WARN_SIGMA * std
 
     return {
         "n": n,
@@ -418,7 +423,10 @@ def _period_alerts(
 ) -> list[dict[str, Any]]:
     """기간 집계에서 이상 급증 / 평균 이동(드리프트) 경보를 추출.
 
-    - anomaly_spike: 직전 기간 대비 이상 건수가 2건 이상으로 늘어난 기간
+    - anomaly_spike: 직전 기간 대비 이상 건수가 2건 이상으로 늘어난 기간.
+      mean_shift 와 동일하게 월/분기/연도 단위에서만 계산 — 일/주 단위는 구간당
+      측정이 1~2건이라 하루에 이상 2건만 몰려도 경보가 떠 과민했다(GAP-3). 완화
+      게이트를 두 경보에 일관 적용한다.
     - mean_shift   : 전기대비 평균변화가 전체 σ 이상인 기간(공정 평균 드리프트).
       월/분기/연도 단위에서만 계산 — 일/주 단위는 구간이 측정 1~2건이라 평균이
       사실상 개별 측정값이고, 정상 등락(±1σ)이 전부 경보로 잡히는 과민 문제가
@@ -429,7 +437,11 @@ def _period_alerts(
     prev: dict[str, Any] | None = None
     for p in periods:
         if prev is not None:
-            if p["anomaly_count"] >= 2 and p["anomaly_count"] > prev["anomaly_count"]:
+            if (
+                coarse
+                and p["anomaly_count"] >= 2
+                and p["anomaly_count"] > prev["anomaly_count"]
+            ):
                 alerts.append({
                     "period": p["period"],
                     "type": "anomaly_spike",

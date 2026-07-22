@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from ..auth import require_access_level
 from ..db import utc_now_text
 from . import (
     admin_routes,
@@ -56,8 +57,13 @@ def build_router() -> APIRouter:
     router.include_router(recipe_op_router)
     router.include_router(recipe_mgr_router)       # manager recipe writes
     router.include_router(import_router)
-    router.include_router(viscosity_op_router)       # operator viscosity reads + register
-    router.include_router(viscosity_mgr_router)      # manager viscosity product settings
+    router.include_router(viscosity_op_router)       # operator viscosity reads + register (open)
+    # 정책 ⓑ: 점도의 management 성격 쓰기(제품 생성/수정, 측정 삭제, CSV export)는 책임자
+    # 강제. 라우터 단위 의존성으로 걸어 viscosity_routes.py 본문은 건드리지 않는다.
+    router.include_router(
+        viscosity_mgr_router,
+        dependencies=[Depends(require_access_level("manager"))],
+    )
     router.include_router(blend_router)              # blend records (ink weighing overhaul, open)
     router.include_router(blend_session_router)
     router.include_router(worker_open_router)        # worker name registry (open)
