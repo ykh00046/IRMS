@@ -338,6 +338,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "blend_records", "rescale_events_json", "TEXT")
     ensure_column(connection, "blend_records", "rescale_count", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "blend_records", "rescale_unacked", "INTEGER NOT NULL DEFAULT 0")
+    # 일괄 재생성(bulk-regen) 표식: 같은 레시피로 여러 (작업일, 총량) 실적을 한 번에
+    # 생성한 문서·계획용 기록. 실제 현장 계량이 아니라 재생성본임을 목록/상세/공식 DHR 에
+    # 표시하기 위한 플래그(0=일반 실적, 1=일괄 재생성).
+    ensure_column(connection, "blend_records", "is_bulk_regenerated", "INTEGER NOT NULL DEFAULT 0")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_rescale_unacked "
         "ON blend_records(rescale_unacked) WHERE rescale_unacked = 1"

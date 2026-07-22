@@ -39,6 +39,7 @@ def _make_db() -> sqlite3.Connection:
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
             status TEXT NOT NULL DEFAULT 'completed', note TEXT, reactor INTEGER,
             manual_entry INTEGER NOT NULL DEFAULT 0,
+            is_bulk_regenerated INTEGER NOT NULL DEFAULT 0,
             reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
             worker_sign TEXT, reviewed_sign TEXT, approved_sign TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
@@ -369,6 +370,40 @@ def test_blend_update_route_requires_manager_and_full_edit():
     assert j["worker"] == "책임수정"
     assert [d["material_name"] for d in j["details"]] == ["A", "C"]
 
+    # 규제 보존(before-image): blend_record_update 감사에 변경 전 헤더+상세와
+    # 변경된 필드 요약이 담긴다.
+    import json as _json
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        arow = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action = 'blend_record_update' AND target_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (str(rid),),
+        ).fetchone()
+    assert arow is not None
+    adet = _json.loads(arow["details_json"])
+    assert "before" in adet and "after_summary" in adet
+    bh = adet["before"]["header"]
+    assert bh["worker"] == worker              # 변경 전 작업자
+    assert bh["work_date"] == "2026-07-01"     # 변경 전 작업일
+    assert bh["total_amount"] == 100           # 변경 전 총량
+    assert bh["scale"] == "M-65"
+    assert bh["note"] is None
+    # 변경 전 상세 행(terse): [자재명, 실제량, LOT, 이월, 수동]
+    before_names = [r[0] for r in adet["before"]["rows"]]
+    assert before_names == ["A", "B"]
+    # after_summary 는 변경된 필드만(신규 값) — worker/work_date/total_amount/scale/note.
+    asum = adet["after_summary"]
+    assert asum["worker"] == "책임수정"
+    assert asum["work_date"] == "2026-07-03"
+    assert asum["total_amount"] == 200
+    assert asum["scale"] == "S9"
+    assert asum["note"] == "정정"
+    # 상세 행이 바뀌었으므로 rows 도 요약에 포함, 자재명이 A/C 로 갱신됨.
+    assert [r[0] for r in asum["rows"]] == ["A", "C"]
+
     # 편차 초과는 400 (자재 LOT 는 채워 편차 검사까지 도달하게 한다)
     bad = client.request("PUT", f"/api/blend/records/{rid}", json={
         "product_name": prod, "worker": "x", "work_date": "2026-07-03", "total_amount": 100,
@@ -601,6 +636,32 @@ def test_create_bulk():
     assert r2["details"][0]["theory_amount"] == 120.0
     assert r2["details"][0]["actual_amount"] == 120.0
     assert r1["product_lot"] != r2["product_lot"]
+    # 일괄 재생성 표식: create_bulk 로 만든 기록은 is_bulk_regenerated=True.
+    assert r1["is_bulk_regenerated"] is True
+    assert r2["is_bulk_regenerated"] is True
+
+
+def test_create_bulk_flag_in_list_payload_and_normal_record_false():
+    """일괄 재생성 플래그가 목록 직렬화에 실리고, 일반 실적은 False 로 남는다."""
+    conn = _make_db()
+    rid = _seed_recipe(conn, weights=(60, 40))
+    bulk_ids = bs.create_bulk(
+        conn, recipe_id=rid, worker="홍", scale=None,
+        entries=[{"work_date": "2026-06-24", "total_amount": 100}],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    # 일반 실적 1건(현장 계량 경로).
+    normal_id = bs.create_blend_record(
+        conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+        worker="홍", work_date="2026-06-24", work_time=None, total_amount=100,
+        scale=None, note=None,
+        details=[{"material_name": "원료1", "material_lot": "L1",
+                  "ratio": 100.0, "theory_amount": 100, "actual_amount": 100}],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    rows = {r["id"]: r for r in bs.list_blend_records(conn)}
+    assert rows[bulk_ids[0]]["is_bulk_regenerated"] is True
+    assert rows[normal_id]["is_bulk_regenerated"] is False
 
 
 # ── 배합 분석 (제품별 빈도 + 배치 상세, Dashboard 반제품 배합 분석 흡수) ──

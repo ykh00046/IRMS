@@ -803,6 +803,28 @@ def build_router() -> APIRouter:
                 + ", ".join(offenders),
             )
         current_user = get_current_user(request, required=False)
+        # 규제 보존(before-image): 변경을 적용하기 전에 현재 헤더(수정 가능 필드)와 상세 행을
+        # 포착한다. audit_logs.details_json 이 그대로 담으므로 스키마 변경은 없다. 상세 행은
+        # 용량을 아끼려 terse 배열([자재명, 실제량, LOT, 이월(0/1), 수동(0/1)])로 압축한다.
+        _EDITABLE = (
+            "worker", "work_date", "work_time", "total_amount",
+            "scale", "note", "position", "ink_name", "reactor",
+        )
+
+        def _terse_rows(rec: dict[str, Any]) -> list[list[Any]]:
+            return [
+                [
+                    d.get("material_name"),
+                    d.get("actual_amount"),
+                    d.get("material_lot"),
+                    1 if d.get("carried_over") else 0,
+                    1 if d.get("manual_entry") else 0,
+                ]
+                for d in (rec.get("details") or [])
+            ]
+
+        before_header = {k: record.get(k) for k in _EDITABLE}
+        before_rows = _terse_rows(record)
         blend_service.update_blend_record(
             connection,
             record_id,
@@ -820,6 +842,13 @@ def build_router() -> APIRouter:
             updated_at=utc_now_text(),
         )
         updated = blend_service.get_blend_record(connection, record_id)
+        # after_summary: 변경된 필드만 (신규 값). 상세 행이 바뀌었으면 새 terse 행을 함께 남긴다.
+        after_summary: dict[str, Any] = {
+            k: updated.get(k) for k in _EDITABLE if updated.get(k) != before_header[k]
+        }
+        after_rows = _terse_rows(updated)
+        if after_rows != before_rows:
+            after_summary["rows"] = after_rows
         write_audit_log(
             connection,
             action="blend_record_update",
@@ -828,9 +857,8 @@ def build_router() -> APIRouter:
             target_id=str(record_id),
             target_label=updated["product_lot"],
             details={
-                "product_name": body.product_name,
-                "total_amount": body.total_amount,
-                "items": len(body.details),
+                "before": {"header": before_header, "rows": before_rows},
+                "after_summary": after_summary,
             },
         )
         connection.commit()

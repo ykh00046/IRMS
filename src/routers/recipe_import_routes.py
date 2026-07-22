@@ -94,9 +94,7 @@ def build_router() -> APIRouter:
         #   (응답의 material_id 는 표시용 임시값 — mappers.js mapPreview 참조)
         connection = get_connection()
         try:
-            result = parse_import_text(
-                connection, body.raw_text, body.allow_unknown_materials
-            )
+            result = parse_import_text(connection, body.raw_text)
         finally:
             connection.rollback()
             connection.close()
@@ -110,9 +108,7 @@ def build_router() -> APIRouter:
         current_user = get_current_user(request)
         creator_name = actor_name(current_user)
         with get_connection() as connection:
-            parsed = parse_import_text(
-                connection, body.raw_text, body.allow_unknown_materials
-            )
+            parsed = parse_import_text(connection, body.raw_text)
             if parsed["errors"]:
                 raise HTTPException(status_code=400, detail={"errors": parsed["errors"]})
 

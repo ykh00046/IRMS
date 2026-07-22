@@ -29,10 +29,6 @@ class ImportRequest(BaseModel):
     # 비면 기존 동작(반제품명 → product 마스터 단일 히트 자동 인식, 수정 등록 시 부모 승계).
     # 형식 검사(^[A-Z]{2}[A-Z0-9]{2,8}$)와 체인 중복(409)은 라우트에서 처리.
     product_code: str | None = Field(default=None, max_length=20)
-    # item-code P3: 마스터에 없는 신규 자재(unknown)를 허용할지.
-    # 기본 False — unknown 이 있으면 차단(errors). True 면 경고(warnings)로 강등하여
-    # 코드 없이 자동 등록한다(명시적 확인 경로, spec §1).
-    allow_unknown_materials: bool = False
     # reactor-ownership: 반응기 진행 여부(recipes.use_reactor) — 명시 값이 최우선.
     # None(기본)이면 수정 등록 때 부모 레시피의 use_reactor 를 승계(tolerance_g/category 와 동일),
     # 비개정 신규 레시피면 0(반응기 아님)으로 시작한다.

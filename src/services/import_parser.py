@@ -127,7 +127,6 @@ def _parse_value(raw: str) -> tuple[float | None, str | None]:
 def parse_import_text(
     connection: sqlite3.Connection,
     raw_text: str,
-    allow_unknown_materials: bool = False,
 ) -> dict[str, Any]:
     lines = [line.rstrip() for line in raw_text.splitlines() if line.strip()]
     errors: list[dict[str, Any]] = []
@@ -323,7 +322,7 @@ def parse_import_text(
                     similar = _similar_candidates(token, master_index)
                     # 1차→2차 연계 자재 인식(unknown 차단보다 먼저) — 마스터에 없어도 우리가 만드는
                     # 1차 반제품(completed 레시피 product_name)이면 정상 자재로 인식한다. 코드 없이
-                    # 자동 등록하고 안내(level-3)만 남긴다 — allow_unknown_materials 와 무관하게 정상 매칭.
+                    # 자동 등록하고 안내(level-3)만 남긴다 — 마스터에 없어도 정상 매칭.
                     if token in completed_recipe_names:
                         mat = _auto_register_material(connection, header.strip())
                         token_to_material[token] = mat
@@ -344,16 +343,6 @@ def parse_import_text(
                             header_warnings.append({
                                 "level": 3,
                                 "message": f"새 원재료가 자동 등록됩니다: {header.strip()}",
-                                "row": current_row_index,
-                            })
-                        elif allow_unknown_materials:
-                            # 명시적 확인 경로: 코드 없이 자동 등록하되 차단을 경고로 강등.
-                            mat = _auto_register_material(connection, header.strip())
-                            token_to_material[token] = mat
-                            similar_txt = f" — 유사: {', '.join(similar)}" if similar else ""
-                            header_warnings.append({
-                                "level": 3,
-                                "message": f"마스터에 없는 품목(확인 후 등록): {header.strip()}{similar_txt}",
                                 "row": current_row_index,
                             })
                         else:

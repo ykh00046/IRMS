@@ -95,6 +95,28 @@ def test_official_dhr_no_rescale_summary_when_absent():
     assert "증량" not in joined
 
 
+def test_official_dhr_marks_bulk_regenerated():
+    """일괄 재생성 기록이면 비고 영역에 '(일괄 재생성 기록)' 표식이 실린다."""
+    rec = _sample_record()
+    rec["is_bulk_regenerated"] = True
+    xb = dhr_excel.build_official_dhr_xlsx(rec)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "(일괄 재생성 기록)" in joined
+
+
+def test_official_dhr_no_bulk_marker_when_absent():
+    """일반 실적(플래그 없음)이면 일괄 재생성 표식이 생기지 않는다(회귀 가드)."""
+    xb = dhr_excel.build_official_dhr_xlsx(_sample_record())
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "일괄 재생성" not in joined
+
+
 def test_official_dhr_marks_signature_failure():
     """서명 합성 실패(sign_failed) 시 결재칸에 표식을 남긴다 — 무언의 미서명 출력 금지(POLISH-6)."""
     xb = dhr_excel.build_official_dhr_xlsx(_sample_record(), sign_failed=True)

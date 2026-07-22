@@ -3,7 +3,7 @@
 검증 범위:
  1. 마이그레이션(recipes_stage1_recipe_id) — 컬럼 추가, 기본 NULL, 시드 없음.
  2. import_parser 자체 제조 반제품 인식 — 마스터에 없어도 completed 레시피 product_name 과
-    일치하는 자재는 status="recipe" 로 정상 인식(unknown 차단 우회, allow_unknown_materials 무관).
+    일치하는 자재는 status="recipe" 로 정상 인식(unknown 차단 우회).
  3. ImportRequest.stage1_recipe_id 명시 값 저장; 수정 등록(개정) 시 None 이면 부모 승계.
  4. PUT /recipes/{id}/stage1 — set(반영), clear(null), 404 unknown, 400 self-reference,
     non-manager blocked.
@@ -110,7 +110,7 @@ def _parser_conn() -> sqlite3.Connection:
 def test_parser_recognizes_completed_recipe_product_as_material():
     """completed 레시피의 product_name 과 일치하는 자재는 status="recipe" 로 정상 인식.
 
-    마스터에 없어도 unknown 차단 없이 자동 등록 — allow_unknown_materials=False 여도 통과.
+    마스터에 없어도 unknown 차단 없이 자동 등록(1차 반제품 연계).
     """
     conn = _parser_conn()
     # 1차 반제품 레시피(completed) 등록.
@@ -122,7 +122,6 @@ def test_parser_recognizes_completed_recipe_product_as_material():
     result = import_parser.parse_import_text(
         conn,
         "반제품명\tSBCT-1\t원료A\n2차제품\t50\t50",
-        allow_unknown_materials=False,
     )
     # errors 가 비어야 한다(unknown 차단 없음).
     assert result["errors"] == [], result["errors"]
@@ -133,8 +132,8 @@ def test_parser_recognizes_completed_recipe_product_as_material():
     assert matches["원료A"]["status"] == "unknown"
 
 
-def test_parser_recipe_match_does_not_add_errors_without_allow_unknown():
-    """자체 제조 반제품 인식은 allow_unknown_materials 와 무관하게 errors 에 추가하지 않는다."""
+def test_parser_recipe_match_does_not_add_errors():
+    """자체 제조 반제품(1차) 인식은 마스터 유무와 무관하게 errors 에 추가하지 않는다."""
     conn = _parser_conn()
     conn.execute(
         "INSERT INTO recipes (product_name, status) VALUES ('1차반제품', 'completed')"
@@ -143,7 +142,6 @@ def test_parser_recipe_match_does_not_add_errors_without_allow_unknown():
     result = import_parser.parse_import_text(
         conn,
         "반제품명\t1차반제품\n2차\t100",
-        allow_unknown_materials=False,
     )
     assert result["errors"] == []
     matches = {m["name"]: m for m in result["material_matches"]}
@@ -160,7 +158,6 @@ def test_parser_non_completed_recipe_not_recognized():
     result = import_parser.parse_import_text(
         conn,
         "반제품명\t취소된1차\n2차\t100",
-        allow_unknown_materials=False,
     )
     # canceled 레시피는 인식 대상 아니므로 unknown 차단.
     matches = {m["name"]: m for m in result["material_matches"]}

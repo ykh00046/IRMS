@@ -18,6 +18,7 @@ CREATE TABLE blend_records (
     work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
     status TEXT NOT NULL DEFAULT 'completed', note TEXT, reactor INTEGER,
     manual_entry INTEGER NOT NULL DEFAULT 0,
+    is_bulk_regenerated INTEGER NOT NULL DEFAULT 0,
     worker_sign TEXT, created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
 );
 CREATE TABLE blend_details (

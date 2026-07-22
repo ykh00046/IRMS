@@ -233,6 +233,8 @@
   (`blend.js:buildOverrideNote`). 저장 직전에도 전 행 재검증(`saveBlend` 루프).
 - **bulk 재생성 예외**: 일괄 생성은 LOT를 비우고 실제량=이론량으로 채운다 — `missing_lot_names`·미등록 검증을
   거치지 않음(`blend_service.create_bulk`, `blend_routes.blend_create_bulk`). 문서용/드문 재생성 경로.
+  이 경로로 만든 기록은 `blend_records.is_bulk_regenerated=1` 로 표식되어(현장 실측 아님) 목록 배지·
+  상세 안내·공식 DHR 비고 `(일괄 재생성 기록)` 로 드러난다(상세는 `docs/records-dhr-flows.md` §4).
 
 ---
 

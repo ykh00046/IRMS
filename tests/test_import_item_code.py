@@ -7,7 +7,6 @@ scratchpad/item-code-p3-spec.md.
   1) existing: 기존 자재 → 그대로, preview material_matches 에 code 표시.
   2) master: 마스터에만 있는 이름 → 등록 후 materials.code 채워짐.
   3) unknown 차단: 마스터 비어있지 않을 때 미지 이름 → preview errors 차단, import 400.
-     allow_unknown_materials=True 면 통과(코드 없이 등록).
   4) 마스터 0행 하위호환: 미지 이름이어도 기존처럼 경고만·등록됨.
   5) product_code: 마스터 매칭 시 저장 + category 자동. revision 시 부모 product_code 승계.
 
@@ -226,7 +225,7 @@ def test_master_ambiguous_falls_to_unknown():
         _cleanup_master()
 
 
-# ---------- 3) unknown 차단 + allow_unknown_materials ----------
+# ---------- 3) unknown 차단 ----------
 
 
 def test_unknown_material_blocked_when_master_nonempty():
@@ -256,28 +255,6 @@ def test_unknown_material_blocked_when_master_nonempty():
         # import 엔드포인트는 parsed errors 로 400
         res2 = client.post("/api/recipes/import", json=body, headers=headers)
         assert res2.status_code == 400
-    finally:
-        _cleanup_master()
-
-
-def test_unknown_material_allowed_with_flag():
-    """allow_unknown_materials=True 면 unknown 이 경고로 강등 → 통과(코드 없이 등록)."""
-    client = _client()
-    headers = _login(client)
-    uid = _uid()
-    try:
-        _seed_master_material(f"AS{uid}", f"FILLERMAT{uid}")
-        unknown_name = f"UNKNOWNMAT{uid}"
-
-        product = f"PUNKOK{uid}"
-        body = {
-            "raw_text": f"반제품명\t{unknown_name}\n{product}\t50",
-            "allow_unknown_materials": True,
-        }
-        res = client.post("/api/recipes/import", json=body, headers=headers)
-        assert res.status_code == 200, res.text
-        # 코드 없이 등록
-        assert _material_code(unknown_name) is None
     finally:
         _cleanup_master()
 
@@ -336,7 +313,7 @@ def test_empty_master_backward_compat_via_parser(tmp_path):
         assert conn.execute("SELECT COUNT(*) c FROM item_code_master").fetchone()["c"] == 0
         unknown_name = "BWCPARSERMAT"
         raw = f"반제품명\t{unknown_name}\nPROD1\t50"
-        result = parse_import_text(conn, raw, allow_unknown_materials=False)
+        result = parse_import_text(conn, raw)
         # 하위호환: errors 에 차단 항목 없음, status=ok
         assert result["status"] == "ok", result["errors"]
         assert not any("마스터에 없는 품목" in e["message"] for e in result["errors"])

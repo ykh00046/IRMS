@@ -164,12 +164,19 @@ def build_official_dhr_xlsx(
         # 서명 합성 실패를 표면화 — 사용자가 서명본으로 오인해 배포하는 것을 막는다(POLISH-6).
         ws["G2"] = "(서명 합성 실패)"
 
-    # 증량(rescale) 이력을 표 아래 비고 영역에 한 줄로 남긴다(GAP-5). 공식 양식 레이아웃은
-    # 건드리지 않고 표 하단(빈 공간)에 append 만 한다.
+    # 비고 영역(표 아래 빈 공간)에 표식/이력을 한 줄로 남긴다(GAP-5). 공식 양식 레이아웃은
+    # 건드리지 않고 표 하단에 append 만 한다.
+    #  - 일괄 재생성 기록이면 "(일괄 재생성 기록)" 표식(현장 계량 아님).
+    #  - 증량(rescale) 이력이 있으면 요약을 이어 붙인다.
+    note_parts: list[str] = []
+    if record.get("is_bulk_regenerated"):
+        note_parts.append("(일괄 재생성 기록)")
     summary = rescale_summary_line(record)
     if summary:
+        note_parts.append(summary)
+    if note_parts:
         note_row = print_end_row + 2
-        cell = ws.cell(row=note_row, column=1, value=summary)
+        cell = ws.cell(row=note_row, column=1, value="  ".join(note_parts))
         cell.alignment = _LEFT
         try:
             ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=7)

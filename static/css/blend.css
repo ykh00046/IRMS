@@ -563,6 +563,23 @@
   color: #c0322c;
   border-color: #f3c3c0;
 }
+/* 일괄 재생성 표식 — 중립(muted) 배지. 증량 배지와 동일 톤. */
+.bulk-regen-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #eef2f7;
+  color: #64748b;
+  border: 1px solid #dbe2ea;
+  vertical-align: middle;
+}
+.bulk-regen-note {
+  color: #64748b;
+}
 .blend-rescale-block {
   margin: 10px 0 4px;
   padding: 10px 12px;

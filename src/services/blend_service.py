@@ -1066,11 +1066,13 @@ def create_blend_record(
     worker_sign: str | None = None,
     reactor: int | None = None,
     manual_entry: bool = False,
+    is_bulk_regenerated: bool = False,
 ) -> int:
     """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성.
 
     reactor 지정 시 실적을 진행한 반응기(1~4)를 기록한다(반응기 진행 반제품).
     manual_entry=True 면 저울 연동 중 수동 입력으로 계량됐음을 기록한다(추적성).
+    is_bulk_regenerated=True 면 일괄 재생성 경로로 만든 문서·계획용 기록임을 표식한다.
     """
     # 감사 F-1: 채번+INSERT 원자화. 쓰기 락을 선획득(BEGIN IMMEDIATE)해 동시 요청의
     # 채번을 직렬화한다(WAL 에서 리더는 라이터를 막지 않으므로 명시 락이 필요).
@@ -1089,8 +1091,9 @@ def create_blend_record(
                 INSERT INTO blend_records
                     (product_lot, recipe_id, product_name, ink_name, position, worker,
                      work_date, work_time, total_amount, scale, status, note,
-                     worker_sign, reactor, manual_entry, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
+                     worker_sign, reactor, manual_entry, is_bulk_regenerated,
+                     created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
@@ -1098,6 +1101,7 @@ def create_blend_record(
                     (note or "").strip() or None, worker_sign,
                     int(reactor) if reactor is not None else None,
                     1 if manual_entry else 0,
+                    1 if is_bulk_regenerated else 0,
                     created_by, created_at, created_at,
                 ),
             )
@@ -1262,6 +1266,7 @@ def create_bulk(
             details=details,
             created_by=created_by,
             created_at=created_at,
+            is_bulk_regenerated=True,
         )
         ids.append(rid)
     return ids
@@ -1332,7 +1337,8 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         """
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, reactor,
-               manual_entry, reviewed_by, reviewed_at, approved_by, approved_at,
+               manual_entry, is_bulk_regenerated,
+               reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at
         FROM blend_records WHERE id = ?
@@ -1410,7 +1416,7 @@ def list_blend_records(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
-               manual_entry
+               manual_entry, is_bulk_regenerated
         FROM blend_records
         WHERE {where}
         ORDER BY work_date DESC, id DESC
@@ -1446,6 +1452,7 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "note": row["note"],
         "created_at": row["created_at"] if "created_at" in keys else None,
         "manual_entry": bool(row["manual_entry"]) if "manual_entry" in keys else False,
+        "is_bulk_regenerated": bool(row["is_bulk_regenerated"]) if "is_bulk_regenerated" in keys else False,
     }
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
               "worker_sign", "reviewed_sign", "approved_sign", "reactor"):

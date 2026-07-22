@@ -42,6 +42,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return ` <span class="rescale-badge" title="증량 승인됨">증량 ${info.rescale_count}회</span>`;
   }
 
+  // 일괄 재생성 표식 — 현장 계량이 아니라 문서·계획용으로 한 번에 재생성한 기록.
+  function bulkBadge(r) {
+    if (!r || !r.is_bulk_regenerated) return "";
+    return ' <span class="bulk-regen-badge" title="일괄 재생성으로 만든 문서·계획용 기록">일괄 재생성</span>';
+  }
+
   // 상세 모달 — 증량 이력(전 총량→후 총량, 승인자 또는 부재 사유).
   function rescaleBlock(id) {
     const info = rescaleMap[id];
@@ -114,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${rescaleBadge(r.id)}</td>` +
+          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${rescaleBadge(r.id)}${bulkBadge(r)}</td>` +
           `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
@@ -173,6 +179,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const manualBadge = rec.manual_entry
       ? ' <span class="status-chip manual-entry-chip">⚠ 수동 입력</span>'
       : "";
+    const bulkLine = rec.is_bulk_regenerated
+      ? '<p class="dhr-note bulk-regen-note">※ 일괄 재생성 기록 — 현장 계량이 아니라 문서·계획용으로 한 번에 생성한 기록입니다.</p>'
+      : "";
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
@@ -182,6 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
       </div>
+      ${bulkLine}
       ${rescaleBlock(rec.id)}
       <div class="table-wrap"><table class="blend-table">
         <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
