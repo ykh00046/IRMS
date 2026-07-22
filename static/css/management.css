@@ -225,6 +225,19 @@
   padding: 1rem;
 }
 
+/* 빈 오류/확인 패널 — placeholder(li.muted 단독)만 있을 때 세로 폭을 줄여
+   얇은 상태 줄처럼 보이게(검증 결과가 채워지면 원래 폭으로 복귀).
+   li.muted:only-child 는 placeholder 한 줄만 있는 상태를, :has() 로 list 자체를
+   판별한다 — JS 변경 없이 CSS 만으로 빈 상태 축약. */
+.issue-list:has(li.muted:only-child) {
+  max-height: none;
+  padding: 0.25rem 0.5rem;
+}
+.issue-list:has(li.muted:only-child) li.muted {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+}
+
 /* History Filter Grid */
 .history-grid {
   display: grid;
@@ -253,6 +266,16 @@
 .lookup-result {
   overflow-x: auto;
   margin-bottom: 1rem;
+}
+
+/* 빈 상태용 반제품 칩 목록 — 한 번 클릭으로 비교 시작. 검색 결과가 #lookup-result
+   를 덮어쓰면 자연스럽게 사라진다. */
+.lookup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  justify-content: center;
 }
 
 .lookup-result table {
@@ -436,6 +459,13 @@
 @media (max-width: 900px) {
   .history-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* 레시피 속성 그리드 — 좁은 화면에서는 1열로 폴백(필드 짝 깨짐 방지). */
+@media (max-width: 700px) {
+  .imp-attrs-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -653,7 +683,11 @@
 .imp-row { align-items: center; row-gap: 8px; }
 .imp-opt { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .imp-opt .input, .imp-opt select { width: auto; min-width: 150px; }
-.imp-actions { margin-top: 0.6rem; }
+.imp-actions {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border, #e5e7eb);
+  padding-top: 1rem;
+}
 
 /* 레시피 속성(선택) — 기준 배합량/기준 자재/허용 편차/품목코드/반응기를 각각
    라벨+컨트롤+한 줄 설명으로 갖는 반응형 그리드. hover-only title 대신 보이는 설명. */
@@ -666,13 +700,20 @@
 .imp-attrs > legend { padding: 0 0.35rem; }
 .imp-attrs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
   gap: 0.7rem 1rem;
 }
 .imp-attr-field { display: flex; flex-direction: column; gap: 0.25rem; }
 .imp-attr-field .input,
 .imp-attr-field select { width: 100%; }
 .imp-attr-field .visc-checkbox { display: inline-flex; align-items: center; gap: 0.35rem; }
+/* 기준 배합량 입력이 .imp-attr-field(flex column) 안에서 .base-total-input 의
+   flex-basis(140px) 를 높이로 받아 다른 input 보다 키가 크게 렌더링되는 현상 정정.
+   grid field 안에서는 flex-basis 가 높이로 해석되지 않도록 auto 로 되돌린다. */
+.imp-attr-field .base-total-input { flex: 0 0 auto; }
+/* panel-notice 를 담은 풀-폭 행 — grid 양 열을 모두 써, 옆 열이 벌어지지 않게. */
+.imp-attr-span { grid-column: 1 / -1; }
+.imp-attr-span .panel-notice { margin: 0; max-width: none; }
 .imp-attr-desc {
   margin: 0;
   font-size: 0.72rem;

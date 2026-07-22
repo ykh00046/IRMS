@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260721a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260722d" />
 {% endblock %}
 
 {% block content %}
@@ -70,7 +70,11 @@
                       placeholder="선택 · 비우면 자동 인식"
                       title="반제품 ERP 품목코드. 비우면 반제품명으로 자동 인식하고, 수정 등록 시 기존 코드를 그대로 이어받습니다(같은 코드 그대로 두면 됩니다)." />
                     <ul id="imp-product-code-suggest" class="code-suggest-list" hidden></ul>
-                    <!-- panel-notice 단독 사용 — imp-attr-desc(0.72rem)와 겹치면 글씨 축소가 강조를 덮어씀 -->
+                  </div>
+                  <!-- 강조 안내문(callout) 단독 사용 — imp-attr-desc(0.72rem)와 겹치면 글씨 축소가
+                       강조를 덮어씀. grid 전체 폭(imp-attr-span)으로 빼, 품목코드 칸이 커져 옆 열
+                       (허용 편차)이 벌어지는 현상을 막는다. -->
+                  <div class="imp-attr-span">
                     <p class="panel-notice">반제품 ERP 품목코드. 비우면 반제품명으로 자동 인식하고, 수정 등록 시 기존 코드를 그대로 이어받습니다(같은 코드 그대로 두면 됩니다).</p>
                   </div>
                   <div class="imp-attr-field">
@@ -179,7 +183,7 @@
         <div class="tab-panel" id="tab-lookup">
           <section class="panel">
             <h3 class="panel-title">버전 비교</h3>
-            <p class="panel-subtitle">현황에서 바로 수정할 수 있습니다. 이 화면은 여러 버전의 자재 구성을 비교할 때 사용합니다.</p>
+            <p class="panel-subtitle">여러 버전의 자재 구성을 나란히 비교합니다. 아래 목록에서 반제품을 고르거나 이름으로 검색하세요.</p>
             <div class="lookup-search">
               <div class="filter-group">
                 <label class="filter-label">반제품명</label>
@@ -193,6 +197,7 @@
             </div>
             <div id="lookup-result" class="lookup-result">
               <p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>
+              <div id="lookup-chips" class="lookup-chips"></div>
             </div>
             <div id="lookup-anchor" class="lookup-anchor" hidden></div>
             <div id="lookup-actions" class="button-row lookup-actions" hidden>
@@ -305,7 +310,7 @@
     <script src="/static/js/management/recipe-edit-loader.js?v=20260721a"></script>
     <script src="/static/js/management/import-validate.js?v=20260721a"></script>
     <script src="/static/js/management/recipe-history.js?v=20260721b"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260716a"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260722a"></script>
     <script src="/static/js/management/version-compare.js?v=20260707b"></script>
     <script src="/static/js/management/item-codes.js?v=20260722b"></script>
     <script src="/static/js/management.js?v=20260722a"></script>

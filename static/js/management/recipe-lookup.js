@@ -36,9 +36,37 @@
             .map((name) => `<option value="${IRMS.escapeHtml(name)}">`)
             .join("");
         }
+        renderLookupChips(items);
       } catch (error) {
         IRMS.notify(`제품 목록 로드 실패: ${error.message}`, "error");
       }
+    }
+
+    // 빈 상태용 클릭 가능한 반제품 칩 목록 — 검색 결과가 #lookup-result 를 덮어쓰기
+    // 전까지 한 번의 클릭으로 비교를 시작할 수 있게. #lookup-chips 가 DOM 에 있을 때
+    // (=아직 검색 결과로 교체되지 않음)만 그린다. DHR 모드 전환 시 loadProducts 가
+    // 다시 불리므로 모드에 맞는 목록으로 갱신된다.
+    function renderLookupChips(items) {
+      const wrap = document.getElementById("lookup-chips");
+      if (!wrap) return;
+      const names = (items || []).slice(0, 40);
+      const overflow = items.length - names.length;
+      const chipsHtml = names
+        .map(
+          (name) =>
+            `<button type="button" class="btn compact lookup-chip" data-name="${IRMS.escapeHtml(name)}">${IRMS.escapeHtml(name)}</button>`,
+        )
+        .join("");
+      const overflowHtml = overflow > 0
+        ? `<span class="muted">외 ${overflow}개 — 이름으로 검색하세요</span>`
+        : "";
+      wrap.innerHTML = chipsHtml + overflowHtml;
+      wrap.querySelectorAll(".lookup-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (dom.lookupProduct) dom.lookupProduct.value = btn.dataset.name;
+          handleLookup();
+        });
+      });
     }
 
     function setLookupSelection(recipeId) {
@@ -331,8 +359,15 @@
       await loadProducts();
       if (dom.lookupProduct) dom.lookupProduct.value = "";
       if (dom.lookupResult) {
+        // 빈 상태로 원복 — 칩 컨테이너도 함께 넣어 loadProducts 의 renderLookupChips
+        // 가 다시 붙일 수 있게(loadProducts 는 이미 위에서 불렸으므로 여기서 직접 채운다).
         dom.lookupResult.innerHTML =
-          '<p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>';
+          '<p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>' +
+          '<div id="lookup-chips" class="lookup-chips"></div>';
+        const products = (dom.productList && dom.productList.children)
+          ? Array.from(dom.productList.children).map((o) => o.value)
+          : [];
+        renderLookupChips(products);
       }
       setLookupSelection(null);
     }
