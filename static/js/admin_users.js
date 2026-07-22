@@ -366,6 +366,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const attUsersBody = document.getElementById("att-users-body");
   const attUsersRefresh = document.getElementById("att-users-refresh");
 
+  // 근태 관리 오류 코드 → 사용자용 한국어 메시지. 서버 코드를 날것으로 노출하지 않는다
+  // (예: 근태 엑셀에 없는 사번을 최초 발급 시도 → 404 EMP_NOT_IN_EXCEL).
+  const attErrorMap = {
+    EMP_NOT_IN_EXCEL: "근태 자료(엑셀)에 없는 사번입니다. 사번을 확인하세요.",
+  };
+  const attErrorMessage = (msg) => attErrorMap[msg] || msg;
+
   async function attendanceFetch(path, options) {
     const opts = options || {};
     const method = opts.method || "GET";
@@ -439,7 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             IRMS.notify(`사번 ${empId} 임시 비밀번호를 발급했습니다.`, "success");
             loadAttendanceUsers();
           } catch (err) {
-            IRMS.notify(`초기화 실패: ${err.message}`, "error");
+            IRMS.notify(`초기화 실패: ${attErrorMessage(err.message)}`, "error");
             event.currentTarget.disabled = false;
           }
         });
@@ -453,7 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 계정 미발급 직원 최초 발급 — 목록(발급된 계정만)에 없는 사번을 직접 입력해 발급.
   // 백엔드 POST /admin/reset-password 가 미발급 사번이면 계정을 새로 만든다
-  // (근태 명단에 없는 사번은 404 EMP_NOT_IN_EXCEL — 메시지 그대로 노출).
+  // (근태 명단에 없는 사번은 404 EMP_NOT_IN_EXCEL — attErrorMap 으로 한국어 메시지 노출).
   const attNewEmp = document.getElementById("att-user-new-emp");
   const attIssueBtn = document.getElementById("att-user-issue-btn");
   attIssueBtn?.addEventListener("click", async () => {
@@ -475,7 +482,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (attNewEmp) attNewEmp.value = "";
       loadAttendanceUsers();
     } catch (err) {
-      IRMS.notify(`발급 실패: ${err.message}`, "error");
+      IRMS.notify(`발급 실패: ${attErrorMessage(err.message)}`, "error");
     } finally {
       attIssueBtn.disabled = false;
     }

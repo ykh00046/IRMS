@@ -1366,7 +1366,12 @@
   // 증량 적용 요약줄 — 자재별 '더 넣을 양'을 상시 표시(작업자가 얼마나 넣었는지 잊지 않게).
   // 저장 성공·초기화·레시피 변경 전까지 유지(타이핑 중에는 사라지지 않는다).
   function renderRescaleSummary(plan) {
+    // 상단 요약줄은 시선 밖이라 폐기(2026-07-22) — 목표·추가분은 각 행 편차 셀의
+    // 배지("목표 Y · 추가 +X")가 상시 표시한다. 함수는 호출부 보존을 위해 남긴다.
     const el = $("rescale-applied-summary");
+    if (el) { el.hidden = true; el.innerHTML = ""; }
+    return;
+    /* eslint-disable no-unreachable */
     if (!el || !plan) { if (el) el.hidden = true; return; }
     const parts = [];
     plan.rows.forEach((r) => {
@@ -1461,7 +1466,9 @@
       badge.type = "button";
       badge.className = "blend-add-badge";
       badge.dataset.idx = String(r.idx);
-      badge.textContent = `추가 +${fmt(r.addNeeded)} g`;
+      badge.textContent = r.newTheory != null
+        ? `목표 ${fmt(r.newTheory)} · 추가 +${fmt(r.addNeeded)} g`
+        : `추가 +${fmt(r.addNeeded)} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => openAddInline(r.idx));
       td.appendChild(badge);

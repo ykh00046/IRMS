@@ -89,6 +89,16 @@ document.addEventListener("DOMContentLoaded", () => {
       if (btn.dataset.tab === "codes" && ctx.itemCodes) {
         ctx.itemCodes.refresh();
       }
+      // 현황 탭 진입 시 목록 최신화 — 등록·수정 탭에서 새 레시피를 등록한 뒤 현황으로
+      // 돌아오면 목록이 낡아 새 레시피가 안 보이던 문제(탭 전환은 재조회하지 않았음).
+      if (btn.dataset.tab === "history" && ctx.recipeHistory) {
+        ctx.recipeHistory.renderHistory();
+      }
+      // 버전 비교 탭 진입 시 반제품 목록·칩 최신화 — 현황 탭과 같은 이유(새 레시피가
+      // 등록돼도 탭 전환만으로는 칩/목록이 낡은 채 유지되던 문제).
+      if (btn.dataset.tab === "lookup" && ctx.recipeLookup) {
+        ctx.recipeLookup.loadProducts();
+      }
     });
   });
 
@@ -155,6 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const versionCompare = IRMS.management.createVersionCompare(ctx);
   ctx.versionCompare = versionCompare;
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
+  ctx.recipeHistory = recipeHistory;
 
   // 품목코드 패널(item-code-admin §B2) — 자재 코드 지정/해제. init 으로 필터 이벤트 연결.
   if (canManage) {

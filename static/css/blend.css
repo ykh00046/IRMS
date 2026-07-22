@@ -249,9 +249,13 @@
 
 /* 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖 풀폭 줄로.
    좁은 폼 칸에 몰려 레이아웃이 깨지는 것을 방지(재배치만, 동작은 동일). */
+/* 도구줄을 절대배치 오버레이로 — 일반 흐름에 두면 필드 높이가 커져 총 배합량 입력칸이
+   이웃 필드보다 위로 밀린다(하단 정렬 그리드). 버튼 아래는 어차피 빈 공간이라 겹쳐 그린다. */
+.blend-field-total { position: relative; }
 .blend-total-tools {
+  position: absolute; top: 100%; left: 0; min-width: 100%;
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-  margin-top: 0.5rem; min-height: 0;
+  margin-top: 3px; z-index: 5; white-space: nowrap;
 }
 .blend-total-tools:has(#blend-base-links[hidden]):has(#rescale-undo[hidden]) { display: none; }
 
