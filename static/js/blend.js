@@ -69,6 +69,10 @@
     rescaleTotalG: 0,
     // 추가분 입력 모드에 들어간 행 인덱스(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
     addModeIdx: null,
+    // 작업자가 직접 지정한 저울 PRINT 대상 행(수동 오버라이드). null 이면 미지정.
+    // activeScaleRow 우선순위: (1)추가모달 (2)이 값 (3)포커스 행 (4)첫 빈 행 (5)기준 폴백.
+    // 지정 후 그 행이 허용 편차 내로 완료·레시피 변경·저장·초기화 시 해제(sticky).
+    scaleTargetIdx: null,
     // 보류 중인 증량 제안(newTotal) — discard 모달에서 '그래도 증량' 선택 시 재사용.
     pendingRescale: null,
     // 증량 후 각 행의 '더 넣어야 할 양'(idx→addNeeded>tol). 편차 셀에 음수(부족) 대신
@@ -108,6 +112,7 @@
       state.scaleReady = false;
     }
     updateScaleOnlyBanner();
+    updateScaleTargetIndicator();  // 저울 연결 상태 변화 → ⚖ 버튼·대상 표시 토글
   }
 
   // ── 저울 전용 입력 모드(scale-only-input) ───────────────────────
@@ -270,8 +275,11 @@
     // 칸에 머물러 재계량(부족: 더 넣기 / 초과: 증량 제안)을 유도.
     if (warnIfVariance(idx)) {
       if (input) { input.focus(); if (input.select) input.select(); }
+      updateScaleTargetIndicator();
       return;
     }
+    // 이 행이 수동 지정 대상이었고 허용 편차 내로 완료됐으면 지정 해제(sticky 종료).
+    if (state.scaleTargetIdx === idx) state.scaleTargetIdx = null;
     const nextLot = document.querySelector(`.blend-lot[data-idx="${idx + 1}"]`);
     if (nextLot) {
       nextLot.focus();
@@ -279,6 +287,7 @@
       const save = $("blend-save");
       if (save) save.focus();
     }
+    updateScaleTargetIndicator();
   }
 
   // PRINT 키 입력이 들어갈 행: 합산 모드 행 > 커서가 있는 행(LOT/실제량) > 첫 미입력 행
@@ -289,6 +298,10 @@
     // 엉뚱한 빈 행으로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 저울 전용 모드의
     // 부족 복구(타이핑 불가)도 이 라우팅이 있어야 성립한다.
     if (state.addModeIdx != null) return state.addModeIdx;
+    // 작업자 수동 지정 대상(sticky) — 포커스보다 우선. 유효한 행일 때만.
+    if (state.scaleTargetIdx != null && state.items[state.scaleTargetIdx]) {
+      return state.scaleTargetIdx;
+    }
     const focused = document.activeElement;
     if (
       focused && focused.classList
@@ -310,6 +323,87 @@
       return state.anchorIndex;
     }
     return null;
+  }
+
+  // ── 저울 PRINT 대상 행 지정·표시 ─────────────────────────────
+  // 작업자가 ⚖ 버튼으로 대상 행을 직접 고르면 sticky 로 보관(scaleTargetIdx). 저울
+  // PRINT 가 어디로 들어갈지 보이게(row-scale-target 강조 + ⚖ 저울 태그) 하고, 다음
+  // PRINT 를 그 행으로 라우팅한다. 지정 없으면 포커스/첫 빈 행 폴백은 그대로.
+  function setScaleTarget(idx) {
+    state.scaleTargetIdx = idx;
+    updateScaleTargetIndicator();
+  }
+
+  function clearScaleTarget() {
+    if (state.scaleTargetIdx == null) return;
+    state.scaleTargetIdx = null;
+    updateScaleTargetIndicator();
+  }
+
+  // 현재 유효 저울 대상 행 계산 후 화면 표시 갱신. 저울 연결(scaleReady) 시에만 노출 —
+  // 수동 전용 현장에는 아무 표식도 띄우지 않는다. 추가(합산) 모달이 열려 있으면 그
+  // 모달 자체가 안내이므로 행 강조는 지운다.
+  function updateScaleTargetIndicator() {
+    const body = $("blend-mat-body");
+    if (!body) return;
+    // 수동 지정 행이 허용 편차 내로 채워졌으면 지정 자동 해제(다음 빈 행으로 이동).
+    if (state.scaleTargetIdx != null) {
+      const it = state.items[state.scaleTargetIdx];
+      const pend = state.addPending && state.addPending[state.scaleTargetIdx] != null;
+      if (!it) {
+        state.scaleTargetIdx = null;
+      } else if (it.actual_amount !== "" && !pend
+        && Math.abs(rowVariance(it)) <= state.toleranceG + 1e-9) {
+        state.scaleTargetIdx = null;
+      }
+    }
+    body.querySelectorAll("tr.row-scale-target").forEach((tr) => tr.classList.remove("row-scale-target"));
+    body.querySelectorAll(".scale-target-tag").forEach((el) => el.remove());
+    body.querySelectorAll(".blend-scale-btn.is-active").forEach((b) => b.classList.remove("is-active"));
+    // ⚖ 버튼은 저울 연결 시에만 노출(수동 전용 현장 노이즈 제거).
+    body.classList.toggle("scale-connected", Boolean(state.scaleReady));
+    if (!state.scaleReady) return;
+    // 추가 합산 모달이 열려 있으면 모달이 안내 역할 — 행 강조는 생략(버튼만 활성 표시).
+    if (state.addModeIdx != null) {
+      const b = body.querySelector(`.blend-scale-btn[data-idx="${state.addModeIdx}"]`);
+      if (b) b.classList.add("is-active");
+      return;
+    }
+    const idx = activeScaleRow();
+    if (idx == null) return;
+    const inp = body.querySelector(`.blend-actual[data-idx="${idx}"]`);
+    const tr = inp && inp.closest("tr");
+    if (tr) tr.classList.add("row-scale-target");
+    if (inp && inp.parentElement && !inp.parentElement.querySelector(".scale-target-tag")) {
+      const tag = document.createElement("span");
+      tag.className = "scale-target-tag";
+      tag.textContent = "⚖ 저울";
+      inp.parentElement.appendChild(tag);
+    }
+    const btn = body.querySelector(`.blend-scale-btn[data-idx="${idx}"]`);
+    if (btn) btn.classList.add("is-active");
+  }
+
+  // 자재 행 실제량 칸에 붙는 ⚖ 버튼. 증량 대기 행이면 추가 합산 모달을 열고, 일반
+  // 행이면 그 행을 저울 대상으로 지정하고 실제량 칸에 포커스.
+  function buildScaleTargetButton(idx) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "blend-scale-btn";
+    btn.dataset.idx = String(idx);
+    btn.tabIndex = -1;
+    btn.textContent = "⚖";
+    btn.title = "여기로 저울 입력";
+    btn.addEventListener("click", () => {
+      if (state.addPending && state.addPending[idx] != null) {
+        openAddWeighModal(idx);
+        return;
+      }
+      setScaleTarget(idx);
+      const inp = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (inp) { inp.focus(); if (inp.select) { try { inp.select(); } catch (_e) { /* noop */ } } }
+    });
+    return btn;
   }
 
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
@@ -564,6 +658,7 @@
     // 레시피가 바뀌면 이전 레시피의 증량분을 버린다 — 새 레시피는 새 총량 기준.
     state.rescaleTotalG = 0;
     state.addModeIdx = null;
+    state.scaleTargetIdx = null;  // 레시피 변경 → 저울 대상 지정 해제
     state.pendingRescale = null;
     state.addPending = {};
     state.rescaleActive = false;
@@ -889,6 +984,11 @@
         }
       }
       tr.innerHTML = materialRowHtml(idx, it, opts);
+      // 실제량 칸에 ⚖ 저울 대상 지정 버튼을 붙인다(저울 연결 시에만 노출 — CSS).
+      const actualCell = tr.querySelector(".blend-actual");
+      if (actualCell && actualCell.parentElement) {
+        actualCell.parentElement.appendChild(buildScaleTargetButton(idx));
+      }
       body.appendChild(tr);
     });
     body.insertAdjacentHTML("beforeend", stepRowsHtml(steps, state.items.length));  // 마지막 자재 뒤 설명
@@ -988,6 +1088,8 @@
     applyScaleOnlyToRows();
     // 기준 자재 행의 LOT 가 이미 1차 LOT 이면 이월 컨트롤을 노출(수정 등록 프리필 등).
     refreshCarryOverControl();
+    // 저울 대상 행 표시 갱신(행 재렌더 후).
+    updateScaleTargetIndicator();
   }
 
   // ── 반제품 원료 LOT 제안 목록(.blend-lot 칸 아래) ───────────────
@@ -1904,6 +2006,7 @@
       const i = Number(k);
       if (!(i in state.addPending)) updateRowVar(i);
     });
+    updateScaleTargetIndicator();  // 증량 대기 배지 변화 → 대상 표시 갱신
   }
 
   // 행 안 인라인 추가분 입력 — 배지를 작은 input 으로 교체. Enter 확정 시 누계 합산.
@@ -2031,6 +2134,7 @@
     refreshAddWeighModal(idx);
     const input = $("add-weigh-input");
     if (input) { input.value = ""; if (!state.scaleOnlyInput) input.focus(); }
+    updateScaleTargetIndicator();  // 모달이 안내 역할 — 행 강조 제거, 해당 ⚖ 활성 표시
   }
 
   // 모달 숫자(남은 양/목표·현재) 갱신 + 자동 완료(목표 도달 시 자동 닫기).
@@ -2082,6 +2186,7 @@
     const nextLot = document.querySelector(`.blend-lot[data-idx="${next}"]`);
     if (nextLot) nextLot.focus();
     else { const save = $("blend-save"); if (save) save.focus(); }
+    updateScaleTargetIndicator();  // 모달 완료 후 대상이 다음 행으로 이동한 것을 반영
   }
 
   // 수동 닫기 — 완료(값 유지) 또는 다시 계량(실제량 비움). addModeIdx 해제·배지 갱신.
@@ -2319,6 +2424,7 @@
       // 저장 후 다음 배합은 증량분이 없는 깨끗한 상태에서 시작.
       state.rescaleTotalG = 0;
       state.addModeIdx = null;
+      state.scaleTargetIdx = null;  // 저장 완료 → 저울 대상 지정 해제
       state.pendingRescale = null;
       state.addPending = {};
       state.rescaleActive = false;
@@ -2349,6 +2455,14 @@
   }
 
   function bind() {
+    // 자재 표 입력칸 포커스 이동 시 저울 대상 표시 갱신(delegated — 재렌더돼도 유지).
+    // tbody 는 재사용되므로 한 번만 부착한다. focusout 후 새 focusin 이 activeElement 를
+    // 확정하도록 microtask 로 지연 갱신.
+    const matBody = $("blend-mat-body");
+    if (matBody) {
+      matBody.addEventListener("focusin", updateScaleTargetIndicator);
+      matBody.addEventListener("focusout", () => setTimeout(updateScaleTargetIndicator, 0));
+    }
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
     const recipeSel = $("blend-recipe");
     recipeSel.addEventListener("change", onRecipePick);

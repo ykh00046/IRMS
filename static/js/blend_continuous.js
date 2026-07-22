@@ -57,6 +57,10 @@
     lotRescaleEvents: [],
     // 추가분 입력 모드에 들어간 셀(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
     addModeCell: null,     // {i,j} 또는 null
+    // 작업자가 ⚖ 버튼으로 직접 지정한 저울 PRINT 대상 셀(수동 오버라이드). null 이면 미지정.
+    // activeScaleCell 우선순위: (1)추가모드 (2)이 값 (3)포커스 셀 (4)첫 빈 셀. 지정 후 그
+    // 셀이 허용 편차 내로 완료·레시피 변경·로트 수 변경 시 해제(sticky, blend.js scaleTargetIdx 의 셀 버전).
+    scaleTargetCell: null, // {i,j} 또는 null
     // 증량(rescale) 후 추가 대기 셀 — blend.js state.addPending 의 셀(i:j) 버전.
     // 대기 중인 셀은 편차 경고·음수 표시 대신 '추가 +X' 배지만 보인다.
     addPendingCells: {},   // {"i:j": addNeeded}
@@ -91,6 +95,7 @@
       state.scaleReady = false;
     }
     updateScaleOnlyBanner();
+    updateScaleTargetIndicator();  // 저울 연결 상태 변화 → ⚖ 버튼·대상 표시 토글
   }
 
   // ── 저울 전용 입력 모드(scale-only-input) ───────────────────────
@@ -437,6 +442,11 @@
   // 빈 셀로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 커서 우선 → 첫 미입력 셀 폴백.
   function activeScaleCell() {
     if (state.addModeCell) return state.addModeCell;
+    // 작업자 수동 지정 셀(sticky) — 포커스보다 우선. 유효한 셀일 때만.
+    const t = state.scaleTargetCell;
+    if (t && state.cells[t.i] && state.cells[t.i][t.j] && t.j < state.lotCount) {
+      return { i: t.i, j: t.j };
+    }
     const focused = document.activeElement;
     if (focused && focused.classList && focused.classList.contains("cont-actual")) {
       return { i: Number(focused.dataset.i), j: Number(focused.dataset.j) };
@@ -447,6 +457,59 @@
       }
     }
     return null;
+  }
+
+  // ── 저울 PRINT 대상 셀 지정·표시 ─────────────────────────────
+  // ⚖ 버튼으로 대상 셀을 직접 고르면 sticky 로 보관(scaleTargetCell). 다음 PRINT 를 그
+  // 셀로 라우팅하고, 어디로 들어갈지 셀 강조(cell-scale-target)로 보이게 한다. 저울
+  // 연결 시에만 표시 — 수동 전용 현장 노이즈 제거.
+  function setScaleTargetCell(i, j) {
+    state.scaleTargetCell = { i, j };
+    updateScaleTargetIndicator();
+  }
+
+  function updateScaleTargetIndicator() {
+    const body = $("cont-mat-body");
+    if (!body) return;
+    // 수동 지정 셀이 허용 편차 내로 채워졌거나 무효해졌으면 자동 해제.
+    const t = state.scaleTargetCell;
+    if (t) {
+      const cell = state.cells[t.i] && state.cells[t.i][t.j];
+      const pend = state.addPendingCells && state.addPendingCells[`${t.i}:${t.j}`] != null;
+      const th = theoryFor(t.i, t.j);
+      if (!cell || t.j >= state.lotCount) {
+        state.scaleTargetCell = null;
+      } else if (cell.actual !== "" && !pend && th != null
+        && Math.abs(Number(cell.actual) - th) <= state.toleranceG + 1e-9) {
+        state.scaleTargetCell = null;
+      }
+    }
+    body.querySelectorAll("td.cell-scale-target").forEach((td) => td.classList.remove("cell-scale-target"));
+    body.querySelectorAll(".scale-target-tag").forEach((el) => el.remove());
+    body.querySelectorAll(".cont-scale-btn.is-active").forEach((b) => b.classList.remove("is-active"));
+    body.classList.toggle("scale-connected", Boolean(state.scaleReady));
+    if (!state.scaleReady || state.anchorBlocked) return;
+    // 추가 합산 모드(인라인)면 그 셀 ⚖ 만 활성 표시 — 인라인 입력칸이 안내 역할.
+    if (state.addModeCell) {
+      const b = body.querySelector(`.cont-scale-btn[data-i="${state.addModeCell.i}"][data-j="${state.addModeCell.j}"]`);
+      if (b) b.classList.add("is-active");
+      return;
+    }
+    const pos = activeScaleCell();
+    if (!pos) return;
+    const inp = body.querySelector(`.cont-actual[data-i="${pos.i}"][data-j="${pos.j}"]`);
+    const td = inp && inp.closest("td.cont-cell");
+    if (td) {
+      td.classList.add("cell-scale-target");
+      if (!td.querySelector(".scale-target-tag")) {
+        const tag = document.createElement("span");
+        tag.className = "scale-target-tag";
+        tag.textContent = "⚖ 저울";
+        td.appendChild(tag);
+      }
+    }
+    const btn = body.querySelector(`.cont-scale-btn[data-i="${pos.i}"][data-j="${pos.j}"]`);
+    if (btn) btn.classList.add("is-active");
   }
 
   function fillScaleValue(i, j, value) {
@@ -464,9 +527,15 @@
     input.classList.remove("manual-warn");
     input.removeAttribute("title");
     updateCellVar(i, j);
-    warnIfVariance(i, j);
+    const over = warnIfVariance(i, j);
+    // 이 셀이 수동 지정 대상이었고 허용 편차 내로 완료됐으면 지정 해제(sticky 종료).
+    if (!over && state.scaleTargetCell
+      && state.scaleTargetCell.i === i && state.scaleTargetCell.j === j) {
+      state.scaleTargetCell = null;
+    }
     scheduleDraftSave();  // 저울 PRINT 입력분도 임시 저장(복구용)
     focusNextFrom(i, j);
+    updateScaleTargetIndicator();
   }
 
   // ── 작업자 세션 ─────────────────────────────────────────────
@@ -607,6 +676,7 @@
     state.lotRescalePlan = [];      // 레시피 변경 → 증량 요약줄도 리셋
     state.lotRescaleEvents = [];    // 레시피 변경 → 증량 승인 이력도 리셋(총량 잠금도 함께 풀림)
     state.addPendingCells = {};     // 레시피 변경 → 증량 대기 셀 억제도 리셋
+    state.scaleTargetCell = null;   // 레시피 변경 → 저울 대상 지정 해제
     state.manualApproved = null;    // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
     rebuildCells();
     rebuildLotRescale();
@@ -923,6 +993,7 @@
           `<td class="num cont-cell ${lc}">`
           + `<input class="input cont-actual" data-i="${i}" data-j="${j}" type="number" step="any" min="0" `
           + `value="${esc(cell.actual)}" placeholder="${ph}" />`
+          + `<button type="button" class="cont-scale-btn" data-i="${i}" data-j="${j}" tabindex="-1" title="여기로 저울 입력">⚖</button>`
           + `<span class="cont-var" data-i="${i}" data-j="${j}">-</span>`
           + `</td>`
         );
@@ -949,10 +1020,25 @@
     applyScaleOnlyToCells();
     // 이미 계량된 셀이 있으면(로트 수 변경 등 재렌더 후) 총량 잠금 상태를 새 DOM 에 다시 적용.
     updateContTotalLock();
+    // 저울 대상 셀 표시 갱신(재렌더 후).
+    updateScaleTargetIndicator();
   }
 
   function bindCellEvents() {
     const body = $("cont-mat-body");
+    // ⚖ 셀 지정 버튼 — 증량 대기 셀이면 인라인 추가 입력, 아니면 대상 셀 지정 + 포커스.
+    body.querySelectorAll(".cont-scale-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.dataset.i);
+        const j = Number(btn.dataset.j);
+        if (state.addPendingCells && state.addPendingCells[`${i}:${j}`] != null) {
+          openAddInline(i, j);
+          return;
+        }
+        setScaleTargetCell(i, j);
+        focusActual(i, j);
+      });
+    });
     body.querySelectorAll(".cont-lot").forEach((el) => {
       el.addEventListener("input", () => {
         state.sharedLot[Number(el.dataset.i)] = el.value;
@@ -1536,6 +1622,7 @@
         updateCellVar(Number(parts[0]), Number(parts[1]));
       }
     });
+    updateScaleTargetIndicator();  // 증량 대기 배지 변화 → 대상 표시 갱신
   }
 
   // 셀 안 인라인 추가분 입력 — 배지를 작은 input 으로 교체. Enter 확정 시 누계 합산.
@@ -1796,6 +1883,14 @@
 
   // ── 바인딩/초기화 ───────────────────────────────────────────
   function bind() {
+    // 셀 포커스 이동 시 저울 대상 표시 갱신(delegated — 재렌더돼도 유지). tbody 는
+    // render 가 innerHTML 만 갈아끼우므로 한 번만 부착한다. focusout 후 새 focusin 이
+    // activeElement 를 확정하도록 microtask 로 지연 갱신.
+    const matBody = $("cont-mat-body");
+    if (matBody) {
+      matBody.addEventListener("focusin", updateScaleTargetIndicator);
+      matBody.addEventListener("focusout", () => setTimeout(updateScaleTargetIndicator, 0));
+    }
     const onRecipePick = () => onRecipeChange().catch((e) => notify(e.message, "error"));
     const recipeSel = $("cont-recipe");
     recipeSel.addEventListener("change", onRecipePick);
