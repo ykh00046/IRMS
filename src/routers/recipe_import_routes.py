@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
+from ..services.recipe_helpers import resolve_chain_tip
 from .item_code_routes import _PRODUCT_CODE_PATTERN, _revision_chain_ids
 from .models import ImportRequest, actor_name
 
@@ -138,6 +139,17 @@ def build_router() -> APIRouter:
                         },
                     )
 
+            # GAP 2: 동시 수정 등록 레이스(체인 분기) 방지 — 부모가 여전히 체인의 현재
+            # 버전(tip)일 때만 개정을 허용한다. 다른 책임자가 먼저 개정해 tip 이 이동했으면
+            # (resolve_chain_tip(parent) != parent) 409 로 거부한다. 배합 저장 409 와 동일한
+            # 낙관적 잠금 규칙(recipe_helpers.resolve_chain_tip 단일 소스).
+            if body.revision_of is not None:
+                if resolve_chain_tip(connection, int(body.revision_of)) != int(body.revision_of):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="레시피가 방금 개정되었습니다 — 새로고침 후 최신 버전에서 다시 수정 등록하세요.",
+                    )
+
             # 수정 등록(revision)이면 원본 체인의 DHR 전용 여부·기준 배합량을 승계한다.
             # 승계하지 않으면 새 버전이 일반 레시피가 되어 배합 화면에 노출되는 회귀 발생.
             inherited_is_dhr = 0
@@ -203,6 +215,18 @@ def build_router() -> APIRouter:
             effective_is_derived = 1 if body.is_derived else (1 if inherited_is_derived else 0)
             # 1차→2차 연계: 명시 값 우선, 없으면 부모 승계(비개정 신규면 None).
             effective_stage1_recipe_id = body.stage1_recipe_id if body.stage1_recipe_id is not None else inherited_stage1_recipe_id
+            # GAP 4: stage1 연계 참조 무결성 — 지정/승계된 1차 레시피가 실제로 존재해야 한다.
+            # 없으면 400(댕글링 링크 차단). PUT /stage1 의 대상 존재 검증과 동일 규칙.
+            if effective_stage1_recipe_id is not None:
+                stage1_exists = connection.execute(
+                    "SELECT 1 FROM recipes WHERE id = ? LIMIT 1",
+                    (int(effective_stage1_recipe_id),),
+                ).fetchone()
+                if not stage1_exists:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="지정한 1차 레시피를 찾을 수 없습니다.",
+                    )
             # 요청의 tolerance_g 가 지정되면 그것을 우선(base_totals·anchor 와 동일한 우선순위).
             effective_tolerance_g = body.tolerance_g
             if effective_tolerance_g is None:
@@ -214,6 +238,14 @@ def build_router() -> APIRouter:
             # 충돌 조회에서 제외한다(BUG 1: 자기 부모 코드로 자신이 409 되는 회귀 방지).
             explicit_product_code = _normalize_explicit_product_code(body.product_code)
             if explicit_product_code is not None:
+                # BUG 1: 명시 product_code 는 루프 밖에서 한 번 계산돼 모든 값행에 동일하게
+                # 찍힌다. 값행이 2개 이상(서로 다른 반제품)이면 "코드 1개 = 반제품 1개"
+                # 불변식이 깨지므로, 명시 코드는 반제품이 정확히 1개일 때만 허용한다.
+                if len(parsed["parsed_rows"]) > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="여러 반제품을 한 번에 등록할 때는 품목코드를 비워 두세요(자동 인식/개별 지정).",
+                    )
                 exclude_clause = ""
                 exclude_params: list[Any] = []
                 if body.revision_of is not None:
@@ -241,6 +273,11 @@ def build_router() -> APIRouter:
                 ",".join(str(int(t)) if float(t) == int(t) else str(t) for t in totals[:3])
                 if totals else None
             )
+
+            # BUG 1: 한 임포트 안에서 서로 다른 반제품이 같은 유효 코드로 귀결되면(자동 인식
+            # 중복 등) "코드 1개 = 반제품 1개" 불변식 위반이므로 400. DB 충돌 검사는 배치
+            # 내부 형제 행을 못 보므로 여기서 별도로 막는다. {유효코드: 최초 반제품명}.
+            seen_effective_codes: dict[str, str] = {}
 
             for parsed_row in parsed["parsed_rows"]:
                 # 기준 자재 결정:
@@ -295,6 +332,19 @@ def build_router() -> APIRouter:
                     effective_product_code = explicit_product_code
                 else:
                     effective_product_code = matched_code or inherited_product_code
+                # BUG 1: 배치 내부 코드 중복(서로 다른 반제품 → 동일 유효 코드) 차단.
+                if effective_product_code:
+                    prior_name = seen_effective_codes.get(effective_product_code)
+                    if prior_name is not None and prior_name != parsed_row["product_name"]:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"같은 품목코드({effective_product_code})가 서로 다른 반제품"
+                                f"({prior_name}, {parsed_row['product_name']})에 지정되었습니다. "
+                                "반제품마다 다른 코드를 쓰거나 코드를 비워 두세요."
+                            ),
+                        )
+                    seen_effective_codes[effective_product_code] = parsed_row["product_name"]
                 effective_category = inherited_category
                 if effective_category is None and matched_hint:
                     # 신규(비개정) 임포트에서 승계 category 가 없을 때만 hint 로 채움.

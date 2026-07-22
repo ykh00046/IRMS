@@ -19,6 +19,34 @@ from ..db import get_connection, write_audit_log
 from ..services import record_delete_service
 
 
+def _stage1_would_cycle(
+    connection, recipe_id: int, stage1_recipe_id: int, *, max_depth: int = 50
+) -> bool:
+    """GAP 4: stage1_recipe_id 링크를 따라 올라가며 recipe_id 로 되돌아오면 True(순환).
+
+    A→B→A(2노드 상호 지정)·자기참조·더 긴 순환을 유한 걸음(visited-set + 깊이 상한)으로
+    검출한다. recipe_id 가 stage1 을 지정하려 할 때, 대상 체인이 이미 recipe_id 를
+    (직·간접으로) 1차로 가리키면 순환이 된다.
+    """
+    seen: set[int] = set()
+    current: int | None = stage1_recipe_id
+    depth = 0
+    while current is not None and depth < max_depth:
+        if current == recipe_id:
+            return True
+        if current in seen:
+            break
+        seen.add(current)
+        row = connection.execute(
+            "SELECT stage1_recipe_id FROM recipes WHERE id = ?", (current,)
+        ).fetchone()
+        if row is None:
+            break
+        current = row["stage1_recipe_id"]
+        depth += 1
+    return False
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
@@ -47,6 +75,8 @@ def build_router() -> APIRouter:
                 details={
                     "linked_record_count": result.linked_record_count,
                     "deleted_linked_records": result.deleted_linked_records,
+                    "relinked_child_ids": list(result.relinked_child_ids),
+                    "stage1_cleared_recipe_ids": list(result.stage1_cleared_recipe_ids),
                 },
             )
             connection.commit()
@@ -357,6 +387,12 @@ def build_router() -> APIRouter:
                     raise HTTPException(
                         status_code=400,
                         detail="지정한 1차 레시피를 찾을 수 없습니다.",
+                    )
+                # GAP 4: A↔B 상호 지정(2노드 순환) 등 순환 링크 차단(유한 걸음 검사).
+                if _stage1_would_cycle(connection, recipe_id, stage1_recipe_id):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="1차 연계가 순환됩니다 — 이미 상대 레시피가 이 레시피를 1차로 참조하고 있습니다.",
                     )
                 target_label = str(target["product_name"])
             else:

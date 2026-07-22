@@ -454,3 +454,102 @@ def test_revision_explicit_product_code_held_by_other_chain_still_409():
     )
     assert rev_res.status_code == 409
     assert holder in rev_res.json()["detail"]
+
+
+# ---------------- §9 BUG 1: 다중 반제품 임포트 + 명시 품목코드 ----------------
+
+
+def test_multi_product_explicit_code_rejected():
+    """(a) BUG 1: 값행 2개(서로 다른 반제품) + 명시 product_code → 400.
+
+    명시 코드는 루프 밖에서 한 번 계산돼 모든 행에 동일하게 찍히므로, "코드 1개 =
+    반제품 1개" 불변식을 지키려 다중 반제품 임포트에선 명시 코드를 거부한다.
+    """
+    client = _client()
+    headers = _login(client)
+    suffix = _uid()
+    code = f"BC{suffix[:5]}"
+    raw = (
+        "반제품명\t원료A\t원료B\n"
+        f"MULTIA{suffix}\t60\t40\n"
+        f"MULTIB{suffix}\t50\t50"
+    )
+    res = client.post(
+        "/api/recipes/import",
+        json={"raw_text": raw, "product_code": code},
+        headers=headers,
+    )
+    assert res.status_code == 400, res.text
+    assert "비워" in res.json()["detail"]
+
+
+def test_single_product_explicit_code_still_succeeds():
+    """(b) 값행 1개 + 명시 product_code → 정상 등록(코드 적용)."""
+    client = _client()
+    headers = _login(client)
+    suffix = _uid()
+    code = f"BC{suffix[:5]}"
+    product = f"SINGLE{suffix}"
+    res = client.post(
+        "/api/recipes/import",
+        json={"raw_text": f"반제품명\t원료A\t원료B\n{product}\t60\t40", "product_code": code},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    rid = res.json()["created_ids"][0]
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        got = conn.execute(
+            "SELECT product_code FROM recipes WHERE id = ?", (rid,)
+        ).fetchone()["product_code"]
+    assert got == code
+
+
+def test_batch_duplicate_effective_code_rejected():
+    """(c) BUG 1: 한 임포트 안에서 서로 다른 반제품이 같은 유효 코드로 귀결 → 400.
+
+    부모를 명시 코드로 등록한 뒤, 값행 2개(서로 다른 반제품)로 수정 등록하면 둘 다
+    부모 코드를 승계해 유효 코드가 겹친다 — 배치 내부 중복 가드가 이를 막는다.
+    """
+    client = _client()
+    headers = _login(client)
+    suffix = _uid()
+    code = f"BC{suffix[:5]}"
+    base = _import_with_code(client, headers, f"DUPBASE{suffix}", 60, 40, product_code=code)
+    assert base.status_code == 200, base.text
+    base_id = base.json()["created_ids"][0]
+
+    raw = (
+        "반제품명\t원료A\t원료B\n"
+        f"DUPX{suffix}\t50\t50\n"
+        f"DUPY{suffix}\t50\t50"
+    )
+    res = client.post(
+        "/api/recipes/import",
+        json={"raw_text": raw, "revision_of": base_id},
+        headers=headers,
+    )
+    assert res.status_code == 400, res.text
+    assert code in res.json()["detail"]
+
+
+# ---------------- §9 GAP 2: 동시 수정 등록 레이스(체인 분기) ----------------
+
+
+def test_stale_parent_revision_conflicts_409():
+    """(e) GAP 2: 이미 개정된 부모(비-tip)를 다시 개정 시도 → 409.
+
+    v1→v2 개정 뒤 tip 은 v2. v1 을 다시 개정하려 하면 체인이 분기되므로 409 로 막고
+    최신본에서 다시 시도하도록 안내한다(배합 저장 409 와 동일한 낙관적 잠금).
+    """
+    client = _client()
+    headers = _login(client)
+    product = f"STALE{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+    _import(client, headers, product, 70, 30, revision_of=v1)  # tip → v2
+
+    res = _import_with_code(client, headers, product + "stale", 55, 45, revision_of=v1)
+    assert res.status_code == 409, res.text
+    assert "다시 수정 등록" in res.json()["detail"]

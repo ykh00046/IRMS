@@ -336,6 +336,56 @@ def test_non_manager_blocked_from_stage1():
     assert blocked.status_code in (401, 403)
 
 
+def test_stage1_direct_cycle_rejected():
+    """(f) GAP 4: A.stage1=B 설정 후 B.stage1=A 시도 → 400(2노드 순환 차단, 유한 걸음)."""
+    client = _client()
+    headers = _login(client)
+    a = _import(client, headers, f"CYCA_{_uid()}")
+    b = _import(client, headers, f"CYCB_{_uid()}")
+
+    r1 = client.put(f"/api/recipes/{a}/stage1", json={"stage1_recipe_id": b}, headers=headers)
+    assert r1.status_code == 200, r1.text
+    # B → A 는 순환을 만든다(B→A→B).
+    r2 = client.put(f"/api/recipes/{b}/stage1", json={"stage1_recipe_id": a}, headers=headers)
+    assert r2.status_code == 400, r2.text
+    assert "순환" in r2.json()["detail"]
+
+
+def test_stage1_reference_cleared_on_delete():
+    """(g) GAP 4: 1차 레시피 삭제 시 그것을 stage1 로 참조하던 2차의 링크가 NULL 로 정리."""
+    client = _client()
+    headers = _login(client)
+    stage1_id = _import(client, headers, f"DELS1_{_uid()}")
+    stage2_id = _import(client, headers, f"DELS2_{_uid()}")
+    client.put(
+        f"/api/recipes/{stage2_id}/stage1",
+        json={"stage1_recipe_id": stage1_id},
+        headers=headers,
+    )
+
+    res = client.delete(f"/api/recipes/{stage1_id}", headers=headers)
+    assert res.status_code == 200, res.text
+
+    detail = client.get(f"/api/recipes/{stage2_id}/detail").json()
+    assert detail["stage1_recipe_id"] is None  # 댕글링 정리됨
+
+
+def test_registration_dangling_stage1_rejected():
+    """GAP 4: 존재하지 않는 stage1_recipe_id 를 명시한 등록 → 400."""
+    client = _client()
+    headers = _login(client)
+    res = client.post(
+        "/api/recipes/import",
+        json={
+            "raw_text": f"반제품명\t원료A\t원료B\nDANGS2_{_uid()}\t60\t40",
+            "stage1_recipe_id": 999999,
+        },
+        headers=headers,
+    )
+    assert res.status_code == 400, res.text
+    assert "1차 레시피" in res.json()["detail"]
+
+
 def test_stage1_in_history():
     """버전 이력(GET /api/recipes/{id}/history) 항목에 stage1_recipe_id 가 노출된다."""
     client = _client()

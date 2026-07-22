@@ -189,9 +189,12 @@ def test_revision_inherits_anchor_when_present_drops_when_absent():
     assert rev_anchor == parent_anchor  # 승계
     assert rev_anchor is not None
 
-    # 3) 개정 — MatA 제거(새 자재로 교체) → anchor 새 항목에 없으므로 NULL
+    # 3) 개정 — MatA 제거(새 자재로 교체) → anchor 새 항목에 없으므로 NULL.
+    #    GAP 2(동시 개정 방지) 이후 개정은 항상 체인 tip 을 대상으로 해야 하므로
+    #    base_id 가 아니라 직전 개정본(rev_keep, 현재 tip)을 개정한다. rev_keep 은
+    #    MatA anchor 를 승계했으므로 MatA 제거 시 anchor 가 NULL 로 떨어지는 검증은 동일.
     rev_drop = _import(
-        client, headers, product, {"MatC": 50, "MatB": 50}, revision_of=base_id
+        client, headers, product, {"MatC": 50, "MatB": 50}, revision_of=rev_keep
     ).json()["created_ids"][0]
     with get_connection() as conn:
         assert conn.execute(
