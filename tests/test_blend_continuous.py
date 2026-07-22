@@ -69,8 +69,12 @@ def _blend_session(client, headers, worker=None):
     return worker
 
 
-def _details(actual_a, actual_b, lot_a=None, lot_b=None):
-    """2자재(원료A/원료B) 로트 상세. actual 은 사람이 아는 값, ratio/theory 는 서버가 무시."""
+def _details(actual_a, actual_b, lot_a="LA", lot_b="LB"):
+    """2자재(원료A/원료B) 로트 상세. actual 은 사람이 아는 값, ratio/theory 는 서버가 무시.
+
+    material_lot 는 기본으로 채운다(LOT 입력은 이제 서버 필수 검증) — LOT 누락 케이스는
+    해당 테스트에서 lot_a/lot_b 에 빈 문자열을 넘겨 명시적으로 만든다.
+    """
     return [
         {"material_name": "원료A", "ratio": 60, "theory_amount": actual_a, "actual_amount": actual_a, "material_lot": lot_a},
         {"material_name": "원료B", "ratio": 40, "theory_amount": actual_b, "actual_amount": actual_b, "material_lot": lot_b},
@@ -323,3 +327,27 @@ def test_continuous_lot_totals_variance_checked_against_per_lot_total():
     assert "편차" in res.json()["detail"]
     # 로트 2 에서 걸렸음을 확인
     assert "로트 2" in res.json()["detail"]
+
+
+def test_continuous_missing_lot_returns_400():
+    """(c) 연속 배합에서 한 로트의 material_lot 가 비어 있으면 400 + 자재명 + 로트 번호.
+
+    LOT 필수 검증은 단건과 동일 규칙 — detail 의 lot 가 비어있으면 저장 거부.
+    """
+    client = _client()
+    headers = _manager(client)
+    product = f"CLOT{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        # 첫 로트는 원료B 의 LOT 를 비움 → 400.
+        "lots": [_details(60, 40, lot_b=""), _details(60, 40)],
+    }, headers=headers)
+    assert res.status_code == 400, res.text
+    detail = res.json()["detail"]
+    assert "로트 1" in detail
+    assert "자재 LOT 를 입력하세요" in detail
+    assert "원료B" in detail

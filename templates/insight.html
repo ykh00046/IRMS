@@ -5,13 +5,13 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260715a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260722a" />
 {% endblock %}
 
 {% block content %}
         <section class="panel">
           <p class="panel-subtitle">완료된 배합 기록을 분석해 자재별 사용량과 제품별 배합 현황을 산출합니다.</p>
-          <div class="insight-filter-grid">
+          <div class="insight-filter-grid insight-filter-row">
             <div class="filter-group">
               <label class="filter-label">시작일</label>
               <input id="insight-from" type="date" class="input" />
@@ -20,11 +20,11 @@
               <label class="filter-label">종료일</label>
               <input id="insight-to" type="date" class="input" />
             </div>
-            <div class="button-row" style="margin-left: auto;">
-              <button id="insight-range-month" type="button" class="btn">최근 30일</button>
-              <button id="insight-range-90" type="button" class="btn">최근 90일</button>
-              <button id="insight-range-all" type="button" class="btn">전체</button>
-              <button id="insight-query" type="button" class="btn accent">조회</button>
+            <div class="button-row insight-period-buttons">
+              <button id="insight-range-month" type="button" class="btn compact">최근 30일</button>
+              <button id="insight-range-90" type="button" class="btn compact">최근 90일</button>
+              <button id="insight-range-all" type="button" class="btn compact">전체</button>
+              <button id="insight-query" type="button" class="btn accent compact">조회</button>
             </div>
           </div>
           <p id="insight-filter-summary" class="filter-summary muted small"></p>

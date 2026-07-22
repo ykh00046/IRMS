@@ -23,6 +23,7 @@
     computeTheoryAmount, findAnchorIndex, theoryFromWeights,
     baseTotalValues, baseTotalLinksHtml,
     rescalePlan, exceedsBatchLimit,
+    missingLotNames, missingLotBlockMessage, appliedRescaleRowHtml,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -48,6 +49,8 @@
     // 초과 계량 증량(로트별). lotRescale[j] = null(미사용) 또는 증량 후 그 로트의 총량.
     // lotRescale 이 전부 null 이면 기존 동작(state.total 만 사용)과 완전 동일.
     lotRescale: [],
+    // 로트별 증량 적용 plan 스냅샷(요약줄 표시용). lotRescalePlan[j] = plan 또는 null.
+    lotRescalePlan: [],
     // 추가분 입력 모드에 들어간 셀(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
     addModeCell: null,     // {i,j} 또는 null
     // 보류 중인 로트별 증량 제안({j, plan}) — discard 모달 '그래도 증량' 시 재사용.
@@ -317,8 +320,10 @@
     state.sharedLot = state.materials.map(() => "");
     state.lotOverrides = {};        // 레시피 변경 → 미등록 LOT 진행 승인 리셋
     state.lotRescale = [];          // 레시피 변경 → 증량 오버라이드 전부 리셋(스펙)
+    state.lotRescalePlan = [];      // 레시피 변경 → 증량 요약줄도 리셋
     rebuildCells();
     rebuildLotRescale();
+    clearContRescaleSummary();
 
     // 기준 자재 레시피는 지원 불가 — 안내 후 표를 비운다.
     state.anchorBlocked = findAnchorIndex(state.materials) >= 0;
@@ -548,13 +553,16 @@
     return Math.round((Number(m.ratio) / 100) * total * 1000) / 1000;
   }
 
-  // lotRescale 을 lotCount 에 맞춘다 — 기존 값 보존, 늘어난 칸은 null(미사용).
+  // lotRescale(과 lotRescalePlan)을 lotCount 에 맞춘다 — 기존 값 보존, 늘어난 칸은 null.
   function rebuildLotRescale() {
     const next = [];
+    const nextPlan = [];
     for (let j = 0; j < state.lotCount; j++) {
       next.push((state.lotRescale && state.lotRescale[j]) || null);
+      nextPlan.push((state.lotRescalePlan && state.lotRescalePlan[j]) || null);
     }
     state.lotRescale = next;
+    state.lotRescalePlan = nextPlan;
   }
 
   // 공정 설명 줄 HTML(전폭). position === 자재 인덱스면 그 자재 앞에, === 자재 수면 끝에.
@@ -819,6 +827,7 @@
     rebuildCells();
     rebuildLotRescale();   // 로트 수 변경 → lotRescale 을 새 lotCount 에 맞춘다(기존 값 보존)
     render();
+    renderContRescaleSummary();  // 로트 수 변경 → 요약줄도 새 lotCount 에 맞춰 갱신
   }
 
   // ── 초과 계량 증량(rescale) — 로트별 스코프 ─────────────────
@@ -910,6 +919,7 @@
     closeContDiscardModal();
     const { j, plan } = pending;
     state.lotRescale[j] = plan.newTotal;
+    state.lotRescalePlan[j] = plan;
     // 그 로트 열의 셀 편차·placeholder·헤더 즉시 재계산. 다른 로트는 불변.
     for (let i = 0; i < state.materials.length; i++) {
       updateCellVar(i, j);
@@ -918,7 +928,37 @@
     }
     renderContLotHeader(j);
     renderAddBadges(j);
+    renderContRescaleSummary();
     notify(`로트 ${j + 1} 배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+  }
+
+  // 증량 적용 요약줄(로트별) — 각 증량된 로트의 자재별 '더 넣을 양'을 상시 표시.
+  // 저장·레시피 변경 전까지 유지(타이핑 중에는 사라지지 않는다).
+  function renderContRescaleSummary() {
+    const el = $("cont-rescale-applied-summary");
+    if (!el) return;
+    const lots = [];
+    for (let j = 0; j < state.lotCount; j++) {
+      const plan = state.lotRescalePlan && state.lotRescalePlan[j];
+      if (!plan) continue;
+      const parts = [];
+      plan.rows.forEach((r) => {
+        if (r.addNeeded != null && Number(r.addNeeded) > 0) {
+          const name = state.materials[r.idx] ? state.materials[r.idx].material_name : "";
+          parts.push(appliedRescaleRowHtml(name, r));
+        }
+      });
+      if (parts.length) {
+        lots.push(`<span class="rescale-applied-title">로트 ${j + 1} (목표 ${fmt(plan.newTotal, 1)}g):</span>` + parts.join(""));
+      }
+    }
+    if (!lots.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.innerHTML = lots.join("");
+    el.hidden = false;
+  }
+  function clearContRescaleSummary() {
+    const el = $("cont-rescale-applied-summary");
+    if (el) { el.hidden = true; el.innerHTML = ""; }
   }
 
   // 헤더 한 칸만 다시 그린다(증량 적용 직후 — 전체 render() 보다 가볍다).
@@ -1092,6 +1132,36 @@
     if (bad.length) {
       notify(`허용 편차 ±${fmt(tol, 2)}g 초과 — 저장할 수 없습니다.`, "error");
       return fail(err, `허용 편차(±${tol}g) 초과: ${bad.slice(0, 6).join(", ")}${bad.length > 6 ? " 외" : ""}. 해당 셀을 다시 계량하세요.`);
+    }
+
+    // 자재 LOT 필수 — 어느 로트에든 실제량을 넣은 자재는 LOT(전 로트 공통) 도 반드시 입력.
+    // 미등록 LOT '사유 적고 진행' 으로 승인된 자재는 sharedLot 이 채워져 있어 만족된다.
+    const lotRows = state.materials.map((m, i) => {
+      // 이 자재가 어느 로트에서든 실제량을 가지는가(하나라도 있으면 LOT 필요).
+      const anyActual = state.cells[i] && state.cells[i].some((c) =>
+        c && c.actual !== "" && c.actual != null && Number(c.actual) > 0
+      );
+      return {
+        material_name: m.material_name,
+        actual_amount: anyActual ? 1 : "",   // 더미: anyActual 이면 LOT 필수로 판정되게
+        material_lot: state.sharedLot[i] || "",
+      };
+    });
+    const lotMissing = missingLotNames(lotRows);
+    if (lotMissing.length) {
+      const msg = missingLotBlockMessage(lotMissing);
+      notify("자재 LOT 를 입력하세요: " + lotMissing.slice(0, 6).join(", ") + (lotMissing.length > 6 ? " …" : ""), "error");
+      const firstIdx = state.materials.findIndex((m, i) => {
+        const anyActual = state.cells[i] && state.cells[i].some((c) =>
+          c && c.actual !== "" && c.actual != null && Number(c.actual) > 0
+        );
+        return anyActual && String(state.sharedLot[i] || "").trim() === "";
+      });
+      if (firstIdx >= 0) {
+        const input = document.querySelector(`.cont-lot[data-i="${firstIdx}"]`);
+        if (input) input.focus();
+      }
+      return fail(err, msg);
     }
 
     // 작업자 확인/교대

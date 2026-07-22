@@ -138,7 +138,8 @@ def test_public_material_usage_route():
         "total_amount": 500,
         "details": [
             {"material_name": "MatX", "material_code": "X01",
-             "ratio": 100, "theory_amount": 500, "actual_amount": 500},
+             "ratio": 100, "theory_amount": 500, "actual_amount": 500,
+             "material_lot": "LOT-X"},
         ],
     }, headers=headers)
     assert created.status_code == 200, created.text

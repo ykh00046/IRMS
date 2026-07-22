@@ -450,6 +450,42 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   attUsersRefresh?.addEventListener("click", loadAttendanceUsers);
+
+  // 계정 미발급 직원 최초 발급 — 목록(발급된 계정만)에 없는 사번을 직접 입력해 발급.
+  // 백엔드 POST /admin/reset-password 가 미발급 사번이면 계정을 새로 만든다
+  // (근태 명단에 없는 사번은 404 EMP_NOT_IN_EXCEL — 메시지 그대로 노출).
+  const attNewEmp = document.getElementById("att-user-new-emp");
+  const attIssueBtn = document.getElementById("att-user-issue-btn");
+  attIssueBtn?.addEventListener("click", async () => {
+    const empId = String(attNewEmp?.value || "").trim();
+    if (!empId) {
+      IRMS.notify("사번을 입력하세요.", "error");
+      attNewEmp?.focus();
+      return;
+    }
+    if (!window.confirm(`사번 ${empId}의 임시 비밀번호를 발급할까요? (계정이 없으면 새로 만듭니다)`)) return;
+    try {
+      attIssueBtn.disabled = true;
+      const result = await attendanceFetch("/api/attendance/admin/reset-password", {
+        method: "POST",
+        body: { emp_id: empId },
+      });
+      window.prompt(`사번 ${empId} 임시 비밀번호`, result.temporary_password || "");
+      IRMS.notify(`사번 ${empId} 임시 비밀번호를 발급했습니다.`, "success");
+      if (attNewEmp) attNewEmp.value = "";
+      loadAttendanceUsers();
+    } catch (err) {
+      IRMS.notify(`발급 실패: ${err.message}`, "error");
+    } finally {
+      attIssueBtn.disabled = false;
+    }
+  });
+  attNewEmp?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      attIssueBtn?.click();
+    }
+  });
   loadAttendanceUsers();
 
   // ── 배합일지 서명 합성 설정 (signature_qa_tool 이식) ──

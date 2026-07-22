@@ -35,7 +35,7 @@
     selectedBlendId: null,
     selectedBlendDetail: null,
     periodChart: null,
-    granularity: "quarter",
+    granularity: "day",
     year: null,
     reactor: null,
   };
@@ -53,15 +53,59 @@
   async function loadOverview() {
     const data = await request("/viscosity/overview");
     state.products = data.items || [];
-    if (!state.currentId && state.products.length) {
-      state.currentId = state.products[0].id;
-    }
+    // 화면에 보이는 선택과 아래 데이터가 항상 일치하도록, 로드는 select 의 실제 값에서
+    // 파생한다. 첫 진입이면 native select 가 첫 옵션을 자동 선택하므로 그것을 그대로
+    // 따르고, 새로고침/설정 저장 후엔 renderProductSelect 가 유지한 currentId 를 따른다.
     renderProductSelect();
-    if (state.currentId) {
-      const product = state.products.find((item) => item.id === state.currentId);
-      state.year = product ? product.year : null;
-      await loadProduct(state.currentId);
+    const sel = $("visc-product-select");
+    const chosen =
+      sel && sel.value
+        ? state.products.find((item) => String(item.id) === sel.value)
+        : null;
+    if (chosen) {
+      await selectProduct(chosen);
+    } else {
+      showEmptyState();
     }
+  }
+
+  // 선택된 반제품 하나로 화면 전체(카드·추세·기간·배합 기록)를 로드한다. 초기 로드와
+  // 사용자의 select 변경이 같은 경로를 타서 '선택 ≠ 표시' 불일치를 원천 차단한다.
+  function selectProduct(product, options) {
+    if (!product) {
+      showEmptyState();
+      return Promise.resolve();
+    }
+    state.currentId = product.id;
+    state.year = product.year;
+    if (options && options.resetReactor) state.reactor = null;
+    return loadProduct(product.id);
+  }
+
+  // 등록된 반제품이 하나도 없어 선택이 비어 있을 때의 안내 상태.
+  function showEmptyState() {
+    state.currentId = null;
+    state.analysis = null;
+    state.blendRecords = [];
+    state.selectedBlendId = null;
+    state.selectedBlendDetail = null;
+    ["visc-card-count", "visc-card-latest", "visc-card-mean", "visc-card-anomaly", "visc-card-warn"]
+      .forEach((id) => { $(id).textContent = "-"; });
+    $("visc-card-latest-date").textContent = "-";
+    $("visc-control-summary").textContent = "관리 기준 -";
+    $("visc-cond").textContent = "측정 조건 -";
+    $("visc-trend-banner").hidden = true;
+    $("visc-period-alert").hidden = true;
+    const blendBody = $("visc-blend-body");
+    blendBody.innerHTML = "";
+    blendBody.appendChild(emptyRow(5, "등록된 반제품이 없습니다. 배합 기록에 점도를 처음 등록하면 자동 생성됩니다."));
+    $("visc-record-count").textContent = "0건";
+    $("visc-blend-record").value = "";
+    $("visc-selected-row").textContent = "등록된 반제품이 없습니다.";
+    setSubmitEnabled(false);
+    const periodBody = $("visc-period-body");
+    periodBody.innerHTML = "";
+    periodBody.appendChild(emptyRow(9, "표시할 데이터가 없습니다."));
   }
 
   function renderProductSelect() {
@@ -82,10 +126,7 @@
     sel.addEventListener("change", () => {
       const product = selectedProduct();
       if (!product || product.id === state.currentId) return;
-      state.currentId = product.id;
-      state.year = product.year;
-      state.reactor = null; // 반제품이 바뀌면 반응기 필터 초기화
-      loadProduct(product.id);
+      selectProduct(product, { resetReactor: true }); // 반제품이 바뀌면 반응기 필터 초기화
     });
   }
 
@@ -368,6 +409,14 @@
     value.className = "visc-reading-value";
     value.textContent = fmt(reading.viscosity);
     cell.appendChild(value);
+    const status = statusForLot(reading.lot_no);
+    if (status === "anomaly" || status === "warn") {
+      const badge = document.createElement("span");
+      badge.className = `visc-status ${status}`;
+      badge.style.marginLeft = "6px";
+      badge.textContent = status === "anomaly" ? "이상" : "경고";
+      cell.appendChild(badge);
+    }
     if (reading.measured_date) {
       const date = document.createElement("span");
       date.className = "muted small";
@@ -433,6 +482,22 @@
     return state.blendRecords.find((record) => record.id === state.selectedBlendId) || null;
   }
 
+  // 배합 실적 연계 측정(list_readings_for_blend)엔 판정(status)이 없다. 재조회한 분석
+  // (analyze_product 이 각 측정에 status 부여)에서 같은 LOT 를 찾아 판정을 얻는다.
+  function findReadingByLot(lotNo) {
+    if (!lotNo || !state.analysis) return null;
+    const readings = state.analysis.readings || [];
+    for (let i = readings.length - 1; i >= 0; i -= 1) {
+      if (readings[i].lot_no === lotNo) return readings[i];
+    }
+    return null;
+  }
+
+  function statusForLot(lotNo) {
+    const reading = findReadingByLot(lotNo);
+    return reading ? reading.status : null;
+  }
+
   function linkedReadings() {
     return (state.selectedBlendDetail && state.selectedBlendDetail.viscosity) || [];
   }
@@ -457,6 +522,8 @@
       showFormError("점도값을 입력하세요.");
       return;
     }
+    const submittedRecord = selectedRecord();
+    const lotNo = submittedRecord ? submittedRecord.product_lot : null;
     try {
       // 반응기는 배합 실적에서 지정하고 점도는 실적에서 물려받는다(여기서 입력하지 않음).
       await request(`/blend/records/${recordId}/viscosity`, {
@@ -466,10 +533,12 @@
       $("visc-value").value = "";
       $("visc-memo").value = "";
       const selectedId = recordId;
+      // 재조회로 방금 등록한 측정의 판정(이상/경고/정상)을 확정한다 — analyze_product 이
+      // 각 측정에 status 를 붙이므로 목록 배지·카드·알림이 항상 일치한다.
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });
-      warnNewReading(value);
-      notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
+      const flagged = warnNewReading(value, lotNo);
+      if (!flagged) notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
     } catch (error_) {
       showFormError(error_.message);
     }
@@ -481,25 +550,30 @@
     error.hidden = false;
   }
 
-  function warnNewReading(value) {
-    const row = state.analysis && state.analysis.new_reading;
+  // 방금 등록한 LOT 의 판정을 재조회한 분석에서 찾아, 이상/경고면 폼 결과 배너 + notify 로
+  // 뚜렷이 알린다. 정상이면 배너를 숨기고 false 를 반환(호출부가 성공 알림을 띄운다).
+  function warnNewReading(value, lotNo) {
+    const reading = findReadingByLot(lotNo);
+    const status = reading ? reading.status : null;
     const result = $("visc-form-result");
-    if (!row || row.status === "normal") {
+    if (!status || status === "normal") {
       result.hidden = true;
-      return;
+      return false;
     }
-    const reasons = (row.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ");
-    if (row.status === "anomaly") {
-      result.textContent = `이상값입니다. 점도 ${fmt(value)} · ${reasons}`;
+    const reasons = (reading.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ");
+    const tail = reasons ? ` · ${reasons}` : "";
+    if (status === "anomaly") {
+      result.textContent = `⚠ 점도 이상 판정: 관리 범위를 벗어났습니다 — 책임자에게 알리세요. (점도 ${fmt(value)}${tail})`;
       result.className = "visc-form-result anomaly";
       result.hidden = false;
       notify(result.textContent, "error");
     } else {
-      result.textContent = `경고 구간입니다. 점도 ${fmt(value)} · ${reasons}`;
+      result.textContent = `⚠ 점도 경고 구간입니다 — 확인이 필요합니다. (점도 ${fmt(value)}${tail})`;
       result.className = "visc-form-result warn";
       result.hidden = false;
       notify(result.textContent, "warn");
     }
+    return true;
   }
 
   async function deleteReading(readingId, lotNo) {

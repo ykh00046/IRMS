@@ -13,6 +13,17 @@
   align-items: flex-end;
 }
 
+/* 기간 필터 행 — 날짜 입력 바로 뒤에 빠른 기간 버튼을 붙인다. 기본 4열 그리드로는
+   버튼 묶음이 가운데에 떠 오른쪽에 빈 공간이 생기므로, 이 행만 flex 로 오버라이드해
+   시작일·종료일 → 기간 버튼 → 조회를 한 줄에 나란히 둔다(좁은 화면은 wrap). */
+.insight-filter-grid.insight-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+.insight-period-buttons { gap: 0.4rem; }
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

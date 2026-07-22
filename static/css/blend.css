@@ -247,6 +247,26 @@
 }
 .blend-base-link:hover { text-decoration: underline; }
 
+/* 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖 풀폭 줄로.
+   좁은 폼 칸에 몰려 레이아웃이 깨지는 것을 방지(재배치만, 동작은 동일). */
+.blend-total-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin-top: 0.5rem; min-height: 0;
+}
+.blend-total-tools:has(#blend-base-links[hidden]):has(#rescale-undo[hidden]) { display: none; }
+
+/* 증량 적용 요약 — 증량 후 저장·초기화·레시피 변경 전까지 자재별 추가분 상시 표시.
+   주황 계열(기존 rescale 배지·취소 링크와 동일 톤)으로 증량 상태임을 강조. */
+.rescale-applied-summary {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.75rem;
+  margin: 0.5rem 0 0; padding: 0.5rem 0.85rem;
+  background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b;
+  border-radius: 8px; font-size: 0.85rem; color: #92400e;
+}
+.rescale-applied-summary[hidden] { display: none; }
+.rescale-applied-title { font-weight: 700; }
+.rescale-applied-item { white-space: nowrap; }
+
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));

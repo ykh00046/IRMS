@@ -29,6 +29,34 @@
           </div>
         </section>
 
+        <section class="dashboard-cards visc-cards">
+          <div class="metric-card">
+            <div class="metric-label">측정 건수</div>
+            <div class="metric-value" id="visc-card-count">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">최근 점도</div>
+            <div class="metric-value" id="visc-card-latest">-</div>
+            <div class="metric-unit" id="visc-card-latest-date">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">평균 및 표준편차</div>
+            <div class="metric-value" id="visc-card-mean">-</div>
+            <div class="metric-unit">중심 기준</div>
+          </div>
+          <div class="metric-card visc-card-anomaly">
+            <div class="metric-label">이상</div>
+            <div class="metric-value" id="visc-card-anomaly">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card visc-card-warn">
+            <div class="metric-label">경고</div>
+            <div class="metric-value" id="visc-card-warn">-</div>
+            <div class="metric-unit">건</div>
+          </div>
+        </section>
+
         <section class="panel visc-register-panel">
           <div class="visc-register-head">
             <div>
@@ -87,34 +115,6 @@
           </div>
         </section>
 
-        <section class="dashboard-cards visc-cards">
-          <div class="metric-card">
-            <div class="metric-label">측정 건수</div>
-            <div class="metric-value" id="visc-card-count">-</div>
-            <div class="metric-unit">건</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">최근 점도</div>
-            <div class="metric-value" id="visc-card-latest">-</div>
-            <div class="metric-unit" id="visc-card-latest-date">-</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">평균 및 표준편차</div>
-            <div class="metric-value" id="visc-card-mean">-</div>
-            <div class="metric-unit">중심 기준</div>
-          </div>
-          <div class="metric-card visc-card-anomaly">
-            <div class="metric-label">이상</div>
-            <div class="metric-value" id="visc-card-anomaly">-</div>
-            <div class="metric-unit">건</div>
-          </div>
-          <div class="metric-card visc-card-warn">
-            <div class="metric-label">경고</div>
-            <div class="metric-value" id="visc-card-warn">-</div>
-            <div class="metric-unit">건</div>
-          </div>
-        </section>
-
         <section id="visc-trend-banner" class="visc-trend-banner" hidden>
           <span id="visc-trend-text"></span>
         </section>
@@ -127,10 +127,10 @@
           <div class="visc-panel-head">
             <h3 class="panel-title">기간별 추세 및 분석</h3>
             <div class="visc-gran-toggle" id="visc-gran-toggle">
-              <button class="btn btn-sm" data-gran="day" type="button">일</button>
+              <button class="btn btn-sm active" data-gran="day" type="button">일</button>
               <button class="btn btn-sm" data-gran="week" type="button">주</button>
               <button class="btn btn-sm" data-gran="month" type="button">월</button>
-              <button class="btn btn-sm active" data-gran="quarter" type="button">분기</button>
+              <button class="btn btn-sm" data-gran="quarter" type="button">분기</button>
               <button class="btn btn-sm" data-gran="year" type="button">연도</button>
             </div>
           </div>
@@ -247,5 +247,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260712a"></script>
-    <script src="/static/js/viscosity.js?v=20260720a"></script>
+    <script src="/static/js/viscosity.js?v=20260722a"></script>
 {% endblock %}

@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260722a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260722b" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -74,14 +74,7 @@
                   <select class="input" id="blend-recipe"><option value="">레시피 선택…</option></select>
                 </div>
                 <div class="blend-field">
-                  <!-- 기준량 버튼은 라벨 줄 오른쪽 링크형 — 칸 높이를 늘리지 않아 폼 균형 유지 -->
-                  <div class="blend-label-row">
-                    <label class="filter-label" for="blend-total">총 배합량 (g)</label>
-                    <!-- 레시피에 지정된 기준 배합량(최대 3개) — 클릭하면 총량에 채움 -->
-                    <span class="blend-base-links" id="blend-base-links" hidden></span>
-                    <!-- 방금 증량 취소 — 증량 적용 후 추가분을 넣기 전까지만 노출 -->
-                    <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
-                  </div>
+                  <label class="filter-label" for="blend-total">총 배합량 (g)</label>
                   <input class="input" id="blend-total" type="number" step="0.1" min="0" />
                 </div>
                 <div class="blend-field">
@@ -140,6 +133,18 @@
               </div>
             </section>
           </div>
+
+          <!-- 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖으로 빼 폼 균형 유지.
+               id/hidden 토글 동작은 그대로(JS 가 id 로 접근). 비어 있으면 줄이 좁게 유지. -->
+          <div id="blend-total-tools" class="blend-total-tools">
+            <!-- 레시피에 지정된 기준 배합량(최대 3개) — 클릭하면 총량에 채움 -->
+            <span class="blend-base-links" id="blend-base-links" hidden></span>
+            <!-- 방금 증량 취소 — 증량 적용 후 추가분을 넣기 전까지만 노출 -->
+            <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
+          </div>
+          <!-- 증량 적용 요약 — 증량 후 저장·초기화·레시피 변경 전까지 자재별 추가분 표시.
+               작업자가 타이핑하는 동안에는 사라지지 않는다(얼마나 더 넣어야 할지 안내). -->
+          <div id="rescale-applied-summary" class="rescale-applied-summary" hidden></div>
 
           <section class="panel">
             <div class="table-wrap">
@@ -272,8 +277,8 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend.js?v=20260720p"></script>
+    <script src="/static/js/blend_lib.js?v=20260722b"></script>
+    <script src="/static/js/blend.js?v=20260722b"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

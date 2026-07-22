@@ -795,6 +795,29 @@ def enforce_carry_over(
         d["manual_entry"] = False
 
 
+def missing_lot_names(details: list[dict[str, Any]]) -> list[str]:
+    """material_lot 가 비어 있는 행의 자재명 목록을 반환(LOT 입력 누락 검증).
+
+    배합 실적은 자재별 LOT 가 추적성의 핵심이다 — LOT 없이 저장되면 어떤 원료 로트가
+    쓰였는지 알 수 없어 불량 회수·이력 추적이 불가능하다. 따라서 enforce_carry_over 와
+    derive_details_from_recipe 가 끝난 뒤(서버가 행을 보강한 최종 상태 기준) 모든 행의
+    material_lot 가 strip() 후 비어있지 않아야 한다.
+
+    carried_over(반응기 이월) 행은 enforce_carry_over 가 1차 배합 product_lot 를
+    material_lot 로 요구·검증하므로 이 함수에 도달할 때 이미 채워져 있다 — 즉 본 검사에서
+    자연스럽게 만족된다(특별 분기 불필요).
+
+    반환: 빈 값인 행의 material_name 리스트(순서 보존). 호출부는 비어있지 않으면
+    HTTPException(400, "자재 LOT 를 입력하세요: " + ...) 로 되돌린다.
+    """
+    missing: list[str] = []
+    for d in details:
+        lot = str(d.get("material_lot") or "").strip()
+        if lot == "":
+            missing.append(str(d.get("material_name") or "").strip() or "(이름 없음)")
+    return missing
+
+
 def derive_details_from_recipe(
     connection: sqlite3.Connection,
     recipe_id: int,

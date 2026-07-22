@@ -492,6 +492,16 @@ def build_router() -> APIRouter:
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
 
+        # 자재 LOT 필수 — 추적성 핵심. enforce_carry_over·derive 이후 최종 행 상태로 검사.
+        missing_lots = blend_service.missing_lot_names(details)
+        if missing_lots:
+            shown = missing_lots[:5]
+            suffix = " …" if len(missing_lots) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
+            )
+
         # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
         # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
@@ -800,6 +810,15 @@ def build_router() -> APIRouter:
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
+            # 자재 LOT 필수 — 추적성 핵심(단건과 동일 규칙).
+            missing_lots = blend_service.missing_lot_names(derived)
+            if missing_lots:
+                shown = missing_lots[:5]
+                suffix = " …" if len(missing_lots) > 5 else ""
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"로트 {lot_no}: 자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
+                )
             offenders = blend_service.weighing_tolerance_violations(derived, tolerance_g=tolerance)
             if offenders:
                 raise HTTPException(

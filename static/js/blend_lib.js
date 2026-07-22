@@ -306,6 +306,40 @@
     return `허용 편차(±${tol}g)를 초과해 저장할 수 없습니다: ${names}. 해당 자재를 다시 계량하세요.`;
   }
 
+  // 자재 LOT 누락 판정(순수) — 실제량(actual) 이 들어있는데 material_lot 가
+  // 비어있는 행을 찾는다. 미등록 LOT '사유 적고 진행'(override) 은 별도 상태이므로
+  // 여기서는 다루지 않는다(사유가 있으면 lot 가 채워진 것으로 친다).
+  // rows: [{material_name, actual_amount, material_lot}] — lot 가 빈 행의 material_name 반환.
+  function missingLotNames(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const missing = [];
+    for (const it of list) {
+      const actual = it.actual_amount;
+      const hasActual = actual !== "" && actual !== null && actual !== undefined && Number(actual) > 0;
+      if (!hasActual) continue;
+      const lot = String(it.material_lot || "").trim();
+      if (lot === "") missing.push(String(it.material_name || "").trim() || "(이름 없음)");
+    }
+    return missing;
+  }
+
+  // 자재 LOT 누락 알림 문구(순수). names 가 비어있지 않으면 차단 메시지 반환.
+  function missingLotBlockMessage(names) {
+    if (!names || !names.length) return "";
+    const shown = names.slice(0, 6);
+    const suffix = names.length > 6 ? " …" : "";
+    return `자재 LOT 를 입력하세요: ${shown.join(", ")}${suffix} — 실제량을 넣은 자재는 LOT 도 반드시 입력하세요.`;
+  }
+
+  // 증량 적용 요약 행(순수 HTML 문자열). plan 은 rescalePlan 반환값.
+  // 각 행: "자재명 +XXX.Xg (목표 YYY.Yg)" — addNeeded>0 인 행만.
+  function appliedRescaleRowHtml(name, item) {
+    const add = Number(item.addNeeded);
+    const goal = Number(item.newTheory);
+    const addTxt = (add > 0 ? "+" : "") + fmt(add, 1);
+    return `<span class="rescale-applied-item">${esc(name)} ${esc(addTxt)}g (목표 ${fmt(goal, 1)}g)</span>`;
+  }
+
   function option(value, label) {
     const item = document.createElement("option");
     item.value = value;
@@ -356,6 +390,9 @@
     varianceWarnMessage,
     badVarianceNames,
     varianceBlockMessage,
+    missingLotNames,
+    missingLotBlockMessage,
+    appliedRescaleRowHtml,
     option,
     stepRowsHtml,
     lotFallbackText,

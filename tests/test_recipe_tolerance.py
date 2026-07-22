@@ -343,7 +343,8 @@ def test_blend_record_uses_recipe_tolerance_for_accept_reject():
             "total_amount": 100.0,
             "details": [
                 {"material_name": "MatA", "ratio": 100,
-                 "theory_amount": 100.0, "actual_amount": 100.3},
+                 "theory_amount": 100.0, "actual_amount": 100.3,
+                 "material_lot": "LOT-MatA"},
             ],
         }
 

@@ -63,8 +63,8 @@ def test_server_recomputes_theory_and_ignores_client_values():
         "recipe_id": rid, "product_name": product, "worker": worker,
         "work_date": "2026-07-14", "total_amount": 1000,
         "details": [
-            {"material_name": "원료A", "ratio": 99, "theory_amount": 990, "actual_amount": 600},
-            {"material_name": "원료B", "ratio": 1, "theory_amount": 10, "actual_amount": 400},
+            {"material_name": "원료A", "ratio": 99, "theory_amount": 990, "actual_amount": 600, "material_lot": "LOT-A"},
+            {"material_name": "원료B", "ratio": 1, "theory_amount": 10, "actual_amount": 400, "material_lot": "LOT-B"},
         ],
     }, headers=headers)
     assert res.status_code == 200, res.text
@@ -148,8 +148,8 @@ def test_anchor_recipe_saves_and_derives_total_from_measured_anchor():
         "recipe_id": rid, "product_name": product, "worker": worker,
         "work_date": "2026-07-14", "total_amount": 1000,   # 화면이 보낸 총량은 무시된다
         "details": [
-            {"material_name": "원료A", "ratio": 60, "theory_amount": 600, "actual_amount": 630},
-            {"material_name": "원료B", "ratio": 40, "theory_amount": 420, "actual_amount": 420},
+            {"material_name": "원료A", "ratio": 60, "theory_amount": 600, "actual_amount": 630, "material_lot": "LOT-A"},
+            {"material_name": "원료B", "ratio": 40, "theory_amount": 420, "actual_amount": 420, "material_lot": "LOT-B"},
         ],
     }, headers=headers)
     assert res.status_code == 200, res.text

@@ -5,7 +5,7 @@
 {% block heading %}이어서 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260722a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260722b" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260717d" />
 {% endblock %}
 
@@ -82,6 +82,10 @@
             <p class="login-error" id="cont-anchor-warn" hidden></p>
           </section>
 
+          <!-- 증량 적용 요약(로트별) — 증량 후 저장·레시피 변경 전까지 자재별 추가분 표시.
+               작업자가 타이핑하는 동안에는 사라지지 않는다(얼마나 더 넣어야 할지 안내). -->
+          <div id="cont-rescale-applied-summary" class="rescale-applied-summary" hidden></div>
+
           <section class="panel">
             <div class="table-wrap">
               <table class="blend-table cont-table" id="cont-mat-table">
@@ -151,6 +155,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260720c"></script>
-    <script src="/static/js/blend_continuous.js?v=20260720f"></script>
+    <script src="/static/js/blend_lib.js?v=20260722b"></script>
+    <script src="/static/js/blend_continuous.js?v=20260722b"></script>
 {% endblock %}

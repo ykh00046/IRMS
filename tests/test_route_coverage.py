@@ -194,9 +194,10 @@ def test_blend_manual_entry_flag_route():
         "total_amount": 100, "manual_entry": True,
         "details": [{"material_name": "A", "ratio": 60,
                      "theory_amount": 60, "actual_amount": 60,
-                     "manual_entry": True},
+                     "material_lot": "LOT-A", "manual_entry": True},
                     {"material_name": "B", "ratio": 40,
-                     "theory_amount": 40, "actual_amount": 40}],
+                     "theory_amount": 40, "actual_amount": 40,
+                     "material_lot": "LOT-B"}],
     }, headers=headers)
     assert created.status_code == 200, created.text
     assert created.json()["manual_entry"] is True
@@ -213,7 +214,8 @@ def test_blend_manual_entry_flag_route():
         "product_name": prod, "worker": worker, "work_date": "2026-07-09",
         "total_amount": 100,
         "details": [{"material_name": "A", "ratio": 100,
-                     "theory_amount": 100, "actual_amount": 100}],
+                     "theory_amount": 100, "actual_amount": 100,
+                     "material_lot": "LOT-A"}],
     }, headers=headers)
     assert c2.json()["manual_entry"] is False
 
@@ -247,7 +249,8 @@ def test_blend_hard_delete_requires_manager():
         "product_name": prod, "worker": worker, "work_date": "2026-07-05",
         "total_amount": 100,
         "details": [{"material_name": "A", "ratio": 100,
-                     "theory_amount": 100, "actual_amount": 100}],
+                     "theory_amount": 100, "actual_amount": 100,
+                     "material_lot": "LOT-A"}],
     }, headers=headers)
     assert created.status_code == 200, created.text
     rid = created.json()["id"]
@@ -349,7 +352,8 @@ def test_blend_recipe_with_anchor_save_route():
             {"material_id": it["material_id"], "material_name": it["material_name"],
              "material_code": it["material_code"], "ratio": it["ratio"],
              "theory_amount": theory[it["material_name"]],
-             "actual_amount": theory[it["material_name"]]}
+             "actual_amount": theory[it["material_name"]],
+             "material_lot": f"LOT-{it['material_name']}"}
             for it in items
         ],
     }, headers=headers)
@@ -384,7 +388,8 @@ def test_blend_soft_cancel_requires_manager():
         "product_name": prod, "worker": worker, "work_date": "2026-07-12",
         "total_amount": 100,
         "details": [{"material_name": "A", "ratio": 100,
-                     "theory_amount": 100, "actual_amount": 100}],
+                     "theory_amount": 100, "actual_amount": 100,
+                     "material_lot": "LOT-A"}],
     }, headers=headers)
     assert created.status_code == 200, created.text
     rid = created.json()["id"]
@@ -422,7 +427,8 @@ def test_blend_restore_is_manager_only_and_restores():
         "product_name": prod, "worker": worker, "work_date": "2026-07-12",
         "total_amount": 100,
         "details": [{"material_name": "A", "ratio": 100,
-                     "theory_amount": 100, "actual_amount": 100}],
+                     "theory_amount": 100, "actual_amount": 100,
+                     "material_lot": "LOT-A"}],
     }, headers=headers).json()["id"]
     assert client.request("DELETE", f"/api/blend/records/{rid}",
                           headers=headers).status_code == 200

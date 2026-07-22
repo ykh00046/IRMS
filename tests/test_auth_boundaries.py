@@ -52,6 +52,7 @@ def test_blend_record_create_requires_worker_session() -> None:
                     "ratio": 100,
                     "theory_amount": 10,
                     "actual_amount": 10,
+                    "material_lot": "LOT-QA",
                 }
             ],
         },

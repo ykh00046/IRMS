@@ -32,6 +32,9 @@
     varianceWarnMessage,
     badVarianceNames,
     varianceBlockMessage,
+    missingLotNames,
+    missingLotBlockMessage,
+    appliedRescaleRowHtml,
     option,
     stepRowsHtml,
     lotFallbackText,
@@ -75,6 +78,9 @@
     // 증량이 한 번이라도 적용됐는가. true 인 동안만 계량 변경 시 '추가 +X' 배지를 갱신한다
     // (증량 전 일반 계량에서는 미달 행에 배지를 띄우지 않고 음수 편차 그대로 둔다).
     rescaleActive: false,
+    // 증량 적용 요약줄(#rescale-applied-summary) 표시용 plan 스냅샷. 저장·초기화·
+    // 레시피 변경 시까지 유지(타이핑 중에는 사라지지 않는다).
+    rescaleAppliedPlan: null,
     // '방금 증량 취소'용 스냅샷(증량 직전 총량·이론량). 추가분을 넣기 시작하거나
     // 레시피 변경·저장 시 무효화(null). 있으면 #rescale-undo 버튼이 보인다.
     rescaleUndo: null,
@@ -444,9 +450,11 @@
     state.pendingRescale = null;
     state.addPending = {};
     state.rescaleActive = false;
+    state.rescaleAppliedPlan = null;
     state.rescaleUndo = null;
     state.lotOverrides = {};
     hideRescaleUndo();
+    clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준량 버튼).
     $("blend-total").value = "";
@@ -1339,10 +1347,34 @@
     }
     // 증량 활성 — 이후 계량 변경 시 '추가 +X' 배지를 갱신한다(양수 표시).
     state.rescaleActive = true;
+    state.rescaleAppliedPlan = plan;  // 요약줄 표시용(저장·초기화·레시피 변경 시 까지 유지).
     // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
     renderAddBadges();
     showRescaleUndo();
+    renderRescaleSummary(plan);
     notify(`배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+  }
+
+  // 증량 적용 요약줄 — 자재별 '더 넣을 양'을 상시 표시(작업자가 얼마나 넣었는지 잊지 않게).
+  // 저장 성공·초기화·레시피 변경 전까지 유지(타이핑 중에는 사라지지 않는다).
+  function renderRescaleSummary(plan) {
+    const el = $("rescale-applied-summary");
+    if (!el || !plan) { if (el) el.hidden = true; return; }
+    const parts = [];
+    plan.rows.forEach((r) => {
+      if (r.addNeeded != null && Number(r.addNeeded) > 0) {
+        const name = state.items[r.idx] ? state.items[r.idx].material_name : "";
+        parts.push(appliedRescaleRowHtml(name, r));
+      }
+    });
+    if (!parts.length) { el.hidden = true; return; }
+    el.innerHTML = `<span class="rescale-applied-title">증량 적용 (목표 ${fmt(plan.newTotal, 1)}g):</span>` + parts.join("");
+    el.hidden = false;
+  }
+  function clearRescaleSummary() {
+    const el = $("rescale-applied-summary");
+    if (el) { el.hidden = true; el.innerHTML = ""; }
+    state.rescaleAppliedPlan = null;
   }
 
   // ── 증량 되돌리기(방금 증량 취소) ─────────────────────────────
@@ -1375,7 +1407,9 @@
     updateTotals();
     updateLotPreview();
     state.rescaleUndo = null;
+    state.rescaleAppliedPlan = null;
     hideRescaleUndo();
+    clearRescaleSummary();
     notify("증량을 취소하고 이전 배합량으로 되돌렸습니다.", "warn");
   }
 
@@ -1600,6 +1634,23 @@
       notify(`허용 편차 ±${fmt(tol, 2)}g 초과 — 저장할 수 없습니다.`, "error");
       return;
     }
+    // 자재 LOT 필수 — 실제량을 넣은 행은 LOT 도 반드시 입력. 미등록 LOT '사유 적고 진행'
+    // 으로 승인된 행은 이미 material_lot 가 채워져 있어 여기서 만족된다(사유 분기 불필요).
+    const lotMissing = missingLotNames(state.items);
+    if (lotMissing.length) {
+      const msg = missingLotBlockMessage(lotMissing);
+      err.textContent = msg; err.hidden = false;
+      notify("자재 LOT 를 입력하세요: " + lotMissing.slice(0, 6).join(", ") + (lotMissing.length > 6 ? " …" : ""), "error");
+      const firstMissingIdx = state.items.findIndex((it) =>
+        (it.actual_amount !== "" && Number(it.actual_amount) > 0) &&
+        String(it.material_lot || "").trim() === ""
+      );
+      if (firstMissingIdx >= 0) {
+        const input = document.querySelector(`.blend-lot[data-idx="${firstMissingIdx}"]`);
+        if (input) input.focus();
+      }
+      return;
+    }
     // 반응기 진행 반제품은 반응기(1~4) 지정 필수.
     const useReactor = Boolean(state.current.recipe && state.current.recipe.use_reactor);
     const reactorRaw = useReactor ? $("blend-reactor").value : "";
@@ -1681,6 +1732,7 @@
       state.rescaleUndo = null;
       state.lotOverrides = {};
       hideRescaleUndo();
+      clearRescaleSummary();
       if (state.workerPad) state.workerPad.clear();
       renderMatRows();
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)

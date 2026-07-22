@@ -325,8 +325,8 @@ def test_blend_update_route_requires_manager_and_full_edit():
         "product_name": prod, "worker": worker, "work_date": "2026-07-01",
         "total_amount": 100, "scale": "M-65",
         "details": [
-            {"material_name": "A", "ratio": 60, "theory_amount": 60, "actual_amount": 60},
-            {"material_name": "B", "ratio": 40, "theory_amount": 40, "actual_amount": 40},
+            {"material_name": "A", "ratio": 60, "theory_amount": 60, "actual_amount": 60, "material_lot": "LA"},
+            {"material_name": "B", "ratio": 40, "theory_amount": 40, "actual_amount": 40, "material_lot": "LB"},
         ],
     }, headers=csrf_headers())
     assert created.status_code == 200, created.text
@@ -336,7 +336,7 @@ def test_blend_update_route_requires_manager_and_full_edit():
     # 현장(배합 세션만, 관리 미로그인)은 수정 불가
     blocked = client.request("PUT", f"/api/blend/records/{rid}", json={
         "product_name": prod, "worker": worker, "work_date": "2026-07-01", "total_amount": 100,
-        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
     }, headers=csrf_headers())
     assert blocked.status_code in (401, 403)
 
@@ -346,7 +346,7 @@ def test_blend_update_route_requires_manager_and_full_edit():
     renamed = client.request("PUT", f"/api/blend/records/{rid}", json={
         "product_name": prod + "X", "worker": worker, "work_date": "2026-07-01",
         "total_amount": 100,
-        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
     }, headers=csrf_headers())
     assert renamed.status_code == 400, renamed.text
     assert "제품명" in renamed.json()["detail"]
@@ -403,7 +403,7 @@ def test_blend_approve_requires_manager():
     created = client.post("/api/blend/records", json={
         "product_name": prod, "worker": worker, "work_date": "2026-07-05",
         "total_amount": 100,
-        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
     }, headers=headers())
     assert created.status_code == 200, created.text
     rid = created.json()["id"]
@@ -448,7 +448,7 @@ def test_blend_viscosity_route_links_reading():
     created = client.post("/api/blend/records", json={
         "product_name": prod, "worker": worker, "work_date": "2026-07-05",
         "total_amount": 100,
-        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100}],
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
     }, headers=headers())
     assert created.status_code == 200, created.text
     rid = created.json()["id"]
@@ -862,7 +862,7 @@ def _create_blend(client, prod, worker, lot_suffix=""):
         "product_name": prod, "worker": worker, "work_date": "2026-07-01",
         "total_amount": 100, "scale": None,
         "details": [
-            {"material_name": "원료1", "ratio": 100, "theory_amount": 100, "actual_amount": 100},
+            {"material_name": "원료1", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "L1"},
         ],
     }, headers=csrf_headers())
     assert res.status_code == 200, res.text
@@ -1066,7 +1066,7 @@ def _stage1_record(client, csrf, intermediate, worker, total=150.0):
         "product_name": intermediate, "worker": worker, "work_date": "2026-07-01",
         "total_amount": total, "scale": None, "reactor": None,
         "details": [
-            {"material_name": "원료1", "ratio": 100, "theory_amount": total, "actual_amount": total},
+            {"material_name": "원료1", "ratio": 100, "theory_amount": total, "actual_amount": total, "material_lot": "L1"},
         ],
     }, headers=csrf())
     assert res.status_code == 200, res.text
@@ -1098,7 +1098,7 @@ def test_carryover_happy_path_forces_amount_to_stage1_total():
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 999, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf())
     assert res.status_code == 200, res.text
@@ -1132,7 +1132,7 @@ def test_carryover_enforced_on_update_path():
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 150, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf()).json()["id"]
     # (1) 편집 저장 — 이월 행에 틀린 actual(888)을 보내도 1차 총량(150)으로 강제.
@@ -1142,7 +1142,7 @@ def test_carryover_enforced_on_update_path():
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 888, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf())
     assert up.status_code == 200, up.text
@@ -1182,7 +1182,7 @@ def test_carryover_rejected_for_non_derived_recipe():
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 150, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf())
     assert res.status_code == 400
@@ -1209,7 +1209,7 @@ def test_carryover_accepted_for_derived_non_reactor_recipe():
         "details": [
             {"material_name": intermediate, "material_lot": stage1_lot,
              "actual_amount": 999, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf())
     assert res.status_code == 200, res.text
@@ -1258,7 +1258,7 @@ def test_carryover_rejected_for_unregistered_lot():
         "details": [
             {"material_name": intermediate, "material_lot": "절대없는LOT",
              "actual_amount": 150, "carried_over": True},
-            {"material_name": "최종원료", "actual_amount": 100},
+            {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
         ],
     }, headers=csrf())
     assert res.status_code == 400
@@ -1282,9 +1282,72 @@ def test_carryover_rejected_in_continuous_route():
             [
                 {"material_name": intermediate, "material_lot": stage1_lot,
                  "actual_amount": 150, "carried_over": True},
-                {"material_name": "최종원료", "actual_amount": 100},
+                {"material_name": "최종원료", "actual_amount": 100, "material_lot": "L9"},
             ],
         ],
     }, headers=csrf())
     assert res.status_code == 400
     assert res.json()["detail"] == "반응기 이월은 단일 배합 화면에서만 사용할 수 있습니다."
+
+
+# ── 자재 LOT 필수 검증(POST /api/blend/records) — 추적성 ──────────
+def test_blend_create_missing_lot_returns_400_with_names():
+    """(a) 단건 저장에서 한 행의 material_lot 가 비어 있으면 400 + 자재명 노출."""
+    client, csrf = _mgmt_client()
+    prod = "LOTMISS" + __import__("uuid").uuid4().hex[:4]
+    worker = "LOT작업"
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    res = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-10",
+        "total_amount": 100,
+        "details": [
+            {"material_name": "채워진자재", "ratio": 50, "theory_amount": 50, "actual_amount": 50, "material_lot": "L1"},
+            {"material_name": "빈LOT자재", "ratio": 50, "theory_amount": 50, "actual_amount": 50, "material_lot": ""},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400, res.text
+    detail = res.json()["detail"]
+    assert "자재 LOT 를 입력하세요" in detail
+    assert "빈LOT자재" in detail
+    assert "채워진자재" not in detail   # LOT 가 있는 자재는 이름이 나오지 않는다
+
+
+def test_blend_create_all_lots_returns_200():
+    """(b) 모든 행에 material_lot 가 있으면 정상 저장 200(회귀 가드)."""
+    client, csrf = _mgmt_client()
+    prod = "LOTOK" + __import__("uuid").uuid4().hex[:4]
+    worker = "LOT작업2"
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    res = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-10",
+        "total_amount": 100,
+        "details": [
+            {"material_name": "자재A", "ratio": 60, "theory_amount": 60, "actual_amount": 60, "material_lot": "LA"},
+            {"material_name": "자재B", "ratio": 40, "theory_amount": 40, "actual_amount": 40, "material_lot": "LB"},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    assert res.json()["product_lot"]
+
+
+def test_bulk_create_without_lots_still_works():
+    """(d) POST /blend/records/bulk(일괄 재생성, 과거 데이터)는 LOT 필수 검증에서 제외.
+
+    과거 이관 데이터는 LOT 를 모를 수 있어 — bulk 경로는 LOT 검사를 하지 않는다.
+    bs.create_bulk 가 LOT 없는 details 로 정상 저장되는지 확인(서비스 계층 직접 호출).
+    """
+    conn = _make_db()
+    rid = _seed_recipe(conn, weights=(60, 40))
+    ids = bs.create_bulk(
+        conn, recipe_id=rid, worker="홍", scale="M-65",
+        entries=[
+            {"work_date": "2026-06-24", "total_amount": 100},
+        ],
+        created_by="t", created_at="2026-06-24T00:00:00Z",
+    )
+    assert len(ids) == 1
+    rec = bs.get_blend_record(conn, ids[0])
+    # bulk 는 서버가 레시피에서 자재명·이론량을 채우되 material_lot 는 비워둔다.
+    assert all(d["material_lot"] in (None, "") for d in rec["details"])

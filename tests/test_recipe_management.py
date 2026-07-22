@@ -240,9 +240,9 @@ def test_recipe_steps_between_materials():
         "recipe_id": rid2, "product_name": product, "worker": worker,
         "work_date": "2026-07-08", "total_amount": 100,
         "details": [
-            {"material_name": "원료A", "ratio": 60, "theory_amount": 60, "actual_amount": 60},
-            {"material_name": "원료B", "ratio": 30, "theory_amount": 30, "actual_amount": 30},
-            {"material_name": "원료C", "ratio": 10, "theory_amount": 10, "actual_amount": 10},
+            {"material_name": "원료A", "ratio": 60, "theory_amount": 60, "actual_amount": 60, "material_lot": "LOT-A"},
+            {"material_name": "원료B", "ratio": 30, "theory_amount": 30, "actual_amount": 30, "material_lot": "LOT-B"},
+            {"material_name": "원료C", "ratio": 10, "theory_amount": 10, "actual_amount": 10, "material_lot": "LOT-C"},
         ],
     }, headers=headers)
     assert created.status_code == 200, created.text
