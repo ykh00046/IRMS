@@ -396,3 +396,201 @@ def test_continuous_unregistered_own_product_lot_blocked_400():
     detail = res.json()["detail"]
     assert "등록되지 않은 LOT" in detail
     assert f"{intermediate}/{bad_lot}" in detail
+
+
+# ── lot_rescale_events: 로트별 증량 승인 이벤트(책임자 승인/부재) ────────────────
+# 스펙: 이어서 계량 증량 승인 게이트. blend_create 의 rescale_events 를 로트별로 확장.
+# payload: lot_rescale_events[j] = 로트 j 의 이벤트 목록(또는 None). 인덱스 = lots 인덱스.
+#   각 이벤트 {before_total, after_total, approval_id | absence_reason}. 승인 1회=증량 1회.
+#   서버는 로트마다 validate_rescale_events 로 승인 소비·검증·3회(2건 초과) 제한을 적용한다.
+
+def _approval(client, headers):
+    """책임자 승인 토큰 발급 — POST /api/blend/manager-verify (admin/admin=책임자).
+
+    반환 approval_id 는 30분 유효·단회용. 저장 시 서버가 used=1 로 소비한다.
+    """
+    res = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "admin"},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["approval_id"]
+
+
+def test_continuous_approved_rescale_sets_columns_and_consumes_approval():
+    """(a) 한 로트에 책임자 승인 증량 → 그 로트 record 에 rescale 컬럼 기록 + 승인 소비(used=1).
+
+    로트 2 만 증량(총량 200, 이론 120/80). 로트 1 은 기존 총량(100) 그대로 — 증량 없음.
+    """
+    from src.db import get_connection
+
+    client = _client()
+    headers = _manager(client)
+    product = f"CBAP{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    approval_id = _approval(client, headers)
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "lot_totals": [None, 200],
+        "lots": [_details(60, 40), _details(120, 80)],
+        # 로트 2 만 승인 증량 이벤트
+        "lot_rescale_events": [
+            None,
+            [{"before_total": 100, "after_total": 200, "approval_id": approval_id}],
+        ],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = res.json()["ids"]
+
+    with get_connection() as conn:
+        row0 = conn.execute(
+            "SELECT rescale_count, rescale_unacked FROM blend_records WHERE id=?", (ids[0],)
+        ).fetchone()
+        row1 = conn.execute(
+            "SELECT rescale_count, rescale_unacked FROM blend_records WHERE id=?", (ids[1],)
+        ).fetchone()
+        used = conn.execute(
+            "SELECT used FROM blend_rescale_approvals WHERE id=?", (approval_id,)
+        ).fetchone()[0]
+
+    # 로트 2 — 승인 증량 컬럼 기록(1회, 미확인 아님)
+    assert row1["rescale_count"] == 1
+    assert row1["rescale_unacked"] == 0
+    # 승인 토큰 소비됨(재사용 방지)
+    assert used == 1
+    # 로트 1 — 증량 없음(컬럼 기본값 유지)
+    assert row0["rescale_count"] == 0
+    assert row0["rescale_unacked"] == 0
+
+
+def test_continuous_absence_rescale_marks_only_that_lot_unacked():
+    """(b) 책임자 부재 증량(absence_reason) → 그 로트만 rescale_unacked=1. 다른 로트는 0."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _manager(client)
+    product = f"CBAB{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "lot_totals": [None, 200],
+        "lots": [_details(60, 40), _details(120, 80)],
+        "lot_rescale_events": [
+            None,
+            [{"before_total": 100, "after_total": 200,
+              "absence_reason": "야간 근무 — 책임자 부재"}],
+        ],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = res.json()["ids"]
+
+    with get_connection() as conn:
+        r0 = conn.execute(
+            "SELECT rescale_unacked FROM blend_records WHERE id=?", (ids[0],)
+        ).fetchone()[0]
+        r1 = conn.execute(
+            "SELECT rescale_unacked, rescale_count FROM blend_records WHERE id=?", (ids[1],)
+        ).fetchone()
+
+    # 로트 2 — 미승인 증량으로 기록
+    assert r1["rescale_unacked"] == 1
+    assert r1["rescale_count"] == 1
+    # 로트 1 — 미확인 아님(누출 없음)
+    assert r0 == 0
+
+
+def test_continuous_three_rescales_on_one_lot_blocked_400():
+    """(c) 한 로트에 증량 이벤트 3건 → 400 '3회 증량은 불가합니다', 아무 기록도 저장 안 됨."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _manager(client)
+    product = f"CB3R{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    with get_connection() as conn:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM blend_records WHERE product_name = ?", (product,)
+        ).fetchone()[0]
+
+    a1 = _approval(client, headers)
+    a2 = _approval(client, headers)
+    a3 = _approval(client, headers)
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        # 로트 1 을 총량 400(이론 240/160)까지 증량한 3건 — 3건째에서 서버가 막는다.
+        "lot_totals": [400, None],
+        "lots": [_details(240, 160), _details(60, 40)],
+        "lot_rescale_events": [
+            [
+                {"before_total": 100, "after_total": 200, "approval_id": a1},
+                {"before_total": 200, "after_total": 300, "approval_id": a2},
+                {"before_total": 300, "after_total": 400, "approval_id": a3},
+            ],
+            None,
+        ],
+    }, headers=headers)
+    assert res.status_code == 400, res.text
+    assert "3회 증량은 불가합니다" in res.json()["detail"]
+
+    # 원자성 — 아무 기록도 추가되지 않음
+    with get_connection() as conn:
+        after = conn.execute(
+            "SELECT COUNT(*) FROM blend_records WHERE product_name = ?", (product,)
+        ).fetchone()[0]
+    assert after == before
+
+
+def test_continuous_rescale_event_does_not_leak_to_other_lot():
+    """(d) 로트 A 의 증량 이벤트가 로트 B 의 record 로 새지 않는다(컬럼·총량 모두 로트별)."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _manager(client)
+    product = f"CBLK{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    approval_id = _approval(client, headers)
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-15",
+        "total_amount": 100,
+        # 로트 1(A) 만 총량 200 증량. 로트 2(B) 는 이벤트 없음.
+        "lot_totals": [200, None],
+        "lots": [_details(120, 80), _details(60, 40)],
+        "lot_rescale_events": [
+            [{"before_total": 100, "after_total": 200, "approval_id": approval_id}],
+            None,
+        ],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = res.json()["ids"]
+
+    with get_connection() as conn:
+        r0 = conn.execute(
+            "SELECT rescale_count, rescale_unacked FROM blend_records WHERE id=?", (ids[0],)
+        ).fetchone()
+        r1 = conn.execute(
+            "SELECT rescale_count, rescale_unacked FROM blend_records WHERE id=?", (ids[1],)
+        ).fetchone()
+
+    # 로트 1(A) 에만 증량 기록
+    assert r0["rescale_count"] == 1
+    assert r0["rescale_unacked"] == 0
+    # 로트 2(B) 로는 새어들지 않음
+    assert r1["rescale_count"] == 0
+    assert r1["rescale_unacked"] == 0
+    # 총량도 로트별 — A=200, B=공용 100
+    rec0 = client.get(f"/api/blend/records/{ids[0]}").json()
+    rec1 = client.get(f"/api/blend/records/{ids[1]}").json()
+    assert rec0["total_amount"] == 200
+    assert rec1["total_amount"] == 100

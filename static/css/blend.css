@@ -288,6 +288,11 @@
   margin: 0.65rem 0 0; font-size: 0.8rem; color: #b45309; line-height: 1.5;
 }
 .rescale-absence-warn strong { color: #92400e; }
+/* 이어서 계량(연속) 증량 승인 모달 — blend.js 모달의 ID 스코프 규칙을 별도 id 로 재적용
+   (템플릿이 분리돼 #cont-rescale-approve-modal 로 뜨므로 클래스 규칙만으론 미적용되는
+   .blend-field/.login-error 간격만 additive 로 보강). 나머지는 위 클래스 규칙 공유. */
+#cont-rescale-approve-modal .blend-field { margin-bottom: 0.7rem; }
+#cont-rescale-approve-modal .login-error { margin: 0 0 0.6rem; }
 
 /* 추가 계량 모달 — 큰 남은 양 숫자 중심 레이아웃. 기존 .ss-modal/*.btn 클래스 재사용. */
 .add-weigh-modal { text-align: center; min-width: 320px; }

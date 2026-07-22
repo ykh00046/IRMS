@@ -51,6 +51,10 @@
     lotRescale: [],
     // 로트별 증량 적용 plan 스냅샷(요약줄 표시용). lotRescalePlan[j] = plan 또는 null.
     lotRescalePlan: [],
+    // 로트별 증량 승인 이벤트(저장 payload lot_rescale_events 로 전송). lotRescaleEvents[j] =
+    // [{before_total, after_total, approval_id, approver} | {before_total, after_total, absence_reason}].
+    // 증량 1회당 1건. 같은 로트에 2건이면 3회째 제안은 차단(단건 blend.js state.rescaleEvents 의 로트별 버전).
+    lotRescaleEvents: [],
     // 추가분 입력 모드에 들어간 셀(저울 PRINT 를 추가분으로 합산하기 위한 플래그).
     addModeCell: null,     // {i,j} 또는 null
     // 증량(rescale) 후 추가 대기 셀 — blend.js state.addPending 의 셀(i:j) 버전.
@@ -185,6 +189,7 @@
     input.value = String(value);
     state.cells[i][j].actual = input.value;
     state.cells[i][j].manual = false;  // 저울 입력 — 손입력 표시 해제
+    updateContTotalLock();  // 저울 PRINT 로 첫 실제량이 들어와도 총량 잠금
     input.classList.remove("manual-warn");
     input.removeAttribute("title");
     updateCellVar(i, j);
@@ -328,6 +333,7 @@
     state.lotOverrides = {};        // 레시피 변경 → 미등록 LOT 진행 승인 리셋
     state.lotRescale = [];          // 레시피 변경 → 증량 오버라이드 전부 리셋(스펙)
     state.lotRescalePlan = [];      // 레시피 변경 → 증량 요약줄도 리셋
+    state.lotRescaleEvents = [];    // 레시피 변경 → 증량 승인 이력도 리셋(총량 잠금도 함께 풀림)
     state.addPendingCells = {};     // 레시피 변경 → 증량 대기 셀 억제도 리셋
     rebuildCells();
     rebuildLotRescale();
@@ -565,12 +571,15 @@
   function rebuildLotRescale() {
     const next = [];
     const nextPlan = [];
+    const nextEvents = [];
     for (let j = 0; j < state.lotCount; j++) {
       next.push((state.lotRescale && state.lotRescale[j]) || null);
       nextPlan.push((state.lotRescalePlan && state.lotRescalePlan[j]) || null);
+      nextEvents.push((state.lotRescaleEvents && state.lotRescaleEvents[j]) || null);
     }
     state.lotRescale = next;
     state.lotRescalePlan = nextPlan;
+    state.lotRescaleEvents = nextEvents;
   }
 
   // 공정 설명 줄 HTML(전폭). position === 자재 인덱스면 그 자재 앞에, === 자재 수면 끝에.
@@ -664,6 +673,8 @@
     updateLotPreview();
     // 저울 전용 모드가 켜져 있으면 새로 렌더된 셀의 실제량 칸도 readonly 로 잠근다.
     applyScaleOnlyToCells();
+    // 이미 계량된 셀이 있으면(로트 수 변경 등 재렌더 후) 총량 잠금 상태를 새 DOM 에 다시 적용.
+    updateContTotalLock();
   }
 
   function bindCellEvents() {
@@ -691,6 +702,7 @@
       const j = Number(el.dataset.j);
       el.addEventListener("input", () => {
         state.cells[i][j].actual = el.value;
+        updateContTotalLock();  // 첫 실제량 입력 순간 공용 총량 잠금(승인 우회 방지)
         // 저울 연결 중 손입력 → 경고 + 주황 표시(수기 제한 전 준비 단계, 셀당 1회 토스트)
         if (state.scaleReady) {
           if (!state.cells[i][j].manual) {
@@ -877,7 +889,15 @@
   function offerContRescale(j) {
     // 이미 모달 열려 있거나 보류 제안이 있으면 중복 트리거 방지(Enter/change/총량 변경 경로).
     if (!$("cont-rescale-modal").hidden || !$("cont-discard-modal").hidden) return;
+    if (!$("cont-rescale-approve-modal").hidden || !$("cont-rescale-block-modal").hidden) return;
     if (state.pendingContRescale) return;
+    // 3회 금지 — 이미 2회 증량된 '그 로트'는 3회째 제안 자체를 막고 폐기 협의를 유도한다
+    // (blend.js 단건과 동일 규칙, 로트별 스코프). pendingContRescale 을 세우지 않으므로 승인 경로 미도달.
+    const applied = (state.lotRescaleEvents && state.lotRescaleEvents[j]) || [];
+    if (applied.length >= 2) {
+      openContRescaleBlockModal();
+      return;
+    }
     const currentTotal = lotTotal(j);
     // rescalePlan 은 items=[{ratio, actual_amount, theory_amount}] 받는다 — 로트 j 의 셀로 구성.
     const items = state.materials.map((m, i) => ({
@@ -969,7 +989,157 @@
     renderContLotHeader(j);
     renderAddBadges(j);
     renderContRescaleSummary();
+    updateContTotalLock();  // 증량은 lotRescale[j] 만 바꾸므로 잠금 상태는 유지 — 방어적 재적용.
     notify(`로트 ${j + 1} 배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+  }
+
+  // ── 증량 승인 게이트(책임자 승인 없이는 증량 불가) — 로트별 스코프 ────────────
+  // 배합 화면 blend.js 의 승인 게이트를 이어서 계량에 이식. [증량 적용]/[그래도 증량]을
+  // 누르면 즉시 applyContRescale 하지 않고 이 승인 모달을 띄운다.
+  //   [승인]: /api/blend/manager-verify 200 → 그 로트 증량 + {approval_id, approver} 이벤트.
+  //   [부재로 진행]: 사유 필수 + 재확인 → 그 로트 증량 + {absence_reason} 이벤트(미승인 증량).
+  // 승인 1회 = 증량 1회. 부족 채우기(추가분 계량)는 이 경로를 타지 않는다 — 승인 불필요.
+  function csrfToken() {
+    if (IRMS._core && IRMS._core.getCsrfToken) {
+      const t = IRMS._core.getCsrfToken();
+      if (t) return t;
+    }
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  function openContRescaleApproveModal() {
+    // 제안/폐기 모달을 닫고 승인 모달을 연다(pendingContRescale 은 그대로 보존).
+    closeContRescaleModal();
+    closeContDiscardModal();
+    const modal = $("cont-rescale-approve-modal");
+    if (!modal) return;
+    const pending = state.pendingContRescale;
+    const lead = $("cont-rescale-approve-lead");
+    if (lead && pending) {
+      lead.textContent = `로트 ${pending.j + 1} 증량(→ ${fmt(pending.plan.newTotal)} g)은 책임자 승인이 필요합니다. 책임자 이름과 비밀번호를 입력하세요.`;
+    }
+    const nameEl = $("cont-rescale-approve-name");
+    const pwEl = $("cont-rescale-approve-pw");
+    const reasonEl = $("cont-rescale-absence-reason");
+    if (nameEl) nameEl.value = "";
+    if (pwEl) pwEl.value = "";
+    if (reasonEl) reasonEl.value = "";
+    hideContApproveError();
+    modal.hidden = false;
+    if (nameEl) nameEl.focus();
+  }
+
+  function closeContRescaleApproveModal() {
+    const modal = $("cont-rescale-approve-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  // 승인/부재 모달 취소(Escape/overlay) — 보류 중인 증량 제안을 버린다. 초과 계량 상태는
+  // 그대로라 다음 change/Enter 에서 다시 제안이 뜬다.
+  function cancelContRescaleApprove() {
+    state.pendingContRescale = null;
+    closeContRescaleApproveModal();
+  }
+
+  function showContApproveError(msg) {
+    const err = $("cont-rescale-approve-error");
+    if (err) { err.textContent = msg; err.hidden = false; }
+  }
+  function hideContApproveError() {
+    const err = $("cont-rescale-approve-error");
+    if (err) { err.hidden = true; err.textContent = ""; }
+  }
+
+  // 증량 확정 — pendingContRescale 소비 전에 그 로트의 before/after 총량을 잡아 이벤트를 기록한다.
+  // applyContRescale 이 state.pendingContRescale 을 null 로 만들므로 순서가 중요하다.
+  function finalizeContRescale(meta) {
+    const pending = state.pendingContRescale;
+    if (!pending) return;
+    const { j } = pending;
+    const before_total = lotTotal(j);          // 증량 전 그 로트의 현재 총량
+    const after_total = pending.plan.newTotal;
+    applyContRescale();                          // 총량·이론량·배지 갱신(기존 경로 재사용)
+    const ev = { before_total, after_total };
+    if (meta && meta.approval_id != null) ev.approval_id = meta.approval_id;
+    if (meta && meta.approver != null) ev.approver = meta.approver;
+    if (meta && meta.absence_reason != null) ev.absence_reason = meta.absence_reason;
+    if (!state.lotRescaleEvents[j]) state.lotRescaleEvents[j] = [];
+    state.lotRescaleEvents[j].push(ev);
+  }
+
+  async function submitContManagerApproval() {
+    const nameEl = $("cont-rescale-approve-name");
+    const pwEl = $("cont-rescale-approve-pw");
+    const name = nameEl ? nameEl.value.trim() : "";
+    const pw = pwEl ? pwEl.value : "";
+    if (!name) { showContApproveError("책임자 이름을 입력하세요."); if (nameEl) nameEl.focus(); return; }
+    if (!pw) { showContApproveError("비밀번호를 입력하세요."); if (pwEl) pwEl.focus(); return; }
+    hideContApproveError();
+    const btn = $("cont-rescale-approve-submit");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/blend/manager-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({ username: name, password: pw }),
+      });
+      if (res.status === 401) { showContApproveError("비밀번호가 올바르지 않습니다."); return; }
+      if (res.status === 403) { showContApproveError("책임자 권한이 없습니다."); return; }
+      if (!res.ok) { showContApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요."); return; }
+      const data = await res.json().catch(() => ({}));
+      closeContRescaleApproveModal();
+      finalizeContRescale({ approval_id: data.approval_id, approver: data.approver || name });
+      notify(`책임자 승인 완료 (${data.approver || name}) — 증량을 적용합니다.`, "success");
+    } catch (_e) {
+      showContApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function submitContAbsenceProceed() {
+    const reasonEl = $("cont-rescale-absence-reason");
+    const reason = reasonEl ? reasonEl.value.trim() : "";
+    if (!reason) { showContApproveError("책임자 부재 사유를 입력하세요."); if (reasonEl) reasonEl.focus(); return; }
+    if (!window.confirm("책임자 승인 없이 증량을 적용합니다.\n이 로트는 '미승인 증량'으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.")) return;
+    hideContApproveError();
+    closeContRescaleApproveModal();
+    finalizeContRescale({ absence_reason: reason });
+    notify("미승인 증량으로 적용했습니다 — 책임자 확인 전까지 알림이 반복됩니다.", "warn");
+  }
+
+  function openContRescaleBlockModal() {
+    const modal = $("cont-rescale-block-modal");
+    if (modal) { modal.hidden = false; return; }
+    notify("3회 증량은 불가합니다 — 이 로트는 책임자와 폐기 여부를 협의하세요.", "error big");
+  }
+  function closeContRescaleBlockModal() {
+    const modal = $("cont-rescale-block-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  // 총 배합량 잠금 — 셀 실제량이 하나라도 입력되면 공용 총 배합량(cont-total)을 바꿀 수 없다.
+  // (배합 화면 updateTotalLock 의 이어서 계량 버전 — 증량은 lotRescale[j] 로만, 총량 직접 상향으로
+  // 승인 게이트를 우회하지 못하게 한다.) 기본 배합량 버튼도 함께 비활성화. 레시피/셀 초기화 시 자동 해제.
+  function updateContTotalLock() {
+    const totalInput = $("cont-total");
+    if (!totalInput) return;
+    const anyActual = state.cells.some((row) =>
+      row && row.some((c) => c && c.actual !== "" && c.actual != null)
+    );
+    const links = $("cont-base-links");
+    if (links) {
+      links.querySelectorAll(".blend-base-link").forEach((b) => { b.disabled = anyActual; });
+    }
+    if (anyActual) {
+      totalInput.readOnly = true;
+      totalInput.title = "계량 시작 후에는 총 배합량을 바꿀 수 없습니다 (증량은 로트별 승인으로만)";
+    } else {
+      totalInput.readOnly = false;
+      totalInput.removeAttribute("title");
+    }
   }
 
   // 증량 적용 요약줄(로트별) — 각 증량된 로트의 자재별 '더 넣을 양'을 상시 표시.
@@ -1152,6 +1322,7 @@
     updateCellVar(i, j);
     warnIfVariance(i, j);
     renderAddBadges(j);
+    updateContTotalLock();  // 추가분 합산으로 실제량이 채워진 경우도 총량 잠금 유지
   }
 
   // ── 저장 ────────────────────────────────────────────────────
@@ -1281,6 +1452,16 @@
     if (hasLotRescale) {
       body.lot_totals = Array.from({ length: state.lotCount }, (_, j) => lotTotal(j));
     }
+    // 증량 승인 이벤트(로트별) — lots 와 평행(인덱스 j = 로트 j). 이벤트 없는 로트는 null.
+    // 하나라도 있으면 전송(서버가 로트마다 validate_rescale_events 로 승인 소비·검증·3회 제한).
+    // 전부 없으면 미전송 — 기존 동작(rescale 컬럼 기본값 유지)과 완전 동일.
+    const hasRescaleEvents = state.lotRescaleEvents.some((e) => e && e.length);
+    if (hasRescaleEvents) {
+      body.lot_rescale_events = Array.from({ length: state.lotCount }, (_, j) => {
+        const e = state.lotRescaleEvents[j];
+        return e && e.length ? e : null;
+      });
+    }
     try {
       const res = await request("/blend/records/continuous", { method: "POST", body });
       notify(`${res.created}개 로트 저장 완료: ${(res.product_lots || []).join(", ")} — 배합 기록으로 이동합니다.`, "success");
@@ -1358,19 +1539,44 @@
     if (wclr && state.workerPad) wclr.addEventListener("click", () => state.workerPad.clear());
 
     // 증량(rescale) 모달 — hidden 속성 토글로만 열고 닫는다(display 직접 지정 금지).
+    // [증량 적용]/[그래도 증량]은 즉시 적용하지 않고 책임자 승인 모달로 게이트한다(승인 1회=증량 1회).
     const rescaleApply = $("cont-rescale-apply");
-    if (rescaleApply) rescaleApply.addEventListener("click", applyContRescale);
+    if (rescaleApply) rescaleApply.addEventListener("click", openContRescaleApproveModal);
     const rescaleCancel = $("cont-rescale-cancel");
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
       state.pendingContRescale = null;
       closeContRescaleModal();
     });
     const discardForce = $("cont-discard-force");
-    if (discardForce) discardForce.addEventListener("click", applyContRescale);
+    if (discardForce) discardForce.addEventListener("click", openContRescaleApproveModal);
     const discardCancel = $("cont-discard-cancel");
     if (discardCancel) discardCancel.addEventListener("click", () => {
       state.pendingContRescale = null;
       closeContDiscardModal();
+    });
+    // 증량 승인 모달 — [승인](책임자 검증) / [부재로 진행](사유+재확인). Esc/overlay=취소.
+    const approveSubmit = $("cont-rescale-approve-submit");
+    if (approveSubmit) approveSubmit.addEventListener("click", () => submitContManagerApproval());
+    const approvePw = $("cont-rescale-approve-pw");
+    if (approvePw) approvePw.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      submitContManagerApproval();
+    });
+    const absenceSubmit = $("cont-rescale-absence-submit");
+    if (absenceSubmit) absenceSubmit.addEventListener("click", submitContAbsenceProceed);
+    const approveModal = $("cont-rescale-approve-modal");
+    if (approveModal) approveModal.addEventListener("click", (e) => {
+      if (e.target === approveModal) cancelContRescaleApprove();
+    });
+    // 3회 증량 차단 모달 — 확인만.
+    const blockClose = $("cont-rescale-block-close");
+    if (blockClose) blockClose.addEventListener("click", closeContRescaleBlockModal);
+    const blockModal = $("cont-rescale-block-modal");
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (approveModal && !approveModal.hidden) { cancelContRescaleApprove(); return; }
+      if (blockModal && !blockModal.hidden) { closeContRescaleBlockModal(); return; }
     });
     // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
     const lotConfirm = $("cont-lot-invalid-confirm");

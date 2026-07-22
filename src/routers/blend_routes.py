@@ -938,6 +938,25 @@ def build_router() -> APIRouter:
                     detail=f"로트 {lot_no}: 허용 편차(±{tolerance}g) 초과 — " + ", ".join(offenders),
                 )
             derived_lots.append(derived)
+        # 증량(rescale) 이벤트 검증·승인 소비 — 로트별(lot_rescale_events[j]). 단건 blend_create
+        # 와 동일한 validate_rescale_events 를 로트마다 호출한다. 유효 approval_id 는 used=1 로
+        # 소비되고, absence_reason 은 그 로트만 미확인(rescale_unacked=1)으로 기록된다. 무효·재사용·
+        # 만료·3회 초과는 400. 커밋은 맨 끝 한 번뿐이라, 여기서 400 이 나면 앞 로트에서 소비한
+        # 승인 UPDATE 도 함께 롤백된다(get_db 가 미커밋 연결을 close → 자동 롤백 → 원자성).
+        lot_rescale_events = body.lot_rescale_events or []
+        lot_rescales: list[dict[str, Any] | None] = []
+        try:
+            for lot_no in range(1, len(body.lots) + 1):
+                events = (
+                    lot_rescale_events[lot_no - 1]
+                    if lot_no - 1 < len(lot_rescale_events)
+                    else None
+                )
+                lot_rescales.append(
+                    blend_service.validate_rescale_events(connection, events)
+                )
+        except blend_service.RescaleApprovalError as exc:
+            raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
         worker = require_blend_worker(request)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
@@ -960,6 +979,28 @@ def build_router() -> APIRouter:
             reactor=body.reactor,
             lot_totals=body.lot_totals,
         )
+        # 증량 이벤트가 있는 로트만 그 로트의 record 에 컬럼 기록 + 감사(단건과 동일 규칙).
+        # lot_rescales[j] 는 create_continuous 가 저장한 ids[j] 와 같은 로트를 가리킨다(둘 다
+        # body.lots 순서). 이벤트 없는 로트(None)는 건너뛰어 컬럼 기본값 0 을 유지한다.
+        for lot_idx, rescale in enumerate(lot_rescales):
+            if rescale is None:
+                continue
+            record_id = ids[lot_idx]
+            blend_service.apply_rescale_to_record(connection, record_id, rescale)
+            record = blend_service.get_blend_record(connection, record_id)
+            write_audit_log(
+                connection,
+                action="blend_rescale_saved",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record["product_lot"],
+                details={
+                    "count": rescale["count"],
+                    "unapproved": rescale["unapproved"],
+                    "totals": rescale["totals"],
+                },
+            )
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
         write_audit_log(
             connection,

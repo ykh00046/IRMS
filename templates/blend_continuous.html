@@ -5,7 +5,7 @@
 {% block heading %}이어서 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260722b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260723d" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260717d" />
 {% endblock %}
 
@@ -151,10 +151,56 @@
           </div>
         </div>
 
+        <!-- 증량 책임자 승인 모달(로트별 스코프) — 배합 화면 #rescale-approve-modal 의 이어서 계량
+             버전. 로트 증량 [증량 적용]/[그래도 증량] 클릭 시 즉시 적용하지 않고 이 모달로 게이트한다.
+             [승인]: /api/blend/manager-verify 검증 후 그 로트 증량 적용 + 승인 이벤트 기록.
+             [부재로 진행]: 사유 남기고 '미승인 증량'으로 진행(그 로트만 rescale_unacked=1).
+             승인 1회 = 증량 1회. hidden 토글 전용. -->
+        <div class="ss-modal-overlay" id="cont-rescale-approve-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-rescale-approve-title">
+            <div class="ss-modal-header"><h3 id="cont-rescale-approve-title">증량 책임자 승인</h3></div>
+            <div class="ss-modal-body">
+              <p class="rescale-approve-lead" id="cont-rescale-approve-lead">증량은 책임자 승인이 필요합니다. 책임자 이름과 비밀번호를 입력하세요.</p>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-rescale-approve-name">책임자 이름</label>
+                <input class="input" id="cont-rescale-approve-name" autocomplete="off" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="cont-rescale-approve-pw">비밀번호</label>
+                <input class="input" id="cont-rescale-approve-pw" type="password" autocomplete="off" />
+              </div>
+              <p class="login-error" id="cont-rescale-approve-error" hidden></p>
+              <button class="btn accent rescale-approve-btn" id="cont-rescale-approve-submit" type="button">승인</button>
+              <hr class="rescale-approve-divider" />
+              <div class="rescale-absence">
+                <p class="rescale-absence-title">책임자 부재 시</p>
+                <div class="blend-field">
+                  <label class="filter-label" for="cont-rescale-absence-reason">사유</label>
+                  <input class="input" id="cont-rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                </div>
+                <button class="btn rescale-approve-btn" id="cont-rescale-absence-submit" type="button">부재로 진행</button>
+                <p class="rescale-absence-warn">승인 없이 진행하면 이 로트는 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3회 증량 차단 모달 — 이미 2회 증량된 '그 로트'에서 3회째 증량 제안이 뜨려 하면
+             제안 대신 이 모달로 막는다(폐기 협의 유도). hidden 토글 전용. -->
+        <div class="ss-modal-overlay" id="cont-rescale-block-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-rescale-block-title">
+            <div class="ss-modal-header"><h3 id="cont-rescale-block-title">증량 불가</h3></div>
+            <div class="ss-modal-body"><p>3회 증량은 불가합니다 — 이 로트는 책임자와 폐기 여부를 협의하세요.</p></div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn accent" id="cont-rescale-block-close" type="button" autofocus>확인</button>
+            </div>
+          </div>
+        </div>
+
         <datalist id="worker-names"></datalist>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend_continuous.js?v=20260723c"></script>
+    <script src="/static/js/blend_continuous.js?v=20260723d"></script>
 {% endblock %}

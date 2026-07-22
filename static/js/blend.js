@@ -537,6 +537,10 @@
       note: $("blend-note").value,
       reactor: $("blend-reactor").value,
       rescaleTotalG: state.rescaleTotalG || 0,
+      // 증량 승인 이력 — 각 증량의 before/after 총량 + 승인(approval_id/approver) 또는
+      // 부재(absence_reason). 초안에 반드시 함께 보관해야 복구 후 저장 payload(rescale_events)
+      // 로 전송되어 추적성이 유지된다(누락 시 서버가 '증량 없음'으로 조용히 저장 — 추적 구멍).
+      rescaleEvents: (state.rescaleEvents || []).map((ev) => ({ ...ev })),
       lotOverrides: state.lotOverrides || {},
       items: state.items.map((it) => ({
         material_lot: it.material_lot || "",
@@ -602,6 +606,16 @@
     state.lotOverrides = draft.lotOverrides || {};
     state.rescaleTotalG = draft.rescaleTotalG || 0;
     if (state.rescaleTotalG > 0) state.rescaleActive = true;
+    // 증량 승인 이력 복구 — onRecipeChange 가 이미 [] 로 리셋했으므로 초안 값으로 되살린다.
+    // (얕은 복사로 원본 초안 객체와 분리.) 승인 이력이 있으면 증량 활성으로 간주해
+    // 총량 잠금·추가분 배지가 다시 뜨게 한다(일반 레시피는 rescaleTotalG=0 이라 이 신호가 필요).
+    state.rescaleEvents = Array.isArray(draft.rescaleEvents)
+      ? draft.rescaleEvents.map((ev) => ({ ...ev }))
+      : [];
+    if (state.rescaleEvents.length) state.rescaleActive = true;
+    // '방금 증량 취소' 스냅샷은 세션을 넘겨 복구하지 않는다 — 직전 상태는 이번 세션에서만
+    // 의미가 있다. null 로 두어 복구 후 '방금 증량 취소' 버튼이 계속 비활성(숨김)으로 남게 한다.
+    state.rescaleUndo = null;
     (draft.items || []).forEach((di, i) => {
       if (!state.items[i]) return;
       state.items[i].material_lot = di.material_lot || "";
@@ -621,13 +635,21 @@
       $("blend-total").dispatchEvent(new Event("input"));
     }
     state.items.forEach((_, i) => updateRowVar(i));
-    updateTotals();
+    updateTotals();   // updateTotalLock 포함 — 실측이 있으면 총 배합량 잠금 재적용
     updateLotPreview();
     updateInputGuide();
-    if (state.rescaleActive) renderAddBadges();
+    hideRescaleUndo();  // 복구 세션엔 '방금 증량 취소' 없음(스냅샷을 복구하지 않으므로)
     const banner = $("blend-restore-banner");
     if (banner) banner.hidden = true;
     notify("작성 중이던 배합을 복원했습니다.", "success");
+    if (state.rescaleEvents.length) {
+      // 증량 이력이 있으면 총량 잠금·추가분 배지를 명시적으로 다시 그리고 1회 안내한다.
+      updateTotalLock();
+      renderAddBadges();
+      notify(`복구된 배합에 증량 ${state.rescaleEvents.length}회가 포함되어 있습니다.`, "warn");
+    } else if (state.rescaleActive) {
+      renderAddBadges();
+    }
   }
 
   // 기준 자재 모드 적용 — 레시피에 기준 자재가 있으면:
@@ -1444,6 +1466,11 @@
     return m ? decodeURIComponent(m[1]) : "";
   }
 
+  // 증량 재승인(re-auth) 대기 플래그 — 복구된 초안의 만료 승인(approval_id)을
+  // 책임자 인증으로 갱신하는 중일 때만 true. 이때 승인 모달의 [승인] 은 새 증량을
+  // 확정(finalizeRescale)하지 않고 기존 승인 이벤트의 approval_id 만 갈아끼운다.
+  let _rescaleReauthPending = false;
+
   function openRescaleApproveModal() {
     // 제안/폐기 모달을 닫고 승인 모달을 연다(pendingRescale 은 그대로 보존).
     closeRescaleModal();
@@ -1470,6 +1497,9 @@
   // 초과 계량 상태는 그대로라 다음 change/Enter 에서 다시 제안이 뜬다.
   function cancelRescaleApprove() {
     state.pendingRescale = null;
+    // 재승인 도중 취소면 대기 플래그도 해제 — 이벤트의 만료 approval_id 는 그대로 남고,
+    // 작업자가 다시 저장하면 서버 400 → beginRescaleReauth 가 재발동한다(재시도 가능).
+    _rescaleReauthPending = false;
     closeRescaleApproveModal();
   }
 
@@ -1518,6 +1548,44 @@
       if (res.status === 403) { showApproveError("책임자 권한이 없습니다."); return; }
       if (!res.ok) { showApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요."); return; }
       const data = await res.json().catch(() => ({}));
+      if (_rescaleReauthPending) {
+        // ── 증량 재승인 처리 ──
+        // 복구된 초안의 승인 이벤트(approval_id)들이 30분 TTL 을 넘겨 저장이 400 났다.
+        // 이미 한 번 승인된 증량이므로 새 결정이 아니라 재검증 — 작업자 1회 인증으로
+        // 모든 승인 이벤트를 살아있는 새 토큰으로 교체한다. 단, 서버는 approval_id 를
+        // 1건당 1회만 소비(used=1)하므로 승인 이벤트가 여러 건이면 건마다 별도 토큰이
+        // 필요하다: 첫 건은 방금 발급받은 토큰을 쓰고, 나머지는 같은 자격증명으로 추가
+        // 발급한다. 부재(absence_reason) 이벤트는 만료 개념이 없어 손대지 않는다.
+        const approvedIdx = state.rescaleEvents
+          .map((ev, i) => (ev.approval_id != null ? i : -1))
+          .filter((i) => i >= 0);
+        const freshIds = [data.approval_id];
+        try {
+          for (let k = 1; k < approvedIdx.length; k++) {
+            const r2 = await fetch("/api/blend/manager-verify", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+              body: JSON.stringify({ username: name, password: pw }),
+            });
+            if (!r2.ok) throw new Error("verify failed");
+            const d2 = await r2.json().catch(() => ({}));
+            freshIds.push(d2.approval_id);
+          }
+        } catch (_e2) {
+          showApproveError("재승인 중 오류가 발생했습니다. 다시 시도하세요.");
+          return;  // _rescaleReauthPending 유지 — 재시도 가능
+        }
+        approvedIdx.forEach((evIdx, k) => {
+          state.rescaleEvents[evIdx].approval_id = freshIds[k];
+          state.rescaleEvents[evIdx].approver = data.approver || name;
+        });
+        _rescaleReauthPending = false;
+        closeRescaleApproveModal();
+        notify(`책임자 재승인 완료 (${data.approver || name}) — 다시 저장합니다.`, "success");
+        saveBlend();  // 갱신된 토큰으로 저장 재시도
+        return;
+      }
       closeRescaleApproveModal();
       finalizeRescale({ approval_id: data.approval_id, approver: data.approver || name });
       notify(`책임자 승인 완료 (${data.approver || name}) — 증량을 적용합니다.`, "success");
@@ -1529,6 +1597,11 @@
   }
 
   function submitAbsenceProceed() {
+    if (_rescaleReauthPending) {
+      // 재승인은 '이미 승인됐던' 증량의 토큰 갱신 전용 — 부재 진행으로는 처리하지 않는다.
+      showApproveError("만료된 증량은 책임자 재승인(비밀번호)으로만 다시 저장할 수 있습니다.");
+      return;
+    }
     const reasonEl = $("rescale-absence-reason");
     const reason = reasonEl ? reasonEl.value.trim() : "";
     if (!reason) { showApproveError("책임자 부재 사유를 입력하세요."); if (reasonEl) reasonEl.focus(); return; }
@@ -1537,6 +1610,18 @@
     closeRescaleApproveModal();
     finalizeRescale({ absence_reason: reason });
     notify("미승인 증량으로 적용했습니다 — 책임자 확인 전까지 알림이 반복됩니다.", "warn");
+  }
+
+  // 복구된 초안 저장이 만료된 승인 토큰 때문에 400 났을 때 호출 — 책임자 재인증 모달을
+  // 열어 만료 승인을 갱신하도록 안내한다. 승인 이벤트가 하나도 없으면(부재뿐) 대상 아님.
+  function beginRescaleReauth() {
+    if (!state.rescaleEvents.some((ev) => ev.approval_id != null)) {
+      notify("증량 승인 정보를 확인할 수 없습니다 — 새로 배합을 시작하세요.", "error");
+      return;
+    }
+    _rescaleReauthPending = true;
+    notify("증량 승인이 만료되었습니다 — 책임자 재인증 후 다시 저장합니다.", "warn");
+    openRescaleApproveModal();
   }
 
   function openRescaleBlockModal() {
@@ -2118,6 +2203,14 @@
       armPostSaveLogout();
       notify("5분간 새 입력이 없으면 자동 로그아웃됩니다", "warn");
     } catch (e) {
+      // 복구된 초안의 증량 승인(approval_id)은 30분 TTL 을 넘겨 서버가 400 으로 거절할 수 있다.
+      // 이 경우 오류만 띄우지 말고 책임자 1회 재인증으로 만료 승인을 갱신 후 자동 재저장한다.
+      // (부재 이벤트는 만료 없음 — 승인 이벤트가 있을 때만 재승인 흐름을 탄다.)
+      if (String(e.message || "").includes("증량 승인이 유효하지 않습니다") &&
+          state.rescaleEvents.some((ev) => ev.approval_id != null)) {
+        beginRescaleReauth();
+        return;
+      }
       err.textContent = e.message;
       err.hidden = false;
     }

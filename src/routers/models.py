@@ -205,6 +205,12 @@ class BlendContinuousBody(BaseModel):
     lots: list[list[BlendDetailBody]] = Field(default_factory=list)
     # 로트별 총량 오버라이드(초과 계량 증량). 미전송·전부 null 이면 기존 동작(total_amount).
     lot_totals: list[float | None] | None = Field(default=None)
+    # 로트별 증량(rescale) 이벤트 — lots 와 평행(인덱스 j = 로트 j). 각 원소는 그 로트의
+    # 이벤트 목록 [{before_total, after_total, approval_id?, absence_reason?, worker_confirmed?}]
+    # 또는 None(그 로트는 증량 없음). 단건(BlendCreateBody.rescale_events)의 로트별 버전이다.
+    # 미전송·전부 None 이면 기존 동작(컬럼 기본값 유지). 로트별로 최대 2건 — 3건째는
+    # validate_rescale_events 가 로트마다 400("3회 증량은 불가합니다…")으로 막는다.
+    lot_rescale_events: list[list[dict[str, Any]] | None] | None = Field(default=None)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendContinuousBody":
@@ -224,6 +230,16 @@ class BlendContinuousBody(BaseModel):
                 continue
             if not (0 < value <= 10_000_000):
                 raise ValueError(f"lot_totals[{idx}] 는 0 초과 10,000,000 이하여야 합니다.")
+        return self
+
+    @model_validator(mode="after")
+    def _check_lot_rescale_events(self) -> "BlendContinuousBody":
+        # lot_rescale_events 가 주어지면 lots 와 길이가 같아야 한다(인덱스 j = 로트 j).
+        # 내용 검증(승인 유효성·3회 제한)은 서버 validate_rescale_events 가 로트마다 수행.
+        if self.lot_rescale_events is None:
+            return self
+        if len(self.lot_rescale_events) != len(self.lots):
+            raise ValueError("lot_rescale_events 길이가 로트 수와 다릅니다.")
         return self
 
 
