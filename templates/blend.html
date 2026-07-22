@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260722b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260722c" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -76,6 +76,13 @@
                 <div class="blend-field">
                   <label class="filter-label" for="blend-total">총 배합량 (g)</label>
                   <input class="input" id="blend-total" type="number" step="0.1" min="0" />
+                  <!-- 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소. 입력칸 '바로 아래'에 붙여
+                       발견성 유지(폼 밖 풀폭 줄로 뺐더니 사용자가 못 찾음 2026-07-22). 라벨 줄이
+                       아닌 입력 아래라 칸이 좁아도 줄바꿈으로 자연 배치된다. -->
+                  <div id="blend-total-tools" class="blend-total-tools">
+                    <span class="blend-base-links" id="blend-base-links" hidden></span>
+                    <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
+                  </div>
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-worker">작업자 <span class="blend-worker-hint">(클릭해 교대)</span></label>
@@ -134,14 +141,6 @@
             </section>
           </div>
 
-          <!-- 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖으로 빼 폼 균형 유지.
-               id/hidden 토글 동작은 그대로(JS 가 id 로 접근). 비어 있으면 줄이 좁게 유지. -->
-          <div id="blend-total-tools" class="blend-total-tools">
-            <!-- 레시피에 지정된 기준 배합량(최대 3개) — 클릭하면 총량에 채움 -->
-            <span class="blend-base-links" id="blend-base-links" hidden></span>
-            <!-- 방금 증량 취소 — 증량 적용 후 추가분을 넣기 전까지만 노출 -->
-            <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
-          </div>
           <!-- 증량 적용 요약 — 증량 후 저장·초기화·레시피 변경 전까지 자재별 추가분 표시.
                작업자가 타이핑하는 동안에는 사라지지 않는다(얼마나 더 넣어야 할지 안내). -->
           <div id="rescale-applied-summary" class="rescale-applied-summary" hidden></div>

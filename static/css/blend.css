@@ -242,7 +242,7 @@
 .blend-base-label { font-size: 0.72rem; color: var(--muted, #6b7280); }
 .blend-base-link {
   background: none; border: none; padding: 0; cursor: pointer;
-  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+  font-size: 0.85rem; font-weight: 700; white-space: nowrap;
   color: var(--accent, #2563eb);
 }
 .blend-base-link:hover { text-decoration: underline; }
