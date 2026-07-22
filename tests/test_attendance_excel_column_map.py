@@ -73,6 +73,57 @@ class ColumnMapTests(unittest.TestCase):
         self.assertEqual(colmap, ex.DEFAULT_COLUMNS)
 
 
+class ColumnMapWarningTests(unittest.TestCase):
+    """GAP-1: 필수는 잡혔지만 선택 열이 헤더에서 안 잡혀 기본 인덱스로
+    조용히 폴백되면 경고를 남기고, 데이터는 헤더로 계속 파싱한다."""
+
+    def _headers_missing_outing(self):
+        # 필수 8필드 + late/early_leave 는 헤더로, 외출시간(outing)은 누락.
+        sub = [None] * 10
+        sub[0] = "근무일자"   # date
+        sub[1] = "구분"       # day_type
+        sub[2] = "사번"       # emp_id
+        sub[3] = "성명"       # name
+        sub[4] = "근무타임"   # shift_time
+        sub[5] = "근태코드"   # attendance_code
+        sub[6] = "출근"       # check_in
+        sub[7] = "퇴근"       # check_out
+        sub[8] = "지각시간"   # late
+        sub[9] = "조퇴시간"   # early_leave
+        group = [None] * 10
+        return tuple(group), tuple(sub)
+
+    def test_shifted_optional_column_warns_but_parses(self) -> None:
+        group, sub = self._headers_missing_outing()
+        colmap, warnings = ex._build_column_map(group, sub)
+
+        # 경고가 있고, 외출시간(outing)이 폴백 대상으로 명시된다.
+        self.assertTrue(warnings)
+        self.assertIn("outing", warnings[0])
+
+        # 필수/검출된 선택 열은 헤더 인덱스로 매핑(기본 인덱스가 아님).
+        self.assertEqual(colmap["name"], 3)
+        self.assertEqual(colmap["shift_time"], 4)
+        self.assertEqual(colmap["late"], 8)
+        self.assertEqual(colmap["early_leave"], 9)
+
+        # 검출 못한 outing 은 구 기본 인덱스로 조용히 폴백된다.
+        self.assertEqual(colmap["outing"], ex.DEFAULT_COLUMNS["outing"])
+
+    def test_full_layout_has_no_warning(self) -> None:
+        # 2026-06 정상 레이아웃(모든 선택 열 포함)은 경고가 없어야 한다.
+        _colmap, warnings = ex._build_column_map(
+            tuple(_JUNE_HEADER_GROUP), tuple(_JUNE_HEADER_SUB)
+        )
+        self.assertEqual(warnings, [])
+
+    def test_missing_required_falls_back_without_warning(self) -> None:
+        # 필수 미충족 → 통째 폴백은 정상 시나리오라 경고 없음.
+        colmap, warnings = ex._build_column_map(None, None)
+        self.assertEqual(colmap, ex.DEFAULT_COLUMNS)
+        self.assertEqual(warnings, [])
+
+
 class ParentalLeaveExclusionTests(unittest.TestCase):
     def _leave_row(self, code: str) -> ex.AttendanceRow:
         return ex.AttendanceRow(

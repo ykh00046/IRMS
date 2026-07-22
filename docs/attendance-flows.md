@@ -87,13 +87,17 @@ ERP 야간 배치(18:00)
 (검증: `test_missing_header_falls_back_to_default_columns`)
 
 - 필수 필드가 다 잡히면 반환값은 `{**DEFAULT_COLUMNS, **detected}` —
-  즉 **검출되지 않은 비필수 필드는 조용히 구 기본 인덱스를 쓴다**(§7 GAP-1 참조).
+  검출되지 않은 비필수 필드는 구 기본 인덱스로 폴백한다. **이제 이 조용한 폴백을
+  서버 로그로 한 번 경고한다**(GAP-1 해결, 2026-07-22). `parser._build_column_map`
+  이 `(colmap, warnings)` 를 돌려주고 `_make_column_map` 이 warnings 를 `logging`
+  으로 남긴다. 필수 미충족으로 통째 폴백하는 정상 시나리오(헤더 없는 단위테스트·
+  구버전)는 경고 없음.
 
 ### 1.4 셀 파싱 규칙 (`parser.py`)
 
 | 필드 | 함수 | 규칙 |
 |---|---|---|
-| 문자열 | `_cell_str` | `str`→strip; `datetime/date`→`%Y-%m-%d`; `time`→`%H:%M`; 그 외 `str(v).strip()` |
+| 문자열 | `_cell_str` | `str`→strip; `datetime/date`→`%Y-%m-%d`; `time`→`%H:%M`; 정수형 `float`(171013.0)→정수 문자열(BUG-2 해결); 그 외 `str(v).strip()` |
 | 시각 | `_cell_time` | `time/datetime`→`%H:%M`; 문자열은 그대로; 빈값→`None` |
 | 숫자 | `_cell_float` | 실패/빈값→`0.0` |
 | 구분(day_type) | `_cell_day_type` | 지정 열 값이 `DAY_TYPE_VALUES` 밖이면 **바로 오른쪽 열도 확인**(열 밀림 방어) |
@@ -102,6 +106,13 @@ ERP 야간 배치(18:00)
 - `_row_to_record` 는 `emp_id` 가 비면 빈 dict 반환(무시). 파싱과 동시에
   `row.issues = anomaly._row_issue_labels(row, shift_time)` 로 이상 라벨을 붙인다.
 - `DAY_TYPE_VALUES = ("평일","평일2","주휴","무휴","유휴")`.
+- **사번 정규화(`models.normalize_emp_id`, BUG-2 해결)**: 파싱 측 `_cell_str` 가
+  숫자형 셀을 정수 문자열로 낮추고, 조회 측(`summary.employee_exists_in_any_month`,
+  `employee_profile_from_any_month`, `_load_month_rows_for_employee`)이 비교 양쪽을
+  `normalize_emp_id`(strip + 정수형 실수 → 정수 문자열)로 맞춰, 엑셀 사번이 숫자형
+  (`171013.0`)이든 문자열이든 로그인 사번 `"171013"` 과 일치한다. 문자형 사번(앞자리
+  0 포함)은 손상 없이 보존. **주의**: DB 계정 조회(`attendance_auth._fetch`)는 정확
+  일치라 이 정규화 범위 밖 — 저장된 계정 값 자체가 어긋나면 별도 처리 필요.
 
 ---
 
@@ -225,8 +236,12 @@ ERP 야간 배치(18:00)
 | `공제시간 불일치` | 지각/조퇴/외출 공제시간 > 0 인데 코드가 휴가류(연차/반차 등) | 301–302 |
 | `출근 누락`/`퇴근 누락` (코드) | 근태코드에 "미타각/누락" + "출"/"퇴" 포함 | `_attendance_code_issues` 274–288 |
 
-- 유예: `ALERT_GRACE_MINUTES = 15`. `_baseline_has_passed` 가 기준일 이전이면 True,
-  이후면 False, 당일이면 `현재분 ≥ baseline+15`.
+- 유예: `ALERT_GRACE_MINUTES = 15`. `_baseline_has_passed` 는 근무일 자정에
+  `baseline+15분` 을 더한 **실제 기준 datetime** 과 `reference` 를 직접 비교한다
+  (`reference >= 근무일0시 + baseline + 유예`). baseline 이 1440 이상인 2교대(야간)
+  퇴근(27:45 = 익일 03:45)도 익일 날짜로 정확히 걸쳐 계산된다(BUG-1 해결). 날짜
+  지름길(`row_date < reference.date()` → 무조건 통과)을 쓰던 이전 방식은 새벽 열람 시
+  야간 퇴근을 조기 통과시켜 오탐했다.
 - 지각 처리 완료 예: 코드 "지각" + `late_hours=0.5` → 이상 아님
   (`test_row_to_record_with_late_code_ignores_matched_late_deduction`).
 - 지각 시간은 있는데 코드가 없으면 `근태코드 누락(지각)`
@@ -385,31 +400,32 @@ CSRF 면제 목록(`main.py` 43–60): `/api/attendance/login`(토큰 전 로그
 
 ### BUG
 
-- **BUG-1 (낮음) 야간조 자정 넘김 — 퇴근 baseline 조기 통과.**
-  `anomaly._baseline_has_passed` (`anomaly.py:261`)는 `row_date < reference.date()` 면
-  무조건 "기준 지남"으로 본다. 2교대(야간) 퇴근 baseline 은 27:45(익일 03:45)라
-  실제로는 **다음 날력**에 걸친다. 근무일 D 의 야간행을 D+1 자정~03:45 사이에 평가하면
-  (예: 월 화면을 새벽 1시에 열람), 아직 정상 근무 중이라 미타각이 정상인데도
-  `퇴근 누락`으로 오탐한다. baseline 이 1440 이상일 때 reference 가 익일이면
-  `baseline-1440+15` 로 비교해야 정확. 트레이 슬롯(09/13/16)은 이 구간을 안 밟아
-  실피해는 웹 새벽 열람에 국한 → 낮음. `files:_baseline_has_passed`.
+- **BUG-1 ✅ 해결(2026-07-22) 야간조 자정 넘김 — 퇴근 baseline 조기 통과.**
+  `anomaly._baseline_has_passed` 가 날짜 지름길(`row_date < reference.date()` → 무조건
+  통과) 대신 **근무일 자정 + baseline + 유예의 실제 datetime** 과 `reference` 를 직접
+  비교하도록 수정. 2교대(야간) 퇴근 baseline 27:45(익일 03:45)가 익일 날짜로 정확히
+  걸쳐, 근무일 D 의 야간행을 D+1 새벽 02:00 에 평가해도 `퇴근 누락` 오탐이 나지
+  않는다(04:00 도래 시에만 감지). 회귀 테스트 `test_attendance_night_shift.py`.
+  (구 증상: baseline 이 1440 이상인데 날짜만 보고 조기 통과 → 웹 새벽 열람 오탐.)
 
-- **BUG-2 (낮음) 숫자형 사번 셀 → 소수/문자열 불일치.**
-  `parser._cell_str` (`parser.py:43`)는 `str`·날짜·시간 외 값에 `str(value).strip()` 만
-  적용한다. ERP "사번" 열이 **숫자형**이면 `171013.0`(float repr) 또는 정수 문자열로
-  읽혀, 로그인 사번 `"171013"` 과 `employee_exists_in_any_month` 비교에서 어긋날 수 있다
-  (`.0` 접미·앞자리 0 손실). 현재 파일은 사번을 텍스트로 내보내는 듯 테스트가 다 통과하지만,
-  emp_id 전용 정규화(정수화/zfill)가 없어 형식 변동에 취약. `parser:_cell_str`,
-  `summary:employee_exists_in_any_month`.
+- **BUG-2 ✅ 해결(2026-07-22) 숫자형 사번 셀 → 소수/문자열 불일치.**
+  `parser._cell_str` 가 정수형 `float`(171013.0)을 정수 문자열로 낮추고, 조회 측
+  (`summary.employee_exists_in_any_month` / `employee_profile_from_any_month` /
+  `_load_month_rows_for_employee`)이 비교 양쪽을 공용 `models.normalize_emp_id`
+  (strip + 정수형 실수 → 정수 문자열)로 통과시켜, 엑셀 사번이 숫자형이든 문자열이든
+  로그인 사번 `"171013"` 과 일치한다. 문자형 사번(앞자리 0)은 보존. 회귀 테스트
+  `test_attendance_excel_emp_id.py`. **단, DB 계정 조회(`attendance_auth._fetch`)는
+  정확 일치라 조회측 정규화 범위 밖** — 아래 §7 주 참조.
 
 ### GAP
 
-- **GAP-1 (중간) 헤더 부분 이동 시 조용한 오매핑.**
-  `_make_column_map` (`parser.py:127`)은 **필수 8필드**만 다 잡으면 신뢰하고,
-  나머지는 `{**DEFAULT_COLUMNS, **detected}` 로 병합한다. 필수는 그대로인데 비필수 열
-  (예 `외출시간`, `조출`)만 이동/개명되면 그 필드는 **구 기본 인덱스로 조용히 오매핑**된다
-  (전체 폴백도 안 걸림). 2026-06 같은 부분 재배치가 또 오면 외출/조출 계열이 틀려도
-  경고가 없다. 필수 집합을 넓히거나 검출률 로깅 권장.
+- **GAP-1 ✅ 해결(2026-07-22) 헤더 부분 이동 시 조용한 오매핑.**
+  `parser._build_column_map` 이 필수 8필드는 잡혔지만 알려진 선택 열(예 `외출시간`,
+  `조출`)이 헤더에서 검출되지 않아 구 기본 인덱스로 폴백되면 `(colmap, warnings)` 의
+  warnings 에 폴백 필드 목록을 담아 반환하고, `_make_column_map` 이 이를 서버 로그로
+  경고한다. 임포트는 실패시키지 않고 헤더로 잡히는 데이터는 그대로 파싱한다. 필수
+  미충족의 통째 폴백(정상 시나리오)은 경고 없음. 회귀 테스트
+  `test_attendance_excel_column_map.py::ColumnMapWarningTests`.
 
 - **GAP-2 (중간) baseline 함수 이중화 — 2교대 부분휴가 불일치 함정.**
   `_compute_anomaly_baseline`(주간만 부분휴가 적용, `anomaly.py:120`)과
@@ -437,16 +453,13 @@ CSRF 면제 목록(`main.py` 43–60): `/api/attendance/login`(토큰 전 로그
 
 ### POLISH
 
-- **POLISH-1 (문서 오류) 비밀번호 변경 화면이 "4자 이상"이라 표기.**
-  `attendance_change_password.html:35,42,54` 라벨 "새 비밀번호 (4자 이상...)" +
-  `minlength="4"`. 그러나 서버는 8자(`MIN_PASSWORD_LENGTH=8`, Pydantic `min_length=8`,
-  클라 mapError 도 "8자 이상"). 사용자가 4~7자 입력 시 HTML 검증은 통과하나 422/400 거부.
-  라벨·minlength 를 8 로 수정 필요.
+- **POLISH-1 ✅ 해결(2026-07-22) 비밀번호 변경 화면 "4자 이상" 표기.**
+  `attendance_change_password.html` 라벨을 "8자 이상"으로, 두 입력의 `minlength` 를
+  `8` 로 수정해 서버 정책(`MIN_PASSWORD_LENGTH=8`, Pydantic `min_length=8`)과 일치.
 
-- **POLISH-2 (문서 오류) 로그인 placeholder "초기값은 사번과 동일".**
-  `attendance_login.html:51` 이 초기 비번이 사번과 같다고 안내하지만, 실제 프로비저닝은
-  랜덤 임시비번이고 `validate_password_strength` 는 **사번==비번을 명시적으로 거부**한다.
-  같은 화면 하단(59행)의 "책임자에게 발급받으세요" 와도 모순. placeholder 교체 필요.
+- **POLISH-2 ✅ 해결(2026-07-22) 로그인 placeholder "초기값은 사번과 동일".**
+  `attendance_login.html` placeholder 를 "임시 비밀번호는 책임자에게 발급받으세요"로
+  교체 — 랜덤 임시비번 발급 흐름 및 같은 화면 하단 안내와 정합.
 
 - **POLISH-3 (주석 stale) 2교대 테스트 docstring 이 휴식 30분/15:30 이라 적음.**
   `tests/test_attendance_shift2_partial_leave.py:3-9` docstring 은 "휴식 30분",
@@ -465,6 +478,15 @@ CSRF 면제 목록(`main.py` 43–60): `/api/attendance/login`(토큰 전 로그
 - 실제 `C:\ErpExcel\*.xlsx` 파일은 저장소에 없어 **운영 헤더 실물**을 직접 못 봤다.
   헤더 매핑은 `test_attendance_excel_column_map.py` 가 재현한 2026-06 헤더로만 검증됨.
   BUG-2(숫자형 사번)·GAP-1(부분 이동)의 실발생 여부는 실물 파일 확인 필요.
+- **BUG-2 현장 이슈(사번 221023 로그인 불일치) 범위 주의**: 이번 조회측 정규화는
+  **엑셀 매칭**(존재 확인·프로필·행 로드)만 치유한다. 즉 엑셀 셀이 `221023.0` 로 들어와
+  재발급(`employee_exists_in_any_month`) 404 나 프로필/행 누락이 나던 경로는 해결된다.
+  로그인 자체는 `attendance_auth._fetch` 가 `attendance_users.emp_id` 와 **정확 일치**로
+  조회하므로, 계정이 사람이 타이핑한 `"221023"` 로 저장돼 있으면 원래 정상이다. 반대로
+  **저장된 계정 값 자체가 `"221023.0"` 등으로 오염**된 경우(과거 버그성 프로비저닝)는
+  조회측 정규화만으로는 치유되지 않고 DB 값 마이그레이션 또는 `_fetch` 정규화가 별도로
+  필요하다. 다만 프로비저닝은 관리자 입력값(스트립된 `"221023"`)을 쓰므로 이 오염
+  시나리오는 실무상 드물다.
 - 트레이 알림의 실제 팝업 렌더(`attendance_popup.py`)는 이 리뷰 범위 밖(알림 채널까지만).
 - `IRMS_TRUSTED_ORIGINS`·`REQUIRE_TRAY_API_TOKEN` 운영 설정값은 저장소에 없어(런타임 env),
   공개 API 가 실제로 토큰 필수 모드인지 IP 모드인지는 운영 PC 에서만 확정 가능.

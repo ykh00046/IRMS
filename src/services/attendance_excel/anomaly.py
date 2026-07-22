@@ -254,16 +254,22 @@ def _row_is_future(row: AttendanceRow, reference: _dt.datetime) -> bool:
 
 
 def _baseline_has_passed(row: AttendanceRow, baseline_minutes: int, reference: _dt.datetime) -> bool:
+    """기준일 자정 기준 ``baseline_minutes`` + 유예를 넘겼는지 판정.
+
+    ``baseline_minutes`` 는 근무일 자정 기준 분이며 2교대(야간) 퇴근처럼 1440
+    이상(익일)일 수 있다. 날짜 지름길(``row_date < reference.date()`` → 항상
+    통과)을 쓰면 익일에 걸친 야간 퇴근 baseline(예 27:45 = 익일 03:45)이 실제
+    도래 전에 통과 처리돼 새벽 열람 시 '퇴근 누락'을 오탐한다(BUG-1). 그래서
+    근무일 자정에 baseline+유예를 더한 실제 기준 시각과 reference 를 직접 비교한다.
+    """
     try:
         row_date = _dt.date.fromisoformat(row.date)
     except ValueError:
         return True
-    if row_date < reference.date():
-        return True
-    if row_date > reference.date():
-        return False
-    reference_minutes = reference.hour * 60 + reference.minute
-    return reference_minutes >= baseline_minutes + ALERT_GRACE_MINUTES
+    baseline_dt = _dt.datetime.combine(row_date, _dt.time()) + _dt.timedelta(
+        minutes=baseline_minutes + ALERT_GRACE_MINUTES
+    )
+    return reference >= baseline_dt
 
 
 def _append_issue(issues: list[str], issue: str) -> None:

@@ -23,6 +23,7 @@ from .models import (
     FileLocked,
     FileFormatInvalid,
     MonthFileNotFound,
+    normalize_emp_id,
 )
 
 HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
@@ -91,9 +92,13 @@ def employee_list(year_month: str) -> list[dict[str, str]]:
 
 
 def employee_exists_in_any_month(emp_id: str) -> bool:
-    """Used during first login: accept any month that has this sa-beon."""
-    emp_id = (emp_id or "").strip()
-    if not emp_id:
+    """Used during first login: accept any month that has this sa-beon.
+
+    비교 양쪽을 ``normalize_emp_id`` 로 정규화해, 엑셀 사번이 숫자형(171013.0)
+    으로 들어와도 로그인 사번 문자열과 일치시킨다(BUG-2).
+    """
+    target = normalize_emp_id(emp_id)
+    if not target:
         return False
     for ym in files.available_months():
         for path in files.month_file_paths(ym):
@@ -102,15 +107,15 @@ def employee_exists_in_any_month(emp_id: str) -> bool:
             except (MonthFileNotFound, FileLocked, FileFormatInvalid):
                 continue
             for rec in records:
-                if rec["emp_id"] == emp_id:
+                if normalize_emp_id(rec["emp_id"]) == target:
                     return True
     return False
 
 
 def employee_profile_from_any_month(emp_id: str) -> AttendanceProfile | None:
     """Find employee identity even when the selected month has no rows for them."""
-    emp_id = (emp_id or "").strip()
-    if not emp_id:
+    target = normalize_emp_id(emp_id)
+    if not target:
         return None
     for ym in files.available_months():
         for path in files.month_file_paths(ym):
@@ -119,7 +124,7 @@ def employee_profile_from_any_month(emp_id: str) -> AttendanceProfile | None:
             except (MonthFileNotFound, FileLocked, FileFormatInvalid):
                 continue
             for rec in records:
-                if rec and rec["emp_id"] == emp_id:
+                if rec and normalize_emp_id(rec["emp_id"]) == target:
                     return _record_to_profile(rec)
     return None
 
@@ -131,9 +136,10 @@ def _load_month_rows_for_employee(
     profile: AttendanceProfile | None = None
     rows: list[AttendanceRow] = []
     seen_rows: set[tuple[Any, ...]] = set()
+    target = normalize_emp_id(emp_id)
     for path in files._month_file_paths_or_raise(year_month):
         for rec in parser._records_from_path(path):
-            if rec["emp_id"] != emp_id:
+            if normalize_emp_id(rec["emp_id"]) != target:
                 continue
             if profile is None:
                 profile = _record_to_profile(rec)

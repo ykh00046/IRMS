@@ -35,6 +35,7 @@ from . import summary
 # --- models.py: COL_* constants, header map tables, exceptions, dataclasses ---
 from .models import (
     ANNUAL_LEAVE_KEYWORDS,
+    normalize_emp_id,
     COL_DATE,
     COL_WEEKDAY,
     COL_DAY_TYPE,
@@ -102,6 +103,7 @@ from .parser import (
     _cell_at,
     _cell_float,
     _cell_time,
+    _build_column_map,
     _make_column_map,
     _cell_day_type,
     _load_workbook,
@@ -180,6 +182,7 @@ __all__ = [
     "summary",
     # models
     "ANNUAL_LEAVE_KEYWORDS",
+    "normalize_emp_id",
     "COL_DATE",
     "COL_WEEKDAY",
     "COL_DAY_TYPE",
@@ -241,6 +244,7 @@ __all__ = [
     "_cell_at",
     "_cell_float",
     "_cell_time",
+    "_build_column_map",
     "_make_column_map",
     "_cell_day_type",
     "_load_workbook",

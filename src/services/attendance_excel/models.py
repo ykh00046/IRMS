@@ -9,8 +9,39 @@ the other submodules (``files``, ``parser``, ``anomaly``, ``summary``).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 ANNUAL_LEAVE_KEYWORDS = ("연차", "월차", "휴가", "반차", "유급", "공가")
+
+
+def normalize_emp_id(value: Any) -> str:
+    """사번 비교용 정규화 — 파싱 셀과 로그인/조회 입력을 같은 형태로 맞춘다.
+
+    ERP '사번' 열이 숫자형으로 내보내지면 openpyxl이 float(``171013.0``)로 읽어,
+    로그인 사번 문자열 ``"171013"`` 과 ``employee_exists_in_any_month`` 등의
+    비교에서 어긋난다(``.0`` 접미). 파싱 측(``parser._cell_str``)과 조회 측
+    (``summary`` 의 emp_id 매칭)에서 공통으로 이 헬퍼를 통과시켜 방어한다.
+
+    - ``None`` → ``""``
+    - 문자열 → 앞뒤 공백만 제거(원문 보존; 앞자리 0 유지). 단 ``"171013.0"``
+      처럼 정수형 실수를 담은 문자열은 정수 문자열로.
+    - ``float`` → 정수값이면 정수 문자열, 아니면 ``str`` 후 strip
+    - ``int`` → 문자열
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):  # bool 은 int 하위형 — 사번일 리 없으니 원문 유지
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value).strip()
+    text = str(value).strip()
+    if text[-2:] == ".0":
+        head = text[:-2]
+        if head.lstrip("+-").isdigit():
+            return head
+    return text
 
 COL_DATE = 0
 COL_WEEKDAY = 1

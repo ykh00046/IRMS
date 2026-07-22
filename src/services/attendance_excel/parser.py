@@ -10,6 +10,7 @@ affects parsing.
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,13 @@ from .models import (
     _HEADER_WORKHOUR_SUFFIX,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 DAY_TYPE_VALUES = ("평일", "평일2", "주휴", "무휴", "유휴")
+
+# 헤더에서 검출되길 기대하는 선택(비필수) 필드. 필수는 다 잡혔는데 이들이
+# 헤더에서 안 잡히면 구 기본 인덱스로 조용히 폴백되므로 경고 대상이다(GAP-1).
+_OPTIONAL_HEADER_FIELDS = frozenset(files.DEFAULT_COLUMNS) - _HEADER_REQUIRED_FIELDS
 
 
 def _cell_str(value: Any) -> str:
@@ -51,6 +58,11 @@ def _cell_str(value: Any) -> str:
         return value.strftime("%Y-%m-%d")
     if isinstance(value, _dt.time):
         return value.strftime("%H:%M")
+    # 숫자형 셀 정규화: ERP가 사번 등을 숫자로 내보내면 openpyxl이 float
+    # (171013.0)로 읽는다. 정수값 실수는 정수 문자열로 낮춰 로그인 사번
+    # 문자열과 어긋나지 않게 한다(BUG-2). 진짜 소수/그 외 값은 그대로.
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
     return str(value).strip()
 
 
@@ -78,17 +90,20 @@ def _cell_time(value: Any) -> str | None:
     return text or None
 
 
-def _make_column_map(
+def _build_column_map(
     header_group: tuple[Any, ...] | None,
     header_sub: tuple[Any, ...] | None,
-) -> dict[str, int]:
-    """헤더 두 행(그룹 행0 + 세부 행1)에서 논리 필드 → 열 인덱스 맵을 만든다.
+) -> tuple[dict[str, int], list[str]]:
+    """헤더 두 행에서 ``(열맵, 경고목록)`` 을 만든다.
 
-    헤더에서 필수 필드를 모두 찾지 못하면 ``DEFAULT_COLUMNS`` 를 그대로
-    돌려준다(구버전 레이아웃·헤더 없는 입력에 대한 안전한 폴백).
+    필수 필드를 모두 찾지 못하면 ``DEFAULT_COLUMNS`` 로 통째 폴백한다(경고
+    없음 — 헤더 없는 단위테스트/구버전 레이아웃의 정상 시나리오). 필수는
+    잡혔지만 알려진 선택 열(예 ``외출시간``·``조출``)이 헤더에서 안 잡혀 구
+    기본 인덱스로 조용히 폴백되면 경고를 남긴다(GAP-1). 어느 경우에도 파싱은
+    계속한다.
     """
     if not header_sub:
-        return dict(files.DEFAULT_COLUMNS)
+        return dict(files.DEFAULT_COLUMNS), []
 
     group = list(header_group or ())
     sub = list(header_sub)
@@ -125,8 +140,32 @@ def _make_column_map(
             detected["note"] = idx
 
     if not _HEADER_REQUIRED_FIELDS.issubset(detected):
-        return dict(files.DEFAULT_COLUMNS)
-    return {**files.DEFAULT_COLUMNS, **detected}
+        return dict(files.DEFAULT_COLUMNS), []
+
+    warnings: list[str] = []
+    missing_optional = sorted(_OPTIONAL_HEADER_FIELDS - detected.keys())
+    if missing_optional:
+        warnings.append(
+            "선택 열을 헤더에서 찾지 못해 구 기본 인덱스로 폴백: "
+            + ", ".join(missing_optional)
+        )
+    return {**files.DEFAULT_COLUMNS, **detected}, warnings
+
+
+def _make_column_map(
+    header_group: tuple[Any, ...] | None,
+    header_sub: tuple[Any, ...] | None,
+) -> dict[str, int]:
+    """헤더 두 행(그룹 행0 + 세부 행1)에서 논리 필드 → 열 인덱스 맵을 만든다.
+
+    헤더에서 필수 필드를 모두 찾지 못하면 ``DEFAULT_COLUMNS`` 를 그대로
+    돌려준다(구버전 레이아웃·헤더 없는 입력에 대한 안전한 폴백). 선택 열이
+    헤더에서 안 잡혀 기본 인덱스로 폴백되면 서버 로그로 한 번 경고한다(GAP-1).
+    """
+    colmap, warnings = _build_column_map(header_group, header_sub)
+    for message in warnings:
+        _LOGGER.warning("attendance 헤더 매핑: %s", message)
+    return colmap
 
 
 def _cell_day_type(row: tuple[Any, ...], colmap: dict[str, int]) -> str:
