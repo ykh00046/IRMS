@@ -1,6 +1,7 @@
 """원료배합일지(DHR) 공식 양식 출력 검증."""
 
 import io
+import json
 
 import openpyxl
 
@@ -63,3 +64,39 @@ def test_official_dhr_form_handles_missing_optionals():
     ws = openpyxl.load_workbook(io.BytesIO(xb)).active
     assert ws["A1"].value == "원 료 배 합 일 지"
     assert ws["A6"].value == "제품A260625"
+
+
+def test_official_dhr_includes_rescale_summary():
+    """증량(rescale) 이력이 있으면 표 아래 비고에 요약 줄이 실린다(GAP-5)."""
+    rec = _sample_record()
+    rec["rescale_count"] = 2
+    rec["rescale_events_json"] = json.dumps([
+        {"before_total": 1000, "after_total": 1050, "approver": "홍길동"},
+        {"before_total": 1050, "after_total": 1100, "absence_reason": "야간 단독"},
+    ], ensure_ascii=False)
+    xb = dhr_excel.build_official_dhr_xlsx(rec)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "증량 2회" in joined
+    assert "1000→1050" in joined
+    assert "승인: 홍길동" in joined
+    assert "부재: 야간 단독" in joined
+
+
+def test_official_dhr_no_rescale_summary_when_absent():
+    """증량 이력이 없으면 비고 요약 줄이 생기지 않는다(회귀 가드)."""
+    xb = dhr_excel.build_official_dhr_xlsx(_sample_record())
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "증량" not in joined
+
+
+def test_official_dhr_marks_signature_failure():
+    """서명 합성 실패(sign_failed) 시 결재칸에 표식을 남긴다 — 무언의 미서명 출력 금지(POLISH-6)."""
+    xb = dhr_excel.build_official_dhr_xlsx(_sample_record(), sign_failed=True)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    assert ws["G2"].value == "(서명 합성 실패)"

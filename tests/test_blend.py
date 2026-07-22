@@ -353,13 +353,13 @@ def test_blend_update_route_requires_manager_and_full_edit():
     kept = client.get(f"/api/blend/records/{rid}").json()
     assert kept["product_name"] == prod                     # 거부됐으니 원래대로
 
-    # 제품명을 유지한 전체 수정 → 200
+    # 제품명을 유지한 전체 수정 → 200 (자재 LOT 는 create 와 동일하게 필수 — GAP-2)
     res = client.request("PUT", f"/api/blend/records/{rid}", json={
         "product_name": prod, "worker": "책임수정", "work_date": "2026-07-03",
         "total_amount": 200, "scale": "S9", "note": "정정",
         "details": [
-            {"material_name": "A", "ratio": 50, "theory_amount": 100, "actual_amount": 100},
-            {"material_name": "C", "ratio": 50, "theory_amount": 100, "actual_amount": 100},
+            {"material_name": "A", "ratio": 50, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"},
+            {"material_name": "C", "ratio": 50, "theory_amount": 100, "actual_amount": 100, "material_lot": "LC"},
         ],
     }, headers=csrf_headers())
     assert res.status_code == 200, res.text
@@ -369,10 +369,10 @@ def test_blend_update_route_requires_manager_and_full_edit():
     assert j["worker"] == "책임수정"
     assert [d["material_name"] for d in j["details"]] == ["A", "C"]
 
-    # 편차 초과는 400
+    # 편차 초과는 400 (자재 LOT 는 채워 편차 검사까지 도달하게 한다)
     bad = client.request("PUT", f"/api/blend/records/{rid}", json={
         "product_name": prod, "worker": "x", "work_date": "2026-07-03", "total_amount": 100,
-        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 105}],
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 105, "material_lot": "LA"}],
     }, headers=csrf_headers())
     assert bad.status_code == 400
 
@@ -1665,6 +1665,33 @@ def test_rescale_absence_reason_saved_unacked():
     assert "부재" in (rec["rescale_events_json"] or "")
 
 
+def test_rescale_record_detail_exposes_rescale_fields():
+    """get_blend_record 가 rescale_events_json/count/unacked 를 실어 준다(GAP-5 — DHR 소스)."""
+    import uuid
+
+    client = _rescale_client()
+    worker = "이력노출" + uuid.uuid4().hex[:6]
+    prod = "RSE" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{"before_total": 100, "after_total": 130,
+                             "absence_reason": "책임자 부재"}],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    detail = client.get(f"/api/blend/records/{rid}").json()
+    assert detail["rescale_count"] == 1
+    assert detail["rescale_unacked"] == 1
+    assert "부재" in (detail["rescale_events_json"] or "")
+
+
 def test_rescale_three_events_rejected():
     import uuid
 
@@ -1715,3 +1742,171 @@ def test_rescale_save_without_events_keeps_defaults():
     assert rec["rescale_count"] == 0
     assert rec["rescale_unacked"] == 0
     assert rec["rescale_events_json"] is None
+
+
+# ── GAP-2: 수정(PUT)도 create 통제(자재 LOT·레시피 파생·편차)를 강제한다 ──────────
+def _g2_recipe_and_record(client, csrf, *, weights=(60, 40)):
+    """레시피(원료A/원료B) + 그 레시피로 저장한 배합 기록 1건 → (recipe_id, prod, worker, record)."""
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    prod = f"G2P{suffix}"
+    worker = "G2작업" + suffix
+    rid = _import_recipe(client, csrf, prod, [("원료A", weights[0]), ("원료B", weights[1])])
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    total = float(weights[0] + weights[1])
+    res = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": prod, "worker": worker, "work_date": "2026-07-20",
+        "total_amount": total,
+        "details": [
+            {"material_name": "원료A", "actual_amount": float(weights[0]), "material_lot": "LA"},
+            {"material_name": "원료B", "actual_amount": float(weights[1]), "material_lot": "LB"},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    return rid, prod, worker, res.json()
+
+
+def test_blend_update_clearing_lot_returns_400():
+    """PUT 로 자재 LOT 를 비우면 400 — create 와 동일 추적성 통제(GAP-2)."""
+    client, csrf = _mgmt_client()
+    rid, prod, worker, rec = _g2_recipe_and_record(client, csrf)
+    res = client.request("PUT", f"/api/blend/records/{rec['id']}", json={
+        "recipe_id": rid, "product_name": prod, "worker": worker, "work_date": "2026-07-20",
+        "total_amount": 100,
+        "details": [
+            {"material_name": "원료A", "actual_amount": 60, "material_lot": "LA"},
+            {"material_name": "원료B", "actual_amount": 40, "material_lot": ""},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400, res.text
+    assert "자재 LOT" in res.json()["detail"]
+
+
+def test_blend_update_off_recipe_amount_returns_tolerance_400():
+    """PUT 로 레시피에서 벗어난 실제량을 보내면 서버 재산출 이론량 기준 편차 400(GAP-2)."""
+    client, csrf = _mgmt_client()
+    rid, prod, worker, rec = _g2_recipe_and_record(client, csrf)
+    # 원료A 이론량은 서버가 레시피에서 60 으로 재산출 — actual 80 은 편차 20g 초과.
+    res = client.request("PUT", f"/api/blend/records/{rec['id']}", json={
+        "recipe_id": rid, "product_name": prod, "worker": worker, "work_date": "2026-07-20",
+        "total_amount": 100,
+        "details": [
+            {"material_name": "원료A", "actual_amount": 80, "material_lot": "LA",
+             "ratio": 99, "theory_amount": 80},  # 클라이언트가 조작한 값은 무시돼야 한다
+            {"material_name": "원료B", "actual_amount": 40, "material_lot": "LB"},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 400, res.text
+    assert "허용 편차" in res.json()["detail"]
+
+
+def test_blend_update_benign_metadata_edit_still_works():
+    """작업자·비고 등 메타 정정은 그대로 허용된다 — 자재 LOT·정상 실제량이면 200(GAP-2)."""
+    client, csrf = _mgmt_client()
+    rid, prod, worker, rec = _g2_recipe_and_record(client, csrf)
+    res = client.request("PUT", f"/api/blend/records/{rec['id']}", json={
+        "recipe_id": rid, "product_name": prod, "worker": "새담당", "work_date": "2026-07-21",
+        "total_amount": 100, "note": "메모수정",
+        "details": [
+            {"material_name": "원료A", "actual_amount": 60, "material_lot": "LA"},
+            {"material_name": "원료B", "actual_amount": 40, "material_lot": "LB"},
+        ],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    j = res.json()
+    assert j["worker"] == "새담당"
+    assert j["note"] == "메모수정"
+    assert j["product_lot"] == rec["product_lot"]  # LOT 보존
+
+
+# ── GAP-1: 미등록 LOT 진행 사유가 감사에 구조화 보존된다 ─────────────────────────
+def test_blend_create_lot_override_persisted_in_audit():
+    """미등록 자가 반제품 LOT + 사유(lot_overrides)로 진행하면, 그 사유가
+    blend_record_create 감사 details 에 구조화되어 남는다(GAP-1 belt-and-braces)."""
+    import json as _json
+    import uuid as _uuid
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNA{suffix}"
+    worker = "감사작업"
+    _seed_own_product(client, csrf, product, worker)
+    bad_lot = "미등록LOT" + suffix
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FIN{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": bad_lot}],
+        "lot_overrides": [{"material_name": product, "material_lot": bad_lot,
+                           "reason": "1차 종이 기록만 있음"}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    rid = res.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action = 'blend_record_create' AND target_id = ?",
+            (str(rid),),
+        ).fetchone()
+    assert row is not None
+    details = _json.loads(row["details_json"])
+    assert "lot_overrides" in details
+    ov = details["lot_overrides"][0]
+    assert ov["material_name"] == product
+    assert ov["material_lot"] == bad_lot
+    assert ov["reason"] == "1차 종이 기록만 있음"
+
+
+# ── GAP-4: DHR 산출물 출력·다운로드가 감사된다 ─────────────────────────────────
+def test_dhr_exports_are_audited():
+    """단건 Excel/PDF·전체 Excel·일괄 PDF 출력이 dhr_exported 감사를 남긴다(GAP-4)."""
+    import uuid as _uuid
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    prod = f"EXP{suffix}"
+    worker = "출력작업" + suffix
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-15",
+        "total_amount": 100,
+        "details": [{"material_name": "원료1", "ratio": 100, "theory_amount": 100,
+                     "actual_amount": 100, "material_lot": "L1"}],
+    }, headers=csrf())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+
+    # 단건 Excel
+    assert client.get(f"/api/blend/records/{rid}/export").status_code == 200
+    # 단건 PDF
+    assert client.get(f"/api/blend/records/{rid}/pdf").status_code == 200
+    # 일괄 PDF
+    assert client.get(f"/api/blend/records/dhr-batch?ids={rid}").status_code == 200
+    # 전체 Excel 백업
+    assert client.get("/api/blend/records/export-all").status_code == 200
+
+    with get_connection() as conn:
+        formats = {
+            r["format"] for r in [
+                __import__("json").loads(x["details_json"])
+                for x in conn.execute(
+                    "SELECT details_json FROM audit_logs WHERE action = 'dhr_exported'"
+                ).fetchall()
+            ]
+        }
+        single = conn.execute(
+            "SELECT COUNT(*) AS n FROM audit_logs "
+            "WHERE action = 'dhr_exported' AND target_id = ?",
+            (str(rid),),
+        ).fetchone()["n"]
+    # 최소한 단건 xlsx·pdf 형식과 전체 백업 형식이 감사에 남는다.
+    assert "xlsx" in formats
+    assert "pdf" in formats
+    assert "xlsx_all" in formats
+    assert single >= 2  # 단건 Excel + 단건 PDF (같은 record 대상)

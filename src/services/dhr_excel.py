@@ -11,6 +11,7 @@ C:\\X\\Program-estimation v3 의 ExcelWriter 를 웹용으로 이식한 것.
 """
 
 import io
+import json
 import os
 from typing import Any
 
@@ -37,6 +38,47 @@ CELL_MAPPING = {
 _THIN = Side(style="thin", color="000000")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _CENTER = Alignment(horizontal="center", vertical="center")
+_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+
+def _fmt_amt(value: Any) -> str:
+    """총량 표시용 숫자 포맷 — 정수는 소수점 제거, 그 외 2자리."""
+    if value is None or value == "":
+        return "?"
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(f)) if f == int(f) else f"{f:.2f}"
+
+
+def rescale_summary_line(record: dict[str, Any]) -> str:
+    """증량(rescale) 이력을 공식 DHR 비고에 실을 한 줄 요약으로 반환(없으면 빈 문자열).
+
+    예) "증량 2회: 1000→1050 (승인: 홍길동); 1050→1100 (부재: 야간 단독)".
+    record 는 get_blend_record 가 실어 준 rescale_events_json(정규화 이벤트 JSON)을 쓴다.
+    """
+    raw = record.get("rescale_events_json")
+    if not raw or not record.get("rescale_count"):
+        return ""
+    try:
+        events = json.loads(raw)
+    except (ValueError, TypeError):
+        return ""
+    if not events:
+        return ""
+    parts: list[str] = []
+    for ev in events:
+        before = _fmt_amt(ev.get("before_total"))
+        after = _fmt_amt(ev.get("after_total"))
+        if ev.get("approver"):
+            who = f"승인: {ev['approver']}"
+        elif ev.get("absence_reason"):
+            who = f"부재: {ev['absence_reason']}"
+        else:
+            who = "승인 없음"
+        parts.append(f"{before}→{after} ({who})")
+    return f"증량 {len(events)}회: " + "; ".join(parts)
 
 
 def build_official_dhr_xlsx(
@@ -44,12 +86,15 @@ def build_official_dhr_xlsx(
     *,
     include_work_time: bool = True,
     signature_image_path: str | None = None,
+    sign_failed: bool = False,
 ) -> bytes:
     """배합 기록 dict → 원료배합일지 공식 양식 xlsx 바이트.
 
     record: get_blend_record 반환(product_lot/worker/work_date/work_time/scale/
             total_amount/details[material_name,material_lot,ratio,theory_amount,actual_amount]).
     signature_image_path: 결재 도장(image.jpeg+서명) 이미지를 G2 셀에 삽입(원본 ExcelWriter 동일).
+    sign_failed: 서명 합성을 요청했으나 실패한 경우 True — 무언(silent)의 미서명 출력 대신
+                 결재칸에 '(서명 합성 실패)' 표식을 남긴다(POLISH-6).
     """
     wb = load_workbook(TEMPLATE_PATH)
     ws = wb.active
@@ -104,6 +149,7 @@ def build_official_dhr_xlsx(
             cell.alignment = _CENTER
 
     # 인쇄 영역을 채운 표까지로 축소 (빈 공간 제거)
+    print_end_row = end_row
     ws.print_area = f"A1:G{end_row}"
 
     # 결재 도장 이미지를 G2 셀에 삽입 (원본 ExcelWriter: 228x65, anchor G2)
@@ -114,6 +160,22 @@ def build_official_dhr_xlsx(
         stamp.height = 65
         stamp.anchor = "G2"
         ws.add_image(stamp)
+    elif sign_failed:
+        # 서명 합성 실패를 표면화 — 사용자가 서명본으로 오인해 배포하는 것을 막는다(POLISH-6).
+        ws["G2"] = "(서명 합성 실패)"
+
+    # 증량(rescale) 이력을 표 아래 비고 영역에 한 줄로 남긴다(GAP-5). 공식 양식 레이아웃은
+    # 건드리지 않고 표 하단(빈 공간)에 append 만 한다.
+    summary = rescale_summary_line(record)
+    if summary:
+        note_row = print_end_row + 2
+        cell = ws.cell(row=note_row, column=1, value=summary)
+        cell.alignment = _LEFT
+        try:
+            ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=7)
+        except Exception:
+            pass
+        ws.print_area = f"A1:G{note_row}"
 
     buf = io.BytesIO()
     wb.save(buf)

@@ -80,6 +80,37 @@ def build_router() -> APIRouter:
             d["manual_entry"] = False
         return record
 
+    def _audit_dhr_export(
+        connection: sqlite3.Connection,
+        request: Request,
+        *,
+        fmt: str,
+        record_ids: list[int],
+        target_id: str | None = None,
+        target_label: str | None = None,
+    ) -> None:
+        """규제 문서(DHR) 출력·다운로드 행위를 감사한다(GAP-4).
+
+        누가(책임자 또는 현장) 언제 어떤 배합일지를 어느 형식으로 출력·배포했는지 남긴다.
+        actor 는 로그인 사용자(없으면 현장=None). 감사만 커밋한다(응답은 스트리밍 산출물).
+        """
+        current_user = get_current_user(request, required=False)
+        write_audit_log(
+            connection,
+            action="dhr_exported",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=target_id,
+            target_label=target_label,
+            details={
+                "format": fmt,
+                "count": len(record_ids),
+                "record_ids": record_ids[:200],
+                "actor_name": actor_name(current_user) if current_user else "현장",
+            },
+        )
+        connection.commit()
+
     @router.get("/blend/recipes")
     def blend_recipes(
         dhr: bool = Query(default=False),
@@ -311,6 +342,7 @@ def build_router() -> APIRouter:
 
     @router.get("/blend/records/export-all")
     def blend_export_all(
+        request: Request,
         start_date: str | None = None,
         end_date: str | None = None,
         worker: str | None = None,
@@ -321,6 +353,11 @@ def build_router() -> APIRouter:
         records = blend_service.list_blend_records(
             connection, start_date=start_date, end_date=end_date,
             worker=worker, search=search, limit=10000,
+        )
+        _audit_dhr_export(
+            connection, request, fmt="xlsx_all",
+            record_ids=[int(r["id"]) for r in records],
+            target_label=f"전체 {len(records)}건",
         )
         from openpyxl import Workbook
         from openpyxl.styles import Font
@@ -353,6 +390,7 @@ def build_router() -> APIRouter:
 
     @router.get("/blend/records/dhr-batch")
     def blend_dhr_batch(
+        request: Request,
         ids: str = Query(...),
         sign: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
@@ -367,6 +405,11 @@ def build_router() -> APIRouter:
         ]
         if not records:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        _audit_dhr_export(
+            connection, request, fmt="pdf_batch" + ("_signed" if sign else ""),
+            record_ids=[int(r["id"]) for r in records],
+            target_label=f"{len(records)}건",
+        )
         pdf_bytes = dhr_pdf.build_batch_dhr_pdf(records, sign=sign)
         from urllib.parse import quote
         utf8_name = quote(f"배합일지-{len(records)}건.pdf")
@@ -651,6 +694,19 @@ def build_router() -> APIRouter:
                     "totals": rescale["totals"],
                 },
             )
+        create_audit_details: dict[str, Any] = {
+            "product_name": body.product_name,
+            "total_amount": body.total_amount,
+            "items": len(body.details),
+            "manual_entry": body.manual_entry,
+        }
+        # 미등록 LOT '진행 사유'(lot_overrides)를 감사에도 구조화 보존한다(GAP-1 belt-and-braces).
+        # 사유 텍스트는 기록 비고(note)에도 남지만, 클라이언트 의존이라 서버가 받은 구조화 사유를
+        # 감사 원본으로 함께 남겨 일탈(사유부 예외)의 추적성을 보장한다.
+        if body.lot_overrides:
+            create_audit_details["lot_overrides"] = [
+                ov.model_dump() for ov in body.lot_overrides
+            ]
         write_audit_log(
             connection,
             action="blend_record_create",
@@ -658,12 +714,7 @@ def build_router() -> APIRouter:
             target_type="blend_record",
             target_id=str(record_id),
             target_label=record["product_lot"],
-            details={
-                "product_name": body.product_name,
-                "total_amount": body.total_amount,
-                "items": len(body.details),
-                "manual_entry": body.manual_entry,
-            },
+            details=create_audit_details,
         )
         connection.commit()
         return _mask_manual_entry(request, record)
@@ -700,16 +751,47 @@ def build_router() -> APIRouter:
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         details = [d.model_dump() for d in body.details]
+        total_amount = body.total_amount
         # 반응기 이월(carry-over) 검증·강제 채움 — create 경로와 대칭. carried_over=true 행은
         # 파생 레시피의 기준 자재 + 등록된 1차 LOT 이어야 하고, actual_amount 는 1차 총량으로
-        # 강제 덮어써진다(변조 방지). 정정 저장에서도 이 불변식을 지킨다.
+        # 강제 덮어써진다(변조 방지). 정정 저장에서도 이 불변식을 지킨다. derive 보다 먼저.
         try:
             blend_service.enforce_carry_over(
                 connection, body.recipe_id, body.product_name, details
             )
         except blend_service.CarryOverError as exc:
             raise HTTPException(status_code=400, detail=exc.detail) from exc
-        # 자재별 허용 편차 — 편차는 레시피(recipe_id) 에서 결정. 없으면 기본값 0.05g.
+        # 비율·이론량은 서버가 레시피에서 직접 재산출한다(F-5) — 클라이언트 값 불신. create 와
+        # 대칭(GAP-2). recipe_id 가 없는 옛/수동 기록은 대조 근거가 없어 그대로 둔다.
+        if body.recipe_id:
+            try:
+                details, total_amount = blend_service.derive_details_from_recipe(
+                    connection, body.recipe_id, body.total_amount, details
+                )
+            except blend_service.RecipeMismatchError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail) from exc
+        # 자재 LOT 필수 — 추적성 핵심(create 와 동일 통제). enforce_carry_over·derive 이후 검사.
+        missing_lots = blend_service.missing_lot_names(details)
+        if missing_lots:
+            shown = missing_lots[:5]
+            suffix = " …" if len(missing_lots) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
+            )
+        # 미등록 자가 반제품 LOT 서버 백업 검증(create 와 동일 — 사유 전달 시 통과).
+        unregistered = blend_service.unregistered_product_lots(
+            connection, details, body.lot_overrides
+        )
+        if unregistered:
+            shown = unregistered[:5]
+            suffix = " …" if len(unregistered) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
+                + ", ".join(shown) + suffix,
+            )
+        # 자재별 허용 편차 — 서버 재산출 상세 기준. 편차는 레시피(recipe_id)에서 결정, 없으면 0.05g.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
             details, tolerance_g=tolerance
@@ -730,7 +812,7 @@ def build_router() -> APIRouter:
             worker=body.worker,
             work_date=body.work_date,
             work_time=body.work_time,
-            total_amount=body.total_amount,
+            total_amount=total_amount,
             scale=body.scale,
             note=body.note,
             details=details,
@@ -792,11 +874,16 @@ def build_router() -> APIRouter:
     @router.get("/blend/records/{record_id}/export")
     def blend_export(
         record_id: int,
+        request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        _audit_dhr_export(
+            connection, request, fmt="xlsx", record_ids=[record_id],
+            target_id=str(record_id), target_label=record["product_lot"],
+        )
         xlsx_bytes = dhr_excel.build_official_dhr_xlsx(record)
         buf = io.BytesIO(xlsx_bytes)
         buf.seek(0)
@@ -816,6 +903,7 @@ def build_router() -> APIRouter:
     @router.get("/blend/records/{record_id}/pdf")
     def blend_pdf(
         record_id: int,
+        request: Request,
         sign: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
@@ -823,6 +911,11 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        _audit_dhr_export(
+            connection, request, fmt="pdf_signed" if sign else "pdf",
+            record_ids=[record_id], target_id=str(record_id),
+            target_label=record["product_lot"],
+        )
         if sign:
             # 서명본은 캐시하지 않음(기본 비서명본만 캐시)
             pdf_bytes = dhr_pdf.build_scanned_dhr_pdf(record, sign=True)
@@ -1016,6 +1109,14 @@ def build_router() -> APIRouter:
                 },
             )
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
+        continuous_audit_details: dict[str, Any] = {
+            "recipe_id": body.recipe_id, "count": len(ids), "total_amount": body.total_amount,
+        }
+        # 미등록 LOT '진행 사유'(lot_overrides)를 감사에도 구조화 보존(GAP-1 belt-and-braces).
+        if body.lot_overrides:
+            continuous_audit_details["lot_overrides"] = [
+                ov.model_dump() for ov in body.lot_overrides
+            ]
         write_audit_log(
             connection,
             action="blend_record_continuous_create",
@@ -1023,7 +1124,7 @@ def build_router() -> APIRouter:
             target_type="blend_record",
             target_id=",".join(str(i) for i in ids),
             target_label=f"{len(ids)}건",
-            details={"recipe_id": body.recipe_id, "count": len(ids), "total_amount": body.total_amount},
+            details=continuous_audit_details,
         )
         connection.commit()
         return {"created": len(ids), "ids": ids, "product_lots": lots}

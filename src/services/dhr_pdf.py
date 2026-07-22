@@ -6,6 +6,7 @@
 """
 
 import io
+import logging
 import os
 import tempfile
 import threading
@@ -32,6 +33,8 @@ try:
 except ImportError:
     _WIN32_OK = False
 
+_log = logging.getLogger(__name__)
+_SIGN_FAILED_MARK = "(서명 합성 실패)"
 _excel_lock = threading.Lock()
 _RENDER_DPI = 300  # Excel→이미지 렌더 해상도(인쇄 선명도). 200→300 으로 상향.
 _A4_WIDTH_IN = 8.27  # A4 세로 폭 210mm
@@ -357,14 +360,25 @@ def render_exact_form_image(
     sc = signature_config.load()
     worker = str(record.get("worker") or "").strip()
     with tempfile.TemporaryDirectory() as tmp:
+        sign_failed = False
         if sign:
             overrides = _worker_sign_override(record, worker, tmp)
             stamp_path = _build_signed_stamp(worker, sc, os.path.join(tmp, "stamp.png"), overrides)
+            # 서명 요청인데 도장 합성이 실패하면(stamp_path=None) 무언의 미서명 출력 대신
+            # 양식에 실패 표식을 남긴다(POLISH-6). + 서버 로그.
+            if stamp_path is None:
+                sign_failed = True
+                _log.warning(
+                    "DHR 서명 합성 실패(정확 경로) — record id=%s, 미서명 표식으로 출력",
+                    record.get("id"),
+                )
         else:
             # 서명 미포함(기본)일 땐 결재칸 이미지 자체를 넣지 않는다 — 빈 이미지가
             # 삽입되어 보이는 문제(2026-07-03 현장 지적). 서명 시에만 도장 합성.
             stamp_path = None
-        xlsx = dhr_excel.build_official_dhr_xlsx(record, signature_image_path=stamp_path)
+        xlsx = dhr_excel.build_official_dhr_xlsx(
+            record, signature_image_path=stamp_path, sign_failed=sign_failed
+        )
         pdf_bytes = _excel_to_pdf_bytes(xlsx)
     if not pdf_bytes:
         return None
@@ -415,7 +429,17 @@ def render_signed_dhr(record: dict[str, Any], *, scan: bool = True, sign: bool =
                 base_img.save(base_path)
                 overrides = _worker_sign_override(record, worker, tmp)
                 ok, _msg = processor.create_signed_image(base_path, signed_path, worker, overrides=overrides)
-                result = Image.open(signed_path).convert("RGB") if ok and os.path.exists(signed_path) else base_img
+                if ok and os.path.exists(signed_path):
+                    result = Image.open(signed_path).convert("RGB")
+                else:
+                    # 서명 합성 실패 — 무언의 미서명 출력 대신 표식을 그린다(POLISH-6). + 서버 로그.
+                    _log.warning(
+                        "DHR 서명 합성 실패(PIL 폴백) — record id=%s (%s), 미서명 표식으로 출력",
+                        record.get("id"), _msg,
+                    )
+                    mark = ImageDraw.Draw(base_img)
+                    mark.text((_MARGIN, 205), _SIGN_FAILED_MARK, fill=(200, 0, 0), font=_font(24))
+                    result = base_img
 
     if scan:
         result = apply_scan_effects(result, {

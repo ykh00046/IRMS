@@ -1346,6 +1346,21 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     record = _serialize_record(row)
     record["details"] = [_serialize_detail(d) for d in details]
     record["variance"] = _variance_summary(record["details"])
+    # 증량(rescale) 이력 — 공식 DHR·화면이 함께 쓰도록 기록 dict 에 실어 준다(GAP-5).
+    # rescale_* 컬럼이 없는 구버전/단위테스트 스키마는 방어적으로 기본값 폴백(다른 컬럼과 동일 패턴).
+    try:
+        rr = connection.execute(
+            "SELECT rescale_events_json, rescale_count, rescale_unacked "
+            "FROM blend_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        record["rescale_events_json"] = rr["rescale_events_json"] if rr else None
+        record["rescale_count"] = int(rr["rescale_count"] or 0) if rr else 0
+        record["rescale_unacked"] = int(rr["rescale_unacked"] or 0) if rr else 0
+    except sqlite3.OperationalError:  # rescale_* 컬럼이 없는 구버전/테스트 DB
+        record["rescale_events_json"] = None
+        record["rescale_count"] = 0
+        record["rescale_unacked"] = 0
     return record
 
 
