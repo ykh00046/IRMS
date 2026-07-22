@@ -98,10 +98,10 @@
     $("visc-period-alert").hidden = true;
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
-    blendBody.appendChild(emptyRow(5, "등록된 반제품이 없습니다. 배합 기록에 점도를 처음 등록하면 자동 생성됩니다."));
+    blendBody.appendChild(emptyRow(5, "반제품을 선택하면 배합 기록이 표시됩니다."));
     $("visc-record-count").textContent = "0건";
     $("visc-blend-record").value = "";
-    $("visc-selected-row").textContent = "등록된 반제품이 없습니다.";
+    $("visc-selected-row").textContent = "반제품을 선택하세요.";
     setSubmitEnabled(false);
     const periodBody = $("visc-period-body");
     periodBody.innerHTML = "";
@@ -114,13 +114,19 @@
     const sel = $("visc-product-select");
     if (!sel) return;
     sel.innerHTML = "";
+    // 빈 placeholder 를 첫 옵션으로 — 첫 진입에 특정 반제품이 멋대로 선택돼 보이지 않게
+    // (사용자 요청 2026-07-22: "-선택-"). 고르기 전까지는 아래가 빈 안내 상태.
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "— 반제품 선택 —";
+    sel.appendChild(ph);
     state.products.forEach((product) => {
       const opt = document.createElement("option");
       opt.value = String(product.id);
       opt.textContent = productLabel(product);
       sel.appendChild(opt);
     });
-    if (state.currentId) sel.value = String(state.currentId);
+    sel.value = state.currentId ? String(state.currentId) : "";
     if (sel._pickerBound) return;
     sel._pickerBound = true;
     sel.addEventListener("change", () => {
