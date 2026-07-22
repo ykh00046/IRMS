@@ -234,9 +234,16 @@
       banner.hidden = true;
       return;
     }
-    $("visc-period-alert-text").textContent = alerts
-      .map((item) => (PERIOD_ALERT_LABEL[item.type] || (() => item.type))(item))
-      .join(" · ");
+    // '일' 단위에선 하루하루 변동이 전부 알림이 되어 수십 개가 줄줄이 이어졌다
+    // (사용자: "보지도 못해"). 최신 알림만 보여주고 나머지는 건수로 접는다 —
+    // 구간별 상세는 아래 기간별 표의 '전기 대비' 열에서 그대로 확인 가능.
+    const label = (item) => (PERIOD_ALERT_LABEL[item.type] || (() => item.type))(item);
+    const latest = alerts[alerts.length - 1];
+    const rest = alerts.length - 1;
+    $("visc-period-alert-text").textContent =
+      rest > 0
+        ? `${label(latest)} · 외 ${rest}건 (아래 기간별 표 '전기 대비' 참고)`
+        : label(latest);
     banner.hidden = false;
   }
 
