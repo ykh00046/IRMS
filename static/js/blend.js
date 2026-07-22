@@ -1223,11 +1223,19 @@
     updateInputGuide();
   }
 
+  // 같은 행·같은 값 중복 경고 억제 — Enter 로 계량을 마치면 keydown 경고 직후
+  // 포커스 이동이 change 이벤트를 또 발생시켜 동일 경고가 2번 뜨던 문제(2026-07-22).
+  let _lastVarWarn = { key: "", at: 0 };
+
   function warnIfVariance(i) {
     const it = state.items[i];
     const v = rowVariance(it);
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
+      const key = `${i}:${it.actual_amount}`;
+      const now = Date.now();
+      if (_lastVarWarn.key === key && now - _lastVarWarn.at < 1500) return true;
+      _lastVarWarn = { key, at: now };
       notify(varianceWarnMessage(it, v, tol), "error");
       // +방향(초과 계량)일 때만 증량 제안 모달을 띄운다. −방향(부족)은 그 자재를
       // 더 넣으면 끝이므로 기존 토스트만 유지한다.

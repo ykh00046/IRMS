@@ -742,6 +742,10 @@
     }
   }
 
+  // 같은 셀·같은 값 중복 경고 억제 — Enter 직후 change 이벤트 재발생으로 동일 경고가
+  // 2번 뜨던 문제(blend.js 와 동일 패턴, 2026-07-22).
+  let _lastVarWarn = { key: "", at: 0 };
+
   function warnIfVariance(i, j) {
     const th = theoryFor(i, j);
     const raw = state.cells[i][j].actual;
@@ -749,6 +753,10 @@
     const v = Math.round((Number(raw) - th) * 1000) / 1000;
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
+      const key = `${i}:${j}:${raw}`;
+      const now = Date.now();
+      if (_lastVarWarn.key === key && now - _lastVarWarn.at < 1500) return true;
+      _lastVarWarn = { key, at: now };
       notify(`허용 편차 초과: ${state.materials[i].material_name} 로트 ${j + 1} — `
         + `이론 ${fmt(th)} / 실제 ${fmt(Number(raw))} (편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${tol}g). 다시 계량하세요.`, "error");
       // 초과(+) 방향일 때만 그 로트 증량 제안 모달을 띄운다 — 부족(-)은 다시 계량해야 한다.
