@@ -61,6 +61,39 @@ from .models import (
 _ZIP_INVALID_CHARS = '\\/:*?"<>|'
 
 
+def _family_folder_name(connection, product_name):
+    """ZIP 폴더용 가족 이름 — 1차(-1)/최종(2차) 레시피를 한 폴더로 묶는다(2026-07-23).
+
+    우선순위: ①이 반제품을 stage1 로 참조하는 2차 레시피가 있으면 그 이름
+    ②이름이 "-1" 로 끝나고 접미사 제거한 이름의 레시피가 실존하면 그 이름
+    ③그 외는 자기 이름. 현황 탭의 1차/2차 가족 묶음과 같은 기준.
+    """
+    name = (product_name or "").strip()
+    if not name:
+        return name
+    try:
+        row = connection.execute(
+            """
+            SELECT s2.product_name FROM recipes s1
+            JOIN recipes s2 ON s2.stage1_recipe_id = s1.id
+            WHERE s1.product_name = ? LIMIT 1
+            """,
+            (name,),
+        ).fetchone()
+        if row and row["product_name"]:
+            return str(row["product_name"])
+        if name.endswith("-1"):
+            base = name[:-2]
+            hit = connection.execute(
+                "SELECT 1 FROM recipes WHERE product_name = ? LIMIT 1", (base,)
+            ).fetchone()
+            if hit:
+                return base
+    except sqlite3.OperationalError:
+        pass
+    return name
+
+
 def _sanitize_zip_name(value: Any, fallback: str = "") -> str:
     """zip 경로용 파일/폴더명 정리 — Windows 금지문자(\\ / : * ? " < > |)를 '_' 로 치환.
 
@@ -463,7 +496,7 @@ def build_router() -> APIRouter:
         """선택한 배합 기록의 배합일지를 반제품(레시피)명 폴더로 묶어 ZIP 으로 내려준다(최대 200건).
 
         각 기록의 PDF 는 단건 출력(/pdf)과 동일한 경로로 생성한다 — 비서명본은 캐시 재사용,
-        sign=True 면 서명 합성(캐시 미사용). 폴더는 반제품명(product_name), 파일은
+        sign=True 면 서명 합성(캐시 미사용). 폴더는 반제품명 — 단, 1차(-1)와 최종(2차)은 가족으로 묶어 최종 이름 폴더 하나에 담는다. 파일은
         {제품LOT}.pdf. 한 폴더 안에서 LOT 이 겹치면 _2, _3… 을 붙인다. Windows 압축 풀기에서
         한글이 깨지지 않도록 UTF-8 로 기록한다. 존재하지 않는 id 는 전체를 실패시키지 않고
         누락.txt 에 모아 남긴다.
@@ -502,7 +535,9 @@ def build_router() -> APIRouter:
         used: dict[tuple[str, str], int] = {}
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for record in records:
-                folder = _sanitize_zip_name(record.get("product_name"), "기타")
+                folder = _sanitize_zip_name(
+                    _family_folder_name(connection, record.get("product_name")), "기타"
+                )
                 base = _sanitize_zip_name(record.get("product_lot"), f"blend_{record['id']}")
                 key = (folder, base)
                 n = used.get(key, 0) + 1
