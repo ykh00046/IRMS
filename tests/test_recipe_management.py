@@ -553,3 +553,128 @@ def test_stale_parent_revision_conflicts_409():
     res = _import_with_code(client, headers, product + "stale", 55, 45, revision_of=v1)
     assert res.status_code == 409, res.text
     assert "다시 수정 등록" in res.json()["detail"]
+
+
+# ---------------- §9 GAP 3: tip 판정 단일 소스(list ↔ history 일치) ----------------
+
+
+def test_branched_chain_tip_consistent_across_list_and_history():
+    """GAP-3: 분기 체인(선점 데이터)에서 현황 목록 tip 과 이력 current_id 가 일치.
+
+    GAP-2 낙관적 잠금 이후 API 로는 분기를 못 만들므로, 과거에 생긴 분기 데이터를 DB 로
+    직접 심는다. 두 형제의 created_at 을 id 순서와 어긋나게 둬(더 큰 id 가 더 이른
+    created_at) 종전 max(created_at,id) 정의와 resolve_chain_tip(MAX id) 이 갈리는
+    경우를 만든다 — 이제 history·blend·목록이 모두 subtree 활성 MAX(id) 로 수렴해야 한다.
+    """
+    from src.db import get_connection
+    from src.services.blend_service import _resolve_latest_revision
+
+    client = _client()
+    headers = _login(client)
+    product = f"PBRANCH{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+
+    with get_connection() as conn:
+        v2a = conn.execute(
+            "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at, revision_of) "
+            "VALUES (?, ?, 'completed', 't', '2026-07-20T00:00:00Z', ?)",
+            (product, product, v1),
+        ).lastrowid
+        v2b = conn.execute(  # 더 큰 id 인데 더 이른 created_at (id↔created_at 역전)
+            "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at, revision_of) "
+            "VALUES (?, ?, 'completed', 't', '2026-07-19T00:00:00Z', ?)",
+            (product, product, v1),
+        ).lastrowid
+        conn.commit()
+
+    tip = max(v2a, v2b)  # = v2b (subtree 활성 MAX id)
+    hist = client.get(f"/api/recipes/{v1}/history").json()
+    assert hist["current_id"] == tip
+
+    visible = [r["id"] for r in client.get(
+        "/api/recipes", params={"search": product}).json()["items"]]
+    assert hist["current_id"] in visible  # 이력 tip 은 목록에 보이는 tip 중 하나
+    assert v1 not in visible  # 활성 후손이 있어 조상은 숨겨짐
+
+    with get_connection() as conn:  # 배합 저장 귀결과도 일치
+        assert _resolve_latest_revision(conn, v1) == tip
+
+
+# ---------------- §9 GAP 5: 승계 category 허용값 클램프 ----------------
+
+
+def test_revision_clamps_non_allowed_inherited_category_to_null():
+    """GAP-5: 부모 category 가 허용 집합 밖('기타')이면 수정 등록 시 NULL(미분류)로 클램프.
+
+    허용값('합성')은 그대로 승계되는 대조군으로 확인한다.
+    """
+    from src.db import get_connection
+
+    client = _client()
+    headers = _login(client)
+
+    # 비허용값('기타') → 승계 안 됨(NULL)
+    product = f"PCAT{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)
+    with get_connection() as conn:
+        conn.execute("UPDATE recipes SET category = '기타' WHERE id = ?", (v1,))
+        conn.commit()
+    v2 = _import(client, headers, product, 70, 30, revision_of=v1)
+    with get_connection() as conn:
+        cat = conn.execute(
+            "SELECT category FROM recipes WHERE id = ?", (v2,)
+        ).fetchone()["category"]
+    assert cat is None
+
+    # 허용값('합성') → 그대로 승계
+    product2 = f"PCAT2{_uid()}"
+    w1 = _import(client, headers, product2, 60, 40)
+    with get_connection() as conn:
+        conn.execute("UPDATE recipes SET category = '합성' WHERE id = ?", (w1,))
+        conn.commit()
+    w2 = _import(client, headers, product2, 70, 30, revision_of=w1)
+    with get_connection() as conn:
+        cat2 = conn.execute(
+            "SELECT category FROM recipes WHERE id = ?", (w2,)
+        ).fetchone()["category"]
+    assert cat2 == "합성"
+
+
+# ---------------- §9 GAP 6: 기준 자재 승계 해제 경고 ----------------
+
+
+def test_revision_anchor_drop_emits_warning():
+    """GAP-6: 부모 기준 자재가 새 버전 자재 목록에 없으면 승계가 풀리며 등록 응답에 경고."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _login(client)
+    product = f"PANCH{_uid()}"
+    v1 = _import(client, headers, product, 60, 40)  # 원료A, 원료B
+
+    with get_connection() as conn:
+        mat_b = conn.execute(
+            "SELECT id FROM materials WHERE name = '원료B'"
+        ).fetchone()["id"]
+        conn.execute(
+            "UPDATE recipes SET anchor_material_id = ? WHERE id = ?", (mat_b, v1)
+        )
+        conn.commit()
+
+    # 새 버전은 원료A 만 — 부모 anchor(원료B) 가 없다 → 승계 해제 + 경고
+    res = client.post(
+        "/api/recipes/import",
+        json={"raw_text": f"반제품명\t원료A\n{product}\t100", "revision_of": v1},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    v2 = data["created_ids"][0]
+    msgs = " ".join(w["message"] for w in data["warnings"])
+    assert "기준 자재 승계가 해제되었습니다" in msgs
+
+    with get_connection() as conn:
+        anc = conn.execute(
+            "SELECT anchor_material_id FROM recipes WHERE id = ?", (v2,)
+        ).fetchone()["anchor_material_id"]
+    assert anc is None

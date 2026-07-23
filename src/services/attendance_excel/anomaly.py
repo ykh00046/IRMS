@@ -120,29 +120,39 @@ def _partial_leave_shift(
 def _compute_anomaly_baseline(
     shift_time: str, day_type: str, note: str, attendance_code: str = ""
 ) -> tuple[int, int] | None:
-    """shift_time과 부분 휴가를 반영한 ``(출근분, 퇴근분)`` baseline을 반환.
+    """``(day_type, note, attendance_code)`` 기반 ``(출근분, 퇴근분)`` baseline.
+
+    감지 경로가 쓰는 실제 함수는 ``_compute_row_anomaly_baseline`` 이며, 이 함수는
+    그 얇은 어댑터일 뿐이다. 과거에는 별도 구현이라 주간만 부분 휴가를 적용하고
+    2교대(주/야)는 기본 baseline 그대로 두는 불일치가 있었다(GAP-2). 지금은
+    최소 ``AttendanceRow`` 를 구성해 ``_compute_row_anomaly_baseline`` 에 위임하므로
+    두 진입점이 항상 동일한 결과를 낸다 — 2교대 부분 휴가 포함. (출/퇴근 기록이
+    없는 호출이라 오전/오후 미표기 시 추론은 보수적으로 기본 baseline을 유지한다.)
 
     shift_time이 알려진 근무형태가 아니면 ``None`` (감지 제외).
-    부분 휴가(반차/반반차)는 주간 시프트에만 적용한다. 2교대는 근무
-    구조가 달라 동일 규칙이 맞지 않으므로 일단 기본 baseline 그대로 쓴다.
     """
-    baseline = SHIFT_BASELINES.get(shift_time)
-    if baseline is None:
-        return None
-    base_in, base_out = baseline
-
-    if shift_time == "주간":
-        if day_type == DAY_SHIFT_SHORT_LUNCH_DAY_TYPE:
-            base_out -= DAY_SHIFT_SHORT_LUNCH_CHECKOUT_OFFSET_MINUTES
-        leave = _partial_leave_shift(day_type, note, attendance_code)
-        if leave:
-            _kind, half, shift_minutes = leave
-            if half == "오전":
-                base_in += shift_minutes
-            elif half == "오후":
-                base_out -= shift_minutes
-            # half == "unknown" → 구분 모호. 보수적으로 기본 baseline 유지.
-    return base_in, base_out
+    row = AttendanceRow(
+        date="",
+        weekday="",
+        day_type=day_type or "",
+        check_in=None,
+        check_out=None,
+        next_day=False,
+        weekday_early=0.0,
+        weekday_normal=0.0,
+        weekday_overtime=0.0,
+        weekday_night=0.0,
+        holiday_early=0.0,
+        holiday_normal=0.0,
+        holiday_overtime=0.0,
+        holiday_night=0.0,
+        late_hours=0.0,
+        early_leave_hours=0.0,
+        outing_hours=0.0,
+        note=note or "",
+        attendance_code=attendance_code or "",
+    )
+    return _compute_row_anomaly_baseline(row, shift_time)
 
 
 def _partial_leave_shift_minutes(
@@ -371,45 +381,45 @@ def _display_date(date_text: str) -> str:
 
 def _row_alert_category(row: AttendanceRow, issues: list[str]) -> tuple[str, str]:
     joined = " / ".join(issues)
-    has_check_in_missing = "\uCD9C\uADFC \uB204\uB77D" in issues
-    has_check_out_missing = "\uD1F4\uADFC \uB204\uB77D" in issues
+    has_check_in_missing = "출근 누락" in issues
+    has_check_out_missing = "퇴근 누락" in issues
 
     if has_check_in_missing and has_check_out_missing:
-        return "1", "\uCD9C/\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
+        return "1", "출/퇴근 미타각"
     if has_check_in_missing:
-        return "2", "\uCD9C\uADFC \uBBF8\uD0C0\uAC01"
+        return "2", "출근 미타각"
     if has_check_out_missing:
-        return "3", "\uD1F4\uADFC \uBBF8\uD0C0\uAC01"
+        return "3", "퇴근 미타각"
 
     has_code_deduction_mismatch = any(
-        issue.startswith("\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D")
-        or issue == "\uACF5\uC81C\uC2DC\uAC04 \uBD88\uC77C\uCE58"
+        issue.startswith("근태코드 누락")
+        or issue == "공제시간 불일치"
         for issue in issues
     )
     if has_code_deduction_mismatch:
-        return "0", "\uADFC\uD0DC \uC774\uC0C1"
+        return "0", "근태 이상"
 
-    if any(issue.startswith("\uC9C0\uAC01 ") for issue in issues):
-        return "4", "\uADFC\uD0DC \uC774\uC0C1"
-    if any(issue.startswith("\uC870\uD1F4 ") for issue in issues):
-        return "4", "\uADFC\uD0DC \uC774\uC0C1"
+    if any(issue.startswith("지각 ") for issue in issues):
+        return "4", "근태 이상"
+    if any(issue.startswith("조퇴 ") for issue in issues):
+        return "4", "근태 이상"
 
     has_unprocessed_late_or_leave = any(
-        "\uBBF8\uCC98\uB9AC" in issue for issue in issues
+        "미처리" in issue for issue in issues
     )
     if has_unprocessed_late_or_leave:
         basis = f"{row.day_type} {row.note} {row.attendance_code}"
-        if "\uBC18\uBC18\uCC28" in basis:
-            return "6", "\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D(\uBC18\uBC18\uCC28/\uC870\uD1F4 \uC608\uC0C1)"
-        if "\uBC18\uCC28" in basis or "\uC870\uD1F4" in joined:
-            return "5", "\uADFC\uD0DC\uCF54\uB4DC \uB204\uB77D(\uBC18\uCC28/\uC870\uD1F4 \uC608\uC0C1)"
-        return "0", "\uAE30\uD0C0"
+        if "반반차" in basis:
+            return "6", "근태코드 누락(반반차/조퇴 예상)"
+        if "반차" in basis or "조퇴" in joined:
+            return "5", "근태코드 누락(반차/조퇴 예상)"
+        return "0", "기타"
 
-    return "0", "\uAE30\uD0C0"
+    return "0", "기타"
 
 
 def _hide_detail_issue_text(content: str, issues: list[str]) -> bool:
-    return content == "\uADFC\uD0DC \uC774\uC0C1"
+    return content == "근태 이상"
 
 
 def _anomaly_detail(row: AttendanceRow, issues: list[str]) -> dict[str, Any]:

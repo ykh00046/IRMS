@@ -118,14 +118,14 @@ ERP 야간 배치(18:00)
 
 ## 2. 근무 판정 규칙 전체 표 (baseline)
 
-핵심 함수는 **두 개**이며 감지에 실제 쓰이는 것은 아래쪽이다:
+핵심 함수는 **하나**(`_compute_row_anomaly_baseline`)이고, 나머지는 그 어댑터다:
 
-- `anomaly._compute_anomaly_baseline(shift_time, day_type, note, code)`
-  — 구형/보조. **2교대 부분휴가를 적용하지 않는다**(주간만). `day_type` 테스트에서만 사용.
 - `anomaly._compute_row_anomaly_baseline(row, shift_time)`
   — **감지 경로가 쓰는 실제 함수.** 주간 + 2교대(주/야) 부분휴가 모두 처리.
-
-두 함수 존재가 §7 GAP-2(잠재 함정)의 원인이다.
+- `anomaly._compute_anomaly_baseline(shift_time, day_type, note, code)`
+  — 얇은 어댑터. 최소 `AttendanceRow` 를 구성해 위 함수에 **위임**한다(GAP-2 해결,
+  2026-07-23). 두 진입점은 2교대 부분휴가 포함 항상 동일한 결과를 낸다. 기존
+  `day_type` 테스트 caller 호환을 위해 시그니처·export 유지.
 
 ### 2.1 기본 baseline (`anomaly.SHIFT_BASELINES`, 자정 기준 분)
 
@@ -202,7 +202,8 @@ ERP 야간 배치(18:00)
 연 집계에서 카운트. 일수는:
 
 - "반반차" 포함 → `quarter` 0.25 (먼저 검사)
-- `HALF_DAY_LEAVE_KEYWORDS = (반차/오전/오후)` 중 하나 포함 → `half` 0.5
+- `HALF_DAY_LEAVE_KEYWORDS = ("반차",)` 포함 → `half` 0.5 (GAP-5 해결: 단독 "오전"/"오후"는
+  반일 신호 아님 — 전일 연차 비고에 섞인 AM/PM 문구 오분류 차단)
 - 그 외 → `full` 1.0
 
 (검증: `test_attendance_annual_leave.py` — 연차1.0 + 오후반차0.5 + 반반차0.25 = 1.75)
@@ -427,29 +428,35 @@ CSRF 면제 목록(`main.py` 43–60): `/api/attendance/login`(토큰 전 로그
   미충족의 통째 폴백(정상 시나리오)은 경고 없음. 회귀 테스트
   `test_attendance_excel_column_map.py::ColumnMapWarningTests`.
 
-- **GAP-2 (중간) baseline 함수 이중화 — 2교대 부분휴가 불일치 함정.**
-  `_compute_anomaly_baseline`(주간만 부분휴가 적용, `anomaly.py:120`)과
-  `_compute_row_anomaly_baseline`(2교대까지 적용, 205)이 공존하고 **둘 다 export** 된다.
-  감지는 후자만 쓰지만, 전자를 2교대 반차/반반차에 잘못 호출하면 baseline 이 이동하지 않아
-  조퇴/지각 오탐이 난다. 전자는 사실상 `day_type` 테스트 전용 잔재. 통합 또는 명시적
-  deprecate 필요.
+- **GAP-2 ✅ 해결(2026-07-23) baseline 함수 이중화 — 2교대 부분휴가 불일치 함정.**
+  `_compute_anomaly_baseline`(`anomaly.py:120`)을 실제 함수
+  `_compute_row_anomaly_baseline`(205)에 **위임하는 얇은 어댑터**로 통합했다. 최소
+  `AttendanceRow` 를 구성해 후자를 호출하므로, 2교대 반차/반반차에 전자를 잘못 호출해도
+  baseline 이 동일하게 이동해 조퇴/지각 오탐이 나지 않는다(오용 불가). 둘 다 export 유지
+  (기존 `day_type` 테스트 caller 보존). 회귀 테스트
+  `test_attendance_shift2_partial_leave.py::test_both_baseline_entry_points_agree_on_shift2_partial_leave`.
 
-- **GAP-3 (낮음, 설계 의도일 수 있음) 임시비번 변경이 하드 게이트가 아님 + 죽은 403 처리.**
-  로그인 후 `password_reset_required` 는 배너·"나중에 변경"으로 소프트 유도만 하고
-  조회를 막지 않는다. 한편 `attendance.js:122` 는 403 `PASSWORD_RESET_REQUIRED` 를
-  받으면 변경 화면으로 보내지만, **어떤 서버 엔드포인트도 그 코드를 반환하지 않는다**
-  (죽은 코드). 강제하려면 `require_view_context` 에서 발급직후 상태를 403 으로 막아야 함.
-  현 정책이 "리마인더만"이면 죽은 JS 분기 제거가 정리 대상.
+- **GAP-3 ✅ 해결(2026-07-23) 죽은 403 처리 제거.**
+  정책은 그대로 소프트(배너·"나중에 변경", 조회 비차단)로 두고, 도달 불가였던
+  `attendance.js` 의 403 `PASSWORD_RESET_REQUIRED` 처리 분기만 제거했다(서버의 어떤
+  조회 엔드포인트도 그 코드를 반환하지 않음 — grep 확인). 서버 동작을 설명하는 주석을
+  남겼다. 하드 게이트가 필요해지면 `require_view_context` 에서 발급직후 상태를 403 으로
+  막고 이 분기를 되살리면 된다.
 
-- **GAP-4 (낮음) 로그인 JS 의 도달 불가 에러 매핑.**
-  `attendance_login.js:26` 의 `EMP_NOT_IN_EXCEL` 매핑은 로그인 경로에선 절대 안 온다
-  (`authenticate` 는 계정 없음/미프로비저닝을 전부 `INVALID_CREDENTIALS` 로 통일 —
-  §4.1 보안 계약). `EMP_NOT_IN_EXCEL` 은 책임자 재발급 경로에서만 발생. 죽은 매핑.
+- **GAP-4 ✅ 해결(2026-07-23) 로그인 JS 의 도달 불가 에러 매핑 제거.**
+  `attendance_login.js` 의 `EMP_NOT_IN_EXCEL` 매핑을 제거했다. 로그인
+  (`authenticate`)은 계정 없음/미프로비저닝/엑셀에 없는 사번을 전부
+  `INVALID_CREDENTIALS` 로 통일 응답한다(§4.1 보안 계약, grep 으로 `EMP_NOT_IN_EXCEL`
+  이 `attendance_auth.reset_password_to_temporary` 재발급 경로에서만 나옴을 확인).
+  서버 계약을 설명하는 주석을 남겼다.
 
-- **GAP-5 (낮음) 연차 버킷 오전/오후 오분류.**
-  `summary._annual_leave_bucket` (`summary.py:64`)의 `HALF_DAY_LEAVE_KEYWORDS` 에
-  "오전"/"오후" 가 포함돼, 전일 "연차"인데 비고에 "오전" 류 문구가 섞이면 0.5일로
-  집계될 수 있다. 실제 데이터에선 드물지만 연 집계 정확도에 잠재 영향.
+- **GAP-5 ✅ 해결(2026-07-23) 연차 버킷 오전/오후 오분류.**
+  `summary.HALF_DAY_LEAVE_KEYWORDS` 를 `("반차",)` 로 좁혀, 단독 "오전"/"오후"
+  문구만으로는 반일(0.5)로 잡지 않는다. 감지 엔진(`anomaly._partial_leave_shift`,
+  반차/반반차만 부분휴가로 인식)과 정합. "오전반차"/"오후반차"/"반차 오전" 등은 모두
+  "반차"를 포함하므로 그대로 잡히고, 반반차는 먼저 0.25로 걸러진다. 회귀 테스트
+  `test_attendance_annual_leave.py::test_full_day_leave_with_am_pm_in_note_is_not_half`
+  (기존 케이스 전부 green 유지).
 
 ### POLISH
 
@@ -461,15 +468,15 @@ CSRF 면제 목록(`main.py` 43–60): `/api/attendance/login`(토큰 전 로그
   `attendance_login.html` placeholder 를 "임시 비밀번호는 책임자에게 발급받으세요"로
   교체 — 랜덤 임시비번 발급 흐름 및 같은 화면 하단 안내와 정합.
 
-- **POLISH-3 (주석 stale) 2교대 테스트 docstring 이 휴식 30분/15:30 이라 적음.**
-  `tests/test_attendance_shift2_partial_leave.py:3-9` docstring 은 "휴식 30분",
-  "주간 15:30 / 야간 27:30" 이라 하지만, 실제 CASES(51-61)와 코드
-  (`SHIFT2_BREAK_MINUTES=45`)는 **45분 / 15:45 / 27:45**. `anomaly.py:37-46` 본주석은
-  올바르게 45분. 테스트 docstring 만 갱신 누락.
+- **POLISH-3 ✅ 해결(2026-07-23) 2교대 테스트 docstring 휴식값 정정.**
+  `tests/test_attendance_shift2_partial_leave.py` docstring 을 "휴식 45분 / 주간 15:45
+  / 야간 27:45" 로 수정해 실제 CASES·코드(`SHIFT2_BREAK_MINUTES=45`)·`anomaly.py` 본주석과
+  일치시켰다.
 
-- **POLISH-4 (미세) 코드 문자열 하드코딩(유니코드 이스케이프).**
-  `anomaly._row_alert_category` / `_row_to_record` 등이 한글 라벨을 `\uXXXX` 로 직접
-  넣어 가독성이 낮다(제어문자 함정 회피 이력 때문으로 보임). 기능 무해, 유지보수성만.
+- **POLISH-4 ✅ 해결(2026-07-23) 코드 문자열 하드코딩(유니코드 이스케이프) 가독화.**
+  `anomaly._row_alert_category` / `_hide_detail_issue_text` 의 `\uXXXX` 이스케이프를
+  읽을 수 있는 한글 리터럴로 치환(파일은 UTF-8 유지). 문자열 값은 동일해 동작 무변경 —
+  `_unprocessed_row_issues` 가 만드는 라벨과 정확히 일치(테스트로 검증).
 
 ---
 

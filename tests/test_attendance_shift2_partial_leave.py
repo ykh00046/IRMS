@@ -1,7 +1,7 @@
 """2교대(주간/야간) 반차·반반차 baseline 회귀 테스트.
 
-정규 8시간 근무 안에 휴식 30분이 포함되어, 잔업 없이 풀근무하면 출근+8h30m에
-퇴근한다(주간 15:30 / 야간 27:30). 휴식은 정규 근무 후반부에 있어 6시간 이하만
+정규 8시간 근무 안에 휴식 45분이 포함되어, 잔업 없이 풀근무하면 출근+8h45m에
+퇴근한다(주간 15:45 / 야간 27:45). 휴식은 정규 근무 후반부에 있어 6시간 이하만
 일하고 나가는 오후 반차/반반차에는 붙지 않는다.
 
     - 오전(늦게 출근): 출근 = 출근기준 + 휴가량(반차 4h / 반반차 2h)
@@ -69,6 +69,21 @@ class Shift2PartialLeaveTests(unittest.TestCase):
                     attendance_excel._compute_row_anomaly_baseline(row, shift_time),
                     (exp_in, exp_out),
                 )
+
+    def test_both_baseline_entry_points_agree_on_shift2_partial_leave(self) -> None:
+        """GAP-2: 구형 어댑터 ``_compute_anomaly_baseline`` 이 실제 함수
+        ``_compute_row_anomaly_baseline`` 에 위임하므로, 2교대 부분휴가에서도
+        두 진입점이 동일한 baseline을 낸다(과거엔 어댑터가 2교대 부분휴가를
+        적용하지 않아 오후 반차 퇴근이 정규 15:45로 잡히는 오탐 위험이 있었다)."""
+        for shift_time, code, exp_in, exp_out in self.CASES:
+            with self.subTest(shift=shift_time, code=code or "정규"):
+                row = _row(attendance_code=code)
+                via_row = attendance_excel._compute_row_anomaly_baseline(row, shift_time)
+                via_adapter = attendance_excel._compute_anomaly_baseline(
+                    shift_time, row.day_type, row.note, row.attendance_code
+                )
+                self.assertEqual(via_adapter, via_row)
+                self.assertEqual(via_adapter, (exp_in, exp_out))
 
     def test_day_shift_partial_leave_unchanged(self) -> None:
         """주간(09-18) 점심 포함 대칭 모델은 그대로 유지."""

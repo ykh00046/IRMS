@@ -118,13 +118,9 @@
         window.location.assign("/attendance/login");
         return null;
       }
-      if (
-        response.status === 403 &&
-        String(detail).includes("PASSWORD_RESET_REQUIRED")
-      ) {
-        window.location.assign("/attendance/change-password");
-        return null;
-      }
+      // 임시비번 변경은 소프트 유도(배너 + "나중에 변경")일 뿐 하드 게이트가
+      // 아니다. 서버의 어떤 조회 엔드포인트도 403 PASSWORD_RESET_REQUIRED 를
+      // 반환하지 않으므로(§4.2), 과거의 403 처리 분기는 도달 불가라 제거했다.
       throw new Error(String(detail));
     }
 

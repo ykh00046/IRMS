@@ -192,6 +192,37 @@ def test_run_up_trend():
     assert "run_up" in types
 
 
+def test_run_down_trend():
+    """연속 하락 5회 → run_down 추세 경보 (POLISH-1: 상승/하락 대칭 검출 회귀 방지)."""
+    conn = _make_db()
+    p = _add_product(conn, "PB")
+    _seed(conn, p["id"], [52, 51.5, 51, 50.5, 50, 49.5])
+    result = vs.analyze_product(conn, p)
+    trends = {t["type"]: t for t in result["trends"]}
+    assert "run_down" in trends
+    assert "run_up" not in trends  # 단조 하락 tail 은 run_up 을 내지 않는다
+    assert trends["run_down"]["length"] >= 5
+
+
+# ── 제품 코드 정규화(GAP-4) ─────────────────────────────────────
+def test_ensure_product_by_code_normalizes_case_and_space():
+    """GAP-4: 대소문자/앞뒤 공백만 다른 코드는 같은 논리적 제품으로 귀결(중복 생성 방지).
+
+    자동 생성(ensure_product_by_code)·조회(get_product_by_code)가 리마인더 쿼리와 같은
+    strip+upper 정규화를 쓴다.
+    """
+    conn = _make_db()
+    p1 = vs.ensure_product_by_code(conn, "PB", "PB", "2026-01-01T00:00:00Z")
+    assert p1 is not None
+    # 소문자 + 앞뒤 공백 → 새로 만들지 않고 같은 제품을 반환
+    p2 = vs.ensure_product_by_code(conn, "  pb  ", "pb", "2026-01-02T00:00:00Z")
+    assert p2 is not None and p2["id"] == p1["id"]
+    # 제품 행은 하나만 존재
+    assert conn.execute("SELECT COUNT(*) AS c FROM viscosity_products").fetchone()["c"] == 1
+    # get_product_by_code 도 정규화 조회
+    assert vs.get_product_by_code(conn, "Pb")["id"] == p1["id"]
+
+
 # ── 등록 + 멱등성 ───────────────────────────────────────────────
 def test_add_reading_derives_date_from_lot():
     conn = _make_db()

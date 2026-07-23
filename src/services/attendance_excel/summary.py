@@ -26,7 +26,12 @@ from .models import (
     normalize_emp_id,
 )
 
-HALF_DAY_LEAVE_KEYWORDS = ("반차", "오전", "오후")
+# 반차(0.5일) 판정 키워드. "오전"/"오후"는 단독으로는 반일 신호가 아니다 —
+# 전일 "연차" 행의 비고에 "오전 회의" 같은 문구가 섞이면 0.5일로 오분류되던
+# 문제(GAP-5) 때문에, 감지 엔진(anomaly._partial_leave_shift)과 동일하게
+# "반차" 계열 키워드가 있을 때만 반일로 본다. "오전반차"/"오후반차"/"반차 오전"
+# 등은 모두 "반차"를 포함하므로 그대로 잡히고, 반반차는 아래에서 먼저 걸러진다.
+HALF_DAY_LEAVE_KEYWORDS = ("반차",)
 
 
 def _attendance_row_key(row: AttendanceRow) -> tuple[Any, ...]:

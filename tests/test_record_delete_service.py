@@ -1,3 +1,4 @@
+import importlib
 import sqlite3
 
 from src.services import record_delete_service as deletes
@@ -170,3 +171,27 @@ def test_delete_blend_record_removes_detail_and_unlinks_viscosity() -> None:
     ).fetchone() is None
     reading = connection.execute("SELECT blend_record_id FROM viscosity_readings").fetchone()
     assert reading["blend_record_id"] is None
+
+
+def test_hard_delete_purges_dhr_cache(tmp_path, monkeypatch) -> None:
+    """POLISH-7a: hard 삭제 시 남아있던 DHR PDF 캐시(PDF+마커)를 함께 지운다."""
+    # 캐시 디렉터리를 tmp 로 격리 후 dhr_cache 재적재.
+    monkeypatch.setenv("IRMS_DATA_DIR", str(tmp_path))
+    import src.config as cfg
+    importlib.reload(cfg)
+    from src.services import dhr_cache
+    importlib.reload(dhr_cache)
+
+    connection = _make_db()
+    _, record_id = _seed_recipe_with_record(connection)
+
+    # 캐시 파일을 실제로 만들어 둔다(비서명 PDF 캐시가 남아있는 상황 재현).
+    dhr_cache.put({"id": record_id, "product_lot": "BASE26063001"}, b"%PDF-DATA")
+    pdf_path, marker_path = dhr_cache._paths(record_id)
+    assert pdf_path.exists() and marker_path.exists()
+
+    deletes.delete_blend_record(connection, record_id)
+
+    # hard 삭제 후 캐시 잔류 없음.
+    assert not pdf_path.exists()
+    assert not marker_path.exists()

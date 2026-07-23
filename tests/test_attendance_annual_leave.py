@@ -44,6 +44,27 @@ class AttendanceAnnualLeaveTests(unittest.TestCase):
             0.25,
         )
 
+    def test_full_day_leave_with_am_pm_in_note_is_not_half(self) -> None:
+        """GAP-5: 전일 연차인데 비고에 '오전'/'오후' 문구가 섞였다고 0.5일로
+        오분류하지 않는다. 반일은 '반차' 계열 키워드가 있을 때만 인정한다."""
+        self.assertEqual(
+            attendance_excel._annual_leave_days(
+                _row(attendance_code="연차", note="오전 안전교육 후 종일 연차")
+            ),
+            1.0,
+        )
+        self.assertEqual(
+            attendance_excel._annual_leave_days(
+                _row(attendance_code="연차", note="오후 외부 미팅")
+            ),
+            1.0,
+        )
+        # '반차'가 있으면 여전히 0.5일 (오전/오후 표기 여부 무관)
+        self.assertEqual(
+            attendance_excel._annual_leave_days(_row(attendance_code="반차")),
+            0.5,
+        )
+
     def test_year_summary_aggregates_leave_day_totals(self) -> None:
         rows = [
             _row(attendance_code="연차"),

@@ -195,12 +195,13 @@ def test_material_unmatched_reports_close_matches(tmp_path):
     try:
         _add_master(conn, "AS0001", "CARBONBLACK", kind="material")
         _add_material(conn, "카본블랙")  # 정규화 KOREAN → CARBONBLACK 과 다름 → 미매칭
-        # 단, normalize('카본블랙') 은 알파벳/숫자만 남으므로 빈 토큰 → 유사 후보도 없음
+        # normalize_token('카본블랙') 은 한글이 isalnum()==True 라 보존돼 '카본블랙'(비어있지
+        # 않음). 다만 영문 CARBONBLACK 과 토큰이 달라 매칭되지 않는다(빈 토큰이라서가 아님).
         conn.commit()
 
         mat = match_materials(conn, _index(conn))
         assert len(mat["unmatched"]) == 1
-        # 카본블랙(한글)은 알파벳만 남기면 빈 문자열 → close 매칭 불가(empty query)
+        # 한글 토큰은 영문 마스터 토큰과 겹치지 않아 미매칭으로 남는다(토큰은 보존됨).
         assert mat["unmatched"][0]["name"] == "카본블랙"
     finally:
         conn.close()

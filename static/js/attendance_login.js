@@ -23,8 +23,9 @@
     const text = String(raw || "");
     if (text.includes("LOCKED"))
       return "잠금 상태입니다. 5분 후 다시 시도해주세요.";
-    if (text.includes("EMP_NOT_IN_EXCEL"))
-      return "해당 사번이 근태 엑셀에 없습니다. 담당자에게 문의하세요.";
+    // 로그인(authenticate)은 계정 없음·미프로비저닝·엑셀에 없는 사번을 전부
+    // INVALID_CREDENTIALS 로 통일 응답한다(§4.1 보안 계약). EMP_NOT_IN_EXCEL 은
+    // 책임자 재발급 경로에서만 나오므로 이 로그인 화면에선 도달 불가라 제거했다.
     if (text.includes("INVALID_CREDENTIALS"))
       return "사번 또는 비밀번호가 올바르지 않습니다.";
     if (text.includes("MONTH_FILE_NOT_FOUND"))

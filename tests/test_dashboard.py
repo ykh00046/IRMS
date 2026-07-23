@@ -11,6 +11,7 @@ import sqlite3
 
 from openpyxl import load_workbook
 
+from src.services import blend_service as bs
 from src.services import dashboard_export
 
 
@@ -97,9 +98,11 @@ def test_dashboard_routes_respond_without_login():
     body = summary.json()
     for key in (
         "blend_count", "total_weight_g", "product_count", "worker_count",
-        "approval_pending", "viscosity_anomaly", "viscosity_due_today",
+        "viscosity_anomaly", "viscosity_due_today",
     ):
         assert key in body
+    # 결재 대기(approval_pending)는 죽은 값이라 페이로드에서 제거됨(2026-07-23). 회귀 가드.
+    assert "approval_pending" not in body
 
     trend = client.get("/api/dashboard/trend?from=2026-07-01&to=2026-07-03")
     assert trend.status_code == 200
@@ -111,3 +114,71 @@ def test_dashboard_routes_respond_without_login():
 
     # 잘못된 기간은 400
     assert client.get("/api/dashboard/summary?from=2026-07-05&to=2026-07-01").status_code == 400
+
+
+# ── 분석 집계 상한(no silent truncation) ─────────────────────────────
+
+def _make_blend_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE blend_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_lot TEXT NOT NULL, product_name TEXT NOT NULL,
+            worker TEXT NOT NULL, work_date TEXT NOT NULL, total_amount REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'completed'
+        );
+        CREATE TABLE blend_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blend_record_id INTEGER NOT NULL, material_code TEXT,
+            material_name TEXT NOT NULL, material_lot TEXT,
+            ratio REAL, theory_amount REAL, actual_amount REAL,
+            sequence_order INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    rid = int(
+        conn.execute(
+            "INSERT INTO blend_records (product_lot, product_name, worker, work_date, total_amount) "
+            "VALUES ('PB26070101', 'PB', '홍길동', '2026-07-01', 300)"
+        ).lastrowid
+    )
+    for i, name in enumerate(("A", "B", "C")):
+        conn.execute(
+            "INSERT INTO blend_details (blend_record_id, material_code, material_name, "
+            "theory_amount, actual_amount, sequence_order) VALUES (?, ?, ?, 100, 100, ?)",
+            (rid, name, name, i),
+        )
+    conn.commit()
+    return conn
+
+
+def test_material_usage_periods_truncation_flag(monkeypatch):
+    conn = _make_blend_db()
+    # 정상: 상한 미도달 → truncated False, 전체 반환
+    res = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert res["truncated"] is False
+    assert res["total_item_count"] == 3
+    assert len(res["items"]) == 3
+
+    # 상한을 1로 낮추면 잘리고 표면화(조용한 절단 금지)
+    monkeypatch.setattr(bs, "_MATERIAL_USAGE_MAX_ITEMS", 1)
+    res2 = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert res2["truncated"] is True
+    assert res2["total_item_count"] == 3
+    assert len(res2["items"]) == 1
+
+
+def test_batch_details_truncation_flag():
+    conn = _make_blend_db()
+    # 여유 있는 limit → 상한 미도달
+    res = bs.batch_details(conn, limit=1000)
+    assert res["truncated"] is False
+    assert res["total"] == 3
+
+    # limit 이 결과 수에 걸리면 truncated 로 표면화
+    res2 = bs.batch_details(conn, limit=2)
+    assert res2["truncated"] is True
+    assert res2["limit"] == 2
+    assert res2["total"] == 2

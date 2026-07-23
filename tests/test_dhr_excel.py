@@ -117,6 +117,30 @@ def test_official_dhr_no_bulk_marker_when_absent():
     assert "일괄 재생성" not in joined
 
 
+def test_official_dhr_marks_canceled_record():
+    """취소된 기록을 단건 출력하면 비고 영역에 '(취소된 기록)' 표식이 실린다(POLISH-7b)."""
+    rec = _sample_record()
+    rec["status"] = "canceled"
+    xb = dhr_excel.build_official_dhr_xlsx(rec)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "(취소된 기록)" in joined
+
+
+def test_official_dhr_no_canceled_marker_when_completed():
+    """완료 기록(status=completed)이면 취소 표식이 생기지 않는다(회귀 가드)."""
+    rec = _sample_record()
+    rec["status"] = "completed"
+    xb = dhr_excel.build_official_dhr_xlsx(rec)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    joined = "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+    assert "취소된 기록" not in joined
+
+
 def test_official_dhr_marks_signature_failure():
     """서명 합성 실패(sign_failed) 시 결재칸에 표식을 남긴다 — 무언의 미서명 출력 금지(POLISH-6)."""
     xb = dhr_excel.build_official_dhr_xlsx(_sample_record(), sign_failed=True)
