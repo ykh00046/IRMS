@@ -18,7 +18,8 @@ Endpoints:
     POST   /blend/records/bulk                일괄 생성
     GET    /blend/records                     기록 조회(필터)
     GET    /blend/records/export-all          전체 Excel 백업
-    GET    /blend/records/dhr-batch           배합일지 일괄 PDF
+    GET    /blend/records/dhr-batch           배합일지 일괄 PDF (한 파일로 병합)
+    GET    /blend/records/dhr-zip             배합일지 ZIP (반제품명 폴더로 묶음)
     GET    /blend/records/{id}                상세(배합상세+편차+점도)
     PUT    /blend/records/{id}                전체 수정 (책임자 전용)
     DELETE /blend/records/{id}                기록 취소/삭제(soft/hard 모두 책임자 전용)
@@ -55,6 +56,21 @@ from .models import (
     BlendViscosityBody,
     actor_name,
 )
+
+
+_ZIP_INVALID_CHARS = '\\/:*?"<>|'
+
+
+def _sanitize_zip_name(value: Any, fallback: str = "") -> str:
+    """zip 경로용 파일/폴더명 정리 — Windows 금지문자(\\ / : * ? " < > |)를 '_' 로 치환.
+
+    앞뒤 공백을 제거하고, 그래도 비면 fallback 을 돌려준다(빈 폴더/파일명 방지).
+    """
+    text = str(value if value is not None else "").strip()
+    for ch in _ZIP_INVALID_CHARS:
+        text = text.replace(ch, "_")
+    text = text.strip()
+    return text or fallback
 
 
 def build_router() -> APIRouter:
@@ -434,6 +450,82 @@ def build_router() -> APIRouter:
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
+            headers={"Content-Disposition": disposition},
+        )
+
+    @router.get("/blend/records/dhr-zip")
+    def blend_dhr_zip(
+        request: Request,
+        ids: str = Query(...),
+        sign: bool = Query(default=False),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """선택한 배합 기록의 배합일지를 반제품(레시피)명 폴더로 묶어 ZIP 으로 내려준다(최대 200건).
+
+        각 기록의 PDF 는 단건 출력(/pdf)과 동일한 경로로 생성한다 — 비서명본은 캐시 재사용,
+        sign=True 면 서명 합성(캐시 미사용). 폴더는 반제품명(product_name), 파일은
+        {제품LOT}.pdf. 한 폴더 안에서 LOT 이 겹치면 _2, _3… 을 붙인다. Windows 압축 풀기에서
+        한글이 깨지지 않도록 UTF-8 로 기록한다. 존재하지 않는 id 는 전체를 실패시키지 않고
+        누락.txt 에 모아 남긴다.
+        """
+        import zipfile
+
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+        records: list[dict[str, Any]] = []
+        missing: list[int] = []
+        for i in id_list:
+            rec = blend_service.get_blend_record(connection, i)
+            if rec:
+                records.append(rec)
+            else:
+                missing.append(i)
+        if not records:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+
+        _audit_dhr_export(
+            connection, request, fmt="zip" + ("_signed" if sign else ""),
+            record_ids=[int(r["id"]) for r in records],
+            target_label=f"{len(records)}건",
+        )
+
+        def _pdf_bytes(record: dict[str, Any]) -> bytes:
+            # 단건 /pdf 와 동일: 서명본은 매번 합성(캐시 안 함), 비서명본은 캐시 재사용.
+            if sign:
+                return dhr_pdf.build_scanned_dhr_pdf(record, sign=True)
+            data = dhr_cache.get(record)
+            if data is None:
+                data = dhr_pdf.build_scanned_dhr_pdf(record, sign=False)
+                dhr_cache.put(record, data)
+            return data
+
+        buf = io.BytesIO()
+        used: dict[tuple[str, str], int] = {}
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for record in records:
+                folder = _sanitize_zip_name(record.get("product_name"), "기타")
+                base = _sanitize_zip_name(record.get("product_lot"), f"blend_{record['id']}")
+                key = (folder, base)
+                n = used.get(key, 0) + 1
+                used[key] = n
+                name = base if n == 1 else f"{base}_{n}"
+                zf.writestr(f"{folder}/{name}.pdf", _pdf_bytes(record))
+            if missing:
+                note = "누락된 기록 id (해당 기록을 찾을 수 없어 제외됨):\n" + "\n".join(
+                    str(m) for m in missing
+                ) + "\n"
+                zf.writestr("누락.txt", note.encode("utf-8"))
+        buf.seek(0)
+
+        from datetime import date as _date
+        from urllib.parse import quote
+        ascii_name = f"dhr-{_date.today().strftime('%Y%m%d')}.zip"
+        utf8_name = quote(f"배합일지-{len(records)}건.zip")
+        disposition = (
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"
+        )
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
             headers={"Content-Disposition": disposition},
         )
 

@@ -366,6 +366,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
     window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
+  $("status-rec-dhr-zip").addEventListener("click", () => {
+    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
+    if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
+    if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
+    const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
+    window.open(`/api/blend/records/dhr-zip?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
+  });
   $("status-rec-delete-selected").addEventListener("click", async () => {
     const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => Number(c.value));
     if (!ids.length) { IRMS.notify("삭제할 기록을 선택하세요.", "warn"); return; }

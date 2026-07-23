@@ -2021,3 +2021,137 @@ def test_dhr_exports_are_audited():
     assert "pdf" in formats
     assert "xlsx_all" in formats
     assert single >= 2  # 단건 Excel + 단건 PDF (같은 record 대상)
+
+
+# ── 배합일지 ZIP (반제품명 폴더로 묶음) ─────────────────────────────────────────
+def _make_blend_record(client, csrf, *, product, worker, work_date="2026-07-20", total=100):
+    """작업자 세션 로그인 후 배합 실적 1건 생성 → (id, product_lot)."""
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+    res = client.post("/api/blend/records", json={
+        "product_name": product, "worker": worker, "work_date": work_date,
+        "total_amount": total,
+        "details": [{"material_name": "원료1", "ratio": 100, "theory_amount": total,
+                     "actual_amount": total, "material_lot": "L1"}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    return res.json()["id"], res.json()["product_lot"]
+
+
+def test_dhr_zip_groups_by_product_folder():
+    """서로 다른 두 제품 2건 선택 → application/zip, 제품명 폴더별 {LOT}.pdf 구조,
+    존재하지 않는 id 는 누락.txt 로 남고, 감사에 format=zip 이 기록된다."""
+    import io as _io
+    import json as _json
+    import uuid as _uuid
+    import zipfile as _zip
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    # 한글 제품명 — Windows 압축 풀기 호환(UTF-8 플래그) 검증을 위해 non-ASCII 로.
+    prod_a = f"묶음가{suffix}"
+    prod_b = f"묶음나{suffix}"
+    id_a, lot_a = _make_blend_record(client, csrf, product=prod_a, worker="집작업A" + suffix)
+    id_b, lot_b = _make_blend_record(client, csrf, product=prod_b, worker="집작업B" + suffix)
+
+    missing_id = 987654
+    res = client.get(f"/api/blend/records/dhr-zip?ids={id_a},{id_b},{missing_id}")
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "application/zip"
+    assert "dhr-" in res.headers["content-disposition"]
+
+    zf = _zip.ZipFile(_io.BytesIO(res.content))
+    names = zf.namelist()
+    # 제품명 폴더별로 {LOT}.pdf 가 담긴다(두 폴더).
+    assert f"{prod_a}/{lot_a}.pdf" in names, names
+    assert f"{prod_b}/{lot_b}.pdf" in names, names
+    folders = {n.split("/", 1)[0] for n in names if "/" in n}
+    assert prod_a in folders and prod_b in folders
+    # 누락 id 는 전체를 실패시키지 않고 누락.txt 로 기록.
+    assert "누락.txt" in names
+    assert str(missing_id) in zf.read("누락.txt").decode("utf-8")
+    # 한글 폴더명이 UTF-8 플래그로 기록돼 그대로 되읽힌다(0x800 = UTF-8 filename flag).
+    info_a = zf.getinfo(f"{prod_a}/{lot_a}.pdf")
+    assert info_a.flag_bits & 0x800
+    assert info_a.filename == f"{prod_a}/{lot_a}.pdf"
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        formats = {
+            _json.loads(x["details_json"])["format"]
+            for x in conn.execute(
+                "SELECT details_json FROM audit_logs WHERE action = 'dhr_exported'"
+            ).fetchall()
+        }
+    assert "zip" in formats
+
+
+def test_dhr_zip_sign_param_accepted_and_audited():
+    """sign=1 도 200 이며 감사 format=zip_signed 로 남는다."""
+    import json as _json
+    import uuid as _uuid
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    rid, _lot = _make_blend_record(client, csrf, product=f"ZSGN{suffix}", worker="서명집" + suffix)
+    res = client.get(f"/api/blend/records/dhr-zip?ids={rid}&sign=1")
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"] == "application/zip"
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        formats = {
+            _json.loads(x["details_json"])["format"]
+            for x in conn.execute(
+                "SELECT details_json FROM audit_logs WHERE action = 'dhr_exported'"
+            ).fetchall()
+        }
+    assert "zip_signed" in formats
+
+
+def test_dhr_zip_duplicate_lots_within_folder_deduped():
+    """같은 폴더 안 LOT 이 겹치면 두 번째부터 _2 접미가 붙어 덮어쓰기되지 않는다."""
+    import io as _io
+    import uuid as _uuid
+    import zipfile as _zip
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"ZDUP{suffix}"
+    worker = "중복집" + suffix
+    client.post("/api/workers", json={"name": worker}, headers=csrf())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf())
+
+    def make():
+        r = client.post("/api/blend/records", json={
+            "product_name": product, "worker": worker, "work_date": "2026-07-20",
+            "total_amount": 100,
+            "details": [{"material_name": "원료1", "ratio": 100, "theory_amount": 100,
+                         "actual_amount": 100, "material_lot": "L1"}],
+        }, headers=csrf())
+        assert r.status_code == 200, r.text
+        return r.json()["id"]
+
+    id1 = make()
+    id2 = make()
+    # 두 기록은 서로 다른 LOT(채번 순번)이라 폴더 안에서 겹치지 않는 것이 정상이지만,
+    # 어떤 경우에도 두 PDF 가 모두(덮어쓰기 없이) 담기는지 확인한다.
+    res = client.get(f"/api/blend/records/dhr-zip?ids={id1},{id2}")
+    assert res.status_code == 200, res.text
+    zf = _zip.ZipFile(_io.BytesIO(res.content))
+    pdfs = [n for n in zf.namelist() if n.startswith(f"{product}/")]
+    assert len(pdfs) == 2, zf.namelist()
+
+
+def test_dhr_zip_caps_ids_at_200():
+    """id 는 앞에서부터 200개로 상한 — 201번째(실존 id)는 잘려 나가 반영되지 않는다."""
+    import uuid as _uuid
+
+    client, csrf = _mgmt_client()
+    suffix = _uuid.uuid4().hex[:4]
+    rid, _lot = _make_blend_record(client, csrf, product=f"ZCAP{suffix}", worker="상한집" + suffix)
+    # 앞 200개는 존재하지 않는 id, 마지막(201번째)에만 실존 rid → 상한으로 잘리면 rid 제외.
+    fillers = ",".join(str(n) for n in range(900000, 900200))
+    res = client.get(f"/api/blend/records/dhr-zip?ids={fillers},{rid}")
+    # 유효 200개가 모두 없는 id 이므로 실존 rid 가 잘려나가면 결과가 비어 404.
+    assert res.status_code == 404, res.status_code
