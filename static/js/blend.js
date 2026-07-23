@@ -136,8 +136,23 @@
   // 저울 전용 모드일 때 현재 DOM 의 실제량·증량 입력칸에 readonly + title 부여.
   // 새로 렌더되는 행에도 적용되도록 renderMatRows 직후에도 호출한다.
   // 책임자 수기 입력 승인(state.manualApproved)이 있으면 이 배합에 한해 잠금을 해제한다.
+  // 용수 분류는 수기 입력 허용 — 물은 유량계/부피 계량이라 저울 전용 잠금이 맞지 않는다
+  // (사용자 결정 2026-07-23). 분류는 레시피 목록(state.recipes)에서 찾는다.
+  function isWaterCategoryRecipe() {
+    const rid = state.current && state.current.recipe ? state.current.recipe.id : null;
+    if (rid == null || !Array.isArray(state.recipes)) return false;
+    const rec = state.recipes.find((r) => r.id === rid);
+    return Boolean(rec && rec.category === "용수");
+  }
+
   function applyScaleOnlyToRows() {
     if (!state.scaleOnlyInput) return;  // 모드 아니면 손대지 않음(기본 동작)
+    if (isWaterCategoryRecipe()) {
+      // 용수: 잠금 해제(승인 불필요) — 이미 잠겨 있던 입력도 풀어준다.
+      document.querySelectorAll("#blend-mat-body .blend-actual, #blend-mat-body .blend-add-inline")
+        .forEach((el) => { el.readOnly = false; el.removeAttribute("title"); });
+      return;
+    }
     const lock = !state.manualApproved;
     const titleText = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
     document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
@@ -165,6 +180,15 @@
     if (!box) return;
     box.hidden = !state.scaleOnlyInput;
     if (!state.scaleOnlyInput) return;
+    if (isWaterCategoryRecipe()) {
+      const text = $("scale-only-control-text");
+      const btn = $("manual-entry-request-btn");
+      if (text) text.textContent = "용수 분류 — 수기 입력이 허용됩니다(저울 전용 예외).";
+      if (btn) btn.hidden = true;
+      box.classList.add("is-approved");
+      applyScaleOnlyToRows();
+      return;
+    }
     const text = $("scale-only-control-text");
     const btn = $("manual-entry-request-btn");
     if (state.manualApproved) {
