@@ -133,13 +133,11 @@
     });
   }
 
-  // 저울 전용 모드 + 저울 미연결 → 상시 배너(login-error 스타일 재사용).
-  // 저울 연결 상태(detectScale 주기 갱신)에 따라 자동 토글.
+  // (구) 상단 배너는 아래 컨트롤 줄과 중복 + 해제 방법은 작업자 대상 정보가 아니라 제거
+  // (2026-07-23). 저울 미연결 상태는 컨트롤 줄 텍스트가 흡수한다.
   function updateScaleOnlyBanner() {
     const banner = document.getElementById("cont-scale-only-banner");
-    if (!banner) return;
-    const show = state.scaleOnlyInput && !state.scaleReady;
-    banner.hidden = !show;
+    if (banner) banner.hidden = true;  // 옛 템플릿 캐시 대비 항상 숨김
     updateManualEntryControl();
   }
 
@@ -157,7 +155,12 @@
       if (btn) btn.hidden = true;
       box.classList.add("is-approved");
     } else {
-      if (text) text.textContent = "저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.";
+      // 저울 미연결 상태를 이 한 줄이 흡수 — 별도 상단 배너는 중복이라 폐기(2026-07-23).
+      if (text) {
+        text.textContent = state.scaleReady
+          ? "저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다."
+          : "저울 전용 입력 모드 — 저울 연결 대기 중입니다. 연결되면 PRINT 로 입력됩니다.";
+      }
       if (btn) btn.hidden = false;
       box.classList.remove("is-approved");
     }

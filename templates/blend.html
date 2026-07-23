@@ -43,9 +43,6 @@
 {% block content %}
         <!-- ===== 배합 입력 ===== -->
         <div id="blend-entry-mode">
-          <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
-               blend.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
-          <p class="login-error scale-only-banner" id="scale-only-banner" hidden>저울 전용 입력 모드가 켜져 있습니다 — 저울이 연결되지 않아 실제량을 입력할 수 없습니다. (해제는 운영 대시보드)</p>
           <!-- 저울 전용 모드 수기 입력 승인 컨트롤 — 모드가 켜져 있을 때만 노출.
                책임자 승인을 받으면 이 배합에 한해 실제량 손입력을 허용한다(저장·초기화·레시피 변경 시 재잠금).
                blend.js updateManualEntryControl 이 텍스트·버튼 노출을 갱신. -->
@@ -386,7 +383,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723n"></script>
+    <script src="/static/js/blend.js?v=20260723o"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
