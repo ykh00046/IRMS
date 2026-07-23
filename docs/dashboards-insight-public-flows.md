@@ -116,11 +116,22 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
   단위)·자재별(상세 행 단위). 수동 입력 0인 자재는 표에서 제외(L505).
 - **자재 LOT 추적**(`trace_material_lot` L580): 리콜 대응 역추적. **부분 일치
   `LIKE %lot% ESCAPE`**, 취소 기록 포함(누락이 더 위험), `%_\` 이스케이프. LIMIT
-  기본 500(1~2000). 제품 LOT 클릭→`/status?search=` 딥링크(`insight.js` L62).
+  기본 500(1~2000). 서버가 `truncated`/`limit` 를 반환하며, 상한 도달 시 프론트가
+  `#insight-trace-note` 안내를 띄운다(LOT 을 더 구체적으로 입력하도록 유도).
+  제품 LOT 클릭→`/status?search=` 딥링크(`insight.js` L62).
 - **제품별 빈도**(`product_usage` L391): 제품별 배치 수·총량·최근 작업일. Chart TOP10
-  + 배치 상세 필터용 `<select>` 채움.
+  + 배치 상세 필터용 `<select>` 채움. 집계 결과(제품 종수 단위)라 표시 상한 불필요.
 - **배치 상세**(`batch_details` L516): 자재별 비율·이론·실제·편차 평면 목록. work_date
   DESC. LIMIT 기본 2000, 최대 10000. Excel 은 10000 고정(`blend_routes` L161).
+  **화면 렌더는 최근 200행만**(`insight.js` `DETAIL_DISPLAY_CAP`) — 200 초과 또는
+  서버 `truncated` 시 `#insight-detail-note`("최근 200건만 표시 — 기간을 좁히거나
+  Excel 내보내기를 이용하세요") 노출, 요약은 `표시 N / 전체 M행`. **Excel 은 전체
+  (백엔드 상한 10000) 그대로 내보낸다** — 화면 200 캡과 무관.
+
+> **표시 상한 정책(데이터 증가 대비)**: 자재별 사용량·이상 통계·제품별 빈도는
+> **집계(그룹) 결과**라 행 수가 자재/작업자/제품 종수로 자연 제한되어 캡을 두지 않는다.
+> 평면 목록(배치 상세·LOT 추적)만 최근 N 창 + 안내 문구(`.trunc-note`) + `표시 N / 전체 M`
+> 를 적용한다. 안내 스타일은 점도 기간표(`.visc-period-truncation`)와 동일 톤.
 
 ---
 

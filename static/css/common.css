@@ -1146,6 +1146,20 @@ tr:hover td.sticky-right {
   color: var(--text-secondary);
 }
 
+/* 데이터 증가 대비 표시 상한 안내(최근 N건만 표시 — 필터/Excel 유도).
+   점도 기간표 안내(.visc-period-truncation)와 동일한 muted 톤. hidden 이면 숨김. */
+.trunc-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface-200, #f4f6fa);
+}
+.trunc-note[hidden] {
+  display: none;
+}
+
 /* Form validation states */
 .input.error,
 .select.error,

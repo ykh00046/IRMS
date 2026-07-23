@@ -24,6 +24,20 @@
 여기서 기억할 것은 **저장된 기록이 곧 규제 원본**이라는 점: `product_lot` 은 저장 순간 서버가
 채번(`generate_product_lot`, `blend_service.py:658`)하며, 이후 수정·취소·삭제 규칙이 이 원본을 지킨다.
 
+### 1.1b 목록 조회 · 표시 상한 (`GET /blend/records` — `blend_records`)
+
+`/status` 진입 시 `status.js`(`loadRecords`)가 `GET /api/blend/records` 로 목록을 읽는다.
+필터는 `start_date`/`end_date`/`worker`/`search`(제품 LOT·제품명·자재 LOT 부분일치).
+
+- **서버 상한(데이터 증가 대비)**: `list_blend_records` 는 **최신 `limit` 건만**(work_date DESC,
+  id DESC) 반환. 라우트 기본 `limit=500`(1~1000, `취소` 제외). 날짜·작업자·검색이 범위를 좁히는
+  1차 도구다.
+- **상한 표면화**: 라우트가 `count_blend_records`(동일 필터의 전체 M)를 함께 계산해
+  `{total_available, truncated, limit}` 을 반환한다. `truncated = total_available > 표시 건수`.
+- **화면 안내**: `truncated` 이면 `status.js` 가 `#status-rec-note`(`.trunc-note`)에
+  "최근 500건만 표시 (전체 M건) — 날짜·작업자·검색으로 범위를 좁히거나 '전체 Excel'로 내려받으세요"
+  를 띄운다. 전체는 `GET /blend/records/export-all`(limit=10000, 필터 유지)로 받는다.
+
 ### 1.2 수정 (`PUT /blend/records/{id}` — `blend_update`, `blend_routes.py:671`)
 
 - **권한**: `dependencies=[Depends(require_access_level("manager"))]` — 책임자 이상만. 현장 무로그인은 401.

@@ -40,9 +40,11 @@
     const lot = $("insight-trace-lot").value.trim();
     const body = $("insight-trace-body");
     const summary = $("insight-trace-summary");
+    const traceNote = $("insight-trace-note");
     if (!lot) {
       body.innerHTML = '<tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>';
       summary.textContent = "";
+      if (traceNote) traceNote.hidden = true;
       return;
     }
     try {
@@ -51,6 +53,16 @@
       summary.textContent = items.length
         ? `배합 ${d.record_count}건 · 자재 행 ${d.total}건`
         : "";
+      const note = $("insight-trace-note");
+      if (note) {
+        // 서버 상한(기본 500행) 도달 — 일부 잘림. LOT을 더 구체적으로 좁히도록 안내.
+        if (d.truncated) {
+          note.textContent = `표시 상한 ${fmt(d.limit || d.total, 0)}행에 도달 — 일부가 잘렸을 수 있습니다. LOT을 더 정확히 입력해 좁히세요.`;
+          note.hidden = false;
+        } else {
+          note.hidden = true;
+        }
+      }
       if (!items.length) {
         body.innerHTML = `<tr><td colspan="8" class="muted">'${esc(lot)}' 이 투입된 배합 기록이 없습니다.</td></tr>`;
         return;
@@ -71,6 +83,7 @@
     } catch (e) {
       body.innerHTML = `<tr><td colspan="8" class="muted">추적 실패: ${esc(e.message || e)}</td></tr>`;
       summary.textContent = "";
+      if (traceNote) traceNote.hidden = true;
     }
   }
 
@@ -196,14 +209,29 @@
       const d = await request("/blend/batch-details", {
         query: { start_date: start, end_date: end, product },
       });
-      $("insight-detail-summary").textContent =
-        `배치 ${fmt(d.batch_count, 0)}건 · 자재 ${fmt(d.material_count, 0)}종 · ${fmt(d.total, 0)}행`;
       const items = d.items || [];
+      const note = $("insight-detail-note");
+      // 화면 렌더는 최근 DETAIL_DISPLAY_CAP 행으로 제한(백엔드는 작업일 역순으로 이미 최신순).
+      // 전체 데이터는 Excel 내보내기(백엔드 상한 10000)로 받는다.
+      const DETAIL_DISPLAY_CAP = 200;
+      const shown = items.slice(0, DETAIL_DISPLAY_CAP);
+      $("insight-detail-summary").textContent =
+        `배치 ${fmt(d.batch_count, 0)}건 · 자재 ${fmt(d.material_count, 0)}종 · ` +
+        `표시 ${fmt(shown.length, 0)} / 전체 ${fmt(d.total, 0)}${d.truncated ? "+" : ""}행`;
       if (!items.length) {
         body.innerHTML = '<tr><td colspan="8" class="muted">기록이 없습니다.</td></tr>';
+        if (note) note.hidden = true;
         return;
       }
-      body.innerHTML = items
+      if (note) {
+        if (items.length > DETAIL_DISPLAY_CAP || d.truncated) {
+          note.textContent = "최근 200건만 표시 — 기간을 좁히거나 Excel 내보내기를 이용하세요.";
+          note.hidden = false;
+        } else {
+          note.hidden = true;
+        }
+      }
+      body.innerHTML = shown
         .map(
           (it) =>
             `<tr><td>${esc(it.work_date)}</td>` +
@@ -219,6 +247,8 @@
         .join("");
     } catch (e) {
       body.innerHTML = `<tr><td colspan="8" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
+      const note = $("insight-detail-note");
+      if (note) note.hidden = true;
     }
   }
 

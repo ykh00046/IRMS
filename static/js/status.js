@@ -105,6 +105,18 @@ document.addEventListener("DOMContentLoaded", () => {
         loadRescaleMap(),
       ]);
       const items = data.items || [];
+      const note = $("status-rec-note");
+      if (note) {
+        // 서버가 최신 limit(기본 500)건만 반환 — 상한 도달 시 전체 M 과 함께 좁히기 안내.
+        if (data.truncated) {
+          note.textContent =
+            `최근 ${fmt(data.limit || items.length, 0)}건만 표시 (전체 ${fmt(data.total_available, 0)}건) — ` +
+            "날짜·작업자·검색으로 범위를 좁히거나 ‘전체 Excel’로 내려받으세요.";
+          note.hidden = false;
+        } else {
+          note.hidden = true;
+        }
+      }
       if (!items.length) {
         body.innerHTML = '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
         return;
@@ -129,6 +141,8 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     } catch (e) {
       body.innerHTML = `<tr><td colspan="7" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
+      const note = $("status-rec-note");
+      if (note) note.hidden = true;
     }
   }
 

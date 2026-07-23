@@ -132,6 +132,30 @@ def test_material_lot_trace_unknown_lot_returns_zero():
     assert j["record_count"] == 0
 
 
+def test_material_lot_trace_truncation_flag():
+    """limit=1 을 강제하면 truncated=True 로 표시 상한 도달을 표면화(UI 안내용)."""
+    client, worker, headers = _setup_client()
+    t = uuid.uuid4().hex[:6]
+    lot = f"{t}-RM-A1"
+    # 같은 LOT 을 공유하는 상세 행 2건 이상 생성 → limit=1 이면 잘림
+    for wd in ("2026-07-10", "2026-07-11"):
+        _create_record(client, headers, worker, "TRC" + t, wd, [
+            {"material_name": "원료A", "theory_amount": 100, "actual_amount": 100,
+             "material_lot": lot},
+        ])
+
+    full = client.get("/api/blend/material-lot-trace", params={"lot": lot}).json()
+    assert full["truncated"] is False
+    assert full["total"] >= 2
+
+    capped = client.get(
+        "/api/blend/material-lot-trace", params={"lot": lot, "limit": 1}
+    ).json()
+    assert capped["truncated"] is True
+    assert capped["limit"] == 1
+    assert capped["total"] == 1
+
+
 def test_blend_records_search_covers_material_lot():
     """/api/blend/records?search=RM-B2 → 기록2만 반환 + 기존 제품 LOT 검색 회귀 방지."""
     client, worker, headers = _setup_client()

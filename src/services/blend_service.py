@@ -649,11 +649,15 @@ def trace_material_lot(
         (f"%{escaped}%", int(limit)),
     ).fetchall()
     items = [dict(r) for r in rows]
+    # LIMIT 에 정확히 걸리면 더 있을 수 있으므로 truncated 로 표면화(batch_details 와 동일 패턴).
+    truncated = len(items) >= int(limit)
     return {
         "lot": clean,
         "items": items,
         "total": len(items),
         "record_count": len({it["record_id"] for it in items}),
+        "truncated": truncated,
+        "limit": int(limit),
     }
 
 
@@ -1459,6 +1463,46 @@ def list_blend_records(
         params,
     ).fetchall()
     return [_serialize_record(r) for r in rows]
+
+
+def count_blend_records(
+    connection: sqlite3.Connection,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    worker: str | None = None,
+    search: str | None = None,
+) -> int:
+    """list_blend_records 와 동일 필터의 전체 건수(표시 상한과 무관한 '전체 M').
+
+    /status 기록 목록이 표시 상한(LIMIT)에 도달했는지 판정하고 '표시 N / 전체 M' 안내를
+    정확히 보여주기 위한 경량 COUNT. WHERE 절은 list_blend_records 와 일치해야 한다.
+    """
+    clauses = ["status != 'canceled'"]
+    params: list[Any] = []
+    if start_date:
+        clauses.append("work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        clauses.append("work_date <= ?")
+        params.append(end_date)
+    if worker:
+        clauses.append("worker = ?")
+        params.append(worker)
+    if search:
+        clauses.append(
+            "(product_lot LIKE ? OR product_name LIKE ? OR ink_name LIKE ? "
+            "OR EXISTS (SELECT 1 FROM blend_details d "
+            "WHERE d.blend_record_id = blend_records.id "
+            "AND d.material_lot LIKE ?))"
+        )
+        like = f"%{search}%"
+        params.extend([like, like, like, like])
+    where = " AND ".join(clauses)
+    row = connection.execute(
+        f"SELECT COUNT(*) FROM blend_records WHERE {where}", params
+    ).fetchone()
+    return int(row[0])
 
 
 def list_workers(connection: sqlite3.Connection) -> list[str]:

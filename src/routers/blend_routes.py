@@ -325,9 +325,11 @@ def build_router() -> APIRouter:
         end_date: str | None = None,
         worker: str | None = None,
         search: str | None = None,
-        limit: int = Query(default=200, ge=1, le=1000),
+        limit: int = Query(default=500, ge=1, le=1000),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        # 최신 limit 건만 반환(기본 500). 날짜·작업자·검색 필터가 범위를 좁히는 도구다.
+        # total_available(전체 M)로 상한 도달 여부를 표면화 — '표시 N / 전체 M' 안내용.
         items = blend_service.list_blend_records(
             connection,
             start_date=start_date,
@@ -338,7 +340,20 @@ def build_router() -> APIRouter:
         )
         for item in items:
             _mask_manual_entry(request, item)
-        return {"items": items, "total": len(items)}
+        total_available = blend_service.count_blend_records(
+            connection,
+            start_date=start_date,
+            end_date=end_date,
+            worker=worker,
+            search=search,
+        )
+        return {
+            "items": items,
+            "total": len(items),
+            "total_available": total_available,
+            "truncated": total_available > len(items),
+            "limit": limit,
+        }
 
     @router.get("/blend/records/export-all")
     def blend_export_all(

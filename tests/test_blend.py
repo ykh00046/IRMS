@@ -516,6 +516,45 @@ def test_list_blend_records_filters():
     assert len(bs.list_blend_records(conn, search="잉크A")) == 3
 
 
+def test_count_blend_records_matches_filters():
+    """count_blend_records 는 list_blend_records 와 동일 필터의 전체 M 을 센다(표시 상한 무관)."""
+    conn = _make_db()
+    rid = _seed_recipe(conn)
+    for d, worker in [("2026-06-20", "김"), ("2026-06-24", "이"), ("2026-06-25", "김")]:
+        bs.create_blend_record(
+            conn, recipe_id=rid, product_name="잉크A", ink_name=None, position=None,
+            worker=worker, work_date=d, work_time=None, total_amount=100, scale=None, note=None,
+            details=[{"material_name": "원료1", "theory_amount": 100, "actual_amount": 100}],
+            created_by="t", created_at="2026-06-24T00:00:00Z",
+        )
+    assert bs.count_blend_records(conn) == 3
+    assert bs.count_blend_records(conn, worker="김") == 2
+    assert bs.count_blend_records(conn, start_date="2026-06-24", end_date="2026-06-30") == 2
+    # limit 이 전체보다 작으면 route 가 truncated 로 판정하도록 count > len(items) 성립
+    assert bs.count_blend_records(conn) > len(bs.list_blend_records(conn, limit=2))
+
+
+def test_blend_records_route_reports_truncation():
+    """GET /blend/records 는 total_available·truncated·limit 로 표시 상한 도달을 표면화한다."""
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    r = client.get("/api/blend/records", params={"limit": 1})
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert "total_available" in j and "truncated" in j and "limit" in j
+    assert j["limit"] == 1
+    assert len(j["items"]) <= 1
+    assert j["truncated"] == (j["total_available"] > len(j["items"]))
+
+
 # ── 전자서명 저장 ───────────────────────────────────────────────
 def test_worker_signature_stored():
     conn = _make_db()
