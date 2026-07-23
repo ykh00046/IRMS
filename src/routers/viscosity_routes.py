@@ -34,6 +34,21 @@ from openpyxl import Workbook
 # 판정 라벨(화면 STATUS_LABEL 과 동일) — Excel '측정 원본' 판정 열에 쓴다.
 _STATUS_LABEL = {"normal": "정상", "warn": "경고", "anomaly": "이상"}
 _ALLOWED_GRANULARITY = ("day", "week", "month", "quarter", "year")
+
+
+def _parse_reactor(raw):
+    """reactor 쿼리 파라미터 해석 — "1"~"4" 는 정수, "none" 은 미지정(IS NULL) 뷰,
+    그 외/빈 값은 필터 없음. 미지정 항목은 반응기 도입 전 과거 데이터 분리 목적(2026-07-23)."""
+    if raw is None or raw == "":
+        return None
+    if raw == "none":
+        return "none"
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value in (1, 2, 3, 4) else None
+
 _XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -89,14 +104,13 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         product_id: int,
         granularity: str = "quarter",
         year: int | None = None,
-        reactor: int | None = None,
+        reactor: str | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         product = _require_product(connection, product_id)
         if granularity not in ("day", "week", "month", "quarter", "year"):
             granularity = "quarter"
-        if reactor is not None and reactor not in (1, 2, 3, 4):
-            reactor = None
+        reactor = _parse_reactor(reactor)
         return viscosity_service.analyze_product(
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
@@ -302,7 +316,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         product_id: int,
         granularity: str = "quarter",
         year: int | None = None,
-        reactor: int | None = None,
+        reactor: str | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
         product = _require_product(connection, product_id)
@@ -312,8 +326,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         # 이 도메인 전제와 상충). product 상세 라우트와 동일하게 검증한다.
         if granularity not in _ALLOWED_GRANULARITY:
             granularity = "quarter"
-        if reactor is not None and reactor not in (1, 2, 3, 4):
-            reactor = None
+        reactor = _parse_reactor(reactor)
         analysis = viscosity_service.analyze_product(
             connection, product, granularity=granularity, year=year, reactor=reactor
         )

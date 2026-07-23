@@ -192,7 +192,12 @@
           opt.textContent = `반응기 ${n}`;
           select.appendChild(opt);
         });
-        select.value = state.reactor == null ? "" : String(state.reactor);
+        // 미지정 — 반응기 도입 전 과거 데이터 전용 뷰(반응기 뷰에는 섞이지 않는다).
+        const noneOpt = document.createElement("option");
+        noneOpt.value = "none";
+        noneOpt.textContent = "미지정(과거)";
+        select.appendChild(noneOpt);
+        select.value = state.reactor == null ? "" : String(state.reactor);  // "none" 포함
       }
     }
   }
@@ -333,7 +338,14 @@
     renderBlendRecords();
     if (!product) return;
 
-    const found = await findBlendRecords(product);
+    let found = await findBlendRecords(product);
+    // 반응기 필터 연동 — 분석(카드·추세)은 필터되는데 이 표만 전체를 보여줘
+    // "모든 반응기에서 동일하게 보인다"는 혼란이 있었다(2026-07-23).
+    if (state.reactor === "none") {
+      found = found.filter((r) => r.reactor == null);
+    } else if (state.reactor != null) {
+      found = found.filter((r) => Number(r.reactor) === state.reactor);
+    }
     state.blendRecords = await hydrateBlendRecords(found.slice(0, 20));
     state.selectedBlendId = state.blendRecords.length ? state.blendRecords[0].id : null;
     state.selectedBlendDetail = selectedRecord();
@@ -817,7 +829,7 @@
     });
     $("visc-reactor").addEventListener("change", () => {
       const value = $("visc-reactor").value;
-      state.reactor = value === "" ? null : Number(value);
+      state.reactor = value === "" ? null : (value === "none" ? "none" : Number(value));
       if (state.currentId) loadProduct(state.currentId);
     });
     $("visc-gran-toggle").querySelectorAll("button[data-gran]").forEach((button) => {

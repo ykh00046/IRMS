@@ -192,7 +192,10 @@ def _fetch_readings(
         year_clause = "AND substr(measured_date, 1, 4) = ?"
         params.append(f"{year:04d}")
     reactor_clause = ""
-    if reactor is not None:
+    if reactor == "none":
+        # 미지정(과거 데이터 등) 전용 뷰 — 반응기 도입 전 기록을 명시적으로 본다.
+        reactor_clause = "AND reactor IS NULL"
+    elif reactor is not None:
         reactor_clause = "AND reactor = ?"
         params.append(int(reactor))
     return connection.execute(
