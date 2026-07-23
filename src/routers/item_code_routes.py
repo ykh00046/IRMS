@@ -153,6 +153,30 @@ def _ensure_master_entry(
         pass
 
 
+def _refresh_manual_master_name(
+    connection: sqlite3.Connection, code: Any, name: str
+) -> None:
+    """force 이동으로 코드가 새 자재로 옮겨간 뒤, source='manual' 마스터 행의 이름을 새 보유
+    자재명으로 갱신한다.
+
+    _ensure_master_entry 는 INSERT OR IGNORE 라 코드 부여 당시 원 보유 자재명으로 마스터 행이
+    한 번 만들어지면, 코드가 다른 자재로 이동해도 마스터 name 이 옛 자재명에 고착돼 제안 검색이
+    엉뚱한 이름을 보였다(POLISH). manual 행만 새 이름으로 맞춘다.
+
+    - ERP 임포트분(source != 'manual')은 권위 데이터라 절대 건드리지 않는다.
+    - 마이그 전 DB(테이블 없음)는 조용히 무시(_ensure_master_entry 와 동일 방어).
+    """
+    if not code:
+        return
+    try:
+        connection.execute(
+            "UPDATE item_code_master SET name = ? WHERE code = ? AND source = 'manual'",
+            (name, code),
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 def _cleanup_orphan_master(connection: sqlite3.Connection, code: Any) -> None:
     """코드가 어느 자재/반제품에도 더 이상 안 쓰이면 manual 마스터 행을 정리한다.
 
@@ -352,6 +376,10 @@ def create_item_code_router() -> APIRouter:
                 _ensure_master_entry(
                     connection, code, material_row["name"], "material"
                 )
+                # POLISH: force 이동이었다면 manual 마스터 행 이름을 새 보유 자재명으로 갱신
+                # (ensure 는 INSERT OR IGNORE 라 기존 행 이름을 안 바꿔 옛 자재명이 고착됐다).
+                if moved_from_name is not None:
+                    _refresh_manual_master_name(connection, code, material_row["name"])
 
             # 이 자재가 쥐고 있던 옛 코드가 풀렸다면(해제 또는 다른 코드로 교체) 참조가
             # 사라진 manual 마스터 행을 정리한다. force 이동으로 비운 다른 자재의 코드는
@@ -534,6 +562,10 @@ def create_item_code_router() -> APIRouter:
             # 새 코드면 item_code_master 에도 manual 행을 채운다(재임포트 면역).
             if code is not None:
                 _ensure_master_entry(connection, code, name, "material")
+                # POLISH: force 이동이었다면 manual 마스터 행 이름을 새 자재명으로 갱신
+                # (A3 set_material_code 와 동일 — 옛 보유 자재명 고착 방지).
+                if moved_from_name is not None:
+                    _refresh_manual_master_name(connection, code, name)
 
             # 이동 audit — 이제 new_id 가 있으므로 moved_to_material_id 를 채운다.
             if cleared_other_id is not None:

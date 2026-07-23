@@ -604,3 +604,97 @@ def test_set_recipe_product_code_inserts_product_master_row():
     assert row["kind"] == "product"
     assert row["source"] == "manual"
     assert row["name"] == product
+
+
+# ---------------- POLISH: force 이동 후 manual 마스터 이름 갱신 ----------------
+
+
+def test_a3_force_move_refreshes_manual_master_name():
+    """POLISH: A3 force 이동 시 manual 마스터 행 이름이 새 보유 자재명으로 갱신된다.
+
+    _ensure_master_entry 는 INSERT OR IGNORE 라 옛 자재명이 고착됐다 — force 이동이면
+    manual 행 이름을 새 보유 자재명으로 맞춘다(제안 검색이 엉뚱한 이름 보이던 문제).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}5"
+    holder_name = f"옛보유{s}"
+    target_name = f"새보유{s}"
+    with get_connection() as conn:
+        _seed_material(conn, holder_name, code=code)
+        _seed_master(conn, code, holder_name, "material", source="manual", category_hint=None)
+        target_id = _seed_material(conn, target_name)  # 코드 없음
+
+    res = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+
+    with get_connection() as conn:
+        row = _master_row(conn, code)
+    assert row["source"] == "manual"
+    assert row["name"] == target_name  # 옛 이름 고착 해소
+
+
+def test_a6_force_move_refreshes_manual_master_name():
+    """POLISH: A6 create_material force 이동 시에도 manual 마스터 이름이 새 자재명으로 갱신."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}6"
+    holder_name = f"옛보유{s}"
+    new_name = f"신규자재{s}"
+    with get_connection() as conn:
+        _seed_material(conn, holder_name, code=code)
+        _seed_master(conn, code, holder_name, "material", source="manual", category_hint=None)
+
+    res = client.post(
+        "/api/materials",
+        json={"name": new_name, "code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+
+    with get_connection() as conn:
+        row = _master_row(conn, code)
+    assert row["source"] == "manual"
+    assert row["name"] == new_name
+
+
+def test_force_move_keeps_erp_master_name():
+    """POLISH: force 이동이라도 source='erp' 마스터 이름은 갱신하지 않는다(ERP 권위)."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    s = _short()
+    code = f"AS{s}7"
+    erp_name = f"ERP명{s}"
+    holder_name = f"옛보유{s}"
+    target_name = f"새보유{s}"
+    with get_connection() as conn:
+        _seed_material(conn, holder_name, code=code)
+        _seed_master(conn, code, erp_name, "material", source="erp", category_hint="원자재")
+        target_id = _seed_material(conn, target_name)
+
+    res = client.put(
+        f"/api/materials/{target_id}/code",
+        json={"code": code, "force": True},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+
+    with get_connection() as conn:
+        row = _master_row(conn, code)
+    assert row["source"] == "erp"
+    assert row["name"] == erp_name  # ERP 이름 불변

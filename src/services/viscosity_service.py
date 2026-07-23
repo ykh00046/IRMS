@@ -93,13 +93,18 @@ def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, An
 
 
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
+    # GAP-4: 코드 비교는 strip+upper 정규화(대소문자·앞뒤 공백 무시)로 조회한다.
+    # 리마인더 쿼리(daily_reading_reminders 의 upper(p.code))·자동 생성(ensure_product_by_code)이
+    # 모두 같은 정규화를 쓰므로, product_name 이 대소문자/공백만 달라도 같은 논리적 제품으로
+    # 귀결돼 중복 점도 제품이 생기지 않는다.
+    normalized = str(code or "").strip().upper()
     row = connection.execute(
         """
         SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
         FROM viscosity_products
-        WHERE code = ?
+        WHERE upper(code) = ?
         """,
-        (code,),
+        (normalized,),
     ).fetchone()
     return _serialize_product(connection, row) if row else None
 
@@ -309,21 +314,20 @@ def _trend_alerts(values: list[float], center: float | None) -> list[dict[str, A
     alerts: list[dict[str, Any]] = []
     n = len(values)
 
-    # run: 끝에서부터 연속 단조 상승/하락 길이
+    # run: 끝에서부터 연속 단조 상승/하락 길이.
+    # 두 방향을 대칭으로 독립 집계한다. 말단 구간은 한 방향으로만 단조일 수 있으므로
+    # (마지막 스텝이 상승이면 하락 루프는 즉시 멈춰 down=1, 그 반대도 마찬가지, 동값이면
+    # 둘 다 1) up/down 중 최대 하나만 RUN_LENGTH 이상이 된다.
     if n >= RUN_LENGTH:
         up = down = 1
         for i in range(n - 1, 0, -1):
             if values[i] > values[i - 1]:
                 up += 1
-                if down > 1:
-                    break
             else:
                 break
         for i in range(n - 1, 0, -1):
             if values[i] < values[i - 1]:
                 down += 1
-                if up > 1:
-                    break
             else:
                 break
         if up >= RUN_LENGTH:

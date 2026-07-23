@@ -313,19 +313,22 @@ test_viscosity_export_status_uses_year_filter`.
 않아 하루 이상 2건 몰림의 과민을 제거. 회귀 방지 `test_viscosity.py::
 test_period_anomaly_spike_gated_to_coarse`.
 
-### GAP-4 (중복 생성 여지) — 자동 생성은 코드 정확 일치만 검사
-`ensure_product_by_code`/`get_product_by_code`는 `code = ?` 정확 일치로만 조회한다
-(`viscosity_service.py:95-104, 115-119`). 대소문자·내부 공백이 다른 `product_name`으로 배합
-점도를 등록하면(`blend_routes.py:424-426`) 같은 논리적 제품에 대해 별도 점도 제품이 생길 수 있다.
-반면 리마인더 쿼리는 `upper(p.code)`로 비교(`viscosity_service.py:604, 631`)해 정규화 기준이
-서로 다르다. 실데이터의 `product_name`이 일관적이면 문제 없지만, 정규화(대문자/trim) 부재는
-잠재 중복원. 수동 생성 경로는 레시피 존재 검증이 있어 상대적으로 안전.
+### GAP-4 (중복 생성 여지) — 자동 생성은 코드 정확 일치만 검사 — ✅ 해결(2026-07-23)
+`get_product_by_code`가 이제 `WHERE upper(code) = ?`(파라미터=`strip().upper()`)로 조회해
+리마인더 쿼리(`daily_reading_reminders`의 `upper(p.code)`)와 **같은 strip+upper 정규화**를
+쓴다(`viscosity_service.py` `get_product_by_code`). 자동 생성(`ensure_product_by_code`)이 이
+정규화 조회로 기존 제품을 먼저 찾으므로, 대소문자·앞뒤 공백만 다른 `product_name`으로 배합
+점도를 등록해도 같은 논리적 제품으로 귀결돼 별도 점도 제품이 생기지 않는다. 저장되는 코드
+문자열 자체는 최초 등록값을 보존(레시피 제품명 키 유지). 회귀 방지 `test_viscosity.py::
+test_ensure_product_by_code_normalizes_case_and_space`.
+(과거: `code = ?` 정확 일치라 리마인더의 `upper()`와 정규화 기준이 어긋나 잠재 중복원이었다.)
 
-### POLISH-1 — `_trend_alerts` run 루프의 죽은 가드
-`viscosity_service.py:307-327`. 상승(up) 루프 안의 `if down > 1: break`에서 `down`은 그 루프
-동안 항상 1이라 절대 참이 되지 않는 **죽은 코드**다(하강 루프의 `if up > 1`은 유효). 기능상
-run_up/run_down 판정 결과는 정상이나(순수 단조 증가/감소 tail 검출), 의도가 모호하다.
-덧붙여 `run_down`은 단위 테스트가 없다(`test_viscosity.py`에 `run_up`만 존재) — 회귀 시 미검출.
+### POLISH-1 — `_trend_alerts` run 루프의 죽은 가드 — ✅ 해결(2026-07-23)
+`viscosity_service.py` `_trend_alerts`의 상승(up)·하강(down) 루프에서 죽은 `if down > 1: break`
+/ 유효했으나 불필요하던 `if up > 1: break` 가드를 모두 제거하고, 두 방향을 **독립·대칭**으로
+집계하도록 정리했다(말단 구간은 한 방향으로만 단조라 up/down 중 최대 하나만 RUN_LENGTH 이상).
+판정 결과는 불변(순수 단조 증가/감소 tail 검출)이며 의도가 명확해졌다. `run_down` 단위 테스트를
+추가했다(`test_viscosity.py::test_run_down_trend` — 종전엔 `run_up`만 있어 회귀 미검출 우려).
 
 ### POLISH-2 — sigma_k ≤ 2일 때 경고(warn) 구간 소멸 — ✅ 해결(2026-07-22)
 `_control_limits`가 `sigma_k <= WARN_SIGMA`(2.0)이면 경고 밴드 자체를 만들지 않는다(uwl/lwl =

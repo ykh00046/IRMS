@@ -13,6 +13,7 @@ Endpoints:
 """
 
 import hashlib
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,6 +24,14 @@ from ..services.import_parser import parse_import_text
 from ..services.recipe_helpers import resolve_chain_tip
 from .item_code_routes import _PRODUCT_CODE_PATTERN, _revision_chain_ids
 from .models import ImportRequest, actor_name
+
+logger = logging.getLogger(__name__)
+
+# GAP-5: 레시피 분류 허용값 — PUT /recipes/{id}/category(recipe_manager_routes) 와 동일한
+# 집합. 승계된 부모 category 나 마스터 category_hint 가 이 집합 밖(예: "기타")이면 그대로
+# 저장하지 않고 NULL(미분류)로 클램프한다 — 현황/패널 드롭다운에 없는 값이 들어가 편집으로
+# 정상화하기 애매해지는 것을 막는다.
+ALLOWED_CATEGORIES = {"약품", "합성", "잉크", "용수"}
 
 
 def _normalize_explicit_product_code(raw: Any) -> str | None:
@@ -275,6 +284,9 @@ def build_router() -> APIRouter:
             # 내부 형제 행을 못 보므로 여기서 별도로 막는다. {유효코드: 최초 반제품명}.
             seen_effective_codes: dict[str, str] = {}
 
+            # GAP-5/GAP-6: 등록 중 발생한 클램프·승계 해제를 응답 경고로 모은다(파서 경고에 합침).
+            extra_warnings: list[dict[str, Any]] = []
+
             for parsed_row in parsed["parsed_rows"]:
                 # 기준 자재 결정:
                 # - 요청에 anchor_material 이 있으면 → 임포트 항목 중 이름이 정확히 일치하는
@@ -308,12 +320,22 @@ def build_router() -> APIRouter:
                             )
                         anchor_material_id = matched_id
                 elif inherited_anchor_material_id is not None:
-                    # 부모의 기준 자재가 새 버전 자재에 여전히 있으면 승계, 아니면 버림(NULL)
-                    anchor_material_id = (
-                        inherited_anchor_material_id
-                        if inherited_anchor_material_id in item_id_set
-                        else None
-                    )
+                    # 부모의 기준 자재가 새 버전 자재에 여전히 있으면 승계, 아니면 버림(NULL).
+                    # GAP-6: 무음 소실 방지 — 승계가 풀리면 등록 응답에 경고를 실어 운영자에게
+                    # 알린다. tolerance_g/category 와 달리 anchor 는 id 멤버십에 의존해 조용히
+                    # 떨어질 수 있었다(자재 삭제 후 재생성으로 id 가 바뀐 경우 등).
+                    if inherited_anchor_material_id in item_id_set:
+                        anchor_material_id = inherited_anchor_material_id
+                    else:
+                        anchor_material_id = None
+                        extra_warnings.append({
+                            "level": 2,
+                            "message": (
+                                f"기준 자재 승계가 해제되었습니다 — '{parsed_row['product_name']}'의 "
+                                "부모 기준 자재가 이번 버전 자재 목록에 없어 미지정으로 등록됩니다. "
+                                "필요하면 기준 자재를 다시 지정하세요."
+                            ),
+                        })
 
                 # item-code P3 + code-edit-relocate §3: 반제품 코드 결정.
                 # - 명시 product_code(요청 본문) → 최우선. 자동 인식·승계 무시.
@@ -346,6 +368,17 @@ def build_router() -> APIRouter:
                     # 신규(비개정) 임포트에서 승계 category 가 없을 때만 hint 로 채움.
                     # match_item_codes.py 와 동일 — 비어있을 때만 채운다(기존값 건드리지 않음).
                     effective_category = matched_hint
+                # GAP-5: 승계된 부모 category 나 마스터 category_hint 가 허용 집합 밖(예: "기타")
+                # 이면 PUT /category 검증을 우회해 비허용값이 저장되던 문제 — NULL(미분류)로
+                # 클램프하고 서버 로그를 남긴다. 운영자는 이후 현황 드롭다운에서 정상 지정 가능.
+                if effective_category is not None and effective_category not in ALLOWED_CATEGORIES:
+                    logger.warning(
+                        "recipe import: category %r not in allowed set for product %r — "
+                        "clamped to NULL(미분류)",
+                        effective_category,
+                        parsed_row["product_name"],
+                    )
+                    effective_category = None
 
                 # 등록 즉시 사용 가능(completed). (구) 계량 워크플로의 pending→진행→완료
                 # 단계는 /blend 전환으로 폐기 — 승인 단계가 없어 pending 은 영구 정체됨.
@@ -421,7 +454,7 @@ def build_router() -> APIRouter:
         return {
             "created_count": len(created_ids),
             "created_ids": created_ids,
-            "warnings": parsed["warnings"],
+            "warnings": parsed["warnings"] + extra_warnings,
         }
 
     return router

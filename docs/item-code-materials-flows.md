@@ -284,18 +284,24 @@ category='미분류', is_active=1`.
   UPDATE 라 `_ensure_master_entry` 를 호출하지 않는다 → BT000/BT0001 처럼 마스터 4종에 없는 코드는
   `item_code_master` 행이 생기지 않아 A1 제안·임포트 인식에 안 잡힌다.
 
-### POLISH — normalize_token 이 한글을 제거하지 않음(주석과 실제 불일치)
-`db/queries.py:5`, `tools/match_item_codes.py:197-203`·`:328` 주석
+### POLISH — normalize_token 이 한글을 제거하지 않음(주석과 실제 불일치) — ✅ 해결(2026-07-23)
+`db/queries.py` `normalize_token`, `tests/test_match_item_codes.py:197-204`
 - `normalize_token` 은 `str.isalnum()` 기반인데 파이썬에서 한글 음절은 `isalnum()==True` 라 **한글이
-  보존된다**(검증: `'카본블랙'` → 비어있지 않음). 일부 테스트 주석("알파벳/숫자만 남으므로 빈
-  토큰")은 사실과 다르다. 기능 버그는 아니나(한글끼리는 그대로 비교), 한글 자재명이 뜻밖에 서로
-  매칭될 수 있다는 점이 문서화되지 않았다. 향후 한글 정규화(공백/괄호 차이) 도입 시 이 전제를
-  먼저 바로잡아야 한다.
+  보존된다**(검증: `'카본블랙'` → 비어있지 않은 토큰). `normalize_token` 에 이 전제를 명시하는
+  docstring 을 추가하고, 사실과 다르던 테스트 주석("알파벳/숫자만 남으므로 빈 토큰"/"빈 문자열 →
+  close 매칭 불가")을 바로잡았다 — 미매칭 사유는 "빈 토큰"이 아니라 한글 토큰이 영문 마스터 토큰과
+  겹치지 않기 때문. 기능은 불변(주석·docstring 만 수정). 향후 한글 정규화(공백/괄호 차이) 도입 시
+  이 전제를 먼저 바로잡아야 한다는 점도 docstring 에 남겼다. (tools/match_item_codes.py 소스 주석은
+  이번 범위 밖 — 파일 미소유.)
 
-### POLISH — 코드 이동 후 마스터 이름이 옛 자재명으로 고착
-`item_code_routes.py:294-315`
-- force 이동 시 `item_code_master.name`(부여 당시 원 보유 자재명)은 갱신되지 않는다. 코드가 새 자재로
-  옮겨가도 제안 검색은 옛 이름을 계속 보여준다(ERP 재임포트 전까지). 사소하나 혼동 요인.
+### POLISH — 코드 이동 후 마스터 이름이 옛 자재명으로 고착 — ✅ 해결(2026-07-23)
+`item_code_routes.py` (A3 `set_material_code`, A6 `create_material`) — 헬퍼 `_refresh_manual_master_name`
+- force 이동 시 `_ensure_master_entry`(INSERT OR IGNORE)가 기존 마스터 행을 안 바꿔 `item_code_master.name`
+  이 부여 당시 원 보유 자재명에 고착됐다. 이제 force 이동이 일어나면(A3·A6 모두) `source='manual'`
+  마스터 행의 이름을 **새 보유 자재명으로 UPDATE** 한다. **ERP 임포트분(source != 'manual')은 권위
+  데이터라 건드리지 않는다.** 마이그 전 DB 는 조용히 무시. 회귀 방지 `test_material_create.py::
+  test_a3_force_move_refreshes_manual_master_name`, `::test_a6_force_move_refreshes_manual_master_name`,
+  `::test_force_move_keeps_erp_master_name`.
 
 ---
 
