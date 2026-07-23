@@ -192,7 +192,9 @@
 .blend-step-row td {
   background: var(--accent-secondary-light, rgba(244, 124, 38, 0.12));
   color: var(--text-primary, #1f2937); font-size: 1.05rem; font-weight: 700;
-  border-left: 4px solid var(--accent-secondary, #f47c26); padding: 0.6rem 0.8rem;
+  /* 왼쪽 강조선은 row-next(계량 순서)와 같은 방식·두께·위치로 통일 — border 는 셀
+     내용을 밀어 파란 선(inset shadow)과 어긋나 보였다(현장 신고 2026-07-23). */
+  box-shadow: inset 4px 0 0 var(--accent-secondary, #f47c26); padding: 0.6rem 0.8rem;
 }
 
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
@@ -253,7 +255,7 @@
 }
 /* 현재 저울 입력이 들어갈 행(단건) — 옅은 앰버 배경 + 좌측 앰버 보더 */
 #blend-mat-body tr.row-scale-target > td { background: rgba(245, 158, 11, 0.07); }
-#blend-mat-body tr.row-scale-target > td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+#blend-mat-body tr.row-scale-target > td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 /* 현재 저울 입력이 들어갈 셀(이어서 계량) — 앰버 테두리 강조 */
 #cont-mat-body td.cont-cell.cell-scale-target {
   background: rgba(245, 158, 11, 0.12);
@@ -267,6 +269,11 @@
   font-size: 0.7rem; font-weight: 700; white-space: nowrap; vertical-align: middle;
 }
 #cont-mat-body .cont-cell .scale-target-tag { display: block; margin: 0.15rem 0 0; }
+/* 배합표(단건)에서도 태그를 입력칸 '아래 줄'로 — 인라인이면 칸 폭을 넘어 편차 열과
+   겹친다(현장 신고 2026-07-23: 태그가 편차 위로 73px 침범). width fit-content 로 알약 유지. */
+#blend-mat-body td .scale-target-tag {
+  display: block; margin: 0.15rem 0 0; width: fit-content;
+}
 
 /* 기준량 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
 .blend-label-row {

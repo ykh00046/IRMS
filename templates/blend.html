@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260723g" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260723h" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -36,7 +36,7 @@
       .blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
       /* 계량 순서 안내 — 다음에 계량할 행 강조 */
       .blend-table tbody tr.row-next > td { background: #eff6ff; }
-      .blend-table tbody tr.row-next > td:first-child { box-shadow: inset 3px 0 0 #2563eb; }
+      .blend-table tbody tr.row-next > td:first-child { box-shadow: inset 4px 0 0 #2563eb; }
     </style>
 {% endblock %}
 
