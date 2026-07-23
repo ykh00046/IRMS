@@ -182,6 +182,15 @@
 `summarize_periods`(`viscosity_service.py:384-413`)가 버킷별 건수·평균·σ·min/max·이상수·경고수와
 전기 대비 평균변화(`mean_delta`)를 계산.
 
+**화면 표시 상한(최근 60개 구간)**: 서버는 전체 버킷을 반환하지만, 프런트
+`renderPeriods`(`static/js/viscosity.js`)는 `PERIOD_DISPLAY_CAP = 60`으로 **최근 60개
+구간만** 표·차트에 그린다. `periods`는 오름차순(오래된→최신)이라 끝에서 60개를 잘라
+(`slice(-60)`) **차트는 그대로 시간순(왼→오)** 유지, **표는 뒤집어 최신 구간을 위로**
+보여준다. '일' 단위 + 연도=전체에서 버킷이 수백~수천으로 불어나 표·차트가 무거워지는 것을
+막는 조치. 60개를 넘겨 잘린 경우 표 맨 위에 안내 행 "최근 60개 구간만 표시 — 전체 구간은
+Excel 내보내기를 이용하세요."(`td.visc-period-truncation`)를 표시하고, 전체 구간은 Excel
+내보내기(6.2절)의 '기간 요약' 시트로 확인한다. 이상 행 강조(`row-anomaly`)는 유지.
+
 ### 3.3 기간 경보: anomaly_spike / mean_shift와 2026-07-22 완화
 
 `_period_alerts`(`viscosity_service.py:416-451`):
@@ -238,7 +247,7 @@
 
 ---
 
-## 6. 매일 알림(트레이 리마인더) · CSV 내보내기
+## 6. 매일 알림(트레이 리마인더) · Excel 내보내기
 
 ### 6.1 매일 측정 리마인더
 
@@ -254,14 +263,28 @@
   중복 팝업 억제(`_poll_and_notify` `102-117`). 대상 목록은 로컬에 두지 않고 서버(`remind_daily`)가
   소유(`119-121` 주석).
 
-### 6.2 CSV 내보내기
+### 6.2 Excel 내보내기 (xlsx)
 
-- `GET /viscosity/products/{id}/export?year=&reactor=`(`viscosity_routes.py`), 관리자 UI 버튼
-  (`viscosity.html:25`, `exportCsv` `viscosity.js`). mgr_router 라우트 — 정책 ⓑ 로 책임자 전용.
-  `year`/`reactor` 를 화면 상태 그대로 받아 화면과 같은 표본으로 status 를 판정한다(8절 GAP-2 해결).
-- 컬럼: lot_no, viscosity, measured_date, status, memo, recipe_material, material_lot.
-- CSV 인젝션 방지: `=`,`+`,`-`,`@`,`\t`,`\r`로 시작하는 문자열은 앞에 `'` 부착
-  (`_csv_safe` `viscosity_routes.py:288-291`).
+- `GET /viscosity/products/{id}/export?granularity=&year=&reactor=`(`viscosity_routes.py`
+  `viscosity_export`), 관리자 UI 버튼 "Excel 내보내기"(`viscosity.html:25`, `exportCsv`
+  `viscosity.js`). mgr_router 라우트 — 정책 ⓑ 로 책임자 전용. `granularity`/`year`/`reactor`
+  를 화면 상태 그대로 받아 화면과 같은 표본·단위로 status·기간 집계를 계산한다(8절 GAP-2 해결).
+  `granularity`는 허용 집합(`day/week/month/quarter/year`) 밖이면 `quarter`로, `reactor`는
+  1~4 밖이면 무시(상세 라우트와 동일 검증).
+- 출력은 openpyxl `Workbook` 두 시트:
+  - **"측정 원본"**: 화면 배합 기록 표와 같은 필드(한글 헤더) — LOT · 측정일 · 점도 · 판정
+    (정상/경고/이상 라벨) · 반응기 · 메모 · 배합 원료 · 원료 LOT · 작성자.
+  - **"기간 요약"**: 요청 단위/연도/반응기의 **전체** 기간 집계(화면은 최근 60개만 표시하나
+    Excel 은 전체). 컬럼: 기간 · 건수 · 평균 · 전기대비 · 표준편차 · 최소 · 최대 · 이상 · 경고
+    (`analyze_product`의 `periods` 그대로).
+- 파일명 `viscosity_{code}_{yyyymmdd}.xlsx`, content-type
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+- 수식 인젝션 방지: `=`,`+`,`-`,`@`,`\t`,`\r`로 시작하는 문자열 셀은 앞에 `'` 부착
+  (`_xlsx_safe` `viscosity_routes.py`).
+- 회귀 방지: `test_viscosity.py::test_viscosity_export_status_uses_year_filter`(연도 필터가
+  '측정 원본' 시트에 반영), `::test_viscosity_export_xlsx_structure_and_period_rows`(PK 매직
+  바이트 + 두 시트 이름 + '기간 요약' 행 수 = periods 수 + 파일명 규칙).
+- (구 CSV writer 경로는 제거됨 — 이 엔드포인트의 유일한 소비자는 화면 버튼이다.)
 
 ---
 
@@ -290,7 +313,7 @@
 ## 8. 갭 헌트 (BUG / GAP / POLISH)
 
 ### GAP-1 (보안/권한) — manager 전용 점도 변경이 서버에서 강제되지 않음 — ✅ 해결(2026-07-22, 정책 ⓑ)
-`viscosity_mgr_router`(제품 생성·수정, 측정 삭제, CSV export)에 이제 `api.py` include 시
+`viscosity_mgr_router`(제품 생성·수정, 측정 삭제, Excel export)에 이제 `api.py` include 시
 `dependencies=[Depends(require_access_level("manager"))]` 을 걸어 **책임자 권한을 서버에서
 강제**한다(`src/routers/api.py` viscosity_mgr_router include). op_router(열람·측정 등록)는
 설계대로 개방 유지. 화면은 여전히 `can_manage`로 설정/삭제 버튼을 숨기므로 관리 세션에서는
@@ -306,6 +329,8 @@ test_viscosity_reads_and_registration_stay_open`).
 쿼리로 실어 보내(GET 내비게이션, CSRF 무관) 화면과 CSV 판정이 일치한다(`static/js/viscosity.js`
 exportCsv). reactor 는 1~4 밖이면 무시. 회귀 방지 `test_viscosity.py::
 test_viscosity_export_status_uses_year_filter`.
+(후속 2026-07-23: 이 export 는 CSV → xlsx 로 전환되고 `granularity`도 함께 받게 되었다.
+같은 필터 일치 원칙은 그대로이며, 판정은 이제 xlsx '측정 원본' 시트에 반영된다 — 6.2절.)
 
 ### GAP-3 (경보 과민 잔존) — anomaly_spike는 일/주 완화에서 제외되지 않음 — ✅ 해결(2026-07-22)
 `_period_alerts`가 `anomaly_spike`도 `mean_shift`와 동일한 `coarse`(월/분기/연) 게이트 아래로

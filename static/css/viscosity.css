@@ -443,3 +443,11 @@ body {
 #visc-prod-list tr:hover {
   background: var(--bg-surface-200, #f4f6fa);
 }
+
+/* 기간별 표: 최근 60개 구간만 표시할 때의 안내 행 (전체는 Excel 내보내기) */
+.visc-table td.visc-period-truncation {
+  text-align: center;
+  font-size: 0.82rem;
+  padding: 8px 6px;
+  background: var(--bg-surface-200, #f4f6fa);
+}

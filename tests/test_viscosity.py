@@ -564,22 +564,8 @@ def test_viscosity_reads_and_registration_stay_open():
     assert client.get("/api/viscosity/products").status_code == 200
 
 
-def test_viscosity_export_status_uses_year_filter():
-    """GAP-2: CSV export 가 year 파라미터를 analyze_product 로 넘겨 화면과 같은
-    연도 표본으로 판정·필터한다 — year 지정 시 해당 연도 측정만 CSV 에 나온다."""
-    import csv as _csv
-    import io as _io
-    import uuid
-
-    client = _visc_client()
-    login = client.post(
-        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
-    )
-    assert login.status_code == 200, login.text
-    tok = client.cookies.get("csrftoken")
-    headers = {"x-csrftoken": tok} if tok else {}
-
-    product = "YRP" + uuid.uuid4().hex[:6].upper()
+def _seed_export_product(client, headers, product, dates):
+    """레시피 임포트 → 점도 제품 생성 → dates 각각에 측정 1건 등록. product id 반환."""
     header_row = "\t".join(["반제품명", "원료A", "원료B"])
     data_row = "\t".join([product, "60", "40"])
     imported = client.post(
@@ -592,26 +578,103 @@ def test_viscosity_export_status_uses_year_filter():
     )
     assert created.status_code in (200, 201), created.text
     pid = created.json()["id"]
-
-    # 2025 3건 + 2026 2건 등록(등록 경로는 개방이지만 세션 있어도 무방).
-    seq = 0
-    for d in ("2025-03-01", "2025-03-02", "2025-03-03", "2026-04-01", "2026-04-02"):
-        seq += 1
+    for seq, d in enumerate(dates, start=1):
         res = client.post("/api/viscosity/readings", json={
             "product_id": pid, "lot_no": f"{product}L{seq}", "viscosity": 50.0 + seq,
             "measured_date": d,
         }, headers=headers)
         assert res.status_code == 200, res.text
+    return pid
+
+
+def _load_export_wb(resp):
+    """export 응답(xlsx)을 openpyxl 워크북으로 로드. PK 매직 바이트 검증 포함."""
+    import io as _io
+
+    from openpyxl import load_workbook
+
+    assert resp.status_code == 200, resp.text
+    assert resp.content[:2] == b"PK", "xlsx(zip) 매직 바이트가 아님"
+    return load_workbook(_io.BytesIO(resp.content))
+
+
+def test_viscosity_export_status_uses_year_filter():
+    """GAP-2: Excel export 가 year 파라미터를 analyze_product 로 넘겨 화면과 같은
+    연도 표본으로 판정·필터한다 — year 지정 시 해당 연도 측정만 '측정 원본' 시트에 나온다."""
+    import uuid
+
+    client = _visc_client()
+    login = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    assert login.status_code == 200, login.text
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    product = "YRP" + uuid.uuid4().hex[:6].upper()
+    # 2025 3건 + 2026 2건.
+    pid = _seed_export_product(
+        client, headers, product,
+        ("2025-03-01", "2025-03-02", "2025-03-03", "2026-04-01", "2026-04-02"),
+    )
 
     def _years(resp):
-        assert resp.status_code == 200, resp.text
-        reader = _csv.DictReader(_io.StringIO(resp.text))
-        return sorted({row["measured_date"][:4] for row in reader})
+        wb = _load_export_wb(resp)
+        ws = wb["측정 원본"]
+        years = set()
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            measured_date = row[1]  # 헤더 2번째 컬럼 = 측정일
+            if measured_date:
+                years.add(str(measured_date)[:4])
+        return sorted(years)
 
     assert _years(client.get(f"/api/viscosity/products/{pid}/export?year=2026")) == ["2026"]
     assert _years(client.get(f"/api/viscosity/products/{pid}/export?year=2025")) == ["2025"]
     # year 미지정 = 전체 연도.
     assert _years(client.get(f"/api/viscosity/products/{pid}/export")) == ["2025", "2026"]
+
+
+def test_viscosity_export_xlsx_structure_and_period_rows():
+    """Excel export: PK 매직 바이트 + 두 시트 이름 + '기간 요약' 데이터 행 수가
+    같은 필터의 analyze_product periods 수와 일치한다."""
+    import uuid
+
+    client = _visc_client()
+    login = client.post(
+        "/api/auth/management-login", json={"username": "admin", "password": "admin"}
+    )
+    assert login.status_code == 200, login.text
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+
+    product = "XLS" + uuid.uuid4().hex[:6].upper()
+    # 4개월에 걸친 측정 → 월 단위로 4개 기간 버킷.
+    dates = ("2026-01-05", "2026-02-05", "2026-03-05", "2026-04-05")
+    pid = _seed_export_product(client, headers, product, dates)
+
+    # 화면과 같은 필터(월 단위)로 기간 수 확인.
+    detail = client.get(f"/api/viscosity/products/{pid}?granularity=month")
+    assert detail.status_code == 200, detail.text
+    expected_periods = len(detail.json()["periods"])
+    assert expected_periods == 4
+
+    resp = client.get(f"/api/viscosity/products/{pid}/export?granularity=month")
+    wb = _load_export_wb(resp)
+    assert wb.sheetnames == ["측정 원본", "기간 요약"]
+
+    ws_readings = wb["측정 원본"]
+    # 헤더 1행 + 측정 4건.
+    assert ws_readings.max_row == 1 + len(dates)
+    assert ws_readings.cell(row=1, column=1).value == "LOT"
+
+    ws_periods = wb["기간 요약"]
+    assert ws_periods.cell(row=1, column=1).value == "기간"
+    period_rows = ws_periods.max_row - 1  # 헤더 제외
+    assert period_rows == expected_periods
+
+    # Content-Disposition 파일명 규칙.
+    disposition = resp.headers.get("content-disposition", "")
+    assert f"viscosity_{product}_" in disposition and disposition.endswith('.xlsx"')
 
 
 def test_direct_registration_stores_the_date_used_for_judgement(monkeypatch):

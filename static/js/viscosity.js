@@ -27,6 +27,10 @@
   const $ = (id) => document.getElementById(id);
   const isManager = Boolean($("visc-settings-btn"));
 
+  // 기간별 표·차트에 한 번에 그릴 최대 구간 수. '일' 단위 + 연도=전체에서 버킷이
+  // 무한정 늘어나(수백~수천 행) 표·차트가 무거워지는 것을 막는다. 전체는 Excel 내보내기로.
+  const PERIOD_DISPLAY_CAP = 60;
+
   const state = {
     products: [],
     currentId: null,
@@ -248,28 +252,46 @@
   }
 
   function renderPeriods() {
-    const periods = state.analysis.periods || [];
+    const allPeriods = state.analysis.periods || [];
     const body = $("visc-period-body");
     body.innerHTML = "";
-    if (!periods.length) {
+    // 최근 PERIOD_DISPLAY_CAP 개 구간만 표시. periods 는 시간순(오래된→최신) 오름차순이라
+    // 끝에서 60개를 잘라(recent) 차트는 그대로 왼→오 시간순으로 그리고, 표는 최신순으로
+    // 뒤집어 보여준다. 전체 구간은 Excel 내보내기로.
+    const truncated = allPeriods.length > PERIOD_DISPLAY_CAP;
+    const recent = truncated ? allPeriods.slice(-PERIOD_DISPLAY_CAP) : allPeriods;
+    if (!allPeriods.length) {
       body.appendChild(emptyRow(9, "측정일이 있는 데이터가 없습니다."));
     } else {
-      periods.forEach((period) => {
-        const row = document.createElement("tr");
-        if (period.anomaly_count > 0) row.className = "row-anomaly";
-        appendTextCell(row, period.period);
-        appendTextCell(row, period.count, "num");
-        appendTextCell(row, fmt(period.mean), "num");
-        appendDeltaCell(row, period.mean_delta);
-        appendTextCell(row, fmt(period.std), "num");
-        appendTextCell(row, fmt(period.min), "num");
-        appendTextCell(row, fmt(period.max), "num");
-        appendTextCell(row, period.anomaly_count, "num");
-        appendTextCell(row, period.warn_count, "num");
-        body.appendChild(row);
-      });
+      if (truncated) {
+        const note = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 9;
+        cell.className = "muted visc-period-truncation";
+        cell.textContent =
+          "최근 60개 구간만 표시 — 전체 구간은 Excel 내보내기를 이용하세요.";
+        note.appendChild(cell);
+        body.appendChild(note);
+      }
+      recent
+        .slice()
+        .reverse() // 표는 최신 구간을 위로
+        .forEach((period) => {
+          const row = document.createElement("tr");
+          if (period.anomaly_count > 0) row.className = "row-anomaly";
+          appendTextCell(row, period.period);
+          appendTextCell(row, period.count, "num");
+          appendTextCell(row, fmt(period.mean), "num");
+          appendDeltaCell(row, period.mean_delta);
+          appendTextCell(row, fmt(period.std), "num");
+          appendTextCell(row, fmt(period.min), "num");
+          appendTextCell(row, fmt(period.max), "num");
+          appendTextCell(row, period.anomaly_count, "num");
+          appendTextCell(row, period.warn_count, "num");
+          body.appendChild(row);
+        });
     }
-    renderPeriodChart(periods);
+    renderPeriodChart(recent); // 차트는 오름차순(시간순) 유지
   }
 
   function renderPeriodChart(periods) {
@@ -769,10 +791,11 @@
 
   function exportCsv() {
     if (!state.currentId) return;
-    // GAP-2: CSV 판정을 화면과 같은 필터(연도/반응기)로 맞추기 위해 현재 state 를 쿼리로
-    // 넘긴다. 직접 다운로드(GET 내비게이션)라 CSRF 헤더는 불필요하고, 관리 세션 쿠키가
-    // export 의 책임자 강제(정책 ⓑ)를 통과시킨다.
+    // GAP-2: Excel 판정·기간 요약을 화면과 같은 필터(단위/연도/반응기)로 맞추기 위해 현재
+    // state 를 쿼리로 넘긴다. 직접 다운로드(GET 내비게이션)라 CSRF 헤더는 불필요하고,
+    // 관리 세션 쿠키가 export 의 책임자 강제(정책 ⓑ)를 통과시킨다.
     const params = new URLSearchParams();
+    if (state.granularity) params.set("granularity", state.granularity);
     if (state.year !== null && state.year !== undefined) params.set("year", String(state.year));
     if (state.reactor !== null && state.reactor !== undefined) {
       params.set("reactor", String(state.reactor));
