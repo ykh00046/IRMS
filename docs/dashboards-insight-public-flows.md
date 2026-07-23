@@ -159,6 +159,7 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 | 경로 | 함수(파일) | 소비자 | 페이로드 |
 |------|-----------|--------|----------|
 | `GET /api/public/material-usage` | `material_usage` (`public_material_usage_routes.py` L35) | **상위 재고 대시보드** | `{start_date,end_date,group,unit:"g",record_count,total_weight,items:[{period,material_code,material_name,total_actual,total_theory,batch_count,(erp_code)}],truncated,total_item_count}` (truncated=상한 초과 시 items 절단됨) |
+| `GET /api/public/material-usage/details` | `material_usage_details` (`public_material_usage_routes.py`) | **상위 재고 대시보드** — LOT 배정(FIFO 정리) | `{start_date,end_date,record_count,items:[{record_id,work_date,product_lot,product_name,worker,erp_code,material_code,material_name,material_lot,ratio,theory_amount,actual_amount,variance}]}` limit≤10000. 행 단위(투입 자재별 1행). erp_code 해석은 집계와 동일 체계 공유(+ERP 형태 저장 코드 5순위 fallback, 30a0db4) — **계약 변경 주의**(상위가 소비) |
 | `GET /api/public/attendance-alerts/today` | `today` (`public_attendance_alert_routes.py` L23) | 트레이(근태) | `{date,day_type,total,items[]}` |
 | `GET /api/public/attendance-alerts/month` | `month` (L45) | 트레이(근태) 폴러 | `{month,date,total,items[]}` |
 | `GET /api/public/viscosity-reminders/due` | `due` (`public_viscosity_reminder_routes.py` L27) | 트레이(점도) | `{date,total,items[]}` |
