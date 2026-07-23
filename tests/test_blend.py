@@ -811,7 +811,13 @@ def test_blend_next_lot_route():
 
 
 def test_reactor_required_route_and_settings_patch():
-    """반응기 반제품 설정(PATCH use_reactor/remind_daily 저장) + 실적 저장 시 반응기 필수 400."""
+    """반응기 반제품: use_reactor 는 레시피 소유(점도 PATCH 는 무시) + 실적 저장 시 반응기 필수 400.
+
+    소유권이 recipes 로 이전(reactor-ownership)된 뒤에도 이 테스트가 점도 PATCH 저장을
+    단언하고 있었다 — 무인증 시절엔 401 로 가려져 있다가 정책 ⓑ 적용 후 드러난 잔재.
+    현행 설계대로: 레시피의 use_reactor=1 이 점도 제품 payload 와 실적 저장 400 을 결정하고,
+    점도 PATCH 의 use_reactor 본문 필드는 호환용으로 받되 무시됨을 함께 증명한다.
+    """
     import importlib
 
     import src.config as cfg
@@ -844,10 +850,12 @@ def test_reactor_required_route_and_settings_patch():
         ).fetchone()
         if not exists:
             conn.execute(
-                "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at) "
-                "VALUES ('RXTEST', 'RXTEST', 'completed', 'test', '2026-07-01T00:00:00Z')"
+                "INSERT INTO recipes (product_name, ink_name, status, created_by, created_at, use_reactor) "
+                "VALUES ('RXTEST', 'RXTEST', 'completed', 'test', '2026-07-01T00:00:00Z', 1)"
             )
-            conn.commit()
+        # 재실행 멱등: 기존 행이어도 반응기 소유값을 확실히 켠다(레시피가 단일 소스).
+        conn.execute("UPDATE recipes SET use_reactor = 1 WHERE product_name = 'RXTEST'")
+        conn.commit()
 
     # 반제품 확보 (재실행 멱등: 이미 있으면 409 → 목록에서 id 조회)
     created = client.post(
@@ -862,20 +870,21 @@ def test_reactor_required_route_and_settings_patch():
         assert created.status_code == 200
         pid = created.json()["id"]
 
-    # PATCH 로 use_reactor + remind_daily 저장이 실제 반영되는지
+    # PATCH: remind_daily 는 점도 소유(저장됨), use_reactor 는 레시피 소유 —
+    # 본문으로 False 를 보내도 payload 는 레시피 값(True)을 반환해야 한다(무시 증명).
     patched = client.patch(
         f"/api/viscosity/products/{pid}",
         json={
             "name": "RXTEST",
             "sigma_k": 3,
             "remind_daily": True,
-            "use_reactor": True,
+            "use_reactor": False,
             "is_active": True,
         },
         headers=headers,
     )
     assert patched.status_code == 200
-    assert patched.json()["use_reactor"] is True
+    assert patched.json()["use_reactor"] is True  # 레시피(use_reactor=1)가 단일 소스
     assert patched.json()["remind_daily"] is True
 
     # 반응기 미지정 실적 저장 → 400 (작업자 세션 검증보다 앞서 걸림)
