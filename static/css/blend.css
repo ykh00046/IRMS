@@ -152,14 +152,21 @@
 .ss-modal-header h3 { margin: 0; font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
 .ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
-/* 증량 관련 모달 중간 폭 — 긴 자재명(PB 레시피 등)이 520px 에서 감겨 답답하던 문제. */
-.ss-modal-mid { width: min(640px, 95vw); }
+/* 증량 관련 모달 확대 폭 — 명시적 선택 없이는 닫히지 않는 전용 흐름 창이므로
+   화면을 아끼지 않고 현장 가독성에 몰아준다(사용자 결정 2026-07-23). */
+.ss-modal-mid { width: min(760px, 96vw); }
 /* 추가 계량 창의 자재명 줄 — 제목 대신 본문 첫 줄에 크게, 자유 줄바꿈. */
 .add-weigh-material {
-  text-align: center; font-size: 1.15rem; font-weight: 700;
+  text-align: center; font-size: 1.45rem; font-weight: 700;
   color: var(--text-primary, #1f2937); overflow-wrap: anywhere;
   margin: 0 0 0.35rem;
 }
+
+/* 추가 계량 창 입력·버튼 확대 — 전용 흐름이라 크게(장갑 낀 손·거리 가독). */
+#add-weigh-modal .add-weigh-input-row .input { font-size: 1.25rem; padding: 0.55rem 0.8rem; }
+#add-weigh-modal .add-weigh-input-row .btn,
+#add-weigh-modal .ss-modal-footer .btn { font-size: 1.05rem; padding: 0.55rem 1.2rem; }
+#add-weigh-modal .add-weigh-sub { font-size: 1.05rem; }
 
 /* 전자서명 패드 */
 .blend-sign-field { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
@@ -362,8 +369,8 @@
 /* 추가 계량 모달 — 큰 남은 양 숫자 중심 레이아웃. 기존 .ss-modal/*.btn 클래스 재사용. */
 .add-weigh-modal { text-align: center; min-width: 320px; }
 .add-weigh-remaining {
-  font-size: 2.5rem; font-weight: 800; color: #b45309; line-height: 1.1;
-  margin: 0.25rem 0 0.1rem;
+  text-align: center; font-size: 3.4rem; font-weight: 800;
+  color: #b45309; line-height: 1.1; margin: 0.2rem 0 0.3rem;
 }
 .add-weigh-sub { font-size: 0.9rem; color: var(--muted, #6b7280); margin: 0 0 0.75rem; }
 .add-weigh-input-row { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 0.4rem; }
