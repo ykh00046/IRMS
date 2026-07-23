@@ -2126,7 +2126,10 @@
     state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
     // 헤더 자재명 + 목표/현재/남은 렌더.
-    $("add-weigh-title").textContent = `추가 계량 — ${it.material_name}`;
+    // 자재명은 본문 전용 줄에 — 제목에 붙이면 긴 이름이 좁은 헤더에 감긴다(2026-07-23).
+    $("add-weigh-title").textContent = "추가 계량";
+    const matEl = $("add-weigh-material");
+    if (matEl) matEl.textContent = it.material_name;
     // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산).
     const row = $("add-weigh-input-row");
     if (row) row.hidden = Boolean(state.scaleOnlyInput);

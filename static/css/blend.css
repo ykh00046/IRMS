@@ -152,6 +152,15 @@
 .ss-modal-header h3 { margin: 0; font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
 .ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
+/* 증량 관련 모달 중간 폭 — 긴 자재명(PB 레시피 등)이 520px 에서 감겨 답답하던 문제. */
+.ss-modal-mid { width: min(640px, 95vw); }
+/* 추가 계량 창의 자재명 줄 — 제목 대신 본문 첫 줄에 크게, 자유 줄바꿈. */
+.add-weigh-material {
+  text-align: center; font-size: 1.15rem; font-weight: 700;
+  color: var(--text-primary, #1f2937); overflow-wrap: anywhere;
+  margin: 0 0 0.35rem;
+}
+
 /* 전자서명 패드 */
 .blend-sign-field { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .blend-sign-pad {

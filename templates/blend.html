@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260723h" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260723i" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -220,7 +220,7 @@
              기존 빨간 토스트 위에 추가로 뜬다(−방향 부족 계량 시에는 열리지 않음).
              표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지). -->
         <div class="ss-modal-overlay" id="rescale-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="rescale-modal-title">
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="rescale-modal-title">
             <div class="ss-modal-header"><h3 id="rescale-modal-title">배합량 증량</h3></div>
             <div class="ss-modal-body" id="rescale-modal-body"></div>
             <div class="ss-modal-footer blend-actions">
@@ -234,7 +234,7 @@
              '다시 계량' 중 선택. 확인/취소의 의미가 헷갈리던 window.confirm 을 대체.
              표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지) — rescale 모달과 동일 패턴. -->
         <div class="ss-modal-overlay" id="shortage-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="shortage-modal-title">
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="shortage-modal-title">
             <div class="ss-modal-header"><h3 id="shortage-modal-title">부족 계량</h3></div>
             <div class="ss-modal-body"><p id="shortage-modal-text"></p></div>
             <div class="ss-modal-footer blend-actions">
@@ -248,9 +248,12 @@
              저울 PRINT 도 addModeIdx 경로로 자동 합산(수동 입력칸은 저울 전용 모드에선 숨김).
              hidden 토글 전용 — rescale/shortage 모달과 동일 패턴. -->
         <div class="ss-modal-overlay" id="add-weigh-modal" hidden>
-          <div class="ss-modal add-weigh-modal" role="dialog" aria-modal="true" aria-labelledby="add-weigh-title">
+          <div class="ss-modal ss-modal-mid add-weigh-modal" role="dialog" aria-modal="true" aria-labelledby="add-weigh-title">
             <div class="ss-modal-header"><h3 id="add-weigh-title">추가 계량</h3></div>
             <div class="ss-modal-body">
+              <!-- 자재명은 제목이 아니라 본문 첫 줄에 크게 — 긴 이름(PB 레시피 등)이 좁은
+                   제목줄에 감겨 한눈에 안 읽히던 문제(2026-07-23). 자유 줄바꿈 허용. -->
+              <div class="add-weigh-material" id="add-weigh-material"></div>
               <div class="add-weigh-remaining" id="add-weigh-remaining">+0 g</div>
               <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
               <div class="add-weigh-input-row" id="add-weigh-input-row">
@@ -383,7 +386,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260722b"></script>
-    <script src="/static/js/blend.js?v=20260723o"></script>
+    <script src="/static/js/blend.js?v=20260723p"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
