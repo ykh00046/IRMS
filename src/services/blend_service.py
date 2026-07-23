@@ -13,6 +13,7 @@ NOTE: 1차 증분은 기록 중심이다. 자동 재고 차감은 기존 계량(
 
 import json
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -251,6 +252,11 @@ def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
     return mapping
 
 
+# ERP 품목코드 형태(영문 1-3자 + 숫자 3자 이상, 예: AC0060/AS0031/B0020).
+# materials.code 미등록 자재의 저장 코드 fallback 판별용.
+_ERP_CODE_RE = re.compile(r"^[A-Za-z]{1,3}\d{3,}$")
+
+
 def _resolve_erp_code(
     name: str,
     code: str,
@@ -258,10 +264,11 @@ def _resolve_erp_code(
     material_code_map: dict[str, str] | None = None,
 ) -> str:
     """ERP 품목코드 결정. 우선순위(P4):
-    materials.code > RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명 > 별칭(비RM).
+    materials.code > RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명
+    > ERP 형태 저장 코드 > 별칭(비RM).
 
     materials.code 가 도입되기 전 화면 '자재코드'는 materials.category(분류) 였고,
-    이 인자 `code` 는 그 legacy 값을 받는다 — RM 형태인 경우에만 후보로 쓴다.
+    이 인자 `code` 는 그 legacy 값을 받는다 — RM/ERP 형태인 경우에만 후보로 쓴다.
     """
     # 1) materials.code — 정식 ERP 품목코드(P4 최우선). 맵과 같은 정규화 키로 조회.
     if material_code_map is not None:
@@ -278,7 +285,11 @@ def _resolve_erp_code(
     # 4) RM 형태의 자재명
     if name.upper().startswith("RM"):
         return name
-    # 5) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
+    # 5) ERP 품목코드 형태의 저장 코드 — materials.code 미등록이어도 상세 화면에서
+    #    정식 코드(AC0060 등)를 직접 입력한 자재는 그 코드로 매칭한다.
+    if _ERP_CODE_RE.fullmatch((code or "").strip()):
+        return (code or "").strip()
+    # 6) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
     return alias
 
 
@@ -618,6 +629,30 @@ def batch_details(
         "truncated": truncated,
         "limit": effective_limit,
     }
+
+
+def material_usage_details(
+    connection: sqlite3.Connection,
+    *,
+    start_date: str,
+    end_date: str,
+    limit: int = _BATCH_DETAILS_MAX_ROWS,
+) -> dict[str, Any]:
+    """자재 불출 행 단위 상세 — 상위 재고 대시보드 LOT 배정(FIFO 정리) 연동용.
+
+    batch_details(완료 기록 평면 목록)에 erp_code(재고 시스템 매칭 키)를 결합한다.
+    해석 체계는 집계 API(material_usage_periods)와 동일(_resolve_erp_code) —
+    두 API 가 같은 자재를 다른 코드로 보고하지 않도록 단일 소스를 공유한다.
+    """
+    result = batch_details(connection, start_date, end_date, None, limit=limit)
+    alias_map = _erp_code_map(connection)
+    material_code_map = _material_code_map(connection)
+    for item in result["items"]:
+        item["erp_code"] = _resolve_erp_code(
+            item["material_name"], item["material_code"] or "", alias_map, material_code_map
+        )
+    result["unit"] = "g"
+    return result
 
 
 def trace_material_lot(

@@ -111,6 +111,52 @@ def test_erp_code_resolution_from_aliases():
     assert codes["MatC"] == ""          # 매칭 불가 → 빈 값(대시보드에서 제외 가능)
 
 
+def test_erp_code_fallback_from_erp_format_stored_code():
+    """materials.code 미등록이어도 저장 코드가 ERP 형태(AC0060 등)면 그 코드로 해석 —
+    운영에서 L-HEMA(Lotte)/PGMEA 등 5개 자재가 erp_code 빈값으로 빠지던 구멍."""
+    conn = _make_db()
+    _seed_record(conn, "P3", "2026-07-11", [
+        {"material_name": "L-HEMA (Lotte)", "material_code": "AS0031", "ratio": 50,
+         "theory_amount": 50, "actual_amount": 50},
+        {"material_name": "SomeEtc", "material_code": "기타", "ratio": 30,
+         "theory_amount": 30, "actual_amount": 30},
+        {"material_name": "PB", "material_code": "B109", "ratio": 20,
+         "theory_amount": 20, "actual_amount": 20},
+    ])
+    res = bs.material_usage_periods(conn, start_date="2026-07-11", end_date="2026-07-11")
+    codes = {i["material_name"]: i["erp_code"] for i in res["items"]}
+    assert codes["L-HEMA (Lotte)"] == "AS0031"  # ERP 형태 저장 코드 fallback
+    assert codes["SomeEtc"] == ""               # '기타'는 여전히 매칭 불가
+    assert codes["PB"] == "B109"                # B+숫자3 도 ERP 형태로 인정
+
+
+def test_material_usage_details_rows():
+    """행 단위 상세 — batch_details 평면 목록 + erp_code 결합(집계와 동일 해석)."""
+    conn = _make_db()
+    _seed_record(conn, "PD1", "2026-07-05", [
+        {"material_name": "MatD", "material_code": "AC0060", "ratio": 60,
+         "theory_amount": 60, "actual_amount": 61, "material_lot": "LOT-D1"},
+        {"material_name": "MatE", "material_code": "기타", "ratio": 40,
+         "theory_amount": 40, "actual_amount": 40},
+    ])
+    _seed_record(conn, "PD2", "2026-07-06", [
+        {"material_name": "MatD", "material_code": "AC0060", "ratio": 100,
+         "theory_amount": 100, "actual_amount": 100, "material_lot": "LOT-D2"},
+    ])
+    res = bs.material_usage_details(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert res["unit"] == "g" and res["total"] == 3 and res["batch_count"] == 2
+    by_lot = {(i["product_lot"], i["material_name"]): i for i in res["items"]}
+    d1 = next(i for i in res["items"] if i["material_lot"] == "LOT-D1")
+    assert d1["erp_code"] == "AC0060" and d1["actual_amount"] == 61.0
+    assert d1["product_name"] == "PD1" and d1["worker"] == "w"
+    e1 = next(i for i in res["items"] if i["material_name"] == "MatE")
+    assert e1["erp_code"] == ""  # 해석 불가는 빈값 그대로 표면화(조용한 드랍 금지)
+    assert len(by_lot) == 3
+    # 기간 필터
+    res = bs.material_usage_details(conn, start_date="2026-07-06", end_date="2026-07-06")
+    assert res["total"] == 1 and res["items"][0]["material_lot"] == "LOT-D2"
+
+
 def _client():
     import src.config as cfg
     import src.main as mainmod
@@ -161,6 +207,21 @@ def test_public_material_usage_route():
     res = internal.get("/api/public/material-usage",
                        params={"start_date": "2026-07-01", "end_date": "2026-07-31", "group": "day"})
     assert any(i["period"] == "2026-07-03" for i in res.json()["items"])
+
+    # 행 단위 상세(/details) — 자재LOT·제품LOT·erp_code 포함
+    res = internal.get("/api/public/material-usage/details",
+                       params={"start_date": "2026-07-01", "end_date": "2026-07-31"})
+    assert res.status_code == 200, res.text
+    detail_mine = [i for i in res.json()["items"]
+                   if i["material_code"] == "X01" and i["product_name"] == prod]
+    assert detail_mine and detail_mine[0]["material_lot"] == "LOT-X"
+    assert detail_mine[0]["actual_amount"] == 500.0
+    assert "erp_code" in detail_mine[0] and "product_lot" in detail_mine[0]
+    # 검증: 형식 오류 400, 역전 기간 400
+    assert internal.get("/api/public/material-usage/details",
+                        params={"start_date": "07/01/2026"}).status_code == 400
+    assert internal.get("/api/public/material-usage/details",
+                        params={"start_date": "2026-07-31", "end_date": "2026-07-01"}).status_code == 400
 
     # 검증: 형식 오류 400, 잘못된 group 422, 역전 기간 400
     assert internal.get("/api/public/material-usage",

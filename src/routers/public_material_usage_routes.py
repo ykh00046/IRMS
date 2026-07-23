@@ -9,6 +9,12 @@ Endpoints:
         기본: 이번 달 1일 ~ 오늘, group=total(기간 합계).
         응답 items: {period, material_code, material_name,
                      total_actual, total_theory, batch_count}
+    GET /public/material-usage/details?start_date&end_date&limit
+        기간 내 완료 배합 기록의 행 단위 상세(투입 자재별 1행) — 상위 대시보드의
+        LOT 배정(FIFO 정리)용. erp_code 는 집계와 동일한 해석 체계를 공유한다.
+        응답 items: {record_id, work_date, product_lot, product_name, worker,
+                     erp_code, material_code, material_name, material_lot,
+                     ratio, theory_amount, actual_amount, variance}
 """
 
 import re
@@ -47,6 +53,22 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="start_date 가 end_date 보다 늦습니다.")
         return blend_service.material_usage_periods(
             connection, start_date=start, end_date=end, group=group, by_product=by_product
+        )
+
+    @router.get("/details")
+    def material_usage_details(
+        start_date: str | None = Query(default=None, max_length=10),
+        end_date: str | None = Query(default=None, max_length=10),
+        limit: int = Query(default=10000, ge=1, le=10000),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        today = local_today_text()
+        start = _validate_date(start_date, "start_date") if start_date else today[:8] + "01"
+        end = _validate_date(end_date, "end_date") if end_date else today
+        if start > end:
+            raise HTTPException(status_code=400, detail="start_date 가 end_date 보다 늦습니다.")
+        return blend_service.material_usage_details(
+            connection, start_date=start, end_date=end, limit=limit
         )
 
     return router
