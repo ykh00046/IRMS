@@ -746,6 +746,21 @@ body {
   max-width: 60ch;
 }
 
+/* 체크박스+라벨 공용 정렬 — 이름은 역사적으로 .visc-checkbox 지만 배합 기록·관리 등
+   여러 화면이 쓴다. 점도 CSS에만 있던 정의를 공용화(서명 넣기 어긋남 신고 2026-07-23). */
+.visc-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 13px;
+  color: var(--text-secondary, #475569);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.visc-checkbox input[type="checkbox"] { margin: 0; }
+/* 필터 줄(flex-end 정렬)에서는 버튼보다 낮게 붙는다 — 버튼 중앙선에 맞춰 올림. */
+.blend-filter-row .visc-checkbox { padding-bottom: 9px; }
+
 .panel-notice {
   font-size: 1rem;
   font-weight: 600;
