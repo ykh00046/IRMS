@@ -23,7 +23,7 @@
     computeTheoryAmount, findAnchorIndex, theoryFromWeights,
     baseTotalValues, baseTotalLinksHtml,
     rescalePlan, exceedsBatchLimit,
-    missingLotNames, missingLotBlockMessage, appliedRescaleRowHtml,
+    appliedRescaleRowHtml,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -36,8 +36,10 @@
     current: null,        // /blend/recipes/{id} 응답
     materials: [],        // [{material_id, material_code, material_name, ratio, is_anchor, value_weight}]
     theory: [],           // theory[i] — 전 로트 공통 이론량(총량×ratio)
-    sharedLot: [],        // sharedLot[i] — 재료별 자재 LOT(전 로트 공통)
-    cells: [],            // cells[i][j] = { actual:"", manual:false }
+    // cells[i][j] = { actual:"", manual:false, lot:"" }
+    // 자재 LOT 은 이제 (자재 × 로트)마다 개별(cell.lot) — 로트별로 다른 원료 봉지를 쓴 실제를
+    // 그대로 기록해 추적성을 확보한다. (구: 재료별 전 로트 공통 sharedLot[i] — 제거.)
+    cells: [],
     lotCount: 2,
     total: 0,
     toleranceG: TOLERANCE_G,
@@ -72,8 +74,8 @@
     // 저울 전용 모드 수기 입력 승인 — 책임자 승인 시 {approver}. 이 배합에 한해 실제량
     // 손입력을 허용(잠금 해제)한다. 레시피 변경 시 null 로 되돌려 재잠금(저장은 화면 이동).
     manualApproved: null,
-    // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록.
-    // 이어서 계량은 자재 LOT 이 전 로트 공통(.cont-lot 행당 1개) — 동일 적용.
+    // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록(자재별 1회 조회).
+    // 자재 LOT 은 셀별이지만 제안 목록은 자재 단위라 (자재 × 로트) 모든 셀이 공유한다.
     lotSuggest: {},
     // 미등록 LOT 차단 — (자재명\u0000LOT) → true(등록됨)/false(미등록) 캐시.
     // 동일 (name, lot) 조합의 중복 조회를 막기 위해 한 번 판정하면 보관한다.
@@ -246,7 +248,8 @@
     // 의미 있는 입력이 있을 때만 초안을 만든다: 실제량을 넣은 셀이 있거나 자재 LOT 을 적었을 때.
     const hasCell = state.cells.some((row) =>
       row && row.some((c) => c && c.actual !== "" && c.actual != null));
-    const hasLot = (state.sharedLot || []).some((l) => (l || "").trim());
+    const hasLot = state.cells.some((row) =>
+      row && row.some((c) => c && (c.lot || "").trim()));
     if (!hasCell && !hasLot) return null;
     return {
       recipe_id: state.current.recipe.id,
@@ -259,12 +262,12 @@
       note: $("cont-note").value,
       reactor: $("cont-reactor").value,
       lotOverrides: state.lotOverrides || {},
-      // 자재 LOT 은 전 로트 공통(재료당 1개) — state.sharedLot 그대로.
-      sharedLot: (state.sharedLot || []).map((l) => l || ""),
-      // 셀 매트릭스 — cells[i][j] = {actual, manual}. actual 은 문자열로 통일.
+      // 셀 매트릭스 — cells[i][j] = {actual, manual, lot}. actual·lot 은 문자열로 통일.
+      // 자재 LOT 은 이제 셀별(cell.lot). (구 초안의 sharedLot 은 복구 시 마이그레이션.)
       cells: state.cells.map((row) => (row || []).map((c) => ({
         actual: (c.actual === "" || c.actual == null) ? "" : String(c.actual),
         manual: c.manual === true,
+        lot: (c.lot === "" || c.lot == null) ? "" : String(c.lot),
       }))),
       // 로트별 증량 상태 — override 총량·요약 plan·승인 이벤트(깊은 복사). 반드시 함께
       // 보관해야 복구 후 저장 payload(lot_totals·lot_rescale_events)로 전송돼 추적성이
@@ -351,17 +354,19 @@
       state.total = Number(draft.total) || 0;
       recomputeTheory();
     }
-    // 자재 LOT(전 로트 공통) 복구.
-    (draft.sharedLot || []).forEach((lot, i) => {
-      if (i < state.sharedLot.length) state.sharedLot[i] = lot || "";
-    });
-    // 셀 매트릭스 복구(actual/manual).
+    // 셀 매트릭스 복구(actual/manual/lot).
+    // 레거시 마이그레이션: 옛 초안은 자재 LOT 이 전 로트 공통(draft.sharedLot[i]) 이고
+    // 셀에 lot 필드가 없다. 이 경우 그 재료의 공통 LOT 을 그 재료의 모든 로트 셀에 복사한다
+    // (자연스러운 이월 — 그 시점엔 로트별 구분이 없었으므로 동일 값으로 채우는 것이 안전).
+    const legacyShared = Array.isArray(draft.sharedLot) ? draft.sharedLot : null;
     (draft.cells || []).forEach((row, i) => {
       (row || []).forEach((c, j) => {
-        if (state.cells[i] && state.cells[i][j]) {
-          state.cells[i][j].actual = (c.actual === "" || c.actual == null) ? "" : c.actual;
-          state.cells[i][j].manual = c.manual === true;
-        }
+        if (!(state.cells[i] && state.cells[i][j])) return;
+        state.cells[i][j].actual = (c.actual === "" || c.actual == null) ? "" : c.actual;
+        state.cells[i][j].manual = c.manual === true;
+        let lot = (c && typeof c.lot === "string") ? c.lot : "";
+        if (!lot && legacyShared && typeof legacyShared[i] === "string") lot = legacyShared[i] || "";
+        state.cells[i][j].lot = lot;
       });
     });
     // 로트별 증량 상태 복구 — onRecipeChange 가 이미 [] 로 리셋했으므로 초안 값으로 되살린다.
@@ -673,7 +678,6 @@
     if (state.workerPad) state.workerPad.clear();
     state.total = 0;
     state.theory = state.materials.map(() => null);
-    state.sharedLot = state.materials.map(() => "");
     state.lotOverrides = {};        // 레시피 변경 → 미등록 LOT 진행 승인 리셋
     state.lotRescale = [];          // 레시피 변경 → 증량 오버라이드 전부 리셋(스펙)
     state.lotRescalePlan = [];      // 레시피 변경 → 증량 요약줄도 리셋
@@ -723,6 +727,7 @@
   // 항목 mousedown(preventDefault) → LOT 칸 채움 + input 이벤트 + 목록 닫기.
   function renderLotSuggest(input) {
     const i = Number(input.dataset.i);
+    const j = Number(input.dataset.j);
     const name = (state.materials[i] && state.materials[i].material_name) || "";
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
     if (!lots.length) { hideLotSuggest(input); return; }
@@ -759,7 +764,7 @@
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
         input.value = lot;  // LOT 만 채운다(총량은 표시 전용).
-        state.sharedLot[i] = lot;
+        if (state.cells[i] && state.cells[i][j]) state.cells[i][j].lot = lot;
         input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
         hideLotSuggest(input);
         input.focus();
@@ -778,7 +783,7 @@
   // 제안(state.lotSuggest)이 있는 자재 = 완료 배합 기록이 있는 반제품. 이 자재의 자재 LOT 칸은
   // 반드시 그 반제품의 실제 product_lot 중 하나여야 한다. 그렇지 않으면(직접 타이핑 오타 등)
   // #cont-lot-invalid-modal 로 막고 값을 비운다. 일반 자재(제안 없음)는 100% 기존 동작 유지.
-  // 이어서 계량은 자재 LOT 이 전 로트 공통(state.sharedLot[i])이므로 행당 1개만 검증한다.
+  // 자재 LOT 이 셀별(cells[i][j].lot)이므로 (자재 × 로트) 셀마다 개별 검증한다.
   //
   // 판정 우선순위: 빈 값(공백 trim) → 통과 / 제안 목록에 있는 값 → 통과 /
   // 그 외 → 서버 /blend/product-lot-exists 로 확인(캐시 state.lotChecked[name\u0000lot] 사용).
@@ -803,17 +808,20 @@
     }
   }
 
-  // .cont-lot 입력칸 하나 검증 — 미등록이면 모달을 띄우고 값·state 를 비운 뒤 다시 포커스.
+  // 셀 LOT 입력칸 하나 검증 — 미등록이면 모달을 띄우고 값·state 를 비운 뒤 다시 포커스.
+  // 자재 LOT 이 셀별(cells[i][j].lot)이므로 (자재 × 로트) 셀마다 개별 검증한다. override 는
+  // (자재명, LOT) 키라 같은 봉지를 여러 로트에 쓰면 한 번 승인으로 모두 통과된다.
   async function validateLotInput(input) {
     const i = Number(input.dataset.i);
+    const j = Number(input.dataset.j);
     const m = state.materials[i];
-    if (!m) return;
+    if (!m || !(state.cells[i] && state.cells[i][j])) return;
     const name = (m.material_name || "").trim();
     // 제안이 없는 자재(일반 원료)는 검증하지 않는다 — 기존 동작 유지.
     if (!state.lotSuggest || !state.lotSuggest[name]) return;
     const lot = (input.value || "").trim();
     input.value = lot;  // trim 반영
-    state.sharedLot[i] = lot;
+    state.cells[i][j].lot = lot;
     if (lotOverrideKey(name, lot) in state.lotOverrides) return;  // 사유 입력 후 진행 승인됨 → 통과
     if (await checkLotRegistered(name, lot)) return;  // 등록됨 → 통과
     // 미등록 — 모달 표시. 확인 버튼이 값 비우기를 맡는다(아래 bind 의 cont-lot-invalid-confirm).
@@ -823,15 +831,21 @@
   // 미등록 LOT '사유 입력 후 진행'(안전밸브) 승인 키·비고 — 배합 화면과 동일 취지.
   function lotOverrideKey(name, lot) { return `${name}::${lot}`; }
   function buildOverrideNote() {
+    // 자재 LOT 이 셀별이므로 전 셀을 훑어 승인된 (자재, LOT) 조합을 중복 없이 모은다.
     const parts = [];
+    const seen = new Set();
     state.materials.forEach((m, i) => {
       const name = (m.material_name || "").trim();
-      const lot = (state.sharedLot[i] || "").trim();
-      if (!lot) return;
-      const key = lotOverrideKey(name, lot);
-      if (key in state.lotOverrides) {
-        parts.push(`[미등록 LOT 진행] ${name}/${lot}: ${state.lotOverrides[key]}`);
-      }
+      (state.cells[i] || []).forEach((c) => {
+        const lot = (c && c.lot || "").trim();
+        if (!lot) return;
+        const key = lotOverrideKey(name, lot);
+        if (seen.has(key)) return;
+        if (key in state.lotOverrides) {
+          seen.add(key);
+          parts.push(`[미등록 LOT 진행] ${name}/${lot}: ${state.lotOverrides[key]}`);
+        }
+      });
     });
     return parts.join("\n");
   }
@@ -873,7 +887,7 @@
       const prevRow = state.cells[i] || [];
       const row = [];
       for (let j = 0; j < state.lotCount; j++) {
-        row.push(prevRow[j] || { actual: "", manual: false });
+        row.push(prevRow[j] || { actual: "", manual: false, lot: "" });
       }
       next.push(row);
     }
@@ -973,15 +987,15 @@
         + `<small class="cont-lot-preview" data-j="${j}">-</small></th>`
       );
     }
+    // 자재 LOT 은 이제 열이 아니라 각 로트 셀 안(실제량 위)에 들어간다 — 헤더에서 제거.
     head.innerHTML = "<tr>"
       + '<th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론량(g)</th>'
-      + "<th>자재 LOT</th>"
       + lotHeads.join("")
       + "</tr>";
 
     // 공정 설명 줄(레시피 '설명') — 자재 사이/끝에 전폭 안내 행으로 끼워넣는다.
     const steps = (state.current && state.current.steps) || [];
-    const colspan = 5 + state.lotCount;
+    const colspan = 4 + state.lotCount;  // 자재 LOT 열 제거 → 4 고정열(#·품목·비율·이론량) + 로트 수
     const parts = [];
     state.materials.forEach((m, i) => {
       parts.push(contStepRowsHtml(steps, i, colspan));  // 이 자재 앞(=앞선 자재 i개 뒤) 설명
@@ -992,8 +1006,17 @@
         const th = theoryFor(i, j);
         const ph = th == null ? "" : fmt(th);
         const lc = `cont-lc${j % 4}${j === 0 ? " cont-first-lot" : ""}`;
+        // 각 셀 = 자재 LOT(위) + 실제량(아래). LOT 은 셀별(cells[i][j].lot) — 로트마다 다른
+        // 봉지를 쓴 실제를 그대로 기록. j>0 셀엔 '↩' 이전-로트 LOT 복사 버튼(명시적 클릭만).
+        const copyBtn = j > 0
+          ? `<button type="button" class="cont-lot-copy" data-i="${i}" data-j="${j}" tabindex="-1" title="이전 로트 LOT 복사">↩</button>`
+          : "";
         cells.push(
           `<td class="num cont-cell ${lc}">`
+          + `<div class="cont-lot-wrap">`
+          + `<input class="input blend-lot cont-lot cont-cell-lot" data-i="${i}" data-j="${j}" value="${esc(cell.lot || "")}" placeholder="LOT" autocomplete="off" />`
+          + copyBtn
+          + `</div>`
           + `<input class="input cont-actual" data-i="${i}" data-j="${j}" type="number" step="any" min="0" `
           + `value="${esc(cell.actual)}" placeholder="${ph}" />`
           + `<button type="button" class="cont-scale-btn" data-i="${i}" data-j="${j}" tabindex="-1" title="여기로 저울 입력">⚖</button>`
@@ -1007,7 +1030,6 @@
         + `<td class="cont-matname">${esc(m.material_name)}</td>`
         + `<td class="num">${fmt(m.ratio, 2)}</td>`
         + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i])}</td>`
-        + `<td><input class="input cont-lot" data-i="${i}" value="${esc(state.sharedLot[i])}" placeholder="LOT" /></td>`
         + cells.join("")
         + "</tr>");
     });
@@ -1042,9 +1064,11 @@
         focusActual(i, j);
       });
     });
-    body.querySelectorAll(".cont-lot").forEach((el) => {
+    body.querySelectorAll(".cont-cell-lot").forEach((el) => {
+      const i = Number(el.dataset.i);
+      const j = Number(el.dataset.j);
       el.addEventListener("input", () => {
-        state.sharedLot[Number(el.dataset.i)] = el.value;
+        if (state.cells[i] && state.cells[i][j]) state.cells[i][j].lot = el.value;
         if (el._lotBox) renderLotSuggest(el);
         scheduleDraftSave();  // 진행분 임시 저장(복구용)
       });
@@ -1055,11 +1079,22 @@
         if (e.key === "Escape" && el._lotBox) { hideLotSuggest(el); return; }
         if (e.key !== "Enter" || e.isComposing) return;
         e.preventDefault();
-        focusActual(Number(el.dataset.i), 0);
+        // 셀별 LOT → 그 셀의 실제량으로(LOT-먼저-실제량 흐름).
+        focusActual(i, j);
       });
-      // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 검증.
+      // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 셀별 검증.
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #cont-lot-invalid-modal 표시 후 값을 비운다.
       el.addEventListener("change", () => validateLotInput(el));
+    });
+    // ↩ 이전 로트 LOT 복사 — 명시적 클릭만(자동 이월 없음: 봉지 교체를 놓쳐 조용히 잘못
+    // 기록되는 것을 막기 위해 사용자가 직접 확인하고 복사한다). 같은 자재의 직전 로트 LOT 을
+    // 이 셀에 채우고 검증한 뒤 실제량으로 포커스를 옮긴다.
+    body.querySelectorAll(".cont-lot-copy").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.dataset.i);
+        const j = Number(btn.dataset.j);
+        copyPrevLot(i, j);
+      });
     });
     body.querySelectorAll(".cont-actual").forEach((el) => {
       const i = Number(el.dataset.i);
@@ -1103,13 +1138,39 @@
     return true;
   }
 
-  // 가로 우선 흐름: 같은 재료의 다음 로트 → 없으면 다음 재료 LOT → 없으면 저장.
+  function focusLot(i, j) {
+    const el = document.querySelector(`.cont-cell-lot[data-i="${i}"][data-j="${j}"]`);
+    if (!el) return false;
+    el.focus();
+    try { el.select(); } catch (_e) { /* noop */ }
+    return true;
+  }
+
+  // 가로 우선 흐름(셀별 LOT): 실제량 완료 → 같은 재료의 다음 로트 LOT → 없으면 다음 재료의
+  // 첫 로트 LOT → 없으면 저장. (셀마다 LOT-먼저-실제량이라 다음 셀은 그 셀의 LOT 칸으로.)
   function focusNextFrom(i, j) {
-    if (j + 1 < state.lotCount) { focusActual(i, j + 1); return; }
-    const nextLot = document.querySelector(`.cont-lot[data-i="${i + 1}"]`);
-    if (nextLot) { nextLot.focus(); try { nextLot.select(); } catch (_e) { /* noop */ } return; }
+    if (j + 1 < state.lotCount) { focusLot(i, j + 1); return; }
+    if (focusLot(i + 1, 0)) return;
     const save = $("cont-save");
     if (save) save.focus();
+  }
+
+  // ↩ 이전 로트 LOT 복사 — 같은 자재(i)의 직전 로트(j-1) LOT 을 이 셀(j)에 채운다.
+  // 명시적 클릭만(자동 이월 금지). 채운 뒤 미등록 LOT 검증을 돌리고 실제량으로 포커스 이동.
+  function copyPrevLot(i, j) {
+    if (j <= 0) return;
+    const prevCell = state.cells[i] && state.cells[i][j - 1];
+    const prev = (prevCell && prevCell.lot || "").trim();
+    if (!prev) { notify("이전 로트에 복사할 LOT 이 없습니다.", "warn"); focusLot(i, j); return; }
+    if (!(state.cells[i] && state.cells[i][j])) return;
+    state.cells[i][j].lot = prev;
+    const input = document.querySelector(`.cont-cell-lot[data-i="${i}"][data-j="${j}"]`);
+    if (input) {
+      input.value = prev;
+      validateLotInput(input);  // 미등록이면 모달로 막고 값을 비운다(직접 입력과 동일 경로)
+    }
+    scheduleDraftSave();
+    focusActual(i, j);
   }
 
   function updateCellVar(i, j) {
@@ -1764,51 +1825,43 @@
       return fail(err, `허용 편차(±${tol}g) 초과: ${bad.slice(0, 6).join(", ")}${bad.length > 6 ? " 외" : ""}. 해당 셀을 다시 계량하세요.`);
     }
 
-    // 자재 LOT 필수 — 어느 로트에든 실제량을 넣은 자재는 LOT(전 로트 공통) 도 반드시 입력.
-    // 미등록 LOT '사유 적고 진행' 으로 승인된 자재는 sharedLot 이 채워져 있어 만족된다.
-    const lotRows = state.materials.map((m, i) => {
-      // 이 자재가 어느 로트에서든 실제량을 가지는가(하나라도 있으면 LOT 필요).
-      const anyActual = state.cells[i] && state.cells[i].some((c) =>
-        c && c.actual !== "" && c.actual != null && Number(c.actual) > 0
-      );
-      return {
-        material_name: m.material_name,
-        actual_amount: anyActual ? 1 : "",   // 더미: anyActual 이면 LOT 필수로 판정되게
-        material_lot: state.sharedLot[i] || "",
-      };
-    });
-    const lotMissing = missingLotNames(lotRows);
-    if (lotMissing.length) {
-      const msg = missingLotBlockMessage(lotMissing);
-      notify("자재 LOT 를 입력하세요: " + lotMissing.slice(0, 6).join(", ") + (lotMissing.length > 6 ? " …" : ""), "error");
-      const firstIdx = state.materials.findIndex((m, i) => {
-        const anyActual = state.cells[i] && state.cells[i].some((c) =>
-          c && c.actual !== "" && c.actual != null && Number(c.actual) > 0
-        );
-        return anyActual && String(state.sharedLot[i] || "").trim() === "";
-      });
-      if (firstIdx >= 0) {
-        const input = document.querySelector(`.cont-lot[data-i="${firstIdx}"]`);
-        if (input) input.focus();
+    // 자재 LOT 필수 — 자재 LOT 이 셀별이므로 실제량을 넣은 (자재 × 로트) 셀마다 LOT 필수.
+    // 미등록 LOT '사유 적고 진행' 으로 승인된 셀은 cell.lot 이 채워져 있어 만족된다.
+    const lotMissingCells = [];
+    let firstMissingLot = null;  // {i, j}
+    for (let i = 0; i < state.materials.length; i++) {
+      for (let j = 0; j < state.lotCount; j++) {
+        const c = state.cells[i][j];
+        const hasActual = c && c.actual !== "" && c.actual != null && Number(c.actual) > 0;
+        const lot = (c && c.lot || "").trim();
+        if (hasActual && !lot) {
+          lotMissingCells.push(`로트 ${j + 1} · ${state.materials[i].material_name}`);
+          if (!firstMissingLot) firstMissingLot = { i, j };
+        }
       }
-      return fail(err, msg);
+    }
+    if (lotMissingCells.length) {
+      notify("자재 LOT 를 입력하세요: " + lotMissingCells.slice(0, 6).join(", ") + (lotMissingCells.length > 6 ? " …" : ""), "error");
+      if (firstMissingLot) focusLot(firstMissingLot.i, firstMissingLot.j);
+      return fail(err, `자재 LOT 미입력: ${lotMissingCells.slice(0, 6).join(", ")}${lotMissingCells.length > 6 ? " 외" : ""}. LOT 를 입력하세요.`);
     }
 
     // 작업자 확인/교대
     if (worker !== state.sessionWorker && !(await switchWorker(worker))) return;
-    // 미등록 LOT 차단 — 반제품(제안 있는 자재) 행의 비어있지 않은 자재 LOT 를 순차 검증.
-    // 이어서 계량은 자재 LOT 이 전 로트 공통(state.sharedLot[i])이므로 행당 1개만 검증한다.
-    // 하나라도 미등록이면 첫 미등록 행의 모달을 띄우고 저장을 중단한다(일반 자재는 제외).
+    // 미등록 LOT 차단 — 반제품(제안 있는 자재) 셀의 비어있지 않은 자재 LOT 를 (자재 × 로트)
+    // 셀마다 순차 검증. 하나라도 미등록이면 그 셀의 모달을 띄우고 저장을 중단한다(일반 자재 제외).
     for (let i = 0; i < state.materials.length; i++) {
       const name = (state.materials[i].material_name || "").trim();
       if (!state.lotSuggest || !state.lotSuggest[name]) continue;
-      const lot = (state.sharedLot[i] || "").trim();
-      if (!lot) continue;
-      if (lotOverrideKey(name, lot) in state.lotOverrides) continue;  // 사유 입력 후 진행 승인됨
-      if (!(await checkLotRegistered(name, lot))) {
-        const input = document.querySelector(`.cont-lot[data-i="${i}"]`);
-        openContLotInvalidModal(name, lot, input || null);
-        return;
+      for (let j = 0; j < state.lotCount; j++) {
+        const lot = (state.cells[i][j] && state.cells[i][j].lot || "").trim();
+        if (!lot) continue;
+        if (lotOverrideKey(name, lot) in state.lotOverrides) continue;  // 사유 입력 후 진행 승인됨
+        if (!(await checkLotRegistered(name, lot))) {
+          const input = document.querySelector(`.cont-cell-lot[data-i="${i}"][data-j="${j}"]`);
+          openContLotInvalidModal(name, lot, input || null);
+          return;
+        }
       }
     }
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 ${state.lotCount}개 로트를 저장합니다. 맞습니까?`)) return;
@@ -1824,7 +1877,7 @@
         ratio: m.ratio,
         theory_amount: theoryFor(i, j),
         actual_amount: Number(state.cells[i][j].actual),
-        material_lot: state.sharedLot[i] || null,
+        material_lot: (state.cells[i][j].lot || "").trim() || null,
         manual_entry: state.cells[i][j].manual === true,
         sequence_order: i + 1,
       })));
@@ -2048,7 +2101,8 @@
       closeContLotInvalidModal();
       if (input) {
         const i = Number(input.dataset.i);
-        if (state.materials[i]) state.sharedLot[i] = "";
+        const j = Number(input.dataset.j);
+        if (state.cells[i] && state.cells[i][j]) state.cells[i][j].lot = "";
         input.value = "";
         input.focus();
       }

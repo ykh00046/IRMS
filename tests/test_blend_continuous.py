@@ -594,3 +594,87 @@ def test_continuous_rescale_event_does_not_leak_to_other_lot():
     rec1 = client.get(f"/api/blend/records/{ids[1]}").json()
     assert rec0["total_amount"] == 200
     assert rec1["total_amount"] == 100
+
+
+# ── 자재 LOT 은 (자재 × 로트) 셀마다 개별 ─────────────────────────────
+# 스펙: 이어서 계량 자재 LOT 을 '재료별 전 로트 공통'에서 '셀별(자재×로트 각각)'로 전환.
+# 서버 body 형태는 이미 lots[j][i].material_lot 로 로트별 detail 을 받으므로 백엔드 변경 없이
+# 로트마다 다른 LOT 을 그대로 저장한다. 아래 테스트가 그 per-record 저장을 증명한다.
+
+def test_continuous_distinct_lots_per_lot_stored_on_each_record():
+    """(a) 로트마다 다른 자재 LOT → 각 record 의 detail 에 그 로트의 LOT 이 그대로 저장된다."""
+    client = _client()
+    headers = _manager(client)
+    product = f"CBPL{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-23",
+        "total_amount": 100,
+        # 로트 1·2 가 각각 다른 원료 봉지 LOT 을 쓴다(셀별 LOT).
+        "lots": [
+            _details(60, 40, lot_a="A-LOT1", lot_b="B-LOT1"),
+            _details(60, 40, lot_a="A-LOT2", lot_b="B-LOT2"),
+        ],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = res.json()["ids"]
+
+    rec0 = client.get(f"/api/blend/records/{ids[0]}").json()
+    rec1 = client.get(f"/api/blend/records/{ids[1]}").json()
+    by0 = {d["material_name"]: d for d in rec0["details"]}
+    by1 = {d["material_name"]: d for d in rec1["details"]}
+    # 로트 1 record 는 로트 1 의 LOT 만, 로트 2 record 는 로트 2 의 LOT 만 — 섞이지 않는다.
+    assert by0["원료A"]["material_lot"] == "A-LOT1"
+    assert by0["원료B"]["material_lot"] == "B-LOT1"
+    assert by1["원료A"]["material_lot"] == "A-LOT2"
+    assert by1["원료B"]["material_lot"] == "B-LOT2"
+
+
+def test_continuous_legacy_shared_lots_still_accepted():
+    """(c) 하위호환: 옛 클라이언트처럼 로트마다 같은 LOT(재료별 공통)을 보내도 그대로 저장된다.
+
+    body 형태(lots[j][i].material_lot)는 신·구 동일 — '공통 LOT'은 모든 로트 detail 에 같은
+    값이 실린 특수 케이스일 뿐이다. 별도 shared 필드가 없어 422 거부 경로도 없다(무변경 수용).
+    """
+    client = _client()
+    headers = _manager(client)
+    product = f"CBLS{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-23",
+        "total_amount": 100,
+        # 두 로트 모두 동일 LOT(LA/LB) — 구 sharedLot 동작과 동일한 값 분포.
+        "lots": [_details(60, 40), _details(60, 40)],
+    }, headers=headers)
+    assert res.status_code == 200, res.text
+    ids = res.json()["ids"]
+    for rid_ in ids:
+        rec = client.get(f"/api/blend/records/{rid_}").json()
+        by = {d["material_name"]: d for d in rec["details"]}
+        assert by["원료A"]["material_lot"] == "LA"
+        assert by["원료B"]["material_lot"] == "LB"
+
+
+def test_continuous_missing_lot_in_second_lot_named_400():
+    """(b) 둘째 로트의 한 셀만 LOT 누락 → 400 + '로트 2' + 자재명. 셀 단위로 집어낸다."""
+    client = _client()
+    headers = _manager(client)
+    product = f"CBM2{_uid()}"
+    rid = _import_recipe(client, headers, product, 60, 40)
+    _blend_session(client, headers)
+
+    res = client.post("/api/blend/records/continuous", json={
+        "recipe_id": rid, "product_name": product, "work_date": "2026-07-23",
+        "total_amount": 100,
+        # 로트 1 은 정상, 로트 2 의 원료A LOT 만 비움 → 400(로트 2 · 원료A).
+        "lots": [_details(60, 40), _details(60, 40, lot_a="")],
+    }, headers=headers)
+    assert res.status_code == 400, res.text
+    detail = res.json()["detail"]
+    assert "로트 2" in detail
+    assert "원료A" in detail
+    assert "자재 LOT 를 입력하세요" in detail
