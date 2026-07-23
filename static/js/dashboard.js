@@ -97,12 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("card-blend-count").textContent = fmtNumber(data.blend_count);
     document.getElementById("card-weight").textContent = fmtNumber(data.total_weight_g, 1);
     document.getElementById("card-products").textContent = fmtNumber(data.product_count);
-    // '결재 대기' 카드는 제거됨(결재 현장 미사용) — 요소가 있을 때만 채운다(방어).
-    const approval = document.getElementById("card-approval");
-    if (approval) {
-      approval.textContent = fmtNumber(data.approval_pending);
-      approval.style.color = data.approval_pending > 0 ? cssVar("--status-warning", "#c98212") : "";
-    }
+    // '결재 대기' 카드·API 필드(approval_pending)는 제거됨(결재 현장 미사용, 2026-07-23).
     const anomaly = document.getElementById("card-visc-anomaly");
     anomaly.textContent = fmtNumber(data.viscosity_anomaly);
     anomaly.style.color = data.viscosity_anomaly > 0 ? cssVar("--status-error", "#d8453f") : "";

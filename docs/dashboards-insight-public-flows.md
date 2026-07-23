@@ -147,7 +147,7 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 
 | 경로 | 함수(파일) | 소비자 | 페이로드 |
 |------|-----------|--------|----------|
-| `GET /api/public/material-usage` | `material_usage` (`public_material_usage_routes.py` L35) | **상위 재고 대시보드** | `{start_date,end_date,group,unit:"g",record_count,total_weight,items:[{period,material_code,material_name,total_actual,total_theory,batch_count,(erp_code)}]}` |
+| `GET /api/public/material-usage` | `material_usage` (`public_material_usage_routes.py` L35) | **상위 재고 대시보드** | `{start_date,end_date,group,unit:"g",record_count,total_weight,items:[{period,material_code,material_name,total_actual,total_theory,batch_count,(erp_code)}],truncated,total_item_count}` (truncated=상한 초과 시 items 절단됨) |
 | `GET /api/public/attendance-alerts/today` | `today` (`public_attendance_alert_routes.py` L23) | 트레이(근태) | `{date,day_type,total,items[]}` |
 | `GET /api/public/attendance-alerts/month` | `month` (L45) | 트레이(근태) 폴러 | `{month,date,total,items[]}` |
 | `GET /api/public/viscosity-reminders/due` | `due` (`public_viscosity_reminder_routes.py` L27) | 트레이(점도) | `{date,total,items[]}` |
@@ -208,8 +208,12 @@ material_usage.py`, `test_public_rescale_alerts.py`.
   unacked/ack 는 책임자 전용인데 요약(rescale_events 포함, LIMIT 1000)은 무인증.
   주석(L127)은 `/status` 무로그인 화면 소비를 이유로 의도한 개방이라 명시 — 정책상
   일관되나 증량 이벤트(작업자·사유 추정 가능) 노출 범위 재확인 권장.
-- **[POLISH] 죽은 API 필드 `approval_pending`** — 카드는 제거됐으나 매 `summary`
-  호출마다 계산·반환(`dashboard_routes.py` L74-80,90). 무해하나 혼동/불필요 쿼리.
+- **[POLISH] ✅ 해소 — 죽은 API 필드 `approval_pending` 제거** — 결재 카드 제거(2026-07-15)
+  후에도 `summary` 가 매 호출 계산·반환하던 죽은 값을 **쿼리·페이로드에서 제거**
+  (`dashboard_routes.py`, `dashboard.js` 방어 블록도 삭제). 클라이언트가 읽지 않음을 확인 후 제거.
+  회귀 가드: `test_dashboard_routes_respond_without_login` 이 `approval_pending not in body` 단언.
+  ⚠ 참고: **다운로드 Excel 보고서**(`dashboard_export.py`)의 `결재 대기(전체)` 행은 별개 표면이라
+  존치(요약 API 와 무관). `dashboard.html` L48 주석("API…는 존치")은 이제 낡음 — 템플릿 소유 배치가 정리.
 
 ### 무거운 쿼리 / 페이징
 
@@ -220,15 +224,21 @@ material_usage.py`, `test_public_rescale_alerts.py`.
   '전체' 프리셋을 누르면 `start/end` 없이 전 기간 집계(`insight.js` L278-282 →
   `material_usage` L341, WHERE 에 날짜 없음). 그룹 집계라 행 수는 자재/제품 종류로
   bounded 이지만 스캔은 전 테이블.
-- **[POLISH] `batch_details` 대량 반환** — 기본 2000, 최대·Excel 10000 행을 한 번에
-  JSON/시트로(`blend_service.py` L516, `blend_routes.py` L161). 페이지네이션 없음.
-  현 데이터량에선 무해하나 증가 시 응답 지연.
+- **[POLISH] ✅ 부분 해소 — `batch_details` 대량 반환에 truncated 표면화** — 기본 2000, 최대·Excel
+  10000 행(`_BATCH_DETAILS_MAX_ROWS`)까지 한 번에 JSON/시트로 반환하는 것은 그대로이나, 결과가
+  LIMIT 에 도달하면 **조용히 자르지 않고** `truncated: true`(+`limit`) 를 페이로드에 실고
+  `logging.warning` 을 남긴다(`blend_service.batch_details`). 페이지네이션은 여전히 없음(현 데이터량엔
+  무해). 테스트: `test_batch_details_truncation_flag`(`tests/test_dashboard.py`). ⚠ 이 플래그의 UI
+  표시(insight 패널의 muted note)는 `insight.js`/`insight.html` 소유 배치 몫(본 배치 범위 밖).
 - **[POLISH] `dashboard_summary` 매 호출 점도 전체 집계** — `viscosity_service.overview`
   + `daily_reading_reminders`(`dashboard_routes.py` L81-82)를 range 요청마다 재계산.
   기간 무관 값이라 캐시 여지.
-- **[POLISH] `material_usage_periods` by_product×day 조합 폭증 가능** — 상위 대시보드가
-  `group=day&by_product=true` 로 넓은 기간을 요청하면 items=자재×제품×일수로 커진다
-  (`blend_service.py` L289-307). 상한 없음.
+- **[POLISH] ✅ 해소 — `material_usage_periods` by_product×day 조합 폭증 상한** — `group=day&by_product=true`
+  로 넓은 기간을 요청하면 items=자재×제품×일수로 커지던 것에 상한(`_MATERIAL_USAGE_MAX_ITEMS`=5000)을
+  뒀다. 넘으면 **조용히 자르지 않고** items 를 상한까지 자르되 `truncated: true`·`total_item_count`
+  를 페이로드에 실고 `logging.warning`(기간·group·by_product 포함)을 남긴다(`blend_service.py`).
+  추가 키는 additive 라 상위 재고 대시보드 계약 호환(§3.3). 테스트:
+  `test_material_usage_periods_truncation_flag`(`tests/test_dashboard.py`).
 
 ### 공개 API 정보 과다 / stale
 
@@ -239,12 +249,22 @@ material_usage.py`, `test_public_rescale_alerts.py`.
   L38-42). 역프록시/터널 뒤에 두면 모든 요청이 프록시 사설 IP로 보여 IP 게이트가
   전부 통과. 운영은 토큰 요구가 방어선이나, `IRMS_REQUIRE_TRAY_API_TOKEN=0` 으로
   끄면 그대로 뚫림. 프록시 도입 시 신뢰 설정 필수(코드 주석도 동일 경고).
-- **[POLISH] 대시보드 '점도 이상'·'오늘 점도 미입력' 카드 stale 축** — 두 카드는 range
-  와 무관(최신 연도/오늘 기준, `dashboard_routes.py` L81-82,91-92). 사용자가 과거
-  기간을 선택해도 이 두 카드만 '지금' 값이라 라벨('최신 연도'/'알림 대상 기준')로만
-  구분. 오해 소지.
-- **[POLISH] `dashboard_recent` 기간 무시** — 최근 기록은 range 와 무관하게 항상 id
-  DESC 최신(`dashboard_routes.py` L184-205). 대시보드 다른 지표와 시점 불일치.
+- **[POLISH] ✅ 판정·문서화 — '점도 이상'·'오늘 점도 미입력' 카드는 의도된 현재상태(range 무관)** —
+  **결론: 버그 아님. range 를 적용하지 않는 게 정상**이다. 근거:
+  - '점도 이상'(`viscosity_service.overview.total_anomaly`)은 spec±σ 이상 판정을 **최신 연도**로 스코프한
+    품질 현재상태 지표라, 임의 과거 기간에 재계산하는 것은 의미가 없다.
+  - '오늘 점도 미입력'(`daily_reading_reminders(target_date=today)`)은 본질이 **오늘**의 미입력 알림이라
+    range 를 붙이면 정의가 깨진다.
+  - `dashboard_summary` 코드도 이 둘을 "현재 상태 스냅샷(기간과 무관한 '지금 해야 할 일')"으로 명시(주석).
+  → **조치**: range-기반 KPI(배합 건수/총량/종류)와 섞여 오해되지 않도록, 두 카드는 이미 단위 라벨로
+  현재상태 축을 표기한다 — '점도 이상'=`건 · 최신 연도`, '오늘 점도 미입력'=라벨 `오늘…` + `알림 대상 기준`
+  (`dashboard.html` L50-57). 이 축 표기는 유지하며, 본 문서가 "의도된 현재상태(range 무관)"임을 못 박는다.
+  (템플릿 문구를 `(전체 기간)` 으로 바꾸는 것은 부정확 — 각각 '최신 연도'/'오늘'이라 현 라벨이 더 정확.
+  템플릿은 본 배치 소유 밖.)
+- **[POLISH] ✅ 판정·문서화 — `dashboard_recent` 기간 무시도 의도됨** — '최근 배합 기록' 위젯은
+  이름 그대로 **range 와 무관하게 항상 최신 id DESC**(`dashboard_routes.py` `dashboard_recent`, `limit`만
+  받고 from/to 파라미터 자체가 없음)로, '최근 활동' 성격의 상시 최신 목록이다(패널 제목도 "최근 배합 기록
+  · 전체 보기→/status"). 다른 range-기반 지표와 시점이 다른 것은 설계된 것 — 버그 아님, 문서로 확정.
 
 ---
 

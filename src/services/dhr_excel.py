@@ -166,9 +166,12 @@ def build_official_dhr_xlsx(
 
     # 비고 영역(표 아래 빈 공간)에 표식/이력을 한 줄로 남긴다(GAP-5). 공식 양식 레이아웃은
     # 건드리지 않고 표 하단에 append 만 한다.
+    #  - 취소된 기록이면 "(취소된 기록)" 표식(단건 출력은 상태 무관 가능 — POLISH-7b).
     #  - 일괄 재생성 기록이면 "(일괄 재생성 기록)" 표식(현장 계량 아님).
     #  - 증량(rescale) 이력이 있으면 요약을 이어 붙인다.
     note_parts: list[str] = []
+    if record.get("status") == "canceled":
+        note_parts.append("(취소된 기록)")
     if record.get("is_bulk_regenerated"):
         note_parts.append("(일괄 재생성 기록)")
     summary = rescale_summary_line(record)

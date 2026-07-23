@@ -1,6 +1,8 @@
 import sqlite3
 from dataclasses import dataclass
 
+from . import dhr_cache
+
 
 @dataclass(frozen=True, slots=True)
 class RecipeDeletionResult:
@@ -112,6 +114,8 @@ def delete_blend_record(
     )
     connection.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (record_id,))
     connection.execute("DELETE FROM blend_records WHERE id = ?", (record_id,))
+    # POLISH-7a: hard 삭제된 기록의 DHR PDF 캐시(비서명본)를 함께 지운다 — 디스크 잔류 방지.
+    dhr_cache.purge(record_id)
     return BlendRecordDeletionResult(
         record_id=record_id,
         product_lot=str(row["product_lot"]),

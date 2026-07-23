@@ -12,12 +12,20 @@ NOTE: 1차 증분은 기록 중심이다. 자동 재고 차감은 기존 계량(
 """
 
 import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
 from ..db.queries import normalize_token
 from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
+
+logger = logging.getLogger(__name__)
+
+# 대시보드/분석 집계 상한 — 무제한 반환으로 응답이 폭증하는 것을 막는다(no silent truncation:
+# 상한을 넘으면 truncated 플래그 + 경고 로그를 남기고, 조용히 잘라내지 않는다).
+_MATERIAL_USAGE_MAX_ITEMS = 5000
+_BATCH_DETAILS_MAX_ROWS = 10000
 
 
 # ── 비율/이론량 환산 ────────────────────────────────────────────
@@ -336,14 +344,29 @@ def material_usage_periods(
         "WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?",
         (start_date, end_date),
     ).fetchone()[0]
+    # by_product=True + group=day 로 넓은 기간을 요청하면 items 가 자재×제품×일수로 폭증할 수
+    # 있어 상한을 둔다. 넘으면 잘라내되 truncated 로 표면화(조용한 절단 금지).
+    # total_weight 는 절단 전 전체 합으로 계산(부분합으로 총량이 과소 보고되는 것 방지).
+    total_items = len(items)
+    total_weight = round(sum(i["total_actual"] for i in items), 3)
+    truncated = total_items > _MATERIAL_USAGE_MAX_ITEMS
+    if truncated:
+        logger.warning(
+            "material_usage_periods truncated: %d items > cap %d "
+            "(start=%s end=%s group=%s by_product=%s)",
+            total_items, _MATERIAL_USAGE_MAX_ITEMS, start_date, end_date, group, by_product,
+        )
+        items = items[:_MATERIAL_USAGE_MAX_ITEMS]
     return {
         "start_date": start_date,
         "end_date": end_date,
         "group": group,
         "unit": "g",
         "record_count": int(rec_count),
-        "total_weight": round(sum(i["total_actual"] for i in items), 3),
+        "total_weight": total_weight,
         "items": items,
+        "truncated": truncated,
+        "total_item_count": total_items,
     }
 
 
@@ -542,6 +565,7 @@ def batch_details(
         where.append("br.product_name = ?")
         params.append(product)
     wsql = " AND ".join(where)
+    effective_limit = max(1, min(int(limit), _BATCH_DETAILS_MAX_ROWS))
     rows = connection.execute(
         f"""
         SELECT br.id AS record_id, br.work_date, br.product_lot, br.product_name, br.worker,
@@ -553,8 +577,16 @@ def batch_details(
         ORDER BY br.work_date DESC, br.id DESC, bd.sequence_order ASC
         LIMIT ?
         """,
-        [*params, max(1, min(int(limit), 10000))],
+        [*params, effective_limit],
     ).fetchall()
+    # LIMIT 에 정확히 걸리면 더 있을 수 있으므로 truncated 로 표면화(조용한 절단 금지).
+    truncated = len(rows) >= effective_limit
+    if truncated:
+        logger.warning(
+            "batch_details truncated at LIMIT %d (start=%s end=%s product=%s) — "
+            "결과가 상한에 도달해 일부가 잘렸을 수 있음",
+            effective_limit, start_date, end_date, product,
+        )
     items = []
     for r in rows:
         theory = None if r["theory_amount"] is None else float(r["theory_amount"])
@@ -583,6 +615,8 @@ def batch_details(
         "total": len(items),
         "batch_count": len({i["record_id"] for i in items}),
         "material_count": len({i["material_name"] for i in items}),
+        "truncated": truncated,
+        "limit": effective_limit,
     }
 
 

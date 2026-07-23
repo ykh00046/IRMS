@@ -317,10 +317,10 @@
    `serve.py:free_port`(251행)는 자기/PID 0 을 제외한 **모든** 리슨 프로세스를 `taskkill /F`.
    9000 을 정당하게 쓰는 다른 앱이 있으면 함께 죽는다. 운영 PC 를 IRMS 전용으로 유지 권장.
 
-8. **[POLISH] 설치 안내 파이썬 버전 불일치.**
-   `setup_server.bat`(15행)은 **Python 3.12** 설치를 안내하지만, lock 검증·운영 기준은
-   **3.11**(§5, CLAUDE.md 교훈). 설치 버전에 따라 휠 호환이 달라질 수 있으니 안내를 3.11 로
-   맞추거나 지원 범위를 명시하는 게 좋다.
+8. **[해결됨] 설치 안내 파이썬 버전 불일치.**
+   `setup_server.bat`(15행)의 설치 안내 문구를 **Python 3.11** 로 맞췄다 — lock 검증·운영 기준
+   (§5, CLAUDE.md 교훈)과 일치. 바이너리 휠(numpy 등)은 파이썬 마이너 버전에 민감하므로 운영
+   기준 버전으로 통일한다.
 
 9. **[POLISH] lock 과 requirements 범위는 호환하나 마커 차이 존재.**
    `requirements.txt` 는 `pywin32; platform_system=='Windows'` 마커가 있으나

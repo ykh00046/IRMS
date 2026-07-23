@@ -5,7 +5,7 @@
 지표는 배합 실적과 점도에서 나온다. 배합은 편차 0 강제 저장이라 편차 지표는 없다.
 
 Endpoints (무로그인 개방, 조회 전용):
-    GET /dashboard/summary   기간 KPI + 현재 상태(결재 대기·점도 이상·오늘 점도 미입력)
+    GET /dashboard/summary   기간 KPI + 현재 상태(점도 이상·오늘 점도 미입력)
     GET /dashboard/trend     일별 배합 건수·총량
     GET /dashboard/products  반제품별 배합 TOP
     GET /dashboard/workers   작업자별 실적
@@ -70,14 +70,9 @@ def build_router() -> APIRouter:
                 """,
                 (from_date, to_date),
             ).fetchone()
-            # 현재 상태 스냅샷 (기간과 무관한 '지금 해야 할 일')
-            approval_pending = connection.execute(
-                """
-                SELECT COUNT(*) AS cnt FROM blend_records
-                WHERE status = 'completed'
-                  AND (approved_by IS NULL OR approved_by = '')
-                """
-            ).fetchone()["cnt"]
+            # 현재 상태 스냅샷 (기간과 무관한 '지금 해야 할 일').
+            # NOTE: 결재 대기(approval_pending)는 2026-07-15 카드 제거 + 2026-07-23 페이로드
+            # 에서도 제거했다(결재 현장 미사용 — 죽은 값을 매 호출 계산·반환하지 않음).
             due = viscosity_service.daily_reading_reminders(connection, target_date=today)
             viscosity_anomaly = viscosity_service.overview(connection)["total_anomaly"]
 
@@ -87,7 +82,6 @@ def build_router() -> APIRouter:
             "total_weight_g": round(float(row["total_weight"] or 0.0), 2),
             "product_count": int(row["products"] or 0),
             "worker_count": int(row["workers"] or 0),
-            "approval_pending": int(approval_pending or 0),
             "viscosity_anomaly": int(viscosity_anomaly or 0),
             "viscosity_due_today": [item["code"] for item in due],
         }

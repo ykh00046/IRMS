@@ -52,3 +52,19 @@ def put(record: dict[str, Any], data: bytes) -> None:
         marker_path.write_text(_marker(record), encoding="utf-8")
     except OSError:
         pass
+
+
+def purge(record_id: Any) -> None:
+    """레코드의 캐시(PDF+마커)를 삭제 — hard 삭제 후 잔류 파일 제거(POLISH-7a).
+
+    id 재사용은 없지만 디스크 litter 를 남기지 않도록 삭제 시 함께 정리한다.
+    파일이 없어도(캐시 미생성) 안전한 no-op.
+    """
+    if record_id is None:
+        return
+    pdf_path, marker_path = _paths(record_id)
+    for path in (pdf_path, marker_path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
