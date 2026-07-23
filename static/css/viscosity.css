@@ -13,8 +13,11 @@ body {
 }
 
 .visc-toolbar-panel {
-  margin-bottom: var(--space-4);
+  /* page-grid(gap 24px)가 섹션 간격을 이미 제공 — margin 을 더하면 이중 여백이 된다
+     (KPI 카드 위 40px/아래 58px 신고 2026-07-23). 그리드 간격 하나로 통일. */
+  margin-bottom: 0;
 }
+.visc-cards { margin-bottom: 0; }
 
 .visc-product-picker,
 .visc-toolbar-actions {
@@ -70,7 +73,7 @@ body {
 }
 
 .visc-register-panel {
-  margin-top: var(--space-4);
+  margin-top: 0;  /* page-grid gap 이 담당 */
 }
 
 .visc-register-head {
