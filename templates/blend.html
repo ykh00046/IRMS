@@ -271,7 +271,7 @@
 
         <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
         <div class="ss-modal-overlay" id="discard-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
             <div class="ss-modal-header"><h3 id="discard-modal-title">폐기 권장</h3></div>
             <div class="ss-modal-body" id="discard-modal-body"></div>
             <div class="ss-modal-footer blend-actions">
@@ -318,7 +318,7 @@
              책임자 이름+비밀번호로 /api/blend/manager-verify(purpose=manual) 검증 후 이 배합에 한해
              손입력을 허용한다. 부재 경로 없음(승인만). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="manual-approve-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="manual-approve-title">
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="manual-approve-title">
             <div class="ss-modal-header"><h3 id="manual-approve-title">수기 입력 책임자 승인</h3></div>
             <div class="ss-modal-body">
               <p class="rescale-approve-lead">저울 전용 모드에서 수기 입력을 허용하려면 책임자 승인이 필요합니다. 승인은 <strong>이 배합에 한해</strong> 적용됩니다.</p>
