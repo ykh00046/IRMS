@@ -721,5 +721,61 @@ document.addEventListener("DOMContentLoaded", () => {
     loadScaleOnly();
   })();
 
+  // ── 배합 창 예외 코드 설정 카드 ──────────────────────────────────
+  // GET 으로 현재 코드를 표시하고, 저장 버튼으로 PUT(x-csrftoken 직접 부착). 책임자 전용.
+  (function initBlendWindowCodeCard() {
+    const card = document.getElementById("blend-window-code-card");
+    const input = document.getElementById("blend-window-code-input");
+    const saveBtn = document.getElementById("blend-window-code-save");
+    if (!card || !input || !saveBtn) return;
+
+    async function loadCode() {
+      try {
+        const res = await fetch("/api/settings/blend-window-override", { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        input.value = (data && data.code) || "";
+        saveBtn.disabled = false;
+      } catch (err) {
+        IRMS.notify(`배합 창 예외 코드 조회 실패: ${err.message}`, "error");
+      }
+    }
+
+    saveBtn.addEventListener("click", async () => {
+      const code = String(input.value || "").trim();
+      if (code.length < 4 || code.length > 32) {
+        IRMS.notify("코드는 4자 이상 32자 이하여야 합니다.", "error");
+        return;
+      }
+      saveBtn.disabled = true;
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const res = await fetch("/api/settings/blend-window-override", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ code }),
+        });
+        if (!res.ok) {
+          let msg = `HTTP ${res.status}`;
+          try {
+            const p = await res.json();
+            if (p && p.detail) msg = typeof p.detail === "object" ? (p.detail.message || msg) : String(p.detail);
+          } catch (_e) { /* noop */ }
+          throw new Error(msg);
+        }
+        IRMS.notify("배합 창 예외 코드를 변경했습니다.", "success");
+      } catch (err) {
+        IRMS.notify(`배합 창 예외 코드 변경 실패: ${err.message}`, "error");
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    loadCode();
+  })();
+
   refreshDashboard();
 });

@@ -227,3 +227,122 @@ def test_service_falls_back_when_table_missing():
     # set 도 조용히 no-op (예외 없음)
     settings_service.set_scale_only_input(conn, True, updated_by="x")
     assert settings_service.get_scale_only_input(conn) is False
+
+
+# ============================================================
+# 배합 창 예외 코드(blend-window-override) — get/put(책임자) + verify(무로그인)
+# ============================================================
+def _csrf_only(client):
+    """로그인 없이 CSRF 토큰만 확보(공개 GET 이 csrftoken 쿠키를 심는다)."""
+    client.get("/api/settings/scale-only-input")
+    tok = client.cookies.get("csrftoken")
+    return {"x-csrftoken": tok} if tok else {}
+
+
+def test_blend_window_override_default_and_verify():
+    """기본 코드 111111 — GET(책임자)은 기본값, verify(무로그인+csrf)는 일치만 ok."""
+    client = _client()
+    headers = _login(client)
+
+    # 다른 테스트가 코드를 바꿔뒀을 수 있으므로(공유 DB) 행을 지워 순수 기본값을 확인.
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM app_settings WHERE key = ?",
+            (settings_service.BLEND_WINDOW_OVERRIDE_KEY,),
+        )
+        conn.commit()
+
+    got = client.get("/api/settings/blend-window-override", headers=headers)
+    assert got.status_code == 200, got.text
+    assert got.json() == {"code": "111111"}
+
+    # verify 는 무로그인(별도 클라이언트) — 로그인 없이도 동작, CSRF 만 필요.
+    anon = _client()
+    ch = _csrf_only(anon)
+    ok = anon.post(
+        "/api/settings/blend-window-override/verify", json={"code": "111111"}, headers=ch
+    )
+    assert ok.status_code == 200 and ok.json() == {"ok": True}, ok.text
+    bad = anon.post(
+        "/api/settings/blend-window-override/verify", json={"code": "000000"}, headers=ch
+    )
+    assert bad.status_code == 200 and bad.json() == {"ok": False}
+
+
+def test_blend_window_override_get_requires_manager():
+    """GET/PUT 은 책임자 전용 — 미인증 401/403."""
+    client = _client()
+    assert client.get("/api/settings/blend-window-override").status_code in (401, 403)
+    assert client.put(
+        "/api/settings/blend-window-override", json={"code": "222222"}
+    ).status_code in (401, 403)
+
+
+def test_blend_window_override_change_persists_and_audits():
+    """책임자가 코드 변경 → verify 가 새 코드로 통과, 옛 코드는 실패, audit 남고 값 노출 안 함."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        before = conn.execute(
+            "SELECT COUNT(*) FROM audit_logs WHERE action = 'setting_blend_window_override_set'"
+        ).fetchone()[0]
+
+    res = client.put(
+        "/api/settings/blend-window-override", json={"code": "77-4213"}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+
+    # 새 코드로 verify 통과, 기본/옛 코드는 실패(무로그인 클라이언트 + csrf)
+    anon = _client()
+    ch = _csrf_only(anon)
+    assert anon.post(
+        "/api/settings/blend-window-override/verify", json={"code": "77-4213"}, headers=ch
+    ).json() == {"ok": True}
+    assert anon.post(
+        "/api/settings/blend-window-override/verify", json={"code": "111111"}, headers=ch
+    ).json() == {"ok": False}
+
+    # GET 이 새 코드 반환
+    assert client.get(
+        "/api/settings/blend-window-override", headers=headers
+    ).json() == {"code": "77-4213"}
+
+    # audit 행이 추가되고, details 에 코드 값 자체는 없다(length 만)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT details_json FROM audit_logs WHERE action = 'setting_blend_window_override_set' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        after = conn.execute(
+            "SELECT COUNT(*) FROM audit_logs WHERE action = 'setting_blend_window_override_set'"
+        ).fetchone()[0]
+    assert after == before + 1
+    assert "77-4213" not in (row[0] or "")
+
+
+def test_blend_window_override_rejects_short_code():
+    """4자 미만/32자 초과 코드 → 400."""
+    client = _client()
+    headers = _login(client)
+    assert client.put(
+        "/api/settings/blend-window-override", json={"code": "12"}, headers=headers
+    ).status_code == 400
+    assert client.put(
+        "/api/settings/blend-window-override", json={"code": "x" * 40}, headers=headers
+    ).status_code == 400
+
+
+def test_service_blend_window_override_helpers():
+    """서비스 헬퍼 단위 — 기본값·저장·검증."""
+    conn = _make_db(with_table=True)
+    assert settings_service.get_blend_window_override_code(conn) == "111111"
+    assert settings_service.verify_blend_window_override_code(conn, "111111") is True
+    settings_service.set_blend_window_override_code(conn, "abcd12", updated_by="x")
+    assert settings_service.get_blend_window_override_code(conn) == "abcd12"
+    assert settings_service.verify_blend_window_override_code(conn, "abcd12") is True
+    assert settings_service.verify_blend_window_override_code(conn, "111111") is False

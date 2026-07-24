@@ -280,6 +280,13 @@
   flex-wrap: wrap;
 }
 
+.blend-window-code-edit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.blend-window-code-edit .input { width: 160px; max-width: 44vw; }
+
 .scale-only-desc {
   flex: 1;
   min-width: 220px;

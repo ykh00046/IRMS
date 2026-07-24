@@ -22,10 +22,15 @@
   // 비상 예외(정말 오류로 잘못 막혔을 때만) — 눈에 보이는 버튼은 없다. 경고 아이콘을
   // OVERRIDE_TAPS 번 연속 눌러야 코드 입력칸이 나타나고, 관리자만 아는 코드를 넣어야
   // 넘어갈 수 있다. 책임자 혼자서는 방법을 모르게 해서 관리자 문의를 강제하는 소프트
-  // 게이트다(현장 꼼수 차단이 목적 — 암호학적 보안이 아니라 사회적 장벽). 코드는 아래
-  // 한 줄만 바꾸면 되고, 짐작하기 어려운 값으로 관리자가 바꿔 배포하는 것을 권장한다.
-  var OVERRIDE_CODE = "48-6213";
+  // 게이트다(현장 꼼수 차단이 목적 — 암호학적 보안이 아니라 사회적 장벽). 코드는 서버
+  // (app_settings)에 저장되고 사용자 관리 화면에서 관리자가 변경한다(기본 111111). 여기선
+  // 코드를 갖지 않고 서버에 대조만 요청한다(코드가 클라이언트로 내려오지 않음).
   var OVERRIDE_TAPS = 5;
+
+  function csrfToken() {
+    var m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
 
   var bc;
   try { bc = new BroadcastChannel(CH); } catch (_e) { return; }
@@ -90,11 +95,27 @@
       }
     });
 
+    var okBtn = el.querySelector("#blend-window-guard-code-ok");
     function tryCode() {
-      if (codeEl && codeEl.value.trim() === OVERRIDE_CODE) { doOverride(); }
-      else if (codeEl) { codeEl.value = ""; codeEl.focus(); }  // 조용히 실패(안내 없음).
+      if (!codeEl) return;
+      var val = codeEl.value.trim();
+      if (!val) { codeEl.focus(); return; }
+      if (okBtn) okBtn.disabled = true;
+      // 서버에 대조 요청(코드는 내려받지 않는다). 일치 시에만 진행.
+      fetch("/api/settings/blend-window-override/verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({ code: val }),
+      }).then(function (r) { return r.ok ? r.json() : { ok: false }; })
+        .then(function (d) {
+          if (d && d.ok) { doOverride(); }
+          else { codeEl.value = ""; codeEl.focus(); }  // 조용히 실패(안내 없음).
+        })
+        .catch(function () { codeEl.value = ""; codeEl.focus(); })
+        .then(function () { if (okBtn) okBtn.disabled = false; });
     }
-    el.querySelector("#blend-window-guard-code-ok").addEventListener("click", tryCode);
+    if (okBtn) okBtn.addEventListener("click", tryCode);
     if (codeEl) codeEl.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); tryCode(); }
     });

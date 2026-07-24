@@ -15,6 +15,12 @@ from ..db.time_utils import utc_now_text
 
 SCALE_ONLY_INPUT_KEY = "scale_only_input"
 
+# 배합 창 단일화 가드의 비상 예외 코드(blend_window_guard.js). 관리자만 알고, 사용자 관리
+# 화면에서 변경한다. 행 부재 = 기본값. 소프트 게이트(현장 꼼수 차단용) — 서버가 대조만 하고
+# 코드 자체는 클라이언트로 보내지 않는다(GET 은 책임자 전용).
+BLEND_WINDOW_OVERRIDE_KEY = "blend_window_override_code"
+BLEND_WINDOW_OVERRIDE_DEFAULT = "111111"
+
 
 def _table_exists(connection: sqlite3.Connection) -> bool:
     """app_settings 테이블 존재 여부. 구버전 DB 방어."""
@@ -67,6 +73,35 @@ def set_setting(
         """,
         (key, value, utc_now_text(), updated_by),
     )
+
+
+def get_blend_window_override_code(connection: sqlite3.Connection) -> str:
+    """배합 창 가드 비상 예외 코드. 행 없음/구버전 → 기본값(111111)."""
+    raw = get_setting(connection, BLEND_WINDOW_OVERRIDE_KEY)
+    code = (raw or "").strip()
+    return code or BLEND_WINDOW_OVERRIDE_DEFAULT
+
+
+def set_blend_window_override_code(
+    connection: sqlite3.Connection,
+    code: str,
+    updated_by: str | None = None,
+) -> None:
+    """비상 예외 코드 저장(공백 제거)."""
+    set_setting(
+        connection,
+        BLEND_WINDOW_OVERRIDE_KEY,
+        (code or "").strip(),
+        updated_by=updated_by,
+    )
+
+
+def verify_blend_window_override_code(
+    connection: sqlite3.Connection, code: str
+) -> bool:
+    """입력 코드가 저장된(또는 기본) 예외 코드와 일치하는지. 서버 측 대조."""
+    current = get_blend_window_override_code(connection)
+    return bool(current) and (code or "").strip() == current
 
 
 def get_scale_only_input(connection: sqlite3.Connection) -> bool:
