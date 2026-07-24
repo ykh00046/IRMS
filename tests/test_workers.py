@@ -451,3 +451,49 @@ def test_name_based_manager_login_flow():
     client.post("/api/auth/logout")
     bad = client.post("/api/auth/management-login", json={"username": name, "password": "wrong"})
     assert bad.status_code == 401
+
+
+def test_worker_manager_auto_blend_session():
+    """이름 기반 책임자는 /blend 진입 시 작업자 이름을 다시 묻지 않는다(자동 세션).
+    admin(가상 계정)은 이름이 없어 기존 로그인 흐름 유지."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    name = "배합책임" + uuid.uuid4().hex[:6]
+
+    # admin 은 브리지 대상 아님 → 배합 로그인 화면으로 리다이렉트
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    tok = client.cookies.get("csrftoken")
+    headers = {"x-csrftoken": tok} if tok else {}
+    res = client.get("/blend", follow_redirects=False)
+    assert res.status_code == 303 and "/blend/login" in res.headers["location"]
+
+    # 이름 기반 책임자 등록·지정 후 본인 로그인
+    client.post("/api/workers", json={"name": name}, headers=headers)
+    with get_connection() as conn:
+        wid = conn.execute("SELECT id FROM workers WHERE name=?", (name,)).fetchone()["id"]
+    client.post(f"/api/workers/{wid}/manager", json={"password": "field123"}, headers=headers)
+    client.post("/api/auth/logout", headers=headers)
+    assert client.post(
+        "/api/auth/management-login", json={"username": name, "password": "field123"}
+    ).status_code == 200
+
+    # /blend 진입 → 리다이렉트 없이 렌더 + 본인 이름으로 작업자 세션 자동 개설
+    res = client.get("/blend", follow_redirects=False)
+    assert res.status_code == 200
+    me = client.get("/api/blend/session/me")
+    assert me.status_code == 200 and me.json()["worker"] == name
+
+    # /blend/login 직접 접근도 로그인 화면 대신 배합으로 통과
+    res = client.get("/blend/login", follow_redirects=False)
+    assert res.status_code == 303 and res.headers["location"] == "/blend"

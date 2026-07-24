@@ -10,9 +10,13 @@ from ..attendance_auth import (
     logout_session as att_logout_session,
 )
 from ..auth import get_current_user, has_access_level
-from ..blend_session import current_blend_worker, logout_worker_session
+from ..blend_session import (
+    current_blend_worker,
+    login_worker_session,
+    logout_worker_session,
+)
 from ..config import SEED_DEMO_DATA
-from ..db import get_connection
+from ..db import get_connection, write_audit_log
 from ..security import refresh_csrf_cookie
 from ..services import worker_service
 
@@ -57,6 +61,34 @@ def _entry_redirect(target_path: str, request: Request) -> RedirectResponse:
     next_url = quote(request.url.path or target_path, safe="/")
     joiner = "&" if "?" in target_path else "?"
     return RedirectResponse(url=f"{target_path}{joiner}next={next_url}", status_code=303)
+
+
+def _blend_worker_or_bridge(request: Request) -> str | None:
+    """배합 작업자 세션 — 없으면 이름 기반 책임자의 본인 이름으로 자동 개설.
+
+    책임자는 이용자 명단의 실제 사람이므로 배합 진입 때 이름을 다시 물을 이유가
+    없다. admin(레거시 users 계정)은 가상 계정이라 이름이 없어 기존 로그인 유지.
+    """
+    worker = current_blend_worker(request)
+    if worker:
+        return worker
+    user = get_current_user(request, required=False)
+    if not (user and user.get("is_worker_manager")):
+        return None
+    name = str(user.get("display_name") or "").strip()
+    if not name:
+        return None
+    login_worker_session(request, name)
+    with get_connection() as connection:
+        write_audit_log(
+            connection,
+            action="blend_worker_login",
+            target_type="worker",
+            target_label=name,
+            details={"worker": name, "via": "manager_session"},
+        )
+        connection.commit()
+    return name
 
 
 def _protected_page_response(
@@ -146,7 +178,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/blend", response_class=HTMLResponse)
     def blend_page(request: Request) -> Response:
-        worker = current_blend_worker(request)
+        worker = _blend_worker_or_bridge(request)
         if not worker:
             return _entry_redirect("/blend/login", request)
         return _render(templates, request, "blend.html", {
@@ -156,7 +188,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/blend/bulk", response_class=HTMLResponse)
     def blend_bulk_page(request: Request) -> Response:
-        worker = current_blend_worker(request)
+        worker = _blend_worker_or_bridge(request)
         if not worker:
             return _entry_redirect("/blend/login", request)
         return _render(templates, request, "blend.html", {
@@ -167,7 +199,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/blend/continuous", response_class=HTMLResponse)
     def blend_continuous_page(request: Request) -> Response:
         # 이어서 계량: 한 레시피로 N개 로트를 자재 열 우선으로 연속 계량 → 로트별 기록 N건.
-        worker = current_blend_worker(request)
+        worker = _blend_worker_or_bridge(request)
         if not worker:
             return _entry_redirect("/blend/login", request)
         return _render(templates, request, "blend_continuous.html", {
@@ -178,7 +210,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     @router.get("/blend/login", response_class=HTMLResponse)
     def blend_login_page(request: Request, next: str | None = None) -> Response:
         next_url = _safe_next(next, "/blend")
-        if current_blend_worker(request):
+        if _blend_worker_or_bridge(request):
             return RedirectResponse(url=next_url, status_code=303)
         return _render(templates, request, "blend_login.html", {
             "current_user": get_current_user(request, required=False),
