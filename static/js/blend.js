@@ -19,6 +19,7 @@
     TOLERANCE_G,
     ANCHOR_BADGE,
     fmt,
+    toleranceDecimals,
     todayISO,
     nowTime,
     rowVariance,
@@ -927,6 +928,10 @@
     if (!use) $("blend-reactor").value = "";
   }
 
+  // 계량값 표시 소수 자릿수 — 현재 레시피 허용 편차(state.toleranceG)를 따른다(표시 전용).
+  // 계산·검증·저장은 그대로 2자리 이론 기준을 유지한다.
+  function dp() { return toleranceDecimals(state.toleranceG); }
+
   function recomputeTheory() {
     // 기준 자재 모드에서는 총량 입력이 읽기 전용 — 이론량은 기준 자재 실측값에서
     // 도출되므로 이 총량 기반 재계산 경로를 타지 않는다.
@@ -1512,12 +1517,12 @@
     // 이론량 셀·실제량 placeholder·입력 활성화 상태 갱신(재렌더 없이 DOM 갱신 — 포커스 유지)
     document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
       const i = Number(cell.dataset.idx);
-      cell.textContent = fmt(state.items[i].theory_amount);
+      cell.textContent = fmt(state.items[i].theory_amount, dp());
     });
     document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
       const i = Number(act.dataset.idx);
       const it = state.items[i];
-      if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount);
+      if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount, dp());
       // 기준 자재 입력 전이면 비기준 자재 입력 비활성화, 입력 후면 활성화
       if (i !== ai) act.disabled = !anchorEntered;
     });
@@ -1580,7 +1585,7 @@
     const text = $("shortage-modal-text");
     if (text) {
       text.textContent =
-        `이론 ${fmt(it.theory_amount)} g / 실제 ${fmt(Number(it.actual_amount))} g — ${fmt(shortage, 2)} g 부족`
+        `이론 ${fmt(it.theory_amount, dp())} g / 실제 ${fmt(Number(it.actual_amount), dp())} g — ${fmt(shortage, dp())} g 부족`
         + "\n추가로 채우기: 더 올리는 무게(입력·저울 PRINT)가 현재 값에 합산됩니다.";
     }
     $("shortage-modal").hidden = false;
@@ -1674,9 +1679,9 @@
     }
     html += `<div class="rescale-totals">`
       + `<span>총 배합량</span>`
-      + `<span class="old">${fmt(effectiveCurrentTotal())} g</span>`
+      + `<span class="old">${fmt(effectiveCurrentTotal(), dp())} g</span>`
       + `<span>→</span>`
-      + `<span class="new">${fmt(plan.newTotal)} g</span>`
+      + `<span class="new">${fmt(plan.newTotal, dp())} g</span>`
       + `</div>`;
     if (overRows.length) {
       html += `<table class="rescale-add-table"><thead><tr><th>자재</th>`
@@ -1685,9 +1690,9 @@
       overRows.forEach((r) => {
         const it = state.items[r.idx];
         html += `<tr><td>${esc(it.material_name)}</td>`
-          + `<td class="num">${fmt(it.actual_amount)}</td>`
-          + `<td class="num">${fmt(r.newTheory)}</td>`
-          + `<td class="num add-cell">+${fmt(r.addNeeded)}</td></tr>`;
+          + `<td class="num">${fmt(it.actual_amount, dp())}</td>`
+          + `<td class="num">${fmt(r.newTheory, dp())}</td>`
+          + `<td class="num add-cell">+${fmt(r.addNeeded, dp())}</td></tr>`;
       });
       html += `</tbody></table>`;
     }
@@ -1705,7 +1710,7 @@
     const body = $("discard-modal-body");
     if (body) {
       body.innerHTML = `<p>증량하면 총 배합량이 25,000 g 을 초과합니다 `
-        + `(예상 ${fmt(plan.newTotal)} g). 폐기를 권장합니다.</p>`;
+        + `(예상 ${fmt(plan.newTotal, dp())} g). 폐기를 권장합니다.</p>`;
     }
     $("discard-modal").hidden = false;
   }
@@ -1928,7 +1933,7 @@
     renderAddBadges();
     showRescaleUndo();
     renderRescaleSummary(plan);
-    notify(`배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+    notify(`배합량을 ${fmt(plan.newTotal, dp())} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
   }
 
   // 증량 적용 요약줄 — 자재별 '더 넣을 양'을 상시 표시(작업자가 얼마나 넣었는지 잊지 않게).
@@ -1969,7 +1974,7 @@
     document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
     document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
       const i = Number(cell.dataset.idx);
-      if (state.items[i]) cell.textContent = fmt(state.items[i].theory_amount);
+      if (state.items[i]) cell.textContent = fmt(state.items[i].theory_amount, dp());
     });
     state.items.forEach((_, i) => updateRowVar(i));
     updateTotals();
@@ -1992,7 +1997,7 @@
       if (!it || r.newTheory === null) return;
       it.theory_amount = r.newTheory;
       const cell = document.querySelector(`.blend-theory[data-idx="${r.idx}"]`);
-      if (cell) cell.textContent = fmt(r.newTheory);
+      if (cell) cell.textContent = fmt(r.newTheory, dp());
     });
     state.items.forEach((_, i) => updateRowVar(i));
     updateTotals();
@@ -2022,8 +2027,8 @@
       badge.className = "blend-add-badge";
       badge.dataset.idx = String(r.idx);
       badge.textContent = r.newTheory != null
-        ? `목표 ${fmt(r.newTheory)} · 추가 +${fmt(r.addNeeded)} g`
-        : `추가 +${fmt(r.addNeeded)} g`;
+        ? `목표 ${fmt(r.newTheory, dp())} · 추가 +${fmt(r.addNeeded, dp())} g`
+        : `추가 +${fmt(r.addNeeded, dp())} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => openAddWeighModal(r.idx));
       td.appendChild(badge);
@@ -2178,9 +2183,9 @@
     const cur = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
     const remaining = addWeighRemaining(idx);
     const remEl = $("add-weigh-remaining");
-    if (remEl) remEl.textContent = `+${fmt(remaining, 1)} g`;
+    if (remEl) remEl.textContent = `+${fmt(remaining, dp())} g`;
     const subEl = $("add-weigh-sub");
-    if (subEl) subEl.textContent = `목표 ${fmt(target, 1)} g · 현재 ${fmt(cur, 1)} g`;
+    if (subEl) subEl.textContent = `목표 ${fmt(target, dp())} g · 현재 ${fmt(cur, dp())} g`;
     // 자동 완료 — 남은 양이 허용 편차 이내면 성공 안내 후 닫고 다음 LOT 로.
     if (remaining <= state.toleranceG + 1e-9) {
       notify(`${it.material_name} 추가 계량 완료`, "success");
@@ -2267,10 +2272,10 @@
 
   function updateTotals() {
     const { theory, actual, net } = computeTotals(state.items);
-    $("blend-theory-total").textContent = state.items.length ? fmt(theory) : "-";
-    $("blend-actual-total").textContent = state.items.length ? fmt(actual) : "-";
+    $("blend-theory-total").textContent = state.items.length ? fmt(theory, dp()) : "-";
+    $("blend-actual-total").textContent = state.items.length ? fmt(actual, dp()) : "-";
     const nv = $("blend-net-var");
-    nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, 2) : "-";
+    nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, dp()) : "-";
     updateTotalLock();
   }
 
@@ -2520,11 +2525,11 @@
       // 이론량 셀 + 실제량 입력칸 안내값 갱신 — data-idx 기준(설명 줄이 끼어도 안전)
       document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
         const it = state.items[Number(cell.dataset.idx)];
-        if (it) cell.textContent = fmt(it.theory_amount);
+        if (it) cell.textContent = fmt(it.theory_amount, dp());
       });
       document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
         const it = state.items[Number(act.dataset.idx)];
-        if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount);
+        if (it) act.placeholder = it.theory_amount == null ? "" : fmt(it.theory_amount, dp());
       });
       updateTotals();
       updateLotPreview();

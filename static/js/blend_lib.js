@@ -8,7 +8,7 @@
  * 허용하며, 조회(document.getElementById/querySelector)는 하지 않는다.
  *
  * Exports (window.IRMS.blendLib):
- *   esc, TOLERANCE_G, ANCHOR_BADGE, fmt, todayISO, nowTime, rowVariance,
+ *   esc, TOLERANCE_G, ANCHOR_BADGE, fmt, toleranceDecimals, todayISO, nowTime, rowVariance,
  *   baseTotalValues, materialRowHtml, baseTotalLinksHtml, bulkRowHtml,
  *   computeTotals, computeTheoryAmount,
  *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
@@ -48,6 +48,21 @@
     if (v === null || v === undefined || v === "") return "-";
     // 기본 소수 2자리 — 저울(XP 0.01g) 해상도에 맞춤
     return Number(v).toFixed(d === undefined ? 2 : d);
+  }
+
+  // 계량값 표시 소수 자릿수 — 레시피 허용 편차(tolerance_g)의 소수 자릿수를 따른다.
+  // 허용 편차가 큰 레시피는 저울 해상도(0.1g 등)나 대용량 배치 때문이라, 저울이 못 찍는
+  // 소수(4775.72)를 목표로 보여주는 게 부자연스럽다는 현장 판단(2026-07-24).
+  //   null/undefined/NaN → 2 (기본값 0.05 와 동일 — 기존 동작 보존)
+  //   0.05 → 2, 0.1/0.5 → 1, 1 이상 정수 → 0, 2.5 → 1
+  // 표시 전용 — 계산·검증·저장은 이 값과 무관하게 서버 기준(2자리 이론)을 유지한다.
+  function toleranceDecimals(tolG) {
+    const n = Number(tolG);
+    if (tolG === null || tolG === undefined || !Number.isFinite(n)) return 2;
+    // 최소 표기(String(n))의 소수 자릿수를 센다: "0.05"→2, "0.1"→1, "1"→0, "2.5"→1.
+    const s = String(n);
+    const dot = s.indexOf(".");
+    return dot < 0 ? 0 : s.length - dot - 1;
   }
 
   function todayISO() {
@@ -377,6 +392,7 @@
     TOLERANCE_G,
     ANCHOR_BADGE,
     fmt,
+    toleranceDecimals,
     todayISO,
     nowTime,
     rowVariance,

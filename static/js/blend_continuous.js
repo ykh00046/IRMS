@@ -19,7 +19,7 @@
   const notify = IRMS.notify || function (m) { console.log(m); };
 
   const {
-    esc, TOLERANCE_G, fmt, todayISO, nowTime,
+    esc, TOLERANCE_G, fmt, toleranceDecimals, todayISO, nowTime,
     computeTheoryAmount, findAnchorIndex, theoryFromWeights,
     baseTotalValues, baseTotalLinksHtml,
     rescalePlan, exceedsBatchLimit,
@@ -916,6 +916,10 @@
     state.cells = next;
   }
 
+  // 계량값 표시 소수 자릿수 — 현재 레시피 허용 편차(state.toleranceG)를 따른다(표시 전용).
+  // 계산·검증·저장은 그대로 2자리 이론 기준을 유지한다.
+  function dp() { return toleranceDecimals(state.toleranceG); }
+
   function recomputeTheory() {
     // value_weight 비례 방식 — 서버(blend_service.scale_theory)와 동일 산술로
     // 반올림된 ratio(%) 로 인한 꼬리를 없앤다. value_weight 이 빠진 옛 레시피는
@@ -1001,7 +1005,7 @@
       const rescaled = state.lotRescale && state.lotRescale[j];
       const chip = `<span class="cont-lot-chip">로트 ${j + 1}</span>`;
       const totalBadge = rescaled
-        ? ` <small class="cont-lot-total">· ${fmt(rescaled)} g</small>`
+        ? ` <small class="cont-lot-total">· ${fmt(rescaled, dp())} g</small>`
         : "";
       const emphCls = rescaled ? " cont-lot-rescaled" : "";
       lotHeads.push(
@@ -1026,7 +1030,7 @@
         const cell = state.cells[i][j];
         // 셀 placeholder 도 로트별 이론(theoryFor) 기준 — 증량 로트는 큰 값 표시.
         const th = theoryFor(i, j);
-        const ph = th == null ? "" : fmt(th);
+        const ph = th == null ? "" : fmt(th, dp());
         const lc = `cont-lc${j % 4}${j === 0 ? " cont-first-lot" : ""}`;
         // 각 셀 = 자재 LOT(위) + 실제량(아래). LOT 은 셀별(cells[i][j].lot) — 로트마다 다른
         // 봉지를 쓴 실제를 그대로 기록. j>0 셀엔 '↩' 이전-로트 LOT 복사 버튼(명시적 클릭만).
@@ -1051,7 +1055,7 @@
         + `<td>${i + 1}</td>`
         + `<td class="cont-matname">${esc(m.material_name)}</td>`
         + `<td class="num">${fmt(m.ratio, 2)}</td>`
-        + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i])}</td>`
+        + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i], dp())}</td>`
         + cells.join("")
         + "</tr>");
     });
@@ -1247,7 +1251,7 @@
         window.alert(
           `부족 계량: ${state.materials[i].material_name} (로트 ${j + 1})
 `
-          + `이론 ${fmt(th)} g / 실제 ${fmt(Number(raw))} g — ${fmt(Math.abs(v), 2)} g 부족
+          + `이론 ${fmt(th, dp())} g / 실제 ${fmt(Number(raw), dp())} g — ${fmt(Math.abs(v), dp())} g 부족
 
 `
           + `저울을 다시 올려 채운 뒤, 최종 무게(합계)를 이 칸에 다시 입력하세요.`
@@ -1283,13 +1287,13 @@
   function refreshTheoryCells() {
     document.querySelectorAll("#cont-mat-body .cont-theory").forEach((cell) => {
       const i = Number(cell.dataset.i);
-      cell.textContent = fmt(state.theory[i]);
+      cell.textContent = fmt(state.theory[i], dp());
     });
     document.querySelectorAll("#cont-mat-body .cont-actual").forEach((act) => {
       const i = Number(act.dataset.i);
       const j = Number(act.dataset.j);
       const th = theoryFor(i, j);
-      act.placeholder = th == null ? "" : fmt(th);
+      act.placeholder = th == null ? "" : fmt(th, dp());
     });
     for (let i = 0; i < state.materials.length; i++) {
       for (let j = 0; j < state.lotCount; j++) updateCellVar(i, j);
@@ -1379,9 +1383,9 @@
     if (over) html += `<p class="rescale-summary">초과 자재(로트 ${j + 1}): ${over}</p>`;
     html += `<div class="rescale-totals">`
       + `<span>총 배합량</span>`
-      + `<span class="old">${fmt(lotTotal(j))} g</span>`
+      + `<span class="old">${fmt(lotTotal(j), dp())} g</span>`
       + `<span>→</span>`
-      + `<span class="new">${fmt(plan.newTotal)} g</span>`
+      + `<span class="new">${fmt(plan.newTotal, dp())} g</span>`
       + `</div>`;
     if (overRows.length) {
       html += `<table class="rescale-add-table"><thead><tr><th>자재</th>`
@@ -1390,9 +1394,9 @@
       overRows.forEach((r) => {
         const act = items[r.idx] ? items[r.idx].actual_amount : "";
         html += `<tr><td>${esc(r.name)}</td>`
-          + `<td class="num">${fmt(Number(act))}</td>`
-          + `<td class="num">${fmt(r.newTheory)}</td>`
-          + `<td class="num add-cell">+${fmt(r.addNeeded)}</td></tr>`;
+          + `<td class="num">${fmt(Number(act), dp())}</td>`
+          + `<td class="num">${fmt(r.newTheory, dp())}</td>`
+          + `<td class="num add-cell">+${fmt(r.addNeeded, dp())}</td></tr>`;
       });
       html += `</tbody></table>`;
     }
@@ -1412,7 +1416,7 @@
     const body = $("cont-discard-modal-body");
     if (body) {
       body.innerHTML = `<p>로트 ${j + 1}: 증량하면 총 배합량이 25,000 g 을 초과합니다 `
-        + `(예상 ${fmt(plan.newTotal)} g). 폐기를 권장합니다.</p>`;
+        + `(예상 ${fmt(plan.newTotal, dp())} g). 폐기를 권장합니다.</p>`;
     }
     $("cont-discard-modal").hidden = false;
   }
@@ -1433,14 +1437,14 @@
     for (let i = 0; i < state.materials.length; i++) {
       updateCellVar(i, j);
       const inp = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
-      if (inp) inp.placeholder = theoryFor(i, j) == null ? "" : fmt(theoryFor(i, j));
+      if (inp) inp.placeholder = theoryFor(i, j) == null ? "" : fmt(theoryFor(i, j), dp());
     }
     renderContLotHeader(j);
     renderAddBadges(j);
     renderContRescaleSummary();
     updateContTotalLock();  // 증량은 lotRescale[j] 만 바꾸므로 잠금 상태는 유지 — 방어적 재적용.
     scheduleDraftSave();    // 증량 적용(override 총량·plan) 도 임시 저장(복구용)
-    notify(`로트 ${j + 1} 배합량을 ${fmt(plan.newTotal)} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+    notify(`로트 ${j + 1} 배합량을 ${fmt(plan.newTotal, dp())} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
   }
 
   // ── 증량 승인 게이트(책임자 승인 없이는 증량 불가) — 로트별 스코프 ────────────
@@ -1467,7 +1471,7 @@
     const pending = state.pendingContRescale;
     const lead = $("cont-rescale-approve-lead");
     if (lead && pending) {
-      lead.textContent = `로트 ${pending.j + 1} 증량(→ ${fmt(pending.plan.newTotal)} g)은 책임자 승인이 필요합니다. 책임자 이름과 비밀번호를 입력하세요.`;
+      lead.textContent = `로트 ${pending.j + 1} 증량(→ ${fmt(pending.plan.newTotal, dp())} g)은 책임자 승인이 필요합니다. 책임자 이름과 비밀번호를 입력하세요.`;
     }
     const nameEl = $("cont-rescale-approve-name");
     const pwEl = $("cont-rescale-approve-pw");
@@ -1655,7 +1659,7 @@
     if (!th) return;
     const rescaled = state.lotRescale && state.lotRescale[j];
     const chip = `<span class="cont-lot-chip">로트 ${j + 1}</span>`;
-    const totalBadge = rescaled ? ` <small class="cont-lot-total">· ${fmt(rescaled)} g</small>` : "";
+    const totalBadge = rescaled ? ` <small class="cont-lot-total">· ${fmt(rescaled, dp())} g</small>` : "";
     // 기존 cont-lc*/cont-first-lot 클래스는 보존, cont-lot-rescaled 만 토글.
     th.classList.toggle("cont-lot-rescaled", Boolean(rescaled));
     th.innerHTML = `${chip}${totalBadge}<br><small class="cont-lot-preview" data-j="${j}">-</small>`;
@@ -1696,7 +1700,7 @@
       badge.className = "blend-add-badge";
       badge.dataset.i = String(r.idx);
       badge.dataset.j = String(j);
-      badge.textContent = `추가 +${fmt(r.addNeeded)} g`;
+      badge.textContent = `추가 +${fmt(r.addNeeded, dp())} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => openAddInline(r.idx, j));
       td.appendChild(badge);
