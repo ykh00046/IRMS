@@ -86,6 +86,44 @@ def _seed_recipe(conn, product="잉크A", weights=(60.0, 30.0, 10.0)):
     return rid
 
 
+# ── 중복 자재(분할 계량) 파생 ────────────────────────────────────
+def test_derive_pairs_duplicate_material_rows_in_order():
+    """같은 자재가 레시피에 두 번(분할 계량) — 이름 딕셔너리 짝짓기가 행을 소실/오짝해
+    정상 계량을 편차 초과로 오판하던 회귀(PB Cyclopentanone 2000+3510, 2026-07-24)."""
+    conn = _make_db()
+    rid = conn.execute(
+        "INSERT INTO recipes (product_name, ink_name, status) VALUES ('PBX', 'PBX', 'completed')"
+    ).lastrowid
+    mid_a = conn.execute(
+        "INSERT INTO materials (name, unit_type, unit) VALUES ('L-HEMA', 'weight', 'g')"
+    ).lastrowid
+    mid_c = conn.execute(
+        "INSERT INTO materials (name, unit_type, unit) VALUES ('Cyclopentanone', 'weight', 'g')"
+    ).lastrowid
+    for mid, w in ((mid_a, 4500.0), (mid_c, 2000.0), (mid_c, 3510.0)):
+        conn.execute(
+            "INSERT INTO recipe_items (recipe_id, material_id, value_weight) VALUES (?, ?, ?)",
+            (rid, mid, w),
+        )
+    total = 4500.0 + 2000.0 + 3510.0
+    details = [
+        {"material_name": "L-HEMA", "actual_amount": 4500.01, "material_lot": "L1"},
+        {"material_name": "Cyclopentanone", "actual_amount": 2000.02, "material_lot": "C1"},
+        {"material_name": "Cyclopentanone", "actual_amount": 3509.98, "material_lot": "C1"},
+    ]
+    derived, out_total = bs.derive_details_from_recipe(conn, rid, total, details)
+    assert len(derived) == 3
+    cyc = [d for d in derived if d["material_name"] == "Cyclopentanone"]
+    assert [round(d["theory_amount"], 2) for d in cyc] == [2000.0, 3510.0]
+    assert [d["actual_amount"] for d in cyc] == [2000.02, 3509.98]
+    # 편차 검사: 모두 ±0.05 이내 → 위반 없음 (기존엔 오짝으로 Cyclopentanone 위반 오판)
+    assert bs.weighing_tolerance_violations(derived, tolerance_g=0.05) == []
+    # 행 수 불일치는 명확한 오류로
+    import pytest as _pytest
+    with _pytest.raises(bs.RecipeMismatchError):
+        bs.derive_details_from_recipe(conn, rid, total, details[:2])
+
+
 # ── 비율/이론량 ─────────────────────────────────────────────────
 def test_compute_ratios():
     assert bs.compute_ratios([60, 30, 10]) == [60.0, 30.0, 10.0]

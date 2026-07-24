@@ -994,25 +994,52 @@ def derive_details_from_recipe(
     if not recipe:
         raise RecipeMismatchError("레시피를 찾을 수 없습니다.")
 
-    items = {str(it["material_name"]): it for it in recipe["items"]}
-    incoming = {str(d.get("material_name") or ""): d for d in details}
-    if set(items) != set(incoming):
-        missing = sorted(set(items) - set(incoming))
-        extra = sorted(set(incoming) - set(items))
+    # 같은 자재가 레시피에 여러 번 나올 수 있다(분할 계량 — 예: PB 의 Cyclopentanone
+    # 2000g+3510g). 이름 키 딕셔너리로 짝지으면 중복 행이 조용히 소실되거나 엉뚱한
+    # 이론량과 짝지어져 정상 계량이 편차 초과로 오판된다(현장 신고 2026-07-24).
+    # → 이름별 '등장 순서 보존 그룹'으로 모아 k번째는 k번째와 짝짓는다.
+    from collections import defaultdict
+
+    incoming_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for d in details:
+        incoming_groups[str(d.get("material_name") or "")].append(d)
+    item_counts: dict[str, int] = defaultdict(int)
+    for it in recipe["items"]:
+        item_counts[str(it["material_name"])] += 1
+
+    if dict(item_counts) != {k: len(v) for k, v in incoming_groups.items()}:
+        item_names = set(item_counts)
+        in_names = set(incoming_groups)
+        missing = sorted(item_names - in_names)
+        extra = sorted(in_names - item_names)
+        count_diff = sorted(
+            n for n in (item_names & in_names)
+            if item_counts[n] != len(incoming_groups[n])
+        )
         parts = []
         if missing:
             parts.append("누락: " + ", ".join(missing))
         if extra:
             parts.append("레시피에 없음: " + ", ".join(extra))
+        if count_diff:
+            parts.append("행 수 불일치: " + ", ".join(count_diff))
         raise RecipeMismatchError(
             "자재 구성이 레시피와 다릅니다 — 화면을 새로고침하세요. (" + " / ".join(parts) + ")"
         )
+
+    # 그룹 내 소비 인덱스 — recipe["items"] 순서대로 같은 이름의 k번째 detail 을 꺼낸다.
+    consumed: dict[str, int] = defaultdict(int)
+
+    def take_incoming(name: str) -> dict[str, Any]:
+        idx = consumed[name]
+        consumed[name] += 1
+        return incoming_groups[name][idx]
 
     # 기준 자재가 있으면 총량을 실측에서 되돌려 계산 (없으면 작업자가 고른 배치 총량 사용)
     total = float(total_amount)
     anchor = next((it for it in recipe["items"] if it.get("is_anchor")), None)
     if anchor is not None:
-        anchor_actual = _opt_num(incoming[str(anchor["material_name"])].get("actual_amount"))
+        anchor_actual = _opt_num(incoming_groups[str(anchor["material_name"])][0].get("actual_amount"))
         if anchor_actual is None or anchor_actual <= 0:
             raise RecipeMismatchError(
                 f"기준 자재({anchor['material_name']})를 먼저 계량하세요."
@@ -1027,7 +1054,7 @@ def derive_details_from_recipe(
     derived: list[dict[str, Any]] = []
     for order, item in enumerate(recipe["items"], start=1):
         name = str(item["material_name"])
-        sent = incoming[name]
+        sent = take_incoming(name)
         ratio = float(item["ratio"] or 0)
         if anchor is not None:
             # 저울 해상도(2자리) — 기준 자재 파생 이론량도 2자리로 맞춘다.
