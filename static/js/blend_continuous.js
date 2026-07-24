@@ -719,7 +719,6 @@
   function recipesForCategory() {
     const cat = $("cont-recipe-cat") ? $("cont-recipe-cat").value : "";
     if (cat === "") return state.recipes;                       // 전체
-    if (cat === "__none__") return state.recipes.filter((r) => !r.category);  // 미분류
     return state.recipes.filter((r) => r.category === cat);
   }
 
