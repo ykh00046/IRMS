@@ -794,6 +794,23 @@
       box.appendChild(item);
     });
     box.hidden = !matches.length;
+    if (!box.hidden) positionLotSuggest(input, box);
+  }
+
+  // 아래 공간이 부족하면(맨 아래 행 등 .table-wrap overflow 로 잘리는 경우) 위로 연다.
+  // 배합 화면 renderLotSuggest 와 동일한 보정 — 자세한 배경은 blend.js 참고.
+  function positionLotSuggest(input, box) {
+    box.classList.remove("lot-suggest--up");
+    const wrap = input.closest(".table-wrap");
+    if (!wrap) return;
+    const inRect = input.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const boxH = box.offsetHeight || 216;
+    const spaceBelow = wrapRect.bottom - inRect.bottom;
+    const spaceAbove = inRect.top - wrapRect.top;
+    if (spaceBelow < boxH + 8 && spaceAbove > spaceBelow) {
+      box.classList.add("lot-suggest--up");
+    }
   }
 
   function hideLotSuggest(input) {

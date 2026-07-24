@@ -1178,6 +1178,26 @@
       box.appendChild(item);
     });
     box.hidden = !matches.length;
+    if (!box.hidden) positionLotSuggest(input, box);
+  }
+
+  // 제안 목록은 기본으로 LOT 칸 바로 아래(top:100%)에 뜬다. 그런데 표 컨테이너
+  // (.table-wrap)는 가로 스크롤용 overflow-x:auto 를 갖고, CSS 규칙상 세로도 함께
+  // 잘린다(overflow-y 가 visible→auto 로 승격). 그래서 맨 아래 행의 자재(예: 2단
+  // 제조 2차의 마지막 1차 반제품 행)는 아래로 열리는 제안이 컨테이너 밑단에서 잘려
+  // 안 보였다. 아래 공간이 부족하면 위로 열어(bottom:100%) 표 안쪽에 보이게 한다.
+  function positionLotSuggest(input, box) {
+    box.classList.remove("lot-suggest--up");
+    const wrap = input.closest(".table-wrap");
+    if (!wrap) return;
+    const inRect = input.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const boxH = box.offsetHeight || 216;
+    const spaceBelow = wrapRect.bottom - inRect.bottom;
+    const spaceAbove = inRect.top - wrapRect.top;
+    if (spaceBelow < boxH + 8 && spaceAbove > spaceBelow) {
+      box.classList.add("lot-suggest--up");
+    }
   }
 
   function hideLotSuggest(input) {

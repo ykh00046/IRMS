@@ -457,6 +457,13 @@
   box-shadow: 0 12px 28px rgba(21, 35, 63, 0.18);
 }
 .lot-suggest[hidden] { display: none !important; }
+/* 맨 아래 행 등 아래 공간이 부족할 때 위로 열어(.table-wrap overflow 로 잘리지 않게) 준다. */
+.lot-suggest--up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
+}
 .lot-suggest-item {
   display: block;
   width: 100%;
