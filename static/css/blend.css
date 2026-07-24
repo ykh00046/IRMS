@@ -387,11 +387,19 @@
   background: #fff; border-radius: 16px; padding: 28px 26px; text-align: center;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.4);
 }
-.blend-window-guard-icon { font-size: 2.4rem; color: #b45309; margin-bottom: 6px; }
+/* 경고 아이콘은 숨은 비상구 트리거 — 클릭 가능하지만 그렇게 보이지 않게(labeled 아님). */
+.blend-window-guard-icon { font-size: 2.4rem; color: #b45309; margin-bottom: 6px; user-select: none; }
 .blend-window-guard-title { margin: 0 0 10px; font-size: 1.25rem; color: #15233f; }
 .blend-window-guard-text { margin: 0 0 10px; font-size: 0.95rem; line-height: 1.6; color: #334155; }
 .blend-window-guard-text strong { color: #b45309; }
-.blend-window-guard-hint { margin: 0 0 16px; font-size: 0.82rem; color: #6b7688; }
+.blend-window-guard-hint { margin: 0 0 4px; font-size: 0.82rem; color: #6b7688; }
+/* 비상 예외(관리자 코드) — 기본 숨김, 아이콘 연속 탭으로만 노출. */
+.blend-window-guard-override { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e5e7eb; }
+.blend-window-guard-override[hidden] { display: none !important; }
+.blend-window-guard-override-label { display: block; margin-bottom: 6px; font-size: 0.82rem; color: #6b7688; }
+.blend-window-guard-override-row { display: flex; gap: 8px; }
+.blend-window-guard-override-row .input { flex: 1; }
+.blend-window-guard-override-hint { margin: 8px 0 0; font-size: 0.76rem; color: #94a3b8; }
 /* 이어서 계량(연속) 증량 승인 모달 — blend.js 모달의 ID 스코프 규칙을 별도 id 로 재적용
    (템플릿이 분리돼 #cont-rescale-approve-modal 로 뜨므로 클래스 규칙만으론 미적용되는
    .blend-field/.login-error 간격만 additive 로 보강). 나머지는 위 클래스 규칙 공유. */

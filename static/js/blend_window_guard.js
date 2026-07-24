@@ -18,6 +18,15 @@
 
   var CH = "irms-blend-window";
   var myId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+
+  // 비상 예외(정말 오류로 잘못 막혔을 때만) — 눈에 보이는 버튼은 없다. 경고 아이콘을
+  // OVERRIDE_TAPS 번 연속 눌러야 코드 입력칸이 나타나고, 관리자만 아는 코드를 넣어야
+  // 넘어갈 수 있다. 책임자 혼자서는 방법을 모르게 해서 관리자 문의를 강제하는 소프트
+  // 게이트다(현장 꼼수 차단이 목적 — 암호학적 보안이 아니라 사회적 장벽). 코드는 아래
+  // 한 줄만 바꾸면 되고, 짐작하기 어려운 값으로 관리자가 바꿔 배포하는 것을 권장한다.
+  var OVERRIDE_CODE = "48-6213";
+  var OVERRIDE_TAPS = 5;
+
   var bc;
   try { bc = new BroadcastChannel(CH); } catch (_e) { return; }
 
@@ -42,19 +51,52 @@
     el.className = "blend-window-guard";
     el.innerHTML =
       '<div class="blend-window-guard-card">' +
-      '  <div class="blend-window-guard-icon" aria-hidden="true">⚠</div>' +
+      '  <div class="blend-window-guard-icon" id="blend-window-guard-secret" aria-hidden="true">⚠</div>' +
       '  <h2 class="blend-window-guard-title">다른 창이 떠 있습니다</h2>' +
       '  <p class="blend-window-guard-text">이미 다른 창에서 배합을 진행 중입니다.<br>' +
       '     저울 값이 엉뚱한 창에 들어가거나 임시저장이 섞일 수 있으니,<br>' +
       '     <strong>이 창을 닫고 한 창에서만</strong> 작업해 주세요.</p>' +
       '  <p class="blend-window-guard-hint">원래 창을 닫으면 이 안내는 자동으로 사라집니다.</p>' +
-      '  <button type="button" class="btn" id="blend-window-guard-continue">그래도 이 창에서 계속</button>' +
+      '  <div class="blend-window-guard-override" id="blend-window-guard-override" hidden>' +
+      '    <label class="blend-window-guard-override-label" for="blend-window-guard-code">관리자 확인 코드</label>' +
+      '    <div class="blend-window-guard-override-row">' +
+      '      <input class="input" id="blend-window-guard-code" type="password" autocomplete="off" inputmode="text" />' +
+      '      <button type="button" class="btn" id="blend-window-guard-code-ok">확인</button>' +
+      '    </div>' +
+      '    <p class="blend-window-guard-override-hint">정말 오류로 막힌 경우에만 사용하세요. 코드는 관리자에게 문의하세요.</p>' +
+      '  </div>' +
       '</div>';
-    el.querySelector("#blend-window-guard-continue").addEventListener("click", function () {
+
+    function doOverride() {
       // 이 창을 쓰겠다고 선택 → 상대 창들이 대신 막히도록 인계 신호를 보낸다(슬롯 이동).
       bc.postMessage({ type: "takeover", from: myId });
       others = {};
       hideBlock();
+    }
+
+    // 숨은 비상구: 경고 아이콘을 OVERRIDE_TAPS 번(1.5초 내 연속) 눌러야 코드 입력칸이 나타난다.
+    var taps = 0, tapTimer = null;
+    var secret = el.querySelector("#blend-window-guard-secret");
+    var overrideBox = el.querySelector("#blend-window-guard-override");
+    var codeEl = el.querySelector("#blend-window-guard-code");
+    secret.addEventListener("click", function () {
+      taps += 1;
+      if (tapTimer) clearTimeout(tapTimer);
+      tapTimer = setTimeout(function () { taps = 0; }, 1500);
+      if (taps >= OVERRIDE_TAPS) {
+        taps = 0;
+        overrideBox.hidden = false;
+        if (codeEl) codeEl.focus();
+      }
+    });
+
+    function tryCode() {
+      if (codeEl && codeEl.value.trim() === OVERRIDE_CODE) { doOverride(); }
+      else if (codeEl) { codeEl.value = ""; codeEl.focus(); }  // 조용히 실패(안내 없음).
+    }
+    el.querySelector("#blend-window-guard-code-ok").addEventListener("click", tryCode);
+    if (codeEl) codeEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); tryCode(); }
     });
     return el;
   }
@@ -64,6 +106,11 @@
     blocked = true;
     if (!overlay) overlay = buildOverlay();
     if (!overlay.isConnected) document.body.appendChild(overlay);
+    // 재노출 시 비상구는 다시 숨기고 코드칸을 비운다(이전에 펼쳐뒀던 상태가 남지 않게).
+    var ov = overlay.querySelector("#blend-window-guard-override");
+    if (ov) ov.hidden = true;
+    var codeEl = overlay.querySelector("#blend-window-guard-code");
+    if (codeEl) codeEl.value = "";
     overlay.hidden = false;
   }
 
