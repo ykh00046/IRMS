@@ -374,6 +374,24 @@
   color: var(--brand, #2563eb);
   font-weight: 700;
 }
+
+/* 배합 창 단일화 가드 — 두 번째 배합 창을 덮어 막는 전체 오버레이(blend_window_guard.js). */
+.blend-window-guard {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(15, 23, 42, 0.72);
+}
+.blend-window-guard[hidden] { display: none !important; }
+.blend-window-guard-card {
+  max-width: min(460px, 94vw); width: 100%;
+  background: #fff; border-radius: 16px; padding: 28px 26px; text-align: center;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.4);
+}
+.blend-window-guard-icon { font-size: 2.4rem; color: #b45309; margin-bottom: 6px; }
+.blend-window-guard-title { margin: 0 0 10px; font-size: 1.25rem; color: #15233f; }
+.blend-window-guard-text { margin: 0 0 10px; font-size: 0.95rem; line-height: 1.6; color: #334155; }
+.blend-window-guard-text strong { color: #b45309; }
+.blend-window-guard-hint { margin: 0 0 16px; font-size: 0.82rem; color: #6b7688; }
 /* 이어서 계량(연속) 증량 승인 모달 — blend.js 모달의 ID 스코프 규칙을 별도 id 로 재적용
    (템플릿이 분리돼 #cont-rescale-approve-modal 로 뜨므로 클래스 규칙만으론 미적용되는
    .blend-field/.login-error 간격만 additive 로 보강). 나머지는 위 클래스 규칙 공유. */
