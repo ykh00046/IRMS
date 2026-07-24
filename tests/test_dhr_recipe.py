@@ -19,7 +19,7 @@ def _db() -> sqlite3.Connection:
             product_name TEXT, position TEXT, ink_name TEXT,
             status TEXT DEFAULT 'completed', created_at TEXT DEFAULT '2026-06-26',
             is_dhr INTEGER NOT NULL DEFAULT 0, revision_of INTEGER, category TEXT,
-            product_code TEXT
+            product_code TEXT, stage1_recipe_id INTEGER
         );
         CREATE TABLE recipe_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT, recipe_id INTEGER,

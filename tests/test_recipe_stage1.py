@@ -397,3 +397,34 @@ def test_stage1_in_history():
     by_id = {it["id"]: it for it in hist}
     assert by_id[parent]["stage1_recipe_id"] == stage1_id
     assert by_id[child]["stage1_recipe_id"] == stage1_id  # 승계
+
+
+def test_blend_recipe_list_clusters_families_adjacently():
+    """list_blend_recipes 의 가족 정렬 — 2차와 그 1차가 인접(명시 링크 + 이름 규칙)."""
+    from src.services.blend_service import _cluster_recipe_families
+
+    # 최신순(created_at DESC)으로 흩어진 상태를 흉내낸다.
+    items = [
+        {"id": 1, "product_name": "K-TOP", "stage1_recipe_id": 9},
+        {"id": 2, "product_name": "NPR-S", "stage1_recipe_id": None},
+        {"id": 3, "product_name": "SBCT-1", "stage1_recipe_id": None},
+        {"id": 4, "product_name": "SCRA", "stage1_recipe_id": None},
+        {"id": 7, "product_name": "PB", "stage1_recipe_id": None},
+        {"id": 9, "product_name": "K-TOP-1", "stage1_recipe_id": None},
+        {"id": 10, "product_name": "SBCT", "stage1_recipe_id": 3},
+        {"id": 11, "product_name": "PB-1", "stage1_recipe_id": None},
+    ]
+    names = [x["product_name"] for x in _cluster_recipe_families(items)]
+
+    def adjacent(a, b):
+        i = names.index(a)
+        return names[i + 1] == b if i + 1 < len(names) else False
+
+    # 명시 링크 가족: 최종(2차)이 먼저, 1차가 바로 뒤.
+    assert adjacent("K-TOP", "K-TOP-1")
+    assert adjacent("SBCT", "SBCT-1")
+    # 이름 규칙만으로도(명시 링크 없음) 묶인다.
+    assert adjacent("PB", "PB-1")
+    # 단일 레시피는 그대로 유지되고 전체 개수는 보존된다.
+    assert "NPR-S" in names and "SCRA" in names
+    assert len(names) == len(items)

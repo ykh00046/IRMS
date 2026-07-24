@@ -704,7 +704,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
     rows = connection.execute(
         """
         SELECT r.id, r.product_name, r.position, r.ink_name, r.status, r.category,
-               r.product_code,
+               r.product_code, r.stage1_recipe_id,
                COUNT(ri.id) AS item_count,
                COALESCE(SUM(ri.value_weight), 0) AS total_weight
         FROM recipes r
@@ -718,7 +718,7 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
         """,
         (1 if dhr else 0,),
     ).fetchall()
-    return [
+    items = [
         {
             "id": int(r["id"]),
             "product_name": r["product_name"],
@@ -729,11 +729,70 @@ def list_blend_recipes(connection: sqlite3.Connection, *, dhr: bool = False) -> 
             # 반제품 품목코드(item-code P1). 매칭(P2) 또는 등록(P3)으로 부여.
             # UI 는 P6 범위 밖이므로 응답 필드만 노출.
             "product_code": r["product_code"],
+            "stage1_recipe_id": (
+                int(r["stage1_recipe_id"]) if r["stage1_recipe_id"] is not None else None
+            ),
             "item_count": int(r["item_count"]),
             "total_weight": round(float(r["total_weight"]), 3),
         }
         for r in rows
     ]
+    return _cluster_recipe_families(items)
+
+
+def _cluster_recipe_families(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """레시피 목록을 2단 제조 가족(1차↔2차)끼리 인접하게 재정렬한다.
+
+    배합·이어서 계량 드롭다운에서 가족이 흩어져 보이던 문제 해결. 전체 순서는 기존
+    최신순을 유지하되, 각 가족은 '가족의 첫 등장 위치'에 함께 모아 최종(2차)을 먼저,
+    이어서 1차(중간체)를 붙인다. 관계는 명시 링크(stage1_recipe_id) 우선, 없으면 이름
+    규칙("<base>" 과 "<base>-1")으로 보완(현황 가족 묶음과 동일 기준).
+    """
+    by_id = {it["id"]: it for it in items}
+    id_by_name: dict[str, int] = {}
+    for it in items:
+        id_by_name.setdefault(str(it["product_name"] or ""), it["id"])
+
+    # leader[id] = 그 가족의 대표(최종/2차) 레시피 id. 기본은 자기 자신.
+    leader = {it["id"]: it["id"] for it in items}
+    # 1) 명시 링크: 2차 F 가 가리키는 1차 S 는 F 가족으로.
+    for it in items:
+        s1 = it.get("stage1_recipe_id")
+        if s1 is not None and s1 in by_id:
+            leader[s1] = it["id"]
+    # 2) 이름 규칙 보완: "<base>-1" 은 "<base>" 가족으로(명시 링크 없을 때).
+    for it in items:
+        name = str(it["product_name"] or "")
+        if name.endswith("-1"):
+            base_id = id_by_name.get(name[:-2])
+            if base_id is not None and base_id != it["id"] and leader[it["id"]] == it["id"]:
+                leader[it["id"]] = base_id
+
+    def resolve(i: int) -> int:
+        seen: set[int] = set()
+        while leader[i] != i and i not in seen:
+            seen.add(i)
+            i = leader[i]
+        return i
+
+    from collections import defaultdict
+
+    members: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for it in items:
+        members[resolve(it["id"])].append(it)
+
+    emitted: set[int] = set()
+    ordered: list[dict[str, Any]] = []
+    for it in items:  # 최신순 유지 — 가족은 첫 등장 위치에 모은다.
+        lid = resolve(it["id"])
+        if lid in emitted:
+            continue
+        emitted.add(lid)
+        grp = members[lid]
+        # 대표(2차)를 먼저, 나머지(1차)는 이름순.
+        grp.sort(key=lambda x: (0 if x["id"] == lid else 1, str(x["product_name"] or "")))
+        ordered.extend(grp)
+    return ordered
 
 
 # ── product_lot 생성 ────────────────────────────────────────────
