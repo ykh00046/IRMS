@@ -30,6 +30,9 @@
         {% elif admin_mode %}
           <span class="att-badge att-badge-admin">책임자 + 본인 로그인</span>
         {% endif %}
+        {% if admin_mode %}
+          <a href="/admin/users" class="btn compact accent">사용자 관리</a>
+        {% endif %}
         <a href="/viscosity" class="btn compact accent">점도</a>
         <a href="/blend" class="btn compact accent">배합</a>
         <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
