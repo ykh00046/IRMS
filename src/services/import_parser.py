@@ -179,13 +179,32 @@ def parse_import_text(
     # 2차 레시피의 자재 중 마스터에 없어도 우리가 만드는 1차 반제품(레시피 product_name)이면
     # 정상 자재로 인식한다(unknown 차단 우회). 품명이 같은 완료 레시피가 하나라도 있으면 매칭.
     completed_recipe_names: set[str] = set()
+    # 1차 반제품(레시피) 이름 토큰 → 그 레시피의 product_code. 2차 BOM 에서 1차 반제품을
+    # 자재로 자동 등록할 때, 마스터에 없어도 1차 레시피의 품목코드를 그대로 그 자재에 부여한다
+    # (PB-1 이 ERP 마스터에 있어 코드가 붙는 것과 동일한 결과 — 새 가족도 즉시 코드 표시).
+    completed_recipe_codes: dict[str, str] = {}
     try:
-        for row in connection.execute(
-            "SELECT product_name FROM recipes WHERE status = 'completed'"
-        ).fetchall():
+        # product_code 컬럼이 없는 최소 스키마(단위테스트)에서도 죽지 않도록 폴백.
+        try:
+            recipe_rows = connection.execute(
+                "SELECT product_name, product_code FROM recipes WHERE status = 'completed'"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            recipe_rows = connection.execute(
+                "SELECT product_name FROM recipes WHERE status = 'completed'"
+            ).fetchall()
+        for row in recipe_rows:
             name = row["product_name"]
-            if name not in (None, ""):
-                completed_recipe_names.add(normalize_token(str(name)))
+            if name in (None, ""):
+                continue
+            tok = normalize_token(str(name))
+            completed_recipe_names.add(tok)
+            try:
+                code = row["product_code"]
+            except (IndexError, KeyError):
+                code = None
+            if code:
+                completed_recipe_codes[tok] = str(code)
     except sqlite3.OperationalError:
         completed_recipe_names = set()  # recipes 테이블 없는 구버전/테스트 스키마
     # 자재 3단 판정 결과를 preview 응답에 모아 담는다(spec §1 material_matches).
@@ -324,16 +343,32 @@ def parse_import_text(
                     # 1차 반제품(completed 레시피 product_name)이면 정상 자재로 인식한다. 코드 없이
                     # 자동 등록하고 안내(level-3)만 남긴다 — 마스터에 없어도 정상 매칭.
                     if token in completed_recipe_names:
-                        mat = _auto_register_material(connection, header.strip())
+                        # 1차 레시피의 품목코드를 이 자재에 승계한다(있을 때). 단 그 코드를
+                        # 이미 다른 자재가 쥐고 있으면 materials.code 부분 UNIQUE 충돌이 나므로
+                        # 코드 없이 등록(안전 폴백) — 코드는 이후 품목코드 화면에서 정리 가능.
+                        recipe_code = completed_recipe_codes.get(token)
+                        if recipe_code:
+                            clash = connection.execute(
+                                "SELECT 1 FROM materials WHERE code = ? LIMIT 1",
+                                (recipe_code,),
+                            ).fetchone()
+                            if clash:
+                                recipe_code = None
+                        mat = _auto_register_material(
+                            connection, header.strip(), code=recipe_code
+                        )
                         token_to_material[token] = mat
                         header_warnings.append({
                             "level": 3,
-                            "message": f"자체 제조 반제품(1차) 연계: {header.strip()}",
+                            "message": (
+                                f"자체 제조 반제품(1차) 연계: {header.strip()}"
+                                + (f" ({recipe_code})" if recipe_code else "")
+                            ),
                             "row": current_row_index,
                         })
                         material_matches.append({
                             "name": header.strip(), "status": "recipe",
-                            "code": None, "similar": [],
+                            "code": recipe_code, "similar": [],
                         })
                     else:
                         # 마스터가 비어 있으면(하위호환) 차단하지 않고 기존처럼 코드 없이 자동 등록.

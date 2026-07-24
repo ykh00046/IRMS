@@ -258,6 +258,13 @@
           "success",
         );
 
+        // 등록으로 새로 자동 등록된 자재(예: 2차 BOM 에서 인식된 1차 반제품)를 BOM 코드
+        // 배지·자재명 datalist 에 즉시 반영한다 — 전체 새로고침 없이 품목코드가 바로 뜨도록.
+        // (handleClear 가 initSpreadsheet(state.materials) 를 호출하므로 그 전에 최신화한다.)
+        if (ctx.refreshMaterials) {
+          try { await ctx.refreshMaterials(); } catch (_e) { /* 조용히 무시 — 등록은 이미 성공 */ }
+        }
+
         handleClear();
       } catch (error) {
         IRMS.notify(`등록 실패: ${error.message}`, "error");
