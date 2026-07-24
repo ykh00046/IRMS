@@ -175,7 +175,11 @@
     const text = $("cont-scale-only-control-text");
     const btn = $("cont-manual-entry-request-btn");
     if (state.manualApproved) {
-      if (text) text.textContent = `수기 입력 승인됨 — 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
+      if (text) {
+        text.textContent = state.manualApproved.absence_reason
+          ? `수기 입력 진행 — 책임자 부재(${state.manualApproved.absence_reason}) · 사후 확인 대상`
+          : `수기 입력 승인됨 — 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
+      }
       if (btn) btn.hidden = true;
       box.classList.add("is-approved");
     } else {
@@ -190,16 +194,50 @@
     }
   }
 
+  // ── 빠른 사유 태그(채움형) ──────────────────────────────────────
+  // [책임자 부재]/[야간 근무] 버튼을 누르면 사유 입력칸에 그 문구를 토글로 넣고 뺀다.
+  // 자유 텍스트도 그대로 편집 가능(사유는 " · "로 이어붙인다). 증량·수기 부재 공용.
+  function toggleReasonTag(inputEl, tag) {
+    if (!inputEl) return;
+    const parts = String(inputEl.value || "").split("·").map((s) => s.trim()).filter(Boolean);
+    const at = parts.indexOf(tag);
+    if (at >= 0) parts.splice(at, 1);
+    else parts.push(tag);
+    inputEl.value = parts.join(" · ");
+    syncReasonTags(inputEl);
+  }
+  function syncReasonTags(inputEl) {
+    if (!inputEl) return;
+    const wrap = document.querySelector(`.rescale-absence-tags[data-reason-target="${inputEl.id}"]`);
+    if (!wrap) return;
+    const val = String(inputEl.value || "");
+    wrap.querySelectorAll(".reason-tag").forEach((b) => {
+      b.classList.toggle("is-on", val.includes(b.dataset.tag));
+    });
+  }
+  function wireReasonTags() {
+    document.querySelectorAll(".rescale-absence-tags .reason-tag").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const wrap = btn.closest(".rescale-absence-tags");
+        const input = wrap && document.getElementById(wrap.dataset.reasonTarget);
+        toggleReasonTag(input, btn.dataset.tag);
+      });
+    });
+  }
+
   // ── 저울 전용 모드 수기 입력 승인 게이트 ───────────────────────
   // '수기 입력 승인 요청' → /api/blend/manager-verify(purpose=manual) 200 → 이 배합에 한해
-  // 손입력 허용. 부재 경로 없음(승인만). 레시피 변경 시 재잠금(저장은 /status 이동).
+  // 손입력 허용. 책임자 부재 시엔 사유(+빠른 사유 태그)만 남기고 진행하며, 그 로트는
+  // manual_entry 표시 + 비고의 부재 사유로 책임자가 사후 확인한다. 레시피 변경 시 재잠금.
   function openManualApproveModal() {
     const modal = $("cont-manual-approve-modal");
     if (!modal) return;
     const nameEl = $("cont-manual-approve-name");
     const pwEl = $("cont-manual-approve-pw");
+    const reasonEl = $("cont-manual-absence-reason");
     if (nameEl) nameEl.value = "";
     if (pwEl) pwEl.value = "";
+    if (reasonEl) { reasonEl.value = ""; syncReasonTags(reasonEl); }
     hideManualApproveError();
     modal.hidden = false;
     if (nameEl) nameEl.focus();
@@ -251,9 +289,32 @@
     }
   }
 
-  // 저장 시 비고에 남길 수기 입력 승인 표시(미등록 LOT 사유와 동일 방식으로 append).
+  // [부재로 진행]: 사유 필수 → 비밀번호 없이 이 배합의 손입력 잠금을 해제하되, 부재 사유를
+  // 남겨 저장 시 '미승인 수기 입력'으로 표시된다(manual_entry + 비고). 증량 부재와 달리 반복
+  // 알림 루프는 붙이지 않는다 — 성격상 manual_entry 표시로 사후 확인이 성립.
+  function submitManualAbsence() {
+    const reasonEl = $("cont-manual-absence-reason");
+    const reason = reasonEl ? reasonEl.value.trim() : "";
+    if (!reason) {
+      showManualApproveError("책임자 부재 사유를 입력하세요.");
+      if (reasonEl) reasonEl.focus();
+      return;
+    }
+    hideManualApproveError();
+    state.manualApproved = { approver: null, absence_reason: reason };
+    closeManualApproveModal();
+    applyScaleOnlyToCells();
+    updateManualEntryControl();
+    notify("책임자 부재로 수기 입력을 진행합니다 — 사유가 기록에 남아 사후 확인됩니다.", "warn");
+  }
+
+  // 저장 시 비고에 남길 수기 입력 승인/부재 표시(미등록 LOT 사유와 동일 방식으로 append).
   function buildManualApprovalNote() {
-    return state.manualApproved ? `[수기 입력 승인] 승인자: ${state.manualApproved.approver}` : "";
+    if (!state.manualApproved) return "";
+    if (state.manualApproved.absence_reason) {
+      return `[수기 입력 · 책임자 부재] 사유: ${state.manualApproved.absence_reason}`;
+    }
+    return `[수기 입력 승인] 승인자: ${state.manualApproved.approver}`;
   }
 
   // ── 이어서 계량 임시 저장·복구 ────────────────────────────────
@@ -1495,7 +1556,7 @@
     const reasonEl = $("cont-rescale-absence-reason");
     if (nameEl) nameEl.value = "";
     if (pwEl) pwEl.value = "";
-    if (reasonEl) reasonEl.value = "";
+    if (reasonEl) { reasonEl.value = ""; syncReasonTags(reasonEl); }
     hideContApproveError();
     modal.hidden = false;
     if (nameEl) nameEl.focus();
@@ -2114,6 +2175,8 @@
     if (manualSubmit) manualSubmit.addEventListener("click", () => submitManualApproval());
     const manualCancel = $("cont-manual-approve-cancel");
     if (manualCancel) manualCancel.addEventListener("click", closeManualApproveModal);
+    const manualAbsence = $("cont-manual-absence-submit");
+    if (manualAbsence) manualAbsence.addEventListener("click", submitManualAbsence);
     const manualPw = $("cont-manual-approve-pw");
     if (manualPw) manualPw.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
@@ -2127,6 +2190,8 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && manualModal && !manualModal.hidden) closeManualApproveModal();
     });
+    // 빠른 사유 태그(증량·수기 부재 공용) — 누르면 사유칸 토글 채움.
+    wireReasonTags();
     // 3회 증량 차단 모달 — 확인만.
     const blockClose = $("cont-rescale-block-close");
     if (blockClose) blockClose.addEventListener("click", closeContRescaleBlockModal);

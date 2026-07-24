@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260724b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260724c" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -302,6 +302,11 @@
               <hr class="rescale-approve-divider" />
               <div class="rescale-absence">
                 <p class="rescale-absence-title">책임자 부재 시</p>
+                <div class="rescale-absence-tags" data-reason-target="rescale-absence-reason">
+                  <span class="rescale-absence-tags-label">빠른 사유</span>
+                  <button class="btn compact reason-tag" type="button" data-tag="책임자 부재">책임자 부재</button>
+                  <button class="btn compact reason-tag" type="button" data-tag="야간 근무">야간 근무</button>
+                </div>
                 <div class="blend-field">
                   <label class="filter-label" for="rescale-absence-reason">사유</label>
                   <input class="input" id="rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
@@ -331,6 +336,21 @@
                 <input class="input" id="manual-approve-pw" type="password" autocomplete="off" />
               </div>
               <p class="login-error" id="manual-approve-error" hidden></p>
+              <hr class="rescale-approve-divider" />
+              <div class="rescale-absence">
+                <p class="rescale-absence-title">책임자 부재 시</p>
+                <div class="rescale-absence-tags" data-reason-target="manual-absence-reason">
+                  <span class="rescale-absence-tags-label">빠른 사유</span>
+                  <button class="btn compact reason-tag" type="button" data-tag="책임자 부재">책임자 부재</button>
+                  <button class="btn compact reason-tag" type="button" data-tag="야간 근무">야간 근무</button>
+                </div>
+                <div class="blend-field">
+                  <label class="filter-label" for="manual-absence-reason">사유</label>
+                  <input class="input" id="manual-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                </div>
+                <button class="btn rescale-approve-btn" id="manual-absence-submit" type="button">부재로 진행</button>
+                <p class="rescale-absence-warn">승인 없이 진행하면 이 배합의 손입력은 <strong>'미승인 수기 입력'</strong>으로 표시되고, 사유가 기록에 남아 책임자가 사후 확인합니다.</p>
+              </div>
             </div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="manual-approve-cancel" type="button">취소</button>
@@ -386,7 +406,7 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
-    <script src="/static/js/blend.js?v=20260724b"></script>
+    <script src="/static/js/blend.js?v=20260724c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
