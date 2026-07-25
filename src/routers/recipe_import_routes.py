@@ -215,11 +215,25 @@ def build_router() -> APIRouter:
                     if parent_row["stage1_recipe_id"] is not None:
                         inherited_stage1_recipe_id = int(parent_row["stage1_recipe_id"])
             # reactor-ownership: 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지).
-            effective_use_reactor = 1 if body.use_reactor else (1 if inherited_use_reactor else 0)
+            # ⚠ `if body.use_reactor` 로 읽으면 명시 False 와 미지정(None)이 구분되지 않아,
+            # 화면에서 체크를 해제해도(명시 False 전송) 부모 값이 살아남아 '끌 수 없는'
+            # 상태가 된다 — 모델이 bool|None 3상태로 정의된 이유가 여기 있다.
+            effective_use_reactor = (
+                (1 if body.use_reactor else 0) if body.use_reactor is not None
+                else (1 if inherited_use_reactor else 0)
+            )
             # 파생(derived): 명시 값 우선, 없으면 승계값(비개정 신규면 0 유지) — use_reactor 와 동일.
-            effective_is_derived = 1 if body.is_derived else (1 if inherited_is_derived else 0)
+            effective_is_derived = (
+                (1 if body.is_derived else 0) if body.is_derived is not None
+                else (1 if inherited_is_derived else 0)
+            )
             # 1차→2차 연계: 명시 값 우선, 없으면 부모 승계(비개정 신규면 None).
-            effective_stage1_recipe_id = body.stage1_recipe_id if body.stage1_recipe_id is not None else inherited_stage1_recipe_id
+            # 0 = '없음'을 명시적으로 고른 것(해제). 미전송(None)과 구분해야 화면에서
+            # 1차 연계를 풀 수 있다 — 예전에는 해제를 표현할 값이 없어 부모 값이 계속 승계됐다.
+            if body.stage1_recipe_id is not None:
+                effective_stage1_recipe_id = body.stage1_recipe_id or None
+            else:
+                effective_stage1_recipe_id = inherited_stage1_recipe_id
             # GAP 4: stage1 연계 참조 무결성 — 지정/승계된 1차 레시피가 실제로 존재해야 한다.
             # 없으면 400(댕글링 링크 차단). PUT /stage1 의 대상 존재 검증과 동일 규칙.
             if effective_stage1_recipe_id is not None:

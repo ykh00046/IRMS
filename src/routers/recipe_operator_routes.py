@@ -240,9 +240,15 @@ def build_router() -> APIRouter:
         steps = [{"position": int(s["position"]), "note": s["note"]} for s in step_rows]
         recipe["steps"] = steps
 
-        # TSV: 공정 설명('설명' 열)을 자재 사이 원위치에 끼워 수정 등록 왕복 보존
+        # TSV: 공정 설명('설명' 열)을 자재 사이 원위치에 끼워 수정 등록 왕복 보존.
+        # '위치'도 함께 싣는다 — 이 TSV 가 그대로 편집기에 올라가 수정 등록으로 되돌아가는데,
+        # 위치 열이 없으면 파서가 position=None 으로 읽어 개정할 때마다 위치가 사라졌다
+        # (구 시트 이관분은 위치가 채워져 있다).
         header = ["반제품명"]
         values = [recipe["product_name"] or ""]
+        if recipe.get("position"):
+            header.append("위치")
+            values.append(recipe["position"])
         step_queue = list(steps)
         for idx, it in enumerate(recipe_items):
             while step_queue and step_queue[0]["position"] <= idx:

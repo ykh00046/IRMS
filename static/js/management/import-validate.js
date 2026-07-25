@@ -286,9 +286,9 @@
       if (Array.isArray(baseTotals) && baseTotals.length) {
         body.base_totals = baseTotals.slice(0, 3);
       }
-      if (anchorMaterial) {
-        body.anchor_material = anchorMaterial;
-      }
+      // anchor_material: 항상 명시적으로 전송한다. 빈 문자열 = '없음'(해제) — 값이 있을
+      // 때만 보내면 수정 등록에서 기준 자재를 "없음"으로 되돌릴 수 없다(부모 값이 계속 승계).
+      body.anchor_material = anchorMaterial || "";
       // tolerance_g: 숫자 값만 전송(null 은 미지정과 동일 — 보내지 않음).
       if (toleranceG != null && Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0) {
         body.tolerance_g = Number(toleranceG);
@@ -302,10 +302,9 @@
       body.use_reactor = !!useReactor;
       // is_derived(파생): 항상 명시적으로 전송(체크=true, 해제=false). 반응기와 독립.
       body.is_derived = !!isDerived;
-      // stage1_recipe_id(1차 연계): 고른 값이 있을 때만 전송(없음=미지정, 수정 등록 시 부모 승계).
-      if (stage1RecipeId) {
-        body.stage1_recipe_id = stage1RecipeId;
-      }
+      // stage1_recipe_id(1차 연계): 항상 명시적으로 전송. 0 = '없음'(해제) — 값이 있을 때만
+      // 보내면 수정 등록에서 1차 연계를 풀 수 없다(부모 값이 계속 승계).
+      body.stage1_recipe_id = Number(stage1RecipeId) || 0;
       const headers = { "Content-Type": "application/json" };
       const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
       if (token) headers["x-csrftoken"] = token;
