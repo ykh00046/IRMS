@@ -881,6 +881,18 @@ body {
   background: #991b1b;
 }
 
+/* 되돌릴 수 있는 위험 동작(예: 기록 취소) — danger(빨강)는 되돌릴 수 없는 것에만 쓴다.
+   둘 다 빨강이면 '취소'와 '완전 삭제'의 무게 차이가 화면에서 사라진다. */
+.btn.warn {
+  background: #b45309;
+  border-color: #92400e;
+  color: white;
+}
+
+.btn.warn:hover:not(:disabled) {
+  background: #92400e;
+}
+
 .btn.success {
   background: var(--status-success);
   border-color: var(--status-success);
@@ -1003,7 +1015,9 @@ td {
 th {
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
+  /* text-transform: uppercase 금지 — 머리글은 한글이라 대문자화로 얻는 것이 없고,
+     괄호 안 단위만 바꿔버린다: '이론량(g)' → '이론량(G)'. g(그램)과 G(기가)는 다른
+     단위라 규제 문서(DHR)를 만드는 화면에서 잘못된 표기가 된다. */
   letter-spacing: 0.05em;
   color: var(--text-secondary);
   background: var(--bg-surface-200);
@@ -1108,7 +1122,7 @@ tr:hover td.sticky-right {
 .filter-label {
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
+  /* uppercase 제거 — 위 th 와 같은 이유('총 배합량 (g)' → '(G)'). */
   color: var(--text-tertiary);
   letter-spacing: 0.05em;
 }
