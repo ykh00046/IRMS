@@ -507,8 +507,10 @@ def test_warn_band_collapses_when_sigma_k_le_warn_sigma():
     kσ(UCL) 가 2σ(UWL) 안쪽/동일이라 경고가 이상보다 바깥에 놓이는 역전을 차단.
     """
     conn = _make_db()
+    # σ 판정은 MIN_SIGMA_SAMPLES(8) 이상일 때만 활성 — 경고 밴드 자체를 검증하려면
+    # 표본을 그만큼 채워야 한다(2026-07-25: 표본 부족 시 통계 한계 보류 도입).
     p2 = _add_product(conn, "PBK2", sigma_k=2)
-    _seed(conn, p2["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0])
+    _seed(conn, p2["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 52.0, 54.0])
     res2 = vs.analyze_product(conn, p2)
     assert res2["stats"]["std"] > 0
     assert res2["stats"]["uwl"] is None
@@ -518,7 +520,7 @@ def test_warn_band_collapses_when_sigma_k_le_warn_sigma():
 
     # 대조군: sigma_k=3 이면 경고 밴드가 존재한다.
     p3 = _add_product(conn, "PBK3", sigma_k=3)
-    _seed(conn, p3["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0], start_seq=100)
+    _seed(conn, p3["id"], [40.0, 42.0, 44.0, 46.0, 48.0, 50.0, 52.0, 54.0], start_seq=100)
     res3 = vs.analyze_product(conn, p3)
     assert res3["stats"]["uwl"] is not None
     assert res3["stats"]["lwl"] is not None

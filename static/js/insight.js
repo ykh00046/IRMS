@@ -19,10 +19,18 @@
 
   let productChart = null;
 
+  // 로컬 날짜 기준 — toISOString() 은 UTC 라 KST 오전 9시 이전에는 '오늘'이 하루 전으로
+  // 밀린다. 배합 기록의 work_date 는 로컬 날짜로 저장되므로(blend_lib.todayISO), 그대로
+  // 두면 야간조가 새벽에 조회할 때 그날 배합이 0건으로 보인다.
+  function _localISO(d) {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
   function isoDaysAgo(days) {
     const d = new Date();
     d.setDate(d.getDate() - days);
-    return d.toISOString().slice(0, 10);
+    return _localISO(d);
   }
 
   function currentRange() {

@@ -455,6 +455,13 @@
     if (status === "anomaly" || status === "warn") {
       badge.className = `visc-status ${status}`;
       badge.textContent = status === "anomaly" ? "이상" : "경고";
+    } else if (status === null || status === undefined) {
+      // 분석 표본에 없는 측정(선택 연도 밖 등) — 판정이 '없는' 것이지 '정상'이 아니다.
+      // 예전에는 else 로 떨어져 초록 '정상' 배지가 붙었고, 규격을 벗어난 측정이
+      // 품질 책임자 화면에서 정상으로 읽혔다.
+      badge.className = "visc-status";
+      badge.textContent = "판정 없음";
+      badge.title = "이 측정은 현재 선택한 연도·조건의 분석 표본에 없어 판정되지 않았습니다.";
     } else {
       badge.className = "visc-status normal";
       badge.textContent = "정상";

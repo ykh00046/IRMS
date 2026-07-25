@@ -114,6 +114,12 @@
     if (product.lower_limit !== null || product.upper_limit !== null) {
       parts.push(`규격 ${product.lower_limit ?? "-"}~${product.upper_limit ?? "-"}`);
     }
+    // 표본이 적어 통계 관리한계를 아직 쓰지 않는 상태를 분명히 알린다 — 예전에는
+    // 관리한계가 없어도 이유가 화면에 없어서, 판정이 왜 느슨한지 알 수 없었다.
+    if (stats.sigma_ready === false) {
+      const need = stats.sigma_min_samples || 8;
+      parts.push(`기준 축적 중 (측정 ${stats.n ?? 0}/${need}건 · 규격 판정만 적용)`);
+    }
     return parts.length ? `관리 기준 · ${parts.join(" · ")}` : "관리 기준이 아직 없습니다.";
   }
 

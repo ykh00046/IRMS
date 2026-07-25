@@ -25,6 +25,13 @@ from typing import Any
 RUN_LENGTH = 5  # 연속 단조 상승/하락 N회 → 추세 경보
 SHIFT_LENGTH = 7  # 중심선 한쪽 연속 M회 → 시프트 경보
 WARN_SIGMA = 2.0  # 경고 구간: 2σ 초과 ~ kσ 이하
+# 통계 관리한계(σ 기반)를 신뢰하려면 필요한 최소 표본 수.
+# 표본이 3~5개뿐일 때 stdev 는 우연히 아주 작게 나온다(예: 49.0/49.0/49.1 → σ=0.058,
+# UCL 49.207). 그러면 49.4 같은 정상 산포가 '이상'으로 뜨고, 현장은 판정 자체를
+# 불신하게 된다. 반대로 n=2 는 한계가 터무니없이 넓어 진짜 이상도 통과한다.
+# 표본이 이 수에 못 미치면 σ 판정은 보류하고 **규격(spec) 판정만** 적용한다
+# — 규격은 표본과 무관한 공학 기준이라 언제나 유효하다.
+MIN_SIGMA_SAMPLES = 8
 
 
 def parse_lot_date(lot_no: Any) -> str | None:
@@ -251,7 +258,8 @@ def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, A
     sigma_k = product["sigma_k"]
 
     ucl = lcl = uwl = lwl = None
-    if center is not None and std > 0:
+    sigma_ready = n >= MIN_SIGMA_SAMPLES
+    if center is not None and std > 0 and sigma_ready:
         ucl = center + sigma_k * std
         lcl = center - sigma_k * std
         # 경고 밴드 붕괴 방지(POLISH-2): sigma_k <= WARN_SIGMA 면 kσ(UCL) 가 2σ(UWL)
@@ -264,6 +272,9 @@ def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, A
 
     return {
         "n": n,
+        # σ 판정 가능 여부 — False 면 관리한계가 없고 규격 판정만 적용된다(화면 안내용).
+        "sigma_ready": sigma_ready,
+        "sigma_min_samples": MIN_SIGMA_SAMPLES,
         "mean": round(mean, 3) if mean is not None else None,
         "std": round(std, 3),
         "min": round(min(values), 3) if values else None,
@@ -479,12 +490,14 @@ def classify_value(
 ) -> dict[str, Any]:
     """단일 값을 현재 제품 기준으로 판정 (신규 입력 즉시 경고용).
 
-    중심선/관리한계는 같은 연도(+반응기) 의 기존 측정 표본 + 제품 설정으로 산출한다
-    (입력값 포함 전 기준). year 미지정 시 전체 표본.
+    중심선/관리한계는 같은 연도(+반응기) 의 측정 표본 + 제품 설정으로 산출하며,
+    **판정 대상 값도 표본에 포함한다** — 저장 후 목록(analyze_product)이 그 값을 포함해
+    다시 계산하므로, 포함하지 않으면 같은 응답 안에서 new_reading.status(이상)와
+    readings[] 의 같은 행(정상)이 서로 모순됐다. year 미지정 시 전체 표본.
     """
     rows = _fetch_readings(connection, product["id"], year, reactor)
     values = [float(r["viscosity"]) for r in rows]
-    control = _control_limits(product, values)
+    control = _control_limits(product, [*values, float(value)])
     verdict = _classify(value, product, control)
     verdict["control"] = control
     return verdict
