@@ -175,7 +175,9 @@
   }
 
   function renderSummary(summary) {
-    if (!summary) return;
+    // 조기 return 금지 — 값이 없으면 '그리지 않는' 게 아니라 '0 으로 지워야' 한다.
+    // 예전에는 여기서 빠져나가, 조회 실패 시 앞사람 숫자가 화면에 그대로 남았다.
+    summary = summary || {};
     document.getElementById("att-late").textContent = formatCountHours(
       summary.late_count,
       summary.late_total
@@ -498,14 +500,17 @@
         payload = await apiGet("/api/attendance/me", { month: state.month });
       }
 
-      if (!payload) return;
+      if (!payload) { clearView(); return; }
 
       state.availableMonths = payload.available_months || state.availableMonths;
       if (adminMode && state.selectedEmpId && !payload.profile) {
+        // 프로필이 없으면 나머지 수치도 이 사번의 것이 아니다 — 통째로 비운다.
+        clearView();
         window.IRMS?.notify?.(
           "해당 사번의 근태 정보를 찾지 못했습니다.",
           "warn"
         );
+        return;
       }
 
       renderProfile(payload.profile);
@@ -522,14 +527,26 @@
         renderRows([]);
         monthLabel.textContent = `${state.month} (파일 없음)`;
       } else if (message.includes("FILE_LOCKED_RETRY")) {
+        clearView();
         window.IRMS?.notify?.(
           "엑셀 파일이 열려 있습니다. 잠시 후 다시 시도해 주세요.",
           "error"
         );
       } else {
+        clearView();
         window.IRMS?.notify?.(`조회 실패: ${message}`, "error");
       }
     }
+  }
+
+  // 개인정보 오귀속 방지 — 다른 직원/다른 달을 불러오기 전과 실패 시 화면을 비운다.
+  // 이게 없으면 오타 사번을 조회했을 때 이름만 바뀌고 지각·연차·상세는 앞사람 것이
+  // 그대로 남아, 책임자가 그 숫자를 새 사번의 것으로 읽는다.
+  function clearView() {
+    renderProfile(null);
+    renderSummary({});
+    renderAnnualSummary({});
+    renderRows([]);
   }
 
   function moveMonth(delta) {
@@ -609,8 +626,11 @@
     if (!banner) return;
 
     const empId = banner.dataset.empId || "";
+    // sessionStorage 를 쓴다 — localStorage 로 두면 ×를 한 번 누른 순간 그 PC 에서
+    // 다시는 경고가 뜨지 않아, 공용 PC 에서 임시 비밀번호가 무기한 유지된다.
+    // 세션 한정으로 두어 다음 로그인 때 다시 알린다.
     const storageKey = empId ? `irms_att_reset_dismissed_${empId}` : "";
-    const dismissed = storageKey && localStorage.getItem(storageKey) === "1";
+    const dismissed = storageKey && sessionStorage.getItem(storageKey) === "1";
 
     if (!dismissed) {
       banner.hidden = false;
@@ -619,7 +639,7 @@
     dismissBtn?.addEventListener("click", () => {
       banner.hidden = true;
       if (storageKey) {
-        localStorage.setItem(storageKey, "1");
+        sessionStorage.setItem(storageKey, "1");
       }
     });
   }

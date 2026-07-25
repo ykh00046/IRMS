@@ -207,6 +207,11 @@
                 <button class="btn rescale-approve-btn" id="cont-rescale-absence-submit" type="button">부재로 진행</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 로트는 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
+              <!-- 세 번째 길 — 그냥 덜어내고 다시 재고 싶을 때. 예전에는 Esc 키뿐이라
+                   장갑 낀 손으로는 찾을 수 없었고, 필요 없는 '미승인 증량'이 기록에 남았다.
+                   부재 처리 절차와 섞이지 않게 구분선 아래 별도 줄로 둔다(배합 화면과 동일). -->
+              <hr class="rescale-approve-divider" />
+              <button class="btn" id="cont-rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
             </div>
           </div>
         </div>
@@ -268,6 +273,6 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260724c"></script>
-    <script src="/static/js/blend_continuous.js?v=20260725a"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
+    <script src="/static/js/blend_continuous.js?v=20260725e"></script>
 {% endblock %}

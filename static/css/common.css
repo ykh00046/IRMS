@@ -881,6 +881,20 @@ body {
   background: #991b1b;
 }
 
+/* 폼·모달의 오류 문구. 이 클래스는 7개 템플릿 15곳이 쓰는데 색·굵기 정의가 없어서,
+   저장 실패 메시지가 본문 검은 글씨 한 줄로 조용히 끼어들었다 — 성공 토스트에 익숙한
+   작업자는 저장된 줄 알고 자리를 뜬다(현장에서 가장 비싼 오해). 눈에 띄게 만든다. */
+.login-error {
+  color: var(--status-error, #d8453f);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--status-error, #d8453f);
+  background: rgba(216, 69, 63, 0.08);
+  border-radius: var(--radius-sm, 6px);
+}
+.login-error[hidden] { display: none !important; }
+
 /* 되돌릴 수 있는 위험 동작(예: 기록 취소) — danger(빨강)는 되돌릴 수 없는 것에만 쓴다.
    둘 다 빨강이면 '취소'와 '완전 삭제'의 무게 차이가 화면에서 사라진다. */
 .btn.warn {

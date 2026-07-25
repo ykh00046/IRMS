@@ -2438,10 +2438,21 @@
     }
   }
 
+  let _saving = false;   // 중복 저장 방지 — 응답이 늦으면 작업자가 한 번 더 누른다.
+
   async function saveBlend() {
     const err = $("blend-error");
     err.hidden = true;
+    if (_saving) return;   // 이미 저장 중 — 두 번째 클릭은 무시(로트 2건 생성 차단)
     if (!state.current) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
+    // 실제량이 하나도 없으면 저장하지 않는다. 저장 성공 후 화면은 레시피·총량을 유지하므로,
+    // 습관적으로 Enter/저장을 한 번 더 누르면 '전부 빈' 기록이 새 LOT 을 받아 저장됐다.
+    if (state.items.every((it) => it.actual_amount === "" || it.actual_amount == null)) {
+      err.textContent = "계량한 실제량이 없습니다 — 자재를 계량한 뒤 저장하세요.";
+      err.hidden = false;
+      notify("계량값이 없어 저장하지 않았습니다.", "error");
+      return;
+    }
     const worker = lockedWorkerName();
     const total = Number($("blend-total").value);
     if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
@@ -2543,6 +2554,9 @@
         carried_over: it.carried_over === true,
       })),
     };
+    const saveBtn = $("blend-save");
+    _saving = true;
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.label = saveBtn.textContent; saveBtn.textContent = "저장 중…"; }
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
@@ -2606,6 +2620,10 @@
       }
       err.textContent = e.message;
       err.hidden = false;
+      notify(`저장 실패: ${e.message}`, "error");   // 폼 한 줄만으로는 놓치기 쉽다
+    } finally {
+      _saving = false;
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = saveBtn.dataset.label || "배합 실적 저장"; }
     }
   }
 

@@ -406,7 +406,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
     window.open(`/api/blend/records/dhr-zip?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
-  $("status-rec-delete-selected").addEventListener("click", async () => {
+  // 책임자에게만 렌더되므로 null 가드 필수 — 없으면 비책임자 화면에서 예외가 나
+  // 이후 리스너(조회·상세 열기 등)가 전부 등록되지 않는다.
+  const bulkCancelBtn = $("status-rec-delete-selected");
+  if (bulkCancelBtn) bulkCancelBtn.addEventListener("click", async () => {
     const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => Number(c.value));
     if (!ids.length) { IRMS.notify("취소할 기록을 선택하세요.", "warn"); return; }
     const reason = window.prompt(

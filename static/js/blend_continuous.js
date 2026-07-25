@@ -1917,9 +1917,12 @@
   }
 
   // ── 저장 ────────────────────────────────────────────────────
+  let _saving = false;   // 중복 저장 방지(blend.js 와 동일) — 늦으면 한 번 더 누른다.
+
   async function save() {
     const err = $("cont-error");
     err.hidden = true;
+    if (_saving) return;   // 이미 저장 중 — N로트가 두 벌 생기는 것을 막는다
     if (!state.current) { return fail(err, "레시피를 선택하세요."); }
     if (state.anchorBlocked) { return fail(err, "기준 자재 레시피는 이어서 계량을 지원하지 않습니다."); }
     const worker = lockedWorkerName();
@@ -2051,6 +2054,9 @@
         return e && e.length ? e : null;
       });
     }
+    const saveBtn = $("cont-save");
+    _saving = true;
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.label = saveBtn.textContent; saveBtn.textContent = "저장 중…"; }
     try {
       const res = await request("/blend/records/continuous", { method: "POST", body });
       clearDraft();  // 저장 완료 → 임시 저장 삭제(복구 배너가 다시 뜨지 않게)
@@ -2068,6 +2074,10 @@
         return fail(err, "증량 승인이 만료되었습니다(30분 경과). 초과 계량 증량을 다시 승인받은 뒤 저장하세요 — 책임자 재인증 필요.");
       }
       fail(err, msg);
+      notify(`저장 실패: ${msg}`, "error");   // 폼 한 줄만으로는 놓치기 쉽다
+    } finally {
+      _saving = false;
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = saveBtn.dataset.label || "전 로트 저장"; }
     }
   }
 
@@ -2198,9 +2208,11 @@
       closeContRescaleApproveModal();
       clearOverContActuals();
     }
+    const contReweigh = $("cont-rescale-approve-reweigh");
+    if (contReweigh) contReweigh.addEventListener("click", dismissContApproveWithReweigh);
     if (approveModal) approveModal.addEventListener("click", (e) => {
       if (e.target === approveModal) {
-        showContApproveError("승인, 부재로 진행, 또는 Esc(다시 계량) 중에서 선택하세요.");
+        showContApproveError("승인, 부재로 진행, 또는 [다시 계량] 중에서 선택하세요.");
       }
     });
     // 저울 전용 모드 수기 입력 승인 — 요청 버튼/모달 [승인]·[취소]·Enter·Esc.

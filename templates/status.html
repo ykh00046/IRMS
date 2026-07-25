@@ -35,7 +35,11 @@
             <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
             <button class="btn" id="status-rec-dhr-zip" type="button">ZIP(레시피별 폴더)</button>
             <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
+            {% if can_manage %}
+            <!-- 책임자 전용 — 예전에는 게이트 밖이라 비로그인 사용자에게도 붉은 버튼이 보였고,
+                 기록을 고르고 사유까지 적은 뒤에야 로그인 화면으로 튕겨 선택이 전부 날아갔다. -->
             <button class="btn warn" id="status-rec-delete-selected" type="button">선택 기록 취소</button>
+            {% endif %}
           </div>
         </section>
 
@@ -91,5 +95,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260725d"></script>
+    <script src="/static/js/status.js?v=20260725e"></script>
 {% endblock %}

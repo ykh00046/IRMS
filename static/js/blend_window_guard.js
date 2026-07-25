@@ -155,12 +155,18 @@
     switch (m.type) {
       case "ping":
         // 누군가 존재를 물음 → 내가 여기 있다고 응답.
+        // 단 이미 막힌 창은 응답하지 않는다 — 막힌 창끼리 서로 '있다'고 답하면
+        // 양쪽이 영원히 막혀 탈출구가 없어진다(세션 복원으로 탭 두 개가 동시에
+        // 뜨는 경우가 실제 트리거). 막힌 창은 '존재하지 않는 것'으로 취급한다.
+        if (blocked) return;
         bc.postMessage({ type: "here", from: myId });
         break;
       case "here":
-        // 내가 새로 열었는데 기존 창이 응답 → 이 창을 막는다.
+        // 상대가 살아 있다고 응답 → 둘 중 하나만 막혀야 한다. id 가 큰 쪽(나중에 열린
+        // 창)이 양보한다 — 결정적 규칙이라 동시에 열려도 양쪽이 같이 막히지 않는다.
+        // (id 는 열린 시각 + 난수라 사전식 비교가 곧 '나중에 열림' 판정이 된다.)
         others[m.from] = Date.now();
-        showBlock();
+        if (String(myId) > String(m.from)) showBlock();
         break;
       case "hello":
         // 다른 창이 새로 열림(나는 기존 창) — 존재만 기록(나는 안 막힘).
