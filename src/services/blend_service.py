@@ -62,14 +62,24 @@ def _resolve_latest_revision(connection: sqlite3.Connection, recipe_id: int) -> 
 
 
 def get_recipe_for_blend(
-    connection: sqlite3.Connection, recipe_id: int, total_amount: float | None = None
+    connection: sqlite3.Connection,
+    recipe_id: int,
+    total_amount: float | None = None,
+    *,
+    resolve_revision: bool = True,
 ) -> dict[str, Any] | None:
     """레시피와 자재 목록을 비율·이론량과 함께 반환 (배합 입력 화면용).
 
     total_amount 미지정 시 레시피 절대중량 합계를 기본 배치 총량으로 사용.
     개정된 레시피 id 가 오면 최신 개정판으로 자동 귀결.
+
+    resolve_revision=False: **이미 저장된 기록을 수정할 때** 쓴다. 그 기록이 만들어진
+    개정본을 그대로 써야 한다 — 최신 개정판으로 귀결시키면 작업시간·비고만 고쳐도
+    배합비율·이론량이 새 레시피 값으로 조용히 바뀌어 규제 문서(DHR)의 과거 값이
+    변조되고, 개정 이후에는 편차 초과 400 으로 메타 정정조차 막힌다.
     """
-    recipe_id = _resolve_latest_revision(connection, recipe_id)
+    if resolve_revision:
+        recipe_id = _resolve_latest_revision(connection, recipe_id)
     recipe = connection.execute(
         "SELECT id, product_name, position, ink_name, status, "
         "       base_total AS base_total_setting, base_totals AS base_totals_setting "
@@ -1033,6 +1043,8 @@ def derive_details_from_recipe(
     recipe_id: int,
     total_amount: float,
     details: list[dict[str, Any]],
+    *,
+    resolve_revision: bool = True,
 ) -> tuple[list[dict[str, Any]], float]:
     """비율·이론량을 **서버가 레시피에서 직접 산출**해 상세를 재구성한다 (감사 F-5).
 
@@ -1049,7 +1061,9 @@ def derive_details_from_recipe(
 
     개정 여부는 호출부가 먼저 검사한다(RecipeRevisedError).
     """
-    recipe = get_recipe_for_blend(connection, recipe_id, total_amount)
+    recipe = get_recipe_for_blend(
+        connection, recipe_id, total_amount, resolve_revision=resolve_revision
+    )
     if not recipe:
         raise RecipeMismatchError("레시피를 찾을 수 없습니다.")
 

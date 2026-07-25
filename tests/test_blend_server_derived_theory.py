@@ -159,3 +159,48 @@ def test_anchor_recipe_saves_and_derives_total_from_measured_anchor():
     assert rec["total_amount"] == 1050                  # 실측(630)에서 파생
     assert by_name["원료A"]["theory_amount"] == 630     # 기준 행: 이론 = 실측 (편차 0)
     assert by_name["원료B"]["theory_amount"] == 420
+
+
+def test_edit_uses_the_recipe_revision_the_record_was_made_with():
+    """수정은 최신 개정본이 아니라 '그 기록이 만들어진 개정본'으로 재산출한다.
+
+    최신 개정판으로 귀결시키면 (1) 작업시간만 고쳐도 과거 기록의 배합비율·이론량이
+    새 레시피 값으로 조용히 바뀌어 DHR 의 과거 값이 변조되고, (2) 실측은 옛 비율
+    기준이라 편차 초과 400 으로 비고 오타 정정조차 막힌다(2026-07-25 감사 실측).
+    """
+    client = _client()
+    headers = _mgr(client)
+    product = "REVEDIT" + _uid()[:6]
+    rid = _import(client, headers, product, 60, 40)
+    worker = _blend_worker(client, headers)
+
+    body = {
+        "recipe_id": rid,
+        "product_name": product,
+        "worker": worker,
+        "work_date": "2026-07-25",
+        "total_amount": 1000,
+        "details": [
+            {"material_name": "원료A", "material_lot": "L1", "ratio": 60,
+             "theory_amount": 600, "actual_amount": 600},
+            {"material_name": "원료B", "material_lot": "L2", "ratio": 40,
+             "theory_amount": 400, "actual_amount": 400},
+        ],
+    }
+    created = client.post("/api/blend/records", json=body, headers=headers)
+    assert created.status_code == 200, created.text
+    record_id = created.json()["id"]
+
+    # 레시피를 개정한다(61/39) — 이후 저장되는 새 배합은 이 비율을 쓴다.
+    _import(client, headers, product, 61, 39, revision_of=rid)
+
+    # 기존 기록의 작업시간만 정정 — 개정 이후에도 통과해야 하고,
+    edit = dict(body, work_time="13:00:00")
+    res = client.put(f"/api/blend/records/{record_id}", json=edit, headers=headers)
+    assert res.status_code == 200, res.text
+
+    # 비율·이론량은 저장 당시(60/40) 그대로여야 한다.
+    got = {d["material_name"]: (d["ratio"], d["theory_amount"]) for d in res.json()["details"]}
+    assert got["원료A"] == (60.0, 600.0), got
+    assert got["원료B"] == (40.0, 400.0), got
+    assert res.json()["work_time"] == "13:00:00"

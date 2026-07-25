@@ -919,10 +919,15 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=exc.detail) from exc
         # 비율·이론량은 서버가 레시피에서 직접 재산출한다(F-5) — 클라이언트 값 불신. create 와
         # 대칭(GAP-2). recipe_id 가 없는 옛/수동 기록은 대조 근거가 없어 그대로 둔다.
+        # ⚠ 수정은 생성과 달리 **그 기록이 만들어진 개정본**을 쓴다(resolve_revision=False).
+        # 최신 개정판으로 귀결시키면 작업시간만 고쳐도 과거 기록의 배합비율·이론량이 새
+        # 레시피 값으로 조용히 바뀌고(감사에는 "작업시간만 변경"으로 남는다), 개정 이후엔
+        # 실측이 옛 비율 기준이라 편차 초과 400 으로 비고 오타 정정조차 막혔다.
         if body.recipe_id:
             try:
                 details, total_amount = blend_service.derive_details_from_recipe(
-                    connection, body.recipe_id, body.total_amount, details
+                    connection, body.recipe_id, body.total_amount, details,
+                    resolve_revision=False,
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
@@ -968,6 +973,9 @@ def build_router() -> APIRouter:
         )
 
         def _terse_rows(rec: dict[str, Any]) -> list[list[Any]]:
+            # ratio·theory_amount 도 포함한다 — 이 둘은 DHR 에 인쇄되는 값인데 예전 terse
+            # 행에 빠져 있어서, 서버 재산출로 값이 바뀌어도 before/after 가 동일해 보였고
+            # 감사가 "작업시간만 변경"이라고 잘못 기록했다(무성 변경 + 허위 감사).
             return [
                 [
                     d.get("material_name"),
@@ -975,6 +983,8 @@ def build_router() -> APIRouter:
                     d.get("material_lot"),
                     1 if d.get("carried_over") else 0,
                     1 if d.get("manual_entry") else 0,
+                    d.get("ratio"),
+                    d.get("theory_amount"),
                 ]
                 for d in (rec.get("details") or [])
             ]
