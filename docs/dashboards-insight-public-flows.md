@@ -163,7 +163,7 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 | `GET /api/public/attendance-alerts/today` | `today` (`public_attendance_alert_routes.py` L23) | 트레이(근태) | `{date,day_type,total,items[]}` |
 | `GET /api/public/attendance-alerts/month` | `month` (L45) | 트레이(근태) 폴러 | `{month,date,total,items[]}` |
 | `GET /api/public/viscosity-reminders/due` | `due` (`public_viscosity_reminder_routes.py` L27) | 트레이(점도) | `{date,total,items[]}` |
-| `GET /api/public/rescale-alerts` | `rescale_alerts` (`public_rescale_alert_routes.py` L29) | 트레이(증량) | `{count,items:[{id,product_name,product_lot,work_date,worker}]}` LIMIT 20 |
+| `GET /api/public/rescale-alerts` | `rescale_alerts` (`public_rescale_alert_routes.py` L29) | 트레이(증량·수기 입력) | `{count,items:[{id,product_name,product_lot,work_date,worker,kind}]}` LIMIT 20 · `kind`=`rescale`\|`manual`\|`both` (2026-07-25 추가 — 수기 입력 부재 진행도 같은 채널로 통합) |
 
 **material-usage 상세**(`blend_service.material_usage_periods` L268):
 - 파라미터: `start_date`/`end_date`(YYYY-MM-DD, 기본 이달 1일~오늘), `group=total|day|month`,
@@ -195,7 +195,7 @@ material_usage.py`, `test_public_rescale_alerts.py`.
 |------|-----------|----------|-------------|--------------|------|
 | 근태 이상 | `AttendanceAlertPoller` (`attendance_alerts.py`) | `/api/public/attendance-alerts/month` | **슬롯 09/13/16시** 각 1회 (`schedule.py`) | `attendance_alerts_enabled` (기본 켜짐) | 슬롯당 1회, 서명 중복 억제 |
 | 점도 리마인더 | `ViscosityAlertPoller` (`viscosity_alerts.py`) | `/api/public/viscosity-reminders/due` | **슬롯 09/13/16시** | `viscosity_alerts_enabled` (기본 켜짐) | 대상 반제품 선택은 **웹이 소유**(`/viscosity` remind_daily) |
-| 증량 미확인 | `RescaleAlertPoller` (`rescale_alerts.py`) | `/api/public/rescale-alerts` | **완만한 반복 폴링 기본 10분** (`DEFAULT_INTERVAL_SECONDS` L24) | `rescale_alerts_enabled` (기본 켜짐) | 슬롯 아님 — 미확인 남는 동안 매 주기 반복 나그(L61-65) |
+| 증량·수기 입력 미확인 | `RescaleAlertPoller` (`rescale_alerts.py`) | `/api/public/rescale-alerts` | **완만한 반복 폴링 기본 10분** (`DEFAULT_INTERVAL_SECONDS` L24) | `rescale_alerts_enabled` (기본 켜짐) | 슬롯 아님 — 미확인 남는 동안 매 주기 반복 나그(L61-65) |
 
 - 활성 조건: 각 `_*_active`(`main.py` L180-186) = 채널 토글 AND `_alerts_enabled_today`
   ("현장 알림 오늘만 끄기" 자정 자동 복귀).

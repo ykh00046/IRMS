@@ -31,7 +31,8 @@ def _make_blend_db() -> sqlite3.Connection:
             revision_of INTEGER,
             created_at TEXT NOT NULL,
             category TEXT,
-            product_code TEXT
+            product_code TEXT,
+            stage1_recipe_id INTEGER
         )
         """
     )

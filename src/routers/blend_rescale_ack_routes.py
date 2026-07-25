@@ -142,11 +142,13 @@ def build_router() -> APIRouter:
     def rescales_summary(
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        # 수기 입력 부재 진행(manual_unacked)도 같은 배지 소스에서 노출한다 — 사유 텍스트는
+        # 개방 payload 라 보내지 않고 플래그만(정책 ⓑ). 상세는 책임자 전용 목록에서 본다.
         rows = connection.execute(
             """
-            SELECT id, rescale_count, rescale_unacked, rescale_events_json
+            SELECT id, rescale_count, rescale_unacked, rescale_events_json, manual_unacked
             FROM blend_records
-            WHERE rescale_count > 0 AND status != 'canceled'
+            WHERE (rescale_count > 0 OR manual_unacked = 1) AND status != 'canceled'
             ORDER BY id DESC
             LIMIT 1000
             """
@@ -156,6 +158,7 @@ def build_router() -> APIRouter:
                 "id": int(r["id"]),
                 "rescale_count": int(r["rescale_count"] or 0),
                 "rescale_unacked": bool(r["rescale_unacked"]),
+                "manual_unacked": bool(r["manual_unacked"]),
                 "rescale_events": [
                     _strip_private_event(e)
                     for e in _parse_events(r["rescale_events_json"])
@@ -164,5 +167,73 @@ def build_router() -> APIRouter:
             for r in rows
         ]
         return {"items": items, "total": len(items)}
+
+    # ------------------------------------------------------------------
+    # 4. 수기 입력 '책임자 부재 진행' 미확인 — 목록·확인(책임자 전용)
+    # ------------------------------------------------------------------
+    # 증량 부재(1·2)와 같은 사후 확인 루프. 저울 전용 모드에서 비밀번호 승인 없이 사유만
+    # 남기고 손입력한 기록(manual_unacked=1)을 책임자가 확인할 때까지 대시보드·트레이에
+    # 남는다. 사유는 개인정보가 아니라 통제 근거이므로 책임자 목록에는 그대로 노출한다.
+    @router.get("/blend/manual-absences/unacked")
+    def list_unacked_manual_absences(
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, product_name, product_lot, work_date, worker,
+                       manual_absence_reason
+                FROM blend_records
+                WHERE manual_unacked = 1 AND status != 'canceled'
+                ORDER BY work_date DESC, id DESC
+                """
+            ).fetchall()
+
+        items = [
+            {
+                "id": int(r["id"]),
+                "product_name": r["product_name"],
+                "product_lot": r["product_lot"],
+                "work_date": r["work_date"],
+                "worker": r["worker"],
+                "manual_absence_reason": r["manual_absence_reason"],
+            }
+            for r in rows
+        ]
+        return {"items": items, "total": len(items)}
+
+    @router.post("/blend/records/{record_id}/manual-absence-ack")
+    def ack_manual_absence(
+        record_id: int,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT id, product_lot, manual_unacked FROM blend_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+
+            # 이미 확인됨 → 멱등(증량 ack 와 동일 규칙).
+            if not row["manual_unacked"]:
+                return {"status": "ok", "record_id": record_id, "acked_already": True}
+
+            connection.execute(
+                "UPDATE blend_records SET manual_unacked = 0 WHERE id = ?",
+                (record_id,),
+            )
+            write_audit_log(
+                connection,
+                action="blend_manual_absence_acked",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=record_id,
+                target_label=row["product_lot"],
+                details={"product_lot": row["product_lot"]},
+            )
+            connection.commit()
+
+        return {"status": "ok", "record_id": record_id, "acked_already": False}
 
     return router

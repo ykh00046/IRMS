@@ -168,6 +168,9 @@ class BlendCreateBody(BaseModel):
     # None/빈 리스트면 미증량(기존 동작). 최대 2건 — 각 건마다 책임자 승인(approval_id) 또는
     # 미승인 사유(absence_reason) 가 필요하다(서비스 validate_rescale_events 가 검증).
     rescale_events: list[dict[str, Any]] | None = Field(default=None)
+    # 수기 입력 '책임자 부재 진행' 사유 — 저울 전용 모드에서 비밀번호 승인 없이 사유만
+    # 남기고 손입력한 경우. 값이 있으면 그 기록은 책임자 확인 전까지 미확인으로 남는다.
+    manual_absence_reason: str | None = Field(default=None, max_length=300)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":
@@ -207,6 +210,8 @@ class BlendContinuousBody(BaseModel):
     # 미전송·전부 None 이면 기존 동작(컬럼 기본값 유지). 로트별로 최대 2건 — 3건째는
     # validate_rescale_events 가 로트마다 400("3회 증량은 불가합니다…")으로 막는다.
     lot_rescale_events: list[list[dict[str, Any]] | None] | None = Field(default=None)
+    # 수기 입력 '책임자 부재 진행' 사유 — 화면 단위 승인이라 전 로트에 동일 적용(비고와 같은 성격).
+    manual_absence_reason: str | None = Field(default=None, max_length=300)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendContinuousBody":

@@ -342,9 +342,18 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 생성한 문서·계획용 기록. 실제 현장 계량이 아니라 재생성본임을 목록/상세/공식 DHR 에
     # 표시하기 위한 플래그(0=일반 실적, 1=일괄 재생성).
     ensure_column(connection, "blend_records", "is_bulk_regenerated", "INTEGER NOT NULL DEFAULT 0")
+    # 수기 입력 '책임자 부재 진행'(2026-07-25): 저울 전용 모드에서 비밀번호 승인 없이 사유만
+    # 남기고 손입력한 기록. 사유 텍스트 + 책임자 미확인 플래그 — 증량 부재와 동일하게 사후
+    # 확인(ack) 루프·트레이 반복 알림 대상이 된다(사용자 결정: 증량과 대칭으로 격상).
+    ensure_column(connection, "blend_records", "manual_absence_reason", "TEXT")
+    ensure_column(connection, "blend_records", "manual_unacked", "INTEGER NOT NULL DEFAULT 0")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_rescale_unacked "
         "ON blend_records(rescale_unacked) WHERE rescale_unacked = 1"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_manual_unacked "
+        "ON blend_records(manual_unacked) WHERE manual_unacked = 1"
     )
     # 즉석 승인 토큰(세션 미생성 1회 인증): 발급 후 저장 시 1회 소비.
     connection.execute(

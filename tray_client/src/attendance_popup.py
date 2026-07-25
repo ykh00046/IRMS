@@ -206,21 +206,25 @@ def build_rescale_popup_payload(payload: dict[str, Any]) -> PopupPayload:
     """
     items = list(payload.get("items") or [])
     count = max(int(payload.get("count") or len(items)), len(items))
+    # kind: "rescale"(증량 부재) | "manual"(수기 입력 부재) | "both". 서버가 2026-07-25 부터
+    # 두 종류를 같은 채널로 보낸다. 구 서버(kind 없음)는 증량으로 간주 — 하위호환.
+    _KIND_LABEL = {"manual": "수기 입력 확인 필요", "both": "증량·수기 입력 확인 필요"}
     lines: list[str] = []
     for item in items[:POPUP_MAX_NAMES]:
         product = str(item.get("product_name") or "").strip()
         lot = str(item.get("product_lot") or "").strip()
-        label = f"{product} ({lot})" if lot else product or lot or "증량 기록"
-        lines.append(f"{label} 증량 확인 필요")
+        label = f"{product} ({lot})" if lot else product or lot or "배합 기록"
+        suffix = _KIND_LABEL.get(str(item.get("kind") or "rescale"), "증량 확인 필요")
+        lines.append(f"{label} {suffix}")
     remaining = max(0, count - len(lines))
     if remaining > 0:
         lines.append(f"+{remaining}건")
     if not lines:
-        lines.append("미확인 증량이 없습니다.")
+        lines.append("미확인 항목이 없습니다.")
     return PopupPayload(
-        title="미확인 증량",
+        title="미확인 증량 · 수기 입력",
         badge_text=f"{count}건" if count else "확인",
-        summary="미확인 증량이 있습니다 — 배합 기록에서 확인하세요.",
+        summary="책임자 확인이 필요한 기록이 있습니다 — 배합 기록에서 확인하세요.",
         lines=lines,
         accent="rescale",
         action_key="rescale",

@@ -1997,6 +1997,9 @@
       note: [overrideNote, buildManualApprovalNote(), $("cont-note").value.trim()].filter(Boolean).join("\n") || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
+      // 수기 입력을 책임자 부재로 진행했으면 그 사유(화면 단위 승인이라 전 로트 공통).
+      // 서버가 각 로트 기록에 남기고 책임자 확인 전까지 미확인으로 표시한다.
+      manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
       lots,
     };
     // lotRescale 이 하나라도 있으면 lot_totals 전송(그 로트만 큰 총량).

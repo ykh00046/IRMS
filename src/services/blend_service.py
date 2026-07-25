@@ -1839,3 +1839,30 @@ def apply_rescale_to_record(
         "rescale_unacked = ? WHERE id = ?",
         (validated["events_json"], validated["count"], validated["unacked"], record_id),
     )
+
+
+# 수기 입력 부재 사유 길이 상한(모델 Field 와 동일) — 서비스 단독 호출에서도 방어.
+MANUAL_ABSENCE_REASON_MAX = 300
+
+
+def apply_manual_absence_to_record(
+    connection: sqlite3.Connection,
+    record_id: int,
+    reason: str | None,
+) -> bool:
+    """수기 입력 '책임자 부재 진행' 사유를 기록에 남기고 미확인(ack 대기)으로 표시한다.
+
+    저울 전용 모드에서 비밀번호 승인 없이 사유만으로 손입력을 진행한 경우에 호출된다.
+    증량 부재(rescale_unacked)와 동일하게 책임자 확인 전까지 대시보드·트레이 알림에
+    남는다. 사유가 비어 있으면 아무것도 하지 않는다(일반 저장 경로 무영향).
+
+    반환: 미확인으로 표시했으면 True.
+    """
+    text = (reason or "").strip()
+    if not text:
+        return False
+    connection.execute(
+        "UPDATE blend_records SET manual_absence_reason = ?, manual_unacked = 1 WHERE id = ?",
+        (text[:MANUAL_ABSENCE_REASON_MAX], record_id),
+    )
+    return True

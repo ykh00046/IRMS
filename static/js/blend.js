@@ -2507,6 +2507,9 @@
       // 증량 승인 이력 — 각 증량의 before/after 총량 + 승인(approval_id/approver) 또는
       // 부재 진행(absence_reason). 없으면 null. 서버가 유효성(승인 실재 여부)을 재검증한다.
       rescale_events: state.rescaleEvents.length ? state.rescaleEvents : null,
+      // 수기 입력을 책임자 부재로 진행했으면 그 사유 — 서버가 기록에 남기고 책임자
+      // 확인(ack) 전까지 미확인으로 표시한다(증량 부재와 동일한 사후 확인 루프).
+      manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
       // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
       manual_entry: state.items.some((it) => it.manual === true),
       details: state.items.map((it, idx) => ({

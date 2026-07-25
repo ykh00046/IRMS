@@ -36,10 +36,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // 목록 배지 — 증량이 있으면 표시, 미승인(책임자 부재 진행)은 빨간 배지.
   function rescaleBadge(id) {
     const info = rescaleMap[id];
-    if (!info || !info.rescale_count) return "";
-    if (info.rescale_unacked)
-      return ' <span class="rescale-badge unacked" title="책임자 미승인 증량">미승인 증량</span>';
-    return ` <span class="rescale-badge" title="증량 승인됨">증량 ${info.rescale_count}회</span>`;
+    if (!info) return "";
+    let out = "";
+    if (info.rescale_count) {
+      out += info.rescale_unacked
+        ? ' <span class="rescale-badge unacked" title="책임자 미승인 증량">미승인 증량</span>'
+        : ` <span class="rescale-badge" title="증량 승인됨">증량 ${info.rescale_count}회</span>`;
+    }
+    // 수기 입력을 책임자 부재로 진행한 기록 — 확인 전까지 배지 유지(증량과 동일 정책).
+    if (info.manual_unacked) {
+      out += ' <span class="rescale-badge unacked" title="책임자 미확인 수기 입력">미승인 수기 입력</span>';
+    }
+    return out;
   }
 
   // 일괄 재생성 표식 — 현장 계량이 아니라 문서·계획용으로 한 번에 재생성한 기록.

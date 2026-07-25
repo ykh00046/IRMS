@@ -91,3 +91,10 @@
 }
 .rescale-item-info { min-width: 0; overflow-wrap: anywhere; }
 .rescale-empty { padding: 6px 2px; font-size: 0.85rem; }
+/* 미확인 종류 태그 — 증량(오렌지) / 수기 입력(슬레이트). 한 목록에 섞여 나오므로 구분. */
+.rescale-kind {
+  display: inline-block; margin-right: 6px; padding: 1px 7px;
+  border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  background: #fef3c7; color: #92400e;
+}
+.rescale-kind.is-manual { background: #e2e8f0; color: #334155; }

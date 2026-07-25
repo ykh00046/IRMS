@@ -75,12 +75,16 @@ def test_rescale_alerts_payload_only_unacked():
     assert id_a in by_id and id_b in by_id
     assert id_acked not in by_id
 
-    # 필드 계약 — 정확히 이 키들.
-    assert set(by_id[id_a].keys()) == {"id", "product_name", "product_lot", "work_date", "worker"}
+    # 필드 계약 — 정확히 이 키들. kind 는 2026-07-25 추가(수기 입력 부재를 같은 채널로
+    # 함께 보내면서 종류 구분용). 증량만 미확인이면 "rescale".
+    assert set(by_id[id_a].keys()) == {
+        "id", "product_name", "product_lot", "work_date", "worker", "kind",
+    }
     assert by_id[id_a]["product_name"] == prod_a
     assert by_id[id_a]["product_lot"] == lot_a
     assert by_id[id_a]["work_date"] == "2026-07-22"
     assert by_id[id_a]["worker"] == "증량작업"
+    assert by_id[id_a]["kind"] == "rescale"
 
     # 최신순(id DESC) — 나중에 넣은 B 가 A 보다 앞선다.
     order = [item["id"] for item in body["items"]]

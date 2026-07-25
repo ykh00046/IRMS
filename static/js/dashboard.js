@@ -239,16 +239,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const listEl = document.getElementById("rescale-alert-list");
     if (!valueEl || !listEl) return;
     try {
-      const data = await fetchJSON("/api/blend/rescales/unacked");
-      const items = data.items || [];
-      const total = data.total || 0;
+      // 증량 부재 + 수기 입력 부재를 한 카드에서 함께 보여준다(둘 다 '책임자 사후 확인'
+      // 대상이라 목록을 나누면 놓치기 쉽다). 항목마다 kind 로 확인 endpoint 를 가른다.
+      const [rescaleData, manualData] = await Promise.all([
+        fetchJSON("/api/blend/rescales/unacked"),
+        fetchJSON("/api/blend/manual-absences/unacked"),
+      ]);
+      const items = [
+        ...(rescaleData.items || []).map((r) => ({ ...r, kind: "rescale" })),
+        ...(manualData.items || []).map((r) => ({ ...r, kind: "manual" })),
+      ].sort((a, b) => String(b.work_date || "").localeCompare(String(a.work_date || "")));
+      const total = items.length;
       valueEl.textContent = fmtNumber(total);
       valueEl.style.color =
         total > 0 ? cssVar("--status-error", "#d8453f") : cssVar("--text-muted", "#94a3b8");
       const card = document.getElementById("rescale-alert-card");
       if (card) card.classList.toggle("has-unacked", total > 0);
       if (!items.length) {
-        listEl.innerHTML = '<li class="rescale-empty muted">미확인 증량이 없습니다.</li>';
+        listEl.innerHTML = '<li class="rescale-empty muted">미확인 항목이 없습니다.</li>';
         return;
       }
       listEl.innerHTML = items
@@ -256,15 +264,22 @@ document.addEventListener("DOMContentLoaded", () => {
         .map((r) => {
           const date =
             (r.work_date || "-").length === 10 ? r.work_date.slice(5) : r.work_date || "-";
+          const isManual = r.kind === "manual";
+          const tag = isManual ? "수기 입력" : "증량";
+          const reason = isManual && r.manual_absence_reason
+            ? ` <span class="muted">· ${IRMS.escapeHtml(r.manual_absence_reason)}</span>`
+            : "";
           return `
             <li class="rescale-item">
               <span class="rescale-item-info">
+                <span class="rescale-kind${isManual ? " is-manual" : ""}">${tag}</span>
                 <b>${IRMS.escapeHtml(r.product_lot || "-")}</b>
                 <span class="muted">·</span> ${IRMS.escapeHtml(r.product_name || "-")}
                 <span class="muted">·</span> ${IRMS.escapeHtml(r.worker || "-")}
-                <span class="muted">·</span> ${IRMS.escapeHtml(date)}
+                <span class="muted">·</span> ${IRMS.escapeHtml(date)}${reason}
               </span>
-              <button class="btn btn-sm accent rescale-ack-btn" type="button" data-id="${r.id}">확인</button>
+              <button class="btn btn-sm accent rescale-ack-btn" type="button"
+                      data-id="${r.id}" data-kind="${r.kind}">확인</button>
             </li>`;
         })
         .join("");
@@ -276,11 +291,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 확인(ack) — 쓰기 요청. IRMS._core.request 가 x-csrftoken 을 부착한다(base 에서 core.js 로드).
-  async function ackRescale(id, btn) {
+  async function ackRescale(id, btn, kind) {
     if (btn) btn.disabled = true;
+    const isManual = kind === "manual";
+    const path = isManual
+      ? `/blend/records/${id}/manual-absence-ack`
+      : `/blend/records/${id}/rescale-ack`;
     try {
-      await IRMS._core.request(`/blend/records/${id}/rescale-ack`, { method: "POST" });
-      IRMS.notify("증량을 확인 처리했습니다.", "success");
+      await IRMS._core.request(path, { method: "POST" });
+      IRMS.notify(
+        isManual ? "수기 입력을 확인 처리했습니다." : "증량을 확인 처리했습니다.",
+        "success",
+      );
       await loadRescaleAlert();
     } catch (error) {
       IRMS.notify(`확인 실패: ${error.message || error}`, "error");
@@ -292,7 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (rescaleListEl) {
     rescaleListEl.addEventListener("click", (ev) => {
       const btn = ev.target.closest(".rescale-ack-btn");
-      if (btn) ackRescale(Number(btn.dataset.id), btn);
+      if (btn) ackRescale(Number(btn.dataset.id), btn, btn.dataset.kind);
     });
   }
 

@@ -836,6 +836,20 @@ def build_router() -> APIRouter:
                     "totals": rescale["totals"],
                 },
             )
+        # 수기 입력 '책임자 부재 진행' — 사유를 기록에 남기고 미확인(ack 대기)으로 표시.
+        # 증량 부재와 동일하게 책임자 확인 전까지 대시보드·트레이 알림에 남는다.
+        if blend_service.apply_manual_absence_to_record(
+            connection, record_id, body.manual_absence_reason
+        ):
+            write_audit_log(
+                connection,
+                action="blend_manual_absence_saved",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record["product_lot"],
+                details={"reason": (body.manual_absence_reason or "").strip()[:300]},
+            )
         create_audit_details: dict[str, Any] = {
             "product_name": body.product_name,
             "total_amount": body.total_amount,
@@ -1276,6 +1290,24 @@ def build_router() -> APIRouter:
                     "count": rescale["count"],
                     "unapproved": rescale["unapproved"],
                     "totals": rescale["totals"],
+                },
+            )
+        # 수기 입력 '책임자 부재 진행' — 화면 단위 승인이라 이 회차의 전 로트에 동일 적용.
+        if (body.manual_absence_reason or "").strip():
+            for record_id in ids:
+                blend_service.apply_manual_absence_to_record(
+                    connection, record_id, body.manual_absence_reason
+                )
+            write_audit_log(
+                connection,
+                action="blend_manual_absence_saved",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=",".join(str(i) for i in ids),
+                target_label=f"{body.product_name} ({len(ids)}로트)",
+                details={
+                    "reason": (body.manual_absence_reason or "").strip()[:300],
+                    "records": len(ids),
                 },
             )
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
