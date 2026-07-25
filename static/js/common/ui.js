@@ -158,6 +158,18 @@
     initTableScrollHints,
   });
 
+  // 숫자 입력칸 위에서 마우스 휠이 값을 바꾸는 사고 차단(전 화면 공통).
+  // 계량 화면에서 아래 자재를 보려고 휠을 굴리면, 포커스가 남아 있던 실제량 칸의
+  // 값이 조용히 ±1 바뀐다. 저울로 찍은 값이었다면 그 행이 '수기 입력'으로 표시되고
+  // 기록에 영구히 남는데, 작업자는 자기가 무엇을 했는지 알지 못한다.
+  // 포커스를 떼는 방식이라(값 변경 자체를 막는 대신) 의도적인 클릭+휠 조작도 자연스럽게 멈춘다.
+  document.addEventListener("wheel", (e) => {
+    const el = e.target;
+    if (el && el.tagName === "INPUT" && el.type === "number" && el === document.activeElement) {
+      el.blur();
+    }
+  }, { passive: true });
+
   // Side effect: attach logout button if present on the page.
   bindLogoutButton();
 })();

@@ -303,7 +303,14 @@
   font-size: 0.85rem; font-weight: 700; white-space: nowrap;
   color: var(--accent, #2563eb);
 }
-.blend-base-link:hover { text-decoration: underline; }
+.blend-base-link:hover:not(:disabled) { text-decoration: underline; }
+/* 계량 시작 후 총량이 잠기면 이 링크도 비활성된다(blend.js). 예전에는 disabled 스타일이
+   없어 파란 굵은 글씨 그대로 남아, 눌러도 반응 없는 버튼처럼 보였다. */
+.blend-base-link:disabled {
+  color: var(--text-tertiary, #8c97ad);
+  cursor: not-allowed;
+  text-decoration: none;
+}
 
 /* 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖 풀폭 줄로.
    좁은 폼 칸에 몰려 레이아웃이 깨지는 것을 방지(재배치만, 동작은 동일). */

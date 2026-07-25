@@ -104,13 +104,20 @@
         target.innerHTML = `<li class="muted">${emptyText}</li>`;
         return;
       }
-      target.innerHTML = list
-        .slice(0, 12)
+      // 'L2 ·' 같은 내부 등급 표기는 사용자에게 의미가 없어 뺀다.
+      // 12건에서 자르되 잘렸다는 사실을 반드시 알린다 — 예전에는 목록만 보고
+      // 다 고친 줄 알았다(배지의 총 건수와 어긋남).
+      const shown = list.slice(0, 12);
+      let html = shown
         .map(
           (item) =>
-            `<li>L${item.level} · ${IRMS.escapeHtml(item.message)}${item.row ? ` (행 ${item.row})` : ""}</li>`,
+            `<li>${IRMS.escapeHtml(item.message)}${item.row ? ` (행 ${item.row})` : ""}</li>`,
         )
         .join("");
+      if (list.length > shown.length) {
+        html += `<li class="muted">… 외 ${list.length - shown.length}건 (위 항목부터 고치고 다시 검증하세요)</li>`;
+      }
+      target.innerHTML = html;
     }
 
     function renderValidationMeta(result) {
@@ -174,6 +181,19 @@
 
         if (!result.errors.length && result.rows.length > 0) {
           IRMS.notify(`검증 완료: ${result.rows.length}건 등록 가능`, "success");
+        } else if (result.errors.length) {
+          // 오류가 있을 때 아무 소리도 안 나던 것을 고친다 — 검증 버튼은 왼쪽 아래,
+          // 오류 목록은 오른쪽 위라, 25줄짜리 시트를 넣고 스크롤해 내려가 검증을 누른
+          // 작업자에게는 '아무 일도 안 일어난 화면'으로 보였다(등록 버튼만 계속 회색).
+          IRMS.notify(
+            `검증 결과 오류 ${result.errors.length}건 — 오른쪽 '오류' 목록을 확인하세요.`,
+            "error",
+          );
+          if (dom.errorList && dom.errorList.scrollIntoView) {
+            dom.errorList.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        } else if (!result.rows.length) {
+          IRMS.notify("등록할 반제품을 찾지 못했습니다 — 표 내용을 확인하세요.", "warn");
         }
       } catch (error) {
         IRMS.notify(`검증 실패: ${error.message}`, "error");
@@ -268,6 +288,12 @@
         handleClear();
       } catch (error) {
         IRMS.notify(`등록 실패: ${error.message}`, "error");
+        // 토스트는 6초 뒤 사라진다. 동명 레시피 409 처럼 '무엇을 어떻게 하라'는 긴 안내는
+        // 다시 읽을 수 있어야 해서 오류 패널에도 남긴다.
+        if (dom.errorList) {
+          dom.errorList.innerHTML =
+            `<li class="issue-item">${IRMS.escapeHtml(String(error.message || error))}</li>`;
+        }
       } finally {
         IRMS.btnLoading(dom.registerBtn, false);
       }

@@ -881,6 +881,22 @@ body {
   background: #991b1b;
 }
 
+/* 잠긴 입력칸은 잠긴 것처럼 보여야 한다. 예전에는 readonly/disabled 스타일이 전혀 없어,
+   총 배합량 잠금(첫 계량 후)이나 저울 전용 모드의 실제량 칸이 다른 칸과 똑같이 보였다 —
+   작업자는 클릭해서 지우려다 아무 반응이 없는 이유를 알 수 없었고, 설명은 마우스를 1초
+   올려야 뜨는 툴팁뿐이었다. */
+.input:read-only:not([type="checkbox"]):not([type="radio"]),
+.input:disabled {
+  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+/* 링크형 버튼(.blend-base-link 등)이 disabled 일 때 눌리는 것처럼 보이지 않게. */
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* 폼·모달의 오류 문구. 이 클래스는 7개 템플릿 15곳이 쓰는데 색·굵기 정의가 없어서,
    저장 실패 메시지가 본문 검은 글씨 한 줄로 조용히 끼어들었다 — 성공 토스트에 익숙한
    작업자는 저장된 줄 알고 자리를 뜬다(현장에서 가장 비싼 오해). 눈에 띄게 만든다. */
