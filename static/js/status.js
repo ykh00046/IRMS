@@ -392,11 +392,31 @@ document.addEventListener("DOMContentLoaded", () => {
   $("status-rec-all").addEventListener("change", (e) => {
     document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = e.target.checked; });
   });
+  // 긴 출력 작업(일괄 PDF·ZIP·전체 Excel)은 새 탭 스트리밍이라 완료 신호가 없다.
+  // 예전에는 누르면 빈 탭만 열리고 몇 분간 아무 일도 없어, 안 된 줄 알고 다시 눌러
+  // 같은 변환을 큐에 하나 더 쌓았다(서버는 Excel 변환을 직렬로 처리한다).
+  // 완료를 알 수 없으니 '무엇이 진행 중인지' 알리고 그동안 버튼을 잠근다.
+  function startLongExport(btn, count, label) {
+    IRMS.notify(
+      `${label} ${count}건을 준비합니다 — 새 탭에서 다운로드됩니다. ` +
+      "건수가 많으면 몇 분 걸릴 수 있으니 기다려 주세요.",
+      "warn",
+    );
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "준비 중…";
+    // 건당 여유를 두되 상한 90초 — 완료를 알 수 없으므로 재시도 자체를 막지는 않는다.
+    const wait = Math.min(90000, 4000 + count * 700);
+    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, wait);
+  }
+
   $("status-rec-dhr-batch").addEventListener("click", () => {
     const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
     if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
     if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
     const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
+    startLongExport($("status-rec-dhr-batch"), Math.min(ids.length, 200), "배합일지");
     window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
   $("status-rec-dhr-zip").addEventListener("click", () => {
@@ -404,6 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
     if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
     const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
+    startLongExport($("status-rec-dhr-zip"), Math.min(ids.length, 200), "배합일지 ZIP");
     window.open(`/api/blend/records/dhr-zip?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
   });
   // 책임자에게만 렌더되므로 null 가드 필수 — 없으면 비책임자 화면에서 예외가 나
@@ -421,14 +442,21 @@ document.addEventListener("DOMContentLoaded", () => {
     // 순차 처리 중 실패해도 이미 처리된 건수를 반드시 알린다 — 예전에는 오류만 띄우고
     // 몇 건이 이미 지워졌는지 알려주지 않아 작업자가 상태를 알 수 없었다.
     let done = 0;
+    // 100건이면 수십 초가 걸린다 — 그동안 버튼이 계속 눌리면 같은 취소가 겹쳐 돈다.
+    const origLabel = bulkCancelBtn.textContent;
+    bulkCancelBtn.disabled = true;
     try {
       for (const id of ids) {
+        bulkCancelBtn.textContent = `취소 중 ${done + 1}/${ids.length}`;
         await cancelRecord(id, reason.trim());
         done += 1;
       }
       IRMS.notify(`${done}건을 취소했습니다.`, "success");
     } catch (e) {
       IRMS.notify(`${done}건 취소 후 실패했습니다 (${ids.length - done}건 남음): ${e.message || e}`, "error");
+    } finally {
+      bulkCancelBtn.disabled = false;
+      bulkCancelBtn.textContent = origLabel;
     }
     await loadRecords();
   });

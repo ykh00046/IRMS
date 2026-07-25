@@ -140,6 +140,25 @@
     });
   }
 
+  // 반제품·연도·반응기·기간 전환은 모두 loadProduct 를 다시 호출한다. 예전에는 이
+  // 호출들이 catch 없이 Promise 를 버려서, 조회가 실패하면 아무 메시지도 없이
+  // 셀렉트만 새 값이고 카드·추세·기간표는 이전 조건 값이 그대로 남았다 —
+  // 품질 책임자가 그 숫자를 새 조건의 결과로 읽게 된다.
+  async function reloadProduct(productId) {
+    const main = document.querySelector("main.page-grid") || document.body;
+    if (IRMS.showLoading) IRMS.showLoading(main);
+    try {
+      await loadProduct(productId);
+    } catch (error) {
+      // 실패했음을 알리고, 이전 조건의 숫자가 남아 오해를 부르지 않게 비운다.
+      state.analysis = null;
+      renderCards();
+      IRMS.notify(`점도 조회 실패: ${error.message || error} — 다시 시도해 주세요.`, "error");
+    } finally {
+      if (IRMS.hideLoading) IRMS.hideLoading(main);
+    }
+  }
+
   async function loadProduct(productId) {
     state.analysis = await request(`/viscosity/products/${productId}`, {
       query: { granularity: state.granularity, year: state.year, reactor: state.reactor },
@@ -826,18 +845,21 @@
 
   function bind() {
     $("visc-form").addEventListener("submit", submitReading);
-    $("visc-refresh").addEventListener("click", () => loadOverview());
+    $("visc-refresh").addEventListener("click", () => {
+      loadOverview().catch((e) =>
+        IRMS.notify(`새로고침 실패: ${e.message || e}`, "error"));
+    });
     $("visc-blend-filter").addEventListener("input", renderBlendRecords);
     $("visc-open-only").addEventListener("change", renderBlendRecords);
     $("visc-year").addEventListener("change", () => {
       const value = $("visc-year").value;
       state.year = value === "" ? null : Number(value);
-      if (state.currentId) loadProduct(state.currentId);
+      if (state.currentId) reloadProduct(state.currentId);
     });
     $("visc-reactor").addEventListener("change", () => {
       const value = $("visc-reactor").value;
       state.reactor = value === "" ? null : (value === "none" ? "none" : Number(value));
-      if (state.currentId) loadProduct(state.currentId);
+      if (state.currentId) reloadProduct(state.currentId);
     });
     $("visc-gran-toggle").querySelectorAll("button[data-gran]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -846,7 +868,7 @@
         $("visc-gran-toggle").querySelectorAll("button").forEach((item) =>
           item.classList.toggle("active", item === button)
         );
-        if (state.currentId) loadProduct(state.currentId);
+        if (state.currentId) reloadProduct(state.currentId);
       });
     });
     const settingsButton = $("visc-settings-btn");

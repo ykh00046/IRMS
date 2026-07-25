@@ -35,6 +35,12 @@
     }
 
     async function loadRecipeForEdit(recipeId, sourceLabel) {
+      // 편집 중인 표를 말없이 덮어쓰지 않는다 — 자재명 확인하러 다른 탭에 갔다가
+      // '수정 등록'을 누르면 입력하던 25줄이 그대로 사라졌다.
+      if (ctx.hasSheetContent && ctx.hasSheetContent() &&
+          !window.confirm("편집기에 입력한 내용이 있습니다. 불러온 레시피로 덮어쓸까요?")) {
+        return;
+      }
       const detail = await IRMS.getRecipeDetail(recipeId);
       const tsvRows = detail.tsv.split("\n").map((row) => row.split("\t"));
 

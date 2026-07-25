@@ -197,8 +197,35 @@ document.addEventListener("DOMContentLoaded", () => {
     dom.addColBtn?.addEventListener("click", () => spreadsheet.addStepRow());
 
     dom.registerBtn.addEventListener("click", importValidate.handleRegister);
-    dom.clearBtn.addEventListener("click", importValidate.handleClear);
+    // 초기화는 '등록' 바로 옆에 있어 오클릭이 잦다. 입력한 표가 있으면 확인을 거친다
+    // (등록 성공 후 자동 초기화는 handleClear 직접 호출이라 이 확인을 타지 않는다).
+    dom.clearBtn.addEventListener("click", () => {
+      if (hasSheetContent() &&
+          !window.confirm("입력한 내용을 모두 지웁니다. 계속할까요?")) {
+        return;
+      }
+      importValidate.handleClear();
+    });
   }
+
+  // 편집기에 저장하지 않은 내용이 있는가 — 초기화·수정 등록 불러오기·페이지 이탈 경고 공통.
+  function hasSheetContent() {
+    try {
+      return Boolean((spreadsheet.getSpreadsheetDataAsText() || "").trim());
+    } catch (_e) {
+      return false;
+    }
+  }
+  ctx.hasSheetContent = hasSheetContent;
+
+  // 페이지를 떠날 때 경고 — 배합 화면에는 임시저장이 있지만 이 편집기에는 없어서,
+  // 사이드바를 클릭하거나 창을 닫으면 25줄짜리 표가 아무 말 없이 사라졌다.
+  window.addEventListener("beforeunload", (e) => {
+    if (hasSheetContent()) {
+      e.preventDefault();
+      e.returnValue = "";   // 브라우저 기본 확인창(문구는 브라우저가 정한다)
+    }
+  });
 
   dom.historyStatus.addEventListener("change", () => {
     recipeHistory.persistHistoryFilters();
