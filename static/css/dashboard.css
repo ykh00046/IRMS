@@ -86,7 +86,7 @@
   padding: 7px 10px;
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 8px;
-  background: var(--bg-surface, #fff);
+  background: var(--bg-surface-100);
   font-size: 0.85rem;
 }
 .rescale-item-info { min-width: 0; overflow-wrap: anywhere; }

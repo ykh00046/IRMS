@@ -83,7 +83,10 @@
     state.currentId = product.id;
     state.year = product.year;
     if (options && options.resetReactor) state.reactor = null;
-    return loadProduct(product.id);
+    // 반제품 전환이야말로 가장 많이 쓰는 경로인데 예전엔 여기만 loadProduct 를 직접
+    // 불러서, 조회가 실패하면 예외가 그대로 콘솔로 빠지고 화면엔 앞 반제품 숫자가
+    // 남았다. 연도·반응기 전환과 같은 래퍼를 태운다.
+    return reloadProduct(product.id);
   }
 
   // 등록된 반제품이 하나도 없어 선택이 비어 있을 때의 안내 상태.
@@ -150,9 +153,14 @@
     try {
       await loadProduct(productId);
     } catch (error) {
-      // 실패했음을 알리고, 이전 조건의 숫자가 남아 오해를 부르지 않게 비운다.
-      state.analysis = null;
-      renderCards();
+      // 실패했음을 알리고, 이전 조건의 숫자가 남아 오해를 부르지 않게 화면을 비운다.
+      // 카드만 지우면 추세 배너·기간표·배합 기록에 앞 조건 값이 그대로 남는다.
+      showEmptyState();
+      // 셀렉트도 되돌린다. 값이 남아 있으면 같은 반제품을 다시 골라도 change 가
+      // 안 떠서, 다른 걸 찍었다 돌아오지 않는 한 재시도가 막힌다.
+      const sel = $("visc-product-select");
+      if (sel) sel.value = "";
+      $("visc-selected-row").textContent = "조회에 실패했습니다. 다시 선택해 주세요.";
       IRMS.notify(`점도 조회 실패: ${error.message || error} — 다시 시도해 주세요.`, "error");
     } finally {
       if (IRMS.hideLoading) IRMS.hideLoading(main);
@@ -221,16 +229,34 @@
     }
   }
 
+  // 이상·경고 카드는 건수가 0 이 아닐 때만 색을 준다. 늘 빨강/주황이면 훑어볼 때
+  // "0" 도 경보로 읽힌다 — 정상인 제품이 문제 있어 보이면 색이 신호 구실을 못 한다.
+  function setCountCard(id, wrapperClass, count) {
+    $(id).textContent = count == null ? "-" : count;
+    const card = $(id).closest(".metric-card");
+    if (card) card.classList.toggle(wrapperClass, Number(count) > 0);
+  }
+
   function renderCards() {
     const analysis = state.analysis;
+    // 조회 실패 시 analysis 가 비어 들어온다. 던지지 말고 전부 "-" 로 지운다:
+    // 이전 조건의 숫자가 남아 있으면 새 선택의 결과로 잘못 읽힌다.
+    if (!analysis) {
+      ["visc-card-count", "visc-card-latest", "visc-card-latest-date", "visc-card-mean"]
+        .forEach((id) => { $(id).textContent = "-"; });
+      setCountCard("visc-card-anomaly", "visc-card-anomaly-on", null);
+      setCountCard("visc-card-warn", "visc-card-warn-on", null);
+      $("visc-control-summary").textContent = "";
+      return;
+    }
     const stats = analysis.stats;
     const last = analysis.readings.length ? analysis.readings[analysis.readings.length - 1] : null;
     $("visc-card-count").textContent = stats.n;
     $("visc-card-latest").textContent = last ? fmt(last.viscosity) : "-";
     $("visc-card-latest-date").textContent = last && last.measured_date ? last.measured_date : "-";
     $("visc-card-mean").textContent = stats.mean === null ? "-" : `${fmt(stats.center)} ± ${fmt(stats.std)}`;
-    $("visc-card-anomaly").textContent = analysis.counts.anomaly;
-    $("visc-card-warn").textContent = analysis.counts.warn;
+    setCountCard("visc-card-anomaly", "visc-card-anomaly-on", analysis.counts.anomaly);
+    setCountCard("visc-card-warn", "visc-card-warn-on", analysis.counts.warn);
     $("visc-control-summary").textContent = controlSummary(analysis);
   }
 

@@ -25,41 +25,107 @@ document.addEventListener("DOMContentLoaded", () => {
   const auditLimitFilter = document.getElementById("audit-limit-filter");
   const auditLogList = document.getElementById("audit-log-list");
 
+  // 감사로그 이벤트 사전 — 한글 라벨과 필터 목록의 유일한 출처.
+  // 예전엔 라벨 맵(JS)과 필터 목록(HTML)이 따로 있어서 둘 다 낡았다: 서버가 남기는
+  // 49종 중 26종이 라벨 없이 영문 코드로 찍혔고, 하필 수기 승인·증량 거절·계정
+  // 삭제처럼 책임자가 정작 찾아보는 이벤트들이 거기 있었다. 필터는 이 표에서 만든다.
+  const AUDIT_GROUPS = [
+    ["인증", [
+      ["management_login", "책임자 로그인"],
+      ["blend_worker_login", "작업자 로그인"],
+      ["logout", "로그아웃"],
+      ["login_failed", "로그인 실패"],
+      ["attendance_login_failed", "근태 로그인 실패"],
+      ["password_changed", "비밀번호 변경(본인)"],
+      ["worker_manager_password_changed", "책임자 비번 변경(본인)"],
+    ]],
+    ["이용자·권한", [
+      ["worker_register", "이용자 등록"],
+      ["worker_reactivated", "이용자 재활성화"],
+      ["worker_update", "이용자 수정"],
+      ["worker_deleted", "이용자 삭제"],
+      ["worker_manager_granted", "책임자 지정"],
+      ["worker_manager_revoked", "책임자 해제"],
+      ["worker_manager_password_reset", "책임자 비번 초기화"],
+      ["user_deleted", "로그인 계정 삭제"],
+      ["user_password_reset", "로그인 계정 비번 초기화"],
+      ["admin_deactivate_others", "admin 외 계정 일괄 비활성화"],
+      ["attendance_password_reset", "근태 비번 초기화"],
+    ]],
+    ["배합 기록", [
+      ["blend_record_create", "배합 기록 생성"],
+      ["blend_record_continuous_create", "배합 기록 생성(이어서 계량)"],
+      ["blend_record_bulk_create", "배합 일괄 생성"],
+      ["blend_record_update", "배합 기록 수정"],
+      ["blend_record_cancel", "배합 기록 취소"],
+      ["blend_record_restore", "배합 기록 취소 해제"],
+      ["blend_record_deleted", "배합 기록 삭제"],
+      ["blend_record_review", "검토 기록"],
+      ["blend_record_approve", "승인 기록"],
+      ["dhr_exported", "배합일지 출력"],
+      ["product_lot_dedup", "제품 LOT 중복 정리"],
+    ]],
+    ["승인·예외", [
+      ["blend_manual_entry_approved", "수기 입력 승인"],
+      ["blend_manual_absence_saved", "수기 입력(책임자 부재)"],
+      ["blend_rescale_saved", "증량 배합 저장"],
+      ["blend_rescale_approve_denied", "증량 승인 거절"],
+    ]],
+    ["레시피", [
+      ["recipes_imported", "레시피 등록"],
+      ["recipe_status_updated", "레시피 상태"],
+      ["recipe_deleted", "레시피 삭제"],
+      ["recipe_dhr_set", "DHR 전용 지정"],
+      ["recipe_anchor_set", "기준 자재 지정"],
+      ["recipe_tolerance_set", "허용 편차 지정"],
+      ["recipe_category_set", "레시피 분류 지정"],
+      ["recipe_stage1_set", "1차 레시피 연결"],
+      ["recipe_use_reactor_set", "반응기 사용 지정"],
+      ["recipe_is_derived_set", "파생 레시피 지정"],
+      ["material_code_set", "품목코드 지정"],
+    ]],
+    ["점도", [
+      ["viscosity_reading_add", "점도 등록"],
+      ["viscosity_reading_delete", "점도 삭제"],
+      ["viscosity_product_create", "점도 품목 추가"],
+      ["viscosity_product_update", "점도 품목 수정"],
+      ["blend_viscosity_link", "점도 등록(배합 연계)"],
+    ]],
+    ["설정·백업", [
+      ["attendance_viewed_by_admin", "근태 조회"],
+      ["setting_scale_only_set", "저울 전용 입력 설정"],
+      ["setting_blend_window_override_set", "배합 창 예외 코드 변경"],
+      ["signature_config_updated", "서명 설정 변경"],
+      ["signature_sample_added", "서명 이미지 등록"],
+      ["signature_sample_deleted", "서명 이미지 삭제"],
+      ["sheets_config_updated", "시트 백업 설정"],
+      ["sheets_backup_run", "시트 백업 실행"],
+    ]],
+  ];
+
+  const AUDIT_LABELS = {};
+  AUDIT_GROUPS.forEach(([, items]) => items.forEach(([k, v]) => { AUDIT_LABELS[k] = v; }));
+
   function actionLabel(action) {
-    const map = {
-      management_login: "책임자 로그인",
-      logout: "로그아웃",
-      login_failed: "로그인 실패",
-      worker_register: "이용자 등록",
-      worker_reactivated: "이용자 재활성화",
-      worker_update: "이용자 수정",
-      worker_deleted: "이용자 삭제",
-      worker_manager_granted: "책임자 지정",
-      worker_manager_revoked: "책임자 해제",
-      worker_manager_password_reset: "책임자 비번 초기화",
-      worker_manager_password_changed: "책임자 비번 변경(본인)",
-      password_changed: "비밀번호 변경(본인)",
-      blend_worker_login: "작업자 로그인",
-      blend_record_create: "배합 기록 생성",
-      blend_record_update: "배합 기록 수정",
-      blend_record_deleted: "배합 기록 삭제",
-      blend_record_cancel: "배합 기록 취소",
-      blend_record_bulk_create: "배합 일괄 생성",
-      blend_record_review: "검토 기록",
-      blend_record_approve: "승인 기록",
-      blend_viscosity_link: "점도 등록(배합 연계)",
-      viscosity_reading_add: "점도 등록",
-      viscosity_reading_delete: "점도 삭제",
-      viscosity_product_create: "점도 품목 추가",
-      viscosity_product_update: "점도 품목 수정",
-      attendance_viewed_by_admin: "근태 조회",
-      attendance_password_reset: "근태 비번 초기화",
-      recipe_status_updated: "레시피 상태",
-      recipes_imported: "레시피 등록",
-      recipe_deleted: "레시피 삭제",
-      recipe_dhr_set: "DHR 전용 지정",
-    };
-    return map[action] || action;
+    return AUDIT_LABELS[action] || action;
+  }
+
+  function buildAuditFilterOptions() {
+    if (!auditActionFilter) return;
+    const keep = auditActionFilter.value;
+    auditActionFilter.innerHTML = '<option value="">전체</option>';
+    AUDIT_GROUPS.forEach(([groupName, items]) => {
+      const group = document.createElement("optgroup");
+      group.label = groupName;
+      items.forEach(([value, label]) => {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        group.appendChild(opt);
+      });
+      auditActionFilter.appendChild(group);
+    });
+    auditActionFilter.value = keep;
   }
 
   function formatCreatedAt(value) {
@@ -334,6 +400,8 @@ document.addEventListener("DOMContentLoaded", () => {
   async function refreshDashboard() {
     await Promise.all([loadWorkers(), loadAuditLogs()]);
   }
+
+  buildAuditFilterOptions();
 
   addWorkerForm?.addEventListener("submit", handleAddWorker);
   changePwForm?.addEventListener("submit", handleChangePassword);

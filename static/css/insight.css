@@ -36,40 +36,9 @@
 .insight-trace-lot-link { color: var(--accent-primary, #2563eb); text-decoration: none; font-weight: 600; }
 .insight-trace-lot-link:hover { text-decoration: underline; }
 
-/* 지표 카드 — 대시보드 metric-card 와 동일한 차분한 표면. 색 스트라이프(::before)와
-   hover 리프트는 제거: 장식 색띠는 낡은 패턴이고, 클릭되지 않는 카드가 hover 에
-   떠오르면 클릭 가능해 보이는 오신호를 준다. */
-.metric-card {
-  background: var(--bg-surface-200);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.metric-label {
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.metric-value {
-  font-family: var(--font-mono);
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.1;
-  text-shadow: none;
-}
-
-.metric-unit {
-  font-size: 1rem;
-  color: var(--text-tertiary);
-}
+/* 지표 카드 스타일은 common.css 로 통합 — 여기서 다시 정의하지 않는다.
+   (예전 정의는 한글 라벨에 uppercase + letter-spacing 을 걸어 자간이 벌어졌고,
+    같은 카드가 대시보드·점도와 달라 보였다) */
 
 .insight-chart-wrap {
   position: relative;

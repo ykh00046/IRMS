@@ -114,29 +114,10 @@
             <div class="audit-toolbar">
               <div class="form-group audit-filter">
                 <label class="filter-label" for="audit-action-filter">이벤트 필터</label>
-                <!-- 현행 발생 이벤트 기준(2026-07-07 정리). 과거 이벤트는 '전체'로 조회 -->
+                <!-- 이벤트 목록은 admin_users.js 의 AUDIT_GROUPS 에서 생성한다.
+                     여기 손으로 적어두면 서버가 새 이벤트를 남길 때마다 낡는다 -->
                 <select id="audit-action-filter" class="select">
                   <option value="">전체</option>
-                  <option value="management_login">책임자 로그인</option>
-                  <option value="login_failed">로그인 실패</option>
-                  <option value="logout">로그아웃</option>
-                  <option value="worker_register">이용자 등록</option>
-                  <option value="worker_update">이용자 수정</option>
-                  <option value="worker_deleted">이용자 삭제</option>
-                  <option value="worker_manager_granted">책임자 지정</option>
-                  <option value="worker_manager_revoked">책임자 해제</option>
-                  <option value="worker_manager_password_reset">책임자 비번 초기화</option>
-                  <option value="blend_record_create">배합 기록 생성</option>
-                  <option value="blend_record_update">배합 기록 수정</option>
-                  <option value="blend_record_deleted">배합 기록 삭제</option>
-                  <option value="blend_viscosity_link">점도 등록(배합 연계)</option>
-                  <option value="recipes_imported">레시피 등록</option>
-                  <option value="recipe_status_updated">레시피 상태</option>
-                  <option value="recipe_deleted">레시피 삭제</option>
-                  <option value="viscosity_reading_add">점도 등록</option>
-                  <option value="viscosity_reading_delete">점도 삭제</option>
-                  <option value="attendance_viewed_by_admin">근태 조회</option>
-                  <option value="attendance_password_reset">근태 비번 초기화</option>
                 </select>
               </div>
               <div class="form-group audit-filter audit-limit-group">
@@ -291,5 +272,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260724a"></script>
+    <script src="/static/js/admin_users.js?v=20260726a"></script>
 {% endblock %}

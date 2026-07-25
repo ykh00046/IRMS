@@ -303,21 +303,23 @@
       console.error("IRMS core not loaded");
       return;
     }
-    $("insight-range-month").addEventListener("click", () => {
-      $("insight-from").value = isoDaysAgo(30);
+    // 프리셋 버튼은 눌러도 모양이 같아서 지금 어느 기간을 보고 있는지 버튼만 봐선
+    // 알 수 없었다. 누른 것만 표시하고, 날짜를 직접 고치면 더는 그 프리셋이 아니므로 해제.
+    const RANGE_BTNS = ["insight-range-month", "insight-range-90", "insight-range-all"];
+    function markRange(activeId) {
+      RANGE_BTNS.forEach((id) => $(id).classList.toggle("active", id === activeId));
+    }
+    function applyRange(activeId, fromValue) {
+      markRange(activeId);
+      $("insight-from").value = fromValue;
       $("insight-to").value = "";
       loadAll();
-    });
-    $("insight-range-90").addEventListener("click", () => {
-      $("insight-from").value = isoDaysAgo(90);
-      $("insight-to").value = "";
-      loadAll();
-    });
-    $("insight-range-all").addEventListener("click", () => {
-      $("insight-from").value = "";
-      $("insight-to").value = "";
-      loadAll();
-    });
+    }
+    $("insight-range-month").addEventListener("click", () => applyRange("insight-range-month", isoDaysAgo(30)));
+    $("insight-range-90").addEventListener("click", () => applyRange("insight-range-90", isoDaysAgo(90)));
+    $("insight-range-all").addEventListener("click", () => applyRange("insight-range-all", ""));
+    $("insight-from").addEventListener("change", () => markRange(null));
+    $("insight-to").addEventListener("change", () => markRange(null));
     $("insight-query").addEventListener("click", loadAll);
     $("insight-product").addEventListener("change", loadDetails);
     $("insight-detail-export").addEventListener("click", exportDetails);

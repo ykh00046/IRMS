@@ -1511,19 +1511,28 @@ tr:hover td.sticky-right {
   gap: 14px;
   margin-bottom: 18px;
 }
+/* 지표 카드는 대시보드·점도·배합 분석 세 화면이 같이 쓴다. 예전엔 insight.css 가
+   같은 클래스를 통째로 다시 정의해 배합 분석만 글꼴·여백·색이 달랐다 → 여기 하나로.
+   숫자는 배합 DHR 합계와 같이 mono 로 (자릿수 정렬). */
 .metric-card {
-  background: var(--bg-surface, #fff);
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 12px;
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   padding: 18px 20px;
   box-shadow: var(--shadow-subtle);
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.metric-label { font-size: 13px; color: #64748b; font-weight: 500; }
-.metric-value { font-size: 30px; font-weight: 700; color: #0f172a; line-height: 1.15; }
-.metric-unit { font-size: 12px; color: #94a3b8; }
+.metric-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+.metric-unit { font-size: 12px; color: var(--text-tertiary); }
 
 .dashboard-grid {
   display: grid;

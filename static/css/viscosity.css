@@ -41,11 +41,12 @@ body {
   min-width: 8rem;
 }
 
-.visc-cards .metric-card.visc-card-anomaly .metric-value {
+/* 색은 건수가 1 이상일 때만 (JS 가 -on 클래스를 붙인다). 0 건은 기본색. */
+.visc-cards .metric-card.visc-card-anomaly-on .metric-value {
   color: var(--status-error);
 }
 
-.visc-cards .metric-card.visc-card-warn .metric-value {
+.visc-cards .metric-card.visc-card-warn-on .metric-value {
   color: var(--status-warning);
 }
 
