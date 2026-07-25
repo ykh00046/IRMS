@@ -468,11 +468,20 @@ def build_router() -> APIRouter:
         sign=True 면 서명 합성, 기본은 빈 결재칸(서명 없음).
         """
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
-        records = [
+        fetched = [
             r for r in (blend_service.get_blend_record(connection, i) for i in id_list) if r
         ]
+        # 취소된 기록은 일괄 출력에서 제외한다. '취소 포함'으로 조회한 뒤 전체 선택하면
+        # 취소분이 정상 기록과 한 문서로 인쇄됐고, PIL 폴백 렌더러에는 취소 표식이 없어
+        # 정상 문서처럼 보였다. 단건 출력은 의도적으로 계속 허용(표식이 찍힌다).
+        records = [r for r in fetched if r.get("status") != "canceled"]
+        skipped_canceled = len(fetched) - len(records)
         if not records:
-            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+            raise HTTPException(
+                status_code=404,
+                detail=("선택한 기록이 모두 취소된 기록입니다 — 일괄 출력 대상이 없습니다."
+                        if skipped_canceled else "배합 기록을 찾을 수 없습니다."),
+            )
         _audit_dhr_export(
             connection, request, fmt="pdf_batch" + ("_signed" if sign else ""),
             record_ids=[int(r["id"]) for r in records],
@@ -510,9 +519,13 @@ def build_router() -> APIRouter:
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
         records: list[dict[str, Any]] = []
         missing: list[int] = []
+        canceled_lots: list[str] = []
         for i in id_list:
             rec = blend_service.get_blend_record(connection, i)
-            if rec:
+            if rec and rec.get("status") == "canceled":
+                # 취소분은 넣지 않되, 무엇이 빠졌는지 ZIP 안에 남긴다(조용한 누락 금지).
+                canceled_lots.append(str(rec.get("product_lot") or i))
+            elif rec:
                 records.append(rec)
             else:
                 missing.append(i)
@@ -553,6 +566,12 @@ def build_router() -> APIRouter:
                     str(m) for m in missing
                 ) + "\n"
                 zf.writestr("누락.txt", note.encode("utf-8"))
+            if canceled_lots:
+                note = (
+                    "취소된 기록이라 제외했습니다 (배합일지 출력 대상 아님):\n"
+                    + "\n".join(canceled_lots) + "\n"
+                )
+                zf.writestr("제외-취소된기록.txt", note.encode("utf-8"))
         buf.seek(0)
 
         from datetime import date as _date

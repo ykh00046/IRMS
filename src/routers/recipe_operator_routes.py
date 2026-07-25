@@ -240,6 +240,15 @@ def build_router() -> APIRouter:
         steps = [{"position": int(s["position"]), "note": s["note"]} for s in step_rows]
         recipe["steps"] = steps
 
+        # 이 레시피로 만들어진 배합 기록 수 — 삭제 확인창이 '무엇이 사라지는지'를
+        # 미리 말할 수 있게 상세에 싣는다. 예전에는 삭제가 끝난 뒤 성공 토스트에서야
+        # "연결 기록 47건 삭제"가 나와서, 확인을 누르는 시점에는 규모를 알 수 없었다.
+        recipe["linked_record_count"] = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM blend_records WHERE recipe_id = ?", (recipe_id,)
+            ).fetchone()[0]
+        )
+
         # TSV: 공정 설명('설명' 열)을 자재 사이 원위치에 끼워 수정 등록 왕복 보존.
         # '위치'도 함께 싣는다 — 이 TSV 가 그대로 편집기에 올라가 수정 등록으로 되돌아가는데,
         # 위치 열이 없으면 파서가 position=None 으로 읽어 개정할 때마다 위치가 사라졌다
@@ -528,6 +537,11 @@ def build_router() -> APIRouter:
             if body.action == "cancel":
                 allowed = current_status in ("pending", "in_progress", "completed")
                 next_status = "canceled"
+            elif body.action == "restore":
+                # 취소 해제 — /status 의 기록 복원과 같은 짝. 되돌릴 수 없는 조작을
+                # 남겨두지 않는다는 원칙을 레시피에도 적용한다.
+                allowed = current_status == "canceled"
+                next_status = "completed"
             elif body.action == "complete":
                 allowed = current_status in ("pending", "in_progress")
                 next_status = "completed"

@@ -59,7 +59,9 @@ class ImportRequest(BaseModel):
 
 
 class StatusUpdateRequest(BaseModel):
-    action: str = Field(pattern="^(start|complete|cancel)$")
+    # restore: 취소된 레시피를 되돌린다(2026-07-26). 예전에는 canceled 에서 빠져나오는
+    # 전이가 없어, 등록 취소를 누르면 배합 화면 목록에서 영영 사라졌다(DB 직접 수정 외 복구 불가).
+    action: str = Field(pattern="^(start|complete|cancel|restore)$")
     reason: str | None = None
 
 

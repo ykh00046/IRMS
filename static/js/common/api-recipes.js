@@ -44,10 +44,12 @@
     return (payload.items || []).map(mapRecipe);
   }
 
-  async function updateRecipeStatus(recipeId, action) {
+  // reason: 취소 사유(선택) — 서버가 recipes.cancel_reason 과 감사로그에 남긴다.
+  // 예전에는 UI 가 보내지 않아 사유가 항상 비어 있었다.
+  async function updateRecipeStatus(recipeId, action, reason) {
     const payload = await request(`/recipes/${recipeId}/status`, {
       method: "PATCH",
-      body: { action },
+      body: reason ? { action, reason } : { action },
     });
     return mapRecipe(payload);
   }

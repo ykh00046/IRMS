@@ -365,8 +365,8 @@
                     <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
                     <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
                     ${detail.status !== "canceled"
-                      ? `<button class="btn btn-sm history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
-                      : ""}
+                      ? `<button class="btn btn-sm warn history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
+                      : `<button class="btn btn-sm accent history-restore-btn" data-recipe-id="${recipeId}">취소 해제</button>`}
                     <button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">레시피 삭제</button>
                     <button class="btn btn-sm danger history-delete-with-records-btn" data-recipe-id="${recipeId}">레시피+기록 삭제</button>
                   </div>
@@ -376,7 +376,7 @@
               if (!ctx.canManage) {
                 detailRow
                   .querySelectorAll(
-                    ".history-edit-btn, .history-dhr-btn, .history-cancel-btn, .history-delete-btn, .history-delete-with-records-btn",
+                    ".history-edit-btn, .history-dhr-btn, .history-cancel-btn, .history-restore-btn, .history-delete-btn, .history-delete-with-records-btn",
                   )
                   .forEach((button) => {
                     button.hidden = true;
@@ -424,10 +424,21 @@
               if (cancelBtn) {
                 cancelBtn.addEventListener("click", async (e) => {
                   e.stopPropagation();
-                  if (!window.confirm("이 레시피를 등록 취소하시겠습니까?")) return;
+                  // 결과를 명시한다 — 취소하면 현장 배합 화면의 레시피 목록에서 사라진다.
+                  const reason = window.prompt(
+                    [
+                      "이 레시피를 등록 취소합니다.",
+                      "취소하면 배합 화면의 레시피 목록에서 사라집니다(기록은 남습니다).",
+                      "나중에 이 화면에서 '취소 해제'로 되돌릴 수 있습니다.",
+                      "",
+                      "사유를 입력하세요.",
+                    ].join("\n")
+                  );
+                  if (reason === null) return;
+                  if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
                   try {
-                    await IRMS.updateRecipeStatus(recipeId, "cancel");
-                    IRMS.notify("레시피를 취소했습니다.", "success");
+                    await IRMS.updateRecipeStatus(recipeId, "cancel", reason.trim());
+                    IRMS.notify("레시피를 취소했습니다 — 필요하면 '취소 해제'로 되돌릴 수 있습니다.", "success");
                     renderHistory();
                   } catch (err) {
                     IRMS.notify(`취소 실패: ${err.message}`, "error");
@@ -435,10 +446,39 @@
                 });
               }
 
+              const restoreBtn = detailRow.querySelector(".history-restore-btn");
+              if (restoreBtn) {
+                restoreBtn.addEventListener("click", async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await IRMS.updateRecipeStatus(recipeId, "restore");
+                    IRMS.notify("레시피 취소를 해제했습니다 — 배합 화면 목록에 다시 나타납니다.", "success");
+                    renderHistory();
+                  } catch (err) {
+                    IRMS.notify(`취소 해제 실패: ${err.message}`, "error");
+                  }
+                });
+              }
+
               async function deleteRecipeFromHistory(deleteBlendRecords) {
+                // 확인 전에 규모를 알려준다 — 예전에는 삭제가 끝난 뒤에야 건수가 나왔다.
+                const linked = Number(detail.linked_record_count || 0);
+                const scope = linked
+                  ? `이 레시피로 만든 배합 기록이 ${linked}건 있습니다.`
+                  : "이 레시피로 만든 배합 기록은 없습니다.";
                 const message = deleteBlendRecords
-                  ? "이 레시피와 연결된 배합 기록을 함께 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
-                  : "이 레시피만 삭제하시겠습니까? 연결된 배합 기록은 남고 레시피 연결만 해제됩니다.";
+                  ? [
+                      scope,
+                      "",
+                      `그 ${linked}건을 레시피와 함께 영구 삭제합니다.`,
+                      "되돌릴 수 없습니다 — 정말 진행할까요?",
+                    ].join("\n")
+                  : [
+                      scope,
+                      "",
+                      "레시피만 삭제하고 기록은 남깁니다(레시피 연결만 끊김).",
+                      "계속할까요?",
+                    ].join("\n");
                 if (!window.confirm(message)) return;
                 try {
                   const result = await IRMS.deleteRecipe(recipeId, deleteBlendRecords);
