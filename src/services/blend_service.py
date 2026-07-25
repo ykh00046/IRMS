@@ -815,9 +815,15 @@ def generate_product_lot(
     digits = "".join(ch for ch in work_date if ch.isdigit())
     yymmdd = digits[2:8] if len(digits) >= 8 else digits[-6:]
     base = f"{product_name.strip()}{yymmdd}"
+    # 접두 검색을 LIKE 대신 범위 비교로 한다. SQLite 는 ESCAPE 절이 붙으면 LIKE 최적화를
+    # 아예 포기해 인덱스가 있어도 전체 스캔이 된다 — 이 함수는 저장할 때마다, 그리고
+    # /blend/next-lot 미리보기마다 호출되고 BEGIN IMMEDIATE 안에서 돌아 쓰기 락을 잡는다.
+    # 범위 비교는 기존 product_lot 인덱스를 그대로 타서 기록이 10배로 늘어도 비용이 없다.
+    # (\U0010FFFF = 유니코드 최대 코드포인트 → base 로 시작하는 모든 문자열의 상한)
     rows = connection.execute(
-        "SELECT product_lot FROM blend_records WHERE product_lot LIKE ? ESCAPE '\\'",
-        (base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
+        "SELECT product_lot FROM blend_records "
+        "WHERE product_lot >= ? AND product_lot < ?",
+        (base, base + "\U0010FFFF"),
     ).fetchall()
     max_seq = 0
     for r in rows:

@@ -18,6 +18,13 @@ _ALLOWED_TABLES = frozenset({
     "blend_records",
     "blend_details",
     "workers",
+    # 아래 4개가 빠져 있어, 이 테이블에 ensure_column 을 쓰는 순간 ValueError 로
+    # init_db 전체가 죽어 서버가 기동하지 않는다(비개발자 운영 PC에서 자동 git pull
+    # 직후 발생하면 복구 수단이 없다). 실제 스키마에 있는 테이블은 모두 등재해 둔다.
+    "app_settings",
+    "blend_rescale_approvals",
+    "item_code_master",
+    "recipe_steps",
 })
 
 
@@ -354,6 +361,29 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_manual_unacked "
         "ON blend_records(manual_unacked) WHERE manual_unacked = 1"
+    )
+    # 성장 대비 인덱스(2026-07-25 감사, 40,000기록/320,000상세 합성 DB 로 실측).
+    # 자재 사용량 집계는 기간 1년 조회에서 758~988ms 가 걸렸고(기록당 상세를 반복 조회 +
+    # GROUP BY 임시 B-tree), 아래 두 인덱스로 커버링 스캔이 되어 ~500ms 로 떨어진다.
+    # 대상: material_usage / material_usage_periods / material_batches / public material-usage.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_status_date "
+        "ON blend_records(status, work_date)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_details_record_material "
+        "ON blend_details(blend_record_id, material_name, actual_amount, theory_amount)"
+    )
+    # 제품별 빈도(product_usage)의 GROUP BY product_name + MAX(work_date) 커버.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_product_status "
+        "ON blend_records(product_name, status, work_date)"
+    )
+    # 감사 로그 조회는 ORDER BY created_at DESC, id DESC 인데 기존 인덱스가 created_at
+    # 단독이라 두 번째 키에서 임시 B-tree 가 붙었다.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_id "
+        "ON audit_logs(created_at DESC, id DESC)"
     )
     # 즉석 승인 토큰(세션 미생성 1회 인증): 발급 후 저장 시 1회 소비.
     connection.execute(
