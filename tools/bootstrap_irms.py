@@ -59,7 +59,13 @@ def main() -> int:
     args = parser.parse_args()
 
     venv_dir = Path(args.venv_dir).resolve()
-    requirements_file = ROOT / "requirements.txt"
+    # 검증된 고정 버전(requirements-lock.txt)이 있으면 그것을 먼저 쓴다 — serve.py 의
+    # _requirements_file 과 같은 규칙. 예전에는 부트스트랩만 requirements.txt(범위 버전)를
+    # 써서, venv 를 새로 만드는 순간(운영 PC 교체·venv 손상 복구) 그날의 PyPI 최신이
+    # 들어왔다. numpy 2.5.0 으로 운영이 멈춘 사고가 정확히 이 조건이었다 —
+    # 잠금 정책이 가장 필요한 '백지 상태 설치'에서만 적용되지 않았다.
+    lock_file = ROOT / "requirements-lock.txt"
+    requirements_file = lock_file if lock_file.exists() else ROOT / "requirements.txt"
 
     python_path = create_venv(venv_dir)
 

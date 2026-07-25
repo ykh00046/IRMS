@@ -110,10 +110,24 @@ def set_console_title(text: str) -> None:
         log(f"콘솔 제목 설정 실패(무시): {exc}")
 
 
-def _git(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
+def _git(*args: str, capture: bool = False, timeout: int = 120) -> subprocess.CompletedProcess:
+    """git 실행 — 절대 사람 입력을 기다리지 않게 하고 시간 제한을 둔다.
+
+    자격증명(PAT)이 만료되면 git 이 자격증명 창을 띄우거나 프롬프트를 기다리는데,
+    그러면 감시 루프가 그 자리에서 영구 정지한다 — 서버(자식)는 계속 돌아 화면은
+    멀쩡하지만 그 순간부터 자동 업데이트도 일일 백업도 다시는 실행되지 않는다.
+    GIT_TERMINAL_PROMPT=0 + GCM_INTERACTIVE=never 로 즉시 실패시키고, timeout 으로
+    그래도 매달리는 경우를 끊는다.
+    """
+    env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "never",
+        "GIT_ASKPASS": "",
+    }
     return subprocess.run(
         ["git", *args], cwd=ROOT, text=True,
-        capture_output=capture,
+        capture_output=capture, env=env, timeout=timeout,
     )
 
 
@@ -139,8 +153,17 @@ def has_update() -> bool:
         local = _git("rev-parse", "HEAD", capture=True).stdout.strip()
         remote = _git("rev-parse", "origin/main", capture=True).stdout.strip()
         return bool(local) and bool(remote) and local != remote
+    except subprocess.TimeoutExpired as exc:
+        # git 이 응답하지 않음(자격증명 대기 등) — 상태 파일에 남겨 '멈춘 줄 몰랐다'를 막는다.
+        log(f"[중요] 업데이트 확인이 시간 초과됐습니다: {exc}")
+        write_update_status(False, f"git_fetch_timeout: {exc}")
+        return False
     except Exception as exc:  # noqa: BLE001
-        log(f"업데이트 확인 실패(무시): {exc}")
+        # 예전에는 로그 한 줄만 남기고 update-status.json 은 마지막 성공값(ok:true)을
+        # 그대로 유지했다 — 자동 업데이트가 며칠째 죽어 있어도 상태 파일은 정상이라고
+        # 말했다. 실패를 반드시 파일에 남긴다.
+        log(f"[중요] 업데이트 확인 실패: {exc}")
+        write_update_status(False, f"git_fetch_failed: {exc}")
         return False
 
 
@@ -224,12 +247,29 @@ def backup_db() -> str:
             dst.close()
         log(f"DB 백업: {dest.name}")
     except Exception as exc:  # noqa: BLE001
-        # 온라인 백업 실패 시 단순 복사 폴백(없는 것보단 낫다)
+        # 온라인 백업 실패 시 단순 복사 폴백(없는 것보단 낫다).
+        # ⚠ 운영 DB 는 WAL 모드라 마지막 체크포인트 이후 커밋은 -wal 에만 있다. 그냥
+        # 복사하면 그 사본은 '무결하지만 최근 데이터가 빠진' 파일이 되고, 검증(무결성 검사)은
+        # 통과해 정상 백업처럼 보관된다. 복사 전에 체크포인트를 시도해 본체로 밀어 넣는다.
         try:
+            try:
+                ck = sqlite3.connect(str(db))
+                try:
+                    ck.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                finally:
+                    ck.close()
+            except Exception as exc_ck:  # noqa: BLE001
+                log(f"[경고] 체크포인트 실패 — 복사본에 최근 기록이 빠질 수 있습니다: {exc_ck}")
             shutil.copy2(db, dest)
             log(f"DB 백업(복사 폴백): {dest.name} — 온라인 백업 실패: {exc}")
         except Exception as exc2:  # noqa: BLE001
             log(f"DB 백업 실패(계속 진행): {exc2}")
+            # 실패 잔해를 남기지 않는다 — sqlite3.connect(dest) 가 이미 빈 파일을 만들었을 수
+            # 있고, 그게 정상 파일명으로 남으면 나중에 '가장 최근 백업'으로 집힌다.
+            try:
+                dest.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
             return BACKUP_FAILED
     # 생성 직후 검증 — 통과 시 미러·정상 prune 대상, 실패 시 .corrupt 로 격리.
     result = BACKUP_OK
@@ -275,6 +315,14 @@ def _verify_backup(dest: Path) -> bool:
             return True
         finally:
             conn.close()
+            # 읽기 전용(mode=ro)으로 열어도 SQLite 가 WAL DB 옆에 -shm/-wal 을 만든다.
+            # 그대로 두면 백업 폴더에 매일 짝 파일이 쌓이고(보존 정리는 *.db 만 지운다),
+            # 나중에 복구할 때 같은 이름 파일 3개를 보고 무엇을 복사할지 헷갈리게 된다.
+            for suffix in ("-wal", "-shm"):
+                try:
+                    dest.with_name(dest.name + suffix).unlink(missing_ok=True)
+                except Exception:  # noqa: BLE001
+                    pass
     except Exception as exc:  # noqa: BLE001
         log(f"백업 검증 중 오류: {exc}")
         return False
@@ -318,6 +366,28 @@ def prune_backups() -> None:
             removed += 1
         except Exception as exc:  # noqa: BLE001
             log(f"손상 백업 정리 실패({old.name}): {exc}")
+    # 검증이 남긴 짝 파일(-wal/-shm) 정리 — 대응 .db 가 없으면 지운다.
+    for stray in list(BACKUPS_DIR.glob("irms_*.db-wal")) + list(BACKUPS_DIR.glob("irms_*.db-shm")):
+        base = stray.with_name(stray.name.rsplit("-", 1)[0])
+        if not base.exists():
+            try:
+                stray.unlink()
+                removed += 1
+            except Exception:  # noqa: BLE001
+                pass
+    # 2차 사본(미러)도 같은 보존 규칙을 적용한다. 예전에는 복사만 하고 정리하지 않아,
+    # 문서 권장대로 미러를 설정할수록 그 드라이브가 조용히 가득 차 결국 복사가 실패했다.
+    if BACKUP_MIRROR:
+        try:
+            mdir = Path(BACKUP_MIRROR)
+            if mdir.exists():
+                mfiles = sorted(mdir.glob("irms_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+                for old in mfiles[BACKUP_KEEP_MIN:]:
+                    if old.stat().st_mtime < cutoff:
+                        old.unlink()
+                        removed += 1
+        except Exception as exc:  # noqa: BLE001
+            log(f"백업 2차 사본 정리 실패(계속 진행): {exc}")
     if removed:
         log(f"백업 정리: {removed}개 삭제 (보존 {BACKUP_KEEP_DAYS}일, 최소 {BACKUP_KEEP_MIN}개 유지)")
 
@@ -469,6 +539,32 @@ def start_server() -> subprocess.Popen:
     )
 
 
+def wait_until_healthy(proc: subprocess.Popen, timeout: int = 40) -> bool:
+    """새로 띄운 서버가 실제로 응답하는지 확인한다.
+
+    예전에는 업데이트 후 그냥 재시작하고 끝이었다. 부팅을 깨뜨리는 커밋이 올라오면
+    새 서버가 즉시 죽는데, 그 사실을 다음 감시 주기(기본 10분) 전까지 아무도 몰랐고
+    update-status.json 은 pull·pip 이 성공했으므로 ok:true 라고 말했다. 현장은
+    '사이트가 안 열려요'만 보이고 비개발자 운영자가 할 수 있는 일이 없었다.
+    """
+    import urllib.error
+    import urllib.request
+
+    deadline = time.time() + timeout
+    url = f"http://127.0.0.1:{PORT}/health"
+    while time.time() < deadline:
+        if proc.poll() is not None:      # 자식이 이미 죽었으면 더 기다릴 것 없음
+            return False
+        try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+                if resp.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(2)
+    return False
+
+
 def stop_server(proc: subprocess.Popen | None) -> None:
     if proc is None or proc.poll() is not None:
         return
@@ -547,6 +643,17 @@ def main() -> None:
                 if apply_update():
                     stop_server(proc)
                     proc = start_server()
+                    # 새 코드로 실제 기동했는지 확인 — 안 뜨면 상태 파일과 콘솔에
+                    # 크게 남긴다(운영자가 개발자에게 알릴 근거).
+                    if wait_until_healthy(proc):
+                        write_update_status(True)
+                    else:
+                        log("=" * 60)
+                        log("[중대] 업데이트 후 서버가 기동하지 않습니다.")
+                        log("       방금 올라온 변경이 부팅을 깨뜨렸을 수 있습니다.")
+                        log("       조치: 이 창을 닫지 말고 개발자에게 알려주세요.")
+                        log("=" * 60)
+                        write_update_status(False, "boot_failed_after_update")
     except KeyboardInterrupt:
         log("종료 요청 — 서버 정리 중...")
     finally:

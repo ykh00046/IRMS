@@ -25,19 +25,29 @@
 > 라이브 서버가 손상/삭제된 경우에만 수행. 순서대로, 건너뛰지 말 것.
 
 1. **서버 중지**: 운영 콘솔에서 `Ctrl+C` 로 `serve.py` 종료(서버·감시 루프 함께 정지).
-2. **복구 후보 검증**: 복구에 쓸 백업을 읽기 전용으로 검증 —
-   `python tools/verify_backup.py backups\<선택 파일>` → `PASS` 확인.
-   `FAIL` 이면 다른 백업 후보로 다시 시도(`backups\` 의 다른 최근 사본).
-3. **현행 DB 대피**: `data\irms.db`(및 `-shm`/`-wal` 이 있으면 함께)를
-   `data\irms.db.pre_restore_<yyyymmdd_HHMMSS>` 로 이름 변경(롤백용 보존).
-4. **백업 복사**: 검증 통과한 백업을 `data\irms.db` 로 복사
-   (`copy backups\<선택 파일> data\irms.db`). `-wal`/`-shm` 은 복사하지 않는다.
-5. **재기동**: `run_auto.bat` 실행 → 서버 시작 로그 확인.
-6. **정상 확인**:
+2. **복구 실행** — 아래 한 줄이 검증·대피·복사를 순서대로 처리한다(권장):
+
+   ```
+   python tools/restore_backup.py
+   ```
+
+   가장 최근 정상 백업을 자동으로 고르고, 다른 파일을 쓰려면
+   `--backup backups\irms_YYYYMMDD_HHMMSS.db` 를 붙인다. 백업이 손상됐으면
+   **아무것도 건드리지 않고 중단**하며, 기존 `irms.db`·`-wal`·`-shm` 은
+   `dataestore-before-<시각>\` 으로 **함께 대피**된다(삭제 아님).
+
+   > ⚠ 손으로 복사하지 말 것. `-wal` 을 남겨두고 `.db` 만 바꾸면 **옛 WAL 프레임이
+   > 새 DB 위에 재생돼 데이터가 뒤섞인다**(WAL 은 DB 파일과 묶여 있지 않다).
+   > 이 스크립트는 그 실수를 불가능하게 만들려고 만든 것이다.
+
+   손으로 해야 하는 상황이면: 검증(`python tools/verify_backup.py backups\<파일>` → `PASS`)
+   → `data\irms.db`·`-wal`·`-shm` **셋 다** 다른 폴더로 이동 → 백업을 `data\irms.db` 로 복사.
+3. **재기동**: `run_auto.bat` 실행 → 서버 시작 로그 확인.
+4. **정상 확인**:
    - `curl http://127.0.0.1:<PORT>/health` → `200` + `{"status":"ok"}`.
    - 브라우저 `/status`(배합 기록)에서 최신 데이터가 보이는지 육안 확인.
    - `/management`(레시피), `/viscosity`(점도) 도 1회씩 조회 확인.
-7. (선택) 대피한 `data\irms.db.pre_restore_*` 는 안정 운영 확인 후(수일 뒤) 삭제.
+5. (선택) 대피한 `dataestore-before-*` 는 안정 운영 확인 후(수일 뒤) 삭제.
 
 ## 3. 분기 리허설 체크리스트 (분기 1회, 라이브 무접촉)
 
