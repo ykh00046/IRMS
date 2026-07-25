@@ -66,7 +66,8 @@ def build_router() -> APIRouter:
                        COUNT(DISTINCT product_name) AS products,
                        COUNT(DISTINCT worker) AS workers
                 FROM blend_records
-                WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND work_date BETWEEN ? AND ?
                 """,
                 (from_date, to_date),
             ).fetchone()
@@ -98,7 +99,8 @@ def build_router() -> APIRouter:
                 SELECT work_date AS d, COUNT(*) AS cnt,
                        COALESCE(SUM(total_amount), 0) AS total_weight
                 FROM blend_records
-                WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND work_date BETWEEN ? AND ?
                 GROUP BY work_date
                 """,
                 (from_date, to_date),
@@ -127,7 +129,8 @@ def build_router() -> APIRouter:
                 SELECT product_name, COUNT(*) AS cnt,
                        COALESCE(SUM(total_amount), 0) AS total_weight
                 FROM blend_records
-                WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND work_date BETWEEN ? AND ?
                 GROUP BY product_name
                 ORDER BY total_weight DESC
                 LIMIT ?
@@ -158,7 +161,8 @@ def build_router() -> APIRouter:
                        COALESCE(SUM(total_amount), 0) AS total_weight,
                        COUNT(DISTINCT product_name) AS products
                 FROM blend_records
-                WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND work_date BETWEEN ? AND ?
                 GROUP BY worker
                 ORDER BY cnt DESC
                 """,

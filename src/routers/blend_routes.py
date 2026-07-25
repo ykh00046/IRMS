@@ -375,10 +375,12 @@ def build_router() -> APIRouter:
         worker: str | None = None,
         search: str | None = None,
         limit: int = Query(default=500, ge=1, le=1000),
+        include_canceled: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         # 최신 limit 건만 반환(기본 500). 날짜·작업자·검색 필터가 범위를 좁히는 도구다.
         # total_available(전체 M)로 상한 도달 여부를 표면화 — '표시 N / 전체 M' 안내용.
+        # include_canceled: 취소된 기록까지 함께 조회(취소분을 다시 열어 복원하는 유일한 경로).
         items = blend_service.list_blend_records(
             connection,
             start_date=start_date,
@@ -386,6 +388,7 @@ def build_router() -> APIRouter:
             worker=worker,
             search=search,
             limit=limit,
+            include_canceled=include_canceled,
         )
         for item in items:
             _mask_manual_entry(request, item)
@@ -395,6 +398,7 @@ def build_router() -> APIRouter:
             end_date=end_date,
             worker=worker,
             search=search,
+            include_canceled=include_canceled,
         )
         return {
             "items": items,
@@ -1362,6 +1366,38 @@ def build_router() -> APIRouter:
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
         if hard:
+            # 물리 삭제는 되돌릴 수 없다 — 규제 기록을 흔적 없이 없애는 가장 강한 행위이므로
+            # ①사유를 반드시 받고 ②기록 전체 스냅샷을 감사에 남긴다. 예전에는 수정 경로에만
+            # before-image 가 있고 삭제에는 LOT 한 줄뿐이라, 가장 위험한 행위가 가장 약한
+            # 증적을 남겼다(백업 롤백 외 복구 수단 없음).
+            clean_reason = (reason or "").strip()
+            if not clean_reason:
+                raise HTTPException(
+                    status_code=400,
+                    detail="완전 삭제는 사유가 필요합니다. 되돌릴 수 없으니 취소를 먼저 검토하세요.",
+                )
+            snapshot = {
+                "header": {
+                    k: record.get(k)
+                    for k in (
+                        "id", "product_lot", "recipe_id", "product_name", "ink_name",
+                        "position", "worker", "work_date", "work_time", "total_amount",
+                        "scale", "status", "note", "reactor", "manual_entry",
+                        "is_bulk_regenerated", "manual_absence_reason",
+                        "reviewed_by", "reviewed_at", "approved_by", "approved_at",
+                        "created_by", "created_at", "updated_at",
+                    )
+                },
+                "rows": [
+                    [
+                        d.get("material_name"), d.get("material_code"), d.get("material_lot"),
+                        d.get("ratio"), d.get("theory_amount"), d.get("actual_amount"),
+                        1 if d.get("carried_over") else 0,
+                        1 if d.get("manual_entry") else 0,
+                    ]
+                    for d in (record.get("details") or [])
+                ],
+            }
             result = record_delete_service.delete_blend_record(connection, record_id)
             if result is None:
                 raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
@@ -1372,7 +1408,7 @@ def build_router() -> APIRouter:
                 target_type="blend_record",
                 target_id=str(result.record_id),
                 target_label=result.product_lot,
-                details={"reason": reason} if reason else None,
+                details={"reason": clean_reason, "snapshot": snapshot},
             )
             connection.commit()
             return {"deleted": result.record_id}

@@ -26,6 +26,7 @@ def _make_db() -> sqlite3.Connection:
             ink_name TEXT, position TEXT, worker TEXT NOT NULL, work_date TEXT NOT NULL,
             work_time TEXT, total_amount REAL NOT NULL, scale TEXT,
             status TEXT NOT NULL DEFAULT 'completed', note TEXT, reactor INTEGER,
+            is_bulk_regenerated INTEGER NOT NULL DEFAULT 0,
             reviewed_by TEXT, reviewed_at TEXT, approved_by TEXT, approved_at TEXT,
             worker_sign TEXT, reviewed_sign TEXT, approved_sign TEXT,
             created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT
@@ -127,7 +128,8 @@ def _make_blend_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_lot TEXT NOT NULL, product_name TEXT NOT NULL,
             worker TEXT NOT NULL, work_date TEXT NOT NULL, total_amount REAL NOT NULL,
-            status TEXT NOT NULL DEFAULT 'completed'
+            status TEXT NOT NULL DEFAULT 'completed',
+            is_bulk_regenerated INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE blend_details (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -337,7 +337,8 @@ def material_usage_periods(
                COUNT(DISTINCT bd.blend_record_id) AS batch_count
         FROM blend_details bd
         JOIN blend_records br ON br.id = bd.blend_record_id
-        WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?
+        WHERE br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0
+          AND br.work_date >= ? AND br.work_date <= ?
         GROUP BY {period_expr}{product_group}, bd.material_code, bd.material_name
         ORDER BY period, total_actual DESC
         """,
@@ -362,7 +363,8 @@ def material_usage_periods(
     ]
     rec_count = connection.execute(
         "SELECT COUNT(*) FROM blend_records br "
-        "WHERE br.status = 'completed' AND br.work_date >= ? AND br.work_date <= ?",
+        "WHERE br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0 "
+        "AND br.work_date >= ? AND br.work_date <= ?",
         (start_date, end_date),
     ).fetchone()[0]
     # by_product=True + group=day 로 넓은 기간을 요청하면 items 가 자재×제품×일수로 폭증할 수
@@ -397,7 +399,7 @@ def material_usage(
     end_date: str | None = None,
 ) -> dict[str, Any]:
     """배합 기록 기반 자재 사용 분석. 기간 내 완료 기록의 자재별 실제/이론 사용량·건수."""
-    where = ["br.status = 'completed'"]
+    where = ["br.status = 'completed'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
     params: list[Any] = []
     if start_date:
         where.append("br.work_date >= ?")
@@ -447,7 +449,7 @@ def product_usage(
     end_date: str | None = None,
 ) -> dict[str, Any]:
     """제품별 배합 빈도 분석. 기간 내 완료 기록의 제품별 배치 수·총 배합량·최근 작업일."""
-    where = ["status = 'completed'"]
+    where = ["status = 'completed'", "COALESCE(is_bulk_regenerated, 0) = 0"]
     params: list[Any] = []
     if start_date:
         where.append("work_date >= ?")
@@ -518,7 +520,7 @@ def mistake_stats(
                SUM(CASE WHEN status = 'completed' AND manual_entry = 1 THEN 1 ELSE 0 END) AS manual_records,
                SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_records
         FROM blend_records
-        WHERE 1 = 1 {wclause}
+        WHERE COALESCE(is_bulk_regenerated, 0) = 0 {wclause}
         GROUP BY worker
         HAVING records > 0 OR canceled_records > 0
         ORDER BY manual_records DESC, canceled_records DESC, worker ASC
@@ -545,7 +547,7 @@ def mistake_stats(
                SUM(CASE WHEN d.manual_entry = 1 THEN 1 ELSE 0 END) AS manual_rows
         FROM blend_details d
         JOIN blend_records r ON r.id = d.blend_record_id
-        WHERE r.status = 'completed' {mclause}
+        WHERE r.status = 'completed' AND COALESCE(r.is_bulk_regenerated, 0) = 0 {mclause}
         GROUP BY d.material_name
         ORDER BY manual_rows DESC, d.material_name ASC
         """,
@@ -574,7 +576,7 @@ def batch_details(
     limit: int = 2000,
 ) -> dict[str, Any]:
     """배치 상세 — 완료 기록의 자재별 비율·이론량·실제량·편차 평면 목록(작업일 역순)."""
-    where = ["br.status = 'completed'"]
+    where = ["br.status = 'completed'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
     params: list[Any] = []
     if start_date:
         where.append("br.work_date >= ?")
@@ -1561,8 +1563,12 @@ def list_blend_records(
     worker: str | None = None,
     search: str | None = None,
     limit: int = 200,
+    include_canceled: bool = False,
 ) -> list[dict[str, Any]]:
-    clauses = ["status != 'canceled'"]
+    # 기본은 취소분 제외(현장 목록). include_canceled=True 면 함께 조회한다 — 취소한 기록을
+    # 다시 열어 '복원'하거나 취소 이력을 확인할 유일한 경로이고, 전체 Excel 백업에서도
+    # 취소는 지워진 게 아니라 보존해야 할 증거라 포함이 맞다.
+    clauses = [] if include_canceled else ["status != 'canceled'"]
     params: list[Any] = []
     if start_date:
         clauses.append("work_date >= ?")
@@ -1584,7 +1590,7 @@ def list_blend_records(
         )
         like = f"%{search}%"
         params.extend([like, like, like, like])
-    where = " AND ".join(clauses)
+    where = " AND ".join(clauses) if clauses else "1=1"
     params.append(int(limit))
     rows = connection.execute(
         f"""
@@ -1608,13 +1614,14 @@ def count_blend_records(
     end_date: str | None = None,
     worker: str | None = None,
     search: str | None = None,
+    include_canceled: bool = False,
 ) -> int:
     """list_blend_records 와 동일 필터의 전체 건수(표시 상한과 무관한 '전체 M').
 
     /status 기록 목록이 표시 상한(LIMIT)에 도달했는지 판정하고 '표시 N / 전체 M' 안내를
     정확히 보여주기 위한 경량 COUNT. WHERE 절은 list_blend_records 와 일치해야 한다.
     """
-    clauses = ["status != 'canceled'"]
+    clauses = [] if include_canceled else ["status != 'canceled'"]
     params: list[Any] = []
     if start_date:
         clauses.append("work_date >= ?")
@@ -1634,7 +1641,7 @@ def count_blend_records(
         )
         like = f"%{search}%"
         params.extend([like, like, like, like])
-    where = " AND ".join(clauses)
+    where = " AND ".join(clauses) if clauses else "1=1"
     row = connection.execute(
         f"SELECT COUNT(*) FROM blend_records WHERE {where}", params
     ).fetchone()

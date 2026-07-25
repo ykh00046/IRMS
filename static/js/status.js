@@ -77,11 +77,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<div class="blend-rescale-block"><b>증량 이력${unackedTag}</b><ul class="blend-rescale-list">${rows}</ul></div>`;
   }
 
-  async function deleteRecord(recordId) {
+  // 기본 삭제 = '취소'(soft) — 기록은 남고 목록·출력·집계에서만 빠지며 복원할 수 있다.
+  // 물리 삭제는 되돌릴 수 없어 별도 경로(cancelRecord 이후 '완전 삭제')로만 도달한다.
+  async function cancelRecord(recordId, reason) {
     await request(`/blend/records/${recordId}`, {
       method: "DELETE",
-      query: { hard: 1 },
+      query: { reason },
     });
+  }
+
+  async function hardDeleteRecord(recordId, reason) {
+    await request(`/blend/records/${recordId}`, {
+      method: "DELETE",
+      query: { hard: 1, reason },
+    });
+  }
+
+  async function restoreRecord(recordId) {
+    await request(`/blend/records/${recordId}/restore`, { method: "POST" });
   }
 
   async function loadWorkers() {
@@ -106,6 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
       end_date: $("status-rec-to").value || undefined,
       worker: $("status-rec-worker").value || undefined,
       search: $("status-rec-search").value.trim() || undefined,
+      include_canceled: ($("status-rec-canceled") && $("status-rec-canceled").checked) ? 1 : undefined,
     };
     try {
       const [data] = await Promise.all([
@@ -138,9 +152,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
         // 목록에 표시해도 책임자 로그인 시에만 보인다.
         const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
+        // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
+        const canceledTag = r.status === "canceled"
+          ? ' <span class="rescale-badge unacked" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${rescaleBadge(r.id)}${bulkBadge(r)}</td>` +
+          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${canceledTag}${rescaleBadge(r.id)}${bulkBadge(r)}</td>` +
           `<td>${esc(r.product_name)}</td>` +
           `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
         tr.addEventListener("click", () => openDetail(r.id));
@@ -225,12 +242,20 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="dhr-approvals dhr-approvals-single">${approvalCell("작성", rec.created_by, rec.created_at, rec.worker_sign)}</div>
         ${visc}
       </div>`;
+    // 상태에 따라 취소/복원/완전 삭제 버튼 노출을 가른다 — 정상 기록은 되돌릴 수 있는
+    // '취소'만, 이미 취소된 기록에서만 '복원'과 (되돌릴 수 없는) '완전 삭제'가 보인다.
+    const isCanceled = rec.status === "canceled";
+    const setHidden = (id, hidden) => { const el = $(id); if (el) el.hidden = hidden; };
+    setHidden("status-cancel-rec", isCanceled);
+    setHidden("status-restore", !isCanceled);
+    setHidden("status-delete", !isCanceled);
     $("status-detail-modal").hidden = false;
   }
 
   // ── 전체 수정(책임자 전용) ────────────────────────────────────
   // 헤더 액션(PDF/인쇄/Excel/수정/삭제 + 서명 체크)을 편집 중에는 숨긴다.
-  const EDIT_HIDE_IDS = ["status-pdf", "status-excel", "status-edit", "status-delete"];
+  const EDIT_HIDE_IDS = ["status-pdf", "status-excel", "status-edit",
+                         "status-cancel-rec", "status-restore", "status-delete"];
 
   function setEditChromeHidden(hidden) {
     EDIT_HIDE_IDS.forEach((id) => { const el = $(id); if (el) el.style.display = hidden ? "none" : ""; });
@@ -383,21 +408,33 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("status-rec-delete-selected").addEventListener("click", async () => {
     const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => Number(c.value));
-    if (!ids.length) { IRMS.notify("삭제할 기록을 선택하세요.", "warn"); return; }
-    if (!window.confirm(`선택한 배합 기록 ${ids.length}건을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!ids.length) { IRMS.notify("취소할 기록을 선택하세요.", "warn"); return; }
+    const reason = window.prompt(
+      `선택한 배합 기록 ${ids.length}건을 취소합니다. 사유를 입력하세요.\n` +
+      "(기록은 지워지지 않고 목록·출력에서 빠집니다. 상세에서 복원할 수 있습니다.)"
+    );
+    if (reason === null) return;
+    if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
+    // 순차 처리 중 실패해도 이미 처리된 건수를 반드시 알린다 — 예전에는 오류만 띄우고
+    // 몇 건이 이미 지워졌는지 알려주지 않아 작업자가 상태를 알 수 없었다.
+    let done = 0;
     try {
       for (const id of ids) {
-        await deleteRecord(id);
+        await cancelRecord(id, reason.trim());
+        done += 1;
       }
-      IRMS.notify(`${ids.length}건을 삭제했습니다.`, "success");
-      await loadRecords();
+      IRMS.notify(`${done}건을 취소했습니다.`, "success");
     } catch (e) {
-      IRMS.notify(`삭제 실패: ${e.message || e}`, "error");
+      IRMS.notify(`${done}건 취소 후 실패했습니다 (${ids.length - done}건 남음): ${e.message || e}`, "error");
     }
+    await loadRecords();
   });
   $("status-rec-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadRecords();
   });
+  // '취소 포함' 토글 — 켜면 취소된 기록까지 조회해 상세에서 복원할 수 있다.
+  const canceledChk = $("status-rec-canceled");
+  if (canceledChk) canceledChk.addEventListener("change", loadRecords);
   $("status-detail-close").addEventListener("click", () => {
     $("status-detail-modal").hidden = true;
   });
@@ -409,14 +446,63 @@ document.addEventListener("DOMContentLoaded", () => {
   $("status-excel").addEventListener("click", () => {
     if (detailId) window.location.assign(`/api/blend/records/${detailId}/export`);
   });
-  $("status-delete").addEventListener("click", async () => {
+  // [취소] — 기본 경로. 기록은 남고 목록·출력·집계에서 빠지며 언제든 복원할 수 있다.
+  const cancelBtn = $("status-cancel-rec");
+  if (cancelBtn) cancelBtn.addEventListener("click", async () => {
     if (!detailId) return;
-    if (!window.confirm("이 배합 기록을 완전히 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+    const reason = window.prompt(
+      "이 배합 기록을 취소합니다. 사유를 입력하세요.\n" +
+      "(기록은 지워지지 않고 목록·출력에서 빠집니다. 나중에 복원할 수 있습니다.)"
+    );
+    if (reason === null) return;              // 취소 버튼
+    if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
     try {
-      await deleteRecord(detailId);
+      await cancelRecord(detailId, reason.trim());
       $("status-detail-modal").hidden = true;
       detailId = null;
-      IRMS.notify("배합 기록을 삭제했습니다.", "success");
+      IRMS.notify("배합 기록을 취소했습니다. 필요하면 상세에서 복원할 수 있습니다.", "success");
+      await loadRecords();
+    } catch (e) {
+      IRMS.notify(`취소 실패: ${e.message || e}`, "error");
+    }
+  });
+
+  // [복원] — 취소된 기록을 되돌린다.
+  const restoreBtn = $("status-restore");
+  if (restoreBtn) restoreBtn.addEventListener("click", async () => {
+    if (!detailId) return;
+    try {
+      await restoreRecord(detailId);
+      const id = detailId;
+      IRMS.notify("배합 기록을 복원했습니다.", "success");
+      await loadRecords();
+      await openDetail(id);   // 버튼 상태를 새 상태로 다시 그린다
+    } catch (e) {
+      IRMS.notify(`복원 실패: ${e.message || e}`, "error");
+    }
+  });
+
+  // [완전 삭제] — 되돌릴 수 없다. 취소된 기록에서만 보이고, 제품 LOT 을 정확히 입력해야
+  // 진행된다(오클릭 방지). 사유는 서버가 필수로 요구하며 기록 전체 스냅샷과 함께 감사에 남는다.
+  // 버튼들은 책임자에게만 렌더링된다(can_manage) — 비책임자 화면에서는 null 이므로
+  // 반드시 가드한다. 가드가 없으면 이 줄에서 예외가 나 이후 리스너가 전부 등록되지 않는다.
+  const hardDelBtn = $("status-delete");
+  if (hardDelBtn) hardDelBtn.addEventListener("click", async () => {
+    if (!detailId || !currentRecord) return;
+    const lot = String(currentRecord.product_lot || "");
+    const typed = window.prompt(
+      `되돌릴 수 없는 완전 삭제입니다.\n진행하려면 제품 LOT 을 그대로 입력하세요:\n${lot}`
+    );
+    if (typed === null) return;
+    if (typed.trim() !== lot) { IRMS.notify("제품 LOT 이 일치하지 않아 중단했습니다.", "error"); return; }
+    const reason = window.prompt("완전 삭제 사유를 입력하세요(감사 기록에 남습니다).");
+    if (reason === null) return;
+    if (!reason.trim()) { IRMS.notify("사유를 입력해야 삭제할 수 있습니다.", "error"); return; }
+    try {
+      await hardDeleteRecord(detailId, reason.trim());
+      $("status-detail-modal").hidden = true;
+      detailId = null;
+      IRMS.notify("배합 기록을 완전히 삭제했습니다.", "success");
       await loadRecords();
     } catch (e) {
       IRMS.notify(`삭제 실패: ${e.message || e}`, "error");

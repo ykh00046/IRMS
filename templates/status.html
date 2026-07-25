@@ -28,11 +28,14 @@
               <input class="input" id="status-rec-search" placeholder="검색어" />
             </div>
             <button class="btn accent" id="status-rec-apply" type="button">조회</button>
+            <!-- 취소된 기록은 기본으로 숨긴다. 켜면 함께 보이고, 상세에서 '복원'할 수 있다
+                 (켜지 않으면 취소분에 도달할 방법이 없어 복원이 죽은 기능이 된다). -->
+            <label class="visc-checkbox"><input id="status-rec-canceled" type="checkbox" /> 취소 포함</label>
             <label class="visc-checkbox"><input id="status-sign" type="checkbox" /> 서명 넣기</label>
             <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
             <button class="btn" id="status-rec-dhr-zip" type="button">ZIP(레시피별 폴더)</button>
             <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
-            <button class="btn danger" id="status-rec-delete-selected" type="button">선택 삭제</button>
+            <button class="btn danger" id="status-rec-delete-selected" type="button">선택 취소</button>
           </div>
         </section>
 
@@ -66,8 +69,15 @@
                 <label class="visc-checkbox"><input id="status-detail-sign" type="checkbox" /> 서명 넣기</label>
                 <button id="status-pdf" class="btn btn-sm accent" type="button">배합일지 PDF</button>
                 <button id="status-excel" class="btn btn-sm" type="button">Excel</button>
-                {% if can_manage %}<button id="status-edit" class="btn btn-sm" type="button">수정</button>{% endif %}
-                <button id="status-delete" class="btn btn-sm danger" type="button">삭제</button>
+                {% if can_manage %}
+                <button id="status-edit" class="btn btn-sm" type="button">수정</button>
+                <!-- 취소(soft)가 기본 — 되돌릴 수 있다. 복원·완전 삭제는 취소된 기록에서만
+                     노출된다(status.js 가 상태에 따라 hidden 토글). 예전에는 삭제 버튼이
+                     비책임자에게도 보였고 누르면 곧바로 물리 삭제였다. -->
+                <button id="status-cancel-rec" class="btn btn-sm danger" type="button">취소</button>
+                <button id="status-restore" class="btn btn-sm" type="button" hidden>복원</button>
+                <button id="status-delete" class="btn btn-sm danger" type="button" hidden>완전 삭제</button>
+                {% endif %}
                 <button id="status-detail-close" class="btn btn-sm" type="button">닫기</button>
               </div>
             </div>
@@ -77,5 +87,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260725a"></script>
+    <script src="/static/js/status.js?v=20260725c"></script>
 {% endblock %}

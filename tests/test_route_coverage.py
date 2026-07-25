@@ -174,7 +174,7 @@ def test_blend_bulk_and_delete_routes():
                             (ids[0],)).fetchone()["status"] == "canceled"
 
     # 하드 삭제는 책임자 전용 — admin 세션이 이미 있으므로 200, 행 제거
-    res = client.request("DELETE", f"/api/blend/records/{ids[1]}?hard=1", headers=headers)
+    res = client.request("DELETE", f"/api/blend/records/{ids[1]}?hard=1&reason=테스트 삭제", headers=headers)
     assert res.status_code == 200
     with get_connection() as conn:
         assert conn.execute("SELECT 1 FROM blend_records WHERE id=?",
@@ -256,7 +256,7 @@ def test_blend_hard_delete_requires_manager():
     rid = created.json()["id"]
 
     # 배합 세션만으로 하드 삭제 시도 → 403
-    res = client.request("DELETE", f"/api/blend/records/{rid}?hard=1", headers=headers)
+    res = client.request("DELETE", f"/api/blend/records/{rid}?hard=1&reason=권한 테스트", headers=headers)
     assert res.status_code == 403
 
 
