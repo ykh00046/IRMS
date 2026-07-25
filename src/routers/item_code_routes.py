@@ -443,19 +443,25 @@ def create_item_code_router() -> APIRouter:
             placeholders = ",".join("?" for _ in chain_ids)
 
             # 다른 체인의 레시피가 같은 product_code 를 쓰고 있으면 충돌(반제품명 포함).
+            # 단 **반제품명이 같으면 충돌이 아니다** — 같은 제품이므로 같은 코드가 정상이다.
+            # 예전에는 이름이 같아도 체인이 다르면 막았는데, 같은 이름으로 별개 체인이
+            # 생겨버린 데이터에서는 자기 제품의 코드를 재지정하는 것조차 영구히 막혔다
+            # (현장 신고: "이미 사용 중인 코드라고 뜨는데 수정이 안 된다").
             if product_code is not None and chain_ids:
                 conflict = connection.execute(
                     f"""
-                    SELECT product_name FROM recipes
-                    WHERE product_code = ? AND id NOT IN ({placeholders}) LIMIT 1
+                    SELECT id, product_name FROM recipes
+                    WHERE product_code = ? AND id NOT IN ({placeholders})
+                      AND product_name <> ?
+                    LIMIT 1
                     """,
-                    [product_code, *chain_ids],
+                    [product_code, *chain_ids, recipe_row["product_name"]],
                 ).fetchone()
                 if conflict:
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"이미 다른 반제품({conflict['product_name']})이"
+                            f"이미 다른 반제품({conflict['product_name']}, id={conflict['id']})이"
                             " 사용 중인 코드입니다."
                         ),
                     )

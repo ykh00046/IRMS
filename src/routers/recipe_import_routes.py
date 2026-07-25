@@ -287,6 +287,41 @@ def build_router() -> APIRouter:
             # GAP-5/GAP-6: 등록 중 발생한 클램프·승계 해제를 응답 경고로 모은다(파서 경고에 합침).
             extra_warnings: list[dict[str, Any]] = []
 
+            # 같은 반제품명으로 '별개 레시피'가 또 생기는 것을 막는다.
+            # 중복 검사가 raw_input_hash(내용 완전 일치)만 보던 탓에, 배합비를 조금 바꿔
+            # 같은 이름으로 다시 등록하면 개정이 아니라 **독립된 새 체인**이 생겼다. 그러면
+            #  · 배합 화면 레시피 목록에 같은 이름이 두 줄 뜨고(작업자는 구분할 방법이 없다),
+            #  · 두 체인이 같은 품목코드를 쥐어 이후 코드 재지정이 409 로 막힌다
+            #    (현장 신고: "이미 사용 중인 코드라고 뜨는데 수정이 안 된다").
+            # 수정 등록(revision_of)·force 는 그대로 통과시킨다.
+            if body.revision_of is None and not body.force:
+                for parsed_row in parsed["parsed_rows"]:
+                    dup = connection.execute(
+                        """
+                        SELECT id FROM recipes
+                        WHERE product_name = ? AND status NOT IN ('canceled', 'draft')
+                          AND id NOT IN (SELECT revision_of FROM recipes
+                                         WHERE revision_of IS NOT NULL)
+                        LIMIT 1
+                        """,
+                        (parsed_row["product_name"],),
+                    ).fetchone()
+                    if dup:
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "code": "DUPLICATE_PRODUCT_NAME",
+                                "message": (
+                                    f"'{parsed_row['product_name']}' 레시피가 이미 있습니다. "
+                                    "내용을 바꾸려면 레시피 현황에서 그 레시피를 열어 "
+                                    "'수정 등록'으로 진행하세요. 그래야 개정 이력이 이어지고 "
+                                    "품목코드도 그대로 유지됩니다."
+                                ),
+                                "existing": [{"id": dup["id"],
+                                              "product_name": parsed_row["product_name"]}],
+                            },
+                        )
+
             for parsed_row in parsed["parsed_rows"]:
                 # 기준 자재 결정:
                 # - 요청에 anchor_material 이 있으면 → 임포트 항목 중 이름이 정확히 일치하는
