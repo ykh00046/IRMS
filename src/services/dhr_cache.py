@@ -14,9 +14,22 @@ from . import signature_config
 _CACHE_DIR = config.DATA_DIR / "dhr_cache"
 
 
+# 렌더러 판(版). 배합일지의 '내용'이 아니라 '그리는 코드'가 바뀌면 이 값을 올려야
+# 낡은 캐시가 무효화된다. 기록 내용이 그대로면 마커가 같아, 취소 표식·일괄 재생성 표식·
+# 증량 요약 같은 렌더러 개선이 배포돼도 예전에 만들어 둔 PDF 가 계속 나가던 문제가 있었다.
+# ⚠ dhr_excel.py / dhr_pdf.py 의 출력물이 바뀌는 변경을 하면 이 상수를 반드시 올린다.
+RENDERER_VERSION = 3  # 3: 취소·일괄 재생성 표식, 증량 요약, 수기 부재 사유
+
+
 def _marker(record: dict[str, Any]) -> str:
     # v2: 기본 출력이 '서명 없음'으로 바뀜 → 기존(서명본) 캐시 무효화
-    payload = {"v": 2, "record": record, "sig": signature_config.load()}
+    # renderer: 렌더러 코드 판이 바뀌면 내용이 같아도 다시 그린다.
+    payload = {
+        "v": 2,
+        "renderer": RENDERER_VERSION,
+        "record": record,
+        "sig": signature_config.load(),
+    }
     blob = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

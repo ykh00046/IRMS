@@ -40,7 +40,8 @@ def build_router() -> APIRouter:
             SELECT id, product_name, product_lot, work_date, worker,
                    rescale_unacked, manual_unacked
             FROM blend_records
-            WHERE rescale_unacked = 1 OR manual_unacked = 1
+            WHERE (rescale_unacked = 1 OR manual_unacked = 1)
+              AND status != 'canceled'
             ORDER BY id DESC
             LIMIT ?
             """,

@@ -122,9 +122,17 @@
     return el;
   }
 
+  // 막힌 창인지 다른 스크립트(blend.js / blend_continuous.js)가 볼 수 있게 노출한다.
+  // 오버레이는 화면만 덮을 뿐이라, 이 플래그가 없으면 막힌 창도 저울 PRINT 를 계속
+  // 받아 자기 행에 채우고 공유 임시저장 키를 덮어써 — 가드가 막으려던 두 사고가
+  // 그대로 일어난다. 폴링·초안 저장 쪽에서 이 값을 확인해 건너뛴다.
+  window.IRMS = window.IRMS || {};
+  window.IRMS.blendWindowBlocked = false;
+
   function showBlock() {
     if (blocked) return;
     blocked = true;
+    window.IRMS.blendWindowBlocked = true;
     if (!overlay) overlay = buildOverlay();
     if (!overlay.isConnected) document.body.appendChild(overlay);
     // 재노출 시 비상구는 다시 숨기고 코드칸을 비운다(이전에 펼쳐뒀던 상태가 남지 않게).
@@ -137,6 +145,7 @@
 
   function hideBlock() {
     blocked = false;
+    window.IRMS.blendWindowBlocked = false;
     if (overlay) overlay.hidden = true;
   }
 

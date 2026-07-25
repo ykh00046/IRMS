@@ -76,3 +76,7 @@ scale_agent/build/
 code*.xlsx
 .tmp-tests/
 docs/.pdca-snapshots/
+
+# 백업 검증(mode=ro)이 남기는 SQLite 부산물 — 백업 파일 자체는 정상
+backups/*.db-shm
+backups/*.db-wal

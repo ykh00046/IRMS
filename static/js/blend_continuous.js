@@ -345,6 +345,9 @@
       note: $("cont-note").value,
       reactor: $("cont-reactor").value,
       lotOverrides: state.lotOverrides || {},
+      // 수기 입력 승인/부재 진행 상태 — 누락하면 복구 후 저장이 사유·미확인 표시 없는
+      // 정상 배치로 기록된다(추적 구멍). lotRescaleEvents 와 같은 이유로 왕복시킨다.
+      manualApproved: state.manualApproved ? { ...state.manualApproved } : null,
       // 셀 매트릭스 — cells[i][j] = {actual, manual, lot}. actual·lot 은 문자열로 통일.
       // 자재 LOT 은 이제 셀별(cell.lot). (구 초안의 sharedLot 은 복구 시 마이그레이션.)
       cells: state.cells.map((row) => (row || []).map((c) => ({
@@ -367,6 +370,8 @@
     if (_draftTimer) clearTimeout(_draftTimer);
     _draftTimer = setTimeout(() => {
       try {
+        // 가드에 막힌 창은 공유 초안 키를 덮어쓰지 않는다(blend.js 와 동일).
+        if (window.IRMS && window.IRMS.blendWindowBlocked) return;
         const d = currentDraft();
         if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
       } catch (_e) { /* 저장공간 없음 등 무시 */ }
@@ -431,6 +436,8 @@
     if (draft.note) $("cont-note").value = draft.note;
     if (draft.reactor) $("cont-reactor").value = draft.reactor;
     state.lotOverrides = draft.lotOverrides || {};
+    // 수기 입력 승인/부재 상태 복구(onRecipeChange 가 null 로 리셋했으므로 되살린다).
+    state.manualApproved = draft.manualApproved ? { ...draft.manualApproved } : null;
     // 총 배합량 복구 → 이론량 재산출(placeholder·편차 기준).
     if (draft.total) {
       $("cont-total").value = draft.total;
@@ -468,6 +475,9 @@
       if (state.lotRescale[j] > 0) renderAddBadges(j);
     }
     updateContTotalLock();  // 실측이 있으면 공용 총 배합량 잠금 재적용.
+    // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
+    applyScaleOnlyToCells();
+    updateManualEntryControl();
     const banner = $("cont-restore-banner");
     if (banner) banner.hidden = true;
     notify("작성 중이던 이어서 계량을 복원했습니다.", "success");
@@ -503,6 +513,8 @@
   let scaleEventSynced = false;
 
   async function pollScaleEvents() {
+    // 창 단일화 가드에 막힌 창은 저울 이벤트를 소비하지 않는다(blend.js 와 동일 이유).
+    if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
@@ -949,6 +961,23 @@
     return parts.join("\n");
   }
 
+  // 서버 백업 검증용 구조화 사유 — 단건 blend.js buildLotOverrides 의 연속판.
+  // 이걸 보내지 않으면 서버(unregistered_product_lots)가 사유를 모른 채 400 으로 막아,
+  // 화면에서 '사유 적고 진행'을 통과한 작업자가 저장할 방법이 없어진다(막다른 길).
+  function buildLotOverrides() {
+    const out = [];
+    Object.keys(state.lotOverrides || {}).forEach((key) => {
+      const sep = key.indexOf("::");
+      if (sep < 0) return;
+      const material_name = key.slice(0, sep);
+      const material_lot = key.slice(sep + 2);
+      const reason = String(state.lotOverrides[key] || "").trim();
+      if (!material_name || !material_lot || !reason) return;
+      out.push({ material_name, material_lot, reason });
+    });
+    return out;
+  }
+
   function openContLotInvalidModal(name, lot, input) {
     const body = $("cont-lot-invalid-modal-body");
     if (body) {
@@ -1205,9 +1234,10 @@
       el.addEventListener("input", () => {
         state.cells[i][j].actual = el.value;
         updateContTotalLock();  // 첫 실제량 입력 순간 공용 총량 잠금(승인 우회 방지)
-        // 저울 연결 중 손입력 → 경고 + 주황 표시(수기 제한 전 준비 단계, 셀당 1회 토스트)
-        if (state.scaleReady) {
-          if (!state.cells[i][j].manual) {
+        // 손입력 '수동 입력' 표시 조건 — 저울 연결 중이거나 저울 전용 모드(blend.js 와 동일).
+        // 저울 전용 모드를 빼면 승인/부재로 손계량한 로트가 manual_entry=false 로 저장된다.
+        if (state.scaleReady || state.scaleOnlyInput) {
+          if (!state.cells[i][j].manual && state.scaleReady) {
             notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
           }
           state.cells[i][j].manual = true;
@@ -2000,6 +2030,9 @@
       // 수기 입력을 책임자 부재로 진행했으면 그 사유(화면 단위 승인이라 전 로트 공통).
       // 서버가 각 로트 기록에 남기고 책임자 확인 전까지 미확인으로 표시한다.
       manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
+      // 서버 백업: 미등록 LOT 사유를 구조화해 보낸다(단건과 동일). 미전송이면 서버가
+      // 사유를 모른 채 400 으로 막아 저장 자체가 불가능해진다.
+      lot_overrides: (function () { const o = buildLotOverrides(); return o.length ? o : null; })(),
       lots,
     };
     // lotRescale 이 하나라도 있으면 lot_totals 전송(그 로트만 큰 총량).

@@ -177,6 +177,11 @@ def build_official_dhr_xlsx(
     summary = rescale_summary_line(record)
     if summary:
         note_parts.append(summary)
+    # 수기 입력을 책임자 부재로 진행한 기록 — 증량 일탈과 같은 성격이므로 문서에도 남긴다.
+    # (전용 컬럼에만 저장돼 화면·알림에만 보이고 문서에는 흔적이 없던 것을 보완.)
+    manual_absence = str(record.get("manual_absence_reason") or "").strip()
+    if manual_absence:
+        note_parts.append(f"(수기 입력 · 책임자 부재: {manual_absence})")
     if note_parts:
         note_row = print_end_row + 2
         cell = ws.cell(row=note_row, column=1, value="  ".join(note_parts))

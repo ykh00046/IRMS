@@ -167,7 +167,12 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
                 (int(mgr_worker_id),),
             ).fetchone()
         if row and row["is_active"] and row["is_manager"] and (token or "") == (row["session_token"] or ""):
-            _touch_auth_session(request)  # 활동 있음 → 유휴 카운트 리셋
+            # 유휴 카운트는 '권한을 실제로 쓴 요청'(required=True)에서만 리셋한다.
+            # 무권한 조회(required=False — 배합 화면 컨텍스트, 기록 목록 마스킹 등)에서도
+            # 리셋하면, 옆에서 다른 사람이 현장 화면을 쓰는 것만으로 책임자 세션이 계속
+            # 갱신돼 15분 유휴 만료가 사실상 동작하지 않는다(공용 PC 정책 무력화).
+            if required:
+                _touch_auth_session(request)
             return _worker_to_public(row)
         _clear_auth_session(request)
         if required:
@@ -192,7 +197,8 @@ def get_current_user(request: Request, required: bool = True) -> dict[str, Any] 
             (int(user_id),),
         ).fetchone()
     if row and (cookie_token or "") == (row["session_token"] or ""):
-        _touch_auth_session(request)  # 활동 있음 → 유휴 카운트 리셋
+        if required:  # 위와 동일 — 권한을 실제로 쓴 요청에서만 유휴 카운트 리셋
+            _touch_auth_session(request)
         return to_public_user(row)
 
     _clear_auth_session(request)

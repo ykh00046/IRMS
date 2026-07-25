@@ -501,6 +501,10 @@
   let scaleEventSynced = false;
 
   async function pollScaleEvents() {
+    // 창 단일화 가드에 막힌 창은 저울 이벤트를 소비하지 않는다 — 오버레이는 화면만
+    // 덮으므로, 이 가드가 없으면 막힌 창이 다른 창에서 누른 PRINT 값을 자기 행에
+    // 채워 넣는다(가드가 막으려던 바로 그 사고). 해제되면 잔여 이벤트는 버리고 재동기화.
+    if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
@@ -819,6 +823,10 @@
       // 부재(absence_reason). 초안에 반드시 함께 보관해야 복구 후 저장 payload(rescale_events)
       // 로 전송되어 추적성이 유지된다(누락 시 서버가 '증량 없음'으로 조용히 저장 — 추적 구멍).
       rescaleEvents: (state.rescaleEvents || []).map((ev) => ({ ...ev })),
+      // 수기 입력 승인/부재 진행 상태 — rescaleEvents 와 같은 이유로 반드시 왕복시킨다.
+      // 누락하면 복구 후 저장 시 manual_absence_reason 이 null 이 되어, 승인 없이 손계량한
+      // 배치가 '미확인' 표시도 사유도 없이 정상 배치로 기록된다(추적 구멍).
+      manualApproved: state.manualApproved ? { ...state.manualApproved } : null,
       lotOverrides: state.lotOverrides || {},
       items: state.items.map((it) => ({
         material_lot: it.material_lot || "",
@@ -834,6 +842,8 @@
     if (_draftTimer) clearTimeout(_draftTimer);
     _draftTimer = setTimeout(() => {
       try {
+        // 가드에 막힌 창은 공유 초안 키를 덮어쓰지 않는다(다른 창의 진행분 오염 방지).
+        if (window.IRMS && window.IRMS.blendWindowBlocked) return;
         const d = currentDraft();
         if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
       } catch (_e) { /* 저장공간 없음 등 무시 */ }
@@ -882,6 +892,9 @@
     if (draft.note) $("blend-note").value = draft.note;
     if (draft.reactor) $("blend-reactor").value = draft.reactor;
     state.lotOverrides = draft.lotOverrides || {};
+    // 수기 입력 승인/부재 상태 복구 — onRecipeChange 가 null 로 리셋했으므로 되살린다.
+    // 이게 없으면 복구 후 저장이 사유 없는 정상 배치로 기록된다.
+    state.manualApproved = draft.manualApproved ? { ...draft.manualApproved } : null;
     state.rescaleTotalG = draft.rescaleTotalG || 0;
     if (state.rescaleTotalG > 0) state.rescaleActive = true;
     // 증량 승인 이력 복구 — onRecipeChange 가 이미 [] 로 리셋했으므로 초안 값으로 되살린다.
@@ -916,6 +929,9 @@
     updateTotals();   // updateTotalLock 포함 — 실측이 있으면 총 배합량 잠금 재적용
     updateLotPreview();
     updateInputGuide();
+    // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
+    applyScaleOnlyToRows();
+    updateManualEntryControl();
     hideRescaleUndo();  // 복구 세션엔 '방금 증량 취소' 없음(스냅샷을 복구하지 않으므로)
     const banner = $("blend-restore-banner");
     if (banner) banner.hidden = true;
@@ -1089,10 +1105,12 @@
       el.addEventListener("input", () => {
         const i = Number(el.dataset.idx);
         state.items[i].actual_amount = el.value;
-        // 저울 연결 중 손입력 → '수동 입력' 기록 + 경고(수기 제한 전 준비 단계).
-        // 행당 1회만 토스트(타이핑 키마다 스팸 방지), 칸은 주황 표시로 남긴다.
-        if (state.scaleReady) {
-          if (!state.items[i].manual) {
+        // 손입력을 '수동 입력'으로 기록하는 조건 — ①저울 연결 중이거나 ②저울 전용 모드.
+        // ②를 빼면, 저울이 꺼진 채 책임자 승인/부재로 손계량한 배치가 manual_entry=false 로
+        // 저장돼 "통제는 승인 + 수동 입력 표시로 이뤄진다"는 설계의 표시가 실제로는 안 남는다
+        // (저울이 없을 때가 바로 승인이 필요한 상황이므로 정확히 그때만 누락됐다).
+        if (state.scaleReady || state.scaleOnlyInput) {
+          if (!state.items[i].manual && state.scaleReady) {
             notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
           }
           state.items[i].manual = true;
@@ -2534,6 +2552,19 @@
       state.items.forEach((it) => {
         it.actual_amount = ""; it.material_lot = ""; it.manual = false; it.carried_over = false;
       });
+      // 증량이 있었던 배합은 총량·이론량이 '증량된 값'으로 남아 있다. 그대로 두면 다음
+      // 배합이 아무 안내 없이 증량된 총량에서 시작하고(그 기록은 증량 이력 0건), 반복하면
+      // 총량이 계단식으로 올라간다 — 증량 2회 제한이 사실상 무력화된다. 증량 직전 총량으로
+      // 되돌린다(첫 증량 이벤트의 before_total). 기준 자재 모드는 아래에서 통째로 초기화.
+      const firstRescale = (state.rescaleEvents || []).find((ev) => ev && ev.before_total != null);
+      let restoredTotal = null;
+      if (!hasAnchor() && firstRescale) {
+        const totalInput = $("blend-total");
+        if (totalInput) {
+          totalInput.value = String(firstRescale.before_total);
+          restoredTotal = firstRescale.before_total;
+        }
+      }
       if (hasAnchor()) {
         state.items.forEach((it) => { it.theory_amount = null; });
         state.prevAnchorActual = "";
@@ -2554,6 +2585,11 @@
       hideRescaleUndo();
       clearRescaleSummary();
       if (state.workerPad) state.workerPad.clear();
+      // 증량 총량을 되돌렸으면 이론량도 그 총량 기준으로 다시 산출(표시값 정합).
+      if (restoredTotal !== null) {
+        recomputeTheory();
+        notify(`다음 배합을 위해 총 배합량을 증량 전 값(${restoredTotal} g)으로 되돌렸습니다.`, "warn");
+      }
       renderMatRows();
       updateManualEntryControl();  // 승인 해제 반영(배너 텍스트·버튼 복귀)
       // 저장 완료 → 자동 로그아웃 카운트 시작(새 입력이 시작되면 해제)

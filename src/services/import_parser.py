@@ -490,6 +490,29 @@ def parse_import_text(
         preview_items = []
         row_steps = []  # 공정 설명: {position(앞선 자재 수), note}
 
+        # 어느 열에도 속하지 않는 칸에 값이 있으면 그 값은 조용히 버려진다 — 헤더의 자재명
+        # 칸이 비어 있거나(시트 편집 실수), 값행이 헤더행보다 길 때(한 칸 밀린 붙여넣기)가
+        # 대표적이다. 예전에는 경고 없이 '검증 완료'가 떠서 자재가 빠진 레시피가 그대로
+        # 등록됐다. 저장 전에 차단한다(errors 는 등록 버튼을 막는다).
+        known_indexes = set(current_config["field_indexes"].values())
+        known_indexes.update(col["index"] for col in current_config["material_columns"])
+        known_indexes.update(current_config.get("step_indexes", []))
+        _remark_i = current_config.get("remark_index", -1)
+        if _remark_i >= 0:
+            known_indexes.add(_remark_i)
+        for _i, _cell in enumerate(cells):
+            if _i in known_indexes or not str(_cell).strip():
+                continue
+            errors.append({
+                "level": 2,
+                "message": (
+                    f"{_i + 1}번째 칸의 값 '{str(_cell).strip()[:20]}' 을 넣을 자재명이 "
+                    "머리글에 없습니다 — 머리글의 자재명 칸이 비었거나 값이 한 칸 밀렸는지 "
+                    "확인하세요(이대로 등록하면 이 값은 사라집니다)."
+                ),
+                "row": row_index,
+            })
+
         # 자재·설명 열을 시트 열 순서대로 함께 훑어 설명 위치(몇 번째 자재 뒤)를 계산
         merged_cols = sorted(
             [("material", col) for col in current_config["material_columns"]]

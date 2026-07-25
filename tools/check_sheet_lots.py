@@ -29,6 +29,11 @@ from collections import OrderedDict
 from pathlib import Path
 
 
+# 읽은 시트 이름과 그 시트에서 새로 얻은 LOT 수 — 리포트에 반드시 출력한다.
+# (어떤 탭을 실제로 읽었는지 눈으로 확인하지 못하면 '누락 0건'을 신뢰할 수 없다.)
+_SHEETS_READ: list = []
+
+
 def _norm(lot: str) -> str:
     return (lot or "").strip().upper()
 
@@ -50,23 +55,28 @@ def load_sheet_lots(path: Path) -> "OrderedDict[str, dict]":
     if suffix in (".xlsx", ".xlsm"):
         import openpyxl
 
-        ws = openpyxl.load_workbook(path, data_only=True, read_only=True).active
-        header_seen = False
-        lot_idx, date_idx = 0, 4  # 기본: 제품LOT=1열, 작업일시=5열
-        for row in ws.iter_rows(values_only=True):
-            if not row or all(v in (None, "") for v in row):
-                continue
-            if not header_seen:
-                header_seen = True
-                cells = [str(v).strip() if v is not None else "" for v in row]
-                if "제품LOT" in cells:
-                    lot_idx = cells.index("제품LOT")
-                    if "작업일시" in cells:
-                        date_idx = cells.index("작업일시")
-                    continue  # 헤더 행 소비
-                # 헤더가 없으면 첫 행부터 데이터로 취급(기본 인덱스)
-            feed(row[lot_idx] if lot_idx < len(row) else "",
-                 row[date_idx] if date_idx < len(row) else "")
+        # ⚠ 활성 탭 하나만 읽으면 안 된다 — 백업 시트는 월별 탭으로 나뉘어 있는 경우가
+        # 흔하고, 그때 다른 탭의 누락 LOT 을 통째로 못 본 채 '누락 0건'을 선언하게 된다.
+        wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+        for ws in wb.worksheets:
+            before = len(lots)
+            header_seen = False
+            lot_idx, date_idx = 0, 4  # 기본: 제품LOT=1열, 작업일시=5열
+            for row in ws.iter_rows(values_only=True):
+                if not row or all(v in (None, "") for v in row):
+                    continue
+                if not header_seen:
+                    header_seen = True
+                    cells = [str(v).strip() if v is not None else "" for v in row]
+                    if "제품LOT" in cells:
+                        lot_idx = cells.index("제품LOT")
+                        if "작업일시" in cells:
+                            date_idx = cells.index("작업일시")
+                        continue  # 헤더 행 소비
+                    # 헤더가 없으면 첫 행부터 데이터로 취급(기본 인덱스)
+                feed(row[lot_idx] if lot_idx < len(row) else "",
+                     row[date_idx] if date_idx < len(row) else "")
+            _SHEETS_READ.append((ws.title, len(lots) - before))
     else:
         # CSV — 구글 시트 내려받기 기본은 UTF-8. BOM 허용.
         with io.open(path, encoding="utf-8-sig", newline="") as f:
@@ -86,6 +96,7 @@ def load_sheet_lots(path: Path) -> "OrderedDict[str, dict]":
                         continue
                 feed(row[lot_idx] if lot_idx < len(row) else "",
                      row[date_idx] if date_idx < len(row) else "")
+        _SHEETS_READ.append(("(CSV)", len(lots)))
     return lots
 
 
@@ -122,38 +133,79 @@ def main() -> int:
     sheet_lots = load_sheet_lots(Path(args.sheet))
     brm = load_brm_lots(Path(args.db))
 
+    undated = 0
     if args.since:
-        sheet_lots = OrderedDict(
-            (lot, info) for lot, info in sheet_lots.items()
-            if (info["first_date"] or "")[:10] >= args.since
-        )
+        # 날짜가 비어 있는 행은 '기간 밖'이 아니라 '날짜 불명'이다. 예전에는 ""가 비교에서
+        # 탈락해 조용히 제외됐는데, 수기 시트에서 날짜 칸 누락은 흔하고 그 행이 바로
+        # 기입 누락일 확률이 높다 — 즉 잡아야 할 것을 필터가 지웠다. 항상 포함한다.
+        filtered = OrderedDict()
+        for lot, info in sheet_lots.items():
+            date10 = (info["first_date"] or "")[:10]
+            if not date10:
+                undated += 1
+                filtered[lot] = info
+            elif date10 >= args.since:
+                filtered[lot] = info
+        sheet_lots = filtered
 
-    missing, canceled, ok = [], [], 0
+    missing, canceled, draft, ok = [], [], [], 0
     for lot, info in sheet_lots.items():
         status = brm.get(lot)
         if status is None:
             missing.append((lot, info["first_date"]))
         elif status == "canceled":
             canceled.append((lot, info["first_date"]))
+        elif status == "draft":
+            # 저장이 끝나지 않은 미완성 기록 — '있다'로 세면 진짜 누락을 가린다.
+            draft.append((lot, info["first_date"]))
         else:
             ok += 1
 
+    # 역방향(BRM 에만 있는 LOT) — 판정에는 넣지 않지만 반드시 보여준다. 작업자가 LOT 을
+    # 오타로 넣으면 시트 쪽 '누락 1건'과 BRM 쪽 '여분 1건'이 쌍으로 생기는데, 여분을
+    # 감추면 운영자가 진짜 누락으로 오판해 없는 데이터를 새로 만들게 된다.
+    extra = sorted(set(brm.keys()) - set(sheet_lots.keys()))
+
     lines = []
     lines.append("=== 시트 ↔ BRM 제품 LOT 대조 리포트 ===")
+    lines.append("읽은 시트: " + (", ".join(f"{n}({c}건)" for n, c in _SHEETS_READ) or "(없음)"))
     lines.append(f"시트 LOT: {len(sheet_lots)}건"
-                 + (f" (작업일시 {args.since} 이후)" if args.since else ""))
-    lines.append(f"정상(BRM 존재): {ok}건 · 취소됨: {len(canceled)}건 · 누락: {len(missing)}건")
+                 + (f" (작업일시 {args.since} 이후 + 날짜 불명 {undated}건 포함)" if args.since else ""))
+    lines.append(f"BRM LOT: {len(brm)}건")
+    lines.append(f"정상(BRM 존재): {ok}건 · 취소됨: {len(canceled)}건 · "
+                 f"미완성(draft): {len(draft)}건 · 누락: {len(missing)}건")
     if missing:
         lines.append("")
         lines.append("--- 누락 (시트에 있으나 BRM 에 없음 — 확인 필수) ---")
         for lot, date in missing:
+            lines.append(f"  {lot}  (작업일시 {date or '-'})")
+    if draft:
+        lines.append("")
+        lines.append("--- 미완성 draft (저장이 끝나지 않음 — 확인 필수) ---")
+        for lot, date in draft:
             lines.append(f"  {lot}  (작업일시 {date or '-'})")
     if canceled:
         lines.append("")
         lines.append("--- 취소됨 (BRM 에서 취소 처리 — 의도 확인) ---")
         for lot, date in canceled:
             lines.append(f"  {lot}  (작업일시 {date or '-'})")
-    if not missing and not canceled:
+    if extra:
+        lines.append("")
+        lines.append(f"--- 참고: BRM 에만 있는 LOT {len(extra)}건 (오타 대응쌍 확인용) ---")
+        for lot in extra[:50]:
+            lines.append(f"  {lot}")
+        if len(extra) > 50:
+            lines.append(f"  … 외 {len(extra) - 50}건")
+
+    # 파싱이 실패했는데 '누락 0건'을 선언하는 것이 가장 위험하다(잘못된 탭·빈 CSV·컬럼
+    # 밀림 모두 시트 0건으로 끝난다). 시트를 못 읽었으면 안전 선언 대신 강제 실패한다.
+    parse_suspect = len(sheet_lots) == 0 or (brm and len(sheet_lots) < len(brm) * 0.5)
+    if parse_suspect:
+        lines.append("")
+        lines.append(">>> [중단] 시트 파싱 실패 의심 — 시트 LOT 건수가 0이거나 BRM 대비 "
+                     "현저히 적습니다. 위 '읽은 시트' 목록과 파일/탭을 확인하세요. "
+                     "이 상태의 결과는 전환 근거로 쓸 수 없습니다.")
+    elif not missing and not draft and not canceled:
         lines.append("")
         lines.append(">>> 누락 0건 — 전환 안전 기준 충족.")
 
@@ -167,7 +219,9 @@ def main() -> int:
     if args.out:
         io.open(args.out, "w", encoding="utf-8").write(report + "\n")
         print(f"\n리포트 저장: {args.out}")
-    return 1 if missing else 0
+    if parse_suspect:
+        return 2
+    return 1 if (missing or draft) else 0
 
 
 if __name__ == "__main__":

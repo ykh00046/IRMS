@@ -1497,6 +1497,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, reactor,
                manual_entry, is_bulk_regenerated,
+               manual_absence_reason, manual_unacked,
                reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at
@@ -1861,8 +1862,12 @@ def apply_manual_absence_to_record(
     text = (reason or "").strip()
     if not text:
         return False
+    # manual_entry 도 함께 강제한다 — 부재 진행으로 손계량했다는 사실 자체가 수동 입력이다.
+    # 클라이언트는 저울이 꺼져 있으면 행 단위 manual 플래그를 세우지 않을 수 있어(저울 연결
+    # 중에만 표시하던 규칙), 서버가 기록 단위 표시를 보장한다.
     connection.execute(
-        "UPDATE blend_records SET manual_absence_reason = ?, manual_unacked = 1 WHERE id = ?",
+        "UPDATE blend_records SET manual_absence_reason = ?, manual_unacked = 1, "
+        "manual_entry = 1 WHERE id = ?",
         (text[:MANUAL_ABSENCE_REASON_MAX], record_id),
     )
     return True
