@@ -114,15 +114,25 @@ function createContext() {
     setItem() {},
   };
 
+  // 비밀번호 초기화 배너 dismiss 는 sessionStorage 를 쓴다(공용 PC 라 세션 한정).
+  const sessionStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+  };
+
   const context = {
     console,
     fetch,
     localStorage,
+    sessionStorage,
     window: {
       location: { origin: "http://127.0.0.1:8000", assign() {} },
       IRMS: { notify() {} },
       fetch,
       localStorage,
+      sessionStorage,
     },
     document: {
       body: {

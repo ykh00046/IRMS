@@ -41,6 +41,13 @@ body {
   min-width: 8rem;
 }
 
+/* 다른 카드는 숫자 하나지만 이 칸은 '5000.0 ± 12.0' 처럼 값 두 개가 들어가서
+   공용 28px 로는 두 줄로 깨진다. 이 카드만 줄인다. */
+.visc-cards #visc-card-mean {
+  font-size: 20px;
+  white-space: nowrap;
+}
+
 /* 색은 건수가 1 이상일 때만 (JS 가 -on 클래스를 붙인다). 0 건은 기본색. */
 .visc-cards .metric-card.visc-card-anomaly-on .metric-value {
   color: var(--status-error);

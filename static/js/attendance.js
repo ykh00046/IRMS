@@ -630,16 +630,29 @@
     // 다시는 경고가 뜨지 않아, 공용 PC 에서 임시 비밀번호가 무기한 유지된다.
     // 세션 한정으로 두어 다음 로그인 때 다시 알린다.
     const storageKey = empId ? `irms_att_reset_dismissed_${empId}` : "";
-    const dismissed = storageKey && sessionStorage.getItem(storageKey) === "1";
+    // 쿠키 차단·시크릿 모드에서는 sessionStorage 접근 자체가 예외를 던진다. 그때는
+    // 배너를 못 숨기는 게 맞지, 초기화가 통째로 죽어 경고가 안 뜨는 건 안 된다
+    // (임시 비밀번호를 쓰는 중이라는 경고라 놓치면 그대로 남는다).
+    const readDismissed = () => {
+      if (!storageKey) return false;
+      try {
+        return sessionStorage.getItem(storageKey) === "1";
+      } catch (error) {
+        return false;
+      }
+    };
 
-    if (!dismissed) {
+    if (!readDismissed()) {
       banner.hidden = false;
     }
 
     dismissBtn?.addEventListener("click", () => {
       banner.hidden = true;
-      if (storageKey) {
+      if (!storageKey) return;
+      try {
         sessionStorage.setItem(storageKey, "1");
+      } catch (error) {
+        /* 저장 못 해도 이번 화면에서는 이미 숨겼다 */
       }
     });
   }

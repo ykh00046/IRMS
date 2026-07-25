@@ -157,6 +157,26 @@
     return { labels, datasets };
   }
 
+  // 기간 차트 y축의 하한/상한 후보. 막대 그래프인데 축이 데이터에 맞춰 확대되면
+  // 4,850 과 4,900 처럼 사실상 같은 값이 두 배 차이나는 막대로 보인다 — 품질 판단을
+  // 하는 화면에서 이건 그림이 거짓말을 하는 것이다. 축을 관리한계·규격에 걸어두면
+  // 기간이 바뀌어도 눈금이 흔들리지 않고, 막대 길이를 서로 비교할 수 있다.
+  // suggested* 는 범위를 넓히기만 하므로 실제 값이 한계를 벗어나면 그건 그대로 보인다.
+  function periodChartYBounds(stats, product) {
+    const candidates = [];
+    const push = (v) => { if (v !== null && v !== undefined && Number.isFinite(Number(v))) candidates.push(Number(v)); };
+    push(stats && stats.center);
+    push(stats && stats.lcl);
+    push(stats && stats.ucl);
+    push(product && product.lower_limit);
+    push(product && product.upper_limit);
+    if (candidates.length < 2) return {};   // 기준이 없으면 기존대로 자동
+    const min = Math.min(...candidates);
+    const max = Math.max(...candidates);
+    const pad = (max - min) * 0.15 || Math.abs(max) * 0.05 || 1;
+    return { suggestedMin: min - pad, suggestedMax: max + pad };
+  }
+
   IRMS.viscLib = {
     STATUS_LABEL,
     REASON_LABEL,
@@ -172,5 +192,6 @@
     option,
     controlSummary,
     periodChartDatasets,
+    periodChartYBounds,
   };
 })();

@@ -22,6 +22,7 @@
     option,
     controlSummary,
     periodChartDatasets,
+    periodChartYBounds,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -371,7 +372,12 @@
             },
           },
         },
-        scales: { y: { beginAtZero: false } },
+        scales: {
+          y: Object.assign(
+            { beginAtZero: false },
+            periodChartYBounds(state.analysis.stats, state.analysis.product),
+          ),
+        },
       },
     });
   }
