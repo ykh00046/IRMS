@@ -112,20 +112,23 @@
 
 ### 2.5 복구 절차 (단계별)
 
-> 라이브 DB 가 손상/삭제된 경우에만. 순서대로, 건너뛰지 말 것. 상세는
-> `docs/ops-backup-restore.md` §2.
+> 라이브 DB 가 손상/삭제된 경우에만. **정본 절차는 `docs/ops-backup-restore.md` §2** —
+> 두 문서가 다른 순서를 말하면 그쪽을 따른다. 여기 요약은 그 문서의 축약이다.
+> (2026-07-26 실연 PASS — 이력은 `ops-backup-restore.md` §4)
 
 1. **서버 중지**: 운영 콘솔에서 `Ctrl+C`(서버·감시 루프 함께 정지).
-2. **복구 후보 검증**: `python tools\verify_backup.py backups\<선택 파일>` → `PASS` 확인.
-   `FAIL` 이면 다른 최근 사본으로 재시도.
-3. **현행 DB 대피**: `data\irms.db`(있으면 `-shm`/`-wal` 도)를
-   `data\irms.db.pre_restore_<yyyymmdd_HHMMSS>` 로 이름 변경(롤백용).
-4. **백업 복사**: `copy backups\<선택 파일> data\irms.db`.
-   **`-wal`/`-shm` 은 복사하지 않는다**(백업은 이미 정합 상태의 단일 파일).
-5. **재기동**: `run_auto.bat`.
-6. **정상 확인**: `curl http://127.0.0.1:<PORT>/health` → `{"status":"ok"}` +
+2. **복구 실행**: `python tools\restore_backup.py`
+   한 줄이 검증 → 대피 → 복사 → 재검증을 순서대로 처리한다. 최근 정상 백업을
+   자동으로 고르며, 다른 파일은 `--backup backups\irms_YYYYMMDD_HHMMSS.db`.
+   백업이 손상됐으면 **아무것도 건드리지 않고 중단**한다.
+3. **재기동**: `run_auto.bat`.
+4. **정상 확인**: `curl http://127.0.0.1:<PORT>/health` → `{"status":"ok"}` +
    브라우저 `/status`·`/management`·`/viscosity` 육안 확인.
-7. (선택) 대피본은 안정 확인 후(수일 뒤) 삭제.
+5. (선택) `data\restore-before-*` 대피 폴더는 안정 확인 후(수일 뒤) 삭제.
+
+> ⚠ **손으로 복사하지 말 것.** `-wal` 을 남겨두고 `.db` 만 바꾸면 옛 WAL 프레임이
+> 새 DB 위에 재생돼 데이터가 뒤섞인다. 도구를 쓸 수 없는 상황에서만
+> `ops-backup-restore.md` §2 의 수동 절차(`.db`·`-wal`·`-shm` **셋 다** 이동)를 따른다.
 
 ---
 

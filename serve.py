@@ -69,6 +69,7 @@ AUTO = os.environ.get("IRMS_AUTO_UPDATE", "1") != "0"
 BACKUP_KEEP_DAYS = max(1, int(os.environ.get("IRMS_BACKUP_KEEP_DAYS", "30")))
 BACKUP_KEEP_MIN = 5  # 보존일수와 무관하게 항상 남길 최근 백업 수
 BACKUP_MIRROR = os.environ.get("IRMS_BACKUP_MIRROR", "").strip()
+PIP_TIMEOUT = max(60, int(os.environ.get("IRMS_PIP_TIMEOUT", "900")))  # 의존성 설치 상한(초)
 
 _VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
@@ -513,14 +514,44 @@ def apply_update() -> bool:
         return False
     # BACKUP_OK 또는 BACKUP_SKIPPED_MISSING(경고는 backup_db 가 이미 출력) → 진행
 
-    pull = _git("pull", "origin", "main", capture=True)
-    if pull.returncode != 0 and not _recover_and_retry_pull(pull):
+    # git·pip 는 네트워크를 타므로 매달릴 수 있다. 여기서 새는 예외는 감시 루프를
+    # 빠져나가 finally 에서 서버까지 같이 내린다 — 업데이트 실패가 서비스 중단이
+    # 되어선 안 되므로, 실패는 전부 '이번 주기 보류'로 흡수한다.
+    try:
+        pull = _git("pull", "origin", "main", capture=True)
+    except subprocess.TimeoutExpired as exc:
+        log(f"git pull 시간 초과 — 이번 주기는 보류합니다: {exc}")
+        write_update_status(False, f"git_pull_timeout: {exc}")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log(f"git pull 실패 — 이번 주기는 보류합니다: {exc}")
+        write_update_status(False, f"git_pull_error: {exc}")
         return False
 
-    pip = subprocess.run(
-        [PYTHON, "-m", "pip", "install", "-r", _requirements_file(), "--quiet"],
-        cwd=ROOT,
-    )
+    try:
+        if pull.returncode != 0 and not _recover_and_retry_pull(pull):
+            return False
+    except Exception as exc:  # noqa: BLE001
+        log(f"git 복구 시도 실패 — 이번 주기는 보류합니다: {exc}")
+        write_update_status(False, f"git_recover_error: {exc}")
+        return False
+
+    # pip 에도 시간 제한 — 없으면 인덱스가 응답하지 않을 때 감시 루프가 그 자리에서
+    # 영구 정지한다(서버는 계속 돌아 화면은 멀쩡한데 백업·업데이트만 영영 멈춘다).
+    try:
+        pip = subprocess.run(
+            [PYTHON, "-m", "pip", "install", "-r", _requirements_file(), "--quiet"],
+            cwd=ROOT,
+            timeout=PIP_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log(f"pip install 시간 초과({PIP_TIMEOUT}초) — 서버 재시작을 건너뜁니다.")
+        write_update_status(False, "pip_install_timeout")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log(f"pip install 실행 실패 — 서버 재시작을 건너뜁니다: {exc}")
+        write_update_status(False, f"pip_install_error: {exc}")
+        return False
     if pip.returncode != 0:
         log("pip install 실패 — 서버 재시작을 건너뜁니다(다음 주기에 재시도).")
         write_update_status(False, "pip_install_failed")
@@ -611,10 +642,89 @@ def warn_if_not_production() -> None:
     ])
 
 
+def warn_if_no_backup_mirror() -> None:
+    """백업 2차 사본이 없으면 경고 — 백업은 잘 만들면서 한 디스크에만 두는 상태 방지.
+
+    백업 생성·검증·보존은 잘 갖춰져 있는데 기본 저장 위치가 저장소 폴더라, 미러를
+    지정하지 않으면 원본 DB 와 백업이 같은 디스크에 나란히 있게 된다. 그 디스크가
+    죽으면 둘 다 사라진다 — 전환 후엔 그게 전 생산기록 소실이다.
+    """
+    if BACKUP_MIRROR:
+        return
+    _loud([
+        "백업 2차 사본(IRMS_BACKUP_MIRROR)이 지정되지 않았습니다.",
+        f"백업이 {BACKUPS_DIR} 한 곳에만 쌓입니다 — DB 와 같은 디스크일 가능성이 큽니다.",
+        "이 디스크가 고장 나면 원본과 백업을 함께 잃습니다.",
+        "조치: .env 에 IRMS_BACKUP_MIRROR 을 사내 NAS/파일서버 경로로 지정하세요.",
+    ])
+
+
+class _Watch:
+    """감시 루프의 가변 상태 — 한 주기(_watch_once)가 갱신한다."""
+
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self.proc = proc
+        self.last_daily_backup: date | None = None
+        self.consecutive_restarts = 0
+
+
+def _restart_after_death(w: _Watch) -> None:
+    """서버 프로세스가 죽어 있을 때 재기동하고 결과를 표면화한다."""
+    w.consecutive_restarts += 1
+    log(f"서버가 종료되어 다시 시작합니다. (연속 {w.consecutive_restarts}회)")
+    free_port()
+    w.proc = start_server()
+    if wait_until_healthy(w.proc):
+        w.consecutive_restarts = 0
+        return
+    if w.consecutive_restarts >= 3:
+        # 계속 죽는데 조용하면 아무도 모른다 — 콘솔과 상태 파일 양쪽에 남긴다.
+        _loud([
+            f"서버가 {w.consecutive_restarts}회 연속으로 기동하지 못했습니다.",
+            "코드나 DB에 문제가 있을 수 있습니다. 개발자에게 알려주세요.",
+        ])
+        write_update_status(False, f"crash_loop:{w.consecutive_restarts}")
+
+
+def _watch_once(w: _Watch) -> None:
+    """감시 한 주기: 생존 확인 → 일일 백업 → 업데이트 반영."""
+    if w.proc.poll() is not None:
+        _restart_after_death(w)
+        return
+
+    today = date.today()
+    if w.last_daily_backup != today:
+        # 실패하면 날짜를 남기지 않아 다음 주기에 다시 시도한다 — 예전에는 하루 한 번
+        # 시도하고 결과를 버려서, 디스크가 찬 날 백업이 없는 채로 하루가 지나갔다.
+        if backup_db() not in (BACKUP_FAILED, BACKUP_CORRUPT):
+            w.last_daily_backup = today
+
+    if not (AUTO and has_update()):
+        return
+
+    # pull/pip 가 전부 성공했을 때만 재시작 — 실패하면 기존 서버가
+    # (메모리에 올라간 옛 코드로) 계속 돌아 무중단.
+    if not apply_update():
+        return
+    stop_server(w.proc)
+    w.proc = start_server()
+    # 새 코드로 실제 기동했는지 확인 — 안 뜨면 상태 파일과 콘솔에 크게 남긴다.
+    if wait_until_healthy(w.proc):
+        write_update_status(True)
+        return
+    _loud([
+        "[중대] 업데이트 후 서버가 기동하지 않습니다.",
+        "방금 올라온 변경이 부팅을 깨뜨렸을 수 있습니다.",
+        "조치: 이 창을 닫지 말고 개발자에게 알려주세요.",
+    ])
+    write_update_status(False, "boot_failed_after_update")
+
+
 def main() -> None:
     global PYTHON
     set_console_title(f"IRMS 서버 + 자동 업데이트 (포트 {PORT})")
     warn_if_not_production()
+    warn_if_no_backup_mirror()
     PYTHON = _ensure_runtime_self_healing()
     log(
         f"IRMS 실행 (자동 업데이트 {'ON' if AUTO else 'OFF'}, "
@@ -622,42 +732,32 @@ def main() -> None:
         f"{' + 미러 ' + BACKUP_MIRROR if BACKUP_MIRROR else ''}). 종료: Ctrl+C"
     )
     free_port()  # 비정상 종료로 남은 옛 서버가 포트를 물고 있으면 정리
-    last_daily_backup: date | None = None
-    proc = start_server()
+    w = _Watch(start_server())
     try:
         while True:
-            time.sleep(INTERVAL)
-            if proc.poll() is not None:
-                log("서버가 종료되어 다시 시작합니다.")
-                free_port()
-                proc = start_server()
-                continue
-            # 일일 자동 백업(감시 주기마다 날짜 확인 — 하루 1회)
-            today = date.today()
-            if last_daily_backup != today:
-                backup_db()
-                last_daily_backup = today
-            if AUTO and has_update():
-                # pull/pip 가 전부 성공했을 때만 재시작 — 실패하면 기존 서버가
-                # (메모리에 올라간 옛 코드로) 계속 돌아 무중단.
-                if apply_update():
-                    stop_server(proc)
-                    proc = start_server()
-                    # 새 코드로 실제 기동했는지 확인 — 안 뜨면 상태 파일과 콘솔에
-                    # 크게 남긴다(운영자가 개발자에게 알릴 근거).
-                    if wait_until_healthy(proc):
-                        write_update_status(True)
-                    else:
-                        log("=" * 60)
-                        log("[중대] 업데이트 후 서버가 기동하지 않습니다.")
-                        log("       방금 올라온 변경이 부팅을 깨뜨렸을 수 있습니다.")
-                        log("       조치: 이 창을 닫지 말고 개발자에게 알려주세요.")
-                        log("=" * 60)
-                        write_update_status(False, "boot_failed_after_update")
+            # 예전엔 time.sleep(INTERVAL) 로 통째로 자서 서버가 죽어도 최대 10분을
+            # 방치했다. 자식이 끝나면 즉시 깨어난다(정상이면 주기를 채우고 빠져나옴).
+            try:
+                w.proc.wait(timeout=INTERVAL)
+            except subprocess.TimeoutExpired:
+                pass
+
+            # 이 안에서 무슨 예외가 나든 감시 루프는 살아 있어야 한다. 예전에는
+            # KeyboardInterrupt 만 잡아서, git·pip·디스크에서 예외 하나가 새면
+            # finally 의 stop_server 로 흘러가 **감시자가 서버까지 끄고 종료**했다.
+            # 배합 기록이 유일한 생산기록인 시스템에서 가장 나쁜 결말이다.
+            try:
+                _watch_once(w)
+            except Exception as exc:  # noqa: BLE001
+                log(f"[중요] 감시 주기 중 오류 — 무시하고 계속합니다: {exc!r}")
+                try:
+                    write_update_status(False, f"watch_error: {exc}")
+                except Exception:  # noqa: BLE001 — 상태 기록 실패로 루프를 깨진 않는다
+                    pass
     except KeyboardInterrupt:
         log("종료 요청 — 서버 정리 중...")
     finally:
-        stop_server(proc)
+        stop_server(w.proc)
         log("종료되었습니다.")
 
 
