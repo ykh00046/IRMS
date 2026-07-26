@@ -10,6 +10,7 @@ from ..attendance_auth import (
     logout_session as att_logout_session,
 )
 from ..auth import get_current_user, has_access_level
+from ..middleware.tunnel_auth import is_via_cloudflare
 from ..blend_session import (
     current_blend_worker,
     login_worker_session,
@@ -153,11 +154,14 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         if current_user and has_access_level(current_user, "manager"):
             return RedirectResponse(url=next_url, status_code=303)
 
+        # 이름 자동완성은 사내망 편의 기능이다. 터널로 들어온 요청에까지 내주면
+        # 인터넷에 유효한 계정명 목록을 그대로 알려주는 셈이 된다 — 로그인 화면은
+        # (로그인을 하려면) 외부에도 열려 있어야 하므로 목록만 비운다.
         return _render(templates, request, "management_login.html", {
             "current_user": current_user,
             "next_url": next_url,
             "show_demo_credentials": SEED_DEMO_DATA,
-            "managers": _manager_names(),
+            "managers": [] if is_via_cloudflare(request) else _manager_names(),
         })
 
     @router.get("/weighing", response_class=HTMLResponse)

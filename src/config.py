@@ -35,6 +35,10 @@ TRAY_API_TOKEN = os.getenv("IRMS_TRAY_API_TOKEN", "").strip()
 REQUIRE_TRAY_API_TOKEN = _env_flag(
     "IRMS_REQUIRE_TRAY_API_TOKEN", not IS_DEVELOPMENT
 )
+# 터널(Cloudflare) 경유 요청에 책임자 로그인을 요구할지. 현장 무로그인 정책은 사내망
+# 한정이라, 터널이 앱 전체를 인터넷에 게시하면 기록 반출·위조 기록 삽입이 열린다.
+# 터널을 안 쓰면 CF 헤더가 없어 아무 영향이 없으므로 기본값은 켬.
+TUNNEL_REQUIRE_LOGIN = _env_flag("IRMS_TUNNEL_REQUIRE_LOGIN", True)
 
 if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     raise RuntimeError(

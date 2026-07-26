@@ -16,12 +16,14 @@ from .config import (
     SESSION_MAX_AGE,
     SESSION_SECRET,
     TRAY_API_TOKEN,
+    TUNNEL_REQUIRE_LOGIN,
 )
 from .db import init_db, utc_now_text
 from .limiter import limiter
 from .middleware.internal_only import InternalNetworkOnlyMiddleware
 from .middleware.login_origin import LoginOriginMiddleware
 from .middleware.security_headers import SecurityHeadersMiddleware
+from .middleware.tunnel_auth import TunnelAuthMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
 
@@ -31,6 +33,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="IRMS", version="0.1.0")
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # SessionMiddleware 보다 **먼저** 등록해야 안쪽(세션이 채워진 뒤)에서 돈다.
+    # 터널로 들어온 요청에만 책임자 로그인을 요구한다 — 사내망 요청은 그대로 통과.
+    app.add_middleware(
+        TunnelAuthMiddleware,
+        enabled=TUNNEL_REQUIRE_LOGIN,
+    )
     app.add_middleware(
         SessionMiddleware,
         secret_key=SESSION_SECRET,
