@@ -102,10 +102,16 @@
   padding: 0;
 }
 
+/* `overflow-x: hidden` 이 아니라 `clip` 이어야 한다. hidden 은 스크롤 컨테이너를
+   만들어 버려서, 그 안의 position:sticky 가 '절대 스크롤되지 않는 body' 기준으로
+   달라붙는다 — 즉 아무 효과가 없다. 실제로 사이드바가 본문과 함께 위로 밀려 올라가
+   긴 화면(점도·기록)에서 파란 영역이 중간에 끊겨 보였다(2026-07-27 현장 지적).
+   clip 은 가로 넘침만 잘라내고 스크롤 컨테이너를 만들지 않는다. */
 html,
 body {
   height: 100%;
-  overflow-x: hidden;
+  overflow-x: hidden;   /* clip 미지원 구형 브라우저 폴백 — 종전 동작 유지 */
+  overflow-x: clip;
 }
 
 /* hidden 속성은 display 클래스(.blend-form-grid 의 grid 등)보다 항상 우선.
