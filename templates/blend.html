@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260728c" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260728d" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -253,21 +253,36 @@
               <!-- 자재명은 제목이 아니라 본문 첫 줄에 크게 — 긴 이름(PB 레시피 등)이 좁은
                    제목줄에 감겨 한눈에 안 읽히던 문제(2026-07-23). 자유 줄바꿈 허용. -->
               <div class="add-weigh-material" id="add-weigh-material"></div>
-              <div class="add-weigh-remaining" id="add-weigh-remaining">+0 g</div>
+              <!-- 처음 보는 작업자를 위한 한 줄 안내 — 이 창이 무엇을 하는 곳인지.
+                   비커에 한 번에 안 들어가는 자재를 여러 번에 나눠 담는 자리다. -->
+              <p class="add-weigh-guide">한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.</p>
+              <!-- 큰 숫자에 라벨을 붙인다 — 예전엔 '+24000 g' 만 커서 이게 담을 양인지
+                   담은 양인지 처음 보면 몰랐다. '더 담아야 할 양'으로 명시. -->
+              <div class="add-weigh-remaining-block">
+                <span class="add-weigh-remaining-label">더 담아야 할 양</span>
+                <div class="add-weigh-remaining" id="add-weigh-remaining">0 g</div>
+              </div>
               <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
               <!-- 담은 회차 — 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가
                    1개일 때부터 쌓아 보여줘야 '이어서 하는 중'으로 읽힌다. 비커를
-                   여러 번 오가는 동안 몇 번 담았는지 세던 것을 잊기 쉽다. -->
-              <ol class="add-weigh-portions" id="add-weigh-portions" hidden></ol>
+                   여러 번 오가는 동안 몇 번 담았는지 세던 것을 잊기 쉽다.
+                   아직 안 담았을 때도 빈 안내를 보여줘 창의 목적이 드러나게 한다. -->
+              <div class="add-weigh-portions-wrap">
+                <span class="add-weigh-portions-title">담은 내역</span>
+                <ol class="add-weigh-portions" id="add-weigh-portions"></ol>
+                <p class="add-weigh-portions-empty" id="add-weigh-portions-empty">아직 담지 않았습니다. 아래에 담은 양을 넣으면 회차별로 쌓입니다.</p>
+              </div>
               <div class="add-weigh-input-row" id="add-weigh-input-row">
                 <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="담을 양 g" autofocus />
                 <button class="btn accent" id="add-weigh-add-btn" type="button">담기</button>
               </div>
-              <p class="muted add-weigh-note">저울 PRINT 를 누르면 자동으로 합산됩니다.</p>
+              <p class="muted add-weigh-note" id="add-weigh-note">저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.</p>
             </div>
             <div class="ss-modal-footer blend-actions">
-              <button class="btn accent" id="add-weigh-done-btn" type="button">완료</button>
-              <button class="btn" id="add-weigh-reweigh-btn" type="button">다시 계량</button>
+              <!-- 완료: 목표에 못 미쳐도 지금까지 담은 값으로 마친다(드묾). 목표를 채우면
+                   자동으로 닫히므로 평소엔 안 눌러도 된다 — 그래서 보조(비강조) 버튼. -->
+              <button class="btn" id="add-weigh-done-btn" type="button">지금까지 담은 값으로 마치기</button>
+              <button class="btn" id="add-weigh-reweigh-btn" type="button">처음부터 다시</button>
             </div>
           </div>
         </div>
@@ -410,7 +425,7 @@
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend.js?v=20260728e"></script>
+    <script src="/static/js/blend.js?v=20260728f"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

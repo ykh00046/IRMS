@@ -418,15 +418,42 @@
 
 /* 추가 계량 모달 — 큰 남은 양 숫자 중심 레이아웃. 기존 .ss-modal/*.btn 클래스 재사용. */
 .add-weigh-modal { text-align: center; min-width: 320px; }
-.add-weigh-remaining {
-  text-align: center; font-size: 3.4rem; font-weight: 800;
-  color: #b45309; line-height: 1.1; margin: 0.2rem 0 0.3rem;
+/* 처음 보는 작업자용 한 줄 안내 — 무엇을 하는 창인지. */
+.add-weigh-guide {
+  font-size: 0.9rem; color: var(--text-secondary, #56627b);
+  margin: 0 0 0.9rem; line-height: 1.4;
 }
-.add-weigh-sub { font-size: 0.9rem; color: var(--muted, #6b7280); margin: 0 0 0.75rem; }
+.add-weigh-guide b { color: var(--text-primary, #15233f); }
+/* 큰 숫자에 라벨을 얹는다 — '+24000' 만으로는 담을 양인지 담은 양인지 안 읽힌다. */
+.add-weigh-remaining-block { margin: 0.2rem 0 0.3rem; }
+.add-weigh-remaining-label {
+  display: block; font-size: 0.8rem; font-weight: 600;
+  color: var(--text-secondary, #56627b); letter-spacing: 0.01em;
+}
+.add-weigh-remaining {
+  text-align: center; font-size: 3.1rem; font-weight: 800;
+  color: #b45309; line-height: 1.05; margin: 0;
+}
+.add-weigh-sub { font-size: 0.95rem; color: var(--muted, #6b7280); margin: 0.15rem 0 0.9rem; }
+/* 담은 내역 — 아직 안 담았을 때도 영역을 보여줘 창의 목적이 드러나게. */
+.add-weigh-portions-wrap {
+  text-align: left; margin: 0 0 0.9rem; padding: 0.55rem 0.7rem;
+  background: var(--bg-surface-200, #fafbfd); border: 1px solid var(--border-subtle, #e7ebf2);
+  border-radius: 8px;
+}
+.add-weigh-portions-title {
+  display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text-tertiary, #8c97ad); text-transform: none; margin-bottom: 0.25rem;
+}
+.add-weigh-portions-empty {
+  margin: 0; font-size: 0.8rem; color: var(--text-tertiary, #8c97ad); line-height: 1.4;
+}
+.add-weigh-portions-empty[hidden] { display: none; }
 .add-weigh-input-row { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 0.4rem; }
 .add-weigh-input-row .input { max-width: 9rem; }
 .add-weigh-input-row[hidden] { display: none; }
 .add-weigh-note { font-size: 0.78rem; }
+.add-weigh-note[hidden] { display: none; }
 
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
@@ -692,17 +719,14 @@
   background: #eff6ff;
 }
 
-/* 담은 회차 목록 — 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가 쌓여 보여야
-   '이어서 하는 중'으로 읽히고, 비커를 오가다 몇 번 담았는지 잊지 않는다. */
+/* 담은 회차 목록 — 이제 .add-weigh-portions-wrap 안에 들어가므로 배경/테두리는
+   wrap 이 갖는다. 목록은 순수 리스트로. */
 .add-weigh-portions {
-  margin: 0.6rem 0 0;
-  padding: 0.4rem 0.6rem;
+  margin: 0;
+  padding: 0;
   list-style: none;
   max-height: 7.5rem;
   overflow-y: auto;
-  background: var(--bg-surface-200);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
 }
 .add-weigh-portions[hidden] { display: none; }
 .add-weigh-portion {

@@ -2292,9 +2292,19 @@
     $("add-weigh-title").textContent = (options && options.split) ? "나눠 담기" : "추가 계량";
     const matEl = $("add-weigh-material");
     if (matEl) matEl.textContent = it.material_name;
-    // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산).
+    // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산). 안내 문구도
+    // 그에 맞춰 — 손입력 줄이 없는데 '담기를 누르세요'라고 하면 어긋난다.
+    const scaleOnly = Boolean(state.scaleOnlyInput);
     const row = $("add-weigh-input-row");
-    if (row) row.hidden = Boolean(state.scaleOnlyInput);
+    if (row) row.hidden = scaleOnly;
+    const guideEl = document.querySelector(".add-weigh-guide");
+    if (guideEl) {
+      guideEl.innerHTML = scaleOnly
+        ? "저울에 담기는 만큼 담고 <b>PRINT</b>를 누르세요. 목표를 채우면 자동으로 끝납니다."
+        : "한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.";
+    }
+    const noteEl = $("add-weigh-note");
+    if (noteEl) noteEl.hidden = scaleOnly;  // 저울 전용이면 위 안내가 이미 PRINT 를 말한다
     // 반드시 '모달을 연 뒤' 숫자를 그린다 — refreshAddWeighModal 은 닫힌 모달이면
     // 갱신을 건너뛰므로, 열기 전에 부르면 목표/현재/남은이 초기 "-" 로 남는다
     // (현장 신고 2026-07-22: 추가 계량 화면 목표값이 "-" 표시).
@@ -2316,13 +2326,17 @@
     const cur = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
     const remaining = addWeighRemaining(idx);
     const remEl = $("add-weigh-remaining");
-    if (remEl) remEl.textContent = `+${fmt(remaining, dp())} g`;
+    // '+' 없이 값만 — 큰 숫자 위 라벨('더 담아야 할 양')이 의미를 말해준다.
+    if (remEl) remEl.textContent = `${fmt(remaining, dp())} g`;
     const subEl = $("add-weigh-sub");
     if (subEl) subEl.textContent = `목표 ${fmt(target, dp())} g · 현재 ${fmt(cur, dp())} g`;
     // 담은 회차를 1회차부터 쌓아 보여준다 — 이 창 안에서 한 자재를 끝낸다는 감각을
     // 주려면 진행 이력이 남아 있어야 한다. 마지막 회차를 강조해 방금 넣은 것을 표시.
+    // 아직 안 담았으면 빈 안내를 보여줘 창의 목적이 드러나게 한다.
     const porEl = $("add-weigh-portions");
+    const emptyEl = $("add-weigh-portions-empty");
     const list = Array.isArray(it.portions) ? it.portions : [];
+    if (emptyEl) emptyEl.hidden = list.length > 0;
     if (porEl) {
       porEl.hidden = list.length === 0;
       porEl.innerHTML = list
