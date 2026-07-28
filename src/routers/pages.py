@@ -225,6 +225,14 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def insight_page(request: Request) -> Response:
         return _app_page_response(request, templates, "insight.html")
 
+    @router.get("/material-lots", response_class=HTMLResponse)
+    def material_lots_page(request: Request) -> Response:
+        # 로그인 없이 누구나 진입(사내 공용 단말 — 점도·배합 화면과 동일 정책).
+        # ERP 원재료 LOT 목록을 조회하고, 책임자는 수동 LOT 를 추가·삭제한다.
+        response = _app_page_response(request, templates, "material_lots.html")
+        refresh_csrf_cookie(response)
+        return response
+
     @router.get("/dashboard", response_class=HTMLResponse)
     def dashboard_page(request: Request) -> Response:
         return _app_page_response(request, templates, "dashboard.html")

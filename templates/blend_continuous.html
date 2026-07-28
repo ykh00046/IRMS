@@ -5,7 +5,7 @@
 {% block heading %}이어서 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260726a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260728e" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260723k" />
     <style>
       /* 이어서 계량 임시 저장 복구 배너 — 배합 화면(blend.html)과 동일 스타일. */
@@ -172,6 +172,31 @@
           </div>
         </div>
 
+        <!-- ERP 원재료 LOT 검사 미통과 경고(이어서 계량) — 저장은 막지 않는다(값 유지).
+             배합 화면 #erp-lot-modal 의 이어서 계량 버전. -->
+        <div class="ss-modal-overlay" id="cont-erp-lot-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-erp-lot-modal-title">
+            <div class="ss-modal-header"><h3 id="cont-erp-lot-modal-title">등록되지 않은 LOT</h3></div>
+            <div class="ss-modal-body" id="cont-erp-lot-modal-body"></div>
+            <div class="lot-override-box" id="cont-erp-lot-add-box" hidden style="margin:8px 0 4px;">
+              <label class="filter-label" for="cont-erp-add-username">책임자 이름</label>
+              <input class="input" id="cont-erp-add-username" autocomplete="off" />
+              <label class="filter-label" for="cont-erp-add-password" style="margin-top:6px;">비밀번호</label>
+              <input class="input" id="cont-erp-add-password" type="password" autocomplete="off" />
+              <label class="filter-label" for="cont-erp-add-note" style="margin-top:6px;">메모 (선택)</label>
+              <input class="input" id="cont-erp-add-note" />
+              <p class="login-error" id="cont-erp-lot-add-error" hidden></p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="cont-erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
+              <button class="btn accent" id="cont-erp-lot-confirm" type="button">다시 확인</button>
+            </div>
+            <div class="ss-modal-footer blend-actions" style="justify-content:flex-end;">
+              <button class="btn accent" id="cont-erp-lot-add-submit" type="button" hidden>추가</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 증량 책임자 승인 모달(로트별 스코프) — 배합 화면 #rescale-approve-modal 의 이어서 계량
              버전. 로트 증량 [증량 적용]/[그래도 증량] 클릭 시 즉시 적용하지 않고 이 모달로 게이트한다.
              [승인]: /api/blend/manager-verify 검증 후 그 로트 증량 적용 + 승인 이벤트 기록.
@@ -274,5 +299,5 @@
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260725e"></script>
+    <script src="/static/js/blend_continuous.js?v=20260728b"></script>
 {% endblock %}

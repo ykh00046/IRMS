@@ -1,0 +1,134 @@
+{% extends "_base_app.html" %}
+
+{% block title %}자재 LOT{% endblock %}
+{% block eyebrow %}운영 관리{% endblock %}
+{% block heading %}자재 LOT{% endblock %}
+
+{% block styles %}
+<style>
+  /* 자재 LOT 화면 전용 — 기존 클래스(.panel/.input/.btn/.metric-card/.table-wrap)를
+     우선 재사용하고, 이 화면에서만 필요한 배치·상태 색만 최소로 추가한다. */
+  .mlot-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .mlot-search {
+    flex: 1 1 280px;
+    max-width: 420px;
+  }
+  .mlot-stale-warn { color: #b45309; font-weight: 600; }
+  .mlot-stale-ok { color: #166534; }
+  .mlot-status-cell { font-weight: 600; }
+  .mlot-status-valid { color: #166534; }
+  .mlot-status-spent { color: #b91c1c; }
+  .mlot-status-manual { color: #1d4ed8; }
+  .mlot-source-erp { color: #475569; }
+  .mlot-source-manual { color: #1d4ed8; }
+  .mlot-add-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr auto;
+    gap: 10px;
+    align-items: end;
+  }
+  @media (max-width: 720px) {
+    .mlot-add-form { grid-template-columns: 1fr; }
+  }
+  .mlot-warn {
+    padding: 18px 20px;
+    border: 1px solid #f59e0b;
+    background: #fffbeb;
+    border-radius: 10px;
+    color: #92400e;
+  }
+  .mlot-empty {
+    padding: 24px;
+    text-align: center;
+    color: #64748b;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+        <section class="dashboard-cards">
+          <div class="metric-card">
+            <div class="metric-label">기준 파일</div>
+            <div class="metric-value" id="mlot-card-file" style="font-size:1.05rem;">-</div>
+            <div class="metric-unit" id="mlot-card-filedate">-</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">경과일</div>
+            <div class="metric-value" id="mlot-card-stale">-</div>
+            <div class="metric-unit" id="mlot-card-stale-note">파일명 날짜 기준</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">LOT 수</div>
+            <div class="metric-value" id="mlot-card-counts">-</div>
+            <div class="metric-unit">유효 / 수동</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="mlot-toolbar">
+            <div class="mlot-search">
+              <label class="filter-label" for="mlot-search">검색</label>
+              <input class="input" id="mlot-search" type="search" placeholder="품목코드 · 품목명 · LOT 부분 일치" autocomplete="off" />
+            </div>
+            <button id="mlot-refresh" class="btn btn-sm" type="button">새로고침</button>
+          </div>
+        </section>
+
+        <section class="panel" id="mlot-warn-panel" hidden>
+          <div class="mlot-warn" id="mlot-warn-text"></div>
+        </section>
+
+        <section class="panel" id="mlot-table-panel" hidden>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>품목코드</th>
+                  <th>품목명</th>
+                  <th>LOT</th>
+                  <th class="num">재고</th>
+                  <th>상태</th>
+                  <th>출처</th>
+                  {% if can_manage %}<th>관리</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody id="mlot-body"></tbody>
+            </table>
+          </div>
+          <p class="mlot-empty" id="mlot-empty" hidden>조건에 맞는 LOT 가 없습니다.</p>
+        </section>
+
+        {% if can_manage %}
+        <section class="panel">
+          <h3 class="panel-title">수동 LOT 추가</h3>
+          <p class="muted small">ERP 엑셀에 없거나 소진된 LOT 를 책임자가 직접 유효로 등록합니다. 배합 화면에서 즉석 인증으로 추가할 수도 있습니다.</p>
+          <form id="mlot-add-form" class="mlot-add-form" autocomplete="off">
+            <div>
+              <label class="filter-label" for="mlot-add-code">품목코드</label>
+              <input class="input" id="mlot-add-code" list="mlot-code-candidates" required placeholder="예: AC0001" />
+              <datalist id="mlot-code-candidates"></datalist>
+            </div>
+            <div>
+              <label class="filter-label" for="mlot-add-lot">LOT</label>
+              <input class="input" id="mlot-add-lot" required placeholder="LOT 번호" />
+            </div>
+            <div>
+              <label class="filter-label" for="mlot-add-note">메모</label>
+              <input class="input" id="mlot-add-note" placeholder="추가 사유 등(선택)" />
+            </div>
+            <button class="btn accent" id="mlot-add-btn" type="submit">추가</button>
+          </form>
+          <p class="login-error" id="mlot-add-error" hidden></p>
+        </section>
+        {% endif %}
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/js/material_lots.js?v=20260728a"></script>
+{% endblock %}

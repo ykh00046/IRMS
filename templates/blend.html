@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260728d" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260728e" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -408,6 +408,31 @@
           </div>
         </div>
 
+        <!-- ERP 원재료 LOT 검사 미통과 경고 — 저장은 막지 않는다(값 유지). [다시 확인] 은
+             해당 입력에 포커스+선택, [책임자 LOT 추가하기] 는 즉석 인증으로 수동 LOT 추가. -->
+        <div class="ss-modal-overlay" id="erp-lot-modal" hidden>
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="erp-lot-modal-title">
+            <div class="ss-modal-header"><h3 id="erp-lot-modal-title">등록되지 않은 LOT</h3></div>
+            <div class="ss-modal-body" id="erp-lot-modal-body"></div>
+            <div class="lot-override-box" id="erp-lot-add-box" hidden style="margin:8px 0 4px;">
+              <label class="filter-label" for="erp-add-username">책임자 이름</label>
+              <input class="input" id="erp-add-username" autocomplete="off" />
+              <label class="filter-label" for="erp-add-password" style="margin-top:6px;">비밀번호</label>
+              <input class="input" id="erp-add-password" type="password" autocomplete="off" />
+              <label class="filter-label" for="erp-add-note" style="margin-top:6px;">메모 (선택)</label>
+              <input class="input" id="erp-add-note" />
+              <p class="login-error" id="erp-lot-add-error" hidden></p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
+              <button class="btn accent" id="erp-lot-confirm" type="button">다시 확인</button>
+            </div>
+            <div class="ss-modal-footer blend-actions" id="erp-lot-add-submit-row" style="justify-content:flex-end;">
+              <button class="btn accent" id="erp-lot-add-submit" type="button" hidden>추가</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 파생 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
              누르면 표시. 적용하면 1차 배합 총량을 이 행의 실제량으로 기록(계량 생략). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="carry-over-modal" hidden>
@@ -425,7 +450,7 @@
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend.js?v=20260728f"></script>
+    <script src="/static/js/blend.js?v=20260728h"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

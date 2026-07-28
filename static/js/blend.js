@@ -1172,7 +1172,8 @@
       });
       // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 검증.
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #lot-invalid-modal 표시 후 값을 비운다.
-      el.addEventListener("change", () => validateLotInput(el));
+      // 그 뒤 ERP 원재료 LOT 검사(제안 없는 자재만) — 경고는 저장을 막지 않는다.
+      el.addEventListener("change", () => { validateLotInput(el); checkErpLot(el); });
     });
     // 키보드 흐름(LOT 먼저): LOT Enter → 같은 행 실제량, 실제량 Enter → 다음 품목 LOT(마지막이면 저장)
     const focusField = (selector) => {
@@ -1402,6 +1403,132 @@
   }
 
   function closeLotInvalidModal() { $("lot-invalid-modal").hidden = true; }
+
+  // ── ERP 원재료 LOT 검사(반제품 자재는 제외) ─────────────────────
+  // 반제품(제안이 있는 자재)은 위 validateLotInput 가 다루므로 건드리지 않는다.
+  // 일반 원료(제안 없음 + material_code 가 있는 자재)의 LOT 입력 확정(change) 시
+  // GET /api/material-lots/check 로 유효성을 본다. valid=False 면 경고 모달을 띄우되
+  // 저장을 막지 않는다(값은 지우지 않음). fetch 실패·file_ok=False 는 통과(fail-open).
+  function setErpLotWarn(input, on, reason) {
+    if (!input) return;
+    if (on) {
+      input.classList.add("erp-lot-warn");
+      input.title = reason || "등록되지 않은 LOT 입니다.";
+    } else {
+      input.classList.remove("erp-lot-warn");
+      input.title = "";
+    }
+  }
+
+  async function checkErpLot(input) {
+    if (!input) return;
+    const idx = Number(input.dataset.idx);
+    const item = state.items[idx];
+    if (!item) return;
+    const code = (item.material_code || "").trim();
+    if (!code) return;  // 품목코드 없는 자재는 ERP 검사 불가
+    const name = (item.material_name || "").trim();
+    // 반제품(제안 대상)은 validateLotInput 이 다룬다 — 여기서 제외.
+    if (state.lotSuggest && state.lotSuggest[name]) return;
+    const lot = (input.value || "").trim();
+    if (!lot) { setErpLotWarn(input, false); return; }  // 빈 값이면 경고 해제
+    let data;
+    try {
+      data = await request("/material-lots/check", { query: { code, lot } });
+    } catch (_e) {
+      // 조회 실패 — 통과(checkLotRegistered 의 fail-open 철학과 동일). 경고도 두지 않는다.
+      setErpLotWarn(input, false);
+      return;
+    }
+    if (!data || data.file_ok === false) {
+      // 엑셀 파일 문제 — 현장을 막지 않는다(fail-open).
+      setErpLotWarn(input, false);
+      return;
+    }
+    if (data.valid) {
+      setErpLotWarn(input, false);
+      return;
+    }
+    // 미통과 — 경고 표시(값은 지우지 않음). 모달로 알림.
+    const reason =
+      data.source === "erp"
+        ? "재고가 소진된 LOT 입니다(재고 0)."
+        : "ERP 원재료 목록에 없는 LOT 입니다.";
+    setErpLotWarn(input, true, reason);
+    openErpLotModal(name, code, lot, reason, input);
+  }
+
+  // 미통과 LOT 경고 모달 — [다시 확인](포커스+선택) / [책임자 LOT 추가하기](즉석 인증 추가).
+  function openErpLotModal(name, code, lot, reason, input) {
+    const body = $("erp-lot-modal-body");
+    if (body) {
+      body.innerHTML = ""
+        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
+        + `<p><strong>품목코드:</strong> ${esc(code)}</p>`
+        + `<p><strong>입력한 LOT:</strong> ${esc(lot)}</p>`
+        + `<p>${esc(reason)}</p>`
+        + `<p>LOT 를 제대로 확인해주세요.</p>`;
+    }
+    const box = $("erp-lot-add-box");
+    const err = $("erp-lot-add-error");
+    if (err) { err.textContent = ""; err.hidden = true; }
+    if (box) box.hidden = true;
+    const submitBtn = $("erp-lot-add-submit");
+    if (submitBtn) submitBtn.hidden = true;
+    ["erp-add-username", "erp-add-password", "erp-add-note"].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = "";
+    });
+    const modal = $("erp-lot-modal");
+    modal._erpInput = input || null;
+    modal._erpCode = code;
+    modal._erpLot = lot;
+    modal.hidden = false;
+  }
+
+  function closeErpLotModal() { $("erp-lot-modal").hidden = true; }
+
+  async function submitErpLotAdd() {
+    const err = $("erp-lot-add-error");
+    const username = ($("erp-add-username").value || "").trim();
+    const password = $("erp-add-password").value || "";
+    const note = ($("erp-add-note").value || "").trim();
+    if (!username || !password) {
+      if (err) { err.textContent = "책임자 이름과 비밀번호를 입력하세요."; err.hidden = false; }
+      return;
+    }
+    const modal = $("erp-lot-modal");
+    const code = modal._erpCode;
+    const lot = modal._erpLot;
+    try {
+      const res = await fetch("/api/material-lots/manual-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({
+          username, password, material_code: code, lot,
+          note: note || undefined,
+        }),
+      });
+      if (!res.ok) {
+        // 401/403 — 인라인 오류. 그 외 오류도 인라인.
+        let detail = "추가에 실패했습니다.";
+        try {
+          const j = await res.json();
+          if (j && j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+          // 서버 규약 코드는 현장 문구로 — 영문 코드가 그대로 보이면 원인을 알 수 없다.
+          if (detail === "INVALID_CREDENTIALS") detail = "책임자 이름 또는 비밀번호가 올바르지 않습니다.";
+        } catch (_e) { /* 무시 */ }
+        if (err) { err.textContent = detail; err.hidden = false; }
+        return;
+      }
+      notify("수동 LOT 를 추가했습니다.", "success");
+      if (modal._erpInput) setErpLotWarn(modal._erpInput, false);
+      closeErpLotModal();
+    } catch (e) {
+      if (err) { err.textContent = e.message || "추가에 실패했습니다."; err.hidden = false; }
+    }
+  }
 
   // ── 파생 이월(carry-over): 기준 자재 행만, 파생 레시피만 ────
   // 1차 배합(반제품)의 총량을 2차 배합 기준 자재의 실제량으로 그대로 가져오는 기능.
@@ -2886,6 +3013,28 @@
       if (input) input.focus();
       notify("사유를 남기고 진행합니다 — 이 로트는 기록에 '미등록 진행'으로 남습니다.", "warn");
     });
+    // ERP 미통과 LOT 경고 모달 — '다시 확인'(닫고 입력에 포커스+선택) /
+    // '책임자 LOT 추가하기'(즉석 인증 → manual-verify). 경고는 저장을 막지 않는다.
+    const erpConfirm = $("erp-lot-confirm");
+    if (erpConfirm) erpConfirm.addEventListener("click", () => {
+      const modal = $("erp-lot-modal");
+      const input = modal && modal._erpInput;
+      closeErpLotModal();
+      if (input) { input.focus(); if (typeof input.select === "function") { try { input.select(); } catch (_e) {} } }
+    });
+    const erpAddToggle = $("erp-lot-add-toggle");
+    if (erpAddToggle) erpAddToggle.addEventListener("click", () => {
+      const box = $("erp-lot-add-box");
+      if (box) {
+        box.hidden = false;
+        const submitBtn = $("erp-lot-add-submit");
+        if (submitBtn) submitBtn.hidden = false;
+        const u = $("erp-add-username");
+        if (u) u.focus();
+      }
+    });
+    const erpAddSubmit = $("erp-lot-add-submit");
+    if (erpAddSubmit) erpAddSubmit.addEventListener("click", submitErpLotAdd);
     // 파생 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
     const coConfirm = $("carry-over-confirm");
     if (coConfirm) coConfirm.addEventListener("click", applyCarryOver);

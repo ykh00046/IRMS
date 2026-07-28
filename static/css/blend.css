@@ -739,3 +739,5 @@
 /* 방금 담은 회차 — 어디까지 했는지 눈이 바로 찾게 */
 .add-weigh-portion.is-last { color: var(--text-primary); }
 .add-weigh-portion.is-last .add-weigh-portion-amt { font-weight: 700; }
+/* ERP 원재료 LOT 검사 미통과 — 저장을 막지 않는 경고 표시 */
+.erp-lot-warn { border-color: #f59e0b; }

@@ -11,6 +11,7 @@ from . import (
     blend_routes,
     dashboard_routes,
     item_code_routes,
+    material_lot_routes,
     public_attendance_alert_routes,
     public_rescale_alert_routes,
     public_material_usage_routes,
@@ -43,6 +44,7 @@ def build_router() -> APIRouter:
     dashboard_router = dashboard_routes.build_router()
     item_code_router = item_code_routes.create_item_code_router()
     settings_router = settings_routes.build_router()
+    material_lot_router = material_lot_routes.build_router()
 
     @public_router.get("/health")
     def health() -> dict[str, str]:
@@ -71,6 +73,7 @@ def build_router() -> APIRouter:
     router.include_router(admin_router)
     router.include_router(dashboard_router)
     router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
+    router.include_router(material_lot_router)    # ERP 원재료 LOT 검증(배합 화면 무로그인)
     router.include_router(blend_rescale_ack_routes.build_router())   # 증량 사후 확인(책임자)
     router.include_router(public_rescale_alert_routes.build_router())  # 증량 트레이 알림(내부망 공개)
     router.include_router(settings_router)        # 앱 설정(저울 전용 입력 모드 토글)

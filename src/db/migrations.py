@@ -25,6 +25,7 @@ _ALLOWED_TABLES = frozenset({
     "blend_rescale_approvals",
     "item_code_master",
     "recipe_steps",
+    "manual_material_lots",
 })
 
 
@@ -563,6 +564,23 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     if not has_migration(connection, "drop_reactor_slots"):
         connection.execute("DROP TABLE IF EXISTS reactor_slots")
         record_migration(connection, "drop_reactor_slots")
+
+    # 수동 자재 LOT — 책임자가 즉석 인증으로 추가한 LOT(엑셀 재고와 무관하게 valid).
+    # 배합 화면에서 ERP 엑셀에 없거나 소진된 LOT 를 부득이 써야 할 때, 책임자 자격
+    # 검증을 거쳐 이 표에 남기면 현장이 막히지 않는다. (material_code, lot) 유일.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS manual_material_lots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_code TEXT NOT NULL,
+            lot TEXT NOT NULL,
+            note TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(material_code, lot)
+        )
+        """
+    )
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

@@ -93,6 +93,10 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_viscosity_link", "점도 등록(배합 연계)"],
       ["viscosity_exported_all", "점도 전체 내보내기"],
     ]],
+    ["자재 LOT", [
+      ["material_lot_added", "수동 LOT 추가"],
+      ["material_lot_deleted", "수동 LOT 삭제"],
+    ]],
     ["설정·백업", [
       ["attendance_viewed_by_admin", "근태 조회"],
       ["setting_scale_only_set", "저울 전용 입력 설정"],

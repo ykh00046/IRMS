@@ -1000,6 +1000,128 @@
 
   function closeContLotInvalidModal() { $("cont-lot-invalid-modal").hidden = true; }
 
+  // ── ERP 원재료 LOT 검사(반제품 자재는 제외) ─────────────────────
+  // 반제품(제안이 있는 자재)은 위 validateLotInput 가 다루므로 건드리지 않는다.
+  // 일반 원료(제안 없음 + material_code 가 있는 자재)의 LOT 입력 확정(change) 시
+  // GET /api/material-lots/check 로 유효성을 본다. valid=False 면 경고 모달을 띄우되
+  // 저장을 막지 않는다(값은 지우지 않음). fetch 실패·file_ok=False 는 통과(fail-open).
+  function setErpLotWarn(input, on, reason) {
+    if (!input) return;
+    if (on) {
+      input.classList.add("erp-lot-warn");
+      input.title = reason || "등록되지 않은 LOT 입니다.";
+    } else {
+      input.classList.remove("erp-lot-warn");
+      input.title = "";
+    }
+  }
+
+  async function checkErpLot(input) {
+    if (!input) return;
+    const i = Number(input.dataset.i);
+    const j = Number(input.dataset.j);
+    const m = state.materials[i];
+    if (!m || !(state.cells[i] && state.cells[i][j])) return;
+    const code = (m.material_code || "").trim();
+    if (!code) return;  // 품목코드 없는 자재는 ERP 검사 불가
+    const name = (m.material_name || "").trim();
+    // 반제품(제안 대상)은 validateLotInput 이 다룬다 — 여기서 제외.
+    if (state.lotSuggest && state.lotSuggest[name]) return;
+    const lot = ((state.cells[i][j] && state.cells[i][j].lot) || (input.value || "")).trim();
+    if (!lot) { setErpLotWarn(input, false); return; }  // 빈 값이면 경고 해제
+    let data;
+    try {
+      data = await request("/material-lots/check", { query: { code, lot } });
+    } catch (_e) {
+      setErpLotWarn(input, false);
+      return;
+    }
+    if (!data || data.file_ok === false) {
+      setErpLotWarn(input, false);
+      return;
+    }
+    if (data.valid) {
+      setErpLotWarn(input, false);
+      return;
+    }
+    const reason =
+      data.source === "erp"
+        ? "재고가 소진된 LOT 입니다(재고 0)."
+        : "ERP 원재료 목록에 없는 LOT 입니다.";
+    setErpLotWarn(input, true, reason);
+    openContErpLotModal(name, code, lot, reason, input);
+  }
+
+  function openContErpLotModal(name, code, lot, reason, input) {
+    const body = $("cont-erp-lot-modal-body");
+    if (body) {
+      body.innerHTML = ""
+        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
+        + `<p><strong>품목코드:</strong> ${esc(code)}</p>`
+        + `<p><strong>입력한 LOT:</strong> ${esc(lot)}</p>`
+        + `<p>${esc(reason)}</p>`
+        + `<p>LOT 를 제대로 확인해주세요.</p>`;
+    }
+    const box = $("cont-erp-lot-add-box");
+    const err = $("cont-erp-lot-add-error");
+    if (err) { err.textContent = ""; err.hidden = true; }
+    if (box) box.hidden = true;
+    const submitBtn = $("cont-erp-lot-add-submit");
+    if (submitBtn) submitBtn.hidden = true;
+    ["cont-erp-add-username", "cont-erp-add-password", "cont-erp-add-note"].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = "";
+    });
+    const modal = $("cont-erp-lot-modal");
+    modal._erpInput = input || null;
+    modal._erpCode = code;
+    modal._erpLot = lot;
+    modal.hidden = false;
+  }
+
+  function closeContErpLotModal() { $("cont-erp-lot-modal").hidden = true; }
+
+  async function submitContErpLotAdd() {
+    const err = $("cont-erp-lot-add-error");
+    const username = ($("cont-erp-add-username").value || "").trim();
+    const password = $("cont-erp-add-password").value || "";
+    const note = ($("cont-erp-add-note").value || "").trim();
+    if (!username || !password) {
+      if (err) { err.textContent = "책임자 이름과 비밀번호를 입력하세요."; err.hidden = false; }
+      return;
+    }
+    const modal = $("cont-erp-lot-modal");
+    const code = modal._erpCode;
+    const lot = modal._erpLot;
+    try {
+      const res = await fetch("/api/material-lots/manual-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({
+          username, password, material_code: code, lot,
+          note: note || undefined,
+        }),
+      });
+      if (!res.ok) {
+        let detail = "추가에 실패했습니다.";
+        try {
+          const j = await res.json();
+          if (j && j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+          // 서버 규약 코드는 현장 문구로 — 영문 코드가 그대로 보이면 원인을 알 수 없다.
+          if (detail === "INVALID_CREDENTIALS") detail = "책임자 이름 또는 비밀번호가 올바르지 않습니다.";
+        } catch (_e) { /* 무시 */ }
+        if (err) { err.textContent = detail; err.hidden = false; }
+        return;
+      }
+      notify("수동 LOT 를 추가했습니다.", "success");
+      if (modal._erpInput) setErpLotWarn(modal._erpInput, false);
+      closeContErpLotModal();
+    } catch (e) {
+      if (err) { err.textContent = e.message || "추가에 실패했습니다."; err.hidden = false; }
+    }
+  }
+
   function renderReactorField() {
     const field = $("cont-reactor-field");
     if (!field) return;
@@ -1216,7 +1338,7 @@
       });
       // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 셀별 검증.
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #cont-lot-invalid-modal 표시 후 값을 비운다.
-      el.addEventListener("change", () => validateLotInput(el));
+      el.addEventListener("change", () => { validateLotInput(el); checkErpLot(el); });
     });
     // ↩ 이전 로트 LOT 복사 — 명시적 클릭만(자동 이월 없음: 봉지 교체를 놓쳐 조용히 잘못
     // 기록되는 것을 막기 위해 사용자가 직접 확인하고 복사한다). 같은 자재의 직전 로트 LOT 을
@@ -2279,6 +2401,27 @@
       if (input) input.focus();
       notify("사유를 남기고 진행합니다 — 이 로트는 기록에 '미등록 진행'으로 남습니다.", "warn");
     });
+    // ERP 미통과 LOT 경고 모달 — '다시 확인' / '책임자 LOT 추가하기'. 경고는 저장을 막지 않는다.
+    const erpConfirm = $("cont-erp-lot-confirm");
+    if (erpConfirm) erpConfirm.addEventListener("click", () => {
+      const modal = $("cont-erp-lot-modal");
+      const input = modal && modal._erpInput;
+      closeContErpLotModal();
+      if (input) { input.focus(); if (typeof input.select === "function") { try { input.select(); } catch (_e) {} } }
+    });
+    const erpAddToggle = $("cont-erp-lot-add-toggle");
+    if (erpAddToggle) erpAddToggle.addEventListener("click", () => {
+      const box = $("cont-erp-lot-add-box");
+      if (box) {
+        box.hidden = false;
+        const submitBtn = $("cont-erp-lot-add-submit");
+        if (submitBtn) submitBtn.hidden = false;
+        const u = $("cont-erp-add-username");
+        if (u) u.focus();
+      }
+    });
+    const erpAddSubmit = $("cont-erp-lot-add-submit");
+    if (erpAddSubmit) erpAddSubmit.addEventListener("click", submitContErpLotAdd);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
