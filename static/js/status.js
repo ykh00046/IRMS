@@ -550,6 +550,10 @@ document.addEventListener("DOMContentLoaded", () => {
     Object.entries(map).forEach(([k, val]) => {
       if (val) q.set(k, val);
     });
+    // 화면의 '취소 포함' 체크와 같이 취소 기록까지 내려받는다 — 정합.
+    if ($("status-rec-canceled") && $("status-rec-canceled").checked) {
+      q.set("include_canceled", "1");
+    }
     window.location.assign(`/api/blend/records/export-all?${q.toString()}`);
   });
 

@@ -518,6 +518,14 @@
       }
     }
 
+    // 전체 Excel 내보내기 — 책임자 전용 엔드포인트로 바로 이동(서버가 권한 통제).
+    const exportBtn = document.getElementById("history-export-btn");
+    if (exportBtn) {
+      exportBtn.addEventListener("click", () => {
+        window.location.assign("/api/recipes/export");
+      });
+    }
+
     return {
       persistHistoryFilters,
       updateHistorySummary,

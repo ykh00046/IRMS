@@ -415,12 +415,19 @@ def build_router() -> APIRouter:
         end_date: str | None = None,
         worker: str | None = None,
         search: str | None = None,
+        include_canceled: bool = False,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
-        """전체(필터) 배합 기록을 한 시트로 — 데이터 백업·이관용."""
+        """전체(필터) 배합 기록을 한 시트로 — 데이터 백업·이관용.
+
+        include_canceled=False(기본) 면 화면 기본 목록과 같이 취소 기록을 빼고,
+        True 면 /status 의 '취소 포함' 체크와 같이 취소 기록까지 내려준다 — 화면과
+        파일의 정합. 취소 행이 섞이면 구분이 안 되므로 '상태' 열 값은 한글로 표기.
+        """
         records = blend_service.list_blend_records(
             connection, start_date=start_date, end_date=end_date,
             worker=worker, search=search, limit=10000,
+            include_canceled=include_canceled,
         )
         _audit_dhr_export(
             connection, request, fmt="xlsx_all",
@@ -437,10 +444,12 @@ def build_router() -> APIRouter:
         ws.append(headers)
         for c in range(1, len(headers) + 1):
             ws.cell(row=1, column=c).font = Font(bold=True)
+        _status_label = {"completed": "완료", "canceled": "취소"}
         for r in records:
             ws.append([
                 r["work_date"], r["product_lot"], r["product_name"], r.get("ink_name") or "",
-                r["worker"], r["total_amount"], r.get("scale") or "", r["status"], r.get("note") or "",
+                r["worker"], r["total_amount"], r.get("scale") or "",
+                _status_label.get(r["status"], r["status"]), r.get("note") or "",
             ])
         widths = [12, 18, 16, 14, 10, 10, 10, 10, 24]
         for col, w in enumerate(widths, start=1):

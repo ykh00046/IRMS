@@ -83,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_use_reactor_set", "반응기 사용 지정"],
       ["recipe_is_derived_set", "파생 레시피 지정"],
       ["material_code_set", "품목코드 지정"],
+      ["recipes_exported", "레시피 전체 내보내기"],
     ]],
     ["점도", [
       ["viscosity_reading_add", "점도 등록"],
@@ -90,6 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["viscosity_product_create", "점도 품목 추가"],
       ["viscosity_product_update", "점도 품목 수정"],
       ["blend_viscosity_link", "점도 등록(배합 연계)"],
+      ["viscosity_exported_all", "점도 전체 내보내기"],
     ]],
     ["설정·백업", [
       ["attendance_viewed_by_admin", "근태 조회"],

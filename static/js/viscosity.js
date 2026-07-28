@@ -929,6 +929,9 @@
       $("visc-settings-form").addEventListener("submit", saveSettings);
       $("visc-new-form").addEventListener("submit", createProduct);
       $("visc-export-btn").addEventListener("click", exportCsv);
+      $("visc-export-all-btn").addEventListener("click", () => {
+        window.location.assign("/api/viscosity/export-all");
+      });
     }
   }
 

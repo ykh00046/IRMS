@@ -432,6 +432,149 @@ def build_router() -> APIRouter:
 
         return {"versions": versions, "materials": materials_payload}
 
+    @router.get(
+        "/recipes/export",
+        dependencies=[Depends(require_access_level("manager"))],
+    )
+    def recipes_export(
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ):
+        """레시피 전체 Excel 내보내기 — 책임자 전용.
+
+        시트1 '레시피 목록'(레시피당 1행)·시트2 '자재 구성'(자재행당 1행) 두 장으로
+        내려준다. 배합 전체 Excel(blend_export_all)과 같은 openpyxl + StreamingResponse
+        패턴. 파일명은 ASCII recipes_YYYYMMDD.xlsx.
+
+        정적 경로(/recipes/export)는 동적 경로보다 먼저 선언돼 있으므로 FastAPI 가
+        /recipes/{recipe_id} 로 해석하지 않는다.
+        """
+        import io
+        from datetime import date as _date
+
+        from fastapi.responses import StreamingResponse
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        with get_connection() as connection:
+            recipe_rows = connection.execute(
+                """
+                SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
+                       r.category, r.created_at,
+                       r.base_totals, r.tolerance_g, r.anchor_material_id,
+                       am.name AS anchor_material_name,
+                       COALESCE(r.is_dhr, 0) AS is_dhr,
+                       r.product_code,
+                       COALESCE(r.use_reactor, 0) AS use_reactor,
+                       COALESCE(r.is_derived, 0) AS is_derived,
+                       r.stage1_recipe_id,
+                       s.product_name AS stage1_product_name
+                FROM recipes r
+                LEFT JOIN materials am ON am.id = r.anchor_material_id
+                LEFT JOIN recipes s ON s.id = r.stage1_recipe_id
+                ORDER BY r.created_at DESC, r.id DESC
+                """
+            ).fetchall()
+            recipe_ids = [row["id"] for row in recipe_rows]
+            # fetch_recipe_items 는 materials 조인까지 끌어온다(자재명·단위). 자재코드는
+            # materials.code 에 있으므로 별도로 모은다.
+            item_map = fetch_recipe_items(connection, recipe_ids)
+            code_rows = connection.execute(
+                f"""
+                SELECT m.id, m.code
+                FROM materials m
+                WHERE m.id IN (
+                    SELECT ri.material_id FROM recipe_items ri
+                    WHERE ri.recipe_id IN ({",".join("?" for _ in recipe_ids) if recipe_ids else "NULL"})
+                )
+                """,
+                recipe_ids,
+            ).fetchall() if recipe_ids else []
+            code_map = {row["id"]: (row["code"] or "") for row in code_rows}
+
+            write_audit_log(
+                connection,
+                action="recipes_exported",
+                actor=current_user,
+                target_type="recipe",
+                target_id=None,
+                target_label=f"전체 {len(recipe_rows)}건",
+                details={"count": len(recipe_rows)},
+            )
+            connection.commit()
+
+            wb = Workbook()
+
+            # 시트1 — 레시피 목록 (레시피당 1행)
+            ws1 = wb.active
+            ws1.title = "레시피 목록"
+            headers1 = [
+                "ID", "반제품명", "분류", "상태", "품목코드",
+                "기준 배합량", "허용 편차", "기준 자재명", "DHR 전용",
+                "1차 레시피명", "반응기 사용", "파생", "등록일",
+            ]
+            ws1.append(headers1)
+            for c in range(1, len(headers1) + 1):
+                ws1.cell(row=1, column=c).font = Font(bold=True)
+            status_map = {"completed": "사용중", "canceled": "취소"}
+            for row in recipe_rows:
+                ws1.append([
+                    row["id"],
+                    row["product_name"] or "",
+                    row["category"] or "",
+                    status_map.get(row["status"], row["status"] or ""),
+                    row["product_code"] or "",
+                    row["base_totals"] or "",
+                    row["tolerance_g"] if row["tolerance_g"] is not None else "",
+                    row["anchor_material_name"] or "",
+                    "예" if row["is_dhr"] else "아니오",
+                    row["stage1_product_name"] or "",
+                    "예" if row["use_reactor"] else "아니오",
+                    "예" if row["is_derived"] else "아니오",
+                    (row["created_at"] or "")[:19],
+                ])
+
+            # 시트2 — 자재 구성 (자재행당 1행)
+            ws2 = wb.create_sheet("자재 구성")
+            headers2 = [
+                "레시피 ID", "반제품명", "순서", "자재명", "자재코드",
+                "배합량(g)", "비율(%)",
+            ]
+            ws2.append(headers2)
+            for c in range(1, len(headers2) + 1):
+                ws2.cell(row=1, column=c).font = Font(bold=True)
+            name_by_id = {row["id"]: (row["product_name"] or "") for row in recipe_rows}
+            for rid in recipe_ids:
+                items = item_map.get(rid, [])
+                weights = [
+                    (it.get("value_weight") if it.get("value_weight") is not None else 0.0)
+                    for it in items
+                ]
+                total = sum(weights)
+                for idx, it in enumerate(items, start=1):
+                    weight = it.get("value_weight")
+                    ratio = ""
+                    if weight is not None and total > 0:
+                        ratio = round(weight / total * 100, 4)
+                    ws2.append([
+                        rid,
+                        name_by_id.get(rid, ""),
+                        idx,
+                        it.get("material_name") or "",
+                        code_map.get(it.get("material_id"), ""),
+                        weight if weight is not None else (it.get("value_text") or ""),
+                        ratio,
+                    ])
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        filename = f"recipes_{_date.today().strftime('%Y%m%d')}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @router.get("/recipes")
     def list_recipes(
         status: str | None = None,

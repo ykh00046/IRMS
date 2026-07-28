@@ -374,4 +374,82 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    @mgr_router.get("/viscosity/export-all")
+    def viscosity_export_all(
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """전체 반제품의 점도 측정을 한 flat 시트로 내보낸다 — 책임자 전용.
+
+        판정(status)은 화면과 **반드시 같아야** 한다. GAP-2(제품별 export 주석 참고):
+        점도 기준이 연도별로 다르므로 전 연도를 한데 섞어 재계산하면 같은 측정이
+        화면=정상 / Excel=경고(이상)으로 갈린다. 따라서 list_products 로 전 반제품을
+        돌고, 각 반제품마다 available_years 의 각 연도별로 analyze_product(year=연도)
+        를 호출해 그 readings 에 붙은 status 를 그대로 가져온다(연도 없는 측정은
+        available_years 에 걸리지 않으므로 자연 누락 — 화면의 연도 탭 기준과 동일).
+        """
+        current_user = get_current_user(request, required=False)
+        workbook = Workbook()
+        ws = workbook.active
+        ws.title = "전체 측정"
+        ws.append([
+            "반제품 코드", "반제품명", "연도", "LOT", "측정일",
+            "점도", "판정", "반응기", "메모", "등록자", "등록일시",
+        ])
+        products = viscosity_service.list_products(connection)
+        row_count = 0
+        for product in products:
+            years = viscosity_service.available_years(connection, product["id"])
+            for yr in years:
+                analysis = viscosity_service.analyze_product(
+                    connection, product, year=yr
+                )
+                # analyze_product 의 item 에는 created_at 이 없다(서비스 공개 키 아님).
+                # 같은 연도 표본의 created_at 만 별도로 모아 매핑한다.
+                ids = [r["id"] for r in analysis["readings"]]
+                created_map: dict[int, str] = {}
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    crows = connection.execute(
+                        f"SELECT id, created_at FROM viscosity_readings WHERE id IN ({placeholders})",
+                        ids,
+                    ).fetchall()
+                    created_map = {int(r["id"]): (r["created_at"] or "") for r in crows}
+                for r in analysis["readings"]:
+                    ws.append([
+                        product["code"],
+                        product["name"],
+                        yr,
+                        _xlsx_safe(r["lot_no"]),
+                        r["measured_date"],
+                        r["viscosity"],
+                        _STATUS_LABEL.get(r["status"], ""),
+                        r["reactor"],
+                        _xlsx_safe(r["memo"] or ""),
+                        _xlsx_safe(r["created_by"] or ""),
+                        created_map.get(int(r["id"]), ""),
+                    ])
+                    row_count += 1
+
+        write_audit_log(
+            connection,
+            action="viscosity_exported_all",
+            actor=current_user,
+            target_type="viscosity_reading",
+            target_id=None,
+            target_label=f"전체 {row_count}건",
+            details={"row_count": row_count, "product_count": len(products)},
+        )
+        connection.commit()
+
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+        filename = f"viscosity_all_{date.today().strftime('%Y%m%d')}.xlsx"
+        return StreamingResponse(
+            buffer,
+            media_type=_XLSX_MEDIA_TYPE,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     return op_router, mgr_router
