@@ -669,3 +669,25 @@
   padding-left: 18px;
 }
 .blend-rescale-list li { margin: 2px 0; }
+
+/* 나눠 담기 버튼 — 비커 용량을 넘는 자재를 여러 번에 걸쳐 계량할 때.
+   ⚖ 와 달리 저울 연결과 무관하게 **항상** 보인다: 넘치느냐는 무게가 아니라 부피
+   문제라 자재마다 다르고(가벼운 분말은 10kg 도 넘치고 무거운 액체는 안 넘친다),
+   시스템이 "이건 나눠야 한다"를 g 기준으로 판단할 수 없다 — 작업자가 정한다. */
+.blend-split-btn {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  margin-left: 0.2rem; padding: 0 3px; min-width: 22px; height: 22px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: #b6bcc7; cursor: pointer;
+  font-size: 0.92rem; line-height: 1; vertical-align: middle;
+}
+.blend-split-btn:hover { color: var(--accent-primary); background: #eff6ff; }
+
+/* 나눠 담은 회차 내역 — 8000 + 8000 + 8000 */
+.add-weigh-portions {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}

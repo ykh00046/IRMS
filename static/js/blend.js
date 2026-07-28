@@ -496,6 +496,22 @@
     return btn;
   }
 
+  // 나눠 담기 — 비커 용량을 넘는 자재를 여러 번에 나눠 계량한다.
+  // 합산 기계장치(applyAddAmount)는 원래 '부족분 보충'용으로 이미 있었지만, 들어가는
+  // 문이 편차 경고밖에 없어서 계획된 분할이 매번 오류로 취급됐다(8kg 씩 3번이면 경고
+  // 2번). 여기서 먼저 선언하고 들어가면 그 경로를 오류 없이 그대로 쓴다.
+  function buildSplitButton(idx) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "blend-split-btn";
+    btn.dataset.idx = String(idx);
+    btn.tabIndex = -1;
+    btn.textContent = "⊞";
+    btn.title = "나눠 담기 — 여러 번에 걸쳐 계량";
+    btn.addEventListener("click", () => openAddWeighModal(idx, { split: true }));
+    return btn;
+  }
+
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
   let scaleEventLast = 0;
   let scaleEventSynced = false;
@@ -744,7 +760,7 @@
     state.toleranceG = (state.current.recipe && state.current.recipe.tolerance_g) || TOLERANCE_G;
     // value_weight(기준 자재 이론량 산출용)·is_anchor(기준 자재 여부) 보존.
     state.items = data.items.map((it) => ({
-      ...it, actual_amount: "", material_lot: "",
+      ...it, actual_amount: "", material_lot: "", portions: [],
     }));
     state.anchorIndex = findAnchorIndex(state.items);
     state.prevAnchorActual = "";
@@ -1097,6 +1113,7 @@
       const actualCell = tr.querySelector(".blend-actual");
       if (actualCell && actualCell.parentElement) {
         actualCell.parentElement.appendChild(buildScaleTargetButton(idx));
+        actualCell.parentElement.appendChild(buildSplitButton(idx));
       }
       body.appendChild(tr);
     });
@@ -1650,6 +1667,10 @@
     const v = rowVariance(it);
     const tol = state.toleranceG;
     if (Math.abs(v) > tol + 1e-9) {
+      // 나눠 담는 중인 행은 '아직 덜 넣었다'가 정상 상태다 — 계획된 분할을 매 회차
+      // 오류로 알리면 8kg 씩 3번 담을 때 경고가 2번 뜬다(실측). 부족 방향일 때만
+      // 침묵하고, 초과는 그대로 알린다(그건 분할 중에도 실제 문제다).
+      if (_addWeighIdx === i && v < 0) return true;
       const key = `${i}:${it.actual_amount}`;
       const now = Date.now();
       if (_lastVarWarn.key === key && now - _lastVarWarn.at < 1500) return true;
@@ -2204,6 +2225,8 @@
     const next = prev + add;
     // 저울 해상도(2자리)로 누계 — 3자리가 실제량에 스며드는 것을 막는다.
     it.actual_amount = String(Math.round(next * 100) / 100);
+    // 회차 기록 — 작업자가 "몇 번에 걸쳐 얼마씩 담았는지" 화면에서 확인할 수 있게.
+    if (Array.isArray(it.portions)) it.portions.push(Math.round(add * 100) / 100);
     it.manual = false;
     const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
     if (input) {
@@ -2246,16 +2269,24 @@
     return Math.max(0, Math.round((target - cur) * 100) / 100);
   }
 
-  function openAddWeighModal(idx) {
+  function openAddWeighModal(idx, options) {
     // 모달 요소가 없으면(옛 템플릿) 기존 인라인 추가 입력으로 폴백.
     if (!$("add-weigh-modal")) { openAddInline(idx); return; }
     const it = state.items[idx];
     if (!it) return;
+    // 부족 모달을 거쳐 들어왔으면 닫는다 — 안 닫으면 두 모달이 겹쳐 뜬다(실측).
+    closeShortageModal();
     state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
+    // 회차 기록은 이 행의 계량이 처음 시작될 때만 초기화한다(모달을 닫았다 다시 열어도 이어짐).
+    // 이미 한 번 담고 들어왔다면(직접 입력 8000 → 나눠 담기) 그 값이 1회차다.
+    if (!Array.isArray(it.portions)) {
+      const already = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
+      it.portions = already > 0 ? [already] : [];
+    }
     // 헤더 자재명 + 목표/현재/남은 렌더.
     // 자재명은 본문 전용 줄에 — 제목에 붙이면 긴 이름이 좁은 헤더에 감긴다(2026-07-23).
-    $("add-weigh-title").textContent = "추가 계량";
+    $("add-weigh-title").textContent = (options && options.split) ? "나눠 담기" : "추가 계량";
     const matEl = $("add-weigh-material");
     if (matEl) matEl.textContent = it.material_name;
     // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산).
@@ -2285,6 +2316,14 @@
     if (remEl) remEl.textContent = `+${fmt(remaining, dp())} g`;
     const subEl = $("add-weigh-sub");
     if (subEl) subEl.textContent = `목표 ${fmt(target, dp())} g · 현재 ${fmt(cur, dp())} g`;
+    const porEl = $("add-weigh-portions");
+    if (porEl) {
+      const list = Array.isArray(it.portions) ? it.portions : [];
+      porEl.hidden = list.length < 2;   // 한 번만 담았으면 '회차'라 할 게 없다
+      porEl.textContent = list.length < 2
+        ? ""
+        : `${list.length}회 담음 · ${list.map((p) => fmt(p, dp())).join(" + ")}`;
+    }
     // 자동 완료 — 남은 양이 허용 편차 이내면 성공 안내 후 닫고 다음 LOT 로.
     if (remaining <= state.toleranceG + 1e-9) {
       notify(`${it.material_name} 추가 계량 완료`, "success");
@@ -2330,7 +2369,9 @@
     state.addModeIdx = null;
     if (!keepValue && idx != null) {
       const it = state.items[idx];
-      if (it) it.actual_amount = "";
+      // 처음부터 다시 계량 — 누계와 함께 회차 기록도 버린다. 안 지우면 다음 분할에
+      // 이전 회차가 붙어 "8000 + 8000 + 5000" 처럼 넣지도 않은 양이 표시된다.
+      if (it) { it.actual_amount = ""; it.portions = []; }
       const actualInput = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
       if (actualInput) {
         actualInput.value = "";
