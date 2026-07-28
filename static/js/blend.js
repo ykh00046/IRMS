@@ -1678,6 +1678,9 @@
       notify(varianceWarnMessage(it, v, tol), "error");
       if (v > 0) {
         // +방향(초과 계량): 증량 제안 모달.
+        // 나눠 담는 중에 넘겨 담았다면 그 창을 먼저 닫는다 — 증량/폐기 모달이 그 위에
+        // 겹쳐 뜨면 어느 걸 조작해야 하는지 헷갈린다(실측). 담긴 값은 유지한 채 넘긴다.
+        if (_addWeighIdx === i) closeAddWeighModal(i, /*keepValue*/ true);
         offerRescale();
       } else if (state.addModeIdx !== i) {
         // −방향(부족): 부족량 모달로 '추가로 채우기(합산)' 또는 '다시 계량' 제안.
@@ -2334,8 +2337,12 @@
     // 다음이 몇 회차인지 입력칸에 — '계속 이어서 담는 중'이라는 신호.
     const inputEl = $("add-weigh-input");
     if (inputEl) inputEl.placeholder = `${list.length + 1}회차 담을 양 g`;
-    // 자동 완료 — 남은 양이 허용 편차 이내면 성공 안내 후 닫고 다음 LOT 로.
-    if (remaining <= state.toleranceG + 1e-9) {
+    // 자동 완료 — 목표에 '딱' 도달했을 때만. remaining 은 Math.max(0,…) 로 0 에서
+    // 잘리므로 초과(음수 남음)도 0 으로 보여, 그것만 보면 넘겨 담아도 완료로 오인한다
+    // ("완료" 성공 토스트 + "허용 편차 초과" 오류가 동시에 뜨던 버그). 실제 편차의
+    // 절댓값으로 판정해, 초과는 완료로 치지 않고 아래 warnIfVariance(초과 경고/증량)에 맡긴다.
+    const overshoot = cur - target;  // 양수=초과, 음수=미달
+    if (Math.abs(overshoot) <= state.toleranceG + 1e-9) {
       notify(`${it.material_name} 추가 계량 완료`, "success");
       finishAddWeighModal(idx);
     }
