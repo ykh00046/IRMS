@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260728a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260728c" />
     <style>
       /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
       .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
@@ -255,12 +255,13 @@
               <div class="add-weigh-material" id="add-weigh-material"></div>
               <div class="add-weigh-remaining" id="add-weigh-remaining">+0 g</div>
               <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
-              <!-- 나눠 담은 회차 — 몇 번에 얼마씩 넣었는지 보이지 않으면 작업자가
-                   중간에 세던 것을 잊는다(비커를 여러 번 오가는 동안). -->
-              <p class="add-weigh-portions" id="add-weigh-portions" hidden></p>
+              <!-- 담은 회차 — 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가
+                   1개일 때부터 쌓아 보여줘야 '이어서 하는 중'으로 읽힌다. 비커를
+                   여러 번 오가는 동안 몇 번 담았는지 세던 것을 잊기 쉽다. -->
+              <ol class="add-weigh-portions" id="add-weigh-portions" hidden></ol>
               <div class="add-weigh-input-row" id="add-weigh-input-row">
-                <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="추가분 g" autofocus />
-                <button class="btn" id="add-weigh-add-btn" type="button">더하기</button>
+                <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="담을 양 g" autofocus />
+                <button class="btn accent" id="add-weigh-add-btn" type="button">담기</button>
               </div>
               <p class="muted add-weigh-note">저울 PRINT 를 누르면 자동으로 합산됩니다.</p>
             </div>
@@ -409,7 +410,7 @@
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260724a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend.js?v=20260728a"></script>
+    <script src="/static/js/blend.js?v=20260728c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

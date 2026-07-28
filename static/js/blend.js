@@ -506,8 +506,8 @@
     btn.className = "blend-split-btn";
     btn.dataset.idx = String(idx);
     btn.tabIndex = -1;
-    btn.textContent = "⊞";
-    btn.title = "나눠 담기 — 여러 번에 걸쳐 계량";
+    btn.textContent = "⊞ 나눠 담기";
+    btn.title = "비커에 한 번에 안 들어갈 때 — 이 창에서 끝까지 나눠 담습니다";
     btn.addEventListener("click", () => openAddWeighModal(idx, { split: true }));
     return btn;
   }
@@ -2278,12 +2278,12 @@
     closeShortageModal();
     state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
-    // 회차 기록은 이 행의 계량이 처음 시작될 때만 초기화한다(모달을 닫았다 다시 열어도 이어짐).
-    // 이미 한 번 담고 들어왔다면(직접 입력 8000 → 나눠 담기) 그 값이 1회차다.
-    if (!Array.isArray(it.portions)) {
-      const already = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
-      it.portions = already > 0 ? [already] : [];
-    }
+    // 이미 담긴 양이 있는데 회차 기록이 비어 있으면 그 값이 1회차다. 안 맞춰두면
+    // "현재 9000 g"인데 목록은 비고 다음이 '1회차'로 안내돼 앞뒤가 어긋난다.
+    // (Array 여부만 보면 '다시 계량'이 비워둔 [] 를 놓친다 — 실측으로 잡힘)
+    const already = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
+    if (!Array.isArray(it.portions)) it.portions = [];
+    if (it.portions.length === 0 && already > 0) it.portions = [already];
     // 헤더 자재명 + 목표/현재/남은 렌더.
     // 자재명은 본문 전용 줄에 — 제목에 붙이면 긴 이름이 좁은 헤더에 감긴다(2026-07-23).
     $("add-weigh-title").textContent = (options && options.split) ? "나눠 담기" : "추가 계량";
@@ -2316,14 +2316,24 @@
     if (remEl) remEl.textContent = `+${fmt(remaining, dp())} g`;
     const subEl = $("add-weigh-sub");
     if (subEl) subEl.textContent = `목표 ${fmt(target, dp())} g · 현재 ${fmt(cur, dp())} g`;
+    // 담은 회차를 1회차부터 쌓아 보여준다 — 이 창 안에서 한 자재를 끝낸다는 감각을
+    // 주려면 진행 이력이 남아 있어야 한다. 마지막 회차를 강조해 방금 넣은 것을 표시.
     const porEl = $("add-weigh-portions");
+    const list = Array.isArray(it.portions) ? it.portions : [];
     if (porEl) {
-      const list = Array.isArray(it.portions) ? it.portions : [];
-      porEl.hidden = list.length < 2;   // 한 번만 담았으면 '회차'라 할 게 없다
-      porEl.textContent = list.length < 2
-        ? ""
-        : `${list.length}회 담음 · ${list.map((p) => fmt(p, dp())).join(" + ")}`;
+      porEl.hidden = list.length === 0;
+      porEl.innerHTML = list
+        .map((p, n) => {
+          const last = n === list.length - 1 ? " is-last" : "";
+          return `<li class="add-weigh-portion${last}">`
+            + `<span class="add-weigh-portion-no">${n + 1}회차</span>`
+            + `<span class="add-weigh-portion-amt">${fmt(p, dp())} g</span></li>`;
+        })
+        .join("");
     }
+    // 다음이 몇 회차인지 입력칸에 — '계속 이어서 담는 중'이라는 신호.
+    const inputEl = $("add-weigh-input");
+    if (inputEl) inputEl.placeholder = `${list.length + 1}회차 담을 양 g`;
     // 자동 완료 — 남은 양이 허용 편차 이내면 성공 안내 후 닫고 다음 LOT 로.
     if (remaining <= state.toleranceG + 1e-9) {
       notify(`${it.material_name} 추가 계량 완료`, "success");

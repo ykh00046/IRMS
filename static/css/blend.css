@@ -163,7 +163,10 @@
 }
 
 /* 추가 계량 창 입력·버튼 확대 — 전용 흐름이라 크게(장갑 낀 손·거리 가독). */
-#add-weigh-modal .add-weigh-input-row .input { font-size: 1.25rem; padding: 0.55rem 0.8rem; }
+/* '3회차 담을 양 g' 안내가 잘리지 않을 만큼 — 좁으면 다음이 몇 회차인지 안 읽힌다. */
+#add-weigh-modal .add-weigh-input-row .input {
+  font-size: 1.25rem; padding: 0.55rem 0.8rem; min-width: 15rem;
+}
 #add-weigh-modal .add-weigh-input-row .btn,
 #add-weigh-modal .ss-modal-footer .btn { font-size: 1.05rem; padding: 0.55rem 1.2rem; }
 #add-weigh-modal .add-weigh-sub { font-size: 1.05rem; }
@@ -673,21 +676,42 @@
 /* 나눠 담기 버튼 — 비커 용량을 넘는 자재를 여러 번에 걸쳐 계량할 때.
    ⚖ 와 달리 저울 연결과 무관하게 **항상** 보인다: 넘치느냐는 무게가 아니라 부피
    문제라 자재마다 다르고(가벼운 분말은 10kg 도 넘치고 무거운 액체는 안 넘친다),
-   시스템이 "이건 나눠야 한다"를 g 기준으로 판단할 수 없다 — 작업자가 정한다. */
+   시스템이 "이건 나눠야 한다"를 g 기준으로 판단할 수 없다 — 작업자가 정한다.
+   아이콘만 두면 비커가 찬 순간에 찾지 못한다. 글자를 붙여 보이는 동작으로 만든다. */
 .blend-split-btn {
   display: inline-flex;
-  align-items: center; justify-content: center;
-  margin-left: 0.2rem; padding: 0 3px; min-width: 22px; height: 22px;
-  border: 1px solid transparent; border-radius: 6px;
-  background: none; color: #b6bcc7; cursor: pointer;
-  font-size: 0.92rem; line-height: 1; vertical-align: middle;
+  align-items: center; gap: 3px;
+  margin-left: 0.35rem; padding: 2px 7px; height: 22px;
+  border: 1px solid var(--border-subtle); border-radius: 6px;
+  background: var(--bg-surface-100); color: var(--text-secondary); cursor: pointer;
+  font-size: 0.72rem; font-weight: 600; line-height: 1; white-space: nowrap;
+  vertical-align: middle;
 }
-.blend-split-btn:hover { color: var(--accent-primary); background: #eff6ff; }
+.blend-split-btn:hover {
+  color: var(--accent-primary); border-color: var(--accent-primary);
+  background: #eff6ff;
+}
 
-/* 나눠 담은 회차 내역 — 8000 + 8000 + 8000 */
+/* 담은 회차 목록 — 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가 쌓여 보여야
+   '이어서 하는 중'으로 읽히고, 비커를 오가다 몇 번 담았는지 잊지 않는다. */
 .add-weigh-portions {
-  margin: 0.35rem 0 0;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  margin: 0.6rem 0 0;
+  padding: 0.4rem 0.6rem;
+  list-style: none;
+  max-height: 7.5rem;
+  overflow-y: auto;
+  background: var(--bg-surface-200);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
 }
+.add-weigh-portions[hidden] { display: none; }
+.add-weigh-portion {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.75rem; padding: 2px 0;
+  font-size: 0.82rem; color: var(--text-secondary);
+}
+.add-weigh-portion-no { font-weight: 600; }
+.add-weigh-portion-amt { font-family: var(--font-mono); }
+/* 방금 담은 회차 — 어디까지 했는지 눈이 바로 찾게 */
+.add-weigh-portion.is-last { color: var(--text-primary); }
+.add-weigh-portion.is-last .add-weigh-portion-amt { font-weight: 700; }
