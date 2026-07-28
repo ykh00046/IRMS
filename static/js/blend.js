@@ -1450,9 +1450,14 @@
       return;
     }
     // 미통과 — 경고 표시(값은 지우지 않음). 모달로 알림.
+    // 음수 재고는 소진과 다르다 — ERP 전표 지연/누락 신호(실물은 돌고 있을 확률이
+    // 높다). 실제 값을 보여줘야 "재고 0"이라는 거짓 안내가 되지 않는다.
+    const stock = Number(data.stock);
     const reason =
       data.source === "erp"
-        ? "재고가 소진된 LOT 입니다(재고 0)."
+        ? (stock < 0
+            ? `ERP 재고가 마이너스인 LOT 입니다(재고 ${stock}). 전산 반영 지연일 수 있으니 실물을 확인하세요.`
+            : "재고가 소진된 LOT 입니다(재고 0).")
         : "ERP 원재료 목록에 없는 LOT 입니다.";
     setErpLotWarn(input, true, reason);
     openErpLotModal(name, code, lot, reason, input);

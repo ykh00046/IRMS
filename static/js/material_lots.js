@@ -31,13 +31,18 @@ document.addEventListener("DOMContentLoaded", () => {
     return Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
   }
 
-  // 상태 셀 — valid(사용 가능) / 엑셀 재고 0(소진) / 수동
+  // 상태 셀 — valid(사용 가능) / 엑셀 재고 0(소진) / 재고 음수(재고 이상) / 수동.
+  // 음수는 소진과 다르다: ERP 전표 지연·누락 신호라(실물은 돌고 있을 확률이 높다)
+  // '소진'으로 뭉뚱그리면 전산 정리 대상이 눈에 안 띈다.
   function statusCell(lot) {
     if (lot.source === "manual") {
       return '<span class="mlot-status-cell mlot-status-manual">수동</span>';
     }
     if (lot.valid) {
       return '<span class="mlot-status-cell mlot-status-valid">사용 가능</span>';
+    }
+    if (Number(lot.stock) < 0) {
+      return '<span class="mlot-status-cell mlot-status-spent" title="ERP 재고가 마이너스 — 전표 반영 지연·누락일 수 있습니다">재고 이상(−)</span>';
     }
     return '<span class="mlot-status-cell mlot-status-spent">소진</span>';
   }
