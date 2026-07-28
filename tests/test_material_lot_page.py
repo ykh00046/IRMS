@@ -51,11 +51,17 @@ def test_sidebar_has_material_lots_link_on_other_page():
 
 
 def test_material_lots_page_loads_script_with_version():
-    """material_lots.js 가 ?v=20260728a 로 로드된다."""
+    """material_lots.js 가 ?v= 캐시버스팅과 함께 로드된다.
+
+    특정 버전 값을 못박으면 버전을 올릴 때마다 테스트가 깨진다 — 검사할 것은
+    '캐시버스팅이 걸려 있다'는 사실이지 오늘의 버전 문자열이 아니다.
+    """
+    import re
+
     client = _client()
     res = client.get("/material-lots")
     assert res.status_code == 200
-    assert "/static/js/material_lots.js?v=20260728a" in res.text
+    assert re.search(r"/static/js/material_lots\.js\?v=[0-9a-z]+", res.text)
 
 
 def test_material_lots_page_shows_add_form_only_for_manager():
