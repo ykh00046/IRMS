@@ -11,6 +11,18 @@
 {% block content %}
         <section class="panel visc-toolbar-panel">
           <div class="visc-toolbar">
+            <!-- 분류로 먼저 좁힌 뒤 반제품 — 배합 화면과 같은 순서·같은 목록.
+                 분류는 레시피 관리에서 지정한 값을 그대로 읽는다(별도 관리 없음). -->
+            <div class="visc-product-picker">
+              <label class="filter-label" for="visc-cat-select">분류</label>
+              <select class="input" id="visc-cat-select">
+                <option value="">전체</option>
+                <option value="약품">약품</option>
+                <option value="합성">합성</option>
+                <option value="잉크">잉크</option>
+                <option value="용수">용수</option>
+              </select>
+            </div>
             <div class="visc-product-picker">
               <label class="filter-label" for="visc-product-select">반제품</label>
               <select class="input" id="visc-product-select"></select>
@@ -248,5 +260,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260726a"></script>
-    <script src="/static/js/viscosity.js?v=20260726c"></script>
+    <script src="/static/js/viscosity.js?v=20260728a"></script>
 {% endblock %}

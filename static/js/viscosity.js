@@ -128,12 +128,17 @@
     ph.value = "";
     ph.textContent = "— 반제품 선택 —";
     sel.appendChild(ph);
-    state.products.forEach((product) => {
-      const opt = document.createElement("option");
-      opt.value = String(product.id);
-      opt.textContent = productLabel(product);
-      sel.appendChild(opt);
-    });
+    // 분류로 좁히기 — 반제품이 늘어나면 한 목록에서 찾기 어렵다(배합 화면과 같은 방식).
+    // 분류가 지정되지 않은 반제품은 '전체'에서만 보인다.
+    const cat = ($("visc-cat-select") && $("visc-cat-select").value) || "";
+    state.products
+      .filter((product) => !cat || product.category === cat)
+      .forEach((product) => {
+        const opt = document.createElement("option");
+        opt.value = String(product.id);
+        opt.textContent = productLabel(product);
+        sel.appendChild(opt);
+      });
     sel.value = state.currentId ? String(state.currentId) : "";
     if (sel._pickerBound) return;
     sel._pickerBound = true;
@@ -880,6 +885,18 @@
     $("visc-refresh").addEventListener("click", () => {
       loadOverview().catch((e) =>
         IRMS.notify(`새로고침 실패: ${e.message || e}`, "error"));
+    });
+    // 분류를 바꾸면 반제품 목록만 다시 그린다. 고른 반제품이 새 분류에 없으면
+    // 선택을 비우고 빈 안내 상태로 — 목록에 없는 반제품의 숫자가 남아 있으면
+    // 지금 보고 있는 게 무엇인지 어긋난다.
+    $("visc-cat-select").addEventListener("change", () => {
+      const keep = state.currentId;
+      renderProductSelect();
+      const sel = $("visc-product-select");
+      if (keep && sel && !Array.from(sel.options).some((o) => o.value === String(keep))) {
+        sel.value = "";
+        showEmptyState();
+      }
     });
     $("visc-blend-filter").addEventListener("input", renderBlendRecords);
     $("visc-open-only").addEventListener("change", renderBlendRecords);

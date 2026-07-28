@@ -161,6 +161,31 @@ def _recipe_use_reactor(connection: sqlite3.Connection, code: Any, name: Any) ->
     return bool(row["use_reactor"]) if row else None
 
 
+def _recipe_category(connection: sqlite3.Connection, code: Any, name: Any) -> str | None:
+    """반제품의 분류(약품/합성/잉크/용수)를 레시피에서 가져온다.
+
+    viscosity_products 에는 분류 열이 없고, 분류는 레시피 관리에서 지정한다
+    (recipes.category). 여기에 열을 하나 더 만들면 같은 사실을 두 곳에서 관리하게 되고
+    관리 화면에서 분류를 바꿔도 점도 화면이 옛 값을 계속 보여준다 — 원본에서 읽는다.
+    use_reactor 와 같은 매칭 규칙(code 또는 name = product_name, 최신 completed).
+    """
+    candidates = [v for v in (code, name) if v not in (None, "")]
+    if not candidates:
+        return None
+    placeholders = " OR ".join("product_name = ?" for _ in candidates)
+    try:
+        row = connection.execute(
+            f"SELECT category FROM recipes "
+            f"WHERE ({placeholders}) AND status = 'completed' "
+            f"ORDER BY id DESC LIMIT 1",
+            candidates,
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # recipes 테이블/열이 없는 스키마(단위 테스트) — 분류 없음으로 본다.
+        return None
+    return (row["category"] or None) if row else None
+
+
 def _serialize_product(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     # use_reactor 소유 이전: 매칭되는 최신 completed 레시피 값이 우선, 없으면 구 열(폴백).
     recipe_use = _recipe_use_reactor(connection, row["code"], row["name"])
@@ -179,6 +204,7 @@ def _serialize_product(connection: sqlite3.Connection, row: sqlite3.Row) -> dict
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "has_spec": row["lower_limit"] is not None or row["upper_limit"] is not None,
+        "category": _recipe_category(connection, row["code"], row["name"]),
     }
 
 
@@ -592,6 +618,7 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
             "name": product["name"],
             "is_active": product["is_active"],
             "has_spec": product["has_spec"],
+            "category": product.get("category"),   # 반제품 선택 좁히기용(배합 화면과 동일 분류)
             "year": latest_year,
             "count": analysis["stats"]["n"],
             "mean": analysis["stats"]["mean"],
