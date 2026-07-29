@@ -136,12 +136,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function loadProducts() {
+    try {
+      const data = await request("/blend/product-usage");
+      const sel = $("status-rec-product");
+      const names = (data.items || [])
+        .map((it) => it.product_name)
+        .filter((n) => n);
+      names.sort((a, b) => String(a).localeCompare(String(b), "ko"));
+      names.forEach((name) => {
+        const o = document.createElement("option");
+        o.value = name;
+        o.textContent = name;
+        sel.appendChild(o);
+      });
+    } catch (_e) {
+      /* 제품 목록 실패는 조회에 영향 없음 (작업자와 동일 fail-soft) */
+    }
+  }
+
   async function loadRecords() {
     const body = $("status-rec-body");
     const query = {
       start_date: $("status-rec-from").value || undefined,
       end_date: $("status-rec-to").value || undefined,
       worker: $("status-rec-worker").value || undefined,
+      product: $("status-rec-product").value || undefined,
       search: $("status-rec-search").value.trim() || undefined,
       include_canceled: ($("status-rec-canceled") && $("status-rec-canceled").checked) ? 1 : undefined,
     };
@@ -621,5 +641,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (urlSearch) $("status-rec-search").value = urlSearch;
 
   loadWorkers();
+  loadProducts();
   loadRecords();
 });

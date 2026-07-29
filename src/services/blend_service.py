@@ -1567,6 +1567,7 @@ def list_blend_records(
     start_date: str | None = None,
     end_date: str | None = None,
     worker: str | None = None,
+    product: str | None = None,
     search: str | None = None,
     limit: int = 200,
     include_canceled: bool = False,
@@ -1585,6 +1586,10 @@ def list_blend_records(
     if worker:
         clauses.append("worker = ?")
         params.append(worker)
+    if product:
+        # 제품별 필터 — 정확 일치(검색용 부분일치와 별개). 특정 제품의 여러 배치를 한 화면에서.
+        clauses.append("product_name = ?")
+        params.append(product)
     if search:
         # 자재 LOT 역추적 확장 — 검색어가 어떤 상세 행의 material_lot 에 걸려도
         # 그 배합 기록을 반환(추적성). 동일 검색어 토큰을 LIKE 파라미터로 재사용.
@@ -1619,6 +1624,7 @@ def count_blend_records(
     start_date: str | None = None,
     end_date: str | None = None,
     worker: str | None = None,
+    product: str | None = None,
     search: str | None = None,
     include_canceled: bool = False,
 ) -> int:
@@ -1638,6 +1644,10 @@ def count_blend_records(
     if worker:
         clauses.append("worker = ?")
         params.append(worker)
+    if product:
+        # 제품별 필터 — 정확 일치. list_blend_records 와 조건 일치.
+        clauses.append("product_name = ?")
+        params.append(product)
     if search:
         clauses.append(
             "(product_lot LIKE ? OR product_name LIKE ? OR ink_name LIKE ? "

@@ -126,72 +126,9 @@
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-head-row">
-            <div>
-              <h3 class="panel-title">배치 상세</h3>
-              <p class="panel-subtitle">제품을 선택하면 해당 제품의 배합 기록을 자재 단위로 보여줍니다.</p>
-            </div>
-            <div class="button-row">
-              <button id="insight-detail-export" type="button" class="btn">Excel 다운로드</button>
-            </div>
-          </div>
-          <div class="insight-filter-grid">
-            <div class="filter-group">
-              <label class="filter-label" for="insight-product">제품 선택</label>
-              <select id="insight-product" class="input">
-                <option value="">전체 제품</option>
-              </select>
-            </div>
-            <div class="button-row" style="margin-left: auto; align-items: center;">
-              <span id="insight-detail-summary" class="muted small"></span>
-            </div>
-          </div>
-          <p id="insight-detail-note" class="trunc-note" hidden></p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>작업일</th>
-                  <th>제품LOT</th>
-                  <th>자재</th>
-                  <th>자재LOT</th>
-                  <th class="num">비율(%)</th>
-                  <th class="num">이론량(g)</th>
-                  <th class="num">실제량(g)</th>
-                  <th class="num">편차(g)</th>
-                </tr>
-              </thead>
-              <tbody id="insight-detail-body">
-                <tr><td colspan="8" class="muted">조회하세요.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-title">자재별 사용량 (실제 기준 · 많은 순)</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>자재</th>
-                  <th class="num">총 사용량(g)</th>
-                  <th class="num">비중(%)</th>
-                  <th class="num">이론(g)</th>
-                  <th class="num">사용 건수</th>
-                </tr>
-              </thead>
-              <tbody id="insight-body">
-                <tr><td colspan="6" class="muted">조회하세요.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260726a"></script>
+    <script src="/static/js/insight.js?v=20260729a"></script>
 {% endblock %}

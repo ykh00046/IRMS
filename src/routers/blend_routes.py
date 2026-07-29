@@ -378,6 +378,7 @@ def build_router() -> APIRouter:
         start_date: str | None = None,
         end_date: str | None = None,
         worker: str | None = None,
+        product: str | None = None,
         search: str | None = None,
         limit: int = Query(default=500, ge=1, le=1000),
         include_canceled: bool = Query(default=False),
@@ -391,6 +392,7 @@ def build_router() -> APIRouter:
             start_date=start_date,
             end_date=end_date,
             worker=worker,
+            product=product,
             search=search,
             limit=limit,
             include_canceled=include_canceled,
@@ -402,6 +404,7 @@ def build_router() -> APIRouter:
             start_date=start_date,
             end_date=end_date,
             worker=worker,
+            product=product,
             search=search,
             include_canceled=include_canceled,
         )
