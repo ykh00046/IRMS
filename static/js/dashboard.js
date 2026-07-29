@@ -281,7 +281,8 @@ document.addEventListener("DOMContentLoaded", () => {
             <li class="rescale-item">
               <span class="rescale-item-info">
                 <span class="rescale-kind${isManual ? " is-manual" : ""}">${tag}</span>
-                <b>${IRMS.escapeHtml(r.product_lot || "-")}</b>
+                <a class="rescale-item-link" href="/status?search=${encodeURIComponent(r.product_lot || "")}"
+                   title="배합 기록에서 이 LOT 열어보기"><b>${IRMS.escapeHtml(r.product_lot || "-")}</b></a>
                 <span class="muted">·</span> ${IRMS.escapeHtml(r.product_name || "-")}
                 <span class="muted">·</span> ${IRMS.escapeHtml(r.worker || "-")}
                 <span class="muted">·</span> ${IRMS.escapeHtml(date)}${reason}

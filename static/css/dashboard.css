@@ -90,6 +90,9 @@
   font-size: 0.85rem;
 }
 .rescale-item-info { min-width: 0; overflow-wrap: anywhere; }
+/* LOT 는 기록으로 가는 링크 — [확인]만 있으면 무엇을 승인하는지 안 보고 누르게 된다. */
+.rescale-item-link { color: var(--accent-primary, #2563eb); text-decoration: none; }
+.rescale-item-link:hover { text-decoration: underline; }
 .rescale-empty { padding: 6px 2px; font-size: 0.85rem; }
 /* 미확인 종류 태그 — 증량(오렌지) / 수기 입력(슬레이트). 한 목록에 섞여 나오므로 구분. */
 .rescale-kind {
