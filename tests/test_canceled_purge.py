@@ -141,9 +141,12 @@ def test_purge_disabled_with_zero_retention():
     assert client.get(f"/api/blend/records/{rec_id}").status_code == 200
 
 
-def test_root_redirects_to_dashboard():
-    """'/' 는 대시보드로 — 구 홈 런처는 은퇴(개편 2026-07-29)."""
+def test_root_is_the_home_launcher():
+    """'/' 는 근태/반제품 제조 게이트(홈 런처) — 제조 타일은 대시보드로 간다."""
     client, _cfg = _client()
-    res = client.get("/", follow_redirects=False)
-    assert res.status_code == 303
-    assert res.headers["location"] == "/dashboard"
+    res = client.get("/")
+    assert res.status_code == 200
+    body = res.text
+    assert 'href="/attendance"' in body        # 근태 타일
+    assert 'href="/dashboard"' in body         # 반제품 제조 → 대시보드
+    assert 'href="/blend"' not in body         # 예전 제조 목적지가 아님

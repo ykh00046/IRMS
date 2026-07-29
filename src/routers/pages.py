@@ -128,12 +128,14 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     def entry_page(request: Request) -> Response:
-        # 첫 진입 = 대시보드(개편 2026-07-29 — 구 홈 런처 entry.html 은 은퇴).
-        # 공용 PC 정책은 유지: 처음 화면으로 돌아오면 근태·작업자 세션을 비워
-        # 다음 사용자에게 이전 사용자의 상태가 노출되지 않게 한다.
+        # 홈 런처 = 근태 / 반제품 제조 게이트. '반제품 제조 관리' 타일은 대시보드로
+        # 들어간다(개편 2026-07-29 — 제조 쪽 첫 화면을 대시보드로). 공용 PC 정책 유지:
+        # 홈으로 돌아오면 근태·작업자 세션을 비워 다음 사용자에게 이전 상태가 안 남게.
         att_logout_session(request)
         logout_worker_session(request)
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return _render(templates, request, "entry.html", {
+            "current_user": get_current_user(request, required=False),
+        })
 
     @router.get("/login", response_class=HTMLResponse)
     def legacy_login_page(request: Request, next: str | None = None) -> Response:
