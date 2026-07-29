@@ -77,6 +77,10 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
+  // 페이지네이션 — 운영 엑셀은 LOT 700행 이상. 한 번에 다 그리지 않는다(QA 2026-07-29).
+  const PAGE_SIZE = 50;
+  let page = 1;
+
   function renderLots() {
     const body = $("mlot-body");
     const empty = $("mlot-empty");
@@ -97,16 +101,35 @@ document.addEventListener("DOMContentLoaded", () => {
         ))
       : flat;
 
+    const pager = $("mlot-pager");
     if (!filtered.length) {
       body.innerHTML = "";
       empty.hidden = false;
+      if (pager) pager.hidden = true;
       return;
     }
     empty.hidden = true;
-    body.innerHTML = filtered.map(({ item, lot }) => rowHtml(item, lot)).join("");
+    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const slice = filtered.slice(start, start + PAGE_SIZE);
+    body.innerHTML = slice.map(({ item, lot }) => rowHtml(item, lot)).join("");
     Array.from(body.querySelectorAll(".mlot-del")).forEach((btn) => {
       btn.addEventListener("click", () => onDelete(btn));
     });
+    if (pager) {
+      pager.hidden = pages <= 1;
+      const info = $("mlot-page-info");
+      if (info) {
+        info.textContent =
+          `${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)} / 전체 ${filtered.length}건 (${page}/${pages}쪽)`;
+      }
+      const prev = $("mlot-page-prev");
+      const next = $("mlot-page-next");
+      if (prev) prev.disabled = page <= 1;
+      if (next) next.disabled = page >= pages;
+    }
   }
 
   function renderSummary(data) {
@@ -250,7 +273,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 초기 바인딩
-  if ($("mlot-search")) $("mlot-search").addEventListener("input", renderLots);
+  if ($("mlot-search")) $("mlot-search").addEventListener("input", () => { page = 1; renderLots(); });
+  const _prev = $("mlot-page-prev");
+  const _next = $("mlot-page-next");
+  if (_prev) _prev.addEventListener("click", () => { page -= 1; renderLots(); });
+  if (_next) _next.addEventListener("click", () => { page += 1; renderLots(); });
   if ($("mlot-refresh")) $("mlot-refresh").addEventListener("click", loadStatus);
   const addForm = $("mlot-add-form");
   if (addForm) addForm.addEventListener("submit", onAdd);

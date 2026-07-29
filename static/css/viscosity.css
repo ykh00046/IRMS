@@ -19,22 +19,23 @@ body {
 }
 .visc-cards { margin-bottom: 0; }
 
-.visc-product-picker,
+.visc-toolbar-filters,
 .visc-toolbar-actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.visc-product-picker .filter-label,
+.visc-toolbar-filters .filter-label,
 .visc-toolbar-actions .filter-label {
   margin: 0;
   white-space: nowrap;
 }
 
-.visc-product-picker .input {
-  min-width: 260px;
-}
+/* 공용 .input 은 width:100% — 툴바 셀렉트는 내용 크기로(안 그러면 한 줄을 통째로 차지). */
+.visc-cat-select { width: auto; min-width: 7rem; }
+.visc-product-select { width: auto; min-width: 260px; max-width: 420px; }
 
 .visc-year-select {
   width: auto;
@@ -409,7 +410,7 @@ body {
 @media (max-width: 900px) {
   .visc-toolbar,
   .visc-toolbar-actions,
-  .visc-product-picker,
+  .visc-toolbar-filters,
   .visc-register-head,
   .visc-record-topline,
   .visc-record-filters {
@@ -417,7 +418,7 @@ body {
     flex-direction: column;
   }
 
-  .visc-product-picker .input,
+  .visc-toolbar-filters .input,
   .visc-record-filters .input,
   .visc-toolbar-actions .input,
   .visc-toolbar-actions .btn {

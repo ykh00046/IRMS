@@ -5,36 +5,37 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260726b" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260729b" />
 {% endblock %}
 
 {% block content %}
         <section class="panel visc-toolbar-panel">
           <div class="visc-toolbar">
-            <!-- 분류로 먼저 좁힌 뒤 반제품 — 배합 화면과 같은 순서·같은 목록.
+            <!-- 왼쪽 = 조회 조건(고르는 순서대로: 분류 → 반제품 → 연도 → 반응기),
+                 오른쪽 = 동작 버튼. 예전에는 분류·반제품이 툴바 양 끝으로 갈라지고
+                 연도가 버튼들 사이에 끼어 있었다(현장 QA 2026-07-29).
                  분류는 레시피 관리에서 지정한 값을 그대로 읽는다(별도 관리 없음). -->
-            <div class="visc-product-picker">
+            <div class="visc-toolbar-filters">
               <label class="filter-label" for="visc-cat-select">분류</label>
-              <select class="input" id="visc-cat-select">
+              <select class="input visc-cat-select" id="visc-cat-select">
                 <option value="">전체</option>
                 <option value="약품">약품</option>
                 <option value="합성">합성</option>
                 <option value="잉크">잉크</option>
                 <option value="용수">용수</option>
               </select>
-            </div>
-            <div class="visc-product-picker">
               <label class="filter-label" for="visc-product-select">반제품</label>
-              <select class="input" id="visc-product-select"></select>
-            </div>
-            <div class="visc-toolbar-actions">
+              <select class="input visc-product-select" id="visc-product-select"></select>
               <label class="filter-label" for="visc-year">연도</label>
               <select class="input visc-year-select" id="visc-year"></select>
               <label class="filter-label" for="visc-reactor" id="visc-reactor-label" hidden>반응기</label>
               <select class="input visc-year-select" id="visc-reactor" hidden></select>
+            </div>
+            <div class="visc-toolbar-actions">
               {% if can_manage %}
               <button id="visc-settings-btn" class="btn btn-sm" type="button">반제품 설정</button>
-              <button id="visc-export-btn" class="btn btn-sm" type="button">Excel 내보내기</button>
+              <!-- Excel 둘의 구분이 이름에 드러나야 한다 — '내보내기'만으로는 범위를 알 수 없다. -->
+              <button id="visc-export-btn" class="btn btn-sm" type="button">이 반제품 Excel</button>
               <button id="visc-export-all-btn" class="btn btn-sm" type="button">전체 Excel</button>
               {% endif %}
               <button id="visc-refresh" class="btn btn-sm" type="button">새로고침</button>

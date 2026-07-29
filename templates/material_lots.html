@@ -48,6 +48,9 @@
     text-align: center;
     color: #64748b;
   }
+      .mlot-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-top: 0.7rem; }
+      .mlot-pager[hidden] { display: none; }
+      .mlot-pager-info { font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 </style>
 {% endblock %}
 
@@ -80,6 +83,31 @@
           </div>
         </section>
 
+        {% if can_manage %}
+        <section class="panel">
+          <!-- 표 위에 둔다 — 맨 아래에 있으면 목록이 길어질수록 추가하러 내려가야 한다(현장 QA 2026-07-29). -->
+          <h3 class="panel-title">수동 LOT 추가</h3>
+          <p class="muted small">ERP 엑셀에 없거나 소진된 LOT 를 책임자가 직접 유효로 등록합니다. 배합 화면에서 즉석 인증으로 추가할 수도 있습니다.</p>
+          <form id="mlot-add-form" class="mlot-add-form" autocomplete="off">
+            <div>
+              <label class="filter-label" for="mlot-add-code">품목코드</label>
+              <input class="input" id="mlot-add-code" list="mlot-code-candidates" required placeholder="예: AC0001" />
+              <datalist id="mlot-code-candidates"></datalist>
+            </div>
+            <div>
+              <label class="filter-label" for="mlot-add-lot">LOT</label>
+              <input class="input" id="mlot-add-lot" required placeholder="LOT 번호" />
+            </div>
+            <div>
+              <label class="filter-label" for="mlot-add-note">메모</label>
+              <input class="input" id="mlot-add-note" placeholder="추가 사유 등(선택)" />
+            </div>
+            <button class="btn accent" id="mlot-add-btn" type="submit">추가</button>
+          </form>
+          <p class="login-error" id="mlot-add-error" hidden></p>
+        </section>
+        {% endif %}
+
         <section class="panel" id="mlot-warn-panel" hidden>
           <div class="mlot-warn" id="mlot-warn-text"></div>
         </section>
@@ -102,33 +130,17 @@
             </table>
           </div>
           <p class="mlot-empty" id="mlot-empty" hidden>조건에 맞는 LOT 가 없습니다.</p>
+          <!-- 페이지 — 운영 엑셀은 LOT 가 700행이 넘는다. 한 번에 다 그리면 무겁고
+               스크롤만 길어진다(현장 QA 2026-07-29). 검색하면 1페이지로 돌아간다. -->
+          <div class="mlot-pager" id="mlot-pager" hidden>
+            <button class="btn btn-sm" id="mlot-page-prev" type="button">이전</button>
+            <span class="mlot-pager-info" id="mlot-page-info">-</span>
+            <button class="btn btn-sm" id="mlot-page-next" type="button">다음</button>
+          </div>
         </section>
 
-        {% if can_manage %}
-        <section class="panel">
-          <h3 class="panel-title">수동 LOT 추가</h3>
-          <p class="muted small">ERP 엑셀에 없거나 소진된 LOT 를 책임자가 직접 유효로 등록합니다. 배합 화면에서 즉석 인증으로 추가할 수도 있습니다.</p>
-          <form id="mlot-add-form" class="mlot-add-form" autocomplete="off">
-            <div>
-              <label class="filter-label" for="mlot-add-code">품목코드</label>
-              <input class="input" id="mlot-add-code" list="mlot-code-candidates" required placeholder="예: AC0001" />
-              <datalist id="mlot-code-candidates"></datalist>
-            </div>
-            <div>
-              <label class="filter-label" for="mlot-add-lot">LOT</label>
-              <input class="input" id="mlot-add-lot" required placeholder="LOT 번호" />
-            </div>
-            <div>
-              <label class="filter-label" for="mlot-add-note">메모</label>
-              <input class="input" id="mlot-add-note" placeholder="추가 사유 등(선택)" />
-            </div>
-            <button class="btn accent" id="mlot-add-btn" type="submit">추가</button>
-          </form>
-          <p class="login-error" id="mlot-add-error" hidden></p>
-        </section>
-        {% endif %}
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/material_lots.js?v=20260728b"></script>
+    <script src="/static/js/material_lots.js?v=20260729a"></script>
 {% endblock %}
