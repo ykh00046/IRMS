@@ -739,3 +739,39 @@ def test_direct_registration_stores_the_date_used_for_judgement(monkeypatch):
     assert row is not None
     # 판정에 쓴 날짜(라우트가 정한 값)가 그대로 저장돼야 한다 — 서비스가 다시 폴백하면 안 된다
     assert row["measured_date"] == "2026-12-31"
+
+
+# ── 사용한 PB 연계 (바인더 ↔ 원료 PB 점도) ──────────────────────
+def test_source_pb_viscosity_links_binder_to_pb():
+    """바인더의 material_lot(사용한PB)이 PB 반제품의 lot_no 와 같으면 그 PB 점도를 붙인다."""
+    conn = _make_db()
+    pb = _add_product(conn, code="PB")
+    cspb = _add_product(conn, code="CSPB")
+    # PB 점도: LOT 26010801 = 48.6cp
+    vs.add_reading(conn, product_id=pb["id"], lot_no="26010801", viscosity=48.6,
+                   measured_date="2026-01-08", memo=None, recipe_material=None,
+                   material_lot=None, created_by="t", created_at="2026-01-01T00:00:00Z")
+    # CSPB 점도: 사용한PB=26010801 (그 PB로 만듦) → PB 48.6 이 붙어야
+    vs.add_reading(conn, product_id=cspb["id"], lot_no="B1", viscosity=70.2,
+                   measured_date="2026-01-10", memo=None, recipe_material=None,
+                   material_lot="26010801", created_by="t", created_at="2026-01-01T00:00:00Z")
+    # 매칭되는 PB 점도가 없는 CSPB 행
+    vs.add_reading(conn, product_id=cspb["id"], lot_no="B2", viscosity=71.0,
+                   measured_date="2026-01-11", memo=None, recipe_material=None,
+                   material_lot="99999999", created_by="t", created_at="2026-01-01T00:00:00Z")
+
+    analysis = vs.analyze_product(conn, cspb)
+    by_lot = {r["lot_no"]: r for r in analysis["readings"]}
+    assert by_lot["B1"]["source_pb_viscosity"] == 48.6   # 연계됨
+    assert by_lot["B2"]["source_pb_viscosity"] is None   # 매칭 PB 없음
+
+
+def test_source_pb_not_attached_when_viewing_pb_itself():
+    """PB 반제품 자신을 볼 때는 연계를 붙이지 않는다(자기 참조 방지)."""
+    conn = _make_db()
+    pb = _add_product(conn, code="PB")
+    vs.add_reading(conn, product_id=pb["id"], lot_no="26010801", viscosity=48.6,
+                   measured_date="2026-01-08", memo=None, recipe_material=None,
+                   material_lot="26010801", created_by="t", created_at="2026-01-01T00:00:00Z")
+    analysis = vs.analyze_product(conn, pb)
+    assert all(r.get("source_pb_viscosity") is None for r in analysis["readings"])

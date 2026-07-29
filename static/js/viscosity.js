@@ -183,6 +183,7 @@
     renderTrendBanner();
     renderPeriodAlerts();
     renderPeriods();
+    renderSourcePb();
     renderCondition();
     await loadBlendRecordsForProduct(state.analysis.product);
   }
@@ -305,6 +306,41 @@
         ? `${label(latest)} · 외 ${rest}건 (아래 기간별 표 '전기 대비' 참고)`
         : label(latest);
     banner.hidden = false;
+  }
+
+  // 사용한 PB 연계 측정 — 바인더처럼 material_lot(사용한PB)에 PB 점도가 매칭되는
+  // 측정이 하나라도 있을 때만 표를 띄운다. 각 바인더 점도 옆에 원료 PB 점도를 놓아
+  // "이 PB(48cp)로 만든 바인더는 80" 상관을 바로 읽게 한다.
+  const STATUS_KO = { normal: "정상", warn: "경고", anomaly: "이상" };
+  function renderSourcePb() {
+    const panel = $("visc-source-pb-panel");
+    const body = $("visc-source-pb-body");
+    const note = $("visc-source-pb-note");
+    if (!panel || !body) return;
+    const readings = (state.analysis && state.analysis.readings) || [];
+    const linked = readings.filter((r) => r.source_pb_viscosity != null && (r.material_lot || "").trim());
+    if (!linked.length) {
+      panel.hidden = true;
+      body.innerHTML = "";
+      return;
+    }
+    panel.hidden = false;
+    // 최신순
+    linked.sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
+    if (note) note.textContent = `${linked.length}건 · 사용한 PB의 점도와 나란히`;
+    body.innerHTML = linked
+      .map((r) => {
+        const st = STATUS_KO[r.status] || "";
+        const stCls = r.status ? ` visc-status ${r.status}` : "";
+        return "<tr>"
+          + `<td>${IRMS.escapeHtml(r.measured_date || "-")}</td>`
+          + `<td>${IRMS.escapeHtml(r.material_lot)}</td>`
+          + `<td class="num">${fmt(r.source_pb_viscosity)}</td>`
+          + `<td class="num">${fmt(r.viscosity)}</td>`
+          + `<td>${st ? `<span class="${stCls.trim()}">${st}</span>` : "-"}</td>`
+          + "</tr>";
+      })
+      .join("");
   }
 
   function renderPeriods() {

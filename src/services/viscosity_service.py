@@ -529,6 +529,24 @@ def classify_value(
     return verdict
 
 
+def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
+    """PB 반제품의 {lot_no → 최신 점도} 맵. 바인더의 사용한PB 연계에 쓴다.
+
+    같은 PB LOT 에 점도가 여러 번이면 가장 최근(measured_date, id) 것을 쓴다.
+    PB 반제품이 없으면 빈 맵.
+    """
+    pb = get_product_by_code(connection, "PB")
+    if not pb:
+        return {}
+    rows = connection.execute(
+        "SELECT lot_no, viscosity FROM viscosity_readings WHERE product_id = ? "
+        "ORDER BY measured_date ASC, id ASC",
+        (pb["id"],),
+    ).fetchall()
+    # ASC 로 돌며 덮어쓰면 마지막(=최신) 값이 남는다.
+    return {str(r["lot_no"]).strip(): float(r["viscosity"]) for r in rows}
+
+
 def analyze_product(
     connection: sqlite3.Connection,
     product: dict[str, Any],
@@ -547,11 +565,17 @@ def analyze_product(
     values = [float(r["viscosity"]) for r in rows]
     control = _control_limits(product, values)
 
+    # 사용한 PB 연계 — 바인더(APB/CSPB 등)의 material_lot(사용한PB) 을 PB 반제품의
+    # 점도(lot_no) 와 맞춰, "이 PB(48cp)로 만든 바인더는 80" 상관을 보여준다. 두 LOT
+    # 은 같은 8자리 형식이라 직접 매칭. PB 자신을 볼 때나 매칭이 없으면 그냥 빈 값.
+    pb_map = _pb_viscosity_map(connection) if product.get("code") != "PB" else {}
+
     readings: list[dict[str, Any]] = []
     anomalies: list[dict[str, Any]] = []
     for r in rows:
         value = float(r["viscosity"])
         verdict = _classify(value, product, control)
+        source_lot = (r["material_lot"] or "").strip()
         item = {
             "id": int(r["id"]),
             "lot_no": r["lot_no"],
@@ -560,6 +584,7 @@ def analyze_product(
             "memo": r["memo"],
             "recipe_material": r["recipe_material"],
             "material_lot": r["material_lot"],
+            "source_pb_viscosity": pb_map.get(source_lot),
             "reactor": r["reactor"],
             "created_by": r["created_by"],
             "status": verdict["status"],

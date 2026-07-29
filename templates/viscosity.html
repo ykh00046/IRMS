@@ -170,6 +170,30 @@
           </div>
         </section>
 
+        <!-- 사용한 PB 연계 측정 목록 — 바인더(APB/CSPB 등)처럼 '사용한 PB'가 있는
+             반제품에서만 뜬다. 각 바인더 점도 옆에 그 원료 PB의 점도를 나란히 놓아
+             '48cp PB로 만든 CSPB는 80' 상관을 바로 읽게 한다(2026-07-29). -->
+        <section class="panel" id="visc-source-pb-panel" hidden>
+          <div class="visc-panel-head">
+            <h3 class="panel-title">사용한 PB 연계 측정</h3>
+            <span class="muted small" id="visc-source-pb-note"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>사용한 PB</th>
+                  <th class="num">PB 점도</th>
+                  <th class="num">바인더 점도</th>
+                  <th>판정</th>
+                </tr>
+              </thead>
+              <tbody id="visc-source-pb-body"></tbody>
+            </table>
+          </div>
+        </section>
+
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal">
             <div class="ss-modal-header">
@@ -262,5 +286,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260726a"></script>
-    <script src="/static/js/viscosity.js?v=20260728b"></script>
+    <script src="/static/js/viscosity.js?v=20260729c"></script>
 {% endblock %}
