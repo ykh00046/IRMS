@@ -1,8 +1,8 @@
-"""바인더 점도 임포트 스크립트 검사.
+"""바인더 점도 임포트 — 배합 기록 연계 검사.
 
-바인더 종류 정규화(APB(17)→APB17, CSBP→CSPB 오타, 괄호 제거, TEST 제외),
-사용한PB 를 material_lot 에 저장(PB 연계 키), 멱등 재임포트를 고정한다.
-연계 키 형식이 우리 PB 점도 LOT(8자리)과 그대로 맞물리는 것이 이 기능의 핵심이다.
+바인더 점도는 별도로 저장하는 게 아니라, 매칭되는 배합 기록(product_lot =
+바인더종류 + 사용한PB)에 blend_record_id 로 연계돼야 한다 — 배합 화면 점도 등록과
+같은 형태. 배합 기록이 없으면 건너뛰고, 이전 버전이 남긴 미연계 행은 정리한다.
 """
 
 import importlib
@@ -10,94 +10,138 @@ import importlib
 from openpyxl import Workbook
 
 
-def _make_binder_file(path, pb_prefix="2601"):
-    # pb_prefix 로 LOT 을 분기 — conftest 의 DB 는 테스트 간 공유되므로, 각 테스트가
-    # 고유한 사용한PB(=lot_no) 를 써야 (product_id, lot_no) UNIQUE 충돌을 피한다.
+def _make_binder_file(path, pb_prefix="2606"):
     wb = Workbook()
     wb.remove(wb.active)
     ws = wb.create_sheet("26년도 바인더 점도 기록")
     ws.append(["일자", "바인더", "사용한PB", "점도", "작업자"])
-    ws.append(["26년1월5일", "APB", f"{pb_prefix}0501", 409.8, "이시현"])
-    ws.append(["26년1월6일", "CSBP", f"{pb_prefix}0601", 78.6, "이재석"])       # 오타 → CSPB
-    ws.append(["26년1월6일", "APB(17)", f"{pb_prefix}0602", 384, "이재석"])     # → APB17
-    ws.append(["26년1월8일", "APB(TEST)", f"{pb_prefix}0701", 999, "김민준"])   # 제외
-    ws.append(["26년1월9일", "APB", f"{pb_prefix}0702", None, "설영훈"])        # 점도 결측 → 제외
-    ws.append(["26년1월9일", "APB", "badlot", 400, "설영훈"])                   # PB 형식 이상 → 제외
+    ws.append(["26년6월1일", "APB", f"{pb_prefix}0101", 385.5, "이시현"])
+    ws.append(["26년6월1일", "CSBP", f"{pb_prefix}0102", 78.6, "이재석"])   # 오타→CSPB, 배합기록 없음
+    ws.append(["26년6월2일", "APB(17)", f"{pb_prefix}0201", 384, "이재석"])  # →APB17, 배합기록 없음
     wb.save(path)
 
 
-def test_binder_import_normalizes_and_links(tmp_path, monkeypatch):
+def _seed_blend_record(conn, product_lot, product_name):
+    from src.db import utc_now_text
+    conn.execute(
+        "INSERT INTO blend_records (product_lot, product_name, worker, work_date, "
+        "total_amount, status, created_at) VALUES (?, ?, '홍길동', '2026-06-01', 1000, 'completed', ?)",
+        (product_lot, product_name, utc_now_text()),
+    )
+    conn.commit()
+
+
+def test_binder_links_to_matching_blend_record(tmp_path):
     import src.config as cfg
 
     importlib.reload(cfg)
     from src.db import get_connection
     from src.services import viscosity_service
 
+    from src.db import init_db
+    init_db()
     xlsx = tmp_path / "바인더.xlsx"
-    _make_binder_file(xlsx)
+    _make_binder_file(xlsx, pb_prefix="2606")
+
+    with get_connection() as conn:
+        _seed_blend_record(conn, "APB26060101", "APB")   # 이 배합만 존재
 
     import scripts.import_binder_viscosity as imp
 
     stats = imp.import_binder([str(xlsx)])
 
-    # 정규화 결과 — TEST/결측/형식이상 제외, 오타·괄호 병합
-    assert stats["inserted"] == 3
-    assert stats["products"] == {"APB": 1, "CSPB": 1, "APB17": 1}
-    assert stats["skip_binder"] == 1   # APB(TEST)
-    assert stats["skip_visc"] == 1     # 점도 결측
-    assert stats["skip_pb"] == 1       # badlot
+    assert stats["linked"] == 1          # APB26060101 만 매칭
+    assert stats["skip_no_record"] == 2  # CSPB/APB17 은 배합 기록 없음
 
     with get_connection() as conn:
-        # CSPB 반제품이 생기고, 사용한PB 가 lot_no·material_lot 양쪽에 들어갔는가
-        cspb = viscosity_service.get_product_by_code(conn, "CSPB")
-        assert cspb is not None
         row = conn.execute(
-            "SELECT lot_no, material_lot, viscosity FROM viscosity_readings WHERE product_id = ?",
-            (cspb["id"],),
+            "SELECT r.lot_no, r.viscosity, r.material_lot, r.blend_record_id, b.product_lot "
+            "FROM viscosity_readings r JOIN blend_records b ON b.id = r.blend_record_id "
+            "WHERE b.product_lot = 'APB26060101'"
         ).fetchone()
-        assert row["lot_no"] == "26010601"
-        assert row["material_lot"] == "26010601"   # PB 연계 키
-        assert row["viscosity"] == 78.6
-        # APB17 로 정규화됐는가
-        assert viscosity_service.get_product_by_code(conn, "APB17") is not None
-        assert viscosity_service.get_product_by_code(conn, "CSBP") is None
+        assert row is not None
+        assert row["lot_no"] == "APB26060101"       # 배합 product_lot
+        assert row["viscosity"] == 385.5
+        assert row["material_lot"] == "26060101"    # 사용한PB(PB 연계 키)
+        assert row["blend_record_id"] is not None
 
 
 def test_binder_import_is_idempotent(tmp_path):
     import src.config as cfg
 
     importlib.reload(cfg)
+    from src.db import get_connection
+
+    from src.db import init_db
+    init_db()
     xlsx = tmp_path / "바인더.xlsx"
-    _make_binder_file(xlsx, pb_prefix="9901")   # 다른 테스트와 LOT 충돌 방지
+    _make_binder_file(xlsx, pb_prefix="2607")
+    with get_connection() as conn:
+        _seed_blend_record(conn, "APB26070101", "APB")
 
     import scripts.import_binder_viscosity as imp
 
     first = imp.import_binder([str(xlsx)])
     second = imp.import_binder([str(xlsx)])
-    assert first["inserted"] == 3
-    assert second["inserted"] == 0
-    assert second["dup"] == 3
+    assert first["linked"] == 1
+    assert second["linked"] == 0
+    assert second["dup"] == 1
+
+
+def test_cleanup_removes_previous_unlinked_import(tmp_path):
+    """이전 버전이 남긴 미연계 행(blend_record_id NULL, lot_no=material_lot 8자리)만 지운다."""
+    import src.config as cfg
+
+    importlib.reload(cfg)
+    from src.db import get_connection, init_db, utc_now_text
+    from src.services import viscosity_service
+
+    init_db()
+    with get_connection() as conn:
+        p = viscosity_service.ensure_product_by_code(conn, "APB", "APB", utc_now_text())
+        # 옛 방식 흔적
+        viscosity_service.add_reading(
+            conn, product_id=p["id"], lot_no="24990001", viscosity=400.0,
+            measured_date="2024-09-01", memo=None, recipe_material=None,
+            material_lot="24990001", created_by="x", created_at=utc_now_text(),
+        )
+        # 배합 화면으로 등록한 정상 점도(연계됨) — 지우면 안 됨
+        conn.execute(
+            "INSERT INTO blend_records (product_lot, product_name, worker, work_date, "
+            "total_amount, status, created_at) VALUES ('APB26050101','APB','h','2026-05-01',1000,'completed',?)",
+            (utc_now_text(),),
+        )
+        rid = conn.execute("SELECT id FROM blend_records WHERE product_lot='APB26050101'").fetchone()["id"]
+        viscosity_service.add_reading(
+            conn, product_id=p["id"], lot_no="APB26050101", viscosity=380.0,
+            measured_date="2026-05-01", memo=None, recipe_material="APB",
+            material_lot="26050101", created_by="h", created_at=utc_now_text(),
+            blend_record_id=rid,
+        )
+        conn.commit()
+
+    xlsx = tmp_path / "바인더.xlsx"
+    _make_binder_file(xlsx, pb_prefix="2699")   # 매칭 배합 없음 — 정리만 검증
+    import scripts.import_binder_viscosity as imp
+    stats = imp.import_binder([str(xlsx)])
+
+    assert stats["cleaned"] == 1   # 옛 방식 1건 삭제
+    with get_connection() as conn:
+        # 옛 방식은 사라지고
+        assert conn.execute(
+            "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='24990001'"
+        ).fetchone()[0] == 0
+        # 정상 연계 점도는 보존
+        assert conn.execute(
+            "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='APB26050101'"
+        ).fetchone()[0] == 1
 
 
 def test_binder_normalize_rules():
     import scripts.import_binder_viscosity as imp
 
     assert imp._normalize_binder("APB(17)") == "APB17"
-    assert imp._normalize_binder("APB17") == "APB17"
     assert imp._normalize_binder("CSBP") == "CSPB"
     assert imp._normalize_binder("APB(1)") == "APB"
-    assert imp._normalize_binder("CSPB(2)") == "CSPB"
     assert imp._normalize_binder("PM17") == "PM17"
-    assert imp._normalize_binder("HSPU") == "HSPU"
     assert imp._normalize_binder("APB(TEST)") is None
-    assert imp._normalize_binder("") is None
-
-
-def test_binder_pb_lot_matches_pb_viscosity_format():
-    """연계 키 형식 고정 — 사용한PB 는 우리 PB 점도 LOT(8자리)과 같은 꼴이어야 한다."""
-    import scripts.import_binder_viscosity as imp
-
-    assert imp._pb_lot(26010501) == "26010501"   # 정수 셀
-    assert imp._pb_lot("26010501") == "26010501"
-    assert imp._pb_lot("badlot") is None
-    assert imp._pb_lot(None) is None

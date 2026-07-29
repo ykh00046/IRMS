@@ -1,27 +1,26 @@
-"""바인더 점도 기록 → viscosity_readings 임포트 (멱등).
+"""바인더 점도 기록 → 배합 실적(DHR)에 점도 연계 (멱등).
 
-「바인더 기록 (자동 저장됨).xlsx」의 연도별 시트(24/25/26년도)를 읽어, 바인더
-종류(APB/CSPB/APB17 등)를 점도 관리 반제품으로 등록하고 각 점도를 저장한다.
+「바인더 기록 (자동 저장됨).xlsx」의 연도별 시트(24/25/26년도)를 읽어, 각 바인더
+점도를 **우리 배합 기록에 연계**한다 — 배합 화면에서 점도를 등록하는 것과 완전히
+같은 형태(lot_no = 배합 product_lot, blend_record_id 연계)로. 그래야 그 배합
+실적서(DHR)에서 점도가 보이고, 점도 관리의 그 반제품 추세에 함께 잡힌다.
 
-핵심: 바인더는 우리 PB/SBCT/SCRA 와 무관한 별개 반제품이다. 다만 각 바인더를 만들
-때 쓴 **사용한 PB LOT** 을 material_lot 에 함께 저장해, 나중에 그 PB 의 점도(우리 PB
-반제품 데이터)와 연계해 추세를 볼 수 있게 한다("48cp PB 로 만든 CSPB 는 80, 51cp 는
-90" 같은 상관 분석).
+매칭 규칙(사용자 확정 2026-07-29):
+    배합 기록 LOT = 바인더종류(정규화) + 사용한PB(8자리)
+    예: APB + 26060101 = APB26060101  → 그 product_lot 의 배합 기록을 찾아 연계.
+배합 기록이 없으면(구 시스템 등) 그 행은 건너뛴다 — 카운트로 보여준다.
 
-  · product   = 바인더 종류(정규화 후) — viscosity_products 에 없으면 자동 등록
-  · lot_no    = 사용한PB (8자리, 고유) → (product_id, lot_no) UNIQUE 로 재임포트 멱등
-  · material_lot = 사용한PB (PB 연계 키)
-  · viscosity = 점도값
-  · measured_date = 일자 (시트 연도로 보정)
+사용한PB 는 material_lot 에도 저장해, 그 PB 의 점도(PB 반제품)와 상관 조회에 쓴다
+(analyze_product 의 source_pb 연계).
 
-바인더 종류 정규화(사용자 확정 2026-07-29):
-  APB(17)→APB17 · CSBP→CSPB(오타) · 괄호숫자 제거(APB(1)→APB) ·
-  PM/PM17/HSPU 유지 · APB(TEST) 제외 · 점도 결측 행 제외.
+바인더 종류 정규화: APB(17)→APB17 · CSBP→CSPB · 괄호숫자 제거 · PM/PM17/HSPU 유지 ·
+APB(TEST)/점도 결측 제외.
+
+⚠ 이전 버전(별도 반제품 + lot_no=사용한PB + 배합 미연계)으로 넣은 흔적은 임포트
+전에 자동 정리한다(--no-clean 으로 끌 수 있음).
 
 운영 DB 적재:
-    set IRMS_DATA_DIR=...        (서버가 쓰는 데이터 디렉토리)
-    python scripts/import_binder_viscosity.py "바인더 기록 (자동 저장됨).xlsx"
-인자 없으면 위 기본 파일을 시도한다.
+    .venv\\Scripts\\python.exe scripts\\import_binder_viscosity.py "바인더 기록 (자동 저장됨).xlsx"
 """
 
 import re
@@ -38,30 +37,20 @@ from src.db import get_connection, init_db, utc_now_text  # noqa: E402
 from src.services import viscosity_service  # noqa: E402
 
 DEFAULT_FILE = "바인더 기록 (자동 저장됨).xlsx"
-
-# 열 위치(0-기준): 일자·바인더·사용한PB·점도·작업자
 COL_DATE, COL_BINDER, COL_PB, COL_VISC, COL_WORKER = 0, 1, 2, 3, 4
-
-_DATE_KO_YMD = re.compile(r"(?:(\d{2,4})\s*년)?\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _YEAR_FROM_SHEET = re.compile(r"(\d{2,4})\s*년")
 
 
 def _normalize_binder(raw: str) -> str | None:
-    """바인더 종류 표기 정규화. 제외 대상은 None."""
     s = str(raw).strip()
-    if not s:
+    if not s or "TEST" in s.upper():
         return None
-    if "TEST" in s.upper():
-        return None  # 테스트값 제외
     if s == "CSBP":
-        return "CSPB"  # 오타
-    # 괄호와 그 안 내용 제거: APB(17)→APB17 은 숫자 보존, APB(1)→APB
+        return "CSPB"
     m = re.fullmatch(r"([A-Za-z]+)\((\d+)\)", s)
     if m:
         head, num = m.group(1), m.group(2)
-        # (17) 은 등급이라 붙인다(APB(17)→APB17), 그 외 (1)(2) 는 제거
         return f"{head}{num}" if num == "17" else head
-    # 남은 괄호형은 괄호째 제거
     s = re.sub(r"\(.*?\)", "", s).strip()
     return s or None
 
@@ -74,41 +63,7 @@ def _sheet_year(sheet_name: str) -> int | None:
     return 2000 + y if y < 100 else y
 
 
-def _parse_date(value, sheet_year: int | None) -> str | None:
-    """일자 셀 → ISO(YYYY-MM-DD). 형식이 제각각이라 여러 경로로 시도."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    s = str(value).strip()
-    if not s:
-        return None
-    # 이미 ISO
-    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", s)
-    if m:
-        return s
-    # "26년1월5일" / "1월 09일"(연도 없음 → 시트 연도)
-    m = _DATE_KO_YMD.search(s)
-    if m:
-        yr, mo, dy = m.group(1), int(m.group(2)), int(m.group(3))
-        if yr:
-            year = int(yr)
-            year = 2000 + year if year < 100 else year
-        elif sheet_year:
-            year = sheet_year
-        else:
-            return None
-        try:
-            return date(year, mo, dy).isoformat()
-        except ValueError:
-            return None
-    return None
-
-
 def _pb_lot(value) -> str | None:
-    """사용한 PB LOT → 8자리 숫자 문자열. 형식 이상은 None."""
     if value is None:
         return None
     if isinstance(value, float) and value.is_integer():
@@ -118,32 +73,46 @@ def _pb_lot(value) -> str | None:
 
 
 def _visc(value) -> float | None:
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+    return float(value) if isinstance(value, (int, float)) else None
 
 
-def _ensure_product(connection, code: str, now: str) -> dict:
-    product = viscosity_service.get_product_by_code(connection, code)
-    if product:
-        return product
-    connection.execute(
-        "INSERT INTO viscosity_products (code, name, sigma_k, is_active, created_at) "
-        "VALUES (?, ?, 3, 1, ?)",
-        (code, code, now),
+def _find_blend_record(connection, product_lot: str):
+    """product_lot 로 배합 기록 1건 조회. 취소분은 제외, 여럿이면 최신."""
+    try:
+        return connection.execute(
+            "SELECT id, product_name, product_lot, work_date FROM blend_records "
+            "WHERE product_lot = ? AND status != 'canceled' ORDER BY id DESC LIMIT 1",
+            (product_lot,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+
+
+def _clean_previous_import(connection) -> int:
+    """이전 버전 임포트 흔적 제거 — 배합 미연계(blend_record_id IS NULL)이면서
+    lot_no 가 8자리 숫자이고 material_lot 과 같은 행(그때의 특징). 배합 화면으로
+    등록한 정상 점도(blend_record_id 있음, lot_no=product_lot)는 건드리지 않는다.
+    """
+    cur = connection.execute(
+        "DELETE FROM viscosity_readings "
+        "WHERE blend_record_id IS NULL AND lot_no = material_lot "
+        "AND lot_no GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'"
     )
-    return viscosity_service.get_product_by_code(connection, code)
+    return cur.rowcount
 
 
-def import_binder(paths: list[str]) -> dict:
+def import_binder(paths: list[str], *, clean: bool = True) -> dict:
     init_db()
     now = utc_now_text()
     stats = {
-        "read": 0, "inserted": 0, "dup": 0,
-        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0, "skip_date": 0,
-        "products": {}, "linkable_pb": set(),
+        "read": 0, "linked": 0, "dup": 0, "cleaned": 0,
+        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0, "skip_no_record": 0,
+        "by_product": {}, "no_record_samples": [],
     }
     with get_connection() as connection:
+        if clean:
+            stats["cleaned"] = _clean_previous_import(connection)
+
         for path in paths:
             p = Path(path)
             if not p.exists():
@@ -152,15 +121,14 @@ def import_binder(paths: list[str]) -> dict:
             wb = load_workbook(p, read_only=True, data_only=True)
             for sheet_name in wb.sheetnames:
                 if "바인더" not in sheet_name:
-                    continue  # 데이터 시트만 (Sheet1 등 제외)
-                year = _sheet_year(sheet_name)
+                    continue
                 ws = wb[sheet_name]
                 for row in ws.iter_rows(values_only=True):
                     if not row or len(row) <= COL_VISC:
                         continue
                     binder_raw = row[COL_BINDER]
                     if not isinstance(binder_raw, str) or binder_raw.strip() in ("", "바인더"):
-                        continue  # 헤더/빈행
+                        continue
                     stats["read"] += 1
                     binder = _normalize_binder(binder_raw)
                     if not binder:
@@ -174,28 +142,44 @@ def import_binder(paths: list[str]) -> dict:
                     if not pb:
                         stats["skip_pb"] += 1
                         continue
-                    measured = _parse_date(row[COL_DATE], year)
+
+                    # 매칭: 배합 기록 LOT = 바인더종류 + 사용한PB
+                    product_lot = f"{binder}{pb}"
+                    rec = _find_blend_record(connection, product_lot)
+                    if rec is None:
+                        stats["skip_no_record"] += 1
+                        if len(stats["no_record_samples"]) < 10:
+                            stats["no_record_samples"].append(product_lot)
+                        continue
+
                     worker = None
                     if len(row) > COL_WORKER and isinstance(row[COL_WORKER], str):
                         worker = row[COL_WORKER].strip() or None
 
-                    product = _ensure_product(connection, binder, now)
+                    # 배합 화면 점도 등록과 동일 형태 — 배합 제품명으로 반제품 확보,
+                    # lot_no = product_lot, blend_record_id 연계, material_lot = 사용한PB.
+                    product = viscosity_service.ensure_product_by_code(
+                        connection, rec["product_name"], rec["product_name"], now
+                    )
+                    if not product:
+                        stats["skip_no_record"] += 1
+                        continue
                     try:
                         viscosity_service.add_reading(
                             connection,
                             product_id=product["id"],
-                            lot_no=pb,                # 사용한PB = 고유 LOT
+                            lot_no=rec["product_lot"],
                             viscosity=visc,
-                            measured_date=measured,
+                            measured_date=rec["work_date"],
                             memo=None,
-                            recipe_material=None,
-                            material_lot=pb,          # PB 연계 키
+                            recipe_material=rec["product_name"],
+                            material_lot=pb,
                             created_by=worker,
                             created_at=now,
+                            blend_record_id=int(rec["id"]),
                         )
-                        stats["inserted"] += 1
-                        stats["products"][binder] = stats["products"].get(binder, 0) + 1
-                        stats["linkable_pb"].add(pb)
+                        stats["linked"] += 1
+                        stats["by_product"][binder] = stats["by_product"].get(binder, 0) + 1
                     except sqlite3.IntegrityError:
                         stats["dup"] += 1
             wb.close()
@@ -204,16 +188,21 @@ def import_binder(paths: list[str]) -> dict:
 
 
 def main() -> int:
-    paths = sys.argv[1:] or [DEFAULT_FILE]
-    s = import_binder(paths)
-    print("\n=== 바인더 점도 임포트 결과 ===")
-    print(f"읽은 데이터행 : {s['read']}")
-    print(f"등록          : {s['inserted']}")
-    print(f"중복(멱등)    : {s['dup']}")
-    print(f"제외 — 바인더 정규화 실패/제외: {s['skip_binder']} · "
-          f"점도 결측: {s['skip_visc']} · 사용한PB 형식 이상: {s['skip_pb']}")
-    print(f"바인더별 등록 : {s['products']}")
-    print(f"연계 가능 PB LOT 수(사용한PB 고유): {len(s['linkable_pb'])}")
+    args = [a for a in sys.argv[1:] if a != "--no-clean"]
+    clean = "--no-clean" not in sys.argv
+    paths = args or [DEFAULT_FILE]
+    s = import_binder(paths, clean=clean)
+    print("\n=== 바인더 점도 → 배합 기록 연계 결과 ===")
+    if clean:
+        print(f"이전 임포트 정리 : {s['cleaned']}건 삭제")
+    print(f"읽은 데이터행    : {s['read']}")
+    print(f"배합 기록에 연계 : {s['linked']}")
+    print(f"중복(멱등)       : {s['dup']}")
+    print(f"배합 기록 없어 건너뜀: {s['skip_no_record']}")
+    print(f"기타 제외 — 바인더 {s['skip_binder']} · 점도결측 {s['skip_visc']} · PB형식 {s['skip_pb']}")
+    print(f"제품별 연계      : {s['by_product']}")
+    if s["no_record_samples"]:
+        print(f"매칭 실패 LOT 표본: {s['no_record_samples']}")
     return 0
 
 
