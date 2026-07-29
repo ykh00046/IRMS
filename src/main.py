@@ -30,6 +30,18 @@ from .routers.pages import build_router as build_pages_router
 
 def create_app() -> FastAPI:
     init_db()
+    # 취소 보존기한 경과분 정리 — 기동마다 1회(운영은 자동 업데이트로 자주 재시작).
+    # serve.py 가 일일 백업 '이후'에도 돌리므로 삭제분은 항상 백업에 남아 있다.
+    try:
+        from .db import get_connection
+        from .services.record_delete_service import purge_expired_canceled
+        with get_connection() as _conn:
+            _purged = purge_expired_canceled(_conn)
+            _conn.commit()
+        if _purged:
+            print(f"[정리] 취소 보존기한 경과 배합 기록 {len(_purged)}건 삭제")
+    except Exception as _exc:  # noqa: BLE001 — 정리는 부가 기능, 기동을 막지 않는다
+        print(f"[정리] 취소 기록 정리 실패(무시): {_exc}")
     app = FastAPI(title="IRMS", version="0.1.0")
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

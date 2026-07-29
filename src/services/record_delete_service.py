@@ -120,3 +120,83 @@ def delete_blend_record(
         record_id=record_id,
         product_lot=str(row["product_lot"]),
     )
+
+
+def purge_expired_canceled(
+    connection: sqlite3.Connection,
+    *,
+    retention_days: int | None = None,
+) -> list[dict]:
+    """취소 후 보존 기한이 지난 배합 기록을 물리 삭제한다.
+
+    취소(soft)는 실수 되돌리기용이고, 현장 판단으로는 실수는 하루 이틀 안에 알아챈다
+    (사용자 결정 2026-07-29 — "무기한 남길 필요 없다"). 기본 3일 유예 후 자동 정리.
+    IRMS_CANCELED_RETENTION_DAYS=0 이면 비활성(무기한 보존, 종전 동작).
+
+    파괴적 동작이므로 하드 삭제와 같은 원칙을 지킨다:
+      · 기록 전체 스냅샷(헤더+자재 행)을 감사로그(blend_record_purged)에 남긴다
+      · 일일 백업 이후에 도는 것을 전제로 한다(백업에는 남는다 — serve.py 순서 참조)
+    취소 시각은 updated_at 을 쓴다(취소가 마지막 쓰기 — 취소된 기록은 수정 불가).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from ..config import CANCELED_RETENTION_DAYS
+    from ..db import write_audit_log
+
+    days = CANCELED_RETENTION_DAYS if retention_days is None else retention_days
+    if not days or days <= 0:
+        return []
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    rows = connection.execute(
+        "SELECT id FROM blend_records WHERE status = 'canceled' AND updated_at < ?",
+        (cutoff,),
+    ).fetchall()
+    purged: list[dict] = []
+    for row in rows:
+        record_id = int(row["id"])
+        header = connection.execute(
+            """
+            SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
+                   work_date, work_time, total_amount, scale, status, note, reactor,
+                   manual_entry, is_bulk_regenerated, manual_absence_reason,
+                   reviewed_by, reviewed_at, approved_by, approved_at,
+                   created_by, created_at, updated_at
+            FROM blend_records WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        details = connection.execute(
+            """
+            SELECT material_name, material_code, material_lot, ratio,
+                   theory_amount, actual_amount, carried_over, manual_entry
+            FROM blend_details WHERE blend_record_id = ? ORDER BY sequence_order, id
+            """,
+            (record_id,),
+        ).fetchall()
+        snapshot = {
+            "header": {k: header[k] for k in header.keys()},
+            "rows": [
+                [d["material_name"], d["material_code"], d["material_lot"],
+                 d["ratio"], d["theory_amount"], d["actual_amount"],
+                 int(d["carried_over"] or 0), int(d["manual_entry"] or 0)]
+                for d in details
+            ],
+        }
+        result = delete_blend_record(connection, record_id)
+        if result is None:
+            continue
+        write_audit_log(
+            connection,
+            action="blend_record_purged",
+            target_type="blend_record",
+            target_id=str(result.record_id),
+            target_label=result.product_lot,
+            details={
+                "reason": f"취소 후 {days}일 경과 자동 정리",
+                "canceled_at": header["updated_at"],
+                "snapshot": snapshot,
+            },
+        )
+        purged.append({"id": result.record_id, "product_lot": result.product_lot})
+    return purged

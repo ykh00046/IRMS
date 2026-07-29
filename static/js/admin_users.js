@@ -64,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_record_approve", "승인 기록"],
       ["dhr_exported", "배합일지 출력"],
       ["product_lot_dedup", "제품 LOT 중복 정리"],
+      ["blend_record_purged", "배합 기록 자동 정리(취소 경과)"],
     ]],
     ["승인·예외", [
       ["blend_manual_entry_approved", "수기 입력 승인"],

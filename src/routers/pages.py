@@ -128,14 +128,12 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse)
     def entry_page(request: Request) -> Response:
-        # 처음 화면으로 돌아오면 항상 근태 세션을 비워서, 다음 사용자가
-        # 같은 PC에서 바로 열었을 때 이전 사용자의 근태가 노출되지 않게
-        # 한다. IRMS 관리자 세션은 별도 네임스페이스라 영향 없음.
+        # 첫 진입 = 대시보드(개편 2026-07-29 — 구 홈 런처 entry.html 은 은퇴).
+        # 공용 PC 정책은 유지: 처음 화면으로 돌아오면 근태·작업자 세션을 비워
+        # 다음 사용자에게 이전 사용자의 상태가 노출되지 않게 한다.
         att_logout_session(request)
         logout_worker_session(request)
-        return _render(templates, request, "entry.html", {
-            "current_user": get_current_user(request, required=False),
-        })
+        return RedirectResponse(url="/dashboard", status_code=303)
 
     @router.get("/login", response_class=HTMLResponse)
     def legacy_login_page(request: Request, next: str | None = None) -> Response:

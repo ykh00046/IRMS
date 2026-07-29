@@ -39,6 +39,9 @@ REQUIRE_TRAY_API_TOKEN = _env_flag(
 # 한정이라, 터널이 앱 전체를 인터넷에 게시하면 기록 반출·위조 기록 삽입이 열린다.
 # 터널을 안 쓰면 CF 헤더가 없어 아무 영향이 없으므로 기본값은 켬.
 TUNNEL_REQUIRE_LOGIN = _env_flag("IRMS_TUNNEL_REQUIRE_LOGIN", True)
+# 취소(soft)된 배합 기록의 보존일 — 지나면 스냅샷 감사를 남기고 자동 물리 삭제.
+# 실수 되돌리기는 하루 이틀 안에 일어난다는 현장 판단(2026-07-29). 0 = 무기한(비활성).
+CANCELED_RETENTION_DAYS = max(0, int(os.getenv("IRMS_CANCELED_RETENTION_DAYS", "3")))
 
 if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     raise RuntimeError(

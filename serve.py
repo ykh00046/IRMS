@@ -698,6 +698,17 @@ def _watch_once(w: _Watch) -> None:
         # 시도하고 결과를 버려서, 디스크가 찬 날 백업이 없는 채로 하루가 지나갔다.
         if backup_db() not in (BACKUP_FAILED, BACKUP_CORRUPT):
             w.last_daily_backup = today
+            # 취소 보존기한 경과분 정리 — 반드시 백업 '성공 후'(삭제분이 백업에 남게).
+            try:
+                out = subprocess.run(
+                    [PYTHON, "tools/purge_canceled_records.py"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=120,
+                )
+                msg = (out.stdout or out.stderr or "").strip().splitlines()
+                if msg:
+                    log(f"취소 기록 정리: {msg[-1]}")
+            except Exception as exc:  # noqa: BLE001 — 정리 실패가 감시를 멈추면 안 된다
+                log(f"취소 기록 정리 실패(무시): {exc}")
 
     if not (AUTO and has_update()):
         return
