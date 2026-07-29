@@ -529,8 +529,20 @@ def classify_value(
     return verdict
 
 
+def _lot_digits(lot: Any) -> str:
+    """LOT 에서 뒤쪽 8자리 숫자만 추출 — 연계 매칭 키.
+
+    PB 점도 LOT 은 저장 경로마다 형식이 다르다: 배합 화면 등록은 product_lot
+    (예: PB26010701, 제품명 접두사 포함), 엑셀 임포트는 8자리(26010701). 바인더의
+    사용한PB 는 접두사 없는 8자리다. 숫자만 뽑아 뒤 8자리로 맞추면 어느 형식이든
+    같은 배합을 가리키면 매칭된다(제품명에 숫자가 없는 PB 라 안전).
+    """
+    digits = "".join(ch for ch in str(lot or "") if ch.isdigit())
+    return digits[-8:] if len(digits) >= 8 else digits
+
+
 def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
-    """PB 반제품의 {lot_no → 최신 점도} 맵. 바인더의 사용한PB 연계에 쓴다.
+    """PB 반제품의 {LOT 숫자(8자리) → 최신 점도} 맵. 바인더의 사용한PB 연계에 쓴다.
 
     같은 PB LOT 에 점도가 여러 번이면 가장 최근(measured_date, id) 것을 쓴다.
     PB 반제품이 없으면 빈 맵.
@@ -543,8 +555,13 @@ def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
         "ORDER BY measured_date ASC, id ASC",
         (pb["id"],),
     ).fetchall()
-    # ASC 로 돌며 덮어쓰면 마지막(=최신) 값이 남는다.
-    return {str(r["lot_no"]).strip(): float(r["viscosity"]) for r in rows}
+    # ASC 로 돌며 덮어쓰면 마지막(=최신) 값이 남는다. 키는 숫자 8자리로 정규화.
+    out: dict[str, float] = {}
+    for r in rows:
+        key = _lot_digits(r["lot_no"])
+        if key:
+            out[key] = float(r["viscosity"])
+    return out
 
 
 def analyze_product(
@@ -575,7 +592,7 @@ def analyze_product(
     for r in rows:
         value = float(r["viscosity"])
         verdict = _classify(value, product, control)
-        source_lot = (r["material_lot"] or "").strip()
+        source_lot = _lot_digits(r["material_lot"])
         item = {
             "id": int(r["id"]),
             "lot_no": r["lot_no"],

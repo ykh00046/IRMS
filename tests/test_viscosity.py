@@ -766,6 +766,23 @@ def test_source_pb_viscosity_links_binder_to_pb():
     assert by_lot["B2"]["source_pb_viscosity"] is None   # 매칭 PB 없음
 
 
+def test_source_pb_matches_across_lot_prefix_forms():
+    """PB 점도 LOT 이 배합 화면 형식(PB26010801, 접두사 포함)이어도 바인더의
+    8자리 사용한PB(26010801)와 숫자 기준으로 매칭돼야 한다."""
+    conn = _make_db()
+    pb = _add_product(conn, code="PB")
+    cspb = _add_product(conn, code="CSPB")
+    # 배합 화면 저장 형식 — 제품명 접두사 포함
+    vs.add_reading(conn, product_id=pb["id"], lot_no="PB26010801", viscosity=51.6,
+                   measured_date="2026-01-08", memo=None, recipe_material=None,
+                   material_lot=None, created_by="t", created_at="2026-01-01T00:00:00Z")
+    vs.add_reading(conn, product_id=cspb["id"], lot_no="B1", viscosity=79.2,
+                   measured_date="2026-01-10", memo=None, recipe_material=None,
+                   material_lot="26010801", created_by="t", created_at="2026-01-01T00:00:00Z")
+    analysis = vs.analyze_product(conn, cspb)
+    assert analysis["readings"][0]["source_pb_viscosity"] == 51.6
+
+
 def test_source_pb_not_attached_when_viewing_pb_itself():
     """PB 반제품 자신을 볼 때는 연계를 붙이지 않는다(자기 참조 방지)."""
     conn = _make_db()
