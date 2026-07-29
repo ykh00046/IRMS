@@ -74,7 +74,31 @@ document.addEventListener("DOMContentLoaded", () => {
     const unackedTag = info.rescale_unacked
       ? ' <span class="rescale-badge unacked">미승인</span>'
       : "";
-    return `<div class="blend-rescale-block"><b>증량 이력${unackedTag}</b><ul class="blend-rescale-list">${rows}</ul></div>`;
+    // 확인 처리는 내용을 보는 이 자리에서 — 목록/대시보드에서 안 보고 누르게 하지 않는다.
+    const ackBtn = info.rescale_unacked && canManage()
+      ? ` <button class="btn btn-sm accent" id="detail-rescale-ack" data-id="${id}" type="button">확인 처리</button>`
+      : "";
+    return `<div class="blend-rescale-block"><b>증량 이력${unackedTag}</b>${ackBtn}<ul class="blend-rescale-list">${rows}</ul></div>`;
+  }
+
+  // 책임자 여부 — 템플릿이 책임자에게만 렌더하는 요소로 판정(기존 패턴).
+  function canManage() {
+    return Boolean($("status-rec-delete-selected"));
+  }
+
+  // 수기 입력(책임자 부재) 블록 — 사유를 보여주고, 미확인이면 여기서 확인 처리.
+  function manualBlock(rec) {
+    const info = rescaleMap[rec.id] || {};
+    const reason = rec.manual_absence_reason;
+    if (!reason && !info.manual_unacked) return "";
+    const unackedTag = info.manual_unacked
+      ? ' <span class="rescale-badge unacked">미확인</span>'
+      : "";
+    const ackBtn = info.manual_unacked && canManage()
+      ? ` <button class="btn btn-sm accent" id="detail-manual-ack" data-id="${rec.id}" type="button">확인 처리</button>`
+      : "";
+    return `<div class="blend-rescale-block"><b>수기 입력(책임자 부재)${unackedTag}</b>${ackBtn}`
+      + `<p class="muted small" style="margin:0.3rem 0 0;">사유: ${esc(reason || "-")}</p></div>`;
   }
 
   // 기본 삭제 = '취소'(soft) — 기록은 남고 목록·출력·집계에서만 빠지며 복원할 수 있다.
@@ -126,7 +150,15 @@ document.addEventListener("DOMContentLoaded", () => {
         request("/blend/records", { query }),
         loadRescaleMap(),
       ]);
-      const items = data.items || [];
+      let items = data.items || [];
+      // '미확인만' — 요약 맵(rescaleMap)의 미확인 플래그로 로드된 목록을 거른다.
+      // 확인 처리 자체는 상세 모달 안에 있다(내용을 보고 누르는 자리).
+      if ($("status-rec-unacked") && $("status-rec-unacked").checked) {
+        items = items.filter((r) => {
+          const info = rescaleMap[r.id];
+          return info && (info.rescale_unacked || info.manual_unacked);
+        });
+      }
       const note = $("status-rec-note");
       if (note) {
         // 서버가 최신 limit(기본 500)건만 반환 — 상한 도달 시 전체 M 과 함께 좁히기 안내.
@@ -140,7 +172,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
       if (!items.length) {
-        body.innerHTML = '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
+        const unackedOnly = $("status-rec-unacked") && $("status-rec-unacked").checked;
+        body.innerHTML = unackedOnly
+          ? '<tr><td colspan="7" class="muted">미확인 증량·수기 입력이 없습니다.</td></tr>'
+          : '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
         return;
       }
       body.innerHTML = "";
@@ -232,6 +267,7 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
       ${bulkLine}
       ${rescaleBlock(rec.id)}
+      ${manualBlock(rec)}
       <div class="table-wrap"><table class="blend-table">
         <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -249,6 +285,26 @@ document.addEventListener("DOMContentLoaded", () => {
     setHidden("status-cancel-rec", isCanceled);
     setHidden("status-restore", !isCanceled);
     setHidden("status-delete", !isCanceled);
+    // 미확인 증량/수기 입력 확인 처리 — 내용을 본 이 자리에서. 처리 후 요약 맵·목록·
+    // 모달을 새로 그려 배지가 그 자리에서 사라진다(대시보드·트레이는 다음 폴링에 반영).
+    const wireAck = (btnId, path, label) => {
+      const btn = $(btnId);
+      if (!btn) return;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await request(`/blend/records/${rec.id}/${path}`, { method: "POST" });
+          IRMS.notify(`${label} 확인 처리했습니다.`, "success");
+          await loadRecords();      // 요약 맵 갱신 포함 — 목록 배지 제거
+          openDetail(rec.id);       // 모달 재렌더 — 미확인 태그·버튼 제거
+        } catch (e) {
+          btn.disabled = false;
+          IRMS.notify(`확인 처리 실패: ${e.message || e}`, "error");
+        }
+      });
+    };
+    wireAck("detail-rescale-ack", "rescale-ack", "증량을");
+    wireAck("detail-manual-ack", "manual-absence-ack", "수기 입력을");
     $("status-detail-modal").hidden = false;
   }
 
@@ -389,6 +445,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   $("status-rec-apply").addEventListener("click", loadRecords);
+  // 미확인만 — 체크 즉시 다시 그린다(조회 버튼을 또 누르게 하지 않는다).
+  if ($("status-rec-unacked")) $("status-rec-unacked").addEventListener("change", loadRecords);
   $("status-rec-all").addEventListener("change", (e) => {
     document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = e.target.checked; });
   });

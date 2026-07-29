@@ -1682,7 +1682,10 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "is_bulk_regenerated": bool(row["is_bulk_regenerated"]) if "is_bulk_regenerated" in keys else False,
     }
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
-              "worker_sign", "reviewed_sign", "approved_sign", "reactor"):
+              "worker_sign", "reviewed_sign", "approved_sign", "reactor",
+              # 수기 입력(책임자 부재) 사유·미확인 플래그 — SELECT 에는 있었지만 여기서
+              # 빠뜨려 상세 응답에 실리지 않았다(화면이 '사유: -' 로 표시되던 원인).
+              "manual_absence_reason", "manual_unacked"):
         out[f] = row[f] if f in keys else None
     return out
 

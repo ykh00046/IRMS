@@ -125,6 +125,11 @@ def build_router() -> APIRouter:
         if user and has_access_level(user, "manager"):
             return record
         record["manual_entry"] = False
+        # 부재 사유·미확인 플래그도 책임자 전용 통제 정보 — 같은 기준으로 가린다.
+        if "manual_absence_reason" in record:
+            record["manual_absence_reason"] = None
+        if "manual_unacked" in record:
+            record["manual_unacked"] = None
         for d in record.get("details", []) or []:
             d["manual_entry"] = False
         return record
