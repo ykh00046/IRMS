@@ -8,7 +8,8 @@
 매칭 규칙(사용자 확정 2026-07-29):
     배합 기록 LOT = 바인더종류(정규화) + 사용한PB(8자리)
     예: APB + 26060101 = APB26060101  → 그 product_lot 의 배합 기록을 찾아 연계.
-배합 기록이 없으면(구 시스템 등) 그 행은 건너뛴다 — 카운트로 보여준다.
+배합 기록이 없으면(구 시스템의 24/25년 등) 배합 미연계로 점도만 보존한다 — 같은
+바인더 반제품에 쌓여 과거~현재가 한 추세로 이어진다(측정일은 엑셀 일자, 사용한PB 유지).
 
 사용한PB 는 material_lot 에도 저장해, 그 PB 의 점도(PB 반제품)와 상관 조회에 쓴다
 (analyze_product 의 source_pb 연계).
@@ -39,6 +40,7 @@ from src.services import viscosity_service  # noqa: E402
 DEFAULT_FILE = "바인더 기록 (자동 저장됨).xlsx"
 COL_DATE, COL_BINDER, COL_PB, COL_VISC, COL_WORKER = 0, 1, 2, 3, 4
 _YEAR_FROM_SHEET = re.compile(r"(\d{2,4})\s*년")
+_DATE_KO_YMD = re.compile(r"(?:(\d{2,4})\s*년)?\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 
 
 def _normalize_binder(raw: str) -> str | None:
@@ -61,6 +63,36 @@ def _sheet_year(sheet_name: str) -> int | None:
         return None
     y = int(m.group(1))
     return 2000 + y if y < 100 else y
+
+
+def _parse_date(value, sheet_year: int | None) -> str | None:
+    """일자 셀 → ISO(YYYY-MM-DD). 배합 미연계(과거) 점도의 측정일에 쓴다."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    s = str(value).strip()
+    if not s:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return s
+    m = _DATE_KO_YMD.search(s)
+    if m:
+        yr, mo, dy = m.group(1), int(m.group(2)), int(m.group(3))
+        if yr:
+            year = int(yr)
+            year = 2000 + year if year < 100 else year
+        elif sheet_year:
+            year = sheet_year
+        else:
+            return None
+        try:
+            return date(year, mo, dy).isoformat()
+        except ValueError:
+            return None
+    return None
 
 
 def _pb_lot(value) -> str | None:
@@ -105,8 +137,8 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
     init_db()
     now = utc_now_text()
     stats = {
-        "read": 0, "linked": 0, "dup": 0, "cleaned": 0,
-        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0, "skip_no_record": 0,
+        "read": 0, "linked": 0, "archived": 0, "dup": 0, "cleaned": 0,
+        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0,
         "by_product": {}, "no_record_samples": [],
     }
     with get_connection() as connection:
@@ -123,6 +155,7 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
                 if "바인더" not in sheet_name:
                     continue
                 ws = wb[sheet_name]
+                sheet_year = _sheet_year(sheet_name)
                 for row in ws.iter_rows(values_only=True):
                     if not row or len(row) <= COL_VISC:
                         continue
@@ -145,40 +178,58 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
 
                     # 매칭: 배합 기록 LOT = 바인더종류 + 사용한PB
                     product_lot = f"{binder}{pb}"
-                    rec = _find_blend_record(connection, product_lot)
-                    if rec is None:
-                        stats["skip_no_record"] += 1
-                        if len(stats["no_record_samples"]) < 10:
-                            stats["no_record_samples"].append(product_lot)
-                        continue
-
                     worker = None
                     if len(row) > COL_WORKER and isinstance(row[COL_WORKER], str):
                         worker = row[COL_WORKER].strip() or None
 
-                    # 배합 화면 점도 등록과 동일 형태 — 배합 제품명으로 반제품 확보,
-                    # lot_no = product_lot, blend_record_id 연계, material_lot = 사용한PB.
-                    product = viscosity_service.ensure_product_by_code(
-                        connection, rec["product_name"], rec["product_name"], now
-                    )
-                    if not product:
-                        stats["skip_no_record"] += 1
-                        continue
+                    rec = _find_blend_record(connection, product_lot)
+                    if rec is not None:
+                        # 배합 화면 점도 등록과 동일 형태 — 배합 제품명으로 반제품 확보,
+                        # lot_no = product_lot, blend_record_id 연계, material_lot = 사용한PB.
+                        product = viscosity_service.ensure_product_by_code(
+                            connection, rec["product_name"], rec["product_name"], now
+                        )
+                        if not product:
+                            stats["skip_no_record"] += 1
+                            continue
+                        lot_no = rec["product_lot"]
+                        measured_date = rec["work_date"]
+                        blend_record_id = int(rec["id"])
+                        recipe_material = rec["product_name"]
+                        bucket = "linked"
+                    else:
+                        # 배합 기록 없음(구 시스템 등) — 배합 미연계로 점도만 보존한다.
+                        # 반제품은 바인더종류, lot_no=바인더+사용한PB(연계분과 겹치지 않음),
+                        # 측정일은 엑셀 일자, PB는 material_lot 유지(PB 점도 상관 조회).
+                        if len(stats["no_record_samples"]) < 10:
+                            stats["no_record_samples"].append(product_lot)
+                        product = viscosity_service.ensure_product_by_code(
+                            connection, binder, binder, now
+                        )
+                        if not product:
+                            stats["skip_binder"] += 1
+                            continue
+                        lot_no = product_lot
+                        measured_date = _parse_date(row[COL_DATE], sheet_year)
+                        blend_record_id = None
+                        recipe_material = binder
+                        bucket = "archived"
+
                     try:
                         viscosity_service.add_reading(
                             connection,
                             product_id=product["id"],
-                            lot_no=rec["product_lot"],
+                            lot_no=lot_no,
                             viscosity=visc,
-                            measured_date=rec["work_date"],
+                            measured_date=measured_date,
                             memo=None,
-                            recipe_material=rec["product_name"],
+                            recipe_material=recipe_material,
                             material_lot=pb,
                             created_by=worker,
                             created_at=now,
-                            blend_record_id=int(rec["id"]),
+                            blend_record_id=blend_record_id,
                         )
-                        stats["linked"] += 1
+                        stats[bucket] += 1
                         stats["by_product"][binder] = stats["by_product"].get(binder, 0) + 1
                     except sqlite3.IntegrityError:
                         stats["dup"] += 1
@@ -197,12 +248,12 @@ def main() -> int:
         print(f"이전 임포트 정리 : {s['cleaned']}건 삭제")
     print(f"읽은 데이터행    : {s['read']}")
     print(f"배합 기록에 연계 : {s['linked']}")
+    print(f"과거(배합 없음) 보존: {s['archived']}")
     print(f"중복(멱등)       : {s['dup']}")
-    print(f"배합 기록 없어 건너뜀: {s['skip_no_record']}")
     print(f"기타 제외 — 바인더 {s['skip_binder']} · 점도결측 {s['skip_visc']} · PB형식 {s['skip_pb']}")
-    print(f"제품별 연계      : {s['by_product']}")
+    print(f"제품별 등록      : {s['by_product']}")
     if s["no_record_samples"]:
-        print(f"매칭 실패 LOT 표본: {s['no_record_samples']}")
+        print(f"배합 없어 과거로 보존한 LOT 표본: {s['no_record_samples']}")
     return 0
 
 

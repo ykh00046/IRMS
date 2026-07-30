@@ -50,8 +50,8 @@ def test_binder_links_to_matching_blend_record(tmp_path):
 
     stats = imp.import_binder([str(xlsx)])
 
-    assert stats["linked"] == 1          # APB26060101 만 매칭
-    assert stats["skip_no_record"] == 2  # CSPB/APB17 은 배합 기록 없음
+    assert stats["linked"] == 1     # APB26060101 만 배합 기록에 연계
+    assert stats["archived"] == 2   # CSPB/APB17 은 배합 없어 과거로 보존
 
     with get_connection() as conn:
         row = conn.execute(
@@ -84,8 +84,10 @@ def test_binder_import_is_idempotent(tmp_path):
     first = imp.import_binder([str(xlsx)])
     second = imp.import_binder([str(xlsx)])
     assert first["linked"] == 1
+    assert first["archived"] == 2
     assert second["linked"] == 0
-    assert second["dup"] == 1
+    assert second["archived"] == 0
+    assert second["dup"] == 3   # 연계 1 + 과거 2 모두 재실행 시 중복
 
 
 def test_cleanup_removes_previous_unlinked_import(tmp_path):
@@ -135,6 +137,41 @@ def test_cleanup_removes_previous_unlinked_import(tmp_path):
         assert conn.execute(
             "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='APB26050101'"
         ).fetchone()[0] == 1
+
+
+def test_binder_without_record_is_archived(tmp_path):
+    """배합 기록이 없는 과거 행은 건너뛰지 않고, 같은 바인더 반제품에 배합 미연계로
+    점도만 보존한다 — lot_no=바인더+사용한PB, blend_record_id NULL, 측정일=엑셀 일자."""
+    import src.config as cfg
+
+    importlib.reload(cfg)
+    from src.db import get_connection, init_db
+
+    init_db()
+    xlsx = tmp_path / "바인더.xlsx"
+    wb = Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("24년도 바인더 점도 기록")
+    ws.append(["일자", "바인더", "사용한PB", "점도", "작업자"])
+    ws.append(["8월29일", "APB", "24082902", 373.8, "이재석"])   # 배합 기록 없음(과거)
+    wb.save(xlsx)
+
+    import scripts.import_binder_viscosity as imp
+
+    stats = imp.import_binder([str(xlsx)])
+    assert stats["linked"] == 0
+    assert stats["archived"] == 1
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT lot_no, viscosity, material_lot, blend_record_id, measured_date "
+            "FROM viscosity_readings WHERE lot_no = 'APB24082902'"
+        ).fetchone()
+        assert row is not None
+        assert row["viscosity"] == 373.8
+        assert row["material_lot"] == "24082902"       # PB 상관 키 유지
+        assert row["blend_record_id"] is None          # 배합 미연계
+        assert row["measured_date"] == "2024-08-29"    # 시트 연도 + 엑셀 월일
 
 
 def test_binder_normalize_rules():
