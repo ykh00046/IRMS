@@ -120,15 +120,24 @@ def _find_blend_record(connection, product_lot: str):
         return None
 
 
+CREATED_BY_MARKER = "binder-import"
+
+
 def _clean_previous_import(connection) -> int:
-    """이전 버전 임포트 흔적 제거 — 배합 미연계(blend_record_id IS NULL)이면서
-    lot_no 가 8자리 숫자이고 material_lot 과 같은 행(그때의 특징). 배합 화면으로
-    등록한 정상 점도(blend_record_id 있음, lot_no=product_lot)는 건드리지 않는다.
+    """이전 버전 임포트 흔적 제거 — 이 스크립트가 넣은 행(created_by 마커)만.
+
+    옛 흔적의 형태(배합 미연계 blend_record_id IS NULL 이면서 lot_no = material_lot)는
+    사용자가 배합 화면으로 **수동 등록한 PB 점도**(user 경로도 blend_record_id 를 NULL 로
+    남긴다)와도 겹친다. 따라서 형태만으로 지우면 사용자 입력을 삭제할 수 있다. created_by
+    마커로 출처를 한정해, 이 스크립트가 이전에 넣은 행만 정리한다(재임포트 멱등 유지,
+    사용자 수동 입력은 절대 건드리지 않음).
     """
     cur = connection.execute(
         "DELETE FROM viscosity_readings "
-        "WHERE blend_record_id IS NULL AND lot_no = material_lot "
-        "AND lot_no GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'"
+        "WHERE created_by = ? "
+        "AND blend_record_id IS NULL AND lot_no = material_lot "
+        "AND lot_no GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'",
+        (CREATED_BY_MARKER,),
     )
     return cur.rowcount
 
@@ -138,7 +147,7 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
     now = utc_now_text()
     stats = {
         "read": 0, "linked": 0, "archived": 0, "dup": 0, "cleaned": 0,
-        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0,
+        "skip_binder": 0, "skip_pb": 0, "skip_visc": 0, "skip_no_record": 0,
         "by_product": {}, "no_record_samples": [],
     }
     with get_connection() as connection:
@@ -222,10 +231,12 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
                             lot_no=lot_no,
                             viscosity=visc,
                             measured_date=measured_date,
-                            memo=None,
+                            # 출처를 created_by 마커로 고정한다(정리 스코프의 근거).
+                            # 엑셀의 작업자명은 잃지 않도록 memo 에 보존한다.
+                            memo=(f"작업자: {worker}" if worker else None),
                             recipe_material=recipe_material,
                             material_lot=pb,
-                            created_by=worker,
+                            created_by=CREATED_BY_MARKER,
                             created_at=now,
                             blend_record_id=blend_record_id,
                         )
@@ -250,7 +261,7 @@ def main() -> int:
     print(f"배합 기록에 연계 : {s['linked']}")
     print(f"과거(배합 없음) 보존: {s['archived']}")
     print(f"중복(멱등)       : {s['dup']}")
-    print(f"기타 제외 — 바인더 {s['skip_binder']} · 점도결측 {s['skip_visc']} · PB형식 {s['skip_pb']}")
+    print(f"기타 제외 — 바인더 {s['skip_binder']} · 점도결측 {s['skip_visc']} · PB형식 {s['skip_pb']} · 반제품확보실패 {s['skip_no_record']}")
     print(f"제품별 등록      : {s['by_product']}")
     if s["no_record_samples"]:
         print(f"배합 없어 과거로 보존한 LOT 표본: {s['no_record_samples']}")

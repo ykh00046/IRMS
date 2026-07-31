@@ -40,7 +40,13 @@ def samples_dir() -> str:
 
 def _base_name(role: str, worker: str | None) -> str:
     if role == "charge":
-        return f"{(worker or '').strip()}_charge"
+        name = (worker or "").strip()
+        # 경로 탈출 방지 — worker 이름은 파일명 base 로 그대로 쓰이므로
+        # 경로 구분자('/','\\')나 상위 참조('..')가 들어오면 거부한다.
+        # SAMPLES_DIR 밖으로 저장되는 traversal(예: "../../evil")을 막는다.
+        if "/" in name or "\\" in name or ".." in name or "\x00" in name:
+            raise ValueError("작업자 이름에 경로 문자를 쓸 수 없습니다.")
+        return f"{name}_charge"
     if role in ("review", "approve"):
         return role
     raise ValueError("알 수 없는 역할입니다.")

@@ -3163,7 +3163,12 @@
     // 재로그인하면 "이어서 하기" 배너가 진행분을 복구한다. 작업자 세션이 있을 때만 무장.
     if (createIdleLogout) {
       state.idleLogout = createIdleLogout({
-        isActive: () => Boolean(lockedWorkerName()),
+        // window-guard 로 막힌 중복 창은 서버 세션을 공유하므로, 활동이 없어도
+        // 만료시켜 주 창의 진행 중 배합 세션을 로그아웃시키면 안 된다. 다른 공유
+        // 상태 경로(저울 폴링·flushDraftNow)와 같이 blendWindowBlocked 를 함께 확인한다.
+        isActive: () =>
+          Boolean(lockedWorkerName()) &&
+          !(window.IRMS && window.IRMS.blendWindowBlocked),
         saveDraft: flushDraftNow,
         request: request,
         notify: notify,

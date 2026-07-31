@@ -50,6 +50,7 @@ _ALWAYS_ALLOWED = (
     re.compile(r"^/favicon\.ico$"),
     re.compile(r"^/health$"),
     re.compile(r"^/api/health$"),
+    re.compile(r"^/api/version$"),
     re.compile(r"^/management/login$"),
     re.compile(r"^/api/auth/management-login$"),
     re.compile(r"^/api/auth/logout$"),

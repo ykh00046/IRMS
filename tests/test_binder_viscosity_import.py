@@ -90,8 +90,9 @@ def test_binder_import_is_idempotent(tmp_path):
     assert second["dup"] == 3   # 연계 1 + 과거 2 모두 재실행 시 중복
 
 
-def test_cleanup_removes_previous_unlinked_import(tmp_path):
-    """이전 버전이 남긴 미연계 행(blend_record_id NULL, lot_no=material_lot 8자리)만 지운다."""
+def test_cleanup_scoped_to_import_marker(tmp_path):
+    """정리는 이 스크립트가 넣은 행(created_by 마커)만 지운다. 같은 형태라도
+    사용자가 수동 등록한 PB 점도(created_by 마커 아님, blend_record_id NULL)는 보존한다."""
     import src.config as cfg
 
     importlib.reload(cfg)
@@ -99,15 +100,24 @@ def test_cleanup_removes_previous_unlinked_import(tmp_path):
     from src.services import viscosity_service
 
     init_db()
+    import scripts.import_binder_viscosity as imp
     with get_connection() as conn:
         p = viscosity_service.ensure_product_by_code(conn, "APB", "APB", utc_now_text())
-        # 옛 방식 흔적
+        # (1) 이전 버전 임포트 흔적 — created_by 마커 + 옛 형태 → 지워져야 함
         viscosity_service.add_reading(
             conn, product_id=p["id"], lot_no="24990001", viscosity=400.0,
             measured_date="2024-09-01", memo=None, recipe_material=None,
-            material_lot="24990001", created_by="x", created_at=utc_now_text(),
+            material_lot="24990001", created_by=imp.CREATED_BY_MARKER,
+            created_at=utc_now_text(),
         )
-        # 배합 화면으로 등록한 정상 점도(연계됨) — 지우면 안 됨
+        # (2) 사용자가 수동 등록한 look-alike — 마커 아님(created_by NULL), 형태는 동일
+        #     → 절대 지우면 안 됨
+        viscosity_service.add_reading(
+            conn, product_id=p["id"], lot_no="24990002", viscosity=402.0,
+            measured_date="2024-09-02", memo=None, recipe_material=None,
+            material_lot="24990002", created_by=None, created_at=utc_now_text(),
+        )
+        # (3) 배합 화면으로 등록한 정상 연계 점도 — 지우면 안 됨
         conn.execute(
             "INSERT INTO blend_records (product_lot, product_name, worker, work_date, "
             "total_amount, status, created_at) VALUES ('APB26050101','APB','h','2026-05-01',1000,'completed',?)",
@@ -124,16 +134,19 @@ def test_cleanup_removes_previous_unlinked_import(tmp_path):
 
     xlsx = tmp_path / "바인더.xlsx"
     _make_binder_file(xlsx, pb_prefix="2699")   # 매칭 배합 없음 — 정리만 검증
-    import scripts.import_binder_viscosity as imp
     stats = imp.import_binder([str(xlsx)])
 
-    assert stats["cleaned"] == 1   # 옛 방식 1건 삭제
+    assert stats["cleaned"] == 1   # 마커 행 1건만 삭제(수동 look-alike 제외)
     with get_connection() as conn:
-        # 옛 방식은 사라지고
+        # (1) 마커 옛 방식은 사라지고
         assert conn.execute(
             "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='24990001'"
         ).fetchone()[0] == 0
-        # 정상 연계 점도는 보존
+        # (2) 사용자 수동 look-alike 는 생존
+        assert conn.execute(
+            "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='24990002'"
+        ).fetchone()[0] == 1
+        # (3) 정상 연계 점도는 보존
         assert conn.execute(
             "SELECT COUNT(*) FROM viscosity_readings WHERE lot_no='APB26050101'"
         ).fetchone()[0] == 1

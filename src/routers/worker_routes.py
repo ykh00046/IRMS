@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_current_user, require_access_level
 from ..db import get_db, utc_now_text, write_audit_log
+from ..limiter import limiter
 from ..security import hash_password
 from ..services import worker_service
 from .models import WorkerCreateBody, WorkerManagerBody, WorkerUpdateBody
@@ -31,9 +32,10 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return {"items": worker_service.list_workers(connection)}
 
     @open_router.post("/workers")
+    @limiter.limit("10/minute")
     def register_worker(
-        body: WorkerCreateBody,
         request: Request,
+        body: WorkerCreateBody,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         # category 검증 — None(생략) 은 미지정. 값이 있으면 허용 파트만(PATCH 와 동일).

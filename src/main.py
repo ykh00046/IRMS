@@ -1,8 +1,10 @@
+import logging
+import logging.handlers
 import re
 import subprocess
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from slowapi import _rate_limit_exceeded_handler
@@ -12,6 +14,7 @@ from starlette_csrf import CSRFMiddleware
 
 from .config import (
     BASE_DIR,
+    DATA_DIR,
     IS_DEVELOPMENT,
     REQUIRE_TRAY_API_TOKEN,
     SESSION_COOKIE_NAME,
@@ -60,6 +63,61 @@ def _compute_server_version() -> str:
 
 # 프로세스 수명 동안 고정되는 버전 마커(모듈 import 시 1회 계산).
 SERVER_VERSION = _compute_server_version()
+
+
+_error_logger: logging.Logger | None = None
+
+
+def _get_error_logger() -> logging.Logger | None:
+    """미처리 500 예외를 <IRMS_DATA_DIR>/errors.log 에 남기는 회전 로거.
+
+    serve.py 의 update-status.json 과 같은 취지 — 콘솔 로그를 놓쳐도 파일 하나로
+    무엇이 터졌는지 사후 확인할 수 있다. 응답에는 트레이스백을 싣지 않고(기존 500
+    동작 유지) 여기 파일에만 예외 종류·메시지·요청 경로를 기록한다.
+
+    핸들러 구성 실패(폴더 권한 등)는 부가 기능이므로 삼키고 None 을 반환한다 —
+    로깅이 요청 처리를 절대 막지 않는다.
+    """
+    global _error_logger
+    if _error_logger is not None:
+        return _error_logger
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        logger = logging.getLogger("irms.errors")
+        logger.setLevel(logging.ERROR)
+        logger.propagate = False
+        if not logger.handlers:
+            handler = logging.handlers.RotatingFileHandler(
+                DATA_DIR / "errors.log",
+                maxBytes=1_000_000,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+            )
+            logger.addHandler(handler)
+        _error_logger = logger
+    except Exception:  # noqa: BLE001 — 로거 구성 실패는 치명적 아님
+        return None
+    return _error_logger
+
+
+def _log_unhandled_exception(method: str, path: str, exc: BaseException) -> None:
+    """미처리 예외 한 건을 errors.log 에 기록. 자체적으로는 절대 raise 하지 않는다."""
+    try:
+        logger = _get_error_logger()
+        if logger is None:
+            return
+        logger.error(
+            "unhandled %s %s -> %s: %s",
+            method,
+            path,
+            type(exc).__name__,
+            exc,
+        )
+    except Exception:  # noqa: BLE001 — 로깅 실패가 요청/응답을 망치면 안 된다
+        pass
 
 
 def create_app() -> FastAPI:
@@ -129,6 +187,17 @@ def create_app() -> FastAPI:
         SecurityHeadersMiddleware,
         is_production=not IS_DEVELOPMENT,
     )
+
+    # 미처리 500 예외를 파일로 남긴다. call_next 를 감싸 예외를 로깅한 뒤 **그대로
+    # 다시 던져** Starlette 의 기본 500 처리(클라이언트에는 일반 오류만)를 보존한다.
+    # HTTPException 은 여기 도달 전에 응답으로 변환되므로 잡히지 않는다.
+    @app.middleware("http")
+    async def _persist_unhandled_errors(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:  # noqa: BLE001 — 로깅 후 재던지기(동작 불변)
+            _log_unhandled_exception(request.method, request.url.path, exc)
+            raise
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

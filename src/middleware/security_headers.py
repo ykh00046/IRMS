@@ -7,11 +7,23 @@ Headers applied to every response:
   - Referrer-Policy: same-origin
   - Permissions-Policy: minimal allowlist (no geolocation/camera/mic/payment)
   - Cross-Origin-Opener-Policy: same-origin
+  - Content-Security-Policy: conservative same-origin lock
 
 HSTS is intentionally skipped in development to avoid polluting the
 browser cache with a long-lived production-only directive. Other headers
 use ``setdefault`` so a router can explicitly override (e.g. an image
 endpoint that needs a different X-Frame-Options policy).
+
+CSP note: the Jinja2 templates carry inline code that a strict policy
+would break — e.g. an inline ``<script>`` block in ``entry.html`` and
+inline ``<style>`` / ``style="..."`` in ``status.html``,
+``material_lots.html``, ``admin_users.html``. Removing inline code is out
+of scope, so ``script-src``/``style-src`` keep ``'unsafe-inline'``. The
+policy still hardens the app: it pins every origin to ``'self'``, forbids
+framing (``frame-ancestors 'none'``), blocks plugins/objects
+(``object-src 'none'``), and prevents ``<base>`` hijacking
+(``base-uri 'self'``). Set via ``setdefault`` so it stays additive and a
+router can override for a specific response if ever needed.
 """
 
 from __future__ import annotations
@@ -21,6 +33,23 @@ from starlette.requests import Request
 
 
 _DEFAULT_HSTS_MAX_AGE = 31_536_000  # 1 year
+
+# Conservative same-origin CSP. 'unsafe-inline' is required by existing inline
+# scripts/styles in the templates (see module docstring); img data: URIs are
+# used by canvas-generated signatures and small inline assets.
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "frame-ancestors 'none'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "img-src 'self' data:; "
+    # 모든 화면이 CDN 웹폰트(pretendard=jsdelivr, JetBrains Mono=Google Fonts)를
+    # 로드하므로 폰트 CSS 도메인과 폰트 파일 도메인(gstatic)을 허용한다. 이를 빼면
+    # 폰트가 시스템 폴백으로 떨어진다(2026-07-31 CSP 도입 시 확인).
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:; "
+    "script-src 'self' 'unsafe-inline'"
+)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -53,6 +82,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "geolocation=(), camera=(), microphone=(), payment=()",
         )
         headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        headers.setdefault("Content-Security-Policy", _CONTENT_SECURITY_POLICY)
         if self._is_production:
             headers.setdefault(
                 "Strict-Transport-Security",

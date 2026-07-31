@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +10,7 @@ from ..blend_session import (
     touch_worker_session,
 )
 from ..db import get_db, write_audit_log
+from ..limiter import limiter
 from ..services import worker_service
 
 
@@ -34,9 +33,10 @@ def build_router() -> APIRouter:
         return {"worker": worker}
 
     @router.post("/login")
+    @limiter.limit("10/minute")
     def login(
-        body: BlendWorkerSessionRequest,
         request: Request,
+        body: BlendWorkerSessionRequest,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, str]:
         worker_name = body.worker.strip()

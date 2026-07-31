@@ -12,7 +12,9 @@ class LoginRequest(BaseModel):
 
 
 class ImportRequest(BaseModel):
-    raw_text: str = Field(min_length=1)
+    # 상한 200,000자 — 정상적인 배합표 붙여넣기는 수천 자 규모이므로, 병적으로 큰
+    # 붙여넣기(파서 과부하)를 Pydantic 검증 단계에서 422 로 거르는 안전장치.
+    raw_text: str = Field(min_length=1, max_length=200_000)
     created_by: str = Field(default="책임자")
     revision_of: int | None = None
     force: bool = False
