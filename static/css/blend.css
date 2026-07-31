@@ -219,6 +219,27 @@
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
 .blend-worker-hint { font-size: 0.68rem; color: var(--muted, #9ca3af); font-weight: 400; }
 
+/* 배합 임시 저장 복구 배너 — 배합·이어서 계량 두 화면 공용(각 템플릿 인라인 <style>에서
+   이동 2026-07-31). 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. */
+.blend-restore-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 12px; padding: 8px 14px;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+  font-size: 0.85rem; color: #92400e;
+}
+.blend-restore-banner[hidden] { display: none; }
+.blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
+
+/* 미등록 LOT '사유 적고 진행' 입력칸 + ERP 책임자 LOT 추가 상자 — 배합·이어서 계량 공용
+   (인라인 style/블록에서 이동 2026-07-31). 라벨 사이 간격은 인라인 margin-top 대체. */
+.lot-override-box { margin: 8px 0 4px; }
+.lot-override-box[hidden] { display: none; }
+.lot-override-box .filter-label:not(:first-child) { margin-top: 6px; }
+
+/* 계량 순서 안내 — 다음에 계량할 행 강조(blend.html 인라인 <style>에서 이동 2026-07-31) */
+.blend-table tbody tr.row-next > td { background: #eff6ff; }
+.blend-table tbody tr.row-next > td:first-child { box-shadow: inset 4px 0 0 #2563eb; }
+
 /* ── 초과 계량 증량(rescale) UI ────────────────────────────── */
 /* 모달 푸터는 배합 actions 그리드 재사용 — 버튼 한 줄 정렬. */
 .ss-modal-footer { padding: 0.8rem 1.25rem; border-top: 1px solid var(--border, #e5e7eb); }
@@ -315,17 +336,23 @@
   text-decoration: none;
 }
 
-/* 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소를 폼 칸 밖 풀폭 줄로.
-   좁은 폼 칸에 몰려 레이아웃이 깨지는 것을 방지(재배치만, 동작은 동일). */
-/* 도구줄을 절대배치 오버레이로 — 일반 흐름에 두면 필드 높이가 커져 총 배합량 입력칸이
-   이웃 필드보다 위로 밀린다(하단 정렬 그리드). 버튼 아래는 어차피 빈 공간이라 겹쳐 그린다. */
+/* 증량 취소 링크(#rescale-undo)만 절대배치 오버레이로 — 일반 흐름에 두면 필드 높이가
+   커져 총 배합량 입력칸이 이웃 필드보다 위로 밀린다(하단 정렬 그리드). 버튼 아래는 어차피
+   빈 공간이라 겹쳐 그린다. 기준량 버튼(#blend-base-links)은 라벨 줄(.blend-label-row)로
+   옮겨 이어서 계량 화면과 배치를 통일(2026-07-31). */
 .blend-field-total { position: relative; }
 .blend-total-tools {
   position: absolute; top: 100%; left: 0; min-width: 100%;
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
   margin-top: 3px; z-index: 5; white-space: nowrap;
 }
-.blend-total-tools:has(#blend-base-links[hidden]):has(#rescale-undo[hidden]) { display: none; }
+.blend-total-tools:has(#rescale-undo[hidden]) { display: none; }
+/* 방금 증량 취소 — 총량 도구줄 안의 링크형 버튼(blend.html 인라인 <style>에서 이동 2026-07-31) */
+.blend-undo-link {
+  margin-left: auto; padding: 0; border: 0; background: none; cursor: pointer;
+  color: #b45309; font-size: 0.75rem; font-weight: 600; text-decoration: underline;
+}
+.blend-undo-link[hidden] { display: none; }
 
 /* 증량 적용 요약 — 증량 후 저장·초기화·레시피 변경 전까지 자재별 추가분 상시 표시.
    주황 계열(기존 rescale 배지·취소 링크와 동일 톤)으로 증량 상태임을 강조. */

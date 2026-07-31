@@ -5,16 +5,8 @@
 {% block heading %}이어서 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260728e" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260731a" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260723k" />
-    <style>
-      /* 이어서 계량 임시 저장 복구 배너 — 배합 화면(blend.html)과 동일 스타일. */
-      .blend-restore-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        margin: 0 0 12px; padding: 8px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
-        font-size: 0.85rem; color: #92400e; }
-      .blend-restore-banner[hidden] { display: none; }
-      .blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
-    </style>
 {% endblock %}
 
 {% block content %}
@@ -161,7 +153,7 @@
             <div class="ss-modal-header"><h3 id="cont-lot-invalid-modal-title">등록되지 않은 로트</h3></div>
             <div class="ss-modal-body" id="cont-lot-invalid-modal-body"></div>
             <!-- 사유 입력 후 진행(안전밸브) — 배합 화면과 동일. 사유는 전 로트 공통 비고에 남는다. -->
-            <div class="lot-override-box" id="cont-lot-override-box" hidden style="margin:8px 0 4px;">
+            <div class="lot-override-box" id="cont-lot-override-box" hidden>
               <label class="filter-label" for="cont-lot-override-reason">진행 사유 (책임자 확인용)</label>
               <textarea class="input" id="cont-lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
             </div>
@@ -178,21 +170,19 @@
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-erp-lot-modal-title">
             <div class="ss-modal-header"><h3 id="cont-erp-lot-modal-title">등록되지 않은 LOT</h3></div>
             <div class="ss-modal-body" id="cont-erp-lot-modal-body"></div>
-            <div class="lot-override-box" id="cont-erp-lot-add-box" hidden style="margin:8px 0 4px;">
+            <div class="lot-override-box" id="cont-erp-lot-add-box" hidden>
               <label class="filter-label" for="cont-erp-add-username">책임자 이름</label>
               <input class="input" id="cont-erp-add-username" autocomplete="off" />
-              <label class="filter-label" for="cont-erp-add-password" style="margin-top:6px;">비밀번호</label>
+              <label class="filter-label" for="cont-erp-add-password">비밀번호</label>
               <input class="input" id="cont-erp-add-password" type="password" autocomplete="off" />
-              <label class="filter-label" for="cont-erp-add-note" style="margin-top:6px;">메모 (선택)</label>
+              <label class="filter-label" for="cont-erp-add-note">메모 (선택)</label>
               <input class="input" id="cont-erp-add-note" />
               <p class="login-error" id="cont-erp-lot-add-error" hidden></p>
             </div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="cont-erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
-              <button class="btn accent" id="cont-erp-lot-confirm" type="button">다시 확인</button>
-            </div>
-            <div class="ss-modal-footer blend-actions" style="justify-content:flex-end;">
               <button class="btn accent" id="cont-erp-lot-add-submit" type="button" hidden>추가</button>
+              <button class="btn accent" id="cont-erp-lot-confirm" type="button">다시 확인</button>
             </div>
           </div>
         </div>

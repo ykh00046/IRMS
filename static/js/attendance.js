@@ -273,7 +273,7 @@
       const tr = document.createElement("tr");
       tr.className = "att-empty-row";
       tr.innerHTML =
-        '<td colspan="18">표시할 근태 데이터가 없습니다.</td>';
+        '<td colspan="18"><div class="empty-state">표시할 근태 데이터가 없습니다.</div></td>';
       tbody.appendChild(tr);
       return;
     }
@@ -642,8 +642,11 @@
       }
     };
 
-    if (!readDismissed()) {
-      banner.hidden = false;
+    // 배너는 서버 게이트({% if password_reset_required %})로 이미 노출된 상태다.
+    // JS 가 안 돌아도 경고는 보여야 하므로 '보이기'는 하지 않고, 이번 세션에서
+    // 이미 닫은 경우에만 숨긴다(공용 PC 대비 sessionStorage 한정).
+    if (readDismissed()) {
+      banner.hidden = true;
     }
 
     dismissBtn?.addEventListener("click", () => {

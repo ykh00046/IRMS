@@ -10,7 +10,7 @@
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260717b" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260731a" />
   </head>
   <body class="launch-body">
     <main class="login-stage">
@@ -30,7 +30,7 @@
                '전체' 없음: 파트를 골라야 목록이 뜬다(이름 타이핑 검색은 전체에서 동작).
                파트 미지정 작업자는 '미지정'에서 보인다(도입기 하위호환). -->
           <div class="worker-part-filter">
-            <select class="input" id="blend-login-part">
+            <select class="input" id="blend-login-part" aria-label="파트">
               <option value="">파트 선택…</option>
               <option value="약품">약품</option>
               <option value="합성">합성</option>
@@ -81,6 +81,6 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/blend_login.js?v=20260717b"></script>
+    <script src="/static/js/blend_login.js?v=20260731a"></script>
   </body>
 </html>

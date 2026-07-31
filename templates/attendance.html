@@ -9,7 +9,7 @@
     <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260717a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260731a" />
   </head>
   <body
     class="att-page"
@@ -18,7 +18,7 @@
   >
     <header class="att-header">
       <div class="att-header-left">
-        <span class="brand-logo att-logo">IR</span>
+        <span class="brand-logo att-logo">BR</span>
         <div class="att-title-block">
           <p class="att-eyebrow">ATTENDANCE</p>
           <h1>근태 조회</h1>
@@ -30,24 +30,30 @@
         {% elif admin_mode %}
           <span class="att-badge att-badge-admin">책임자 + 본인 로그인</span>
         {% endif %}
-        {% if admin_mode %}
-          <a href="/admin/users" class="btn compact accent">사용자 관리</a>
-        {% endif %}
-        <a href="/viscosity" class="btn compact accent">점도</a>
-        <a href="/blend" class="btn compact accent">배합</a>
-        <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
-        <button id="att-logout-btn" class="btn compact">로그아웃</button>
-        <a href="/" class="btn compact">처음</a>
+        <div class="att-header-group">
+          {% if admin_mode %}
+            <a href="/admin/users" class="btn compact">사용자 관리</a>
+          {% endif %}
+          <a href="/viscosity" class="btn compact">점도</a>
+          <a href="/blend" class="btn compact">배합</a>
+        </div>
+        <span class="att-header-divider" aria-hidden="true"></span>
+        <div class="att-header-group">
+          <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
+          <button id="att-logout-btn" class="btn compact">로그아웃</button>
+          <a href="/" class="btn compact">처음</a>
+        </div>
       </div>
     </header>
 
     <main class="att-shell">
       {% if password_reset_required %}
+      {# 서버가 password_reset_required 로 이미 게이트하므로 기본 노출한다.
+         JS 가 실패해도 임시 비밀번호 경고는 반드시 보여야 한다 — JS 는 닫기(dismiss)만 담당. #}
       <section
         class="att-warning-banner"
         id="att-reset-banner"
         data-emp-id="{{ emp_id or '' }}"
-        hidden
       >
         <span class="att-warning-icon" aria-hidden="true">⚠</span>
         <span class="att-warning-text">
@@ -164,33 +170,37 @@
           <table class="att-table" id="att-rows-table">
             <thead>
               <tr>
-                <th rowspan="2">일자</th>
-                <th rowspan="2">요일</th>
-                <th rowspan="2">구분</th>
-                <th rowspan="2">근태코드</th>
-                <th rowspan="2">출근</th>
-                <th rowspan="2">퇴근</th>
-                <th colspan="4" class="att-group-weekday att-col-first">평일 근무</th>
-                <th colspan="4" class="att-group-holiday att-col-first">휴일 근무</th>
-                <th rowspan="2">지각</th>
-                <th rowspan="2">조퇴</th>
-                <th rowspan="2">외출</th>
-                <th rowspan="2">비고</th>
+                <th rowspan="2" scope="col">일자</th>
+                <th rowspan="2" scope="col">요일</th>
+                <th rowspan="2" scope="col">구분</th>
+                <th rowspan="2" scope="col">근태코드</th>
+                <th rowspan="2" scope="col">출근</th>
+                <th rowspan="2" scope="col">퇴근</th>
+                <th colspan="4" scope="colgroup" class="att-group-weekday att-col-first">평일 근무</th>
+                <th colspan="4" scope="colgroup" class="att-group-holiday att-col-first">휴일 근무</th>
+                <th rowspan="2" scope="col">지각</th>
+                <th rowspan="2" scope="col">조퇴</th>
+                <th rowspan="2" scope="col">외출</th>
+                <th rowspan="2" scope="col">비고</th>
               </tr>
               <tr>
-                <th class="att-group-weekday att-col-first">정상</th>
-                <th class="att-group-weekday">연장</th>
-                <th class="att-group-weekday">야근</th>
-                <th class="att-group-weekday">조출</th>
-                <th class="att-group-holiday att-col-first">정상</th>
-                <th class="att-group-holiday">연장</th>
-                <th class="att-group-holiday">야근</th>
-                <th class="att-group-holiday">조출</th>
+                <th scope="col" class="att-group-weekday att-col-first">정상</th>
+                <th scope="col" class="att-group-weekday">연장</th>
+                <th scope="col" class="att-group-weekday">야근</th>
+                <th scope="col" class="att-group-weekday">조출</th>
+                <th scope="col" class="att-group-holiday att-col-first">정상</th>
+                <th scope="col" class="att-group-holiday">연장</th>
+                <th scope="col" class="att-group-holiday">야근</th>
+                <th scope="col" class="att-group-holiday">조출</th>
               </tr>
             </thead>
             <tbody id="att-rows-body">
               <tr class="att-empty-row">
-                <td colspan="18">로딩 중...</td>
+                <td colspan="18">
+                  <div class="att-loading">
+                    <span class="spinner" role="status" aria-label="불러오는 중"></span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -209,7 +219,7 @@
     <script src="/static/js/common/ui.js?v=20260726a"></script>
     <script src="/static/js/common/audio.js?v=20260707b"></script>
     <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance.js?v=20260726a"></script>
+    <script src="/static/js/attendance.js?v=20260731a"></script>
     <script src="/static/js/attendance_session.js?v=20260624a"></script>
   </body>
 </html>

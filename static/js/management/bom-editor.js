@@ -252,13 +252,13 @@
       const matNo = (i) => bom.rows.slice(0, i).filter((r) => r.type === "material").length + 1;
       const rowsHtml = bom.rows.map((row, i) => {
         const move =
-          `<button type="button" class="bom-move" data-act="up" title="위로">▲</button>` +
-          `<button type="button" class="bom-move" data-act="down" title="아래로">▼</button>`;
+          `<button type="button" class="bom-move" data-act="up" title="위로" aria-label="행 위로 이동">▲</button>` +
+          `<button type="button" class="bom-move" data-act="down" title="아래로" aria-label="행 아래로 이동">▼</button>`;
         if (row.type === "step") {
           return `<div class="bom-row bom-row-step" data-idx="${i}">
             <span class="bom-no">▸</span>
             <input class="input bom-step-note" value="${esc(row.note)}" placeholder="공정 설명 (예: 개시제 교반 - 300rpm)" />
-            <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제">✕</button></span>
+            <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제" aria-label="행 삭제">✕</button></span>
           </div>`;
         }
         // 품목코드 배지 — 등록된 자재(materials.code 보유)의 코드를 상시 표시.
@@ -269,7 +269,7 @@
           <input class="input bom-name" list="bom-material-names" value="${esc(row.name)}" placeholder="자재명" autocomplete="off" />
           <span class="bom-code" title="품목코드">${esc(code)}</span>
           <input class="input bom-value" value="${esc(row.value)}" placeholder="배합량(g)" inputmode="decimal" />
-          <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제">✕</button></span>
+          <span class="bom-tools">${move}<button type="button" class="bom-del" title="삭제" aria-label="행 삭제">✕</button></span>
         </div>`;
       }).join("");
 

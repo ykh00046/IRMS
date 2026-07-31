@@ -595,10 +595,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function render(cfg, ranges) {
       grid.innerHTML = Object.keys(LABELS).map((k) => {
         const r = ranges[k] || [0, 10];
-        return `<label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-          <span>${LABELS[k]}</span>
+        return `<div class="form-group">
+          <label class="filter-label">${LABELS[k]}</label>
           <input type="number" data-key="${k}" value="${cfg[k]}" step="0.05" min="${r[0]}" max="${r[1]}" class="input" />
-        </label>`;
+        </div>`;
       }).join("");
     }
     function collect() {

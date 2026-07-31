@@ -389,6 +389,19 @@
   color: var(--brand, #1b4079);
 }
 
+/* 진행/안내 문구 — .login-error(common.css) 와 같은 레이아웃/여백이되 오류 빨강이
+   아닌 뮤트 톤. blend_login.js 가 className="login-note" 로 설정한다. */
+.login-note {
+  color: var(--text-secondary, #56627b);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--border-strong, #d6dce7);
+  background: rgba(86, 98, 123, 0.08);
+  border-radius: var(--radius-sm, 6px);
+}
+.login-note[hidden] { display: none !important; }
+
 
 
 @media (max-width: 900px) {

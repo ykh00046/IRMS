@@ -43,6 +43,7 @@
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
+  /* 'ATTENDANCE' 는 라틴 아이브로우라 대문자 유지 (한국어 텍스트에는 쓰지 않음). */
   text-transform: uppercase;
   color: var(--accent-secondary-hover, #df6a16);
 }
@@ -55,13 +56,37 @@
   flex-wrap: wrap;
 }
 
+/* 헤더 오른쪽은 두 무리로 나뉜다 — 화면 이동 바로가기(사용자관리/점도/배합)와
+   계정 동작(비밀번호 변경/로그아웃/처음). 공용 터미널에서 한눈에 구분되도록
+   각 무리를 묶고 사이에 세로 구분선을 둔다. 바로가기는 accent(네이비)를 빼서
+   계정 동작과 무게를 맞춘다. */
+.att-header-group {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.att-header-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 1.6rem;
+  background: var(--border-strong, #d7dbe3);
+}
+
+@media (max-width: 640px) {
+  /* 좁은 화면에서 세로선은 줄바꿈되면 어색하다 — 숨긴다. */
+  .att-header-divider {
+    display: none;
+  }
+}
+
 .att-badge {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   background: rgba(51, 65, 85, 0.12);
   color: var(--text-secondary, #334155);
 }
@@ -121,7 +146,8 @@
 .att-profile {
   background: #fff;
   border: 1px solid var(--border-strong, #d7dbe3);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
   padding: 1rem 1.25rem;
   display: flex;
   justify-content: space-between;
@@ -206,9 +232,9 @@
 .att-summary-card {
   background: #fff;
   border: 1px solid var(--border-strong, #d7dbe3);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   padding: 1rem 1.1rem;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-subtle);
 }
 
 .att-summary-card-wide {
@@ -241,7 +267,6 @@
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
   color: var(--text-secondary, #334155);
   margin: 0 0 0.55rem;
 }
@@ -370,7 +395,8 @@
 .att-table-wrap {
   background: #fff;
   border: 1px solid var(--border-strong, #d7dbe3);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
   padding: 1rem 1.1rem;
 }
 
@@ -389,6 +415,9 @@
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.88rem;
+  /* 그룹 헤더(1행)의 렌더 높이. 하위 헤더(2행) sticky 오프셋과 반드시 같아야
+     두 sticky 행이 어긋나지 않는다 — 한 곳에서만 관리하도록 변수로 공유. */
+  --att-group-header-h: 2.05rem;
 }
 
 .att-table th,
@@ -417,6 +446,7 @@
   font-weight: 700;
   color: var(--text-secondary, #334155);
   font-size: 0.82rem;
+  height: var(--att-group-header-h);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -430,7 +460,7 @@
   color: var(--text-secondary, #334155);
   font-size: 0.78rem;
   position: sticky;
-  top: 2.05rem;
+  top: var(--att-group-header-h);
   z-index: 1;
   border-bottom: 1px solid var(--line-strong);
 }
@@ -477,7 +507,7 @@
 
 /* Saturday / Sunday / holiday row tints — these override the zebra stripes. */
 .att-table tr.att-day-saturday > td {
-  background: #eff6ff !important;
+  background: var(--cal-saturday-bg, #eff6ff) !important;
 }
 
 .att-table tr.att-day-saturday > td.att-col-weekday {
@@ -490,12 +520,12 @@
 
 .att-table tr.att-day-saturday > td.att-date-cell,
 .att-table tr.att-day-saturday > td.att-weekday-cell {
-  color: var(--brand);
+  color: var(--cal-saturday, var(--brand));
   font-weight: 700;
 }
 
 .att-table tr.att-day-sunday > td {
-  background: #fff1f2 !important;
+  background: var(--cal-sunday-bg, #fff1f2) !important;
 }
 
 .att-table tr.att-day-sunday > td.att-col-weekday {
@@ -508,12 +538,12 @@
 
 .att-table tr.att-day-sunday > td.att-date-cell,
 .att-table tr.att-day-sunday > td.att-weekday-cell {
-  color: #b91c1c;
+  color: var(--cal-sunday, #b91c1c);
   font-weight: 700;
 }
 
 .att-table tr.att-day-rest > td {
-  background: #f8fafc !important;
+  background: var(--cal-rest-bg, #f8fafc) !important;
 }
 
 .att-table tr.att-day-rest > td.att-col-weekday {
@@ -526,12 +556,12 @@
 
 .att-table tr.att-day-rest > td.att-date-cell,
 .att-table tr.att-day-rest > td.att-weekday-cell {
-  color: var(--text-secondary);
+  color: var(--cal-rest, var(--text-secondary));
   font-weight: 700;
 }
 
 .att-table tr.att-day-leave > td {
-  background: #f0fdf4 !important;
+  background: var(--cal-leave-bg, #f0fdf4) !important;
 }
 
 .att-table tr.att-day-leave > td.att-col-weekday {
@@ -545,12 +575,12 @@
 .att-table tr.att-day-leave > td.att-date-cell,
 .att-table tr.att-day-leave > td.att-weekday-cell,
 .att-table tr.att-day-leave > td.att-code-cell {
-  color: #166534;
+  color: var(--cal-leave, #166534);
   font-weight: 700;
 }
 
 .att-table tr.att-day-holiday > td {
-  background: #fff7ed !important;
+  background: var(--cal-holiday-bg, #fff7ed) !important;
 }
 
 .att-table tr.att-day-holiday > td.att-col-weekday {
@@ -563,7 +593,7 @@
 
 .att-table tr.att-day-holiday > td.att-date-cell,
 .att-table tr.att-day-holiday > td.att-weekday-cell {
-  color: #9a3412;
+  color: var(--cal-holiday, #9a3412);
   font-weight: 700;
 }
 
@@ -605,27 +635,27 @@
 
 .att-pill-weekday {
   background: var(--line);
-  color: var(--text-secondary);
+  color: var(--cal-weekday, var(--text-secondary));
 }
 
 .att-pill-saturday {
   background: #bfdbfe;
-  color: #1e3a8a;
+  color: var(--cal-saturday, #1e3a8a);
 }
 
 .att-pill-sunday {
   background: #fecaca;
-  color: #7f1d1d;
+  color: var(--cal-sunday, #7f1d1d);
 }
 
 .att-pill-rest {
   background: var(--line);
-  color: var(--text-secondary);
+  color: var(--cal-rest, var(--text-secondary));
 }
 
 .att-pill-holiday {
   background: #fed7aa;
-  color: #7c2d12;
+  color: var(--cal-holiday, #7c2d12);
 }
 
 .att-daytype-cell {
@@ -691,7 +721,7 @@
 
 .att-code-pill-leave {
   background: #dcfce7;
-  color: #166534;
+  color: var(--cal-leave, #166534);
 }
 
 .att-code-pill-issue {
@@ -708,6 +738,14 @@
   text-align: center;
   color: var(--text-secondary, #334155);
   padding: 1.3rem 0.5rem;
+}
+
+/* 초기 로딩 스피너를 셀 가운데에 둔다(공용 .spinner). */
+.att-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.6rem 0;
 }
 
 .att-table-hint {

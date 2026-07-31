@@ -5,39 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260728e" />
-    <style>
-      /* 파생 이월(carry-over) 인라인 컨트롤 — 기준 자재 LOT 칸 옆 배지+버튼 */
-      .carry-over-wrap { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
-      .carry-over-badge { font-size: 0.72rem; }
-      .carry-over-btn { padding: 1px 8px; font-size: 0.78rem; }
-      /* 이월 적용된 실제량 칸 — 회색 배경 + 읽기 전용 표시 */
-      .blend-actual.carried-over { background: #f1f5f9; font-weight: 600; }
-      .carry-over-tag {
-        display: inline-block; margin-left: 4px; padding: 0 6px; font-size: 0.7rem;
-        background: #64748b; color: #fff; border-radius: 8px; cursor: pointer;
-      }
-      .carry-over-tag:hover { background: #475569; }
-      .carry-over-caution { color: #b45309; font-weight: 600; }
-      /* 방금 증량 취소 — 총량 라벨 줄 오른쪽 링크형 버튼 */
-      .blend-undo-link {
-        margin-left: auto; padding: 0; border: 0; background: none; cursor: pointer;
-        color: #b45309; font-size: 0.75rem; font-weight: 600; text-decoration: underline;
-      }
-      .blend-undo-link[hidden] { display: none; }
-      /* 미등록 LOT '사유 적고 진행' 입력칸 */
-      .lot-override-box { margin: 8px 0 4px; }
-      .lot-override-box[hidden] { display: none; }
-      /* 배합 임시 저장 복구 배너 */
-      .blend-restore-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        margin: 0 0 12px; padding: 8px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
-        font-size: 0.85rem; color: #92400e; }
-      .blend-restore-banner[hidden] { display: none; }
-      .blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
-      /* 계량 순서 안내 — 다음에 계량할 행 강조 */
-      .blend-table tbody tr.row-next > td { background: #eff6ff; }
-      .blend-table tbody tr.row-next > td:first-child { box-shadow: inset 4px 0 0 #2563eb; }
-    </style>
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260731a" />
 {% endblock %}
 
 {% block content %}
@@ -77,13 +45,14 @@
                   <select class="input" id="blend-recipe"><option value="">레시피 선택…</option></select>
                 </div>
                 <div class="blend-field blend-field-total">
-                  <label class="filter-label" for="blend-total">총 배합량 (g)</label>
-                  <input class="input" id="blend-total" type="number" step="0.1" min="0" />
-                  <!-- 총 배합량 보조 도구줄 — 기준량 버튼·증량 취소. 입력칸 '바로 아래'에 붙여
-                       발견성 유지(폼 밖 풀폭 줄로 뺐더니 사용자가 못 찾음 2026-07-22). 라벨 줄이
-                       아닌 입력 아래라 칸이 좁아도 줄바꿈으로 자연 배치된다. -->
-                  <div id="blend-total-tools" class="blend-total-tools">
+                  <!-- 기준량 버튼은 라벨 줄에(이어서 계량 화면과 배치 통일 2026-07-31).
+                       증량 취소 링크만 입력칸 아래 절대배치 오버레이로 둬 필드 높이를 유지한다. -->
+                  <div class="blend-label-row">
+                    <label class="filter-label" for="blend-total">총 배합량 (g)</label>
                     <span class="blend-base-links" id="blend-base-links" hidden></span>
+                  </div>
+                  <input class="input" id="blend-total" type="number" step="0.1" min="0" />
+                  <div id="blend-total-tools" class="blend-total-tools">
                     <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
                   </div>
                 </div>
@@ -273,7 +242,7 @@
                 <p class="add-weigh-portions-empty" id="add-weigh-portions-empty">아직 담지 않았습니다. 아래에 담은 양을 넣으면 회차별로 쌓입니다.</p>
               </div>
               <div class="add-weigh-input-row" id="add-weigh-input-row">
-                <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="담을 양 g" autofocus />
+                <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="담을 양 g" aria-label="담을 양 (g)" autofocus />
                 <button class="btn accent" id="add-weigh-add-btn" type="button">담기</button>
               </div>
               <p class="muted add-weigh-note" id="add-weigh-note">저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.</p>
@@ -330,9 +299,12 @@
                   <input class="input" id="rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="rescale-absence-submit" type="button">부재로 진행</button>
-              <button class="btn" id="rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 기록은 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
+              <!-- 세 번째 길 — 그냥 덜어내고 다시 재고 싶을 때. 부재 처리 절차와 섞이지 않게
+                   구분선 아래 별도 줄로 둔다(이어서 계량 화면과 동일). -->
+              <hr class="rescale-approve-divider" />
+              <button class="btn" id="rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
             </div>
           </div>
         </div>
@@ -414,21 +386,19 @@
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="erp-lot-modal-title">
             <div class="ss-modal-header"><h3 id="erp-lot-modal-title">등록되지 않은 LOT</h3></div>
             <div class="ss-modal-body" id="erp-lot-modal-body"></div>
-            <div class="lot-override-box" id="erp-lot-add-box" hidden style="margin:8px 0 4px;">
+            <div class="lot-override-box" id="erp-lot-add-box" hidden>
               <label class="filter-label" for="erp-add-username">책임자 이름</label>
               <input class="input" id="erp-add-username" autocomplete="off" />
-              <label class="filter-label" for="erp-add-password" style="margin-top:6px;">비밀번호</label>
+              <label class="filter-label" for="erp-add-password">비밀번호</label>
               <input class="input" id="erp-add-password" type="password" autocomplete="off" />
-              <label class="filter-label" for="erp-add-note" style="margin-top:6px;">메모 (선택)</label>
+              <label class="filter-label" for="erp-add-note">메모 (선택)</label>
               <input class="input" id="erp-add-note" />
               <p class="login-error" id="erp-lot-add-error" hidden></p>
             </div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
-              <button class="btn accent" id="erp-lot-confirm" type="button">다시 확인</button>
-            </div>
-            <div class="ss-modal-footer blend-actions" id="erp-lot-add-submit-row" style="justify-content:flex-end;">
               <button class="btn accent" id="erp-lot-add-submit" type="button" hidden>추가</button>
+              <button class="btn accent" id="erp-lot-confirm" type="button">다시 확인</button>
             </div>
           </div>
         </div>

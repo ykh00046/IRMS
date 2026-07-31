@@ -102,9 +102,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderSummary(data) {
-    document.getElementById("card-blend-count").textContent = fmtNumber(data.blend_count);
-    document.getElementById("card-weight").textContent = fmtNumber(data.total_weight_g, 1);
-    document.getElementById("card-products").textContent = fmtNumber(data.product_count);
+    // 값+단위를 한 줄로(insight 카드와 동일한 인라인 span 형태). textContent 는 span 을
+    // 지우므로 innerHTML 로 단위 span 을 함께 넣는다.
+    document.getElementById("card-blend-count").innerHTML =
+      `${fmtNumber(data.blend_count)}<span class="metric-unit">건</span>`;
+    document.getElementById("card-weight").innerHTML =
+      `${fmtNumber(data.total_weight_g, 1)}<span class="metric-unit">g</span>`;
+    document.getElementById("card-products").innerHTML =
+      `${fmtNumber(data.product_count)}<span class="metric-unit">종</span>`;
     // '결재 대기' 카드·API 필드(approval_pending)는 제거됨(결재 현장 미사용, 2026-07-23).
     const anomaly = document.getElementById("card-visc-anomaly");
     anomaly.textContent = fmtNumber(data.viscosity_anomaly);
@@ -216,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = document.getElementById("recent-body");
     const items = data.items || [];
     if (!items.length) {
-      body.innerHTML = '<tr><td colspan="6"><div class="empty-state">배합 기록 없음</div></td></tr>';
+      body.innerHTML = '<tr><td colspan="5"><div class="empty-state">배합 기록 없음</div></td></tr>';
       return;
     }
     body.innerHTML = items
@@ -233,7 +238,6 @@ document.addEventListener("DOMContentLoaded", () => {
             <td>${IRMS.escapeHtml(r.worker || "-")}</td>
             <td class="num">${fmtNumber(r.total_amount, 1)}</td>
             <td>${r.has_viscosity ? "입력" : '<span class="muted">미입력</span>'}</td>
-            <td>${r.approved ? "완료" : '<span class="muted">대기</span>'}</td>
           </tr>
         `;
       })

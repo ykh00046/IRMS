@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260731b" />
 {% endblock %}
 
 {% block content %}
@@ -116,6 +116,7 @@
                       <th class="num">총량</th>
                       <th class="num">점도</th>
                       <th>상태</th>
+                      {% if can_manage %}<th>관리</th>{% endif %}
                     </tr>
                   </thead>
                   <tbody id="visc-blend-body"></tbody>
@@ -146,12 +147,12 @@
         <section class="panel">
           <div class="visc-panel-head">
             <h3 class="panel-title">기간별 추세 및 분석</h3>
-            <div class="visc-gran-toggle" id="visc-gran-toggle">
-              <button class="btn btn-sm active" data-gran="day" type="button">일</button>
-              <button class="btn btn-sm" data-gran="week" type="button">주</button>
-              <button class="btn btn-sm" data-gran="month" type="button">월</button>
-              <button class="btn btn-sm" data-gran="quarter" type="button">분기</button>
-              <button class="btn btn-sm" data-gran="year" type="button">연도</button>
+            <div class="visc-gran-toggle" id="visc-gran-toggle" role="group" aria-label="기간 단위">
+              <button class="btn btn-sm active" data-gran="day" type="button" aria-pressed="true">일</button>
+              <button class="btn btn-sm" data-gran="week" type="button" aria-pressed="false">주</button>
+              <button class="btn btn-sm" data-gran="month" type="button" aria-pressed="false">월</button>
+              <button class="btn btn-sm" data-gran="quarter" type="button" aria-pressed="false">분기</button>
+              <button class="btn btn-sm" data-gran="year" type="button" aria-pressed="false">연도</button>
             </div>
           </div>
           <div class="chart-wrap visc-period-chart"><canvas id="visc-period-chart"></canvas></div>
@@ -200,7 +201,7 @@
         </section>
 
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal">
+          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="visc-settings-title" tabindex="-1">
             <div class="ss-modal-header">
               <h3 id="visc-settings-title">반제품 설정</h3>
               <button id="visc-settings-close" class="btn" type="button">닫기</button>
@@ -291,7 +292,7 @@
         <!-- 통계 제외 모달 — 책임자가 규격 이탈/이상 측정을 삭제하지 않고 통계(평균·σ·추세)
              에서만 빼둘 때. 사유 필수. hidden 속성으로만 여닫는다(CSS 충돌 방지, 저장소 관례). -->
         <div id="visc-exclude-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal visc-exclude-modal">
+          <div class="ss-modal visc-exclude-modal" role="dialog" aria-modal="true" aria-labelledby="visc-exclude-title" tabindex="-1">
             <div class="ss-modal-header">
               <h3 id="visc-exclude-title">통계 제외</h3>
               <button id="visc-exclude-close" class="btn" type="button">닫기</button>
@@ -315,5 +316,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260731a"></script>
-    <script src="/static/js/viscosity.js?v=20260731a"></script>
+    <script src="/static/js/viscosity.js?v=20260731b"></script>
 {% endblock %}

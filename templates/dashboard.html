@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260729a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260731a" />
 {% endblock %}
 
 {% block content %}
@@ -31,18 +31,15 @@
         <section class="dashboard-cards">
           <div class="metric-card">
             <div class="metric-label">배합 건수</div>
-            <div class="metric-value" id="card-blend-count">-</div>
-            <div class="metric-unit">건</div>
+            <strong class="metric-value" id="card-blend-count">-<span class="metric-unit">건</span></strong>
           </div>
           <div class="metric-card">
             <div class="metric-label">총 배합량</div>
-            <div class="metric-value" id="card-weight">-</div>
-            <div class="metric-unit">g</div>
+            <strong class="metric-value" id="card-weight">-<span class="metric-unit">g</span></strong>
           </div>
           <div class="metric-card">
             <div class="metric-label">반제품 종류</div>
-            <div class="metric-value" id="card-products">-</div>
-            <div class="metric-unit">종</div>
+            <strong class="metric-value" id="card-products">-<span class="metric-unit">종</span></strong>
           </div>
           <!-- '결재 대기' 카드 제거(2026-07-15): 결재는 현장 미사용 정책 — 죽은 지표가
                상시 주황 숫자로 떠서 혼란만 줬다. approval_pending 필드는 2026-07-23 제거됨 -->
@@ -114,7 +111,6 @@
                     <th>작업자</th>
                     <th class="num">총량(g)</th>
                     <th>점도</th>
-                    <th>결재</th>
                   </tr>
                 </thead>
                 <tbody id="recent-body"></tbody>
@@ -127,5 +123,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260729a"></script>
+    <script src="/static/js/dashboard.js?v=20260731a"></script>
 {% endblock %}

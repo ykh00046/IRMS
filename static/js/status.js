@@ -18,6 +18,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }[c]));
   let detailId = null;
   let currentRecord = null;
+
+  // ── 모달 접근성 헬퍼 ─────────────────────────────────────────────
+  // role/aria-modal 은 템플릿에 두고, 여기서 열 때 포커스 이동·닫을 때 복원 +
+  // Esc + 배경 클릭 닫기를 건다. 표준 닫기 경로 = 닫기 버튼 · 배경 클릭 · Esc.
+  function createModal(overlayId, opts) {
+    opts = opts || {};
+    const overlay = $(overlayId);
+    let opener = null;
+    function open(focusEl) {
+      // 재렌더(같은 모달을 다시 open)일 때는 원래 오프너를 보존해 복원 대상이 흔들리지 않게.
+      if (overlay.hidden) opener = document.activeElement;
+      overlay.hidden = false;
+      const target = focusEl
+        || (opts.initialFocus && $(opts.initialFocus))
+        || overlay.querySelector(".ss-modal");
+      if (target && target.focus) setTimeout(() => { try { target.focus(); } catch (_e) { /* noop */ } }, 0);
+    }
+    function close() {
+      if (overlay.hidden) return;
+      overlay.hidden = true;
+      if (opts.onClose) opts.onClose();
+      if (opener && opener.focus) { try { opener.focus(); } catch (_e) { /* noop */ } }
+      opener = null;
+    }
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    overlay.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); close(); }
+    });
+    return { open, close };
+  }
+  const detailModal = createModal("status-detail-modal", { initialFocus: "status-detail-close" });
   // 증량 요약 맵(record_id → {rescale_count, rescale_unacked, rescale_events}).
   // 목록/상세 응답에 rescale 필드가 없어 자체 요약 엔드포인트로 병합 안전하게 채운다.
   let rescaleMap = {};
@@ -157,6 +188,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadRecords() {
     const body = $("status-rec-body");
+    // 조회 중 로딩 표시 — 초기 진입·재조회 모두 공용 .spinner 로.
+    body.innerHTML = '<tr><td colspan="7"><div class="table-loading"><span class="spinner"></span> 불러오는 중…</div></td></tr>';
     const query = {
       start_date: $("status-rec-from").value || undefined,
       end_date: $("status-rec-to").value || undefined,
@@ -208,8 +241,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // 목록에 표시해도 책임자 로그인 시에만 보인다.
         const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
         // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
+        // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
         const canceledTag = r.status === "canceled"
-          ? ' <span class="rescale-badge unacked" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
+          ? ' <span class="status-chip status-canceled" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
         tr.innerHTML =
           `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
           `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${canceledTag}${rescaleBadge(r.id)}${bulkBadge(r)}</td>` +
@@ -325,7 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     wireAck("detail-rescale-ack", "rescale-ack", "증량을");
     wireAck("detail-manual-ack", "manual-absence-ack", "수기 입력을");
-    $("status-detail-modal").hidden = false;
+    detailModal.open();
   }
 
   // ── 전체 수정(책임자 전용) ────────────────────────────────────
@@ -347,7 +381,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? ' readonly title="반응기 이월 — 1차 총량으로 자동 기록(수정 불가)"'
       : "";
     const mark = carried
-      ? ' <span title="반응기 이월 행 — 1차 총량으로 자동 기록" style="margin-left:4px;padding:0 6px;border-radius:8px;background:#2563eb;color:#fff;font-size:0.72rem;font-weight:600;white-space:nowrap;">이월</span>'
+      ? ' <span class="carried-badge" title="반응기 이월 행 — 1차 총량으로 자동 기록">이월</span>'
       : "";
     return `<tr class="edit-row" data-carried="${carried}">
       <td><input class="input e-name" value="${esc(d.material_name || "")}" placeholder="자재명" />${mark}</td>
@@ -544,9 +578,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // '취소 포함' 토글 — 켜면 취소된 기록까지 조회해 상세에서 복원할 수 있다.
   const canceledChk = $("status-rec-canceled");
   if (canceledChk) canceledChk.addEventListener("change", loadRecords);
-  $("status-detail-close").addEventListener("click", () => {
-    $("status-detail-modal").hidden = true;
-  });
+  $("status-detail-close").addEventListener("click", () => detailModal.close());
   $("status-pdf").addEventListener("click", () => {
     if (!detailId) return;
     const sign = $("status-detail-sign") && $("status-detail-sign").checked ? "?sign=1" : "";
@@ -567,7 +599,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
     try {
       await cancelRecord(detailId, reason.trim());
-      $("status-detail-modal").hidden = true;
+      detailModal.close();
       detailId = null;
       IRMS.notify("배합 기록을 취소했습니다. 필요하면 상세에서 복원할 수 있습니다.", "success");
       await loadRecords();
@@ -609,7 +641,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!reason.trim()) { IRMS.notify("사유를 입력해야 삭제할 수 있습니다.", "error"); return; }
     try {
       await hardDeleteRecord(detailId, reason.trim());
-      $("status-detail-modal").hidden = true;
+      detailModal.close();
       detailId = null;
       IRMS.notify("배합 기록을 완전히 삭제했습니다.", "success");
       await loadRecords();

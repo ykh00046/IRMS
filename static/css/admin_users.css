@@ -26,10 +26,10 @@
   border-color: var(--border-strong);
 }
 
+/* 한글 라벨에는 uppercase/letter-spacing 을 걸지 않는다(자간이 벌어져 어색).
+   .metric-label 과 동일한 표기로 맞춘다(insight.css 참고). */
 .summary-label {
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--text-secondary);
 }
 
@@ -296,3 +296,39 @@
   margin: 0.35rem 0 0;
   line-height: 1.4;
 }
+
+/* 서명·백업 설정 폼 — 반복되던 인라인 style(label flex-column, grid, checkbox row)을
+   명명 클래스로 통일. 라벨은 .form-group + .filter-label 공용 클래스를 쓴다. */
+.sig-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.7rem;
+}
+.sig-sample-form {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.admin-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 600px;
+}
+.checkbox-inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.sig-preview {
+  max-width: 100%;
+  margin-top: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.sig-sample-list { margin-top: 0.9rem; }
+.sheets-status { font-weight: 600; }
+.mt-actions { margin-top: 0.9rem; }

@@ -42,7 +42,7 @@
 /* 지표 카드/그리드/차트 공용 스타일은 common.css 로 이동. 여기엔 대시보드 전용만 유지. */
 .dashboard-operators-panel .table-wrap { max-height: 300px; overflow-y: auto; }
 
-/* 최근 배합 기록 — 좁은 패널에 6열이 들어가도록 컴팩트 표 */
+/* 최근 배합 기록 — 좁은 패널에 5열이 들어가도록 컴팩트 표 */
 .dash-recent th,
 .dash-recent td {
   padding: 0.45rem 0.5rem;
@@ -60,8 +60,8 @@
 .dashboard-rescale-alert { margin-bottom: 18px; }
 .rescale-alert-card { padding: 16px 20px; }
 .rescale-alert-card.has-unacked {
-  border-color: #f3c3c0;
-  background: #fdf7f6;
+  border-color: var(--status-error);
+  background: var(--status-error-bg);
 }
 .rescale-alert-head {
   display: flex;
@@ -98,6 +98,6 @@
 .rescale-kind {
   display: inline-block; margin-right: 6px; padding: 1px 7px;
   border-radius: 999px; font-size: 0.72rem; font-weight: 700;
-  background: #fef3c7; color: #92400e;
+  background: var(--status-warning-bg); color: var(--status-warning);
 }
-.rescale-kind.is-manual { background: #e2e8f0; color: #334155; }
+.rescale-kind.is-manual { background: var(--bg-surface-300); color: var(--text-secondary); }

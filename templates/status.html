@@ -6,47 +6,95 @@
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/blend.css?v=20260726a" />
+    <style>
+      /* status(배합 기록) 전용 소량 스타일 — 페이지 자립 CSS 가 없어 여기 인라인.
+         공용 토큰만 사용하고, 색·모양 하드코딩을 두지 않는다. */
+
+      /* 툴바 2분할 — 조회 조건(왼쪽) / 동작(오른쪽). viscosity 의
+         .visc-toolbar-filters/.visc-toolbar-actions 와 같은 구조. */
+      .status-toolbar { justify-content: space-between; }
+      .status-toolbar-filters,
+      .status-toolbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 0.6rem;
+      }
+      .status-toolbar-actions { align-items: center; }
+
+      /* 선택 체크박스 열 — 좁은 고정 폭(예전엔 규칙이 없어 내용만큼 늘어졌다). */
+      .chk-col { width: 2.4rem; text-align: center; }
+
+      /* 반응기 이월 배지 — 인라인 style 하드코딩(#2563eb) 대신 브랜드 토큰 클래스. */
+      .carried-badge {
+        display: inline-block;
+        margin-left: 4px;
+        padding: 0 6px;
+        border-radius: 8px;
+        background: var(--brand);
+        color: var(--bg-base, #fff);
+        font-size: 0.72rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      /* 초기·조회 로딩 — 공용 .spinner 를 표 안에 중앙 배치. */
+      .table-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        padding: 1.4rem;
+        color: var(--text-tertiary);
+      }
+    </style>
 {% endblock %}
 
 {% block content %}
         <section class="panel">
-          <div class="blend-filter-row">
-            <div class="blend-field">
-              <label class="filter-label" for="status-rec-from">시작일</label>
-              <input class="input" id="status-rec-from" type="date" />
+          <!-- 왼쪽 = 조회 조건, 오른쪽 = 동작 버튼(체크박스·출력). 예전에는 필터·체크박스·
+               버튼 최대 5개가 한 줄에 뒤섞여 감겼다. viscosity 툴바와 같은 2분할. -->
+          <div class="blend-filter-row status-toolbar">
+            <div class="status-toolbar-filters">
+              <div class="blend-field">
+                <label class="filter-label" for="status-rec-from">시작일</label>
+                <input class="input" id="status-rec-from" type="date" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="status-rec-to">종료일</label>
+                <input class="input" id="status-rec-to" type="date" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="status-rec-worker">작업자</label>
+                <select class="input" id="status-rec-worker"><option value="">전체</option></select>
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="status-rec-product">제품</label>
+                <select class="input" id="status-rec-product"><option value="">전체</option></select>
+              </div>
+              <div class="blend-field blend-field-grow">
+                <label class="filter-label" for="status-rec-search">검색 (LOT/제품)</label>
+                <input class="input" id="status-rec-search" placeholder="검색어" />
+              </div>
+              <button class="btn btn-sm accent" id="status-rec-apply" type="button">조회</button>
             </div>
-            <div class="blend-field">
-              <label class="filter-label" for="status-rec-to">종료일</label>
-              <input class="input" id="status-rec-to" type="date" />
+            <div class="status-toolbar-actions">
+              <!-- 취소된 기록은 기본으로 숨긴다. 켜면 함께 보이고, 상세에서 '복원'할 수 있다
+                   (켜지 않으면 취소분에 도달할 방법이 없어 복원이 죽은 기능이 된다). -->
+              <label class="visc-checkbox" title="취소 처리된 기록도 목록에 함께 표시합니다 — 취소분을 열어 '기록 복원'을 할 수 있는 유일한 경로. 취소 후 3일이 지나면 자동 삭제됩니다(스냅샷은 감사로그·백업에 남음)"><input id="status-rec-canceled" type="checkbox" /> 취소된 기록 포함</label>
+              <!-- 트레이 '미확인 증량' 재촉을 받은 책임자가 대시보드를 거치지 않고
+                   여기서 바로 골라 확인할 수 있게 — 확인 처리는 상세 모달 안(내용을 보고 누른다). -->
+              <label class="visc-checkbox"><input id="status-rec-unacked" type="checkbox" /> 미확인만</label>
+              <label class="visc-checkbox"><input id="status-sign" type="checkbox" /> 서명 넣기</label>
+              <button class="btn btn-sm accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
+              <button class="btn btn-sm" id="status-rec-dhr-zip" type="button">ZIP(레시피별 폴더)</button>
+              <button class="btn btn-sm" id="status-rec-export-all" type="button">전체 Excel</button>
+              {% if can_manage %}
+              <!-- 책임자 전용 — 예전에는 게이트 밖이라 비로그인 사용자에게도 붉은 버튼이 보였고,
+                   기록을 고르고 사유까지 적은 뒤에야 로그인 화면으로 튕겨 선택이 전부 날아갔다. -->
+              <button class="btn btn-sm warn" id="status-rec-delete-selected" type="button">선택 기록 취소</button>
+              {% endif %}
             </div>
-            <div class="blend-field">
-              <label class="filter-label" for="status-rec-worker">작업자</label>
-              <select class="input" id="status-rec-worker"><option value="">전체</option></select>
-            </div>
-            <div class="blend-field">
-              <label class="filter-label" for="status-rec-product">제품</label>
-              <select class="input" id="status-rec-product"><option value="">전체</option></select>
-            </div>
-            <div class="blend-field blend-field-grow">
-              <label class="filter-label" for="status-rec-search">검색 (LOT/제품)</label>
-              <input class="input" id="status-rec-search" placeholder="검색어" />
-            </div>
-            <button class="btn accent" id="status-rec-apply" type="button">조회</button>
-            <!-- 취소된 기록은 기본으로 숨긴다. 켜면 함께 보이고, 상세에서 '복원'할 수 있다
-                 (켜지 않으면 취소분에 도달할 방법이 없어 복원이 죽은 기능이 된다). -->
-            <label class="visc-checkbox" title="취소 처리된 기록도 목록에 함께 표시합니다 — 취소분을 열어 '기록 복원'을 할 수 있는 유일한 경로. 취소 후 3일이 지나면 자동 삭제됩니다(스냅샷은 감사로그·백업에 남음)"><input id="status-rec-canceled" type="checkbox" /> 취소된 기록 포함</label>
-            <!-- 트레이 '미확인 증량' 재촉을 받은 책임자가 대시보드를 거치지 않고
-                 여기서 바로 골라 확인할 수 있게 — 확인 처리는 상세 모달 안(내용을 보고 누른다). -->
-            <label class="visc-checkbox"><input id="status-rec-unacked" type="checkbox" /> 미확인만</label>
-            <label class="visc-checkbox"><input id="status-sign" type="checkbox" /> 서명 넣기</label>
-            <button class="btn accent" id="status-rec-dhr-batch" type="button">배합일지 출력(선택)</button>
-            <button class="btn" id="status-rec-dhr-zip" type="button">ZIP(레시피별 폴더)</button>
-            <button class="btn" id="status-rec-export-all" type="button">전체 Excel</button>
-            {% if can_manage %}
-            <!-- 책임자 전용 — 예전에는 게이트 밖이라 비로그인 사용자에게도 붉은 버튼이 보였고,
-                 기록을 고르고 사유까지 적은 뒤에야 로그인 화면으로 튕겨 선택이 전부 날아갔다. -->
-            <button class="btn warn" id="status-rec-delete-selected" type="button">선택 기록 취소</button>
-            {% endif %}
           </div>
         </section>
 
@@ -66,14 +114,14 @@
                 </tr>
               </thead>
               <tbody id="status-rec-body">
-                <tr><td colspan="7" class="muted">불러오는 중…</td></tr>
+                <tr><td colspan="7"><div class="table-loading"><span class="spinner"></span> 불러오는 중…</div></td></tr>
               </tbody>
             </table>
           </div>
         </section>
 
         <div id="status-detail-modal" class="ss-modal-overlay" hidden>
-          <div class="ss-modal ss-modal-wide" id="status-dhr">
+          <div class="ss-modal ss-modal-wide" id="status-dhr" role="dialog" aria-modal="true" aria-labelledby="status-detail-title" tabindex="-1">
             <div class="ss-modal-header">
               <h3 id="status-detail-title">배합 실적서</h3>
               <div class="blend-detail-actions">
@@ -102,5 +150,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260729c"></script>
+    <script src="/static/js/status.js?v=20260731a"></script>
 {% endblock %}

@@ -376,17 +376,27 @@ body {
 }
 
 /* 행 인라인 액션 — 통계 제외 / 제외 해제 / 삭제. 모두 같은 컴팩트 텍스트 버튼으로
-   통일하고, 좁은 '점도' 열에서 값과 겹치지 않게 왼쪽 여백만 준다. */
+   통일한다. 점도 값 칸이 아니라 별도 '관리' 열(.visc-manage-cell)에 함께 놓여,
+   점도 칸은 순수하게 숫자만 남는다. 버튼 사이 간격만 주고 셀은 줄바꿈 없이. */
+.visc-manage-cell {
+  white-space: nowrap;
+}
+
 .visc-del-btn,
 .visc-exclude-btn,
 .visc-inc-btn {
-  margin-left: 10px;
+  margin-left: 12px;
   border: 0;
   background: transparent;
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* 관리 열 첫 버튼은 왼쪽 여백 제거(열 왼쪽 정렬 유지). */
+.visc-manage-cell button:first-child {
+  margin-left: 0;
 }
 
 .visc-del-btn {
@@ -405,6 +415,15 @@ body {
 .visc-inc-btn:hover,
 .visc-del-btn:hover {
   text-decoration: underline;
+}
+
+/* 텍스트 버튼은 기본 outline 이 약해 키보드 포커스가 안 보인다 — 뚜렷한 focus-visible. */
+.visc-del-btn:focus-visible,
+.visc-exclude-btn:focus-visible,
+.visc-inc-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* 제외된 측정값은 '치워둔' 상태로 — 값은 남기되 취소선 + 흐리게. */

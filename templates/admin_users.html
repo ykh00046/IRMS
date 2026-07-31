@@ -5,7 +5,7 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260724a" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260731a" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
@@ -116,13 +116,13 @@
                 <label class="filter-label" for="audit-action-filter">이벤트 필터</label>
                 <!-- 이벤트 목록은 admin_users.js 의 AUDIT_GROUPS 에서 생성한다.
                      여기 손으로 적어두면 서버가 새 이벤트를 남길 때마다 낡는다 -->
-                <select id="audit-action-filter" class="select">
+                <select id="audit-action-filter" class="input">
                   <option value="">전체</option>
                 </select>
               </div>
               <div class="form-group audit-filter audit-limit-group">
                 <label class="filter-label" for="audit-limit-filter">조회 개수</label>
-                <select id="audit-limit-filter" class="select">
+                <select id="audit-limit-filter" class="input">
                   <option value="20">20</option>
                   <option value="50" selected>50</option>
                   <option value="100">100</option>
@@ -206,13 +206,13 @@
           <p class="panel-subtitle">
             배합일지 PDF의 서명 자연스러움과 스캔 질감을 조정합니다. 저장 후 미리보기로 확인하세요.
           </p>
-          <div id="sig-config-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.7rem"></div>
-          <div class="button-row" style="margin-top:0.9rem">
+          <div id="sig-config-grid" class="sig-config-grid"></div>
+          <div class="button-row mt-actions">
             <button id="sig-config-save" class="btn accent" type="button">저장</button>
             <button id="sig-config-reset" class="btn" type="button">기본값으로</button>
             <button id="sig-preview-refresh" class="btn" type="button">미리보기 새로고침</button>
           </div>
-          <img id="sig-preview" alt="서명 미리보기" style="max-width:100%;margin-top:0.9rem;border:1px solid var(--line);border-radius:8px" />
+          <img id="sig-preview" class="sig-preview" alt="서명 미리보기" />
         </section>
 
         <section class="panel">
@@ -221,26 +221,26 @@
           <p class="panel-subtitle">
             합성 서명에 쓰는 인별 샘플입니다. 담당은 작업자별, 검토·승인은 공용입니다.
           </p>
-          <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
-            <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-              <span>역할</span>
+          <div class="sig-sample-form">
+            <div class="form-group">
+              <label class="filter-label" for="sig-sample-role">역할</label>
               <select id="sig-sample-role" class="input">
                 <option value="charge">담당</option>
                 <option value="review">검토</option>
                 <option value="approve">승인</option>
               </select>
-            </label>
-            <label id="sig-sample-worker-wrap" style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-              <span>작업자</span>
+            </div>
+            <div class="form-group" id="sig-sample-worker-wrap">
+              <label class="filter-label" for="sig-sample-worker">작업자</label>
               <input id="sig-sample-worker" class="input" placeholder="예: 김도현" />
-            </label>
-            <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-              <span>서명 이미지</span>
+            </div>
+            <div class="form-group">
+              <label class="filter-label" for="sig-sample-file">서명 이미지</label>
               <input id="sig-sample-file" type="file" accept="image/*" class="input" />
-            </label>
+            </div>
             <button id="sig-sample-upload" class="btn accent" type="button">업로드</button>
           </div>
-          <div id="sig-sample-list" style="margin-top:0.9rem"></div>
+          <div id="sig-sample-list" class="sig-sample-list"></div>
         </section>
 
         <section class="panel">
@@ -249,21 +249,21 @@
           <p class="panel-subtitle">
             배합 기록을 Google 스프레드시트에 누적 백업합니다. gspread 설치 + 서비스계정 인증 파일이 필요합니다.
           </p>
-          <p id="sheets-status" class="panel-subtitle" style="font-weight:600"></p>
-          <div style="display:flex;flex-direction:column;gap:0.7rem;max-width:600px">
-            <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-              <span>스프레드시트 URL</span>
+          <p id="sheets-status" class="panel-subtitle sheets-status"></p>
+          <div class="admin-form-stack">
+            <div class="form-group">
+              <label class="filter-label" for="sheets-url">스프레드시트 URL</label>
               <input id="sheets-url" class="input" placeholder="https://docs.google.com/spreadsheets/d/..." />
-            </label>
-            <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)">
-              <span>서비스계정 JSON 경로</span>
+            </div>
+            <div class="form-group">
+              <label class="filter-label" for="sheets-creds">서비스계정 JSON 경로</label>
               <input id="sheets-creds" class="input" placeholder="C:\\path\\to\\service-account.json" />
-            </label>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:13px">
+            </div>
+            <label class="checkbox-inline">
               <input type="checkbox" id="sheets-enabled" /> 백업 활성화
             </label>
           </div>
-          <div class="button-row" style="margin-top:0.9rem">
+          <div class="button-row mt-actions">
             <button id="sheets-save" class="btn accent" type="button">설정 저장</button>
             <button id="sheets-backup-now" class="btn" type="button">지금 백업</button>
           </div>
@@ -272,5 +272,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260726a"></script>
+    <script src="/static/js/admin_users.js?v=20260731a"></script>
 {% endblock %}

@@ -51,6 +51,23 @@
   --status-info: #2c5d9b;
   --status-info-bg: rgba(44, 93, 155, 0.1);
 
+  /* Calendar day-type tokens — 근태(attendance) 달력이 소비.
+     각 유형별 텍스트색 + `-bg` 틴트. 값은 근태 화면의 기존 하드코딩 팔레트에서 이관.
+     (평일 #dbeafe/#0c4a6e, 휴일 #fecaca/#7f1d1d, 휴가 #f0fdf4/#166534,
+      토=블루·일=레드·휴무=뉴트럴 톤으로 보강.) */
+  --cal-weekday: #0c4a6e;
+  --cal-weekday-bg: #dbeafe;
+  --cal-saturday: #1e40af;
+  --cal-saturday-bg: #e0e7ff;
+  --cal-sunday: #b91c1c;
+  --cal-sunday-bg: #fee2e2;
+  --cal-holiday: #7f1d1d;
+  --cal-holiday-bg: #fecaca;
+  --cal-leave: #166534;
+  --cal-leave-bg: #f0fdf4;
+  --cal-rest: #475569;
+  --cal-rest-bg: #f1f5f9;
+
   /* Ink Colors (domain-specific — actual ink pigments) */
   --ink-black: #27272a;
   --ink-red: #dc2626;
@@ -88,6 +105,24 @@
     "Pretendard", -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Malgun Gothic", "Noto Sans KR", Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+}
+
+/* Calendar tokens — 다크 변형. 앱은 현재 라이트 전용이라 자동 적용(prefers-color-scheme)
+   대신 명시적 data-theme="dark" 에만 반영해 라이트 UI 를 깨지 않는다. 다크 모드가
+   도입되면 이 맵이 그대로 근태 달력에 적용된다. */
+:root[data-theme="dark"] {
+  --cal-weekday: #93c5fd;
+  --cal-weekday-bg: #1e3a5f;
+  --cal-saturday: #a5b4fc;
+  --cal-saturday-bg: #1e2a4a;
+  --cal-sunday: #fca5a5;
+  --cal-sunday-bg: #3f1d1d;
+  --cal-holiday: #fca5a5;
+  --cal-holiday-bg: #4c1d1d;
+  --cal-leave: #86efac;
+  --cal-leave-bg: #14311f;
+  --cal-rest: #94a3b8;
+  --cal-rest-bg: #1e293b;
 }
 
 /* =========================================================================
@@ -158,143 +193,11 @@ body {
 }
 
 /* =========================================================================
-   Layout Shell
+   Compact Button & Nav Toggle (topbar 컨트롤)
+   (구 .site-shell/.site-header/.top-nav/.nav-link/.session-card/.brand-block/
+    .eyebrow 레거시 셸은 어떤 템플릿·JS도 참조하지 않아 제거 — 라이브 셸은
+    .app-shell/.app-sidebar/.app-topbar. 2026-07-31)
    ========================================================================= */
-
-.site-shell {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  gap: 2rem;
-}
-
-/* =========================================================================
-   Header & Navigation
-   ========================================================================= */
-
-.site-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.25rem 2rem;
-  background: var(--bg-surface-100);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  position: relative;
-  overflow: hidden;
-}
-
-.site-header::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--border-strong),
-    transparent
-  );
-  opacity: 0.6;
-}
-
-.brand-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.brand-block h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(to right, #1a1a2e, #495057);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0;
-}
-
-.eyebrow {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--accent-primary);
-  font-weight: 600;
-  margin: 0;
-}
-
-.top-nav {
-  display: flex;
-  gap: 0.5rem;
-  background: var(--bg-surface-200);
-  padding: 0.35rem;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-subtle);
-}
-
-.nav-link {
-  text-decoration: none;
-  color: var(--text-secondary);
-  padding: 0.6rem 1.25rem;
-  border-radius: var(--radius-full);
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
-
-.nav-link:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-300);
-}
-
-.nav-link.active {
-  color: #ffffff;
-  background: var(--accent-primary);
-  box-shadow: var(--glow-primary);
-}
-
-.session-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  background: var(--bg-surface-200);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-}
-
-.session-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.session-role {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--status-success);
-  font-weight: 700;
-}
-
-.session-user {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.session-id {
-  font-size: 0.7rem;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-}
 
 .btn.compact {
   padding: 0.45rem 0.8rem;
@@ -697,6 +600,39 @@ body {
   }
 }
 
+/* =========================================================================
+   Modal Primitive — 공용 오버레이/카드
+   피처 화면(배합·점도·관리 등)이 각자 만들던 모달을 하나로. 화면 고유 내용은
+   담지 않는다(피처 에이전트가 .modal-card 안에 채운다).
+   ========================================================================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;                      /* 작은 화면에서 카드가 가장자리에 닿지 않게 */
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 1000;                      /* topbar(30)·backdrop(35)·sidebar(40) 위 */
+}
+/* hidden 속성이 display:flex 를 이겨야 한다(공용 [hidden] 규칙과 같은 취지 —
+   이게 없으면 hidden 을 걸어도 모달이 화면에 남는다). */
+.modal-overlay[hidden] {
+  display: none !important;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: min(88vh, 720px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-prominent);
+  padding: 22px 22px 18px;
+}
+
 .panel {
   background: var(--bg-surface-100);
   border: 1px solid var(--border-subtle);
@@ -754,7 +690,10 @@ body {
 
 /* 체크박스+라벨 공용 정렬 — 이름은 역사적으로 .visc-checkbox 지만 배합 기록·관리 등
    여러 화면이 쓴다. 점도 CSS에만 있던 정의를 공용화(서명 넣기 어긋남 신고 2026-07-23). */
-.visc-checkbox {
+/* 중립 별칭 .checkbox-inline 을 함께 정의한다 — .visc-checkbox 는 화면명(점도)이라
+   신규 화면은 .checkbox-inline 을 쓰되, 기존 .visc-checkbox 도 그대로 동작한다. */
+.visc-checkbox,
+.checkbox-inline {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -763,9 +702,11 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
-.visc-checkbox input[type="checkbox"] { margin: 0; }
+.visc-checkbox input[type="checkbox"],
+.checkbox-inline input[type="checkbox"] { margin: 0; }
 /* 필터 줄(flex-end 정렬)에서는 버튼보다 낮게 붙는다 — 버튼 중앙선에 맞춰 올림. */
-.blend-filter-row .visc-checkbox { padding-bottom: 9px; }
+.blend-filter-row .visc-checkbox,
+.blend-filter-row .checkbox-inline { padding-bottom: 9px; }
 
 .panel-notice {
   font-size: 1rem;
@@ -1127,25 +1068,27 @@ tr:hover td.sticky-right {
   letter-spacing: 0.02em;
 }
 
+/* 테두리는 Tailwind 시절 하드코딩 rgba 대신 같은 --status-* 토큰에서 파생 —
+   채움과 테두리 색상(hue)이 항상 일치한다. */
 .status-pending {
   background: var(--status-info-bg);
   color: var(--status-info);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  border: 1px solid color-mix(in srgb, var(--status-info) 22%, transparent);
 }
 .status-in_progress {
   background: var(--status-warning-bg);
   color: var(--status-warning);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 22%, transparent);
 }
 .status-completed {
   background: var(--status-success-bg);
   color: var(--status-success);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid color-mix(in srgb, var(--status-success) 22%, transparent);
 }
 .status-canceled {
   background: var(--status-error-bg);
   color: var(--status-error);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid color-mix(in srgb, var(--status-error) 22%, transparent);
 }
 
 /* =========================================================================
@@ -1388,53 +1331,12 @@ tr:hover td.sticky-right {
    ========================================================================= */
 
 @media (max-width: 1024px) {
-  .site-shell {
-    padding: 1rem;
-  }
-  .site-header {
-    flex-wrap: wrap;
-  }
-  .nav-toggle {
-    display: flex;
-    order: 2;
-  }
-  .top-nav {
-    order: 4;
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    margin-top: 0;
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    padding: 0;
-    border: none;
-    transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.3s ease, margin 0.3s ease;
-  }
-  .top-nav.open {
-    max-height: 400px;
-    opacity: 1;
-    padding: 0.35rem;
-    border: 1px solid var(--border-subtle);
-    margin-top: 1rem;
-  }
-  .top-nav.open .nav-link {
-    text-align: center;
-    padding: 0.75rem 1rem;
-  }
-  .session-card {
-    order: 3;
-  }
   .filter-bar {
     align-items: stretch;
   }
 }
 
 @media (max-width: 768px) {
-  .site-shell {
-    padding: 0.75rem;
-    gap: 0.75rem;
-  }
   .panel {
     padding: 0.85rem;
   }
@@ -1450,20 +1352,18 @@ tr:hover td.sticky-right {
   .kicker {
     font-size: 0.65rem;
   }
-  .site-header {
-    padding: 0.5rem 0.75rem;
-  }
-  .site-brand {
-    font-size: 0.9rem;
-  }
   .button-row {
     flex-wrap: wrap;
     gap: 0.4rem;
   }
+  /* 터치 화면 타깃 — 손가락 최소 44px 쪽으로. 데스크톱 비율은 유지, 여기서만 상향. */
   .btn {
-    padding: 0.45rem 0.8rem;
+    padding: 0.5rem 0.85rem;
     font-size: 0.8rem;
-    min-height: 40px;
+    min-height: 44px;
+  }
+  .btn.compact {
+    min-height: 44px;
   }
   .select, .input, .textarea {
     font-size: 0.85rem;

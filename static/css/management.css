@@ -624,14 +624,14 @@
 .history-table th, .history-table td { padding: 8px 10px; }
 .compare-scroll { overflow-x: auto; max-height: 60vh; }
 .compare-table { border-collapse: collapse; min-width: 100%; }
-.compare-table th, .compare-table td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; text-align: left; }
-.compare-table thead th { background: #f8fafc; position: sticky; top: 0; z-index: 2; }
-.compare-sticky { position: sticky; left: 0; background: #fff; z-index: 1; font-weight: 600; }
-.compare-table thead .compare-sticky { z-index: 3; background: #f8fafc; }
+.compare-table th, .compare-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; text-align: left; }
+.compare-table thead th { background: var(--bg-surface-200); position: sticky; top: 0; z-index: 2; }
+.compare-sticky { position: sticky; left: 0; background: var(--surface); z-index: 1; font-weight: 600; }
+.compare-table thead .compare-sticky { z-index: 3; background: var(--bg-surface-200); }
 .compare-table tr.compare-modified td { background: rgba(250, 204, 21, 0.15); }
 .compare-table tr.compare-partial td { background: rgba(59, 130, 246, 0.12); }
-.compare-table tr.compare-modified .compare-sticky { background: #fef9c3; }
-.compare-table tr.compare-partial .compare-sticky { background: #dbeafe; }
+.compare-table tr.compare-modified .compare-sticky { background: var(--status-warning-bg); }
+.compare-table tr.compare-partial .compare-sticky { background: var(--status-info-bg); }
 
 /* ============================================================
    세로 BOM 편집기 (item-code P5) — jspreadsheet 시트 대체.
@@ -660,24 +660,24 @@
 .bom-code {
   font-family: var(--font-mono, monospace);
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-tertiary, #64748b);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .bom-row-step { grid-template-columns: 2rem 1fr auto; }
-.bom-row-step .bom-step-note { color: #4b5563; font-style: italic; }
-.bom-no { text-align: right; color: #94a3b8; font-size: 12px; font-weight: 600; }
+.bom-row-step .bom-step-note { color: var(--text-secondary, #4b5563); font-style: italic; }
+.bom-no { text-align: right; color: var(--text-tertiary, #94a3b8); font-size: 12px; font-weight: 600; }
 .bom-row .bom-value { text-align: right; }
 .bom-tools { display: inline-flex; gap: 2px; }
 .bom-tools button {
   border: 1px solid var(--border, #e5e7eb);
-  background: #fff; border-radius: 6px; cursor: pointer;
+  background: var(--surface, #fff); border-radius: 6px; cursor: pointer;
   width: 26px; height: 26px; line-height: 1;
-  color: #64748b; font-size: 11px;
+  color: var(--text-secondary, #64748b); font-size: 11px;
 }
-.bom-tools button:hover { background: #f1f5f9; }
-.bom-tools .bom-del:hover { color: #dc2626; border-color: #fca5a5; }
+.bom-tools button:hover { background: var(--bg-surface-300, #f1f5f9); }
+.bom-tools .bom-del:hover { color: var(--status-error, #dc2626); border-color: var(--status-error, #fca5a5); }
 
 /* BOM 편집기 하단 옵션 행 — 라벨+입력을 한 덩어리로 유지(줄바꿈 어수선 방지) */
 .imp-row { align-items: center; row-gap: 8px; }

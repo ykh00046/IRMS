@@ -28,6 +28,40 @@
 
   const $ = (id) => document.getElementById(id);
   const isManager = Boolean($("visc-settings-btn"));
+  // 배합 기록 표의 열 수 — 책임자는 뒤에 '관리' 열이 하나 더 붙는다(빈 행 colspan 계산용).
+  const BLEND_COLS = isManager ? 7 : 6;
+
+  // ── 모달 접근성 헬퍼 ─────────────────────────────────────────────
+  // role/aria-modal 은 템플릿, 여기서는 열 때 포커스 이동·닫을 때 복원 + Esc + 배경
+  // 클릭 닫기를 건다. 표준 닫기 경로 = 닫기 버튼 · 배경 클릭 · Esc.
+  function createModal(overlayId, opts) {
+    opts = opts || {};
+    const overlay = $(overlayId);
+    if (!overlay) return { open() {}, close() {} };
+    let opener = null;
+    function open(focusEl) {
+      if (overlay.hidden) opener = document.activeElement;
+      overlay.hidden = false;
+      const target = focusEl
+        || (opts.initialFocus && $(opts.initialFocus))
+        || overlay.querySelector(".ss-modal");
+      if (target && target.focus) setTimeout(() => { try { target.focus(); } catch (_e) { /* noop */ } }, 0);
+    }
+    function close() {
+      if (overlay.hidden) return;
+      overlay.hidden = true;
+      if (opts.onClose) opts.onClose();
+      if (opener && opener.focus) { try { opener.focus(); } catch (_e) { /* noop */ } }
+      opener = null;
+    }
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    overlay.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); close(); }
+    });
+    return { open, close };
+  }
+  let settingsModal = null;
+  let excludeModal = null;
 
   // 기간별 표·차트에 한 번에 그릴 최대 구간 수. '일' 단위 + 연도=전체에서 버킷이
   // 무한정 늘어나(수백~수천 행) 표·차트가 무거워지는 것을 막는다. 전체는 Excel 내보내기로.
@@ -107,7 +141,7 @@
     $("visc-period-alert").hidden = true;
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
-    blendBody.appendChild(emptyRow(6, "반제품을 선택하면 배합 기록이 표시됩니다."));
+    blendBody.appendChild(emptyRow(BLEND_COLS, "반제품을 선택하면 배합 기록이 표시됩니다."));
     $("visc-record-count").textContent = "0건";
     $("visc-blend-record").value = "";
     $("visc-selected-row").textContent = "반제품을 선택하세요.";
@@ -413,7 +447,7 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { boxWidth: 12, font: { size: 10 }, usePointStyle: true } },
+          legend: { labels: { boxWidth: 12, font: { size: 12 }, usePointStyle: true } },
           tooltip: {
             callbacks: {
               afterBody: (items) => {
@@ -537,7 +571,7 @@
       ? `${records.length} / ${state.blendRecords.length}건`
       : "0건";
     if (!records.length) {
-      body.appendChild(emptyRow(6, "이 반제품의 배합 기록이 없습니다."));
+      body.appendChild(emptyRow(BLEND_COLS, "이 반제품의 배합 기록이 없습니다."));
       return;
     }
     records.forEach((record) => {
@@ -555,8 +589,62 @@
       appendTextCell(row, record.total_amount == null ? "-" : `${fmt(record.total_amount)} g`, "num");
       appendViscosityCell(row, record);
       appendStatusCell(row, record);
+      // 행 액션(통계 제외/해제·삭제)은 점도 값 칸이 아니라 별도 '관리' 열로 — 점도 칸은
+      // 값만 남겨 숫자로 읽히게 한다(DHR 수정표·자재 LOT 표와 같은 방식).
+      if (isManager) appendManageCell(row, record);
       body.appendChild(row);
     });
+  }
+
+  // 관리 열 — 책임자 전용 행 액션. 점도 값과 같은 판정(제외/정상)에 따라 버튼 구성을 바꾼다.
+  function appendManageCell(row, record) {
+    const cell = document.createElement("td");
+    cell.className = "visc-manage-cell";
+    const linked = linkedReadingsForRecord(record);
+    if (!linked.length) {
+      cell.className = "visc-manage-cell muted";
+      cell.textContent = "-";
+      row.appendChild(cell);
+      return;
+    }
+    const reading = linked[0];
+    const analysisReading = findReadingByLot(reading.lot_no);
+    const isExcluded = Boolean(
+      analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)
+    );
+    // 통계 제외 / 제외 해제 — 삭제와 별개. 제외는 값을 남기고 통계에서만 빼며,
+    // 어느 행이든(경고·이상뿐 아니라) 책임자가 치워둘 수 있다.
+    if (isExcluded) {
+      const inc = document.createElement("button");
+      inc.className = "visc-inc-btn";
+      inc.type = "button";
+      inc.textContent = "제외 해제";
+      inc.addEventListener("click", (event) => {
+        event.stopPropagation();
+        includeReading(reading.id, reading.lot_no);
+      });
+      cell.appendChild(inc);
+    } else {
+      const exc = document.createElement("button");
+      exc.className = "visc-exclude-btn";
+      exc.type = "button";
+      exc.textContent = "통계 제외";
+      exc.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openExcludeModal(reading.id, reading.lot_no);
+      });
+      cell.appendChild(exc);
+    }
+    const del = document.createElement("button");
+    del.className = "visc-del-btn";
+    del.type = "button";
+    del.textContent = "삭제";
+    del.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteReading(reading.id, reading.lot_no);
+    });
+    cell.appendChild(del);
+    row.appendChild(cell);
   }
 
   // 상태 열 — 행별 판정을 별도 열로 상시 표시(값 옆 배지는 수십 행에서 안 보임 — 사용자 요청).
@@ -642,40 +730,7 @@
       rx.textContent = ` · 반응기 ${reading.reactor}`;
       cell.appendChild(rx);
     }
-    if (isManager) {
-      // 통계 제외 / 제외 해제 — 삭제와 별개. 제외는 값을 남기고 통계에서만 빼며,
-      // 어느 행이든(경고·이상뿐 아니라) 책임자가 치워둘 수 있다.
-      if (isExcluded) {
-        const inc = document.createElement("button");
-        inc.className = "visc-inc-btn";
-        inc.type = "button";
-        inc.textContent = "제외 해제";
-        inc.addEventListener("click", (event) => {
-          event.stopPropagation();
-          includeReading(reading.id, reading.lot_no);
-        });
-        cell.appendChild(inc);
-      } else {
-        const exc = document.createElement("button");
-        exc.className = "visc-exclude-btn";
-        exc.type = "button";
-        exc.textContent = "통계 제외";
-        exc.addEventListener("click", (event) => {
-          event.stopPropagation();
-          openExcludeModal(reading.id, reading.lot_no);
-        });
-        cell.appendChild(exc);
-      }
-      const button = document.createElement("button");
-      button.className = "visc-del-btn";
-      button.type = "button";
-      button.textContent = "삭제";
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        deleteReading(reading.id, reading.lot_no);
-      });
-      cell.appendChild(button);
-    }
+    // 행 액션은 '관리' 열(appendManageCell)로 옮겼다 — 여기는 값만.
     row.appendChild(cell);
   }
 
@@ -831,11 +886,16 @@
     $("visc-exclude-title").textContent = `통계 제외 · LOT ${lotNo}`;
     $("visc-exclude-reason").value = "";
     $("visc-exclude-error").hidden = true;
-    modal.hidden = false;
-    $("visc-exclude-reason").focus();
+    if (excludeModal) {
+      excludeModal.open();  // 사유 textarea 로 포커스 이동(initialFocus)
+    } else {
+      modal.hidden = false;
+      $("visc-exclude-reason").focus();
+    }
   }
 
   function closeExcludeModal() {
+    if (excludeModal) { excludeModal.close(); return; }  // close() 가 excludeTargetId 초기화
     const modal = $("visc-exclude-modal");
     if (modal) modal.hidden = true;
     excludeTargetId = null;
@@ -901,7 +961,8 @@
     loadRecipeCandidates().catch(() => {});
     $("visc-settings-error").hidden = true;
     $("visc-new-error").hidden = true;
-    $("visc-settings-modal").hidden = false;
+    if (settingsModal) settingsModal.open();
+    else $("visc-settings-modal").hidden = false;
   }
 
   // 반제품 추가 후보 = (완성) 레시피 중 아직 점도 반제품이 없는 제품명
@@ -1082,18 +1143,19 @@
       button.addEventListener("click", () => {
         if (state.granularity === button.dataset.gran) return;
         state.granularity = button.dataset.gran;
-        $("visc-gran-toggle").querySelectorAll("button").forEach((item) =>
-          item.classList.toggle("active", item === button)
-        );
+        $("visc-gran-toggle").querySelectorAll("button").forEach((item) => {
+          const on = item === button;
+          item.classList.toggle("active", on);
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+        });
         if (state.currentId) reloadProduct(state.currentId);
       });
     });
     const settingsButton = $("visc-settings-btn");
     if (settingsButton) {
+      settingsModal = createModal("visc-settings-modal", { initialFocus: "visc-settings-close" });
       settingsButton.addEventListener("click", openSettings);
-      $("visc-settings-close").addEventListener("click", () => {
-        $("visc-settings-modal").hidden = true;
-      });
+      $("visc-settings-close").addEventListener("click", () => settingsModal.close());
       $("visc-settings-form").addEventListener("submit", saveSettings);
       $("visc-new-form").addEventListener("submit", createProduct);
       $("visc-export-btn").addEventListener("click", exportCsv);
@@ -1104,12 +1166,13 @@
     // 통계 제외 모달 (책임자 전용 — 담당자 화면엔 모달이 렌더되지 않는다)
     const excludeForm = $("visc-exclude-form");
     if (excludeForm) {
+      // createModal 이 배경 클릭 + Esc 닫기와 포커스 이동/복원을 담당한다.
+      excludeModal = createModal("visc-exclude-modal", {
+        initialFocus: "visc-exclude-reason",
+        onClose: () => { excludeTargetId = null; },
+      });
       excludeForm.addEventListener("submit", submitExclude);
       $("visc-exclude-close").addEventListener("click", closeExcludeModal);
-      // 오버레이 배경 클릭으로 닫기(모달 내부 클릭은 유지)
-      $("visc-exclude-modal").addEventListener("click", (event) => {
-        if (event.target === $("visc-exclude-modal")) closeExcludeModal();
-      });
     }
   }
 

@@ -19,14 +19,15 @@
     flex: 1 1 280px;
     max-width: 420px;
   }
-  .mlot-stale-warn { color: #b45309; font-weight: 600; }
-  .mlot-stale-ok { color: #166534; }
-  .mlot-status-cell { font-weight: 600; }
-  .mlot-status-valid { color: #166534; }
-  .mlot-status-spent { color: #b91c1c; }
-  .mlot-status-manual { color: #1d4ed8; }
-  .mlot-source-erp { color: #475569; }
-  .mlot-source-manual { color: #1d4ed8; }
+  /* 상태·출처·경과일 색은 공용 상태 토큰만 사용(하드코딩 hex 금지). */
+  .mlot-stale-warn { color: var(--status-warning); font-weight: 600; }
+  .mlot-stale-ok { color: var(--status-success); }
+  /* 상태 셀은 공용 .status-chip 모양 위에 상태색만 얹는다(JS 가 status-chip 클래스 부여). */
+  .mlot-status-valid { background: var(--status-success-bg); color: var(--status-success); }
+  .mlot-status-spent { background: var(--status-error-bg); color: var(--status-error); }
+  .mlot-status-manual { background: var(--status-info-bg); color: var(--status-info); }
+  .mlot-source-erp { color: var(--text-tertiary); }
+  .mlot-source-manual { color: var(--status-info); font-weight: 600; }
   .mlot-add-form {
     display: grid;
     grid-template-columns: 1fr 1fr 2fr auto;
@@ -36,17 +37,27 @@
   @media (max-width: 720px) {
     .mlot-add-form { grid-template-columns: 1fr; }
   }
+  /* 경고 배너 — 토큰 기반(viscosity 의 .visc-trend-banner 와 같은 방식). raw amber 금지. */
   .mlot-warn {
     padding: 18px 20px;
-    border: 1px solid #f59e0b;
-    background: #fffbeb;
+    border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
+    background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
     border-radius: 10px;
-    color: #92400e;
+    color: color-mix(in srgb, var(--status-warning) 78%, var(--text-primary));
   }
   .mlot-empty {
     padding: 24px;
     text-align: center;
-    color: #64748b;
+    color: var(--text-tertiary);
+  }
+  /* 초기 로딩 스피너 자리 — 공용 .spinner 중앙 배치. */
+  .mlot-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 2rem;
+    color: var(--text-tertiary);
   }
       .mlot-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-top: 0.7rem; }
       .mlot-pager[hidden] { display: none; }
@@ -108,6 +119,10 @@
         </section>
         {% endif %}
 
+        <section class="panel" id="mlot-loading-panel">
+          <div class="mlot-loading"><span class="spinner"></span> 불러오는 중…</div>
+        </section>
+
         <section class="panel" id="mlot-warn-panel" hidden>
           <div class="mlot-warn" id="mlot-warn-text"></div>
         </section>
@@ -142,5 +157,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/material_lots.js?v=20260729a"></script>
+    <script src="/static/js/material_lots.js?v=20260731a"></script>
 {% endblock %}

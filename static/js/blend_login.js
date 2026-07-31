@@ -154,6 +154,14 @@
       setMessage("작업자 이름을 입력하세요.", false);
       return;
     }
+    // 비동기 왕복 동안 이중 제출 차단(blend.js/continuous 저장 가드와 동일 패턴)
+    const submitBtn = document.getElementById("blend-login-submit");
+    if (submitBtn && submitBtn.disabled) return;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.dataset.label = submitBtn.textContent;
+      submitBtn.textContent = "확인 중…";
+    }
     try {
       setMessage("작업자 확인 중...", true);
       const canProceed = await registerWorker(worker);
@@ -168,6 +176,11 @@
       window.location.assign(nextUrl);
     } catch (error) {
       setMessage(error.message || "작업자 확인에 실패했습니다.", false);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitBtn.dataset.label || "시작";
+      }
     }
   }
 

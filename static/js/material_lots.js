@@ -35,16 +35,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // 음수는 소진과 다르다: ERP 전표 지연·누락 신호라(실물은 돌고 있을 확률이 높다)
   // '소진'으로 뭉뚱그리면 전산 정리 대상이 눈에 안 띈다.
   function statusCell(lot) {
+    // 공용 .status-chip 모양 + 상태 토큰색(mlot-status-*). 하드코딩 색 없음.
     if (lot.source === "manual") {
-      return '<span class="mlot-status-cell mlot-status-manual">수동</span>';
+      return '<span class="status-chip mlot-status-manual">수동</span>';
     }
     if (lot.valid) {
-      return '<span class="mlot-status-cell mlot-status-valid">사용 가능</span>';
+      return '<span class="status-chip mlot-status-valid">사용 가능</span>';
     }
     if (Number(lot.stock) < 0) {
-      return '<span class="mlot-status-cell mlot-status-spent" title="ERP 재고가 마이너스 — 전표 반영 지연·누락일 수 있습니다">재고 이상(−)</span>';
+      return '<span class="status-chip mlot-status-spent" title="ERP 재고가 마이너스 — 전표 반영 지연·누락일 수 있습니다">재고 이상(−)</span>';
     }
-    return '<span class="mlot-status-cell mlot-status-spent">소진</span>';
+    return '<span class="status-chip mlot-status-spent">소진</span>';
   }
 
   function sourceCell(lot) {
@@ -180,6 +181,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tablePanel = $("mlot-table-panel");
     const warnPanel = $("mlot-warn-panel");
     const warnText = $("mlot-warn-text");
+    const loadingPanel = $("mlot-loading-panel");
+    if (loadingPanel) loadingPanel.hidden = false;  // 새로고침·재조회에도 스피너 노출
 
     try {
       const data = await request("/material-lots/status");
@@ -205,6 +208,8 @@ document.addEventListener("DOMContentLoaded", () => {
       warnText.textContent = `자재 LOT 조회에 실패했습니다: ${e.message}`;
       lastItems = [];
       notify(`자재 LOT 조회 실패: ${e.message}`, "error");
+    } finally {
+      if (loadingPanel) loadingPanel.hidden = true;
     }
   }
 
