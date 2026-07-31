@@ -47,6 +47,7 @@
     requiredTotalForRow,
     rescalePlan,
     exceedsBatchLimit,
+    createIdleLogout,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -869,6 +870,16 @@
   function clearDraft() {
     if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
     try { localStorage.removeItem(DRAFT_KEY); } catch (_e) { /* 무시 */ }
+  }
+
+  // 초안 즉시 저장(동기 flush) — 유휴 자동 로그아웃 직전 진행분을 잃지 않도록,
+  // scheduleDraftSave 의 600ms 디바운스를 기다리지 않고 바로 localStorage 에 쓴다.
+  function flushDraftNow() {
+    try {
+      if (window.IRMS && window.IRMS.blendWindowBlocked) return;
+      const d = currentDraft();
+      if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch (_e) { /* 저장공간 없음 등 무시 */ }
   }
 
   function readDraft() {
@@ -3147,5 +3158,18 @@
     request("/viscosity/products")
       .then((d) => { state.viscProducts = (d.items || []).filter((p) => p.is_active); })
       .catch(() => {});
+    // 활동 기반 60분 유휴 자동 로그아웃(공용 PC 보안). 저장 후 5분 로그아웃과 독립적으로
+    // 동시 동작 — 먼저 만료되는 쪽이 이긴다. 만료 시 최종 초안 저장 후 홈(/)으로 이동해
+    // 재로그인하면 "이어서 하기" 배너가 진행분을 복구한다. 작업자 세션이 있을 때만 무장.
+    if (createIdleLogout) {
+      state.idleLogout = createIdleLogout({
+        isActive: () => Boolean(lockedWorkerName()),
+        saveDraft: flushDraftNow,
+        request: request,
+        notify: notify,
+        redirectTo: "/",
+      });
+      state.idleLogout.arm();
+    }
   });
 })();

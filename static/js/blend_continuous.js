@@ -24,6 +24,7 @@
     baseTotalValues, baseTotalLinksHtml,
     rescalePlan, exceedsBatchLimit,
     appliedRescaleRowHtml,
+    createIdleLogout,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -376,6 +377,16 @@
         if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
       } catch (_e) { /* 저장공간 없음 등 무시 */ }
     }, 600);
+  }
+
+  // 초안 즉시 저장(동기 flush) — 유휴 자동 로그아웃 직전 진행분을 잃지 않도록,
+  // scheduleDraftSave 의 600ms 디바운스를 기다리지 않고 바로 localStorage 에 쓴다.
+  function flushDraftNow() {
+    try {
+      if (window.IRMS && window.IRMS.blendWindowBlocked) return;
+      const d = currentDraft();
+      if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch (_e) { /* 저장공간 없음 등 무시 */ }
   }
 
   function clearDraft() {
@@ -2445,5 +2456,17 @@
     setInterval(pollScaleEvents, 800);
     // 저울 전용 입력 모드 로드(실패 시 false 폴백). 켜져 있으면 실제량 입력칸 잠금.
     loadScaleOnlyInput();
+    // 활동 기반 60분 유휴 자동 로그아웃(공용 PC 보안). 만료 시 최종 초안 저장 후 홈(/)으로
+    // 이동해 재로그인하면 "이어서 하기" 배너가 진행분을 복구한다. 작업자 세션이 있을 때만 무장.
+    if (createIdleLogout) {
+      state.idleLogout = createIdleLogout({
+        isActive: () => Boolean(lockedWorkerName()),
+        saveDraft: flushDraftNow,
+        request: request,
+        notify: notify,
+        redirectTo: "/",
+      });
+      state.idleLogout.arm();
+    }
   });
 })();

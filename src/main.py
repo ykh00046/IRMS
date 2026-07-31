@@ -1,4 +1,6 @@
 import re
+import subprocess
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +28,38 @@ from .middleware.security_headers import SecurityHeadersMiddleware
 from .middleware.tunnel_auth import TunnelAuthMiddleware
 from .routers.api import build_router as build_api_router
 from .routers.pages import build_router as build_pages_router
+
+
+def _compute_server_version() -> str:
+    """서버 프로세스의 버전 마커를 한 번만 계산한다.
+
+    운영 PC(serve.py)는 주기적으로 git pull 후 서버를 재시작하므로,
+    git HEAD sha 가 배포마다 바뀐다 → 클라이언트가 이 값의 변화를 감지해
+    자동 새로고침한다. git 이 없거나 저장소가 아니면 프로세스 기동 시각(UTC)으로
+    폴백한다(재시작 = 새 값 → 여전히 동작).
+
+    반환값은 모듈 로드 시점에 SERVER_VERSION 상수로 고정되어, 재시작 전까지
+    모든 /api/version 응답이 동일하다.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=True,
+        )
+        sha = result.stdout.strip()
+        if sha:
+            return sha
+    except Exception:  # noqa: BLE001 — git 부재/비저장소는 폴백으로 처리
+        pass
+    return datetime.now(timezone.utc).isoformat()
+
+
+# 프로세스 수명 동안 고정되는 버전 마커(모듈 import 시 1회 계산).
+SERVER_VERSION = _compute_server_version()
 
 
 def create_app() -> FastAPI:
@@ -105,6 +139,12 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "time": utc_now_text()}
+
+    # 배포 감지용 버전 마커 — 인증 불필요, GET 이라 CSRF 면제, 상수 반환이라 저비용.
+    # 클라이언트(core.js)가 이 값을 폴링해 변하면 자동 새로고침한다.
+    @app.get("/api/version")
+    def api_version() -> dict[str, str]:
+        return {"version": SERVER_VERSION}
 
     return app
 

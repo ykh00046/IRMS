@@ -15,7 +15,8 @@
  *   badVarianceNames(bad), varianceBlockMessage(names, toleranceG?),
  *   option, stepRowsHtml, lotFallbackText,
  *   findAnchorIndex, computeAnchorTheory, theoryFromWeights,
- *   BATCH_LIMIT_G, requiredTotalForRow, rescalePlan, exceedsBatchLimit
+ *   BATCH_LIMIT_G, requiredTotalForRow, rescalePlan, exceedsBatchLimit,
+ *   IDLE_LOGOUT_MINUTES, createIdleLogout
  *
  * variance* 헬퍼는 레시피별 허용 편차(toleranceG) 를 인자로 받는다. 미지정 시
  * 기본값 TOLERANCE_G(0.05) 로 폴백 — 레시피 편차가 없는 기존 동작 보존.
@@ -387,10 +388,127 @@
     return '<option value="">로드 실패</option>';
   }
 
+  // ── 활동 기반 유휴 자동 로그아웃 ────────────────────────────────
+  // 배합/이어서 계량 화면에서 마우스·키보드·터치 등 활동이 이 시간(분) 동안
+  // 전혀 없으면 자동 로그아웃한다. 공용 PC 보안 조치.
+  //   ※ 60분 값을 바꾸려면 이 상수만 고치면 된다.
+  const IDLE_LOGOUT_MINUTES = 60;
+
+  // 활동 기반 유휴 로그아웃 컨트롤러(순수 팩토리). 클로저 상태를 자체 보관하되
+  // 화면별 동작(초안 저장·로그아웃 요청·이동)은 opts 콜백으로 주입받는다.
+  // 서버 요청 기반 8h 유휴(blend_session.py)·저장 후 5분 로그아웃과는 독립적으로
+  // 동작한다 — 셋 중 먼저 만료되는 쪽이 이긴다.
+  //
+  // opts:
+  //   isActive()   : () => boolean  — 작업자 세션 활성(로그인) 여부. arm/만료 게이트.
+  //   saveDraft()  : () => void     — 만료 직전 최종 초안 저장(동기 flush 권장).
+  //   request(path, init) : IRMS._core.request — 로그아웃 POST 용.
+  //   notify(msg, level)  : IRMS.notify — 사전 경고 토스트.
+  //   redirectTo   : 만료 후 이동 경로(기본 "/").
+  //   logoutPath   : 로그아웃 엔드포인트(기본 "/blend/session/logout").
+  //   minutes      : 유휴 임계(분, 기본 IDLE_LOGOUT_MINUTES).
+  //   warnBeforeMs : 만료 몇 ms 전에 경고할지(기본 60000 = 1분).
+  //   checkIntervalMs : 유휴 점검 주기(기본 25000).
+  //   throttleMs   : 활동 기록 스로틀(기본 3000 — mousemove 폭주 방지).
+  //   warnMessage  : 경고 문구.
+  // 반환: { arm, disarm, reset, note }.
+  function createIdleLogout(opts) {
+    const o = opts || {};
+    const minutes = Number.isFinite(Number(o.minutes)) && Number(o.minutes) > 0
+      ? Number(o.minutes) : IDLE_LOGOUT_MINUTES;
+    const idleMs = minutes * 60 * 1000;
+    const warnBeforeMs = Number.isFinite(Number(o.warnBeforeMs)) ? Number(o.warnBeforeMs) : 60 * 1000;
+    const checkIntervalMs = Number.isFinite(Number(o.checkIntervalMs)) && Number(o.checkIntervalMs) > 0
+      ? Number(o.checkIntervalMs) : 25 * 1000;
+    const throttleMs = Number.isFinite(Number(o.throttleMs)) && Number(o.throttleMs) >= 0
+      ? Number(o.throttleMs) : 3 * 1000;
+    const redirectTo = o.redirectTo || "/";
+    const logoutPath = o.logoutPath || "/blend/session/logout";
+    const warnMessage = o.warnMessage
+      || "약 1분간 활동이 없으면 자동 로그아웃됩니다 — 화면을 움직이면 유지됩니다.";
+    const isActive = typeof o.isActive === "function" ? o.isActive : () => true;
+    const saveDraft = typeof o.saveDraft === "function" ? o.saveDraft : () => {};
+    const request = typeof o.request === "function" ? o.request : null;
+    const notify = typeof o.notify === "function" ? o.notify : () => {};
+
+    // passive 로 붙여도 되는 이벤트(스크롤 성능): 어느 것도 preventDefault 하지 않는다.
+    const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "wheel", "input"];
+
+    let lastActivity = Date.now();
+    let warned = false;
+    let armed = false;
+    let expired = false;
+    let intervalId = null;
+    let onActivity = null;
+
+    function reset() {
+      lastActivity = Date.now();
+      warned = false;
+    }
+
+    function tick() {
+      if (expired) return;
+      if (!isActive()) return;  // 로그인 화면 등 세션 없음 — 자동 로그아웃하지 않음
+      const idle = Date.now() - lastActivity;
+      if (idle >= idleMs) {
+        expire();
+      } else if (idle >= idleMs - warnBeforeMs && !warned) {
+        warned = true;  // 접근당 1회만 — 활동이 있으면 reset 에서 다시 false 로 풀린다
+        try { notify(warnMessage, "warn"); } catch (_e) { /* 무시 */ }
+      }
+    }
+
+    async function expire() {
+      if (expired) return;
+      expired = true;
+      disarm();
+      try { saveDraft(); } catch (_e) { /* 초안 저장 실패해도 로그아웃은 진행 */ }
+      if (request) {
+        try { await request(logoutPath, { method: "POST" }); } catch (_e) { /* 만료 등 무시 */ }
+      }
+      window.location.href = redirectTo;
+    }
+
+    function arm() {
+      if (armed) return;          // 중복 arm 방지
+      if (!isActive()) return;    // 세션 없으면 무장하지 않음
+      armed = true;
+      expired = false;
+      reset();
+      // 스로틀된 활동 기록 — mousemove 가 lastActivity 를 매 프레임 갱신하지 않도록.
+      onActivity = function () {
+        const now = Date.now();
+        if (now - lastActivity >= throttleMs) {
+          lastActivity = now;
+        }
+        warned = false;  // 활동이 있으면 다음 접근 때 경고를 다시 띄운다
+      };
+      ACTIVITY_EVENTS.forEach((ev) => {
+        document.addEventListener(ev, onActivity, { passive: true, capture: true });
+      });
+      intervalId = setInterval(tick, checkIntervalMs);
+    }
+
+    function disarm() {
+      if (intervalId) { clearInterval(intervalId); intervalId = null; }
+      if (onActivity) {
+        ACTIVITY_EVENTS.forEach((ev) => {
+          document.removeEventListener(ev, onActivity, { capture: true });
+        });
+        onActivity = null;
+      }
+      armed = false;
+    }
+
+    return { arm, disarm, reset };
+  }
+
   IRMS.blendLib = {
     esc,
     TOLERANCE_G,
     ANCHOR_BADGE,
+    IDLE_LOGOUT_MINUTES,
+    createIdleLogout,
     fmt,
     toleranceDecimals,
     todayISO,
