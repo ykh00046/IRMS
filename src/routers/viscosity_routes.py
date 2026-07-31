@@ -19,6 +19,8 @@ Endpoints:
     POST   /viscosity/products                  (책임자)
     PATCH  /viscosity/products/{id}             (책임자)
     DELETE /viscosity/readings/{id}             (책임자)
+    POST   /viscosity/readings/{id}/exclude     통계 제외 (책임자)
+    POST   /viscosity/readings/{id}/include     제외 해제 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
 """
 
@@ -65,6 +67,7 @@ from ..auth import get_current_user
 from ..db import get_db, local_today_text, utc_now_text, write_audit_log
 from ..services import viscosity_service
 from .models import (
+    ViscosityExcludeBody,
     ViscosityProductCreateBody,
     ViscosityProductUpdateBody,
     ViscosityReadingBody,
@@ -310,6 +313,50 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         )
         connection.commit()
         return {"deleted": reading_id}
+
+    @mgr_router.post("/viscosity/readings/{reading_id}/exclude")
+    def viscosity_exclude_reading(
+        reading_id: int,
+        body: ViscosityExcludeBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """측정 1건을 통계에서 제외(삭제 아님) — 책임자 전용. 이상 하나가 σ 를 스스로
+        오염시키지 않도록, 기록은 남기되 평균/σ/관리한계/추세/집계에서 뺀다."""
+        current_user = get_current_user(request, required=False)
+        try:
+            result = viscosity_service.exclude_reading(
+                connection,
+                reading_id,
+                body.reason,
+                by=current_user,
+                now=utc_now_text(),
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="제외 사유를 입력하세요.")
+        if result is None:
+            raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+        connection.commit()
+        return {"ok": True, "id": reading_id}
+
+    @mgr_router.post("/viscosity/readings/{reading_id}/include")
+    def viscosity_include_reading(
+        reading_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """측정 1건의 통계 제외를 해제 — 책임자 전용. 다시 통계에 포함된다."""
+        current_user = get_current_user(request, required=False)
+        result = viscosity_service.include_reading(
+            connection,
+            reading_id,
+            by=current_user,
+            now=utc_now_text(),
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+        connection.commit()
+        return {"ok": True, "id": reading_id}
 
     @mgr_router.get("/viscosity/products/{product_id}/export")
     def viscosity_export(

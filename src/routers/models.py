@@ -119,6 +119,11 @@ class ViscosityProductUpdateBody(BaseModel):
         return self
 
 
+class ViscosityExcludeBody(BaseModel):
+    # 통계 제외 사유(필수) — 왜 이 측정을 σ/평균 계산에서 뺐는지 기록으로 남긴다.
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class BlendDetailBody(BaseModel):
     material_id: int | None = None
     material_code: str | None = Field(default=None, max_length=100)

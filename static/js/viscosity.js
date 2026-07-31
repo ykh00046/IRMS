@@ -23,6 +23,7 @@
     controlSummary,
     periodChartDatasets,
     periodChartYBounds,
+    readingOverlayDatasets,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -97,7 +98,7 @@
     state.blendRecords = [];
     state.selectedBlendId = null;
     state.selectedBlendDetail = null;
-    ["visc-card-count", "visc-card-latest", "visc-card-mean", "visc-card-anomaly", "visc-card-warn"]
+    ["visc-card-count", "visc-card-latest", "visc-card-mean", "visc-card-anomaly", "visc-card-warn", "visc-card-excluded"]
       .forEach((id) => { $(id).textContent = "-"; });
     $("visc-card-latest-date").textContent = "-";
     $("visc-control-summary").textContent = "관리 기준 -";
@@ -253,17 +254,22 @@
         .forEach((id) => { $(id).textContent = "-"; });
       setCountCard("visc-card-anomaly", "visc-card-anomaly-on", null);
       setCountCard("visc-card-warn", "visc-card-warn-on", null);
+      setCountCard("visc-card-excluded", "visc-card-excluded-on", null);
       $("visc-control-summary").textContent = "";
       return;
     }
     const stats = analysis.stats;
     const last = analysis.readings.length ? analysis.readings[analysis.readings.length - 1] : null;
+    // 측정 건수 = 통계에 반영된(유효) 건수. 제외 건수는 아래 '통계 제외' 카드로 따로
+    // 드러내, 표본에서 몇 건이 빠졌는지 조용히 묻히지 않게 한다.
+    const excludedN = (analysis.counts && analysis.counts.excluded) || stats.excluded_n || 0;
     $("visc-card-count").textContent = stats.n;
     $("visc-card-latest").textContent = last ? fmt(last.viscosity) : "-";
     $("visc-card-latest-date").textContent = last && last.measured_date ? last.measured_date : "-";
     $("visc-card-mean").textContent = stats.mean === null ? "-" : `${fmt(stats.center)} ± ${fmt(stats.std)}`;
     setCountCard("visc-card-anomaly", "visc-card-anomaly-on", analysis.counts.anomaly);
     setCountCard("visc-card-warn", "visc-card-warn-on", analysis.counts.warn);
+    setCountCard("visc-card-excluded", "visc-card-excluded-on", excludedN);
     $("visc-control-summary").textContent = controlSummary(analysis);
   }
 
@@ -311,7 +317,7 @@
   // 사용한 PB 연계 측정 — 바인더처럼 material_lot(사용한PB)에 PB 점도가 매칭되는
   // 측정이 하나라도 있을 때만 표를 띄운다. 각 바인더 점도 옆에 원료 PB 점도를 놓아
   // "이 PB(48cp)로 만든 바인더는 80" 상관을 바로 읽게 한다.
-  const STATUS_KO = { normal: "정상", warn: "경고", anomaly: "이상" };
+  const STATUS_KO = { normal: "정상", warn: "경고", anomaly: "이상", excluded: "제외" };
   function renderSourcePb() {
     const panel = $("visc-source-pb-panel");
     const body = $("visc-source-pb-body");
@@ -390,18 +396,31 @@
     const canvas = $("visc-period-chart");
     const center = state.analysis.stats.center;
     const { labels, datasets } = periodChartDatasets(periods, center, getCssVar);
+    // 이상·제외 개별 측정을 기간 막대 위에 점으로 얹는다 — 통계에서 빠졌어도(제외) /
+    // 집계에 묻혀도(이상) 규격 이탈 사건이 눈에 남게. periodChartDatasets 은 순수라
+    // 여기서 병합한다. 표시 중인 구간(labels)에 속한 측정만 오버레이한다.
+    const overlay = readingOverlayDatasets(
+      state.analysis.readings || [],
+      state.granularity,
+      labels,
+      getCssVar,
+    );
+    const allDatasets = datasets.concat(overlay);
     if (state.periodChart) state.periodChart.destroy();
     state.periodChart = new Chart(canvas.getContext("2d"), {
-      data: { labels, datasets },
+      data: { labels, datasets: allDatasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { boxWidth: 12, font: { size: 10 } } },
+          legend: { labels: { boxWidth: 12, font: { size: 10 }, usePointStyle: true } },
           tooltip: {
             callbacks: {
               afterBody: (items) => {
-                const period = periods[items[0].dataIndex];
+                // 막대(기간 평균) 위에서만 구간 요약을 보여준다. 오버레이 점(이상·제외)의
+                // dataIndex 는 자기 데이터셋 기준이라 periods 인덱스와 다르므로 제외한다.
+                const barItem = items.find((it) => it.dataset && it.dataset.type === "bar");
+                const period = barItem ? periods[barItem.dataIndex] : null;
                 if (!period) return [];
                 return [
                   `건수: ${period.count}`,
@@ -414,6 +433,9 @@
           },
         },
         scales: {
+          // 오버레이 산점도를 섞으면 Chart.js 가 x축을 선형으로 추정해 막대가 어긋난다.
+          // 기간 라벨 축을 category 로 명시해 막대·점이 같은 구간 위에 오도록 고정한다.
+          x: { type: "category" },
           y: Object.assign(
             { beginAtZero: false },
             periodChartYBounds(state.analysis.stats, state.analysis.product),
@@ -521,6 +543,11 @@
     records.forEach((record) => {
       const row = document.createElement("tr");
       row.classList.toggle("is-selected", record.id === state.selectedBlendId);
+      const linkedFirst = linkedReadingsForRecord(record)[0];
+      const analysisReading = linkedFirst ? findReadingByLot(linkedFirst.lot_no) : null;
+      if (analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)) {
+        row.classList.add("row-excluded");
+      }
       row.addEventListener("click", () => selectBlendRecord(record.id, { focus: true }));
       appendTextCell(row, record.product_lot);
       appendTextCell(row, record.work_date || "-");
@@ -542,8 +569,28 @@
       row.appendChild(cell);
       return;
     }
-    const status = statusForLot(linked[0].lot_no);
+    const reading = findReadingByLot(linked[0].lot_no);
+    const status = reading ? reading.status : null;
     const badge = document.createElement("span");
+    if (status === "excluded" || (reading && reading.excluded)) {
+      // 통계 제외 — 삭제하지 않고 통계에서만 뺀 측정. 회색으로 '치워둔' 인상을 주고,
+      // 사유·처리자·시각을 인라인 + 툴팁으로 남긴다(사유가 hover 뒤로만 숨으면 놓친다).
+      badge.className = "visc-status excluded";
+      badge.textContent = "제외";
+      const reason = reading.exclude_reason || "";
+      const meta = [reading.excluded_by, reading.excluded_at].filter(Boolean).join(" · ");
+      badge.title = `통계 제외${reason ? ` · 사유: ${reason}` : ""}${meta ? ` (${meta})` : ""}`;
+      cell.appendChild(badge);
+      if (reason) {
+        const note = document.createElement("span");
+        note.className = "visc-exclude-reason muted small";
+        note.textContent = reason;
+        if (meta) note.title = meta;
+        cell.appendChild(note);
+      }
+      row.appendChild(cell);
+      return;
+    }
     if (status === "anomaly" || status === "warn") {
       badge.className = `visc-status ${status}`;
       badge.textContent = status === "anomaly" ? "이상" : "경고";
@@ -573,8 +620,12 @@
     }
 
     const reading = linked[0];
+    const analysisReading = findReadingByLot(reading.lot_no);
+    const isExcluded = Boolean(
+      analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)
+    );
     const cell = document.createElement("td");
-    cell.className = "num visc-reading-cell";
+    cell.className = isExcluded ? "num visc-reading-cell is-excluded" : "num visc-reading-cell";
     const value = document.createElement("span");
     value.className = "visc-reading-value";
     value.textContent = fmt(reading.viscosity);
@@ -592,6 +643,29 @@
       cell.appendChild(rx);
     }
     if (isManager) {
+      // 통계 제외 / 제외 해제 — 삭제와 별개. 제외는 값을 남기고 통계에서만 빼며,
+      // 어느 행이든(경고·이상뿐 아니라) 책임자가 치워둘 수 있다.
+      if (isExcluded) {
+        const inc = document.createElement("button");
+        inc.className = "visc-inc-btn";
+        inc.type = "button";
+        inc.textContent = "제외 해제";
+        inc.addEventListener("click", (event) => {
+          event.stopPropagation();
+          includeReading(reading.id, reading.lot_no);
+        });
+        cell.appendChild(inc);
+      } else {
+        const exc = document.createElement("button");
+        exc.className = "visc-exclude-btn";
+        exc.type = "button";
+        exc.textContent = "통계 제외";
+        exc.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openExcludeModal(reading.id, reading.lot_no);
+        });
+        cell.appendChild(exc);
+      }
       const button = document.createElement("button");
       button.className = "visc-del-btn";
       button.type = "button";
@@ -653,11 +727,6 @@
       if (readings[i].lot_no === lotNo) return readings[i];
     }
     return null;
-  }
-
-  function statusForLot(lotNo) {
-    const reading = findReadingByLot(lotNo);
-    return reading ? reading.status : null;
   }
 
   function linkedReadings() {
@@ -746,6 +815,69 @@
       await loadProduct(state.currentId);
     } catch (error) {
       notify(`삭제 실패: ${error.message}`, "error");
+    }
+  }
+
+  // ── 통계 제외 / 제외 해제 (책임자 전용) ──────────────────────────────
+  // 삭제와 달리 값은 남기고 통계(평균·σ·추세)에서만 뺀다. 쓰기 요청의 CSRF 는
+  // request(=IRMS._core.request)가 x-csrftoken 을 자동 부착한다(이 파일의 등록·삭제와
+  // 동일 경로). 제외는 사유가 필수라 모달로 받고, 해제는 사유가 없어 확인만 받는다.
+  let excludeTargetId = null;
+
+  function openExcludeModal(readingId, lotNo) {
+    const modal = $("visc-exclude-modal");
+    if (!modal) return;                 // 담당자 화면에는 모달이 없다(책임자 전용)
+    excludeTargetId = readingId;
+    $("visc-exclude-title").textContent = `통계 제외 · LOT ${lotNo}`;
+    $("visc-exclude-reason").value = "";
+    $("visc-exclude-error").hidden = true;
+    modal.hidden = false;
+    $("visc-exclude-reason").focus();
+  }
+
+  function closeExcludeModal() {
+    const modal = $("visc-exclude-modal");
+    if (modal) modal.hidden = true;
+    excludeTargetId = null;
+  }
+
+  async function submitExclude(event) {
+    event.preventDefault();
+    const error = $("visc-exclude-error");
+    error.hidden = true;
+    const reason = $("visc-exclude-reason").value.trim();
+    if (!reason) {
+      error.textContent = "제외 사유를 입력하세요.";
+      error.hidden = false;
+      return;
+    }
+    if (!excludeTargetId) {
+      closeExcludeModal();
+      return;
+    }
+    try {
+      await request(`/viscosity/readings/${excludeTargetId}/exclude`, {
+        method: "POST",
+        body: { reason },
+      });
+      closeExcludeModal();
+      IRMS.notify("측정값을 통계에서 제외했습니다.", "success");
+      // 재조회로 평균·σ·추세가 즉시 갱신되고, 목록 배지·카드가 일치한다.
+      await loadProduct(state.currentId);
+    } catch (error_) {
+      error.textContent = error_.message;
+      error.hidden = false;
+    }
+  }
+
+  async function includeReading(readingId, lotNo) {
+    if (!window.confirm(`이 측정값을 다시 통계에 포함할까요? (LOT ${lotNo})`)) return;
+    try {
+      await request(`/viscosity/readings/${readingId}/include`, { method: "POST" });
+      IRMS.notify("측정값을 통계에 다시 포함했습니다.", "success");
+      await loadProduct(state.currentId);
+    } catch (error) {
+      IRMS.notify(`제외 해제 실패: ${error.message}`, "error");
     }
   }
 
@@ -967,6 +1099,16 @@
       $("visc-export-btn").addEventListener("click", exportCsv);
       $("visc-export-all-btn").addEventListener("click", () => {
         window.location.assign("/api/viscosity/export-all");
+      });
+    }
+    // 통계 제외 모달 (책임자 전용 — 담당자 화면엔 모달이 렌더되지 않는다)
+    const excludeForm = $("visc-exclude-form");
+    if (excludeForm) {
+      excludeForm.addEventListener("submit", submitExclude);
+      $("visc-exclude-close").addEventListener("click", closeExcludeModal);
+      // 오버레이 배경 클릭으로 닫기(모달 내부 클릭은 유지)
+      $("visc-exclude-modal").addEventListener("click", (event) => {
+        if (event.target === $("visc-exclude-modal")) closeExcludeModal();
       });
     }
   }

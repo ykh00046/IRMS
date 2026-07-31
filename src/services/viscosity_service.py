@@ -212,6 +212,15 @@ def _opt_float(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
+def _is_excluded(row: Any) -> bool:
+    """측정 행이 '통계 제외'로 표시됐는지. 스키마에 excluded 열이 없거나(구 테스트
+    스키마) NULL 이면 제외 아님으로 본다."""
+    try:
+        return bool(row["excluded"])
+    except (KeyError, IndexError):
+        return False
+
+
 def _fetch_readings(
     connection: sqlite3.Connection,
     product_id: int,
@@ -234,7 +243,8 @@ def _fetch_readings(
     return connection.execute(
         f"""
         SELECT id, product_id, lot_no, viscosity, measured_date,
-               memo, recipe_material, material_lot, reactor, created_by, created_at
+               memo, recipe_material, material_lot, reactor, created_by, created_at,
+               excluded, exclude_reason, excluded_by, excluded_at
         FROM viscosity_readings
         WHERE product_id = ? {year_clause} {reactor_clause}
         ORDER BY
@@ -522,7 +532,8 @@ def classify_value(
     readings[] 의 같은 행(정상)이 서로 모순됐다. year 미지정 시 전체 표본.
     """
     rows = _fetch_readings(connection, product["id"], year, reactor)
-    values = [float(r["viscosity"]) for r in rows]
+    # 통계 자기 오염 방지: 이미 '통계 제외' 로 표시된 측정은 표본에서 뺀다(제외의 목적).
+    values = [float(r["viscosity"]) for r in rows if not _is_excluded(r)]
     control = _control_limits(product, [*values, float(value)])
     verdict = _classify(value, product, control)
     verdict["control"] = control
@@ -552,6 +563,7 @@ def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
         return {}
     rows = connection.execute(
         "SELECT lot_no, viscosity FROM viscosity_readings WHERE product_id = ? "
+        "AND excluded = 0 "
         "ORDER BY measured_date ASC, id ASC",
         (pb["id"],),
     ).fetchall()
@@ -579,8 +591,11 @@ def analyze_product(
     시 해당 반응기 표본만으로 계산(반응기별 추세).
     """
     rows = _fetch_readings(connection, product["id"], year, reactor)
-    values = [float(r["viscosity"]) for r in rows]
-    control = _control_limits(product, values)
+    # 통계(평균/σ/관리한계/추세/기간)는 '통계 제외'되지 않은 유효 측정만으로 계산한다.
+    # 이상 하나가 그 이상을 잡아야 할 σ 를 스스로 오염시키는 문제를 여기서 끊는다.
+    # 제외된 측정은 readings[] 에는 그대로 남겨 화면에 배지+사유로 보여준다(단 판정·집계 제외).
+    valid_values = [float(r["viscosity"]) for r in rows if not _is_excluded(r)]
+    control = _control_limits(product, valid_values)
 
     # 사용한 PB 연계 — 바인더(APB/CSPB 등)의 material_lot(사용한PB) 을 PB 반제품의
     # 점도(lot_no) 와 맞춰, "이 PB(48cp)로 만든 바인더는 80" 상관을 보여준다. 두 LOT
@@ -588,10 +603,12 @@ def analyze_product(
     pb_map = _pb_viscosity_map(connection) if product.get("code") != "PB" else {}
 
     readings: list[dict[str, Any]] = []
+    valid_readings: list[dict[str, Any]] = []
     anomalies: list[dict[str, Any]] = []
+    excluded_count = 0
     for r in rows:
         value = float(r["viscosity"])
-        verdict = _classify(value, product, control)
+        excluded = _is_excluded(r)
         source_lot = _lot_digits(r["material_lot"])
         item = {
             "id": int(r["id"]),
@@ -604,21 +621,38 @@ def analyze_product(
             "source_pb_viscosity": pb_map.get(source_lot),
             "reactor": r["reactor"],
             "created_by": r["created_by"],
-            "status": verdict["status"],
-            "side": verdict["side"],
-            "reasons": verdict["reasons"],
+            "excluded": excluded,
+            "exclude_reason": r["exclude_reason"],
+            "excluded_by": r["excluded_by"],
+            "excluded_at": r["excluded_at"],
         }
+        if excluded:
+            # 제외된 측정은 spec/σ 판정을 건너뛰고 status='excluded' 로만 표시한다.
+            excluded_count += 1
+            item["status"] = "excluded"
+            item["side"] = None
+            item["reasons"] = []
+            readings.append(item)
+            continue
+        verdict = _classify(value, product, control)
+        item["status"] = verdict["status"]
+        item["side"] = verdict["side"]
+        item["reasons"] = verdict["reasons"]
         readings.append(item)
+        valid_readings.append(item)
         if verdict["status"] == "anomaly":
             anomalies.append(item)
 
-    trends = _trend_alerts(values, control["center"])
+    trends = _trend_alerts(valid_values, control["center"])
     counts = {
-        "anomaly": sum(1 for x in readings if x["status"] == "anomaly"),
-        "warn": sum(1 for x in readings if x["status"] == "warn"),
-        "normal": sum(1 for x in readings if x["status"] == "normal"),
+        "anomaly": sum(1 for x in valid_readings if x["status"] == "anomaly"),
+        "warn": sum(1 for x in valid_readings if x["status"] == "warn"),
+        "normal": sum(1 for x in valid_readings if x["status"] == "normal"),
+        "excluded": excluded_count,
     }
-    periods = summarize_periods(readings, granularity)
+    # 기간 집계도 유효 측정만으로 — 제외된 이상이 기간 평균/σ 를 밀어올리지 않게 한다.
+    periods = summarize_periods(valid_readings, granularity)
+    control["excluded_n"] = excluded_count
 
     return {
         "product": product,
@@ -794,6 +828,91 @@ def add_reading(
         ),
     )
     return int(cur.lastrowid)
+
+
+def _actor_display(by: Any) -> str:
+    """감사·excluded_by 표기용 책임자 이름. dict(current_user) 또는 문자열 모두 허용."""
+    if isinstance(by, dict):
+        return str(by.get("display_name") or by.get("username") or "책임자")
+    return str(by) if by else "책임자"
+
+
+def exclude_reading(
+    connection: sqlite3.Connection,
+    reading_id: int,
+    reason: str,
+    by: Any,
+    now: str,
+) -> dict[str, Any] | None:
+    """측정 1건을 '통계 제외'로 표시(삭제 아님). 이후 평균/σ/관리한계/추세/집계에서 빠진다.
+
+    reason 은 필수(비면 ValueError). 알 수 없는 id 면 None 반환.
+    감사 로그(viscosity_reading_excluded)를 남긴다. 커밋은 호출자 책임.
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("exclude reason required")
+    row = connection.execute(
+        "SELECT id, product_id, lot_no FROM viscosity_readings WHERE id = ?",
+        (reading_id,),
+    ).fetchone()
+    if not row:
+        return None
+    by_name = _actor_display(by)
+    connection.execute(
+        "UPDATE viscosity_readings "
+        "SET excluded = 1, exclude_reason = ?, excluded_by = ?, excluded_at = ? "
+        "WHERE id = ?",
+        (reason, by_name, now, reading_id),
+    )
+    from ..db import write_audit_log
+
+    write_audit_log(
+        connection,
+        action="viscosity_reading_excluded",
+        actor=by if isinstance(by, dict) else None,
+        target_type="viscosity_reading",
+        target_id=str(reading_id),
+        target_label=str(row["lot_no"]),
+        details={"reason": reason},
+    )
+    return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
+
+
+def include_reading(
+    connection: sqlite3.Connection,
+    reading_id: int,
+    by: Any,
+    now: str,
+) -> dict[str, Any] | None:
+    """측정 1건의 '통계 제외'를 해제 — 다시 통계에 포함된다. 알 수 없는 id 면 None.
+
+    감사 로그(viscosity_reading_restored)를 남긴다. 커밋은 호출자 책임.
+    """
+    row = connection.execute(
+        "SELECT id, product_id, lot_no, exclude_reason FROM viscosity_readings WHERE id = ?",
+        (reading_id,),
+    ).fetchone()
+    if not row:
+        return None
+    connection.execute(
+        "UPDATE viscosity_readings "
+        "SET excluded = 0, exclude_reason = NULL, excluded_by = NULL, excluded_at = NULL "
+        "WHERE id = ?",
+        (reading_id,),
+    )
+    from ..db import write_audit_log
+
+    write_audit_log(
+        connection,
+        action="viscosity_reading_restored",
+        actor=by if isinstance(by, dict) else None,
+        target_type="viscosity_reading",
+        target_id=str(reading_id),
+        target_label=str(row["lot_no"]),
+        details={"prev_reason": row["exclude_reason"]},
+    )
+    return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
 
 
 def list_readings_for_blend(

@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260729b" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260731a" />
 {% endblock %}
 
 {% block content %}
@@ -68,6 +68,11 @@
             <div class="metric-label">경고</div>
             <div class="metric-value" id="visc-card-warn">-</div>
             <div class="metric-unit">건</div>
+          </div>
+          <div class="metric-card visc-card-excluded">
+            <div class="metric-label">통계 제외</div>
+            <div class="metric-value" id="visc-card-excluded">-</div>
+            <div class="metric-unit">건 · 통계 미반영</div>
           </div>
         </section>
 
@@ -281,10 +286,34 @@
             </div>
           </div>
         </div>
+
+        {% if can_manage %}
+        <!-- 통계 제외 모달 — 책임자가 규격 이탈/이상 측정을 삭제하지 않고 통계(평균·σ·추세)
+             에서만 빼둘 때. 사유 필수. hidden 속성으로만 여닫는다(CSS 충돌 방지, 저장소 관례). -->
+        <div id="visc-exclude-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal visc-exclude-modal">
+            <div class="ss-modal-header">
+              <h3 id="visc-exclude-title">통계 제외</h3>
+              <button id="visc-exclude-close" class="btn" type="button">닫기</button>
+            </div>
+            <div class="ss-modal-body">
+              <p class="muted small">이 측정값을 평균·표준편차·추세 계산에서 제외합니다.
+                값은 화면과 기록에 그대로 남고, 판정만 '제외'로 표시됩니다. 언제든 되돌릴 수 있습니다.</p>
+              <form id="visc-exclude-form" class="visc-form" autocomplete="off">
+                <label class="filter-label" for="visc-exclude-reason">제외 사유 (필수)</label>
+                <textarea class="input" id="visc-exclude-reason" rows="3" required
+                  placeholder="예: 측정 오류 / 시료 오염 / 장비 교정 전 값"></textarea>
+                <p class="login-error" id="visc-exclude-error" hidden></p>
+                <button class="btn accent" id="visc-exclude-save" type="submit">통계에서 제외</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endif %}
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260726a"></script>
-    <script src="/static/js/viscosity.js?v=20260729c"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260731a"></script>
+    <script src="/static/js/viscosity.js?v=20260731a"></script>
 {% endblock %}

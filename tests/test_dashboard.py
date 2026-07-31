@@ -42,7 +42,9 @@ def _make_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL,
             lot_no TEXT NOT NULL, viscosity REAL NOT NULL, measured_date TEXT,
             memo TEXT, recipe_material TEXT, material_lot TEXT, reactor INTEGER,
-            created_by TEXT, created_at TEXT NOT NULL, blend_record_id INTEGER
+            created_by TEXT, created_at TEXT NOT NULL, blend_record_id INTEGER,
+            excluded INTEGER NOT NULL DEFAULT 0, exclude_reason TEXT,
+            excluded_by TEXT, excluded_at TEXT
         );
         """
     )

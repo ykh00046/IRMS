@@ -45,7 +45,11 @@ def _make_db() -> sqlite3.Connection:
             reactor INTEGER,
             created_by TEXT,
             created_at TEXT NOT NULL,
-            blend_record_id INTEGER
+            blend_record_id INTEGER,
+            excluded INTEGER NOT NULL DEFAULT 0,
+            exclude_reason TEXT,
+            excluded_by TEXT,
+            excluded_at TEXT
         );
         CREATE UNIQUE INDEX idx_visc_readings_product_lot
             ON viscosity_readings(product_id, lot_no);

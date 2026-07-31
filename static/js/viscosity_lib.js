@@ -157,6 +157,92 @@
     return { labels, datasets };
   }
 
+  // 측정일(ISO date) → 기간 버킷 키. 백엔드 _period_key 와 동일한 규칙을 그대로
+  // 옮긴 것(day/week/month/quarter/year). 개별 측정을 기간 축(차트 라벨)에 정확히
+  // 얹기 위해 필요하다 — 라벨이 일치해야 Chart.js 가 그 구간 위에 점을 찍는다.
+  function isoWeekKey(year, month, day) {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const dayNum = (date.getUTCDay() + 6) % 7;         // 월=0 … 일=6
+    date.setUTCDate(date.getUTCDate() - dayNum + 3);   // 그 주의 목요일
+    const isoYear = date.getUTCFullYear();
+    const firstThursday = new Date(Date.UTC(isoYear, 0, 4));
+    const week = 1 + Math.round(
+      ((date - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7,
+    );
+    return `${String(isoYear).padStart(4, "0")}-W${String(week).padStart(2, "0")}`;
+  }
+
+  function periodKeyForDate(dateStr, granularity) {
+    if (!dateStr) return null;
+    const year = parseInt(String(dateStr).slice(0, 4), 10);
+    const month = parseInt(String(dateStr).slice(5, 7), 10);
+    if (!Number.isFinite(year) || !(month >= 1 && month <= 12)) return null;
+    if (granularity === "year") return String(year).padStart(4, "0");
+    if (granularity === "month") {
+      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+    }
+    if (granularity === "day" || granularity === "week") {
+      const day = parseInt(String(dateStr).slice(8, 10), 10);
+      if (!Number.isFinite(day)) return null;
+      const probe = new Date(year, month - 1, day);
+      if (Number.isNaN(probe.getTime())) return null;
+      if (granularity === "day") {
+        return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+      return isoWeekKey(year, month, day);
+    }
+    return `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+  }
+
+  // 개별 측정 오버레이 데이터셋 — 이상·제외 측정을 기간 막대 위에 점으로 얹는다.
+  // 기간 평균 막대는 유효값 기준(중심선/관리밴드가 그것에 걸린다)이라, 규격을 벗어난
+  // 사건이 있었다는 사실이 집계에 묻힌다. 각 이상/제외 측정을 실제 값 높이에 개별 점으로
+  // 찍어, 통계에서 빠졌어도 "그날 규격 이탈이 있었다"가 눈에 남게 한다. periodLabels 에
+  // 없는(표시 구간 밖) 측정은 건너뛴다. 동일 입력에 동일 datasets 반환(순수).
+  function readingOverlayDatasets(readings, granularity, periodLabels, resolveCss) {
+    const labelSet = new Set(periodLabels || []);
+    const anomalyPts = [];
+    const excludedPts = [];
+    (readings || []).forEach((r) => {
+      const key = periodKeyForDate(r.measured_date, granularity);
+      if (!key || !labelSet.has(key)) return;
+      if (r.status === "excluded" || r.excluded) {
+        excludedPts.push({ x: key, y: r.viscosity });
+      } else if (r.status === "anomaly") {
+        anomalyPts.push({ x: key, y: r.viscosity });
+      }
+    });
+    const datasets = [];
+    if (anomalyPts.length) {
+      datasets.push({
+        type: "scatter",
+        label: "이상 측정",
+        data: anomalyPts,
+        backgroundColor: resolveCss("--status-error"),
+        borderColor: resolveCss("--status-error"),
+        pointStyle: "triangle",
+        radius: 5,
+        hoverRadius: 6,
+        order: 0,
+      });
+    }
+    if (excludedPts.length) {
+      datasets.push({
+        type: "scatter",
+        label: "제외",
+        data: excludedPts,
+        backgroundColor: "transparent",
+        borderColor: resolveCss("--text-tertiary"),
+        pointStyle: "crossRot",
+        borderWidth: 2,
+        radius: 6,
+        hoverRadius: 7,
+        order: 0,
+      });
+    }
+    return datasets;
+  }
+
   // 기간 차트 y축의 하한/상한 후보. 막대 그래프인데 축이 데이터에 맞춰 확대되면
   // 4,850 과 4,900 처럼 사실상 같은 값이 두 배 차이나는 막대로 보인다 — 품질 판단을
   // 하는 화면에서 이건 그림이 거짓말을 하는 것이다. 축을 관리한계·규격에 걸어두면
@@ -193,5 +279,7 @@
     controlSummary,
     periodChartDatasets,
     periodChartYBounds,
+    periodKeyForDate,
+    readingOverlayDatasets,
   };
 })();

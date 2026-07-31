@@ -336,6 +336,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 지정 필수(use_reactor=1). 지정 시 점도를 반응기별로 추세·이상 분석할 수 있다.
     ensure_column(connection, "viscosity_products", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "viscosity_readings", "reactor", "INTEGER")
+    # spec-out(측정 제외, 2026-07-31): 단일 이상 측정 하나가 σ(이상을 잡아야 할 표준편차)를
+    # 스스로 오염시키는 문제를 끊는다. 삭제하지 않고 '통계 제외' 로만 표시 — 기록에는 남고
+    # 화면엔 배지+사유로 보이되, 평균/σ/관리한계/추세/기간 집계에서는 빠진다(책임자만 토글).
+    ensure_column(connection, "viscosity_readings", "excluded", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "viscosity_readings", "exclude_reason", "TEXT")
+    ensure_column(connection, "viscosity_readings", "excluded_by", "TEXT")
+    ensure_column(connection, "viscosity_readings", "excluded_at", "TEXT")
     # 반응기는 배합 실적을 진행한 위치 → blend_records 에 기록. 점도는 실적에서 물려받아 표시.
     ensure_column(connection, "blend_records", "reactor", "INTEGER")
     # 수동 입력 여부: 저울 연동 중 계량값을 직접 입력했는가(추적성).

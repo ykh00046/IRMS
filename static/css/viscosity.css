@@ -202,6 +202,26 @@ body {
   color: color-mix(in srgb, var(--status-error) 82%, var(--text-primary));
 }
 
+/* 통계 제외 — 삭제가 아니라 '치워둔' 측정. 경보색(빨강/주황)이 아니라 회색으로,
+   눈에는 남되 알람으로 읽히지 않게 한다. */
+.visc-status.excluded {
+  background: color-mix(in srgb, var(--text-tertiary) 16%, var(--bg-base));
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* 제외 사유 인라인 노트 — 배지 옆에 사유를 그대로 보여준다(hover 만으로는 놓친다). */
+.visc-exclude-reason {
+  display: inline-block;
+  max-width: 220px;
+  margin-left: var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .visc-form {
   display: flex;
   flex-direction: column;
@@ -355,14 +375,54 @@ body {
   background: color-mix(in srgb, var(--status-warning) 8%, var(--bg-base));
 }
 
-.visc-del-btn {
+/* 행 인라인 액션 — 통계 제외 / 제외 해제 / 삭제. 모두 같은 컴팩트 텍스트 버튼으로
+   통일하고, 좁은 '점도' 열에서 값과 겹치지 않게 왼쪽 여백만 준다. */
+.visc-del-btn,
+.visc-exclude-btn,
+.visc-inc-btn {
   margin-left: 10px;
   border: 0;
   background: transparent;
-  color: var(--status-error);
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.visc-del-btn {
+  color: var(--status-error);
+}
+
+.visc-exclude-btn {
+  color: var(--text-secondary);
+}
+
+.visc-inc-btn {
+  color: var(--brand);
+}
+
+.visc-exclude-btn:hover,
+.visc-inc-btn:hover,
+.visc-del-btn:hover {
+  text-decoration: underline;
+}
+
+/* 제외된 측정값은 '치워둔' 상태로 — 값은 남기되 취소선 + 흐리게. */
+.visc-reading-cell.is-excluded .visc-reading-value {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* 제외된 배합 기록 행 — 전체 행을 살짝 눌러 통계 밖임을 드러낸다. */
+.visc-blend-table tbody tr.row-excluded td {
+  background: color-mix(in srgb, var(--text-tertiary) 7%, var(--bg-base));
+  color: var(--text-secondary);
+}
+
+/* '통계 제외' 카드: 건수가 0 이 아닐 때만 색(회색 — 경보 아님). */
+.visc-cards .metric-card.visc-card-excluded-on .metric-value {
+  color: var(--text-secondary);
 }
 
 .ss-modal-overlay {
