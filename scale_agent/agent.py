@@ -316,6 +316,31 @@ def parse_frame(raw: str | bytes, protocol: str = "and") -> dict | None:
 
 
 # ── 설정 ─────────────────────────────────────────────────────────
+# 저울이 스스로 찍는 리포트 출력(자동 내부 교정, 기기 정보 헤더) 키워드.
+# 실측 예(XP10002S, 2026-08-01 09:02): "- Internal adjustment --", "METTLER TOLEDO",
+# "Balance Type   XP10002SV", "WeighBridge SNR:" — 무게가 아니므로 해석 실패 경고 대상이 아니다.
+_REPORT_NOISE_KEYWORDS = (
+    "internal adjustment",
+    "mettler",
+    "toledo",
+    "balance type",
+    "weighbridge",
+    "terminal",
+    "snr",
+    "temperature",
+)
+
+
+def _is_report_noise(text: str) -> bool:
+    """저울 리포트 출력 줄 판별 — 키워드 매칭 + 구분선(───) 인식."""
+    t = text.strip().lower()
+    if not t:
+        return False
+    if set(t) <= {"-", "=", " ", "."}:  # 리포트 구분선
+        return True
+    return any(k in t for k in _REPORT_NOISE_KEYWORDS)
+
+
 def config_path() -> Path:
     base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     directory = Path(base) / APP_NAME
@@ -399,7 +424,8 @@ class EventBus:
         self._clock = clock
         self._last: tuple[str, float, float] | None = None  # (source, value, at)
 
-    def push(self, frame: dict, source: str) -> None:
+    def push(self, frame: dict, source: str) -> bool:
+        """이벤트 적재. 중복(같은 저울·같은 값·짧은 간격)으로 버려지면 False."""
         with self._lock:
             now = self._clock()
             if self._last is not None:
@@ -410,10 +436,11 @@ class EventBus:
                     and now - last_at < self.DEDUPE_SECONDS
                 ):
                     self._last = (source, last_value, now)
-                    return
+                    return False
             self._last = (source, float(frame.get("value") or 0.0), now)
             self._seq += 1
             self._events.append({**frame, "id": self._seq, "source": source})
+            return True
 
     def after(self, after_id: int) -> tuple[list[dict], int]:
         with self._lock:
@@ -446,6 +473,7 @@ class Scale:
         # 리더가 해석 못 한 수신 라인 로깅 횟수(세션당 상한)
         self._unparsed_logged = 0
         self._dropped_logged = 0
+        self._report_noise_until = 0.0  # 리포트 출력 블록(교정 등) 억제 창 끝 시각
         self._rx_buffer = b""
         self._rx_last = 0.0
         self._rx_total = 0  # 연결 후 수신한 총 바이트 — /health 진단(0 이면 케이블/설정 문제)
@@ -730,7 +758,9 @@ class Scale:
             self._q_waiter.set()
             return
         if frame.get("stable") and not frame.get("overload"):
-            self._bus.push(frame, self.name)
+            if self._bus.push(frame, self.name):
+                # PRINT 푸시 채택 기록 — "값이 넘어갔는가"를 로그만으로 대사할 수 있게.
+                log(f"[{self.name}] 수신: {frame.get('value')} {frame.get('unit', 'g')}")
 
     def _read_lines(self, ser) -> list[bytes]:
         """CR·LF·CRLF 어느 딜리미터로도 줄을 자른다.
@@ -788,6 +818,18 @@ class Scale:
     def _consume_line(self, line: bytes) -> None:
         frame = parse_frame(line, self._protocol)
         if frame is None:
+            now = time.time()
+            text = bytes(line).decode("ascii", errors="ignore")
+            if _is_report_noise(text):
+                # 자동 교정 리포트 등 저울 자체 출력 — 블록 단위로 이어지므로
+                # 5초 창을 열어 키워드 없는 후속 줄(날짜, SNR 값)까지 함께 무시.
+                if self._report_noise_until < now:
+                    log(f"[{self.name}] 저울 리포트 출력(자동 교정 등) 감지 — 무게가 아니므로 무시합니다.")
+                self._report_noise_until = now + 5.0
+                return
+            if now < self._report_noise_until:
+                self._report_noise_until = now + 5.0
+                return
             if self._unparsed_logged < 6:
                 # 해석 못 한 수신(인쇄 템플릿 등) 원본을 남겨 파서 보강 근거로.
                 self._unparsed_logged += 1
@@ -1002,7 +1044,39 @@ def run_tray(scales: list, server: ThreadingHTTPServer) -> None:
     icon.run()
 
 
+def acquire_single_instance_lock():
+    """이미 실행 중인 에이전트가 있으면 None, 아니면 유지해야 할 lock 핸들.
+
+    2026-08-01 로그 실증: 부팅 자동 실행 + 수동 실행이 겹쳐 인스턴스 여러 개가
+    같은 COM 포트를 서로 뺏으며 '열기 실패'를 쏟아냈다. Windows named mutex 로
+    두 번째 인스턴스를 기동 즉시 종료시킨다 (프로세스 종료 시 OS 가 자동 해제).
+    """
+    if sys.platform != "win32":
+        return object()
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.CreateMutexW(None, False, "Local\\IRMS-Scale-Agent")
+    if not handle:
+        return object()  # 뮤텍스 생성 실패(권한 등) — 가드 없이 계속
+    if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
+class _ExclusiveHTTPServer(ThreadingHTTPServer):
+    # HTTPServer 기본값(allow_reuse_address=1)은 Windows 에서 SO_REUSEADDR 로
+    # 이미 떠 있는 포트에 조용히 중복 바인드된다 — 중복 기동을 조용히 통과시키던
+    # 원인. 배타 바인드로 바꿔 두 번째 기동이 OSError 로 드러나게 한다.
+    allow_reuse_address = False
+
+
 def main() -> None:
+    lock = acquire_single_instance_lock()  # noqa: F841 - 프로세스 생존 동안 유지
+    if lock is None:
+        log("이미 실행 중인 IRMS-Scale 이 있어 추가 실행을 종료합니다 (작업표시줄 트레이 아이콘 확인).")
+        return
     config = load_config()
     log(f"설정: {config_path()}")
     bus = EventBus()
@@ -1015,7 +1089,13 @@ def main() -> None:
         log(f"[{s.name}] 연결됨: {port}" if port else f"[{s.name}] 저울을 찾지 못했습니다. 케이블/전원 확인. (요청 시 재시도)")
 
     http_port = int(config["http_port"])
-    server = ThreadingHTTPServer(("127.0.0.1", http_port), build_handler(scales, bus))
+    try:
+        server = _ExclusiveHTTPServer(("127.0.0.1", http_port), build_handler(scales, bus))
+    except OSError:
+        log(f"HTTP {http_port} 포트가 이미 사용 중 — 다른 IRMS-Scale 이 떠 있는 것으로 보고 종료합니다.")
+        for s in scales:
+            s.close()
+        return
     log(f"http://127.0.0.1:{http_port} 대기 중 (저울 {len(scales)}대 설정)")
 
     # 최초 실행 시 부팅 자동 실행을 기본으로 켠다(트레이 메뉴에서 끌 수 있음).

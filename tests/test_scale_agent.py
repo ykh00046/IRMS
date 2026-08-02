@@ -419,3 +419,68 @@ def test_unstable_frame_is_logged_and_not_pushed(monkeypatch):
     items, _ = bus.after(0)
     assert items == []
     assert any("사용하지 않음" in m for m in logged)
+
+
+# ── 리포트 출력 무시 + 단일 인스턴스 (2026-08-01 운용 로그 회귀) ──────────
+def test_adjustment_report_ignored_without_warning(monkeypatch):
+    """저울 자동 교정 리포트(METTLER 헤더·날짜·SNR)는 '해석 불가' 경고를 만들지 않는다.
+
+    2026-08-01 09:02 실측: 교정 리포트 6줄이 전부 '수신(해석 불가)'로 남아
+    진짜 포맷 문제와 구분되지 않았다. 키워드 줄이 5초 창을 열어 키워드 없는
+    후속 줄(날짜, SNR 값)까지 함께 삼킨다.
+    """
+    logged: list[str] = []
+    monkeypatch.setattr(scale_agent_module, "log", lambda m: logged.append(m))
+    s, bus = _scale(name="XP", protocol="mt-sics")
+    for line in (
+        b"- Internal adjustment --",
+        b"1.Aug 2026          9:00",
+        b"METTLER TOLEDO",
+        b"Balance Type   XP10002SV",
+        b"WeighBridge SNR:",
+        b"              B212787422",
+    ):
+        s._consume_line(line)
+    assert not any("해석 불가" in m for m in logged)
+    assert sum("리포트 출력" in m for m in logged) == 1  # 블록당 안내 1회
+    items, _ = bus.after(0)
+    assert items == []  # 리포트는 이벤트가 아니다
+
+
+def test_genuine_garbage_still_logged(monkeypatch):
+    """리포트 창 밖의 진짜 미지 포맷은 계속 원본이 로그에 남아야 한다(파서 보강 근거)."""
+    logged: list[str] = []
+    monkeypatch.setattr(scale_agent_module, "log", lambda m: logged.append(m))
+    s, _ = _scale(name="XP", protocol="mt-sics")
+    s._consume_line(b"@@UNKNOWN 12 34")
+    assert any("해석 불가" in m for m in logged)
+
+
+def test_accepted_push_is_logged(monkeypatch):
+    """PRINT 푸시가 채택되면 값이 로그에 남는다 — 중복(dedupe)은 로그도 없다."""
+    logged: list[str] = []
+    monkeypatch.setattr(scale_agent_module, "log", lambda m: logged.append(m))
+    now = [100.0]
+    bus = EventBus(clock=lambda: now[0])
+    s = Scale({"name": "XP", "protocol": "mt-sics"}, bus, set())
+    frame = parse_frame(" 1 N 105.00 g", protocol="mt-sics")
+    s._handle_frame(dict(frame))
+    s._handle_frame(dict(frame))  # DEDUPE_SECONDS 안 → push 거절 → 로그 없음
+    assert sum("수신: 105.0" in m for m in logged) == 1
+
+
+def test_single_instance_lock_blocks_second_acquire():
+    """같은 이름의 mutex 를 두 번 잡으면 두 번째는 None (중복 기동 차단)."""
+    import sys as _sys
+
+    if _sys.platform != "win32":
+        assert scale_agent_module.acquire_single_instance_lock() is not None
+        return
+    import ctypes
+
+    first = scale_agent_module.acquire_single_instance_lock()
+    assert first is not None
+    try:
+        assert scale_agent_module.acquire_single_instance_lock() is None
+    finally:
+        ctypes.windll.kernel32.CloseHandle(first)
