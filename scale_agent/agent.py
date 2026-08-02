@@ -962,13 +962,17 @@ def _autostart_command() -> str:
 
 
 def autostart_enabled() -> bool:
+    return _autostart_registered_command() is not None
+
+
+def _autostart_registered_command() -> str | None:
+    """레지스트리에 등록된 자동 실행 명령(없으면 None) — 낡은 경로 감지용."""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            winreg.QueryValueEx(key, RUN_NAME)
-        return True
+            return str(winreg.QueryValueEx(key, RUN_NAME)[0])
     except OSError:
-        return False
+        return None
 
 
 def set_autostart(enabled: bool) -> None:
@@ -1099,8 +1103,11 @@ def main() -> None:
     log(f"http://127.0.0.1:{http_port} 대기 중 (저울 {len(scales)}대 설정)")
 
     # 최초 실행 시 부팅 자동 실행을 기본으로 켠다(트레이 메뉴에서 끌 수 있음).
+    # 이미 등록돼 있는데 경로가 지금 실행 파일과 다르면(설치 위치 이동/설치 파일로
+    # 재설치) 낡은 등록을 현재 경로로 자가 치유한다 — 부팅이 옛 exe 를 띄우는 사고 방지.
     try:
-        if not autostart_enabled():
+        registered = _autostart_registered_command()
+        if registered is None or registered != _autostart_command():
             set_autostart(True)
     except Exception:  # noqa: BLE001 - 레지스트리 접근 불가 환경은 무시
         pass
