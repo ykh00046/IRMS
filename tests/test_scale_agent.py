@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from scale_agent import agent as scale_agent_module
 from scale_agent.agent import (
     EventBus,
@@ -14,6 +16,15 @@ from scale_agent.agent import (
     scale_entries,
 )
 from src.services import blend_service
+
+
+@pytest.fixture(autouse=True)
+def _no_real_log(monkeypatch):
+    """테스트의 log() 호출이 운용 로그(%APPDATA%\\IRMS-Scale\\agent.log)에 쓰이지 않게
+    기본 차단한다 (실제로 '수신: 20.0 g' 테스트 잔재가 운용 로그에 섞인 사례).
+    로그 내용을 검증하는 테스트는 각자 monkeypatch 로 다시 덮는다.
+    """
+    monkeypatch.setattr(scale_agent_module, "log", lambda m: None)
 
 
 # ── A&D 프레임 파서 ──────────────────────────────────────────────
