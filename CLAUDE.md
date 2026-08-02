@@ -93,8 +93,8 @@ templates/              # Jinja2 (_base_app.html 상속)
 
 static/                 # 정적 파일 (css, js, vendor) — ?v= 캐시버스팅 필수
 tests/                  # pytest (in-memory SQLite 픽스처)
-tray_client/            # Windows 트레이 앱 (근태·점도 리마인더 + 저울 연동, 기능별 토글)
-scale_agent/            # A&D 저울 로컬 HTTP 에이전트 (127.0.0.1:8787 — 배합 화면 연동)
+tray_client/            # ★현장 배포 단위★ 「IRMS 현장 도우미」(IRMS-Notice) — 알림+저울 통합 트레이 앱
+scale_agent/            # 저울 로직 라이브러리 (현장 도우미가 임포트) — ⚠️단독 배포 금지(현장 도우미로 대체됨)
 serve.py / run_auto.bat # 운영: 단일 창 서버 + 자동 git pull 업데이트
 data/                   # SQLite DB (런타임, gitignore)
 scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
@@ -127,7 +127,8 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 ## Important Notes
 
 - **모든 레시피 값 단위**: `g` 고정
-- **계량 모드**: 수동 입력 기본 + A&D 저울 연동 옵션 (scale_agent/트레이 앱이 로컬 127.0.0.1:8787 HTTP 로 배합 화면에 무게 전달)
+- **계량 모드**: 수동 입력 기본 + 저울 연동 옵션 (현장 도우미의 저울 토글이 로컬 127.0.0.1:8787 HTTP 로 배합 화면에 무게 전달 — 저울 코드는 scale_agent 패키지를 임포트)
+- **현장 배포 단위는 tray_client(현장 도우미) 하나뿐**: 빌드는 `tray_client/build/build.bat` → `tray_client/build/Output/IRMS-Notice-Setup-{ver}.exe`. `scale_agent`는 라이브러리로만 쓰이며 **단독 설치 파일을 만들지 않는다** (2026-08-02 표류 사례: 대체 사실을 못 보고 standalone 설치 파일을 만들었다가 폐기. 현장 도우미가 부팅 시 구 IRMS-Scale 자동 실행 키를 청소하므로 standalone과 공존 불가). 저울 하드웨어 설정은 `%APPDATA%\IRMS-Scale\config.json`이 계속 소유(현장 도우미도 같은 파일 사용).
 - **환경변수**: `IRMS_ENV`, `IRMS_SESSION_SECRET`, `IRMS_DATA_DIR`, `IRMS_SEED_DEMO_DATA`
 - **세션**: `SessionMiddleware` + CSRF 보호 (`starlette-csrf`)
 - **Rate Limiting**: `slowapi` 적용

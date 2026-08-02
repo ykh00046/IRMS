@@ -1,5 +1,11 @@
 """IRMS 저울 로컬 에이전트 — A&D 저울(GX-10202M 등)을 웹 화면에 연결.
 
+⚠️ 단독 배포 금지 — 「IRMS 현장 도우미」(tray_client, IRMS-Notice)에 통합됨.
+현장 배포는 현장 도우미 설치 파일(tray_client/build → Output/IRMS-Notice-Setup-*.exe)
+하나로 하고, 이 모듈은 그 앱이 임포트하는 **라이브러리**(파서·Scale·EventBus·HTTP 핸들러)
++ 개발용 단독 실행체로만 유지된다. 현장 도우미는 부팅 시 구 IRMS-Scale 자동 실행
+항목을 청소하므로, 이 파일의 main() 은 자동 실행을 스스로 등록하지 않는다.
+
 현장 PC에서 실행하면 RS-232C(또는 USB-시리얼)로 저울을 읽고, 로컬 HTTP
 (127.0.0.1:8787)로 현재 무게를 내어준다. 배합 화면(blend.js)이 이 주소를
 호출해 실제량 칸을 자동으로 채운다. 브라우저 페이지는 서버(192.168.x)에
@@ -1102,15 +1108,10 @@ def main() -> None:
         return
     log(f"http://127.0.0.1:{http_port} 대기 중 (저울 {len(scales)}대 설정)")
 
-    # 최초 실행 시 부팅 자동 실행을 기본으로 켠다(트레이 메뉴에서 끌 수 있음).
-    # 이미 등록돼 있는데 경로가 지금 실행 파일과 다르면(설치 위치 이동/설치 파일로
-    # 재설치) 낡은 등록을 현재 경로로 자가 치유한다 — 부팅이 옛 exe 를 띄우는 사고 방지.
-    try:
-        registered = _autostart_registered_command()
-        if registered is None or registered != _autostart_command():
-            set_autostart(True)
-    except Exception:  # noqa: BLE001 - 레지스트리 접근 불가 환경은 무시
-        pass
+    # 자동 실행을 스스로 등록하지 않는다 — 현장 배포 단위는 「현장 도우미」이고,
+    # 그 앱이 부팅 시 구 IRMS-Scale 자동 실행 항목을 *청소*한다. 여기서 등록하면
+    # 두 앱이 레지스트리를 서로 뒤집는 핑퐁이 된다. 개발용 단독 실행에서 자동
+    # 실행이 필요하면 트레이 메뉴의 토글로 명시적으로 켠다.
 
     # 트레이 모드(기본): 콘솔 없이 상주. pystray 가 없거나 --console 이면 콘솔 모드.
     tray_available = False
