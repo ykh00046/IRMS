@@ -54,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ]],
     ["배합 기록", [
       ["blend_record_create", "배합 기록 생성"],
-      ["blend_record_continuous_create", "배합 기록 생성(이어서 계량)"],
+      ["blend_record_continuous_create", "배합 기록 생성(다중 계량)"],
       ["blend_record_bulk_create", "배합 일괄 생성"],
       ["blend_record_update", "배합 기록 수정"],
       ["blend_record_cancel", "배합 기록 취소"],

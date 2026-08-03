@@ -1,5 +1,5 @@
 /**
- * blend_continuous.js — 이어서 계량(연속 배합) 컨트롤러.
+ * blend_continuous.js — 다중 계량(연속 배합) 컨트롤러.
  *
  * 한 레시피로 N개 로트를 "자재 열 우선"으로 연속 계량한다: 같은 재료를 로트1·2·3
  * 가로로 연달아 계량하고(통 바꾸는 횟수 최소화), 다음 재료로 넘어간다. 저장은
@@ -318,11 +318,11 @@
     return `[수기 입력 승인] 승인자: ${state.manualApproved.approver}`;
   }
 
-  // ── 이어서 계량 임시 저장·복구 ────────────────────────────────
+  // ── 다중 계량 임시 저장·복구 ────────────────────────────────
   // 공용 PC 에서 연속 배합 중 자동 로그아웃·창 닫힘으로 계량값(승인된 증량 이력 포함)이
   // 날아가는 것을 막는다. 진행 중 입력을 이 PC 의 localStorage 에 저장하고(서버·다른 작업
   // 무관), 다음 진입 시 이어서 할지 배너로 묻는다. 저장 완료·버리기 시 삭제. 24시간 지난
-  // 초안은 제안하지 않는다. (단건 배합 blend.js "irms.blend.draft" 의 이어서 계량 버전 —
+  // 초안은 제안하지 않는다. (단건 배합 blend.js "irms.blend.draft" 의 다중 계량 버전 —
   // 셀 매트릭스·로트별 증량에 맞춰 확장.)
   const DRAFT_KEY = "irms.blend.cont.draft";
   let _draftTimer = null;
@@ -414,7 +414,7 @@
     const label = $("cont-restore-label");
     if (label) {
       const when = draft.savedAt ? draft.savedAt.slice(0, 16).replace("T", " ") : "";
-      label.textContent = `작성 중이던 '${draft.product_name || ""}' 이어서 계량이 있습니다${when ? ` (${when})` : ""} — 이어서 하시겠어요?`;
+      label.textContent = `작성 중이던 '${draft.product_name || ""}' 다중 계량이 있습니다${when ? ` (${when})` : ""} — 이어서 하시겠어요?`;
     }
     banner.hidden = false;
   }
@@ -434,9 +434,9 @@
     const recipeSel = $("cont-recipe");
     recipeSel.value = String(draft.recipe_id);
     await onRecipeChange();  // 레시피 로드 + 초기화 + 빈 렌더 — 이후 초안 값을 덮어씌운다.
-    // 기준 자재 레시피면 이어서 계량 자체가 불가 — 복구 중단(빈 상태 유지, 초안 폐기).
+    // 기준 자재 레시피면 다중 계량 자체가 불가 — 복구 중단(빈 상태 유지, 초안 폐기).
     if (state.anchorBlocked) {
-      notify("이 레시피는 기준 자재 방식이라 이어서 계량 복구를 지원하지 않습니다.", "warn");
+      notify("이 레시피는 기준 자재 방식이라 다중 계량 복구를 지원하지 않습니다.", "warn");
       clearDraft();
       const banner = $("cont-restore-banner"); if (banner) banner.hidden = true;
       return;
@@ -491,7 +491,7 @@
     updateManualEntryControl();
     const banner = $("cont-restore-banner");
     if (banner) banner.hidden = true;
-    notify("작성 중이던 이어서 계량을 복원했습니다.", "success");
+    notify("작성 중이던 다중 계량을 복원했습니다.", "success");
     // 증량 이력이 있으면 1회 안내(blend.js 와 동일 취지).
     if (state.lotRescaleEvents.some((e) => e && e.length)) {
       notify("복구된 계량에 증량 이력이 포함되어 있습니다.", "warn");
@@ -800,7 +800,7 @@
     const warn = $("cont-anchor-warn");
     if (state.anchorBlocked) {
       warn.textContent = "이 레시피는 기준 자재(먼저 계량) 방식이라 로트마다 총량이 달라집니다 — "
-        + "이어서 계량은 지원하지 않습니다. 배합(단건) 화면에서 진행하세요.";
+        + "다중 계량은 지원하지 않습니다. 배합(단건) 화면에서 진행하세요.";
       warn.hidden = false;
     } else {
       warn.hidden = true;
@@ -1492,7 +1492,7 @@
         offerContRescale(j);
       } else {
         // 부족(-): 팝업으로 부족량 명시. 영점 실수 등은 추가로 올린 무게를 더한
-        // '합계'를 다시 입력해 맞춘다(이어서 계량은 행별 합산 모드가 없어 합계 재입력 방식).
+        // '합계'를 다시 입력해 맞춘다(다중 계량은 행별 합산 모드가 없어 합계 재입력 방식).
         window.alert(
           `부족 계량: ${state.materials[i].material_name} (로트 ${j + 1})
 `
@@ -1693,7 +1693,7 @@
   }
 
   // ── 증량 승인 게이트(책임자 승인 없이는 증량 불가) — 로트별 스코프 ────────────
-  // 배합 화면 blend.js 의 승인 게이트를 이어서 계량에 이식. [증량 적용]/[그래도 증량]을
+  // 배합 화면 blend.js 의 승인 게이트를 다중 계량에 이식. [증량 적용]/[그래도 증량]을
   // 누르면 즉시 applyContRescale 하지 않고 이 승인 모달을 띄운다.
   //   [승인]: /api/blend/manager-verify 200 → 그 로트 증량 + {approval_id, approver} 이벤트.
   //   [부재로 진행]: 사유 필수 + 재확인 → 그 로트 증량 + {absence_reason} 이벤트(미승인 증량).
@@ -1847,7 +1847,7 @@
   }
 
   // 총 배합량 잠금 — 셀 실제량이 하나라도 입력되면 공용 총 배합량(cont-total)을 바꿀 수 없다.
-  // (배합 화면 updateTotalLock 의 이어서 계량 버전 — 증량은 lotRescale[j] 로만, 총량 직접 상향으로
+  // (배합 화면 updateTotalLock 의 다중 계량 버전 — 증량은 lotRescale[j] 로만, 총량 직접 상향으로
   // 승인 게이트를 우회하지 못하게 한다.) 기본 배합량 버튼도 함께 비활성화. 레시피/셀 초기화 시 자동 해제.
   function updateContTotalLock() {
     const totalInput = $("cont-total");
@@ -2062,7 +2062,7 @@
     err.hidden = true;
     if (_saving) return;   // 이미 저장 중 — N로트가 두 벌 생기는 것을 막는다
     if (!state.current) { return fail(err, "레시피를 선택하세요."); }
-    if (state.anchorBlocked) { return fail(err, "기준 자재 레시피는 이어서 계량을 지원하지 않습니다."); }
+    if (state.anchorBlocked) { return fail(err, "기준 자재 레시피는 다중 계량을 지원하지 않습니다."); }
     const worker = lockedWorkerName();
     if (!worker) { return fail(err, "작업자를 입력하세요."); }
     if (!(state.total > 0)) { return fail(err, "총 배합량을 입력하세요."); }
@@ -2203,7 +2203,7 @@
     } catch (e) {
       const msg = (e && e.message) || "";
       // 복구된 초안의 증량 승인(approval_id)은 30분 경과 시 서버(validate_rescale_events)에서
-      // 만료된다. 단건 배합(blend.js)의 저장 시점 재인증 전체 플로우는 이어서 계량에 아직 없다 —
+      // 만료된다. 단건 배합(blend.js)의 저장 시점 재인증 전체 플로우는 다중 계량에 아직 없다 —
       // 대신 만료가 확인되면 초과 계량 증량을 다시 승인받도록 명확히 안내한다(간소 정책).
       // 해당 로트의 초과 셀을 다시 확정(Enter/blur)하면 offer→승인 모달이 다시 뜬다.
       if (msg.includes("증량 승인이 유효하지 않습니다")) {
@@ -2450,7 +2450,7 @@
     bind();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
-    offerRestore();  // 작성 중이던 이어서 계량이 있으면 이어서 할지 배너로 제안
+    offerRestore();  // 작성 중이던 다중 계량이 있으면 이어서 할지 배너로 제안
     detectScale();
     setInterval(detectScale, 30000);
     setInterval(pollScaleEvents, 800);

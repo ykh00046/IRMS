@@ -19,7 +19,7 @@ class ImportRequest(BaseModel):
     revision_of: int | None = None
     force: bool = False
     effective_from: str | None = Field(default=None, max_length=10)  # 사용 시작일(YYYY-MM-DD), 미지정 시 등록일
-    # 기준 배합량(g, 선택) — 배합 화면 '기준량' 버튼이 채울 총량. 최대 3개, 미지정 시 버튼 없음.
+    # 기준 배합량(g, 선택) — 배합 화면 '기준' 버튼이 채울 총량. 최대 3개, 미지정 시 버튼 없음.
     base_totals: list[float] | None = Field(default=None, max_length=3)
     # (구) 단일 기준 배합량 — 하위호환용, base_totals 미지정 시 사용.
     base_total: float | None = Field(default=None, gt=0, le=10_000_000)

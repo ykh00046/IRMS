@@ -107,15 +107,15 @@
       `<td class="num blend-var" data-idx="${idx}">-</td>`;
   }
 
-  // 1개면 '기준량 N 적용', 여러 개면 '기준량' 라벨 + 압축 표기 값 버튼들
+  // 1개면 '기준 N 적용', 여러 개면 '기준' 라벨 + 압축 표기 값 버튼들
   function baseTotalLinksHtml(values) {
     if (!values.length) return "";
     const short = (v) => String(Number(v));  // 2000.00 → 2000 (라벨 줄 한 줄 유지)
-    const label = values.length === 1 ? "" : '<span class="blend-base-label">기준량</span>';
+    const label = values.length === 1 ? "" : '<span class="blend-base-label">기준</span>';
     return label + values.map((v) =>
       `<button class="blend-base-link" type="button" data-value="${v}" ` +
       `title="총 배합량에 ${fmt(v)} g 을 채웁니다">` +
-      `${values.length === 1 ? `기준량 ${short(v)} 적용` : short(v)}</button>`
+      `${values.length === 1 ? `기준 ${short(v)} 적용` : short(v)}</button>`
     ).join("");
   }
 
@@ -389,7 +389,7 @@
   }
 
   // ── 활동 기반 유휴 자동 로그아웃 ────────────────────────────────
-  // 배합/이어서 계량 화면에서 마우스·키보드·터치 등 활동이 이 시간(분) 동안
+  // 배합/다중 계량 화면에서 마우스·키보드·터치 등 활동이 이 시간(분) 동안
   // 전혀 없으면 자동 로그아웃한다. 공용 PC 보안 조치.
   //   ※ 60분 값을 바꾸려면 이 상수만 고치면 된다.
   const IDLE_LOGOUT_MINUTES = 60;

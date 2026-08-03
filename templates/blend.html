@@ -45,7 +45,7 @@
                   <select class="input" id="blend-recipe"><option value="">레시피 선택…</option></select>
                 </div>
                 <div class="blend-field blend-field-total">
-                  <!-- 기준량 버튼은 라벨 줄에(이어서 계량 화면과 배치 통일 2026-07-31).
+                  <!-- 기준 버튼은 라벨 줄에(다중 계량 화면과 배치 통일 2026-07-31).
                        증량 취소 링크만 입력칸 아래 절대배치 오버레이로 둬 필드 높이를 유지한다. -->
                   <div class="blend-label-row">
                     <label class="filter-label" for="blend-total">총 배합량 (g)</label>
@@ -302,7 +302,7 @@
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 기록은 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
               <!-- 세 번째 길 — 그냥 덜어내고 다시 재고 싶을 때. 부재 처리 절차와 섞이지 않게
-                   구분선 아래 별도 줄로 둔다(이어서 계량 화면과 동일). -->
+                   구분선 아래 별도 줄로 둔다(다중 계량 화면과 동일). -->
               <hr class="rescale-approve-divider" />
               <button class="btn" id="rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
             </div>
@@ -418,9 +418,9 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260731b"></script>
+    <script src="/static/js/blend_lib.js?v=20260803c"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend.js?v=20260731c"></script>
+    <script src="/static/js/blend.js?v=20260803c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

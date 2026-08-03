@@ -102,7 +102,7 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "remark", "TEXT")
 
     # 기준 배합량(g, 선택): 이 레시피를 기본으로 배합할 때의 총량. 연구소 이관 값이
-    # 100/4000 등으로 안 떨어져도(예: 합 3924.38) 배합 화면 '기준량 적용' 버튼이 이 값을
+    # 100/4000 등으로 안 떨어져도(예: 합 3924.38) 배합 화면 '기준 적용' 버튼이 이 값을
     # 사용. 미설정 시 자재 합계로 폴백.
     ensure_column(connection, "recipes", "base_total", "REAL")
     # 공정 설명 줄(레시피 자재 사이 안내문 — 예: "개시제 교반 - 300rpm").
