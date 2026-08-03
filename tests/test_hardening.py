@@ -51,8 +51,8 @@ _EXPECTED_CSP = (
     "object-src 'none'; "
     "base-uri 'self'; "
     "img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self'; "
     "connect-src 'self' http://127.0.0.1:8787; "
     "script-src 'self' 'unsafe-inline'"
 )

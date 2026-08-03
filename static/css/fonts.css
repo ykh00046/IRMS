@@ -1,0 +1,47 @@
+/* 자체 호스팅 웹폰트 — 사내망 PC 렌더 일관성.
+ *
+ * 종전에는 Pretendard(jsdelivr) / JetBrains Mono(Google Fonts)를 외부 CDN 에서
+ * 받았다. 서버는 사내망(192.168.11.194:9000)이라 페이지는 뜨지만, 외부 인터넷이
+ * 막히거나 느린 현장 PC 에서는 폰트만 조용히 실패해 맑은 고딕으로 폴백됐다.
+ * 맑은 고딕은 Pretendard 보다 글자폭이 넓어 같은 100% 배율에서도 화면이 "뚱뚱하게"
+ * 커지고 표·버튼이 잘린다 — PC 마다 인터넷 허용 여부·폰트 캐시가 달라 증상이
+ * 제각각으로 보이던 원인(2026-08-03).
+ *
+ * local() 은 일부러 쓰지 않는다: PC 에 설치된 Pretendard 버전이 다르면 다시
+ * 렌더가 갈리므로, 항상 이 파일이 서빙하는 woff2 하나만 쓰게 한다.
+ *
+ * Pretendard 는 가변 폰트 1개로 100~900 을 모두 커버한다(2MB, 굵기별 정적 파일
+ * 6개 ≒ 7MB 대비 이득). JetBrains Mono 는 숫자·코드 표기용이라 latin 만 담는다.
+ */
+
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 100 900; /* 가변 축 — CSS 의 400/500/600/700/800/900 전부 이 파일로 해결 */
+  font-display: swap;
+  src: url("/static/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2");
+}

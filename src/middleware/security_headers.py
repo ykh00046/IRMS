@@ -43,11 +43,11 @@ _CONTENT_SECURITY_POLICY = (
     "object-src 'none'; "
     "base-uri 'self'; "
     "img-src 'self' data:; "
-    # 모든 화면이 CDN 웹폰트(pretendard=jsdelivr, JetBrains Mono=Google Fonts)를
-    # 로드하므로 폰트 CSS 도메인과 폰트 파일 도메인(gstatic)을 허용한다. 이를 빼면
-    # 폰트가 시스템 폴백으로 떨어진다(2026-07-31 CSP 도입 시 확인).
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:; "
+    # 웹폰트는 2026-08-03 부터 자체 호스팅(static/fonts + static/css/fonts.css)이라
+    # 외부 폰트 도메인 예외가 필요 없다. CDN 시절에는 인터넷이 막힌 현장 PC 에서
+    # 폰트만 조용히 실패해 맑은 고딕으로 폴백 → 화면이 넓어지고 잘렸다.
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self'; "
     # 배합 화면(blend.js/blend_continuous.js)은 현장 PC 로컬 저울 에이전트
     # (http://127.0.0.1:8787, 현장 도우미 저울 토글)로 fetch 한다. connect-src 를
     # 명시하지 않으면 default-src 'self' 로 폴백돼 이 교차 출처 fetch 가 차단된다 —

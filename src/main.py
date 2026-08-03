@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import mimetypes
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -200,6 +201,10 @@ def create_app() -> FastAPI:
             raise
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+    # 자체 호스팅 웹폰트(static/fonts) — Python 의 mimetypes 는 woff2 를 모른다.
+    # 등록하지 않으면 StaticFiles 가 application/octet-stream 으로 내보낸다.
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("font/woff", ".woff")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
     app.include_router(build_pages_router(templates))
