@@ -6,7 +6,7 @@
   gap: 0.75rem;
 }
 .blend-field { display: flex; flex-direction: column; gap: 0.25rem; }
-/* 라벨 줄이 감겨도(기준량 버튼 여러 개 등) 입력칸 기준선은 항상 정렬 */
+/* 라벨 줄이 감겨도(기준 버튼 여러 개 등) 입력칸 기준선은 항상 정렬 */
 .blend-form-grid .blend-field { justify-content: flex-end; }
 .blend-field-grow { flex: 1; }
 
@@ -207,7 +207,7 @@
 
 /* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함)
    작업자가 반드시 읽어야 하는 안내라 오렌지 강조 + 확대(사용자 요청 2026-07-21).
-   배합·이어서 계량 두 화면이 이 클래스를 공유한다. */
+   배합·다중 계량 두 화면이 이 클래스를 공유한다. */
 .blend-step-row td {
   background: var(--accent-secondary-light, rgba(244, 124, 38, 0.12));
   color: var(--text-primary, #1f2937); font-size: 1.05rem; font-weight: 700;
@@ -219,18 +219,23 @@
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
 .blend-worker-hint { font-size: 0.68rem; color: var(--muted, #9ca3af); font-weight: 400; }
 
-/* 배합 임시 저장 복구 배너 — 배합·이어서 계량 두 화면 공용(각 템플릿 인라인 <style>에서
-   이동 2026-07-31). 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. */
-.blend-restore-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: 0 0 12px; padding: 8px 14px;
-  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
-  font-size: 0.85rem; color: #92400e;
+/* 임시저장 복구 후 레시피 변경 고지 — 배합·다중 계량 두 화면 공용. 사라진 재료의
+   계량값처럼 "값이 걸린" 안내는 사라지는 토스트로 끝내지 않고 화면에 남긴다.
+   (구 복구 배너를 대체 — 이어서 하는 입구는 "작성 중 배합" 화면 하나로 통일.) */
+.blend-draft-notice {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin: 0 0 12px; padding: 10px 14px;
+  background: var(--status-warning-bg); border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--status-warning) 40%, var(--border-subtle));
+  font-size: 0.85rem; color: color-mix(in srgb, var(--status-warning) 78%, var(--text-primary));
 }
-.blend-restore-banner[hidden] { display: none; }
-.blend-restore-actions { display: flex; gap: 8px; white-space: nowrap; }
+.blend-draft-notice[hidden] { display: none; }
+.blend-draft-notice-body { flex: 1 1 auto; min-width: 0; }
+.blend-draft-notice-line { margin: 0 0 4px; }
+.blend-draft-notice-list { margin: 2px 0 6px; padding-left: 1.2em; }
+.blend-draft-notice-list li { margin: 2px 0; font-variant-numeric: tabular-nums; }
 
-/* 미등록 LOT '사유 적고 진행' 입력칸 + ERP 책임자 LOT 추가 상자 — 배합·이어서 계량 공용
+/* 미등록 LOT '사유 적고 진행' 입력칸 + ERP 책임자 LOT 추가 상자 — 배합·다중 계량 공용
    (인라인 style/블록에서 이동 2026-07-31). 라벨 사이 간격은 인라인 margin-top 대체. */
 .lot-override-box { margin: 8px 0 4px; }
 .lot-override-box[hidden] { display: none; }
@@ -296,7 +301,7 @@
 /* 현재 저울 입력이 들어갈 행(단건) — 옅은 앰버 배경 + 좌측 앰버 보더 */
 #blend-mat-body tr.row-scale-target > td { background: rgba(245, 158, 11, 0.07); }
 #blend-mat-body tr.row-scale-target > td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
-/* 현재 저울 입력이 들어갈 셀(이어서 계량) — 앰버 테두리 강조 */
+/* 현재 저울 입력이 들어갈 셀(다중 계량) — 앰버 테두리 강조 */
 #cont-mat-body td.cont-cell.cell-scale-target {
   background: rgba(245, 158, 11, 0.12);
   box-shadow: inset 0 0 0 2px #f59e0b;
@@ -315,7 +320,7 @@
   display: block; margin: 0.15rem 0 0; width: fit-content;
 }
 
-/* 기준량 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
+/* 기준 버튼(최대 3개) — 총 배합량 라벨 줄 오른쪽 링크형(칸 높이 불변 → 폼 균형 유지) */
 .blend-label-row {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
   min-width: 0;
@@ -338,8 +343,8 @@
 
 /* 증량 취소 링크(#rescale-undo)만 절대배치 오버레이로 — 일반 흐름에 두면 필드 높이가
    커져 총 배합량 입력칸이 이웃 필드보다 위로 밀린다(하단 정렬 그리드). 버튼 아래는 어차피
-   빈 공간이라 겹쳐 그린다. 기준량 버튼(#blend-base-links)은 라벨 줄(.blend-label-row)로
-   옮겨 이어서 계량 화면과 배치를 통일(2026-07-31). */
+   빈 공간이라 겹쳐 그린다. 기준 버튼(#blend-base-links)은 라벨 줄(.blend-label-row)로
+   옮겨 다중 계량 화면과 배치를 통일(2026-07-31). */
 .blend-field-total { position: relative; }
 .blend-total-tools {
   position: absolute; top: 100%; left: 0; min-width: 100%;
@@ -437,7 +442,7 @@
 .blend-window-guard-override-row { display: flex; gap: 8px; }
 .blend-window-guard-override-row .input { flex: 1; }
 .blend-window-guard-override-hint { margin: 8px 0 0; font-size: 0.76rem; color: #94a3b8; }
-/* 이어서 계량(연속) 증량 승인 모달 — blend.js 모달의 ID 스코프 규칙을 별도 id 로 재적용
+/* 다중 계량(연속) 증량 승인 모달 — blend.js 모달의 ID 스코프 규칙을 별도 id 로 재적용
    (템플릿이 분리돼 #cont-rescale-approve-modal 로 뜨므로 클래스 규칙만으론 미적용되는
    .blend-field/.login-error 간격만 additive 로 보강). 나머지는 위 클래스 규칙 공유. */
 #cont-rescale-approve-modal .blend-field { margin-bottom: 0.7rem; }

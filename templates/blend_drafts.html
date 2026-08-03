@@ -1,0 +1,70 @@
+{% extends "_base_app.html" %}
+
+{% block title %}작성 중 배합{% endblock %}
+{% block eyebrow %}현장 작업{% endblock %}
+{% block heading %}작성 중 배합{% endblock %}
+
+{% block styles %}
+<style>
+  /* 작성 중 배합 화면 전용 — 기존 클래스(.panel/.table-wrap/.btn/.status-chip/.empty-state)를
+     우선 재사용하고, 이 화면에서만 필요한 배치·정렬만 최소로 추가한다(새 디자인 없음). */
+  .drafts-progress { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .drafts-saved { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
+  .drafts-actions { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
+  /* 레시피 변경 배지 — 공용 .status-chip 모양 위에 상태색만 얹는다(하드코딩 hex 금지). */
+  .drafts-badges { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.3rem; }
+  .drafts-badge-warn { background: var(--status-warning-bg); color: var(--status-warning); }
+  .drafts-badge-error { background: var(--status-error-bg); color: var(--status-error); }
+  .drafts-badge-info { background: var(--status-info-bg); color: var(--status-info); }
+  .drafts-change-note { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--text-secondary); }
+  .drafts-change-note ul { margin: 0.2rem 0 0; padding-left: 1.2em; }
+  .drafts-loading {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.6rem; padding: 2rem; color: var(--text-tertiary);
+  }
+  .drafts-empty-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+        <section class="panel">
+          <h3 class="panel-title">이어서 할 작업</h3>
+          <p class="panel-subtitle">
+            배합·다중 계량 화면에서 자동 저장된 진행분입니다. 화면당 최대 3건까지 이 PC 에만
+            보관되며, 24시간이 지나면 목록에서 사라집니다.
+          </p>
+          <div class="drafts-loading" id="drafts-loading"><span class="spinner"></span> 확인하는 중…</div>
+        </section>
+
+        <section class="panel" id="drafts-list-panel" hidden>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>제품</th>
+                  <th>화면</th>
+                  <th>진행도</th>
+                  <th>저장 시각</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="drafts-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="drafts-empty-panel" hidden>
+          <div class="empty-state">
+            <p>이어서 할 작업이 없습니다.</p>
+            <div class="drafts-empty-actions">
+              <a class="btn accent" href="/blend">배합으로 가기</a>
+              <a class="btn" href="/blend/continuous">다중 계량으로 가기</a>
+            </div>
+          </div>
+        </section>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/js/blend_drafts.js?v=20260803d"></script>
+    <script src="/static/js/blend_drafts_page.js?v=20260803d"></script>
+{% endblock %}

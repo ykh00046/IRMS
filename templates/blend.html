@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260803d" />
 {% endblock %}
 
 {% block content %}
@@ -18,13 +18,12 @@
             <span id="scale-only-control-text">저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.</span>
             <button type="button" class="btn btn-sm accent" id="manual-entry-request-btn">수기 입력 승인 요청</button>
           </div>
-          <!-- 배합 임시 저장 복구 배너 — 공용 PC 에서 로그아웃·창 닫힘으로 날아간 진행분을 이어서. -->
-          <div class="blend-restore-banner" id="blend-restore-banner" hidden>
-            <span id="blend-restore-label">작성 중이던 배합이 있습니다.</span>
-            <span class="blend-restore-actions">
-              <button type="button" class="btn btn-sm accent" id="blend-restore-yes">이어서 하기</button>
-              <button type="button" class="btn btn-sm" id="blend-restore-no">버리기</button>
-            </span>
+          <!-- 임시저장 복구 후 레시피 변경 고지 — 사라진 재료의 계량값·새로 추가된 재료·
+               기준 배합량 변경을 값까지 적어 남긴다(토스트는 사라지므로 조용한 폐기 방지).
+               끊긴 작업을 이어서 하는 입구는 "작성 중 배합"(/blend/drafts) 한 곳뿐이다. -->
+          <div class="blend-draft-notice" id="blend-draft-notice" hidden>
+            <div class="blend-draft-notice-body" id="blend-draft-notice-body"></div>
+            <button type="button" class="btn btn-sm" id="blend-draft-notice-close">확인</button>
           </div>
           <div class="blend-top-grid">
             <section class="panel">
@@ -419,8 +418,9 @@
 
 {% block scripts %}
     <script src="/static/js/blend_lib.js?v=20260803c"></script>
+    <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend.js?v=20260803c"></script>
+    <script src="/static/js/blend.js?v=20260803d"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

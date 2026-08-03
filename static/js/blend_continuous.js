@@ -18,6 +18,9 @@
   const request = IRMS._core && IRMS._core.request;
   const notify = IRMS.notify || function (m) { console.log(m); };
 
+  // 임시저장 슬롯 저장소(최대 3칸) + 레시피 변경 정합성 헬퍼 — blend_drafts.js.
+  const blendDrafts = IRMS.blendDrafts;
+
   const {
     esc, TOLERANCE_G, fmt, toleranceDecimals, todayISO, nowTime,
     computeTheoryAmount, findAnchorIndex, theoryFromWeights,
@@ -35,6 +38,9 @@
   const state = {
     recipes: [],
     current: null,        // /blend/recipes/{id} 응답
+    // 이 창이 쓰고 있는 임시저장 슬롯 id(최대 3칸 중 하나). 같은 레시피로 이어서 작업하는
+    // 동안은 이 슬롯만 갱신한다. 저장 완료·복구 실패 시 null 로 되돌린다.
+    draftSlotId: null,
     materials: [],        // [{material_id, material_code, material_name, ratio, is_anchor, value_weight}]
     theory: [],           // theory[i] — 전 로트 공통 이론량(총량×ratio)
     // cells[i][j] = { actual:"", manual:false, lot:"" }
@@ -320,11 +326,11 @@
 
   // ── 다중 계량 임시 저장·복구 ────────────────────────────────
   // 공용 PC 에서 연속 배합 중 자동 로그아웃·창 닫힘으로 계량값(승인된 증량 이력 포함)이
-  // 날아가는 것을 막는다. 진행 중 입력을 이 PC 의 localStorage 에 저장하고(서버·다른 작업
-  // 무관), 다음 진입 시 이어서 할지 배너로 묻는다. 저장 완료·버리기 시 삭제. 24시간 지난
-  // 초안은 제안하지 않는다. (단건 배합 blend.js "irms.blend.draft" 의 다중 계량 버전 —
-  // 셀 매트릭스·로트별 증량에 맞춰 확장.)
-  const DRAFT_KEY = "irms.blend.cont.draft";
+  // 날아가는 것을 막는다. 진행 중 입력을 이 PC 의 localStorage 에 최대 3칸까지 저장하고
+  // (서버·다른 작업 무관), 끊긴 작업은 "작성 중 배합"(/blend/drafts)에서만 이어간다
+  // (진입 배너 폐지). 저장 완료 시 그 슬롯만 삭제. 24시간 지난 초안은 목록에서 빠진다.
+  // (단건 배합 blend.js 초안의 다중 계량 버전 — 셀 매트릭스·로트별 증량에 맞춰 확장.)
+  const DRAFT_KIND = "cont";
   let _draftTimer = null;
 
   function currentDraft() {
@@ -338,6 +344,12 @@
     return {
       recipe_id: state.current.recipe.id,
       product_name: state.current.recipe.product_name,
+      schema: blendDrafts ? blendDrafts.SCHEMA : 2,
+      // 줄(재료)마다 품목 식별자 — 복구 시 위치가 아니라 이 값으로 매칭한다. 초안 저장 후
+      // 재료 순서가 바뀌거나 중간에 삽입/삭제돼도 계량값이 다른 재료 줄로 흘러들지 않는다.
+      materials: blendDrafts ? blendDrafts.materialIdentities(state.materials) : [],
+      // 기준 배합량·허용 편차·기준 자재 설정 스냅샷 — 복구 전 변경 고지에 쓴다.
+      recipeMeta: blendDrafts ? blendDrafts.recipeMetaOf(state.current.recipe) : null,
       lotCount: state.lotCount,
       total: $("cont-total").value,
       date: $("cont-date").value,
@@ -367,61 +379,60 @@
     };
   }
 
+  // 진행 중인 초안이 차지한 슬롯 id. 같은 레시피로 이어서 작업하는 동안은 이 슬롯을
+  // 계속 갱신한다(저장할 때마다 새 칸을 만들면 3칸이 같은 작업으로 순식간에 찬다).
+  function persistDraft() {
+    // 가드에 막힌 창은 공유 초안을 덮어쓰지 않는다(blend.js 와 동일).
+    if (window.IRMS && window.IRMS.blendWindowBlocked) return;
+    if (!blendDrafts) return;
+    const d = currentDraft();
+    if (!d) return;
+    const id = blendDrafts.saveSlot(DRAFT_KIND, d, null, state.draftSlotId);
+    if (id) state.draftSlotId = id;
+  }
+
   function scheduleDraftSave() {
     if (_draftTimer) clearTimeout(_draftTimer);
     _draftTimer = setTimeout(() => {
-      try {
-        // 가드에 막힌 창은 공유 초안 키를 덮어쓰지 않는다(blend.js 와 동일).
-        if (window.IRMS && window.IRMS.blendWindowBlocked) return;
-        const d = currentDraft();
-        if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-      } catch (_e) { /* 저장공간 없음 등 무시 */ }
+      try { persistDraft(); } catch (_e) { /* 저장공간 없음 등 무시 */ }
     }, 600);
   }
 
   // 초안 즉시 저장(동기 flush) — 유휴 자동 로그아웃 직전 진행분을 잃지 않도록,
   // scheduleDraftSave 의 600ms 디바운스를 기다리지 않고 바로 localStorage 에 쓴다.
   function flushDraftNow() {
-    try {
-      if (window.IRMS && window.IRMS.blendWindowBlocked) return;
-      const d = currentDraft();
-      if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-    } catch (_e) { /* 저장공간 없음 등 무시 */ }
+    try { persistDraft(); } catch (_e) { /* 저장공간 없음 등 무시 */ }
   }
 
+  // 저장 완료·중단 — 지금 작업 중인 슬롯 하나만 지운다(다른 초안 2칸은 보존).
   function clearDraft() {
     if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
-    try { localStorage.removeItem(DRAFT_KEY); } catch (_e) { /* 무시 */ }
-  }
-
-  function readDraft() {
     try {
-      const raw = localStorage.getItem(DRAFT_KEY);
-      if (!raw) return null;
-      const d = JSON.parse(raw);
-      // 24시간 지난 초안은 무시(오래된 잔여 방지).
-      if (d && d.savedAt && (Date.now() - Date.parse(d.savedAt)) > 24 * 3600 * 1000) return null;
-      return d;
-    } catch (_e) { return null; }
+      if (blendDrafts && state.draftSlotId) blendDrafts.removeSlot(DRAFT_KIND, state.draftSlotId);
+    } catch (_e) { /* 무시 */ }
+    state.draftSlotId = null;
   }
 
-  // 진입 시 초안이 있으면 배너로 이어서 할지 묻는다.
-  function offerRestore() {
-    const banner = $("cont-restore-banner");
-    if (!banner) return;
-    const draft = readDraft();
-    if (!draft || !draft.recipe_id) { banner.hidden = true; return; }
-    const label = $("cont-restore-label");
-    if (label) {
-      const when = draft.savedAt ? draft.savedAt.slice(0, 16).replace("T", " ") : "";
-      label.textContent = `작성 중이던 '${draft.product_name || ""}' 다중 계량이 있습니다${when ? ` (${when})` : ""} — 이어서 하시겠어요?`;
+  // 복구 후 남는 안내 상자(사라진 재료의 계량값·신규 재료·기준 배합량 변경).
+  // 토스트는 사라지므로, 값이 걸린 고지는 화면에 남긴다.
+  function showDraftNotice(html) {
+    const box = $("cont-draft-notice");
+    const body = $("cont-draft-notice-body");
+    if (!box || !body) return;
+    if (!html) { box.hidden = true; body.innerHTML = ""; return; }
+    body.innerHTML = html;
+    box.hidden = false;
+  }
+
+  // "작성 중 배합" 화면에서 [이어서 하기]로 넘어온 슬롯을 복원한다.
+  // (배너 폐지 후 유일한 진입 경로 — 복구 실행 로직 자체는 그대로 재사용.)
+  async function restoreDraft(slotId) {
+    const draft = blendDrafts ? blendDrafts.getSlot(DRAFT_KIND, slotId) : null;
+    if (!draft || !draft.recipe_id) {
+      notify("이어서 할 임시저장을 찾지 못했습니다(만료되었거나 이미 삭제됨).", "warn");
+      return;
     }
-    banner.hidden = false;
-  }
-
-  async function restoreDraft() {
-    const draft = readDraft();
-    if (!draft || !draft.recipe_id) return;
+    state.draftSlotId = draft.id || null;
     // 레시피 목록이 아직이면 먼저 로드해 select 옵션이 존재하게 한다(값 세팅이 붙도록).
     if (!state.recipes.length) {
       try { await loadRecipes(); } catch (_e) { /* onRecipeChange 가 id 로 직접 조회 */ }
@@ -431,14 +442,25 @@
       state.lotCount = Math.max(MIN_LOTS, Math.min(MAX_LOTS, Number(draft.lotCount) || 2));
       $("cont-lot-count").textContent = String(state.lotCount);
     }
+    // 분류 필터를 전체로 되돌려 그 레시피 option 이 반드시 존재하게 한다
+    // (분류로 걸러져 있으면 value 지정이 붙지 않는다).
+    const catSel = $("cont-recipe-cat");
+    if (catSel && catSel.value !== "") { catSel.value = ""; populateRecipeSelect(); }
     const recipeSel = $("cont-recipe");
     recipeSel.value = String(draft.recipe_id);
     await onRecipeChange();  // 레시피 로드 + 초기화 + 빈 렌더 — 이후 초안 값을 덮어씌운다.
+    // 레시피가 삭제·비활성화돼 option 이 없으면 value 지정이 붙지 않아 state.current 가
+    // 비어 있다. 이 상태로 진행하면 아래 정합성 판정이 터지므로 여기서 멈춘다(초안은 보존 —
+    // 레시피가 되살아나면 다시 이어서 할 수 있다).
+    if (!state.current || !state.current.recipe) {
+      state.draftSlotId = null;
+      notify("이 임시저장의 레시피를 찾을 수 없습니다 — 레시피가 삭제되었거나 비활성화되었습니다.", "error");
+      return;
+    }
     // 기준 자재 레시피면 다중 계량 자체가 불가 — 복구 중단(빈 상태 유지, 초안 폐기).
     if (state.anchorBlocked) {
       notify("이 레시피는 기준 자재 방식이라 다중 계량 복구를 지원하지 않습니다.", "warn");
       clearDraft();
-      const banner = $("cont-restore-banner"); if (banner) banner.hidden = true;
       return;
     }
     if (draft.date) $("cont-date").value = draft.date;
@@ -455,19 +477,29 @@
       state.total = Number(draft.total) || 0;
       recomputeTheory();
     }
+    // ── 레시피 변경 정합성 ──────────────────────────────────────
+    // 초안의 계량값을 '위치'가 아니라 '품목 식별자'로 현재 레시피 줄에 얹는다. 재료 순서가
+    // 바뀌거나 중간에 삽입/삭제돼도 사람이 저울로 잰 값이 제 자리를 찾는다. 식별자가 없는
+    // 옛 초안(schema<2)만 종전처럼 위치 기반으로 복구하고 경고한다.
+    const diff = blendDrafts
+      ? blendDrafts.buildDiff(DRAFT_KIND, draft, { recipe: state.current.recipe, items: state.materials })
+      : { legacy: true, align: { map: null } };
+    const rowMap = diff.align && diff.align.map;
     // 셀 매트릭스 복구(actual/manual/lot).
     // 레거시 마이그레이션: 옛 초안은 자재 LOT 이 전 로트 공통(draft.sharedLot[i]) 이고
     // 셀에 lot 필드가 없다. 이 경우 그 재료의 공통 LOT 을 그 재료의 모든 로트 셀에 복사한다
     // (자연스러운 이월 — 그 시점엔 로트별 구분이 없었으므로 동일 값으로 채우는 것이 안전).
     const legacyShared = Array.isArray(draft.sharedLot) ? draft.sharedLot : null;
     (draft.cells || []).forEach((row, i) => {
+      const target = rowMap ? rowMap[i] : i;
+      if (target === undefined || target < 0) return;   // 레시피에서 사라진 재료 — 아래에서 보고
       (row || []).forEach((c, j) => {
-        if (!(state.cells[i] && state.cells[i][j])) return;
-        state.cells[i][j].actual = (c.actual === "" || c.actual == null) ? "" : c.actual;
-        state.cells[i][j].manual = c.manual === true;
+        if (!(state.cells[target] && state.cells[target][j])) return;
+        state.cells[target][j].actual = (c.actual === "" || c.actual == null) ? "" : c.actual;
+        state.cells[target][j].manual = c.manual === true;
         let lot = (c && typeof c.lot === "string") ? c.lot : "";
         if (!lot && legacyShared && typeof legacyShared[i] === "string") lot = legacyShared[i] || "";
-        state.cells[i][j].lot = lot;
+        state.cells[target][j].lot = lot;
       });
     });
     // 로트별 증량 상태 복구 — onRecipeChange 가 이미 [] 로 리셋했으므로 초안 값으로 되살린다.
@@ -489,9 +521,17 @@
     // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
     applyScaleOnlyToCells();
     updateManualEntryControl();
-    const banner = $("cont-restore-banner");
-    if (banner) banner.hidden = true;
     notify("작성 중이던 다중 계량을 복원했습니다.", "success");
+    // 레시피 변경 고지 — 사라진 재료의 계량값은 조용히 버리지 않고 값까지 적어 남긴다.
+    if (blendDrafts) {
+      showDraftNotice(blendDrafts.restoreNoticeHtml(diff));
+      if (diff.legacy) {
+        notify("레시피 변경 여부를 확인할 수 없는 오래된 임시저장입니다 — 재료별 값을 확인하세요.", "warn");
+      }
+      if (diff.dropped && diff.dropped.length) {
+        notify(`레시피에서 삭제된 재료의 계량값 ${diff.dropped.length}건은 옮기지 못했습니다 — 화면 상단 안내를 확인하세요.`, "error");
+      }
+    }
     // 증량 이력이 있으면 1회 안내(blend.js 와 동일 취지).
     if (state.lotRescaleEvents.some((e) => e && e.length)) {
       notify("복구된 계량에 증량 이력이 포함되어 있습니다.", "warn");
@@ -2197,7 +2237,7 @@
     if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.label = saveBtn.textContent; saveBtn.textContent = "저장 중…"; }
     try {
       const res = await request("/blend/records/continuous", { method: "POST", body });
-      clearDraft();  // 저장 완료 → 임시 저장 삭제(복구 배너가 다시 뜨지 않게)
+      clearDraft();  // 저장 완료 → 이 작업이 쓰던 임시저장 슬롯만 삭제
       notify(`${res.created}개 로트 저장 완료: ${(res.product_lots || []).join(", ")} — 배합 기록으로 이동합니다.`, "success");
       setTimeout(() => window.location.assign("/status"), 900);
     } catch (e) {
@@ -2298,14 +2338,9 @@
       });
     }
 
-    // 임시 저장 복구 배너 — [이어서 하기]=초안 복원 / [버리기]=초안 삭제.
-    const restoreYes = $("cont-restore-yes");
-    if (restoreYes) restoreYes.addEventListener("click", () => { restoreDraft().catch((e) => notify(e.message, "error")); });
-    const restoreNo = $("cont-restore-no");
-    if (restoreNo) restoreNo.addEventListener("click", () => {
-      clearDraft();
-      const banner = $("cont-restore-banner"); if (banner) banner.hidden = true;
-    });
+    // 레시피 변경 고지 상자 닫기 — 복구 배너는 폐지됐고, 이어서 하기는 "작성 중 배합"에서만.
+    const noticeClose = $("cont-draft-notice-close");
+    if (noticeClose) noticeClose.addEventListener("click", () => showDraftNotice(""));
 
     state.workerPad = attachSignaturePad($("cont-worker-sign"));
     const wclr = $("cont-worker-sign-clear");
@@ -2450,14 +2485,18 @@
     bind();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
     loadWorkerNames();
-    offerRestore();  // 작성 중이던 다중 계량이 있으면 이어서 할지 배너로 제안
+    // 끊긴 작업은 "작성 중 배합"(/blend/drafts)에서만 이어간다 — 진입 배너는 폐지했다.
+    // 그 화면의 [이어서 하기]가 sessionStorage 에 슬롯 id 를 남기고 여기로 보낸다.
+    const resumeId = blendDrafts ? blendDrafts.takeResume("cont") : null;
+    if (resumeId) restoreDraft(resumeId).catch((e) => notify(e.message, "error"));
     detectScale();
     setInterval(detectScale, 30000);
     setInterval(pollScaleEvents, 800);
     // 저울 전용 입력 모드 로드(실패 시 false 폴백). 켜져 있으면 실제량 입력칸 잠금.
     loadScaleOnlyInput();
     // 활동 기반 60분 유휴 자동 로그아웃(공용 PC 보안). 만료 시 최종 초안 저장 후 홈(/)으로
-    // 이동해 재로그인하면 "이어서 하기" 배너가 진행분을 복구한다. 작업자 세션이 있을 때만 무장.
+    // 이동해 재로그인하면 "작성 중 배합" 화면에서 진행분을 이어서 할 수 있다. 작업자
+    // 세션이 있을 때만 무장.
     if (createIdleLogout) {
       state.idleLogout = createIdleLogout({
         // window-guard 로 막힌 중복 창은 서버 세션을 공유하므로, 활동이 없어도

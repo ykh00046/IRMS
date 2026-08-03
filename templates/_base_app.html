@@ -38,6 +38,11 @@
             <a href="/blend/continuous" class="side-link{{ ' active' if request.url.path == '/blend/continuous' else '' }}">
               <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>다중 계량</span>
             </a>
+            <!-- 끊긴 작업(임시저장)을 이어서 하는 유일한 입구. 진입 배너를 폐지했으므로
+                 항상 노출한다 — 목록이 비어 있어도 어디로 가야 하는지 보여야 한다. -->
+            <a href="/blend/drafts" class="side-link{{ ' active' if request.url.path == '/blend/drafts' else '' }}">
+              <span class="side-ico side-ico-bulk" aria-hidden="true"></span><span>작성 중 배합</span>
+            </a>
           </div>
 
           <div class="nav-section">

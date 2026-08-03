@@ -211,6 +211,20 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
             "blend_worker": worker,
         })
 
+    @router.get("/blend/drafts", response_class=HTMLResponse)
+    def blend_drafts_page(request: Request) -> Response:
+        # 작성 중 배합: 배합·다중 계량 화면이 이 PC 의 localStorage 에 남긴 임시저장
+        # (화면당 최대 3칸)을 한 곳에 모아 이어서 하거나 지운다. 서버 저장은 없다 —
+        # 목록·복구는 전적으로 프론트엔드가 localStorage 로 처리한다.
+        # 권한은 기존 배합 작업자 게이트를 그대로 쓴다(새 권한 키 없음 — 현장 무로그인 정책).
+        worker = _blend_worker_or_bridge(request)
+        if not worker:
+            return _entry_redirect("/blend/login", request)
+        return _render(templates, request, "blend_drafts.html", {
+            "current_user": get_current_user(request, required=False),
+            "blend_worker": worker,
+        })
+
     @router.get("/blend/login", response_class=HTMLResponse)
     def blend_login_page(request: Request, next: str | None = None) -> Response:
         next_url = _safe_next(next, "/blend")
