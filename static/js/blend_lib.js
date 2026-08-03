@@ -283,6 +283,37 @@
     return Number(total) > BATCH_LIMIT_G;
   }
 
+  // 저울 PRINT 가 들어갈 행 우선순위 — 값이 다른 품목으로 새지 않게 하는 규칙.
+  //
+  // 이 판정이 틀리면 사람이 저울로 잰 값이 엉뚱한 자재에 기록된다. 같은 사고가
+  // 두 번 났다(2026-07-22 인라인 추가칸, 2026-08-03 부족 보충 2회차) — 두 번 다
+  // "그 행은 이미 채워져 있으니 폴백이 다음 빈 행을 골랐다"가 원인이라, 규칙만
+  // 순수 함수로 떼어 테스트로 잠근다.
+  //
+  // 우선순위(위가 강함):
+  //   addModeIdx   — 합산 입력이 실제로 켜져 있는 행
+  //   addWeighIdx  — 추가 계량/나눠 담기 모달이 열려 있는 행. applyAddAmount 가 매번
+  //                  addModeIdx 를 null 로 되돌리므로, 이게 없으면 2회차 PRINT 부터 샌다.
+  //   shortageIdx  — 부족 모달이 떠 있는 행. 아직 '추가로 채우기'를 안 눌러 합산 모드가
+  //                  아니지만, 모달이 "저울 PRINT 가 합산된다"고 약속한 상태다.
+  //   stickyIdx    — 작업자가 지정한 행(유효할 때만) / focusedIdx — 커서가 놓인 행
+  // 전부 해당 없으면 null → 호출부가 '첫 미입력 행' 폴백을 쓴다.
+  function pickScaleRow(ctx) {
+    const c = ctx || {};
+    if (c.addModeIdx != null) return c.addModeIdx;
+    if (c.addWeighIdx != null) return c.addWeighIdx;
+    if (c.shortageIdx != null) return c.shortageIdx;
+    if (c.stickyIdx != null && c.stickyValid) return c.stickyIdx;
+    if (c.focusedIdx != null) return c.focusedIdx;
+    return null;
+  }
+
+  // 이 행의 PRINT 를 기존 값에 합산해야 하는가(덮어쓰기 금지).
+  // 모달이 열려 있는 동안은 addModeIdx 가 회차마다 꺼지므로 addWeighIdx 도 함께 본다.
+  function isAddModeRow(idx, addModeIdx, addWeighIdx) {
+    return addModeIdx === idx || (addWeighIdx != null && addWeighIdx === idx);
+  }
+
   function varianceDisplay(it, toleranceG) {
     // 기준 자재 행은 편차 계량에서 제외 — 항상 '-' 표시(이론=실측이므로 편차 무의미).
     if (it && it.is_anchor) {
@@ -539,5 +570,7 @@
     requiredTotalForRow,
     rescalePlan,
     exceedsBatchLimit,
+    pickScaleRow,
+    isAddModeRow,
   };
 })();

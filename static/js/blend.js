@@ -50,6 +50,8 @@
     requiredTotalForRow,
     rescalePlan,
     exceedsBatchLimit,
+    pickScaleRow,
+    isAddModeRow,
     createIdleLogout,
   } = window.IRMS.blendLib;
 
@@ -357,7 +359,9 @@
     // 저울 PRINT 입력은 input 이벤트가 없으므로 저장 후 자동 로그아웃 해제를 직접 호출
     cancelPostSaveLogout();
     // 추가 입력 모드 행이면 PRINT 값을 추가분으로 합산(누계 = 기존 actual + 입력값).
-    if (state.addModeIdx === idx) {
+    // 모달이 열려 있는 동안은 addModeIdx 가 회차마다 꺼지므로(_addWeighIdx) 함께 본다 —
+    // 안 그러면 2회차 PRINT 가 합산이 아니라 덮어쓰기가 된다.
+    if (isAddModeRow(idx, state.addModeIdx, _addWeighIdx)) {
       applyAddAmount(idx, Number(value));
       return;
     }
@@ -394,18 +398,23 @@
     // actual 은 이미 채워져 있어 폴백도 그 행을 건너뛰었다 — 부족 보충 PRINT 가
     // 엉뚱한 빈 행으로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 저울 전용 모드의
     // 부족 복구(타이핑 불가)도 이 라우팅이 있어야 성립한다.
-    if (state.addModeIdx != null) return state.addModeIdx;
-    // 작업자 수동 지정 대상(sticky) — 포커스보다 우선. 유효한 행일 때만.
-    if (state.scaleTargetIdx != null && state.items[state.scaleTargetIdx]) {
-      return state.scaleTargetIdx;
-    }
+    // 우선순위 규칙은 blend_lib.pickScaleRow 가 소유한다(테스트로 잠근 순수 함수).
+    // 모달이 열려 있는 행(_addWeighIdx)·부족 모달 대상 행(_shortageIdx)까지 포함해야
+    // 2회차 이후 PRINT 가 다음 품목으로 새지 않는다(현장 신고 2026-08-03).
     const focused = document.activeElement;
-    if (
+    const focusedIdx = (
       focused && focused.classList
       && (focused.classList.contains("blend-actual") || focused.classList.contains("blend-lot"))
-    ) {
-      return Number(focused.dataset.idx);
-    }
+    ) ? Number(focused.dataset.idx) : null;
+    const picked = pickScaleRow({
+      addModeIdx: state.addModeIdx,
+      addWeighIdx: _addWeighIdx,
+      shortageIdx: _shortageIdx,
+      stickyIdx: state.scaleTargetIdx,
+      stickyValid: state.scaleTargetIdx != null && !!state.items[state.scaleTargetIdx],
+      focusedIdx,
+    });
+    if (picked != null) return picked;
     const idx = state.items.findIndex(
       (it) => it.actual_amount === "" && it.theory_amount != null
     );
@@ -541,6 +550,10 @@
       if (!scaleEventSynced) { scaleEventSynced = true; return; }
       if (!items.length || !state.items.length) return;
       for (const ev of items) {
+        // 부족 모달이 떠 있는 채로 들어온 PRINT 는 '추가로 채우기'를 고른 것으로 본다.
+        // 모달이 "저울 PRINT 가 현재 값에 합산됩니다"라고 약속해 두고, 정작 선택 전에는
+        // 합산 모드가 아니어서 그 PRINT 가 다음 빈 행(=다음 품목)에 담겼다.
+        if (_shortageIdx != null) shortageChooseAdd();
         const idx = activeScaleRow();
         if (idx === null) {
           notify("모든 자재의 실제량이 입력되어 있습니다. (PRINT 무시)", "warn");
