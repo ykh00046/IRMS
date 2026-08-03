@@ -14,5 +14,9 @@
 # 실행되도록 spec 의 runtime_hooks 에 등록한다. spec 의 excludes 와 이중 방어.
 import sys
 
-for _name in ("simplejson", "brotlicffi", "brotli", "zstandard"):
+# backports.zstd / compression.zstd: urllib3 의 zstd 폴백 경로 — 이름이 zstandard 와
+# 달라 1차 차단 목록에서 누락됐었다 (2026-08-03 두 번째 기동 즉사: 구버전 설치 잔재
+# _internal 디렉터리가 phantom namespace 로 import 돼 `backports.zstd.ZstdError` AttributeError).
+# rthook 은 디스크에 잔재가 있어도 import 자체를 막으므로 잔재 혼입에도 안전하다.
+for _name in ("simplejson", "brotlicffi", "brotli", "zstandard", "backports.zstd", "compression.zstd"):
     sys.modules[_name] = None

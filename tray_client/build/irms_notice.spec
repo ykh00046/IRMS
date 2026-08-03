@@ -46,7 +46,7 @@ a = Analysis(
     # hermes venv py3.11 빌드 exe 가 urllib3 `brotli.error` AttributeError 로 기동 즉사).
     # excludes(수집 차단) + runtime hook(sys.modules[X]=None, import 차단) 이중 방어 —
     # 어느 python 으로 빌드해도 동일하게 동작한다.
-    excludes=["unittest", "pydoc_data", "simplejson", "brotlicffi", "brotli", "zstandard"],
+    excludes=["unittest", "pydoc_data", "simplejson", "brotlicffi", "brotli", "zstandard", "backports.zstd", "compression.zstd"],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)

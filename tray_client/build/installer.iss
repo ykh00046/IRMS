@@ -6,7 +6,7 @@
 ; Output: Output\IRMS-Notice-Setup-2.0.0.exe
 
 #define MyAppName "IRMS 현장 도우미"
-#define MyAppVersion "3.1.8"
+#define MyAppVersion "3.1.9"
 #define MyAppPublisher "IRMS"
 #define MyAppExeName "IRMS-Notice.exe"
 
@@ -30,6 +30,13 @@ UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 CloseApplications=yes
 RestartApplications=no
+
+[InstallDelete]
+; PyInstaller onedir 업그레이드에서 Inno 는 '사라진 파일'을 지우지 않는다 — 다른 python
+; 으로 빌드된 구버전의 _internal 잔재(pyd·네임스페이스 디렉터리)가 새 exe 에 phantom
+; module 로 import 돼 기동 즉사한 실사고 2건(brotlicffi/backports.zstd AttributeError,
+; 2026-08-03). 설치 전에 앱 폴더를 통째로 비운다 — 사용자 상태는 %APPDATA% 라 안전.
+Type: filesandordirs; Name: "{app}"
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
