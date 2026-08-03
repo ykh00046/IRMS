@@ -37,14 +37,16 @@ a = Analysis(
         "winreg",
     ],
     hookspath=[],
-    # requests + PyInstaller + simplejson 함정 차단(아래 excludes 주석 참조).
-    runtime_hooks=[str(ROOT / "build" / "rthook_no_simplejson.py")],
-    # simplejson: requests.compat imports it optionally. If the build venv has a
-    # (partial) simplejson, PyInstaller bundles it as a namespace package and
-    # `from simplejson import JSONDecodeError` fails at runtime with
-    # "cannot import name 'JSONDecodeError' from 'simplejson' (unknown location)".
-    # Excluding it forces requests to fall back to the stdlib json (fully supported).
-    excludes=["unittest", "pydoc_data", "simplejson"],
+    # requests/urllib3 의 선택적 의존성 함정 차단(훅 파일 주석 참조).
+    runtime_hooks=[str(ROOT / "build" / "rthook_block_optional_imports.py")],
+    # simplejson/brotlicffi/brotli/zstandard: requests·urllib3 가 optional import 하는
+    # 패키지들. 빌드 환경에 (부분) 설치돼 있으면 PyInstaller 가 namespace 패키지로
+    # 번들해 프리즈에서 `import X` 성공 후 속성 접근 크래시가 난다.
+    # 실사고: simplejson(JSONDecodeError unknown location), brotlicffi(2026-08-03,
+    # hermes venv py3.11 빌드 exe 가 urllib3 `brotli.error` AttributeError 로 기동 즉사).
+    # excludes(수집 차단) + runtime hook(sys.modules[X]=None, import 차단) 이중 방어 —
+    # 어느 python 으로 빌드해도 동일하게 동작한다.
+    excludes=["unittest", "pydoc_data", "simplejson", "brotlicffi", "brotli", "zstandard"],
     noarchive=False,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)

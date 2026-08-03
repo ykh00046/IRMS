@@ -5,7 +5,11 @@ REM Run from the tray_client directory.
 setlocal
 cd /d "%~dp0\.."
 
-set "PYTHON_CMD=python"
+REM py -3.13 우선 — PATH 의 python 은 hermes venv(3.11, brotlicffi 보유)일 수 있어
+REM 선택적 의존성이 namespace 로 번들되는 함정이 있다 (rthook 주석 참조).
+set "PYTHON_CMD=py -3.13"
+%PYTHON_CMD% -c "" >/dev/null 2>&1
+if errorlevel 1 set "PYTHON_CMD=python"
 set "ISCC_CMD="
 
 echo [1/3] generating assets (icon.ico, ding.wav)
@@ -39,7 +43,7 @@ if errorlevel 1 goto :error
 echo.
 echo Build complete.
 echo   - EXE folder : dist\IRMS-Notice\
-echo   - Installer  : Output\IRMS-Notice-Setup-3.1.6.exe
+echo   - Installer  : Output\IRMS-Notice-Setup-<ver>.exe
 exit /b 0
 
 :error

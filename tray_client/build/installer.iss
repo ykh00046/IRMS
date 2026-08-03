@@ -1,4 +1,4 @@
-; Inno Setup script for IRMS Notice tray client.
+﻿; Inno Setup script for IRMS Notice tray client.
 ;
 ; Build with Inno Setup 6+ after PyInstaller:
 ;   iscc build\installer.iss
@@ -6,7 +6,7 @@
 ; Output: Output\IRMS-Notice-Setup-2.0.0.exe
 
 #define MyAppName "IRMS 현장 도우미"
-#define MyAppVersion "3.1.7"
+#define MyAppVersion "3.1.8"
 #define MyAppPublisher "IRMS"
 #define MyAppExeName "IRMS-Notice.exe"
 
