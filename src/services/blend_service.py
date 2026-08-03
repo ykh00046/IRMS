@@ -1777,6 +1777,38 @@ def _iso_to_dt(text: str) -> datetime | None:
         return None
 
 
+_MAX_RESCALE_DRIVERS = 20  # 한 이벤트의 원인 자재 수 상한(레시피 자재 수를 넘을 이유가 없다)
+
+
+def _sanitize_rescale_drivers(raw: Any) -> list[dict[str, Any]]:
+    """증량 원인 자재 목록을 저장 가능한 형태로 좁힌다(클라이언트 원문 신뢰 금지).
+
+    자재명은 문자열로 잘라 담고 수치 3종은 float 로만 받는다. 형태가 어긋난 항목은
+    통째로 버리되 저장 자체는 실패시키지 않는다 — 증량은 유효한데 표시용 부가정보
+    때문에 배합 기록이 막히면 현장이 멈춘다.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw[:_MAX_RESCALE_DRIVERS]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("material_name") or "").strip()[:200]
+        if not name:
+            continue
+        entry: dict[str, Any] = {"material_name": name}
+        for key in ("theory_before", "actual", "over"):
+            try:
+                value = float(item.get(key))
+            except (TypeError, ValueError):
+                continue
+            if value != value or value in (float("inf"), float("-inf")):  # NaN/inf 제외
+                continue
+            entry[key] = round(value, 2)
+        out.append(entry)
+    return out
+
+
 def validate_rescale_events(
     connection: sqlite3.Connection,
     events: list[dict[str, Any]] | None,
@@ -1818,6 +1850,12 @@ def validate_rescale_events(
             "after_total": ev.get("after_total"),
             "worker_confirmed": bool(ev.get("worker_confirmed")),
         }
+        # 증량을 몰아온 자재 — "어느 자재가 얼마나 넘쳐 총량이 늘었는가".
+        # 이 정규화가 화이트리스트라 여기서 옮기지 않으면, 프론트가 보내고 화면이
+        # 읽으려 해도 저장 단계에서 조용히 사라진다(2026-08-04 검토에서 적발).
+        drivers = _sanitize_rescale_drivers(ev.get("drivers"))
+        if drivers:
+            norm_ev["drivers"] = drivers
         if approval_id is not None:
             # 승인 행 조회 — used=0 이고 30분 이내여야 한다.
             row = connection.execute(

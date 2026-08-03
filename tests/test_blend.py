@@ -2198,3 +2198,92 @@ def test_dhr_zip_caps_ids_at_200():
     res = client.get(f"/api/blend/records/dhr-zip?ids={fillers},{rid}")
     # 유효 200개가 모두 없는 id 이므로 실존 rid 가 잘려나가면 결과가 비어 404.
     assert res.status_code == 404, res.status_code
+
+
+def test_rescale_drivers_survive_server_normalization():
+    """증량 원인 자재(drivers)가 저장까지 살아남는다.
+
+    validate_rescale_events 의 정규화가 화이트리스트라, 프론트가 보내고 화면이
+    읽으려 해도 서버에서 조용히 사라지던 결함(2026-08-04). 프론트·표시만 고치고
+    이 왕복을 지키는 테스트가 없어 반쪽으로 배포됐었다.
+    """
+    import json
+    import uuid
+
+    client = _rescale_client()
+    worker = "원인자재" + uuid.uuid4().hex[:6]
+    prod = "RDR" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{
+                "before_total": 100, "after_total": 115,
+                "absence_reason": "책임자 부재",
+                "drivers": [
+                    {"material_name": "컬러 안료 블루",
+                     "theory_before": 30.0, "actual": 34.5, "over": 4.5},
+                ],
+            }],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        raw = conn.execute(
+            "SELECT rescale_events_json FROM blend_records WHERE id = ?", (rid,)
+        ).fetchone()["rescale_events_json"]
+
+    events = json.loads(raw)
+    assert len(events) == 1
+    drivers = events[0].get("drivers")
+    assert drivers, "drivers 가 저장에서 사라졌다 — 증량 원인 추적 불가"
+    assert drivers[0]["material_name"] == "컬러 안료 블루"
+    assert drivers[0]["over"] == 4.5
+    assert drivers[0]["theory_before"] == 30.0
+
+
+def test_rescale_drivers_reject_malformed_without_blocking_save():
+    """drivers 가 망가진 형태여도 저장은 통과하되, 쓰레기는 담기지 않는다."""
+    import json
+    import uuid
+
+    client = _rescale_client()
+    worker = "형태오류" + uuid.uuid4().hex[:6]
+    prod = "RDM" + uuid.uuid4().hex[:4]
+    _rescale_login_worker(client, worker)
+
+    created = client.post(
+        "/api/blend/records",
+        json=_rescale_record_payload(
+            prod, worker,
+            rescale_events=[{
+                "before_total": 100, "after_total": 115,
+                "absence_reason": "책임자 부재",
+                "drivers": [
+                    "문자열",                                   # dict 아님 → 버림
+                    {"material_name": "   "},                   # 이름 없음 → 버림
+                    {"material_name": "정상자재", "over": "숫자아님"},  # 이름만 남음
+                ],
+            }],
+        ),
+        headers=_rescale_csrf(client),
+    )
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    from src.db import get_connection
+    with get_connection() as conn:
+        raw = conn.execute(
+            "SELECT rescale_events_json FROM blend_records WHERE id = ?", (rid,)
+        ).fetchone()["rescale_events_json"]
+
+    drivers = json.loads(raw)[0].get("drivers")
+    assert len(drivers) == 1
+    assert drivers[0]["material_name"] == "정상자재"
+    assert "over" not in drivers[0]
