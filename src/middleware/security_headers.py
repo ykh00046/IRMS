@@ -48,6 +48,11 @@ _CONTENT_SECURITY_POLICY = (
     # 폰트가 시스템 폴백으로 떨어진다(2026-07-31 CSP 도입 시 확인).
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:; "
+    # 배합 화면(blend.js/blend_continuous.js)은 현장 PC 로컬 저울 에이전트
+    # (http://127.0.0.1:8787, 현장 도우미 저울 토글)로 fetch 한다. connect-src 를
+    # 명시하지 않으면 default-src 'self' 로 폴백돼 이 교차 출처 fetch 가 차단된다 —
+    # 2026-07-31 CSP 도입 직후 전 현장 PC 저울 연동이 동시에 끊긴 실사고의 원인.
+    "connect-src 'self' http://127.0.0.1:8787; "
     "script-src 'self' 'unsafe-inline'"
 )
 
