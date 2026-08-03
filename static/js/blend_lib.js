@@ -243,6 +243,10 @@
     const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
       ? Number(toleranceG) : TOLERANCE_G;
     let newTotal = baseTotal;
+    // 증량을 몰아온 행(=newTotal 을 결정한 행)을 기록해 둔다.
+    // finalizeRescale 이 이벤트에 drivers 로 옮겨, 미확인 증량 알림에서 '어디를 증량했는지' 보여준다.
+    // theory_before 는 증량 전 이 행의 목표 — 증량 후 값이 아니라 작업자가 본 초과 기준이다.
+    const candidates = [];
     for (let i = 0; i < list.length; i++) {
       const it = list[i] || {};
       if (it.actual_amount === "" || it.actual_amount === null || it.actual_amount === undefined) continue;
@@ -257,10 +261,24 @@
       // 목표를 허용 편차 이내로만 넘었으면 총량 불변(편차 흡수). 그 이상 초과해야 증량.
       if (a - currentTheory <= tol + 1e-9) continue;
       const required = a * 100 / r;
+      candidates.push({ idx: i, material_name: it.material_name, theory_before: currentTheory, actual: a, required });
       if (required > newTotal) newTotal = required;
     }
     newTotal = Math.round(newTotal * 100) / 100;  // 저울 해상도(2자리)
     const changed = newTotal - baseTotal > 1e-9;
+    // drivers = 최종 newTotal 을 결정한 행들. 동률이면 그만큼 여러 행(현장에서 두 자재를
+    // 같은 비율로 초과 계량하는 사례). newTotal 과 0.01g 이내로 같고 허용 편차 초과인 행.
+    const drivers = changed
+      ? candidates
+          .filter((c) => Math.abs(c.required - newTotal) <= 0.01)
+          .map((c) => ({
+            idx: c.idx,
+            material_name: c.material_name,
+            theory_before: Math.round(c.theory_before * 100) / 100,
+            actual: c.actual,
+            over: Math.round((c.actual - c.theory_before) * 100) / 100,
+          }))
+      : [];
     const rows = list.map((it, idx) => {
       const item = it || {};
       const r = Number(item.ratio);
@@ -275,7 +293,7 @@
       }
       return { idx, newTheory, addNeeded };
     });
-    return { newTotal, changed, rows };
+    return { newTotal, changed, rows, drivers };
   }
 
   // 배합 총량이 1회 허용 상한(25,000g)을 초과하는가 — 증량 후 폐기 권장 모달 판정용.

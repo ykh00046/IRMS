@@ -99,7 +99,15 @@ document.addEventListener("DOMContentLoaded", () => {
           : e.absence_reason
             ? `책임자 부재: ${esc(e.absence_reason)}`
             : "책임자 부재";
-        return `<li>${i + 1}. ${fmt(e.before_total)} g → ${fmt(e.after_total)} g <span class="muted small">(${who})</span></li>`;
+        // 증량을 몰아온 자재 요약(저장 시점에 첨부된 drivers). 과거 기록엔 없으니 빠져도 OK.
+        const drivers = Array.isArray(e.drivers) ? e.drivers : [];
+        const driverLines = drivers.length
+          ? `<ul class="blend-rescale-drivers muted small">${drivers.map((d) => {
+              const name = d.material_name == null ? "-" : esc(d.material_name);
+              return `<li>${name}: 이론 ${fmt(d.theory_before)}g / 실제 ${fmt(d.actual)}g — ${fmt(d.over)}g 초과</li>`;
+            }).join("")}</ul>`
+          : "";
+        return `<li>${i + 1}. ${fmt(e.before_total)} g → ${fmt(e.after_total)} g <span class="muted small">(${who})</span>${driverLines}</li>`;
       })
       .join("");
     const unackedTag = info.rescale_unacked

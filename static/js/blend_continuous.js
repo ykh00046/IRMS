@@ -1637,11 +1637,12 @@
       return;
     }
     const currentTotal = lotTotal(j);
-    // rescalePlan 은 items=[{ratio, actual_amount, theory_amount}] 받는다 — 로트 j 의 셀로 구성.
+    // rescalePlan 은 items=[{ratio, actual_amount, theory_amount, material_name}] 받는다 — 로트 j 의 셀로 구성.
     const items = state.materials.map((m, i) => ({
       ratio: m.ratio,
       actual_amount: state.cells[i][j].actual,
       theory_amount: theoryFor(i, j),
+      material_name: m.material_name,
     }));
     const plan = rescalePlan(items, currentTotal, state.toleranceG);
     if (!plan.changed) return;
@@ -1829,6 +1830,10 @@
     if (meta && meta.approval_id != null) ev.approval_id = meta.approval_id;
     if (meta && meta.approver != null) ev.approver = meta.approver;
     if (meta && meta.absence_reason != null) ev.absence_reason = meta.absence_reason;
+    // 증량을 몰아온 자재(이론/실제/초과량) — 미확인 증량 알림에서 '어디를 증량했는지' 보여준다.
+    if (pending.plan && Array.isArray(pending.plan.drivers) && pending.plan.drivers.length) {
+      ev.drivers = pending.plan.drivers;
+    }
     if (!state.lotRescaleEvents[j]) state.lotRescaleEvents[j] = [];
     state.lotRescaleEvents[j].push(ev);
     scheduleDraftSave();  // 증량 승인 이벤트가 반드시 초안에 남도록 즉시 갱신(추적성)
@@ -1962,6 +1967,7 @@
       ratio: m.ratio,
       actual_amount: state.cells[i][j].actual,
       theory_amount: theoryFor(i, j),
+      material_name: m.material_name,
     }));
     const plan = rescalePlan(items, lotTotal(j), tol);
     // 직전 대기 집합(이 lot 만) 기억 — 이번에 빠진(충족된) 셀은 편차 표시를 복원해야 한다.

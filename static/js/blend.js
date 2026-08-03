@@ -2113,6 +2113,8 @@
     if (meta && meta.approval_id != null) ev.approval_id = meta.approval_id;
     if (meta && meta.approver != null) ev.approver = meta.approver;
     if (meta && meta.absence_reason != null) ev.absence_reason = meta.absence_reason;
+    // 증량을 몰아온 자재(이론/실제/초과량) — 미확인 증량 알림에서 '어디를 증량했는지' 보여준다.
+    if (Array.isArray(plan.drivers) && plan.drivers.length) ev.drivers = plan.drivers;
     state.rescaleEvents.push(ev);
   }
 
