@@ -151,6 +151,42 @@
         .join("");
     }
 
+    // 배치 폐기 출처 라벨 — 서버 source 값의 표시 이름(데이터 값은 영문 유지).
+    const DISCARD_SOURCE_LABEL = {
+      overweight: "과중량",
+      rescale_limit: "3회 증량 차단",
+      manual: "직접 기록",
+    };
+
+    function renderBatchDiscards(data) {
+      const items = (data && data.items) || [];
+      $("lau-discard-loading").hidden = true;
+      if (!items.length) {
+        $("lau-discard-wrap").hidden = true;
+        $("lau-discard-empty").hidden = false;
+        return;
+      }
+      $("lau-discard-empty").hidden = true;
+      $("lau-discard-wrap").hidden = false;
+      $("lau-discard-body").innerHTML = items
+        .map((it) => {
+          const mats = (it.details || [])
+            .map((d) => `${esc(d.material_name)} ${fmtG(d.actual_amount)} g`)
+            .join(", ");
+          return (
+            "<tr>" +
+            `<td>${esc(it.work_date)}<br /><span class="lau-reason">${esc(it.worker)}</span></td>` +
+            `<td>${esc(it.product_name)}</td>` +
+            `<td class="lau-reason">${esc(it.reason)}</td>` +
+            `<td>${esc(DISCARD_SOURCE_LABEL[it.source] || it.source)}</td>` +
+            `<td class="lau-reason">${mats || "-"}</td>` +
+            `<td class="num lau-num">${fmtG(it.discarded_g)}</td>` +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+
     async function load() {
       if (!request) return;
       try {
@@ -170,6 +206,15 @@
         $("lau-anomaly-empty").hidden = false;
         $("lau-anomaly-empty").textContent = "총량 이상 목록을 불러오지 못했습니다.";
         notify("총량 이상 목록을 불러오지 못했습니다.", "error");
+      }
+      try {
+        const data = await request("/blend/lot-audit/batch-discards");
+        renderBatchDiscards(data || {});
+      } catch (err) {
+        $("lau-discard-loading").hidden = true;
+        $("lau-discard-empty").hidden = false;
+        $("lau-discard-empty").textContent = "배치 폐기 목록을 불러오지 못했습니다.";
+        notify("배치 폐기 목록을 불러오지 못했습니다.", "error");
       }
     }
 

@@ -586,7 +586,7 @@
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal",
       "lot-invalid-modal", "scale-state-modal",
-      "discard-ask-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "discard-ask-modal", "batch-discard-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -2652,6 +2652,98 @@
     _discardAskCtx = null;
   }
 
+  // ── 배치 폐기 기록(batch-discard) ────────────────────────────
+  // 과중량 폐기 권장·3회 증량 차단 뒤 책임자와 협의해 배치 전체를 버리기로 한 경우.
+  // 저장 없이 화면을 떠나면 실물 소모 최대의 폐기가 무기록이었다(2026-08-05 결정).
+  // 제품 LOT 없이 별도 스트림(blend_batch_discards)으로 남는다 — 기록·집계 불변.
+  let _batchDiscardSource = null;  // 'overweight' | 'rescale_limit'
+
+  function weighedRowsForDiscard() {
+    return state.items
+      .map((it, idx) => ({ it, idx }))
+      .filter(({ it }) => it.actual_amount !== "" && Number(it.actual_amount) > 0);
+  }
+
+  function openBatchDiscardModal(source) {
+    const modal = $("batch-discard-modal");
+    if (!modal || !state.current || !state.current.recipe) return;
+    const rows = weighedRowsForDiscard();
+    if (!rows.length) {
+      notify("계량된 자재가 없어 폐기로 기록할 내용이 없습니다.", "warn");
+      return;
+    }
+    _batchDiscardSource = source;
+    const prodEl = $("batch-discard-product");
+    if (prodEl) prodEl.textContent = state.current.recipe.product_name;
+    const listEl = $("batch-discard-list");
+    if (listEl) {
+      listEl.hidden = false;
+      listEl.innerHTML = rows.map(({ it }) =>
+        `<li class="add-weigh-portion">`
+        + `<span class="add-weigh-portion-no">${esc(it.material_name)}</span>`
+        + `<span class="add-weigh-portion-amt">${fmt(Number(it.actual_amount), dp())} g</span></li>`
+      ).join("");
+    }
+    const reason = $("batch-discard-reason");
+    if (reason) reason.value = "";
+    const err = $("batch-discard-error");
+    if (err) err.hidden = true;
+    modal.hidden = false;
+    const back = $("batch-discard-back");
+    if (back) back.focus();  // 실수 Enter 가 파괴적 선택이 안 되게
+  }
+
+  function closeBatchDiscardModal() {
+    const modal = $("batch-discard-modal");
+    if (modal) modal.hidden = true;
+    _batchDiscardSource = null;
+  }
+
+  async function submitBatchDiscard() {
+    const reasonEl = $("batch-discard-reason");
+    const err = $("batch-discard-error");
+    const reason = (reasonEl ? reasonEl.value : "").trim();
+    if (!reason) {
+      if (err) { err.textContent = "폐기 사유를 입력하세요 — 책임자와 협의한 내용을 남깁니다."; err.hidden = false; }
+      if (reasonEl) reasonEl.focus();
+      return;
+    }
+    const rows = weighedRowsForDiscard();
+    const btn = $("batch-discard-submit");
+    if (btn) btn.disabled = true;
+    try {
+      await request("/blend/batch-discards", {
+        method: "POST",
+        body: {
+          recipe_id: state.current.recipe.id,
+          product_name: state.current.recipe.product_name,
+          work_date: $("blend-date").value || todayISO(),
+          total_amount: Number($("blend-total").value) || null,
+          reason,
+          source: _batchDiscardSource || "manual",
+          details: rows.map(({ it }) => ({
+            material_name: it.material_name,
+            material_code: it.material_code || "",
+            material_lot: it.material_lot || "",
+            actual_amount: Number(it.actual_amount) || 0,
+          })),
+        },
+      });
+      // 기록 완료 — 이 배치는 끝났다. 열려 있던 창을 모두 닫고 화면을 새 배합 상태로.
+      closeBatchDiscardModal();
+      closeDiscardModal();
+      closeRescaleBlockModal();
+      clearDraft();  // 폐기된 배치의 초안이 되살아나면 안 된다
+      const sel = $("blend-recipe");
+      if (sel) { sel.value = ""; sel.dispatchEvent(new Event("change", { bubbles: true })); }
+      notify("배치 폐기를 기록했습니다 — 책임자 사후 점검(LOT 대사) 화면에서 볼 수 있습니다.", "warn big");
+    } catch (e) {
+      if (err) { err.textContent = `기록 실패: ${e.message || e}`; err.hidden = false; }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   // '처음부터 다시' 진입문(부족 리셋) — 담긴 값이 있으면 폐기 여부를 먼저 묻는다.
   function requestResetWeigh(idx) {
     if (idx == null) return;
@@ -3387,7 +3479,26 @@
     if (blockClose) blockClose.addEventListener("click", closeRescaleBlockModal);
     const blockModal = $("rescale-block-modal");
     document.addEventListener("keydown", (e) => {
+      // 배치 폐기 창이 위에 떠 있으면 그 창의 Esc(돌아가기)에 양보한다.
+      const bd = $("batch-discard-modal");
+      if (bd && !bd.hidden) return;
       if (e.key === "Escape" && blockModal && !blockModal.hidden) closeRescaleBlockModal();
+    });
+    // 배치 폐기 기록 — 폐기 권장([배치 폐기 기록…])·3회 차단 모달에서 진입. 봉인 모달.
+    const bdModal = $("batch-discard-modal");
+    const bdOpenFromDiscard = $("discard-batch-btn");
+    if (bdOpenFromDiscard) bdOpenFromDiscard.addEventListener("click", () => openBatchDiscardModal("overweight"));
+    const bdOpenFromBlock = $("block-batch-btn");
+    if (bdOpenFromBlock) bdOpenFromBlock.addEventListener("click", () => openBatchDiscardModal("rescale_limit"));
+    const bdBack = $("batch-discard-back");
+    if (bdBack) bdBack.addEventListener("click", closeBatchDiscardModal);
+    const bdSubmit = $("batch-discard-submit");
+    if (bdSubmit) bdSubmit.addEventListener("click", () => { submitBatchDiscard(); });
+    if (bdModal) bdModal.addEventListener("click", (e) => {
+      if (e.target === bdModal) notify("사유를 입력해 기록하거나 [돌아가기]를 누르세요.", "warn");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && bdModal && !bdModal.hidden) closeBatchDiscardModal();
     });
     const discardCancel = $("discard-cancel");
     if (discardCancel) discardCancel.addEventListener("click", () => {

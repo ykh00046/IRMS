@@ -51,6 +51,7 @@ from ..limiter import limiter
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
 from .models import (
     BlendApprovalBody,
+    BlendBatchDiscardBody,
     BlendBulkBody,
     BlendContinuousBody,
     BlendCreateBody,
@@ -886,6 +887,51 @@ def build_router() -> APIRouter:
         )
         connection.commit()
         return result
+
+    @router.post("/blend/batch-discards")
+    def blend_batch_discard(
+        body: BlendBatchDiscardBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """배치 전체 폐기 기록 — 과중량 폐기 권장·3회 증량 차단 뒤 협의 폐기의 흔적.
+
+        저장을 대신하는 별도 스트림: 제품 LOT 을 소비하지 않고 blend_records 를 만들지
+        않는다(목록·집계·DHR 불변, ERP 이관 이중 차감 방지). 저장 없이 화면을 떠나면
+        실물 소모 최대의 폐기가 무기록이던 구멍(2026-08-05)의 마개다. 사유 필수.
+        """
+        worker = require_blend_worker(request)
+        current_user = get_current_user(request, required=False)
+        actor = actor_name(current_user) if current_user else "현장"
+        discard_id = blend_service.create_batch_discard(
+            connection,
+            recipe_id=body.recipe_id,
+            product_name=body.product_name,
+            worker=worker,
+            work_date=body.work_date,
+            total_amount=body.total_amount,
+            reason=body.reason,
+            source=body.source,
+            details=[d.model_dump() for d in body.details],
+            created_by=actor,
+            created_at=utc_now_text(),
+        )
+        write_audit_log(
+            connection,
+            action="blend_batch_discarded",
+            actor=current_user,
+            target_type="blend_batch_discard",
+            target_id=str(discard_id),
+            target_label=body.product_name,
+            details={
+                "source": body.source,
+                "reason": body.reason.strip()[:300],
+                "materials": len(body.details),
+                "discarded_g": round(sum(d.actual_amount for d in body.details), 2),
+            },
+        )
+        connection.commit()
+        return {"id": discard_id}
 
     @router.post("/blend/records")
     def blend_create(

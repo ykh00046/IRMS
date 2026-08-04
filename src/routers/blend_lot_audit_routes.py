@@ -203,4 +203,30 @@ def build_router() -> APIRouter:
             "range": {"from": from_date, "to": today.isoformat()},
         }
 
+    # ------------------------------------------------------------------
+    # 3. GET /blend/lot-audit/batch-discards — 배치 폐기 기록(책임자 전용)
+    # ------------------------------------------------------------------
+    @router.get("/blend/lot-audit/batch-discards")
+    def list_batch_discards(
+        days: int = Query(default=180, ge=1, le=3650),
+        connection: sqlite3.Connection = Depends(get_db),
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """배치 전체 폐기 기록 — 과중량·3회 증량 차단 뒤 협의 폐기.
+
+        성격이 '사후 점검'이라 이 화면에 얹는다(총량 이상과 동일 조회 창).
+        제품 LOT 없이 별도 테이블(blend_batch_discards)에 남는 스트림이다.
+        """
+        today = date.fromisoformat(local_today_text())
+        from_date = date.fromordinal(max(1, today.toordinal() - int(days))).isoformat()
+        items = blend_service.list_batch_discards(
+            connection, from_date=from_date, limit=500,
+        )
+        return {
+            "items": items,
+            "total": len(items),
+            "discarded_g": round(sum(it["discarded_g"] for it in items), 2),
+            "range": {"from": from_date, "to": today.isoformat()},
+        }
+
     return router

@@ -367,6 +367,27 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 버린 경우의 기록 JSON([{material_name, material_code, amount_g}]). 편차 강제 체계라
     # 최종 기록은 항상 이론량과 일치하므로, 이 컬럼이 없으면 버린 자재가 어디에도 남지 않는다.
     ensure_column(connection, "blend_records", "discard_events_json", "TEXT")
+    # 배치 폐기(2026-08-05): 과중량(25kg 폐기 권장)·3회 증량 차단 뒤 협의로 배치 전체를
+    # 버리는 경우 — 저장 없이 화면을 떠나면 실물 소모 최대의 폐기가 무기록이었다.
+    # blend_records 와 분리한 이유: 제품 LOT 을 소비하지 않고, 목록·집계·DHR·내보내기의
+    # status 필터를 전부 건드리지 않기 위해(폐기는 항상 별도 스트림 — 이중 차감 방지).
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_batch_discards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipe_id INTEGER,
+            product_name TEXT NOT NULL,
+            worker TEXT NOT NULL,
+            work_date TEXT NOT NULL,
+            total_amount REAL,
+            reason TEXT NOT NULL,
+            source TEXT NOT NULL CHECK (source IN ('overweight', 'rescale_limit', 'manual')),
+            details_json TEXT NOT NULL,
+            created_by TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_rescale_unacked "
         "ON blend_records(rescale_unacked) WHERE rescale_unacked = 1"

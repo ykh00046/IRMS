@@ -115,3 +115,68 @@ def test_discard_events_round_trip_via_api():
     assert created2.status_code == 200, created2.text
     rec2 = client.get(f"/api/blend/records/{created2.json()['id']}").json()
     assert rec2["discard_events_json"] is None
+
+
+def test_batch_discard_round_trip_and_auth():
+    """배치 폐기: 작업자 세션 저장 → 책임자 대사 화면 조회 왕복. 사유 필수."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    worker = "배치폐기" + uuid.uuid4().hex[:6]
+    prod = "BDIS" + uuid.uuid4().hex[:4]
+
+    def csrf_headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")  # csrf 쿠키 확보
+    body = {
+        "product_name": prod, "work_date": "2026-08-05", "total_amount": 30000,
+        "reason": "과중량 - 책임자 협의 후 폐기", "source": "overweight",
+        "details": [
+            {"material_name": "A", "material_lot": "LA", "actual_amount": 15000},
+            {"material_name": "B", "material_lot": "", "actual_amount": 9000},
+        ],
+    }
+
+    # 작업자 세션 없이는 저장 불가
+    blocked = client.post("/api/blend/batch-discards", json=body, headers=csrf_headers())
+    assert blocked.status_code in (401, 403)
+
+    client.post("/api/workers", json={"name": worker}, headers=csrf_headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=csrf_headers())
+
+    # 사유 없이는 422 (모델 min_length)
+    bad = dict(body)
+    bad["reason"] = ""
+    res_bad = client.post("/api/blend/batch-discards", json=bad, headers=csrf_headers())
+    assert res_bad.status_code == 422
+
+    res = client.post("/api/blend/batch-discards", json=body, headers=csrf_headers())
+    assert res.status_code == 200, res.text
+    discard_id = res.json()["id"]
+    assert discard_id > 0
+
+    # 조회는 책임자 전용
+    denied = client.get("/api/blend/lot-audit/batch-discards")
+    assert denied.status_code in (401, 403)
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+    listed = client.get("/api/blend/lot-audit/batch-discards").json()
+    mine = [it for it in listed["items"] if it["product_name"] == prod]
+    assert len(mine) == 1
+    assert mine[0]["source"] == "overweight"
+    assert mine[0]["worker"] == worker
+    assert mine[0]["discarded_g"] == 24000.0
+    assert len(mine[0]["details"]) == 2
+
+    # 배치 폐기는 blend_records 를 만들지 않는다(별도 스트림 — LOT 미소비)
+    recs = client.get("/api/blend/records", params={"search": prod}).json()
+    assert all(r["product_name"] != prod for r in recs["items"])

@@ -249,12 +249,15 @@
           </div>
         </div>
 
-        <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
+        <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다.
+             [배치 폐기 기록…]: 협의 결과 실제로 배치를 버리기로 했으면 여기서 기록을 남긴다
+             (2026-08-05 — 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍). -->
         <div class="ss-modal-overlay" id="discard-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
             <div class="ss-modal-header"><h3 id="discard-modal-title">폐기 권장</h3></div>
             <div class="ss-modal-body" id="discard-modal-body"></div>
             <div class="ss-modal-footer blend-actions">
+              <button class="btn warn" id="discard-batch-btn" type="button">배치 폐기 기록…</button>
               <button class="btn rescale-danger" id="discard-force" type="button">그래도 증량</button>
               <button class="btn accent" id="discard-cancel" type="button" autofocus>증량 취소</button>
             </div>
@@ -349,6 +352,8 @@
             <div class="ss-modal-header"><h3 id="rescale-block-title">증량 불가</h3></div>
             <div class="ss-modal-body"><p>3회 증량은 불가합니다 — 이 배합은 책임자와 폐기 여부를 협의하세요.</p></div>
             <div class="ss-modal-footer blend-actions">
+              <!-- 협의 결과가 '폐기'면 여기서 바로 기록 — 무기록 이탈 방지(2026-08-05). -->
+              <button class="btn warn" id="block-batch-btn" type="button">배치 폐기 기록…</button>
               <button class="btn accent" id="rescale-block-close" type="button" autofocus>확인</button>
             </div>
           </div>
@@ -362,6 +367,34 @@
         <!-- 저울 상태 선택 모달(공용 partial) — 나눠 담기/추가 계량 진입 전 그림 선택.
              선택이 PRINT/입력값 해석(추가분 vs 누계)을 가른다. hidden 토글 전용. -->
         {% set scale_state_prefix = "" %}{% include "_scale_state_modal.html" %}
+
+        <!-- 배치 폐기 기록 모달 — 과중량 폐기 권장·3회 증량 차단 뒤 책임자와 협의해 배치
+             전체를 버리기로 한 경우의 기록. 제품 LOT 없이 별도 기록(blend_batch_discards)으로
+             남는다 — 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍의 마개
+             (2026-08-05). 사유 필수. hidden 토글 전용. -->
+        <div class="ss-modal-overlay" id="batch-discard-modal" hidden>
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="batch-discard-title">
+            <div class="ss-modal-header"><h3 id="batch-discard-title">배치 폐기 기록</h3></div>
+            <div class="ss-modal-body">
+              <p class="add-weigh-material" id="batch-discard-product"></p>
+              <p class="scale-state-guide">지금까지 계량된 아래 자재가 <b>전부 폐기</b>로 기록됩니다.
+                 이 기록은 배합 기록이 아니라 별도 폐기 기록으로 남습니다(제품 LOT 없음).</p>
+              <div class="add-weigh-portions-wrap">
+                <span class="add-weigh-portions-title">폐기되는 자재</span>
+                <ol class="add-weigh-portions" id="batch-discard-list"></ol>
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="batch-discard-reason">폐기 사유 (필수 — 책임자와 협의한 내용)</label>
+                <textarea class="input" id="batch-discard-reason" rows="2" placeholder="예: 과중량 — 책임자 OOO 협의 후 폐기"></textarea>
+              </div>
+              <p class="login-error" id="batch-discard-error" hidden></p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="batch-discard-back" type="button">돌아가기</button>
+              <button class="btn danger" id="batch-discard-submit" type="button">배치 폐기로 기록</button>
+            </div>
+          </div>
+        </div>
 
         <!-- 자재 폐기 질문 모달 — '처음부터 다시' 재계량 때 비커에 담긴 자재의 행방을 묻는다.
              숫자 오타 정정(자재 그대로)과 실제 폐기(기록 남김)는 완전히 다른 사건인데 버튼
@@ -402,7 +435,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805e"></script>
+    <script src="/static/js/blend.js?v=20260805f"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

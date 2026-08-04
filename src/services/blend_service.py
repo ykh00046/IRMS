@@ -2374,6 +2374,96 @@ def apply_discard_events_to_record(
     return events_json
 
 
+def create_batch_discard(
+    connection: sqlite3.Connection,
+    *,
+    recipe_id: int | None,
+    product_name: str,
+    worker: str,
+    work_date: str,
+    total_amount: float | None,
+    reason: str,
+    source: str,
+    details: list[dict[str, Any]],
+    created_by: str | None,
+    created_at: str,
+) -> int:
+    """배치 전체 폐기 1건 기록 — blend_records 와 분리된 별도 스트림.
+
+    제품 LOT 을 소비하지 않고, 기존 목록·집계·DHR·내보내기의 status 필터를 전혀
+    건드리지 않는다(폐기는 항상 별도 스트림 — ERP 이관 시 이중 차감 방지).
+    details 는 폐기 시점까지 계량돼 있던 자재 행들(무엇이 얼마나 버려졌는가).
+    """
+    cleaned = [{
+        "material_name": str(d.get("material_name") or "").strip()[:200],
+        "material_code": str(d.get("material_code") or "").strip()[:50],
+        "material_lot": str(d.get("material_lot") or "").strip()[:100],
+        "actual_amount": round(float(d.get("actual_amount") or 0), 2),
+    } for d in details if str(d.get("material_name") or "").strip()]
+    cur = connection.execute(
+        """
+        INSERT INTO blend_batch_discards
+            (recipe_id, product_name, worker, work_date, total_amount,
+             reason, source, details_json, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            recipe_id, product_name.strip(), worker.strip(), work_date,
+            round(float(total_amount), 2) if total_amount else None,
+            reason.strip()[:500], source,
+            json.dumps(cleaned, ensure_ascii=False), created_by, created_at,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def list_batch_discards(
+    connection: sqlite3.Connection,
+    *,
+    from_date: str,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """배치 폐기 목록(작업일 역순) — 책임자 사후 점검 화면(LOT 대사)용.
+
+    from_date 는 호출부(라우트)가 로컬 오늘 기준으로 계산해 넘긴다(이 모듈은
+    local_today_text 를 모른다 — 총량 이상 조회와 같은 분담).
+    """
+    rows = connection.execute(
+        """
+        SELECT id, recipe_id, product_name, worker, work_date, total_amount,
+               reason, source, details_json, created_at
+        FROM blend_batch_discards
+        WHERE work_date >= ?
+        ORDER BY work_date DESC, id DESC
+        LIMIT ?
+        """,
+        (from_date, int(limit)),
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        try:
+            details = json.loads(r["details_json"] or "[]")
+            if not isinstance(details, list):
+                details = []
+        except (TypeError, ValueError):
+            details = []
+        discarded_g = round(sum(float(d.get("actual_amount") or 0) for d in details), 2)
+        items.append({
+            "id": int(r["id"]),
+            "recipe_id": r["recipe_id"],
+            "product_name": r["product_name"],
+            "worker": r["worker"],
+            "work_date": r["work_date"],
+            "total_amount": r["total_amount"],
+            "reason": r["reason"],
+            "source": r["source"],
+            "details": details,
+            "discarded_g": discarded_g,
+            "created_at": r["created_at"],
+        })
+    return items
+
+
 # 수기 입력 부재 사유 길이 상한(모델 Field 와 동일) — 서비스 단독 호출에서도 방어.
 MANUAL_ABSENCE_REASON_MAX = 300
 

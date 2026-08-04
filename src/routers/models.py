@@ -164,6 +164,29 @@ class LotOverrideBody(BaseModel):
     acknowledged: bool = True
 
 
+class BatchDiscardDetailBody(BaseModel):
+    """배치 폐기 시점까지 계량돼 있던 자재 1행 — 무엇이 얼마나 버려졌는지의 근거."""
+    material_name: str = Field(min_length=1, max_length=200)
+    material_code: str = Field(default="", max_length=50)
+    material_lot: str = Field(default="", max_length=100)
+    actual_amount: float = Field(ge=0)
+
+
+class BlendBatchDiscardBody(BaseModel):
+    """배치 전체 폐기 기록 — 과중량 폐기 권장·3회 증량 차단 뒤 협의 폐기의 흔적.
+
+    저장 없이 화면을 떠나면 이 폐기는 어디에도 남지 않았다(실물 소모 최대의 무기록
+    경로). 제품 LOT 을 소비하지 않는 별도 스트림 — blend_records 와 섞지 않는다.
+    """
+    recipe_id: int | None = Field(default=None, gt=0)
+    product_name: str = Field(min_length=1, max_length=200)
+    work_date: str = Field(min_length=8, max_length=10)
+    total_amount: float | None = Field(default=None, gt=0)
+    reason: str = Field(min_length=1, max_length=500)
+    source: str = Field(pattern="^(overweight|rescale_limit|manual)$")
+    details: list[BatchDiscardDetailBody] = Field(default_factory=list, max_length=100)
+
+
 class DiscardEventBody(BaseModel):
     """계량 중 자재 폐기 1건 — '처음부터 다시' 재계량에서 담은 자재를 실제로 버린 경우.
 
