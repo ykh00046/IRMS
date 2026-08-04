@@ -836,6 +836,25 @@
   font-size: 0.72rem; font-weight: 600; line-height: 1; white-space: nowrap;
   vertical-align: middle;
 }
+
+/* 실제량 칸 — 입력칸과 ⚖·⊞ 버튼이 폭을 나눠 갖는 flex 행(2026-08-05 겹침 수정).
+   전엔 입력칸이 100% 를 차지해 버튼들이 셀 폭을 넘어 편차 열 위로 흘러넘쳤다
+   (증량 배합 시 "글자가 겹쳐 보인다" 현장 신고). 좁으면 버튼이 아랫줄로 감싼다
+   — 옆 열을 침범하는 것보다 낫다. */
+.blend-table td.blend-actual-cell {
+  display: flex; align-items: center; flex-wrap: wrap;
+  justify-content: flex-end; gap: 4px; min-width: 11rem;
+}
+.blend-table td.blend-actual-cell .blend-actual {
+  flex: 1 1 6.5rem; min-width: 6.5rem; width: auto;
+}
+.blend-table td.blend-actual-cell .blend-scale-btn,
+.blend-table td.blend-actual-cell .blend-split-btn { margin-left: 0; flex: 0 0 auto; }
+
+/* 편차 칸 — 숫자 옆 '추가 +N' 배지가 좁으면 아랫줄로 내려간다(옆 열 침범 금지).
+   증량 시 배지가 숫자와 겹치던 문제의 나머지 절반. */
+.blend-table td.blend-var { min-width: 5.5rem; white-space: normal; }
+.blend-table td.blend-var .blend-add-badge { margin-left: 0.25rem; margin-top: 2px; }
 .blend-split-btn:hover {
   color: var(--accent-primary); border-color: var(--accent-primary);
   background: #eff6ff;

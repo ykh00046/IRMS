@@ -684,6 +684,8 @@ document.addEventListener("DOMContentLoaded", () => {
       start_date: $("status-rec-from").value,
       end_date: $("status-rec-to").value,
       worker: $("status-rec-worker").value,
+      // 목록과 같은 제품 필터 — 화면은 걸러 놓고 파일은 전 제품이던 어긋남 해소(R-12).
+      product: $("status-rec-product") ? $("status-rec-product").value : "",
       search: $("status-rec-search").value.trim(),
     };
     Object.entries(map).forEach(([k, val]) => {

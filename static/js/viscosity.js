@@ -863,7 +863,13 @@
   }
 
   async function deleteReading(readingId, lotNo) {
-    if (!window.confirm(`측정 기록을 삭제할까요? (LOT ${lotNo})`)) return;
+    // 이 화면에서 유일하게 복원 불가한 동작인데 확인이 한 줄뿐이었다(2026-08-05 감사 R-6,
+    // 사용자 결정: 재확인 한 번 더). 통계에서만 빼려면 [통계 제외]가 맞는 길이다.
+    if (!window.confirm(
+      `측정 기록을 삭제할까요? (LOT ${lotNo})\n`
+      + "삭제는 복원할 수 없습니다. 통계에서만 빼려면 [통계 제외]를 사용하세요."
+    )) return;
+    if (!window.confirm(`정말 삭제합니까? (LOT ${lotNo}) — 되돌릴 수 없습니다.`)) return;
     try {
       await request(`/viscosity/readings/${readingId}`, { method: "DELETE" });
       notify("측정 기록을 삭제했습니다.", "success");

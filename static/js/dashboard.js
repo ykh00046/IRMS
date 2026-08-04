@@ -291,8 +291,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="muted">·</span> ${IRMS.escapeHtml(r.worker || "-")}
                 <span class="muted">·</span> ${IRMS.escapeHtml(date)}${reason}
               </span>
-              <button class="btn btn-sm accent rescale-ack-btn" type="button"
-                      data-id="${r.id}" data-kind="${r.kind}">확인</button>
+              <a class="btn btn-sm rescale-open-link"
+                 href="/status?search=${encodeURIComponent(r.product_lot || "")}">기록 열기</a>
             </li>`;
         })
         .join("");
@@ -303,33 +303,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 확인(ack) — 쓰기 요청. IRMS._core.request 가 x-csrftoken 을 부착한다(base 에서 core.js 로드).
-  async function ackRescale(id, btn, kind) {
-    if (btn) btn.disabled = true;
-    const isManual = kind === "manual";
-    const path = isManual
-      ? `/blend/records/${id}/manual-absence-ack`
-      : `/blend/records/${id}/rescale-ack`;
-    try {
-      await IRMS._core.request(path, { method: "POST" });
-      IRMS.notify(
-        isManual ? "수기 입력을 확인 처리했습니다." : "증량을 확인 처리했습니다.",
-        "success",
-      );
-      await loadRescaleAlert();
-    } catch (error) {
-      IRMS.notify(`확인 실패: ${error.message || error}`, "error");
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  const rescaleListEl = document.getElementById("rescale-alert-list");
-  if (rescaleListEl) {
-    rescaleListEl.addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".rescale-ack-btn");
-      if (btn) ackRescale(Number(btn.dataset.id), btn, btn.dataset.kind);
-    });
-  }
+  // [확인] 버튼은 2026-08-05 제거 — 내용을 안 보고 미확인 증량·수기 입력을 해제하는
+  // 단방향 경로였다(status.js 의 "확인 처리는 내용을 보는 그 자리에서" 정책과 충돌,
+  // 사용자 결정). 카드는 알림판 역할만 하고, 확인 처리는 [기록 열기] → 기록 상세에서.
 
   function persistRange(range) {
     try {

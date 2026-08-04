@@ -128,7 +128,9 @@
       `<td class="num">${fmt(it.ratio, 2)}</td>` +
       `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}</td>` +
       `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
-      `<td class="num"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}"${actualAttr} /></td>` +
+      // blend-actual-cell: 입력칸+⚖+⊞ 버튼이 함께 사는 칸 — flex 로 폭을 나눠 갖는다.
+      // 클래스 없이는 input(100%)+버튼이 셀 폭을 넘어 편차 열 위로 흘러넘쳤다(2026-08-05).
+      `<td class="num blend-actual-cell"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}"${actualAttr} /></td>` +
       `<td class="num blend-var" data-idx="${idx}">-</td>`;
   }
 

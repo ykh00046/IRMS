@@ -547,6 +547,9 @@ def build_router() -> APIRouter:
         start_date: str | None = None,
         end_date: str | None = None,
         worker: str | None = None,
+        # 목록 조회와 동일한 제품 필터 — 없어서 화면은 걸러 놓고 파일은 전 제품이 나왔다
+        # (2026-08-05 전수 감사 R-12, '전체'는 기간·필터 안의 전체를 뜻해야 한다).
+        product: str | None = None,
         search: str | None = None,
         include_canceled: bool = False,
         connection: sqlite3.Connection = Depends(get_db),
@@ -559,7 +562,7 @@ def build_router() -> APIRouter:
         """
         records = blend_service.list_blend_records(
             connection, start_date=start_date, end_date=end_date,
-            worker=worker, search=search, limit=10000,
+            worker=worker, product=product, search=search, limit=10000,
             include_canceled=include_canceled,
         )
         _audit_dhr_export(

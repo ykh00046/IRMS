@@ -302,6 +302,12 @@ document.addEventListener("DOMContentLoaded", () => {
           IRMS.notify("비밀번호는 8자 이상이어야 합니다.", "error");
           return;
         }
+        // 초기화만 확인창이 없어 같은 행의 해제·비활성화·삭제보다 가드가 약했다
+        // (2026-08-05 전수 감사 R-7) — 누르는 즉시 기존 비밀번호가 교체되는 동작이다.
+        if (action === "reset-password"
+          && !window.confirm(`${name}의 책임자 비밀번호를 지금 입력한 값으로 바꿉니다. 계속할까요?`)) {
+          return;
+        }
         const path = action === "grant"
           ? `/workers/${workerId}/manager`
           : `/workers/${workerId}/manager/password`;
