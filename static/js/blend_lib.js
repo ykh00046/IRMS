@@ -329,6 +329,47 @@
     return Number(total) > BATCH_LIMIT_G;
   }
 
+  // 증량 제안 비율 막대(순수 HTML) — "내가 A를 넘겨 담았는데 왜 B·C도 더 넣지?"를
+  // 숫자 역산 없이 그림으로 답한다(2026-08-05 전수 감사 P-4). 자재마다 '새 이론량'
+  // 길이의 막대를 그리고, 담은 만큼 칠한다: 칠해진 부분=이미 담음, 빈 부분=더 담을 양.
+  // 모든 막대가 같은 비율로 늘어난 결과라는 것이 폭 비교로 바로 보인다.
+  // 아직 계량 전 행(addNeeded===null)은 옅은 '예정' 막대. 막대 폭은 최대 새 이론량 기준.
+  function rescaleBarsHtml(items, plan, decimals) {
+    const rows = (plan && plan.rows) || [];
+    const list = Array.isArray(items) ? items : [];
+    const maxTheory = rows.reduce((m, r) => Math.max(m, r.newTheory || 0), 0);
+    if (!(maxTheory > 0)) return "";
+    const parts = rows.map((r) => {
+      if (r.newTheory === null || !(r.newTheory > 0)) return "";
+      const it = list[r.idx] || {};
+      const name = esc(it.material_name || "");
+      const width = Math.max(3, Math.round((r.newTheory / maxTheory) * 100));
+      const weighed = r.addNeeded !== null;
+      const actual = weighed ? (Number(it.actual_amount) || 0) : 0;
+      const filledPct = weighed
+        ? Math.min(100, Math.round((Math.min(actual, r.newTheory) / r.newTheory) * 100))
+        : 0;
+      const label = !weighed
+        ? `예정 ${fmt(r.newTheory, decimals)} g`
+        : r.addNeeded > 0
+          ? `+${fmt(r.addNeeded, decimals)} g 더`
+          : "채움 ✓";
+      return `<div class="rescale-bar-row${weighed ? "" : " is-pending"}">`
+        + `<span class="rescale-bar-name">${name}</span>`
+        + `<div class="rescale-bar-track">`
+        + `<div class="rescale-bar" style="width:${width}%">`
+        + `<span class="rescale-bar-fill" style="width:${filledPct}%"></span>`
+        + `</div></div>`
+        + `<span class="rescale-bar-label${r.addNeeded > 0 ? " is-add" : ""}">${label}</span>`
+        + `</div>`;
+    }).join("");
+    if (!parts) return "";
+    return `<div class="rescale-bars">`
+      + `<p class="rescale-bars-caption">비율을 지키려면 모든 자재가 함께 늘어납니다 — `
+      + `색칠된 만큼 담았고, <b>빈 부분</b>을 더 담습니다.</p>`
+      + parts + `</div>`;
+  }
+
   // 저울 PRINT 가 들어갈 행 우선순위 — 값이 다른 품목으로 새지 않게 하는 규칙.
   //
   // 이 판정이 틀리면 사람이 저울로 잰 값이 엉뚱한 자재에 기록된다. 같은 사고가
@@ -632,6 +673,7 @@
     missingLotNames,
     missingLotBlockMessage,
     appliedRescaleRowHtml,
+    rescaleBarsHtml,
     option,
     stepRowsHtml,
     lotFallbackText,

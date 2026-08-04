@@ -177,3 +177,26 @@ test("저울 해상도(2자리) 반올림 — 3자리가 실제량에 스며들�
   assert.strictEqual(resolveAddPortion("loaded", 100.126, 95).portion, 5.13);
   assert.strictEqual(resolveAddPortion("tared", 40.126, 0).portion, 40.13);
 });
+
+// ── 증량 제안 비율 막대(P-4, 2026-08-05) ───────────────────────────
+const { rescaleBarsHtml, rescalePlan } = global.window.IRMS.blendLib;
+
+test("증량 막대: 담은 자재는 채움/더 담을 양, 미계량 자재는 예정으로 그린다", () => {
+  const items = [
+    { material_name: "A", ratio: 50, actual_amount: "600", theory_amount: 500 },
+    { material_name: "B", ratio: 30, actual_amount: "300", theory_amount: 300 },
+    { material_name: "C", ratio: 20, actual_amount: "", theory_amount: 200 },
+  ];
+  const plan = rescalePlan(items, 1000, 0.05);  // A 초과 → newTotal 1200
+  const html = rescaleBarsHtml(items, plan, 2);
+  assert.match(html, /rescale-bars/);
+  assert.ok(html.includes("채움 ✓"), "새 이론량에 정확히 도달한 자재(A 600/600)는 채움 표시");
+  assert.match(html, /\+60\.00 g 더/, "담았지만 모자란 자재(B 300/360)는 더 담을 양");
+  assert.ok(!html.includes("+0.00 g 더"), "0 추가는 '더'가 아니라 채움으로");
+  assert.match(html, /예정 240\.00 g/, "미계량 자재는 예정 막대");
+  assert.match(html, /width:100%/, "최대 자재(A) 막대는 100%");
+});
+
+test("증량 막대: 계획이 비면 빈 문자열(모달 본문 오염 금지)", () => {
+  assert.strictEqual(rescaleBarsHtml([], { rows: [] }, 2), "");
+});

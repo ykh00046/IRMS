@@ -283,6 +283,31 @@
 .rescale-add-table th, .rescale-add-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border, #e5e7eb); text-align: left; }
 .rescale-add-table th.num, .rescale-add-table td.num { text-align: right; }
 .rescale-add-table .add-cell { color: #b45309; font-weight: 700; }
+/* 증량 제안 비율 막대(P-4) — 칠해진 부분=담음(파랑), 빈 부분=더 담을 양(주황 테두리 안 여백).
+   막대 폭 비교가 "모든 자재가 같은 비율로 늘어난다"를 말한다. 표 위에 배치. */
+.rescale-bars { margin: 0.7rem 0 0.9rem; }
+.rescale-bars-caption {
+  font-size: 0.85rem; color: var(--text-secondary, #56627b);
+  margin: 0 0 0.5rem; line-height: 1.4;
+}
+.rescale-bars-caption b { color: #b45309; }
+.rescale-bar-row { display: flex; align-items: center; gap: 0.5rem; margin: 4px 0; }
+.rescale-bar-name {
+  flex: 0 0 6.5rem; text-align: right; font-size: 0.85rem;
+  color: var(--text-primary, #15233f); overflow-wrap: anywhere;
+}
+.rescale-bar-track { flex: 1 1 auto; min-width: 0; }
+.rescale-bar {
+  height: 18px; min-width: 10px; overflow: hidden;
+  background: #fff7ed; border: 1.5px solid #fdba74; border-radius: 5px;
+}
+.rescale-bar-fill { display: block; height: 100%; background: #93c5fd; }
+.rescale-bar-row.is-pending .rescale-bar { background: #f1f5f9; border-color: #d8dfeb; }
+.rescale-bar-label {
+  flex: 0 0 auto; font-size: 0.82rem; white-space: nowrap;
+  color: var(--text-secondary, #56627b);
+}
+.rescale-bar-label.is-add { color: #b45309; font-weight: 700; }
 /* 행 안 추가분 입력 배지(주황 계열) — 클릭하면 인라인 추가 입력 칸으로 전환 */
 .blend-add-badge {
   display: inline-flex; align-items: center; gap: 3px;

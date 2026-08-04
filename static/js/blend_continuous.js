@@ -25,7 +25,7 @@
     esc, TOLERANCE_G, fmt, toleranceDecimals, todayISO, nowTime,
     computeTheoryAmount, findAnchorIndex, theoryFromWeights,
     baseTotalValues, baseTotalLinksHtml,
-    rescalePlan, exceedsBatchLimit,
+    rescalePlan, rescaleBarsHtml, exceedsBatchLimit,
     appliedRescaleRowHtml,
     createIdleLogout,
     pickScaleRow, isAddModeRow, resolveAddPortion, varianceVerdict,
@@ -1712,6 +1712,8 @@
       + `<span>→</span>`
       + `<span class="new">${fmt(plan.newTotal, dp())} g</span>`
       + `</div>`;
+    // 비율 막대 그림 — 배합 화면과 동일(P-4). items 는 위에서 이 로트 기준으로 구성됨.
+    html += rescaleBarsHtml(items, plan, dp());
     if (overRows.length) {
       html += `<table class="rescale-add-table"><thead><tr><th>자재</th>`
         + `<th class="num">현재 실제량</th><th class="num">새 이론량</th>`

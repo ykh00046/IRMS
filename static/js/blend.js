@@ -50,6 +50,7 @@
     BATCH_LIMIT_G,
     requiredTotalForRow,
     rescalePlan,
+    rescaleBarsHtml,
     exceedsBatchLimit,
     pickScaleRow,
     isAddModeRow,
@@ -2020,6 +2021,8 @@
       + `<span>→</span>`
       + `<span class="new">${fmt(plan.newTotal, dp())} g</span>`
       + `</div>`;
+    // 비율 막대 그림 — "왜 다른 자재도 더 넣는지"를 표보다 먼저 그림으로(P-4).
+    html += rescaleBarsHtml(state.items, plan, dp());
     if (overRows.length) {
       html += `<table class="rescale-add-table"><thead><tr><th>자재</th>`
         + `<th class="num">현재 실제량</th><th class="num">새 이론량</th>`
