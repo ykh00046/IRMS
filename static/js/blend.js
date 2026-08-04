@@ -2350,11 +2350,35 @@
     document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
     const tol = state.toleranceG;
     const plan = rescalePlan(state.items, effectiveCurrentTotal(), tol);
+    // 기준 자재(anchor) 모드에서는 배지 목표를 rescalePlan 의 ratio 기반 newTheory 로
+    // 쓰면 안 된다 — 이론량 셀은 recomputeAnchorRescale 이 value_weight 원값 비례로
+    // 채우므로 두 값이 갈린다. anchor 비율이 작을수록 ratio_i/ratio_anchor 배로 증폭돼,
+    // 배지대로 채우면 오히려 편차를 벗어나고 증량을 유발한 행은 배지도 없이 초과로
+    // 남아 저장이 막혔다(2026-08-04 회귀 검토 적발). 여기서는 화면이 실제로 쓰는
+    // 목표(it.theory_amount)를 기준으로 잔여를 다시 계산해 배지와 셀을 일치시킨다.
+    const anchorMode = state.anchorIndex >= 0;
+    const rows = anchorMode
+      ? plan.rows.map((r) => {
+          const it = state.items[r.idx];
+          const theory = it && it.theory_amount != null ? Number(it.theory_amount) : null;
+          if (theory === null) return { ...r, newTheory: null, addNeeded: null };
+          const actualRaw = it.actual_amount;
+          const actual = (actualRaw === "" || actualRaw == null) ? null : Number(actualRaw);
+          if (actual === null || !Number.isFinite(actual)) {
+            return { ...r, newTheory: theory, addNeeded: null };
+          }
+          return {
+            ...r,
+            newTheory: theory,
+            addNeeded: Math.max(0, Math.round((theory - actual) * 100) / 100),
+          };
+        })
+      : plan.rows;
     // 직전 대기 집합을 기억 — 이번에 빠진(충족된) 행은 편차 표시를 복원해야 한다.
     const prevPending = state.addPending || {};
     // 넣어야 할 양이 있는 행 집합을 새로 만든다(편차 셀 음수 숨김 판정용).
     state.addPending = {};
-    plan.rows.forEach((r) => {
+    rows.forEach((r) => {
       if (r.addNeeded === null || r.addNeeded <= tol + 1e-9) return;
       const td = document.querySelector(`.blend-var[data-idx="${r.idx}"]`);
       if (!td) return;

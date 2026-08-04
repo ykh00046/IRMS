@@ -1,0 +1,117 @@
+{% extends "_base_app.html" %}
+
+{% block title %}LOT 대사{% endblock %}
+{% block eyebrow %}운영 관리{% endblock %}
+{% block heading %}미해소 LOT 대사 · 총 배합량 이상{% endblock %}
+
+{% block styles %}
+<style>
+  /* 이 화면 전용 소량 스타일 — 공용 클래스(.panel/.table-wrap/.status-chip/.metric-card)를
+     우선 재사용하고, 상태색은 공용 토큰만 쓴다(하드코딩 hex 금지). */
+  .lau-note { color: var(--text-secondary); font-size: 0.86rem; line-height: 1.6; }
+  .lau-empty { padding: 24px; text-align: center; color: var(--text-tertiary); }
+  .lau-loading {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.6rem; padding: 1.6rem; color: var(--text-tertiary);
+  }
+  .lau-num { font-variant-numeric: tabular-nums; }
+  /* 경과 일수 — 오래됐는데 아직 1차 기록이 없으면 오타 가능성이 높다. */
+  .lau-age-old { color: var(--status-error); font-weight: 700; }
+  .lau-age-warn { color: var(--status-warning); font-weight: 600; }
+  /* 작업자가 확인 창조차 못 본 건 — 성격이 다르므로 행 전체를 눈에 띄게 한다. */
+  .lau-row-unack { background: color-mix(in srgb, var(--status-error) 8%, transparent); }
+  .lau-chip-unack { background: var(--status-error-bg); color: var(--status-error); }
+  .lau-chip-ack { background: var(--status-success-bg); color: var(--status-success); }
+  .lau-chip-over { background: var(--status-warning-bg); color: var(--status-warning); }
+  .lau-chip-bypass { background: var(--status-error-bg); color: var(--status-error); }
+  .lau-reason { color: var(--text-tertiary); }
+</style>
+{% endblock %}
+
+{% block content %}
+        <section class="dashboard-cards">
+          <div class="metric-card">
+            <div class="metric-label">미해소 LOT</div>
+            <div class="metric-value lau-num" id="lau-card-unresolved">-</div>
+            <div class="metric-unit">1차 기록이 아직 없음</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">확인 절차 없음</div>
+            <div class="metric-value lau-num" id="lau-card-unack">-</div>
+            <div class="metric-unit">작업자가 확인 창을 못 봄</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">자동 해소</div>
+            <div class="metric-value lau-num" id="lau-card-resolved">-</div>
+            <div class="metric-unit">1차가 나중에 저장됨</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">총량 이상</div>
+            <div class="metric-value lau-num" id="lau-card-anomaly">-</div>
+            <div class="metric-unit" id="lau-card-anomaly-note">25kg 초과 / 우회 의심</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">미해소 LOT 대사</h3>
+          <p class="lau-note">
+            앞 단계(1차) 배합 기록에 없는 반제품 LOT 로 진행한 건입니다.
+            그 LOT 이 <strong>나중에라도</strong> 완료된 배합 기록으로 생기면 이 목록에서 자동으로 빠집니다(해소).
+            끝내 생기지 않는 건은 <strong>오타이거나 실제로 없는 반제품</strong>일 가능성이 높으니,
+            경과 일수가 큰 건부터 확인하세요. 취소된 배합의 건은 표시하지 않습니다.
+          </p>
+          <div class="lau-loading" id="lau-unresolved-loading"><span class="spinner"></span> 불러오는 중…</div>
+          <div class="table-wrap" id="lau-unresolved-wrap" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">경과</th>
+                  <th>확인</th>
+                  <th>자재(반제품)명</th>
+                  <th>지정한 LOT</th>
+                  <th>사용한 배합</th>
+                  <th>작업일 · 작업자</th>
+                  <th>사유</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="lau-unresolved-body"></tbody>
+            </table>
+          </div>
+          <p class="lau-empty" id="lau-unresolved-empty" hidden>미해소 건이 없습니다.</p>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">총 배합량 이상</h3>
+          <p class="lau-note">
+            <strong>상한 초과</strong>는 현장 1회 배합 상한(<span id="lau-limit">25,000</span> g)을 넘겨 저장된 건입니다 —
+            폐기 권장을 무시한 '그래도 증량' 경로라 저장 자체는 정상입니다.
+            <strong>우회 의심</strong>은 증량 이력이 없는데 총량이 레시피 기준 배합량을 크게 상회하는 건으로,
+            초과 계량 후 승인 대신 총량을 먼저 키워 입력했을 가능성을 뜻합니다.
+            둘 다 저장을 막지 않고 기록만 남긴 것이므로, 정당한 배치일 수 있습니다.
+          </p>
+          <div class="lau-loading" id="lau-anomaly-loading"><span class="spinner"></span> 불러오는 중…</div>
+          <div class="table-wrap" id="lau-anomaly-wrap" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>제품 LOT</th>
+                  <th>제품</th>
+                  <th>작업일 · 작업자</th>
+                  <th class="num">총량(g)</th>
+                  <th class="num">기준(g)</th>
+                  <th class="num">초과</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="lau-anomaly-body"></tbody>
+            </table>
+          </div>
+          <p class="lau-empty" id="lau-anomaly-empty" hidden>최근 조회 기간에 총량 이상 기록이 없습니다.</p>
+        </section>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/js/blend_lot_audit.js?v=20260804i"></script>
+{% endblock %}

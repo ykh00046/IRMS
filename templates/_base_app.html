@@ -59,6 +59,18 @@
             <a href="/management" class="side-link{{ ' active' if request.url.path == '/management' else '' }}">
               <span class="side-ico side-ico-recipes" aria-hidden="true"></span><span>레시피 관리</span>
             </a>
+            {% if can_manage or (current_user and current_user.access_level in ["manager", "admin"]) %}
+            <!-- 미해소 LOT 대사 · 총 배합량 이상 — 책임자 전용 사후 점검(2026-08-04).
+                 개방 화면(/status·/dashboard)에 얹지 않고 별도 페이지로 둔 이유는
+                 pages.lot_audit_page 주석 참조.
+                 조건이 둘인 이유: can_manage 는 배합 화면처럼 컨텍스트에 그 키를 넣지
+                 않는 페이지에서 비어 있고, access_level 비교만 쓰면 레거시 'admin'
+                 값(ACCESS_LEVEL_RANK 상 책임자와 동급)을 놓친다. 통제 화면이라
+                 "책임자인데 입구가 안 보이는" 경우를 만들지 않는다. -->
+            <a href="/lot-audit" class="side-link{{ ' active' if request.url.path == '/lot-audit' else '' }}">
+              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>LOT 대사</span>
+            </a>
+            {% endif %}
           </div>
 
           <div class="nav-section">

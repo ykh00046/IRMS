@@ -665,6 +665,9 @@
   // 셀로 라우팅하고, 어디로 들어갈지 셀 강조(cell-scale-target)로 보이게 한다. 저울
   // 연결 시에만 표시 — 수동 전용 현장 노이즈 제거.
   function setScaleTargetCell(i, j) {
+    // 작업자가 ⚖ 로 다른 셀을 명시 지정하면, 열려 있던 추가 입력칸 참조는 놓는다.
+    // 우선순위상 _addWeighCell 이 sticky 보다 위라, 안 놓으면 방금 고른 셀이 무시된다.
+    if (_addWeighCell && !(_addWeighCell.i === i && _addWeighCell.j === j)) _addWeighCell = null;
     state.scaleTargetCell = { i, j };
     updateScaleTargetIndicator();
   }
@@ -1793,13 +1796,18 @@
 
   // 승인/부재 모달 취소(Escape/overlay) — 보류 중인 증량 제안을 버린다. 초과 계량 상태는
   // 그대로라 다음 change/Enter 에서 다시 제안이 뜬다.
-  // 허용 편차를 +방향으로 벗어난 셀의 실제량을 모두 비운다 — 증량 제안/승인 거절
-  // (다시 계량) 시 초과 상태가 남아 누적되던 사고 방지(blend.js clearOverActuals 동일).
-  function clearOverContActuals() {
+  // 허용 편차를 +방향으로 벗어난 셀의 실제량을 비운다 — 증량 제안/승인 거절(다시 계량) 시
+  // 초과 상태가 남아 누적되던 사고 방지(blend.js clearOverActuals 동일).
+  //
+  // ⚠️ **반드시 로트 하나만** 대상으로 한다. 증량 제안은 offerContRescale(j) 로 그 로트
+  // 한정인데, 예전엔 전 로트를 훑어 취소 한 번에 다른 로트의 계량값까지 지웠다
+  // ("초과가 난 그 로트만 증량한다 — 다른 로트 절대 불변" 설계 위반, 2026-08-04 적발).
+  function clearOverContActuals(lotIndex) {
     const tol = state.toleranceG;
     let firstEl = null;
     state.materials.forEach((_, i) => {
       state.cells[i].forEach((cell, j) => {
+        if (lotIndex != null && j !== lotIndex) return;  // 지정 로트 밖은 손대지 않는다
         const th = theoryFor(i, j);
         if (cell.actual === "" || th == null) return;
         if (varianceVerdict(Number(cell.actual), th, tol).over) {
@@ -2128,6 +2136,15 @@
     updateCellVar(i, j);
     warnIfVariance(i, j);
     renderAddBadges(j);
+    // ⚠️ _addWeighCell 수명 — 여기서 놓으면 이후 모든 PRINT 가 이 셀에 계속 합산된다.
+    // 이 참조는 "아직 더 담아야 하는 동안"만 살아야 한다. 배합 화면은 모달이 열려 있는
+    // 동안으로 묶여 있고 닫힐 때 반드시 해제되지만, 여기 인라인 입력칸은 한 번 적용하면
+    // 사라지므로 같은 수명 규칙이 성립하지 않는다(2026-08-04 회귀 검토 적발 — 2회차
+    // 누수를 막으려던 수정이 반대로 '영구 고착'을 만들었다).
+    // 기준: renderAddBadges 가 다시 계산한 잔여(addPendingCells)가 없으면 놓는다.
+    const stillPending = state.addPendingCells
+      && state.addPendingCells[`${i}:${j}`] != null;
+    if (!stillPending) _addWeighCell = null;
     updateContTotalLock();  // 추가분 합산으로 실제량이 채워진 경우도 총량 잠금 유지
     scheduleDraftSave();    // 추가분 합산 결과도 임시 저장(복구용)
   }
@@ -2441,12 +2458,13 @@
     if (rescaleApply) rescaleApply.addEventListener("click", openContRescaleApproveModal);
     const rescaleCancel = $("cont-rescale-cancel");
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
+      // 어느 로트의 제안이었는지 먼저 집는다 — pendingContRescale 을 비우면 알 수 없다.
+      const lot = state.pendingContRescale ? state.pendingContRescale.j : null;
       state.pendingContRescale = null;
       closeContRescaleModal();
       // 닫기만 하면 초과값이 셀에 남아 다음 초과와 함께 마지막 승인 하나로 뭉뚱그려
-      // 재계산된다(배합 화면이 현장 신고로 2026-07-22 에 고친 사고). blend.js 의
-      // rescale-cancel 과 동일하게 초과 셀을 즉시 비운다.
-      clearOverContActuals();
+      // 재계산된다(배합 화면이 현장 신고로 2026-07-22 에 고친 사고). 단 **그 로트만** 비운다.
+      clearOverContActuals(lot);
     });
     const discardForce = $("cont-discard-force");
     if (discardForce) discardForce.addEventListener("click", openContRescaleApproveModal);
@@ -2470,9 +2488,10 @@
     // 바깥 클릭으로는 닫히지 않는다 — 미해소 초과 누적 방지(blend.js 와 동일 정책).
     function dismissContApproveWithReweigh() {
       if (!window.confirm("입력한 초과값을 비우고 다시 계량합니다. 계속할까요?")) return;
+      const lot = state.pendingContRescale ? state.pendingContRescale.j : null;
       state.pendingContRescale = null;
       closeContRescaleApproveModal();
-      clearOverContActuals();
+      clearOverContActuals(lot);  // 그 로트만 — 다른 로트의 계량값은 건드리지 않는다
     }
     const contReweigh = $("cont-rescale-approve-reweigh");
     if (contReweigh) contReweigh.addEventListener("click", dismissContApproveWithReweigh);
