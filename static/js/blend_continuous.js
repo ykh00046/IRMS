@@ -562,10 +562,32 @@
 
   let scaleEventLast = 0;
   let scaleEventSynced = false;
+  // 책임자 승인 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
+  let _approvalModalPrintWarned = false;
+
+  // 책임자 승인 모달(증량 승인·수기 입력 승인)이 보이는가 — 이 모달들은 포커스를 승인자 이름칸으로
+  // 옮겨 모든 라우팅 플래그를 null 로 만들어, 폴러 폴백이 PRINT 값을 '다음 미계량 셀'에 채운다.
+  // (증량 제안·폐기·3회 차단 모달은 포커스를 빼앗지 않아 그대로 둔다.) blend.js 와 동일 가드.
+  function approvalModalVisible() {
+    const ra = $("cont-rescale-approve-modal");
+    const ma = $("cont-manual-approve-modal");
+    return (ra && !ra.hidden) || (ma && !ma.hidden);
+  }
 
   async function pollScaleEvents() {
     // 창 단일화 가드에 막힌 창은 저울 이벤트를 소비하지 않는다(blend.js 와 동일 이유).
     if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
+    // 책임자 승인 모달이 열려 있으면 PRINT 를 소비하지 않는다(blend.js 와 동일 이유·방식).
+    // 1회만 안내(매 폴링 스팸 금지).
+    if (approvalModalVisible()) {
+      if (!_approvalModalPrintWarned) {
+        _approvalModalPrintWarned = true;
+        notify("승인 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 승인을 먼저 마쳐주세요.", "warn");
+      }
+      scaleEventSynced = false;
+      return;
+    }
+    _approvalModalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
@@ -596,6 +618,9 @@
   // 빈 셀로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 커서 우선 → 첫 미입력 셀 폴백.
   function activeScaleCell() {
     if (state.addModeCell) return state.addModeCell;
+    // 인라인 추가 입력칸이 열려 있는 셀(_addWeighCell) — addModeCell 은 applyAddAmount 가
+    // 매번 null 로 되돌리지만, 입력칸은 닫힐 때까지 살아 있어 2회차 PRINT 도 같은 셀로.
+    if (_addWeighCell) return { i: _addWeighCell.i, j: _addWeighCell.j };
     // 작업자 수동 지정 셀(sticky) — 포커스보다 우선. 유효한 셀일 때만.
     const t = state.scaleTargetCell;
     if (t && state.cells[t.i] && state.cells[t.i][t.j] && t.j < state.lotCount) {
@@ -670,7 +695,9 @@
     const input = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
     if (!input) return;
     // 추가 입력 모드 셀이면 PRINT 값을 추가분으로 합산(누계 = 기존 actual + 입력값).
-    if (state.addModeCell && state.addModeCell.i === i && state.addModeCell.j === j) {
+    // addModeCell 만 보면 applyAddAmount 가 매번 null 로 되돌려 2회차 PRINT 가 덮어쓰기가
+    // 되므로, 입력칸이 열려 있는 한 살아있는 _addWeighCell 도 함께 본다(blend.js isAddModeRow).
+    if (isAddModeCell(i, j)) {
       applyAddAmount(i, j, Number(value));
       return;
     }
@@ -682,8 +709,17 @@
     input.removeAttribute("title");
     updateCellVar(i, j);
     const over = warnIfVariance(i, j);
+    // 저울 PRINT 값이 허용 편차를 벗어나면 다음 셀로 넘어가지 않는다 — 해당 실제량
+    // 칸에 머물러 재계량(부족: 더 넣기 / 초과: 증량 제안)을 유도(blend.js:377-381 와 동일).
+    // 안 그러면 초과한 셀이 커서를 잃고, 작업자의 재계량이 '다음 LOT'에 담긴다.
+    if (over) {
+      if (input) { input.focus(); if (input.select) input.select(); }
+      updateScaleTargetIndicator();
+      scheduleDraftSave();  // 저울 PRINT 입력분도 임시 저장(복구용)
+      return;
+    }
     // 이 셀이 수동 지정 대상이었고 허용 편차 내로 완료됐으면 지정 해제(sticky 종료).
-    if (!over && state.scaleTargetCell
+    if (state.scaleTargetCell
       && state.scaleTargetCell.i === i && state.scaleTargetCell.j === j) {
       state.scaleTargetCell = null;
     }
@@ -829,6 +865,7 @@
     state.lotRescaleEvents = [];    // 레시피 변경 → 증량 승인 이력도 리셋(총량 잠금도 함께 풀림)
     state.addPendingCells = {};     // 레시피 변경 → 증량 대기 셀 억제도 리셋
     state.scaleTargetCell = null;   // 레시피 변경 → 저울 대상 지정 해제
+    _addWeighCell = null;           // 레시피 변경 → 열려 있던 추가 입력칸 참조도 해제
     state.manualApproved = null;    // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
     rebuildCells();
     rebuildLotRescale();
@@ -1613,6 +1650,7 @@
     if (next === state.lotCount) return;
     state.lotCount = next;
     $("cont-lot-count").textContent = String(next);
+    _addWeighCell = null;  // 로트 수 변경 → 셀 매트릭스 재구성, 열려 있던 추가 입력칸 참조 해제
     rebuildCells();
     rebuildLotRescale();   // 로트 수 변경 → lotRescale 을 새 lotCount 에 맞춘다(기존 값 보존)
     render();
@@ -2011,6 +2049,21 @@
   //   (a) Enter 확정 후 입력칸 제거 시 blur 재발화 이중 합산 — input._applied 플래그
   //   (b) blur 취소 시 잠금 해제(addModeCell=null, 실제량 readOnly 해제)
   //   (c) 추가 모드 중 누계 입력칸 readOnly(직접 타이핑하면 누계가 통째로 덮어써짐)
+  //
+  // _addWeighCell: 인라인 추가 입력칸이 '열려 있는' 셀(blend.js _addWeighIdx 의 셀 버전).
+  // applyAddAmount 가 addModeCell 을 매번 null 로 되돌리므로, 모달이 열려 있는 동안의
+  // 2회차 이후 PRINT 는 addModeCell 만 보면 빈 셀로 새어 나간다. 그래서 입력칸이 실제로
+  // 닫힐 때까지 살아있는 별도 참조를 둔다.
+  let _addWeighCell = null;
+
+  // 저울 PRINT 가 들어갈 셀이 '추가(합산) 모드'인가 — addModeCell 또는 _addWeighCell.
+  // blend_lib.isAddModeRow 의 셀 스코프 판정(blend.js fillScaleValue 사용 방식과 동일).
+  function isAddModeCell(i, j) {
+    const am = state.addModeCell;
+    if (am && am.i === i && am.j === j) return true;
+    return _addWeighCell != null && _addWeighCell.i === i && _addWeighCell.j === j;
+  }
+
   function openAddInline(i, j) {
     const td = document.querySelector(`.cont-var[data-i="${i}"][data-j="${j}"]`);
     if (!td) return;
@@ -2048,6 +2101,7 @@
       // (b) 빈 값으로 벗어나면 취소 — 추가 모드·누계 칸 잠금도 함께 해제해야 한다
       input.remove();
       state.addModeCell = null;
+      _addWeighCell = null;  // 입력칸이 닫혔으므로 참조도 해제(다음 빈 셀로 새지 않게)
       const actualInput = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
       if (actualInput) {
         actualInput.classList.remove("add-mode");
@@ -2060,6 +2114,7 @@
     // (c) 실제량(누계) 칸은 잠근다: 추가 모드 중 직접 타이핑하면 누계가 통째로 덮어써져
     //     기존 계량값이 사라진다(스모크에서 재현된 실수 경로).
     state.addModeCell = { i, j };
+    _addWeighCell = { i, j };  // 입력칸이 닫힐 때까지 살아있는 참조(2회차 PRINT 누적 합산)
     const actualInput = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
     if (actualInput) {
       actualInput.classList.add("add-mode");

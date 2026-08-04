@@ -531,12 +531,35 @@
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
   let scaleEventLast = 0;
   let scaleEventSynced = false;
+  // 책임자 승인 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
+  let _approvalModalPrintWarned = false;
+
+  // 책임자 승인 모달(증량 승인·수기 입력 승인)이 보이는가 — 이 모달들은 포커스를 승인자 이름칸으로
+  // 옮겨 모든 라우팅 플래그를 null 로 만들어, 폴러 폴백이 PRINT 값을 '다음 미계량 품목'에 채운다.
+  // (증량 제안·폐기·3회 차단 모달은 포커스를 빼앗지 않아 그대로 둔다.)
+  function approvalModalVisible() {
+    const ra = $("rescale-approve-modal");
+    const ma = $("manual-approve-modal");
+    return (ra && !ra.hidden) || (ma && !ma.hidden);
+  }
 
   async function pollScaleEvents() {
     // 창 단일화 가드에 막힌 창은 저울 이벤트를 소비하지 않는다 — 오버레이는 화면만
     // 덮으므로, 이 가드가 없으면 막힌 창이 다른 창에서 누른 PRINT 값을 자기 행에
     // 채워 넣는다(가드가 막으려던 바로 그 사고). 해제되면 잔여 이벤트는 버리고 재동기화.
     if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
+    // 책임자 승인 모달이 열려 있으면 PRINT 를 소비하지 않는다 — 모달이 승인자 이름칸으로
+    // 포커스를 옮겨 라우팅 플래그가 전부 null 이 되고, 폴백이 값을 다음 미계량 품목에 채운다.
+    // blendWindowBlocked 가드와 같은 방식(이벤트 버리고 재동기화). 1회만 안내(매 폴링 스팸 금지).
+    if (approvalModalVisible()) {
+      if (!_approvalModalPrintWarned) {
+        _approvalModalPrintWarned = true;
+        notify("승인 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 승인을 먼저 마쳐주세요.", "warn");
+      }
+      scaleEventSynced = false;
+      return;
+    }
+    _approvalModalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
