@@ -720,3 +720,39 @@
   line-height: 1.35;
   color: var(--muted, #6b7280);
 }
+
+/* 2단 제조 흐름도(P-3, 2026-08-05) — 파생/1차 레시피/반응기 세 독립 개념을 그림으로 분리.
+   접이식(기본 접힘), 레시피 속성 fieldset 전체 폭. */
+.mg-flow {
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 10px;
+  background: var(--bg-surface-100, #fafbfd);
+}
+.mg-flow > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1d3461;
+}
+.mg-flow > summary:hover { color: #2563eb; }
+.mg-flow-body { padding: 0.2rem 0.9rem 0.9rem; }
+.mg-flow-svg { width: 100%; max-width: 720px; height: auto; display: block; }
+.mg-flow-svg .mg-flow-box { fill: #ffffff; stroke: #1b4079; stroke-width: 2; }
+.mg-flow-svg .mg-flow-box2 { fill: #eff6ff; }
+.mg-flow-svg .mg-flow-title { font-size: 13px; font-weight: 800; fill: #1b4079; text-anchor: middle; }
+.mg-flow-svg .mg-flow-line { font-size: 12px; fill: #334155; text-anchor: middle; }
+.mg-flow-svg .mg-flow-strong { font-weight: 800; fill: #b45309; }
+.mg-flow-svg .mg-flow-arrow { stroke: #b45309; stroke-width: 2.5; }
+.mg-flow-svg .mg-flow-arrow-head { fill: #b45309; }
+.mg-flow-svg .mg-flow-arrow-label { font-size: 12px; font-weight: 800; fill: #b45309; text-anchor: middle; }
+.mg-flow-svg .mg-flow-arrow-sub { font-size: 11px; fill: #92600e; text-anchor: middle; }
+.mg-flow-svg .mg-flow-family { fill: none; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.mg-flow-svg .mg-flow-family-label { font-size: 11px; fill: #64748b; text-anchor: middle; }
+.mg-flow-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #56627b;
+  line-height: 1.5;
+}
+.mg-flow-note b { color: #15233f; }

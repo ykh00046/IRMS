@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260805a" />
 {% endblock %}
 
 {% block content %}
@@ -48,8 +48,8 @@
                     <label class="filter-label" for="register-base-total">기본 배합량 (g)</label>
                     <input id="register-base-total" class="input base-total-input"
                       placeholder="선택 · 쉼표로 최대 3개"
-                      title="배합 화면 '기준' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
-                    <p class="imp-attr-desc">배합 화면 '기준' 버튼이 채울 총량. 쉼표로 최대 3개(예: 3924.38, 2000). 비우면 버튼 없음.</p>
+                      title="배합 화면 '기본량 적용' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />
+                    <p class="imp-attr-desc">배합 화면 '기본량 적용' 버튼이 채울 총량. 쉼표로 최대 3개(예: 3924.38, 2000). 비우면 버튼 없음.</p>
                   </div>
                   <div class="imp-attr-field">
                     <label class="filter-label" for="imp-anchor">기준 자재</label>
@@ -95,6 +95,41 @@
                     <label class="filter-label" for="imp-stage1">1차 레시피</label>
                     <select id="imp-stage1" class="input"><option value="">없음</option></select>
                     <p class="imp-attr-desc">이 레시피(2차)의 1차 레시피를 고릅니다. 지정하면 현황에서 1차/2차가 한 가족으로 묶이고, 재료로 넣은 1차 반제품(예: SBCT-1)은 코드 없이도 정상 인식됩니다.</p>
+                  </div>
+                  <!-- 2단 제조 흐름도(P-3, 2026-08-05) — 파생/1차 레시피/반응기 세 설정은 서로
+                       독립인데 글 설명만으로는 구분이 안 돼, 잘못 지정하면 2차 배합의 총량
+                       자체가 틀린다. 그림이 세 개념을 분리해 보여준다. 기본 접힘. -->
+                  <div class="imp-attr-span">
+                    <details class="mg-flow">
+                      <summary>1차→2차(파생·이월)가 어떻게 도는지 그림으로 보기</summary>
+                      <div class="mg-flow-body">
+                        <svg viewBox="0 0 680 168" class="mg-flow-svg" role="img"
+                             aria-label="2단 제조 흐름 — 1차 레시피에서 계량한 총량이 파생 이월 화살표로 2차 레시피에 재계량 없이 투입되는 그림">
+                          <!-- 1차 상자 -->
+                          <rect x="14" y="26" width="248" height="92" rx="10" class="mg-flow-box"/>
+                          <text x="138" y="50" class="mg-flow-title">1차 레시피 (예: SBCT-1)</text>
+                          <text x="138" y="74" class="mg-flow-line">자재 A · B · C 를 계량</text>
+                          <text x="138" y="96" class="mg-flow-line">총량 <tspan class="mg-flow-strong">3,924.38 g</tspan> 완성</text>
+                          <!-- 파생 이월 화살표 -->
+                          <line x1="262" y1="72" x2="404" y2="72" class="mg-flow-arrow"/>
+                          <polygon points="404,64 420,72 404,80" class="mg-flow-arrow-head"/>
+                          <text x="341" y="58" class="mg-flow-arrow-label">파생 이월</text>
+                          <text x="341" y="94" class="mg-flow-arrow-sub">'파생' 체크 = 이 화살표</text>
+                          <!-- 2차 상자 -->
+                          <rect x="420" y="26" width="248" height="92" rx="10" class="mg-flow-box mg-flow-box2"/>
+                          <text x="544" y="50" class="mg-flow-title">2차 레시피 (예: SBCT)</text>
+                          <text x="544" y="74" class="mg-flow-line">이월 <tspan class="mg-flow-strong">3,924.38 g</tspan> — 재계량 없음</text>
+                          <text x="544" y="96" class="mg-flow-line">+ 자재 D 만 계량</text>
+                          <!-- 가족 연결(1차 레시피 지정) -->
+                          <path d="M 138 118 V 140 H 544 V 118" class="mg-flow-family"/>
+                          <text x="341" y="156" class="mg-flow-family-label">'1차 레시피' 지정 = 두 레시피를 한 가족으로 (현황 묶음 · 1차 반제품 코드 없이 인식)</text>
+                        </svg>
+                        <p class="mg-flow-note">
+                          <b>반응기 사용</b>은 위 그림과 <b>무관한 별도 설정</b>입니다 —
+                          "이 단계가 반응기에서 진행된다"만 뜻하며, 1차든 2차든 붙을 수 있고 이월 여부를 바꾸지 않습니다.
+                        </p>
+                      </div>
+                    </details>
                   </div>
                 </div>
               </fieldset>

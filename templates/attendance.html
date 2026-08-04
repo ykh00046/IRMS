@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260805a" />
   </head>
   <body
     class="att-page"
@@ -160,6 +160,80 @@
           </ul>
         </div>
       </section>
+
+      <!-- 근무 유형별 지각·조퇴 기준 그림(P-2, 2026-08-05) — 판정 규칙이 코드에만 있고
+           화면에는 결과(지각/조퇴)만 떠서, 특히 반차의 오전/오후 비대칭(오전=출근 기준이
+           뒤로, 오후=퇴근 기준이 앞으로)을 알 길이 없었다. 시각·이동량은
+           attendance_excel/anomaly.py 의 검증 예시와 일치해야 한다(주간 9-18,
+           반차 5h·반반차 2h / 2교대 출근+8h45m, 반차 4h·반반차 2h·오후 휴식 미포함). -->
+      <details class="att-rules">
+        <summary>근무 유형별 지각·조퇴 기준 (그림으로 보기)</summary>
+        <div class="att-rules-body">
+          <p class="att-rules-note">
+            색칠된 구간이 <b>근무해야 하는 시간</b>입니다. 구간 <b>시작선보다 늦게 출근하면 지각</b>,
+            <b>종료선보다 일찍 퇴근하면 조퇴</b>입니다. 빗금은 휴가로 비는 시간입니다.
+            (주간 09~18시 기준 — 반차는 점심 1시간이 겹쳐 기준이 5시간, 반반차는 2시간 이동합니다)
+          </p>
+          <svg viewBox="0 0 680 244" class="att-rules-svg" role="img"
+               aria-label="근무 유형별 출퇴근 기준 시각표 — 기본 09~18시, 오전 반차 14시 출근, 오후 반차 13시 퇴근, 오전 반반차 11시 출근, 오후 반반차 16시 퇴근">
+            <defs>
+              <pattern id="att-tl-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                <rect width="7" height="7" class="att-tl-hatch-bg"/>
+                <line x1="0" y1="0" x2="0" y2="7" class="att-tl-hatch-line"/>
+              </pattern>
+            </defs>
+            <!-- 시간축: x = 40 + (시각 - 8) × 56 -->
+            <line x1="96" y1="20" x2="96" y2="236" class="att-tl-grid"/>
+            <line x1="208" y1="20" x2="208" y2="236" class="att-tl-grid"/>
+            <line x1="320" y1="20" x2="320" y2="236" class="att-tl-grid"/>
+            <line x1="376" y1="20" x2="376" y2="236" class="att-tl-grid"/>
+            <line x1="488" y1="20" x2="488" y2="236" class="att-tl-grid"/>
+            <line x1="600" y1="20" x2="600" y2="236" class="att-tl-grid"/>
+            <text x="96" y="14" class="att-tl-hour">09시</text>
+            <text x="208" y="14" class="att-tl-hour">11시</text>
+            <text x="320" y="14" class="att-tl-hour">13시</text>
+            <text x="376" y="14" class="att-tl-hour">14시</text>
+            <text x="488" y="14" class="att-tl-hour">16시</text>
+            <text x="600" y="14" class="att-tl-hour">18시</text>
+            <!-- ① 기본 근무 09~18 -->
+            <text x="88" y="45" class="att-tl-label">기본</text>
+            <rect x="96" y="32" width="504" height="18" class="att-tl-work"/>
+            <line x1="96" y1="28" x2="96" y2="54" class="att-tl-mark"/>
+            <line x1="600" y1="28" x2="600" y2="54" class="att-tl-mark"/>
+            <!-- ② 오전 반차: 휴가 09~14, 출근 기준 14:00 -->
+            <text x="88" y="85" class="att-tl-label">오전 반차</text>
+            <rect x="96" y="72" width="280" height="18" fill="url(#att-tl-hatch)"/>
+            <rect x="376" y="72" width="224" height="18" class="att-tl-work"/>
+            <line x1="376" y1="68" x2="376" y2="94" class="att-tl-mark"/>
+            <text x="376" y="106" class="att-tl-basis">출근 기준 14:00</text>
+            <!-- ③ 오후 반차: 근무 09~13, 퇴근 기준 13:00 -->
+            <text x="88" y="125" class="att-tl-label">오후 반차</text>
+            <rect x="96" y="112" width="224" height="18" class="att-tl-work"/>
+            <rect x="320" y="112" width="280" height="18" fill="url(#att-tl-hatch)"/>
+            <line x1="320" y1="108" x2="320" y2="134" class="att-tl-mark"/>
+            <text x="320" y="146" class="att-tl-basis">퇴근 기준 13:00</text>
+            <!-- ④ 오전 반반차: 휴가 09~11, 출근 기준 11:00 -->
+            <text x="88" y="165" class="att-tl-label">오전 반반차</text>
+            <rect x="96" y="152" width="112" height="18" fill="url(#att-tl-hatch)"/>
+            <rect x="208" y="152" width="392" height="18" class="att-tl-work"/>
+            <line x1="208" y1="148" x2="208" y2="174" class="att-tl-mark"/>
+            <text x="208" y="186" class="att-tl-basis">출근 기준 11:00</text>
+            <!-- ⑤ 오후 반반차: 근무 09~16, 퇴근 기준 16:00 -->
+            <text x="88" y="205" class="att-tl-label">오후 반반차</text>
+            <rect x="96" y="192" width="392" height="18" class="att-tl-work"/>
+            <rect x="488" y="192" width="112" height="18" fill="url(#att-tl-hatch)"/>
+            <line x1="488" y1="188" x2="488" y2="214" class="att-tl-mark"/>
+            <text x="488" y="226" class="att-tl-basis">퇴근 기준 16:00</text>
+          </svg>
+          <p class="att-rules-note att-rules-shift2">
+            <b>2교대</b>는 출근 + 8시간 45분(정규 8시간 + 휴식 45분)이 정규 퇴근입니다 —
+            주간 07:00 → 15:45 · 야간 19:00 → 익일 03:45.<br/>
+            2교대 반차·반반차: <b>오전</b>(늦게 출근) = 출근기준 + 4h/2h,
+            <b>오후</b>(일찍 퇴근) = 출근기준 + (8h − 4h/2h) — 오후에는 휴식 45분이 붙지 않아
+            주간과 계산이 다릅니다. 예: 2교대(주간) 반차 오전 출근 기준 11:00 · 오후 퇴근 기준 11:00.
+          </p>
+        </div>
+      </details>
 
       <section class="att-table-wrap">
         <h3>일자별 상세</h3>
