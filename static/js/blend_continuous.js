@@ -2454,6 +2454,10 @@
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
       state.pendingContRescale = null;
       closeContRescaleModal();
+      // 닫기만 하면 초과값이 셀에 남아 다음 초과와 함께 마지막 승인 하나로 뭉뚱그려
+      // 재계산된다(배합 화면이 현장 신고로 2026-07-22 에 고친 사고). blend.js 의
+      // rescale-cancel 과 동일하게 초과 셀을 즉시 비운다.
+      clearOverContActuals();
     });
     const discardForce = $("cont-discard-force");
     if (discardForce) discardForce.addEventListener("click", openContRescaleApproveModal);

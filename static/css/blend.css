@@ -167,8 +167,8 @@
 #add-weigh-modal .add-weigh-input-row .input {
   font-size: 1.25rem; padding: 0.55rem 0.8rem; min-width: 15rem;
 }
-#add-weigh-modal .add-weigh-input-row .btn,
-#add-weigh-modal .ss-modal-footer .btn { font-size: 1.05rem; padding: 0.55rem 1.2rem; }
+/* 푸터 버튼 확대는 .ss-modal-footer .btn 공통 규칙으로 승격됐다 — 여기는 입력줄 전용. */
+#add-weigh-modal .add-weigh-input-row .btn { font-size: 1.05rem; padding: 0.55rem 1.2rem; }
 #add-weigh-modal .add-weigh-sub { font-size: 1.05rem; }
 
 /* 전자서명 패드 */
@@ -249,6 +249,14 @@
 /* 모달 푸터는 배합 actions 그리드 재사용 — 버튼 한 줄 정렬. */
 .ss-modal-footer { padding: 0.8rem 1.25rem; border-top: 1px solid var(--border, #e5e7eb); }
 .ss-modal-footer.btn-row { justify-content: flex-end; }
+/* 모달 푸터 정렬·크기 통일(2026-08-04 UI 검토) — 모달마다 제각각이던 셋을 한곳에서 잡는다.
+   ① .blend-actions 에 justify-content 가 없어 flex-start 였다 → 760px 모달에서 버튼이
+      왼쪽에 몰리고 오른쪽이 통째로 비어 '배치가 이상하다'의 직접 원인이었다.
+   ② .blend-actions 의 margin-top(0.75rem)이 푸터 padding 위에 더해져 버튼이 아래로 쏠렸다.
+   ③ 버튼이 36px 라 장갑 낀 손에 작았다. 지금까지 #add-weigh-modal 만 개별 규칙으로
+      키워 뒀는데, 그 값을 모든 모달 푸터의 기본으로 올린다. */
+.ss-modal-footer.blend-actions { margin-top: 0; justify-content: flex-end; }
+.ss-modal-footer .btn { min-height: 48px; font-size: 1.05rem; padding: 0.6rem 1.4rem; }
 /* 25,000g 초과 '그래도 증량' — 위험 의사결정임을 명확히. */
 .btn.rescale-danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }
 .btn.rescale-danger:hover { background: #991b1b; }
