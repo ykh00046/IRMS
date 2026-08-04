@@ -235,11 +235,22 @@
 .blend-draft-notice-list { margin: 2px 0 6px; padding-left: 1.2em; }
 .blend-draft-notice-list li { margin: 2px 0; font-variant-numeric: tabular-nums; }
 
-/* 미등록 LOT '사유 적고 진행' 입력칸 + ERP 책임자 LOT 추가 상자 — 배합·다중 계량 공용
-   (인라인 style/블록에서 이동 2026-07-31). 라벨 사이 간격은 인라인 margin-top 대체. */
+/* LOT 확인 창의 보조 상자(사유 · 책임자 인증 · 기록된 LOT 후보) — 배합·다중 계량 공용.
+   2026-08-04: 마크업에서 .ss-modal-body **안**으로 옮겼다(전에는 body 의 형제라 모달
+   좌우 여백 밖으로 삐져나와 테두리에 붙었다 — CSS 추가 없이 해결). */
 .lot-override-box { margin: 8px 0 4px; }
 .lot-override-box[hidden] { display: none; }
-.lot-override-box .filter-label:not(:first-child) { margin-top: 6px; }
+/* 라벨-입력 묶음 간격 — 승인 모달이 쓰는 .blend-field(flex column) 패턴 그대로.
+   예전 `.filter-label:not(:first-child){margin-top:6px}` 는 인라인 요소라 무동작이었다. */
+.lot-override-box .blend-field + .blend-field { margin-top: 6px; }
+/* 확인 창 안의 기록된 LOT 후보 목록 — 입력칸 아래 띄우는 용도가 아니라 본문 흐름에
+   놓는다. 항목 스타일(.lot-suggest-item / .lot-suggest-total)은 그대로 재사용. */
+.lot-suggest--inline {
+  position: static;
+  margin-top: 0;
+  max-height: 168px;
+  box-shadow: none;
+}
 
 /* 계량 순서 안내 — 다음에 계량할 행 강조(blend.html 인라인 <style>에서 이동 2026-07-31) */
 .blend-table tbody tr.row-next > td { background: #eff6ff; }

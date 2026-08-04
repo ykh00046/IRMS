@@ -623,6 +623,37 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         """
     )
 
+    # 앞 단계 배합 기록에 없는 반제품 LOT 로 진행한 건(2026-08-04 차단 해제).
+    # 예전에는 저장을 막고 사유 입력을 요구했다 — 1차 배합을 만들고 곧바로 2차에 투입하는
+    # 정당한 경우에도 매번 걸려, 작업자가 사유란에 아무 글자나 치고 넘어가면서 통제가
+    # 형해화됐다. 지금은 막지 않고 가벼운 확인 창만 띄운다. 대신 **진행한 사실 자체를
+    # 여기에 구조화해 남긴다** — 사유가 비어 있어도 행은 반드시 생긴다. 그래야 나중에
+    # "그 LOT 이 결국 생겼는지" 자동 대사(이 표 × blend_records.product_lot)가 가능하다.
+    #   acknowledged: 작업자가 확인 창의 '계속' 을 눌렀는가(0 = 창을 못 본 경로로 저장됨).
+    # 추가 전용(additive) 테이블 — 기존 데이터·컬럼에 영향 없음.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_lot_acks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_id INTEGER NOT NULL,
+            material_name TEXT NOT NULL,
+            material_lot TEXT NOT NULL,
+            reason TEXT,
+            acknowledged INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_lot_acks_record "
+        "ON blend_lot_acks(record_id)"
+    )
+    # 대사(reconciliation) 조회축 — (자재명, LOT) 로 blend_records 와 맞춰본다.
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_lot_acks_pair "
+        "ON blend_lot_acks(material_name, material_lot)"
+    )
+
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:
     if has_migration(connection, "standardize_units_to_grams"):

@@ -143,15 +143,24 @@ class BlendDetailBody(BaseModel):
 
 
 class LotOverrideBody(BaseModel):
-    """미등록 반제품 LOT '사유 적고 진행' 승인 한 건(서버 백업 검증용).
+    """앞 단계 배합 기록에 없는 반제품 LOT 로 '확인하고 진행' 한 건.
 
-    클라이언트는 미등록 LOT 를 사유 입력으로 통과시킬 수 있으나, 네트워크 장애 시
-    fail-open 우회가 가능해 서버가 같은 조건으로 재확인한다. 이 모델은 그 사유를
-    구조화해 전달한다.
+    2026-08-04 이전에는 사유가 **필수**였다(사유 없으면 저장 400). 1차 배합을 만들고
+    곧바로 2차에 투입하는 정당한 경우에도 매번 걸려, 작업자가 사유란에 아무 글자나
+    치고 넘어가면서 통제가 형해화됐다 — 지금은 막지 않고 확인 창만 띄운다.
+
+    따라서 reason 은 **선택**(빈 문자열 허용)이다. 대신 acknowledged 로 "작업자가
+    확인 창을 보고 계속을 눌렀다"는 사실을 남긴다. 사유가 비어도 이 항목이 존재하는
+    것 자체가 신호다 — 서버는 이를 blend_lot_acks 에 구조화 저장해 나중에 "그 LOT 이
+    결국 생겼는지" 자동 대사할 수 있게 한다.
     """
     material_name: str = Field(min_length=1, max_length=200)
     material_lot: str = Field(min_length=1, max_length=100)
-    reason: str = Field(min_length=1, max_length=500)
+    # 사유는 선택 — 빈 값이어도 '확인하고 진행함' 사실은 남는다.
+    reason: str = Field(default="", max_length=500)
+    # 작업자가 확인 창의 '계속' 을 눌렀는가. 화면을 거치지 않은 경로(저장 시점 일괄
+    # 수집·서버 단독 감지)는 False 로 남겨 대사 화면이 두 경우를 구분할 수 있게 한다.
+    acknowledged: bool = True
 
 
 class BlendCreateBody(BaseModel):
@@ -170,8 +179,9 @@ class BlendCreateBody(BaseModel):
     # 저울 연동 중 '수동 입력' 토글로 계량값을 직접 입력했는가(추적성 — 기록에 표시).
     manual_entry: bool = False
     details: list[BlendDetailBody] = Field(default_factory=list)
-    # 미등록 LOT '사유 적고 진행' 승인을 서버 백업 검증용으로 구조화 전달(None=미전송).
-    # 클라이언트 검증이 네트워크 장애로 우회(fail-open)될 수 있어 서버가 재확인한다.
+    # 앞 단계 기록에 없는 반제품 LOT '확인하고 진행' 기록(None=미전송). 저장을 막지는
+    # 않는다 — 서버가 스스로 미등록 LOT 를 감지해 blend_lot_acks 에 남기고, 이 목록은
+    # 거기에 사유·확인여부를 채워 넣는 용도다(대사용 데이터 보강).
     lot_overrides: list[LotOverrideBody] | None = Field(default=None)
     # 증량(rescale) 이벤트 — {before_total, after_total, approval_id?, absence_reason?, worker_confirmed?}.
     # None/빈 리스트면 미증량(기존 동작). 최대 2건 — 각 건마다 책임자 승인(approval_id) 또는
@@ -212,7 +222,8 @@ class BlendContinuousBody(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
     worker_sign: str | None = Field(default=None, max_length=300_000)  # 전 로트 동일 서명
-    # 미등록 LOT '사유 적고 진행' 승인 — 전 로트 공통 비고처럼 전 로트에 동일 적용.
+    # 앞 단계 기록에 없는 반제품 LOT '확인하고 진행' 기록 — 전 로트 공통 비고처럼
+    # 전 로트에 동일 적용(차단 아님, 대사용 사유·확인여부 보강).
     lot_overrides: list[LotOverrideBody] | None = Field(default=None)
     lots: list[list[BlendDetailBody]] = Field(default_factory=list)
     # 로트별 총량 오버라이드(초과 계량 증량). 미전송·전부 null 이면 기존 동작(total_amount).

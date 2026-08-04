@@ -1507,7 +1507,7 @@ def test_bulk_create_without_lots_still_works():
     assert all(d["material_lot"] in (None, "") for d in rec["details"])
 
 
-# ── 미등록 자가 반제품 LOT 서버 백업 검증(unregistered_product_lots) ──
+# ── 앞 단계 기록에 없는 자가 반제품 LOT: 저장 허용 + 대사용 기록(collect_lot_acks) ──
 def _seed_own_product(client, csrf, product, worker):
     """product 를 자가 반제품으로 만든다 — completed 배합 기록 1건 생성 → (id, product_lot).
 
@@ -1545,8 +1545,26 @@ def test_own_product_registered_lot_saves():
     assert res.status_code == 200, res.text
 
 
-def test_own_product_unregistered_lot_blocked_400():
-    """(b) 자가 반제품 행에 미등록 LOT → 400 + name/LOT 노출."""
+def _lot_acks(record_id):
+    """blend_lot_acks 에 남은 대사용 행 조회 → dict 목록."""
+    from src.db import get_connection
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT material_name, material_lot, reason, acknowledged "
+            "FROM blend_lot_acks WHERE record_id = ? ORDER BY id",
+            (record_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def test_own_product_unregistered_lot_saves_without_reason():
+    """(b) 앞 단계 기록에 없는 반제품 LOT → **저장이 막히지 않는다**(2026-08-04 차단 해제).
+
+    예전에는 400 + 사유 요구였다. 1차 배합을 만들고 곧바로 2차에 투입하는 정당한 경우에도
+    매번 걸려서, 작업자가 사유란에 아무 글자나 치고 넘어가며 통제가 형해화됐다.
+    대신 진행한 사실이 blend_lot_acks 에 구조화되어 남아야 한다 — lot_overrides 를 아예
+    보내지 않아도(확인 창을 거치지 않은 경로) 서버가 스스로 감지해 기록한다.
+    """
     client, csrf = _mgmt_client()
     import uuid as _uuid
     suffix = _uuid.uuid4().hex[:4]
@@ -1560,14 +1578,47 @@ def test_own_product_unregistered_lot_blocked_400():
         "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
                      "actual_amount": 50, "material_lot": bad_lot}],
     }, headers=csrf())
-    assert res.status_code == 400, res.text
-    detail = res.json()["detail"]
-    assert "등록되지 않은 LOT" in detail
-    assert f"{product}/{bad_lot}" in detail
+    assert res.status_code == 200, res.text
+    acks = _lot_acks(res.json()["id"])
+    assert len(acks) == 1, acks
+    assert acks[0]["material_name"] == product
+    assert acks[0]["material_lot"] == bad_lot
+    assert (acks[0]["reason"] or "") == ""
+    # 확인 창을 거치지 않은 경로 → acknowledged=0 으로 구분된다.
+    assert acks[0]["acknowledged"] == 0
+
+
+def test_unregistered_lot_acknowledged_without_reason_is_recorded():
+    """사유가 **빈 값**이어도 '작업자가 확인하고 진행함' 사실이 남는다.
+
+    차단 해제의 핵심 제약: 사유가 선택이 되는 순간 사유를 필터로 쓰면 대사할 신호가
+    통째로 사라진다. reason="" + acknowledged=True 조합이 온전히 저장돼야 한다.
+    """
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNP{suffix}"
+    worker = "LOT작업"
+    _seed_own_product(client, csrf, product, worker)
+    bad_lot = "절대없는LOT"
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": bad_lot}],
+        # 사유 없이(빈 문자열) 확인만 하고 진행 — 스키마가 이걸 거부하면 안 된다.
+        "lot_overrides": [{"material_name": product, "material_lot": bad_lot,
+                           "reason": "", "acknowledged": True}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    acks = _lot_acks(res.json()["id"])
+    assert len(acks) == 1, acks
+    assert (acks[0]["reason"] or "") == ""
+    assert acks[0]["acknowledged"] == 1, "사유가 없어도 '확인하고 진행함' 은 남아야 한다"
 
 
 def test_own_product_unregistered_lot_with_override_saves():
-    """(c) 자가 반제품 미등록 LOT + matching lot_overrides(사유) → 저장 성공."""
+    """(c) 앞 단계 기록에 없는 LOT + 사유(lot_overrides) → 저장 성공 + 사유가 대사에 남는다."""
     client, csrf = _mgmt_client()
     import uuid as _uuid
     suffix = _uuid.uuid4().hex[:4]
@@ -1584,6 +1635,33 @@ def test_own_product_unregistered_lot_with_override_saves():
                            "reason": "1차 배합 종이 기록만 있음"}],
     }, headers=csrf())
     assert res.status_code == 200, res.text
+    acks = _lot_acks(res.json()["id"])
+    assert len(acks) == 1, acks
+    assert acks[0]["reason"] == "1차 배합 종이 기록만 있음"
+    assert acks[0]["acknowledged"] == 1
+
+
+def test_registered_lot_leaves_no_ack_row():
+    """등록된 LOT 은 대사 대상이 아니다 — 행이 생기지 않는다(대사 화면 노이즈 방지).
+
+    클라이언트가 옛 확인 기록을 들고 있어도(그 사이 1차가 저장됨) 자기 치유된다.
+    """
+    client, csrf = _mgmt_client()
+    import uuid as _uuid
+    suffix = _uuid.uuid4().hex[:4]
+    product = f"OWNP{suffix}"
+    worker = "LOT작업"
+    _pid, plot = _seed_own_product(client, csrf, product, worker)
+    res = client.post("/api/blend/records", json={
+        "product_name": f"FINAL{suffix}", "worker": worker, "work_date": "2026-07-02",
+        "total_amount": 50,
+        "details": [{"material_name": product, "ratio": 100, "theory_amount": 50,
+                     "actual_amount": 50, "material_lot": plot}],
+        "lot_overrides": [{"material_name": product, "material_lot": plot,
+                           "reason": "확인함", "acknowledged": True}],
+    }, headers=csrf())
+    assert res.status_code == 200, res.text
+    assert _lot_acks(res.json()["id"]) == []
 
 
 def test_raw_material_lot_unaffected():
@@ -1974,10 +2052,12 @@ def test_blend_update_benign_metadata_edit_still_works():
     assert j["product_lot"] == rec["product_lot"]  # LOT 보존
 
 
-# ── GAP-1: 미등록 LOT 진행 사유가 감사에 구조화 보존된다 ─────────────────────────
+# ── GAP-1: 앞 단계 기록에 없는 LOT 진행이 감사에 구조화 보존된다 ────────────────
 def test_blend_create_lot_override_persisted_in_audit():
-    """미등록 자가 반제품 LOT + 사유(lot_overrides)로 진행하면, 그 사유가
-    blend_record_create 감사 details 에 구조화되어 남는다(GAP-1 belt-and-braces)."""
+    """앞 단계 기록에 없는 LOT + 사유로 진행하면, 그 항목이 blend_record_create 감사
+    details["lot_acks"] 에 구조화되어 남는다(GAP-1 belt-and-braces).
+
+    blend_lot_acks 가 대사의 1차 소스이고, 감사는 기록 삭제·수정에도 남는 원본 사본이다."""
     import json as _json
     import uuid as _uuid
 
@@ -2007,11 +2087,12 @@ def test_blend_create_lot_override_persisted_in_audit():
         ).fetchone()
     assert row is not None
     details = _json.loads(row["details_json"])
-    assert "lot_overrides" in details
-    ov = details["lot_overrides"][0]
+    assert "lot_acks" in details
+    ov = details["lot_acks"][0]
     assert ov["material_name"] == product
     assert ov["material_lot"] == bad_lot
     assert ov["reason"] == "1차 종이 기록만 있음"
+    assert ov["acknowledged"] is True
 
 
 # ── GAP-4: DHR 산출물 출력·다운로드가 감사된다 ─────────────────────────────────

@@ -411,11 +411,12 @@ def build_router() -> APIRouter:
         lot: str = Query(default=""),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """반제품 원료 LOT 미등록 차단용 — 주어진 제품명/LOT 의 완료 기록 존재 여부.
+        """반제품 원료 LOT 확인용 — 주어진 제품명/LOT 의 완료 기록 존재 여부.
 
         2단 제조(1차 중간체 → 2차 최종)에서 2차 배합의 원료 행(=1차 반제품명) 자재 LOT 칸에
-        입력된 값이 실제 1차 배합의 완료(completed) 기록에 존재하는 LOT 인지 검증하여,
-        등록되지 않은 LOT 의 입력을 막는 데 쓴다. 양쪽 값은 strip 후 정확히 일치하는
+        입력된 값이 실제 1차 배합의 완료(completed) 기록에 존재하는 LOT 인지 확인한다.
+        **차단용이 아니다**(2026-08-04) — 화면은 없을 때 가벼운 확인 창만 띄우고, 진행하면
+        서버가 blend_lot_acks 에 대사용 기록을 남긴다. 양쪽 값은 strip 후 정확히 일치하는
         product_name·product_lot 이며 status='completed' 인 행이 있어야 exists=true.
 
         name: 검증할 제품(반제품)명(빈 값 → exists=false).
@@ -892,19 +893,13 @@ def build_router() -> APIRouter:
                 detail="자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
             )
 
-        # 미등록 자가 반제품 LOT 서버 백업 검증 — 클라이언트 fail-open 구멍 방지.
-        # 사유(lot_overrides) 전달 시 통과, 아니면 차단.
-        unregistered = blend_service.unregistered_product_lots(
+        # 앞 단계 배합 기록에 없는 반제품 LOT — **저장을 막지 않는다**(2026-08-04).
+        # 1차를 만들고 곧바로 2차에 투입하는 정당한 경우에도 매번 400 이 나서 작업자가
+        # 사유란에 아무 글자나 치고 넘어갔다(통제의 형해화). 지금은 서버가 스스로 감지해
+        # blend_lot_acks 에 대사용 기록만 남긴다 — 저장 성공 후(record_id 확보 뒤) 기록.
+        lot_acks = blend_service.collect_lot_acks(
             connection, details, body.lot_overrides
         )
-        if unregistered:
-            shown = unregistered[:5]
-            suffix = " …" if len(unregistered) > 5 else ""
-            raise HTTPException(
-                status_code=400,
-                detail="등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
-                + ", ".join(shown) + suffix,
-            )
 
         # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
         # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
@@ -978,19 +973,18 @@ def build_router() -> APIRouter:
                 target_label=record["product_lot"],
                 details={"reason": (body.manual_absence_reason or "").strip()[:300]},
             )
+        # 앞 단계 기록에 없는 LOT 진행 — 대사용 구조화 기록(사유가 비어도 반드시 남는다).
+        blend_service.record_lot_acks(connection, record_id, lot_acks, utc_now_text())
         create_audit_details: dict[str, Any] = {
             "product_name": body.product_name,
             "total_amount": body.total_amount,
             "items": len(body.details),
             "manual_entry": body.manual_entry,
         }
-        # 미등록 LOT '진행 사유'(lot_overrides)를 감사에도 구조화 보존한다(GAP-1 belt-and-braces).
-        # 사유 텍스트는 기록 비고(note)에도 남지만, 클라이언트 의존이라 서버가 받은 구조화 사유를
-        # 감사 원본으로 함께 남겨 일탈(사유부 예외)의 추적성을 보장한다.
-        if body.lot_overrides:
-            create_audit_details["lot_overrides"] = [
-                ov.model_dump() for ov in body.lot_overrides
-            ]
+        # 감사에도 같은 항목을 구조화 보존한다(GAP-1 belt-and-braces). blend_lot_acks 가
+        # 대사의 1차 소스이고, 감사는 삭제·수정에도 남는 원본 사본이다.
+        if lot_acks:
+            create_audit_details["lot_acks"] = lot_acks
         write_audit_log(
             connection,
             action="blend_record_create",
@@ -1096,18 +1090,10 @@ def build_router() -> APIRouter:
                 status_code=400,
                 detail="자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
             )
-        # 미등록 자가 반제품 LOT 서버 백업 검증(create 와 동일 — 사유 전달 시 통과).
-        unregistered = blend_service.unregistered_product_lots(
+        # 앞 단계 기록에 없는 반제품 LOT — create 와 동일하게 막지 않고 대사용 기록만.
+        lot_acks = blend_service.collect_lot_acks(
             connection, details, body.lot_overrides
         )
-        if unregistered:
-            shown = unregistered[:5]
-            suffix = " …" if len(unregistered) > 5 else ""
-            raise HTTPException(
-                status_code=400,
-                detail="등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
-                + ", ".join(shown) + suffix,
-            )
         # 자재별 허용 편차 — 서버 재산출 상세 기준. 편차는 레시피(recipe_id)에서 결정, 없으면 0.05g.
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         offenders = blend_service.weighing_tolerance_violations(
@@ -1171,6 +1157,13 @@ def build_router() -> APIRouter:
         after_rows = _terse_rows(updated)
         if after_rows != before_rows:
             after_summary["rows"] = after_rows
+        # 대사용 기록도 수정 후 상태로 다시 쓴다(replace) — 수정으로 LOT 가 바뀌면
+        # 옛 대사 대상이 유령으로 남는다.
+        blend_service.record_lot_acks(
+            connection, record_id, lot_acks, utc_now_text(), replace=True
+        )
+        if lot_acks:
+            after_summary["lot_acks"] = lot_acks
         write_audit_log(
             connection,
             action="blend_record_update",
@@ -1366,6 +1359,8 @@ def build_router() -> APIRouter:
         # 저장 전 전 로트 도출·편차검사 (원자성: 하나라도 실패하면 중단, 저장 없음)
         # lot_totals 가 있으면 그 로트의 총량 오버라이드를 사용(초과 계량 증량).
         derived_lots: list[list[dict[str, Any]]] = []
+        # 로트별 '앞 단계 기록에 없는 LOT' 대사 항목 — derived_lots 와 평행(인덱스 j).
+        lot_acks_per_lot: list[list[dict[str, Any]]] = []
         lot_totals = body.lot_totals or []
         for lot_no, lot in enumerate(body.lots, start=1):
             lot_total = lot_totals[lot_no - 1] if lot_totals and lot_totals[lot_no - 1] else body.total_amount
@@ -1396,18 +1391,11 @@ def build_router() -> APIRouter:
                     status_code=400,
                     detail=f"로트 {lot_no}: 자재 LOT 를 입력하세요: " + ", ".join(shown) + suffix,
                 )
-            # 미등록 자가 반제품 LOT 서버 백업 검증(단건과 동일 규칙, 사유 전달 시 통과).
-            unregistered = blend_service.unregistered_product_lots(
-                connection, derived, body.lot_overrides
+            # 앞 단계 기록에 없는 반제품 LOT — 단건과 동일하게 막지 않고 대사용 기록만.
+            # 로트별로 모아 두었다가 저장 후 각 record_id 에 남긴다.
+            lot_acks_per_lot.append(
+                blend_service.collect_lot_acks(connection, derived, body.lot_overrides)
             )
-            if unregistered:
-                shown = unregistered[:5]
-                suffix = " …" if len(unregistered) > 5 else ""
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"로트 {lot_no}: 등록되지 않은 LOT 입니다 (사유를 남기고 진행하거나 LOT 를 확인하세요): "
-                    + ", ".join(shown) + suffix,
-                )
             offenders = blend_service.weighing_tolerance_violations(derived, tolerance_g=tolerance)
             if offenders:
                 raise HTTPException(
@@ -1496,15 +1484,21 @@ def build_router() -> APIRouter:
                     "records": len(ids),
                 },
             )
+        # 앞 단계 기록에 없는 LOT 진행 — 로트별 record_id 에 대사용 기록(사유가 비어도 남는다).
+        saved_at = utc_now_text()
+        all_lot_acks: list[dict[str, Any]] = []
+        for lot_idx, acks in enumerate(lot_acks_per_lot):
+            if not acks or lot_idx >= len(ids):
+                continue
+            blend_service.record_lot_acks(connection, ids[lot_idx], acks, saved_at)
+            all_lot_acks.extend(acks)
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
         continuous_audit_details: dict[str, Any] = {
             "recipe_id": body.recipe_id, "count": len(ids), "total_amount": body.total_amount,
         }
-        # 미등록 LOT '진행 사유'(lot_overrides)를 감사에도 구조화 보존(GAP-1 belt-and-braces).
-        if body.lot_overrides:
-            continuous_audit_details["lot_overrides"] = [
-                ov.model_dump() for ov in body.lot_overrides
-            ]
+        # 감사에도 같은 항목을 구조화 보존(GAP-1 belt-and-braces).
+        if all_lot_acks:
+            continuous_audit_details["lot_acks"] = all_lot_acks
         write_audit_log(
             connection,
             action="blend_record_continuous_create",

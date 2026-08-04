@@ -1,44 +1,73 @@
 {# ── LOT 검사 모달(공용 partial) ─────────────────────────────────
    배합(단건)·다중 계량 두 화면이 각자 4개씩 들고 있던 LOT 검사 모달을 하나로 합쳤다.
-   두 케이스(미등록 반제품 LOT 차단 / ERP 원료 LOT 경고)를 '하나의 모달 요소'가 모두
-   구동한다 — 케이스에 따라 사유칸(reason) 또는 책임자 인증칸(auth) 만 노출한다.
-   blend_lot_modal.js 가 open 시 케이스를 판별해 footer 버튼·보조칸 표시를 바꾼다.
+   두 케이스(앞 단계 배합 기록에 없는 반제품 LOT / ERP 원재료 목록·재고 경고)를
+   '하나의 모달 요소'가 모두 구동한다 — 케이스에 따라 사유칸(reason) 또는 책임자
+   인증칸(auth) 만 노출한다. blend_lot_modal.js 가 open 시 케이스를 판별한다.
 
    포함 쪽에서 lot_modal_prefix 를 넘긴다 — 배합은 ""(빈), 다중 계량은 "cont-".
    그래야 두 화면 모두 기존에 쓰던 element id(lot-invalid-modal / cont-lot-invalid-modal)를
    그대로 유지한다(JS·CSS 가 id/클래스로 이미 타겟). hidden 속성 토글로만 표시/숨김.
 
-   두 보조칸(reason, auth)은 같은 모달 안에 함께 두고 케이스에 따라 한쪽만 보인다.
-   footer 의 세 버튼도 항상 렌더하되, open 시 케이스에 맞게 표시/숨김한다.
+   2026-08-04 개편:
+    - 반제품 LOT 은 더 이상 **차단이 아니다**(사유 필수 → 선택, 저장 허용). 두 케이스가
+      모두 '경고'가 되었으므로, 유일하고 충분한 구분자는 제목의 '어디에 없는지'다.
+      제목은 JS 가 케이스·사유별로 갈아끼운다(정적 "등록되지 않은 LOT" 폐기).
+    - 보조칸(사유·인증·LOT 후보 목록)을 모두 **본문(.ss-modal-body) 안**으로 옮겼다.
+      전에는 body 의 형제라 모달 좌우 여백 밖으로 삐져나와 테두리에 붙었다.
+    - 라벨 간격은 .blend-field(flex column) — 승인 모달이 쓰는 그 패턴. 예전
+      `.filter-label:not(:first-child){margin-top}` 는 인라인 요소라 무동작이었다.
+    - footer 버튼 이름을 '결과'로 바꿨다. 파괴적 동작(값 삭제)은 accent 자리에 두지
+      않는다 — accent 는 비파괴 '계속'.
 #}
 {% set p = lot_modal_prefix or "" %}
 <div class="ss-modal-overlay" id="{{ p }}lot-invalid-modal" hidden>
-  <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="{{ p }}lot-invalid-modal-title">
-    <div class="ss-modal-header"><h3 id="{{ p }}lot-invalid-modal-title">등록되지 않은 LOT</h3></div>
-    <div class="ss-modal-body" id="{{ p }}lot-invalid-modal-body"></div>
+  <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="{{ p }}lot-invalid-modal-title">
+    <div class="ss-modal-header"><h3 id="{{ p }}lot-invalid-modal-title">확인이 필요한 LOT</h3></div>
+    <div class="ss-modal-body">
+      {# 자재명 — 안내 문장과 섞이지 않게 본문 첫 줄에 크게(추가 계량 모달과 같은 클래스). #}
+      <p class="add-weigh-material" id="{{ p }}lot-invalid-material"></p>
+      <div id="{{ p }}lot-invalid-modal-body"></div>
 
-    {# 케이스 A — 미등록 반제품 LOT: 사유 입력 후 진행(안전밸브). 차단 케이스에서만 노출. #}
-    <div class="lot-override-box" id="{{ p }}lot-override-box" hidden>
-      <label class="filter-label" for="{{ p }}lot-override-reason">진행 사유 (책임자 확인용)</label>
-      <textarea class="input" id="{{ p }}lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
-    </div>
+      {# 이 자재의 기록된 LOT 후보 — 이미 브라우저에 로드돼 있는 목록(state.lotSuggest).
+         창을 닫고 칸을 다시 누르지 않아도 여기서 바로 고르면 오타가 이 창 안에서 끝난다. #}
+      <div class="lot-override-box" id="{{ p }}lot-invalid-suggest-box" hidden>
+        <span class="filter-label">이 자재의 기록된 LOT — 누르면 바로 채웁니다</span>
+        <div class="lot-suggest lot-suggest--inline" id="{{ p }}lot-invalid-suggest"></div>
+      </div>
 
-    {# 케이스 B — ERP 원료 LOT 경고: 책임자 즉석 인증으로 수동 LOT 추가. 경고 케이스에서만 노출. #}
-    <div class="lot-override-box" id="{{ p }}erp-lot-add-box" hidden>
-      <label class="filter-label" for="{{ p }}erp-add-username">책임자 이름</label>
-      <input class="input" id="{{ p }}erp-add-username" autocomplete="off" />
-      <label class="filter-label" for="{{ p }}erp-add-password">비밀번호</label>
-      <input class="input" id="{{ p }}erp-add-password" type="password" autocomplete="off" />
-      <label class="filter-label" for="{{ p }}erp-add-note">메모 (선택)</label>
-      <input class="input" id="{{ p }}erp-add-note" />
-      <p class="login-error" id="{{ p }}erp-lot-add-error" hidden></p>
+      {# 케이스 A — 앞 단계 기록에 없는 반제품 LOT: 사유는 **선택**(안 적어도 진행). #}
+      <div class="lot-override-box" id="{{ p }}lot-override-box" hidden>
+        <div class="blend-field">
+          <label class="filter-label" for="{{ p }}lot-override-reason">사유 (선택 — 안 적어도 진행됩니다)</label>
+          <textarea class="input" id="{{ p }}lot-override-reason" rows="2" placeholder="예: 1차 배합 저장 전 · 종이 기록만 있음"></textarea>
+        </div>
+      </div>
+
+      {# 케이스 B — ERP 원재료 LOT 경고: 책임자 즉석 인증으로 수동 LOT 추가. #}
+      <div class="lot-override-box" id="{{ p }}erp-lot-add-box" hidden>
+        <div class="blend-field">
+          <label class="filter-label" for="{{ p }}erp-add-username">책임자 이름</label>
+          <input class="input" id="{{ p }}erp-add-username" autocomplete="off" />
+        </div>
+        <div class="blend-field">
+          <label class="filter-label" for="{{ p }}erp-add-password">비밀번호</label>
+          <input class="input" id="{{ p }}erp-add-password" type="password" autocomplete="off" />
+        </div>
+        <div class="blend-field">
+          <label class="filter-label" for="{{ p }}erp-add-note">메모 (선택)</label>
+          <input class="input" id="{{ p }}erp-add-note" />
+        </div>
+        <p class="login-error" id="{{ p }}erp-lot-add-error" hidden></p>
+      </div>
     </div>
 
     <div class="ss-modal-footer blend-actions">
-      <button class="btn" id="{{ p }}lot-invalid-proceed" type="button">사유 적고 진행</button>
+      {# 파괴적(입력값 삭제) — accent 아님. #}
+      <button class="btn" id="{{ p }}lot-invalid-clear" type="button">LOT 지우고 다시 입력</button>
       <button class="btn" id="{{ p }}erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
       <button class="btn accent" id="{{ p }}erp-lot-add-submit" type="button" hidden>추가</button>
-      <button class="btn accent" id="{{ p }}lot-invalid-confirm" type="button">다시 확인</button>
+      {# 주 버튼 — 열릴 때 여기로 포커스가 온다(오버레이 뒤 입력 방지). #}
+      <button class="btn accent" id="{{ p }}lot-invalid-confirm" type="button">확인했습니다 · 계속</button>
     </div>
   </div>
 </div>

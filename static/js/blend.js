@@ -66,6 +66,11 @@
     csrfToken,
   });
 
+  // LOT 등록 여부 조회 캐시(공용) — 부정 결과에만 TTL. 예전에는 state.lotChecked 로
+  // 영구 캐시해서, 모달이 시킨 대로 1차 배합을 저장하고 돌아와 같은 LOT 을 다시
+  // 입력해도 계속 막혔다(새로고침 전에는 풀리지 않음). 저장 성공 시에도 clear().
+  const lotCheckCache = window.IRMS.blendLotModal.createCache({});
+
   const state = { recipes: [], current: null, items: [], viscProducts: [], workers: [], scaleReady: false, sessionWorker: "", anchorIndex: -1, prevAnchorActual: "", toleranceG: TOLERANCE_G, _anchorRecomputing: false,
     // 이 창이 쓰고 있는 임시저장 슬롯 id(최대 3칸 중 하나). 같은 레시피로 이어서 작업하는
     // 동안은 이 슬롯만 갱신한다. 저장 완료·복구 실패 시 null 로 되돌린다.
@@ -74,12 +79,12 @@
     // 자재명이 "배합 기록이 있는 반제품명"과 일치하면 그 제품의 최근 LOT 을 제안.
     // 레시피 선택 시 1회 호출(실패는 조용히 무시 — 제안 없이 기존 동작 유지).
     lotSuggest: {},
-    // 미등록 LOT 차단 — (자재명\u0000LOT) → true(등록됨)/false(미등록) 캐시.
-    // 동일 (name, lot) 조합의 중복 조회를 막기 위해 한 번 판정하면 보관한다.
-    // 레시피가 바뀌면 lotSuggest 와 함께 새로 채워지므로 여기서는 만료 처리하지 않는다.
-    lotChecked: {},
-    // 미등록 LOT '사유 입력 후 진행' 승인 — (자재명\u0000LOT) → 사유. 승인된 조합은
-    // 검증·저장에서 통과시키고, 사유는 저장 시 비고에 남겨 책임자가 사후 확인한다.
+    // (LOT 등록 여부 캐시는 모듈 상단 lotCheckCache 로 옮겼다 — 부정 결과에 TTL 이
+    //  필요해서다. 예전 state.lotChecked 는 만료가 없어, 모달이 시킨 대로 1차 배합을
+    //  저장하고 돌아와도 같은 LOT 이 새로고침 전까지 계속 막혔다.)
+    // 앞 단계 기록에 없는 LOT '확인하고 진행' — (자재명\u0000LOT) → 사유(빈 값 가능).
+    // **키의 존재 자체**가 작업자가 확인 창에서 '계속' 을 눌렀다는 뜻이다(사유는 선택).
+    // 저장 시 비고 + lot_overrides payload 로 나가 서버가 대사용으로 보관한다.
     // 레시피 변경·저장 시 초기화.
     lotOverrides: {},
     // 초과 계량 증량(rescale). 기준 자재 레시피에서 총량이 기준 자재 실측값으로
@@ -1408,27 +1413,29 @@
     input._lotBox.hidden = true;
   }
 
-  // ── 미등록 LOT 차단(반제품 자재만) ─────────────────────────────
-  // 제안(state.lotSuggest)이 있는 자재 = 완료 배합 기록이 있는 반제품. 이 자재의 LOT 칸은
-  // 반드시 그 반제품의 실제 product_lot 중 하나여야 한다. 그렇지 않으면(직접 타이핑 오타 등)
-  // #lot-invalid-modal 로 막고 값을 비운다. 일반 자재(제안 없음)는 100% 기존 동작 유지.
+  // ── 앞 단계 기록에 없는 반제품 LOT 확인(차단 아님) ──────────────
+  // 제안(state.lotSuggest)이 있는 자재 = 완료 배합 기록이 있는 반제품. 이 자재의 LOT 칸이
+  // 그 반제품의 실제 product_lot 이 아니면 #lot-invalid-modal 로 **확인만** 받는다
+  // (2026-08-04 차단 해제 — 반제품을 만들고 곧바로 2차에 투입하는 정당한 경우에도 매번
+  //  걸려서 작업자가 사유란에 아무 글자나 치고 넘어갔다. 통제가 형해화되고 비용은 현장이
+  //  다 치렀다). 일반 자재(제안 없음)는 100% 기존 동작 유지.
   //
   // 판정 우선순위: 빈 값(공백 trim) → 통과 / 제안 목록에 있는 값 → 통과 /
-  // 그 외 → 서버 /blend/product-lot-exists 로 확인(캐시 state.lotChecked[name\u0000lot] 사용).
+  // 그 외 → 서버 /blend/product-lot-exists 로 확인(공용 lotCheckCache — '없음'만 TTL 만료).
   // 네트워크 오류는 통과(loadLotSuggest 와 동일한 fail-open 철학 — 현장 입력을 막지 않는다).
   async function checkLotRegistered(name, lot) {
     if (!lot) return true;
     const lots = (state.lotSuggest && state.lotSuggest[name]) || [];
     // 제안 항목이 이제 {lot, total} 객체이므로 .lot 값으로 비교한다(즉시 통과 판정).
     if (lots.some((e) => String(e && e.lot) === lot)) return true;
-    const key = name + "\u0000" + lot;
-    if (Object.prototype.hasOwnProperty.call(state.lotChecked, key)) {
-      return !!state.lotChecked[key];
-    }
+    const key = lotCheckCache.key(name, lot);
+    const cached = lotCheckCache.get(key);
+    // undefined = 미지 또는 '없음' 캐시 만료 → 서버에 다시 물어본다(B-1).
+    if (cached !== undefined) return cached;
     try {
       const data = await request("/blend/product-lot-exists", { query: { name, lot } });
       const ok = Boolean(data && data.exists);
-      state.lotChecked[key] = ok;
+      lotCheckCache.set(key, ok);
       return ok;
     } catch (_e) {
       // 조회 실패 — 통과(기존 동작 유지). loadLotSuggest 의 fail-open 철학과 동일.
@@ -1436,7 +1443,9 @@
     }
   }
 
-  // .blend-lot 입력칸 하나 검증 — 미등록이면 모달을 띄우고 값·state 를 비운 뒤 다시 포커스.
+  // .blend-lot 입력칸 하나 검증 — 앞 단계 기록에 없으면 확인 창 + 주황 테두리(잔존 표시).
+  // 값은 지우지 않는다(ERP 경고와 같은 취급). 잔존 표시를 반제품 쪽에도 붙이는 이유:
+  // 차단이 없어졌으므로 모달을 닫은 뒤에도 "이 칸은 확인된 예외"라는 흔적이 더 필요하다.
   async function validateLotInput(input) {
     const idx = Number(input.dataset.idx);
     const item = state.items[idx];
@@ -1447,15 +1456,21 @@
     const lot = (input.value || "").trim();
     input.value = lot;  // trim 반영
     state.items[idx].material_lot = lot;
-    if (lotOverrideKey(name, lot) in state.lotOverrides) return;  // 사유 입력 후 진행 승인됨 → 통과
-    if (await checkLotRegistered(name, lot)) return;  // 등록됨 → 통과
-    // 미등록 — 모달 표시. 확인 버튼(hideLotInvalidModal 핸들러)이 값 비우기를 맡는다.
+    if (!lot) { setErpLotWarn(input, false); return; }
+    // 이미 확인 창을 거친 조합 — 다시 띄우지 않되 잔존 표시는 유지한다.
+    if (lotOverrideKey(name, lot) in state.lotOverrides) {
+      setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT — 확인하고 진행함");
+      return;
+    }
+    if (await checkLotRegistered(name, lot)) { setErpLotWarn(input, false); return; }  // 등록됨
+    setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT 입니다.");
     openLotInvalidModal(name, lot, input);
   }
 
   function lotOverrideKey(name, lot) { return `${name}\u0000${lot}`; }
 
-  // 저장 시 비고에 남길 미등록 LOT 진행 사유 — 실제로 저장에 포함된 승인 조합만.
+  // 저장 시 비고에 남길 '확인하고 진행' 표시 — 실제로 저장에 포함된 조합만.
+  // 사유는 선택이므로 비어 있을 수 있다 — 그래도 진행한 사실은 비고에 남긴다.
   function buildOverrideNote() {
     const parts = [];
     state.items.forEach((it) => {
@@ -1464,7 +1479,8 @@
       if (!lot) return;
       const key = lotOverrideKey(name, lot);
       if (key in state.lotOverrides) {
-        parts.push(`[미등록 LOT 진행] ${name}/${lot}: ${state.lotOverrides[key]}`);
+        const reason = String(state.lotOverrides[key] || "").trim();
+        parts.push(`[앞 단계 기록에 없는 LOT 진행] ${name}/${lot}${reason ? ": " + reason : " (사유 미기재)"}`);
       }
     });
     return parts.join("\n");
@@ -1481,14 +1497,31 @@
       const material_name = key.slice(0, sep);
       const material_lot = key.slice(sep + 1);
       const reason = String(state.lotOverrides[key] || "").trim();
-      if (!material_name || !material_lot || !reason) return;
-      out.push({ material_name, material_lot, reason });
+      // 사유가 비어도 버리지 않는다 — 사유가 선택이 된 순간 사유를 필터로 쓰면
+      // 대사할 신호가 통째로 사라진다. 키의 존재 자체가 '확인하고 진행함' 이다.
+      if (!material_name || !material_lot) return;
+      out.push({ material_name, material_lot, reason, acknowledged: true });
     });
     return out;
   }
 
+  // 확인 창을 열면서 **이 자재의 기록된 LOT 후보 목록**을 함께 넘긴다. 목록은 이미
+  // 브라우저에 로드돼 있는데(state.lotSuggest) 창은 그걸 안 보여줘서, 작업자가 창을 닫고
+  // 칸을 다시 눌러야 볼 수 있었다. 창 안에서 고르면 오타가 이 창 안에서 끝난다.
   function openLotInvalidModal(name, lot, input) {
-    lotModal.openInvalid({ name, lot, input });
+    const idx = input ? Number(input.dataset.idx) : -1;
+    lotModal.openInvalid({
+      name, lot, input,
+      lots: (state.lotSuggest && state.lotSuggest[name]) || [],
+      onPick: (picked) => {
+        if (!input) return;
+        input.value = picked;
+        if (state.items[idx]) state.items[idx].material_lot = picked;
+        setErpLotWarn(input, false);        // 등록된 LOT 로 바뀌었으니 잔존 표시 해제
+        input.dispatchEvent(new Event("input"));   // state 반영 경로 재사용
+        input.focus();
+      },
+    });
   }
 
   function closeLotInvalidModal() { lotModal.close(); }
@@ -1542,6 +1575,10 @@
     // 음수 재고는 소진과 다르다 — ERP 전표 지연/누락 신호(실물은 돌고 있을 확률이
     // 높다). 실제 값을 보여줘야 "재고 0"이라는 거짓 안내가 되지 않는다.
     const stock = Number(data.stock);
+    // 경고 이유는 3가지다(목록에 없음 / 재고 0 / 재고 마이너스). 제목도 이유별로 달라야
+    // 한다 — 특히 '전산 반영 지연'(마이너스)인데 제목이 "등록되지 않은 LOT" 이면 제목과
+    // 본문이 서로 모순된다. reasonKind 를 모달에 넘겨 제목을 고르게 한다.
+    const reasonKind = data.source === "erp" ? (stock < 0 ? "negative" : "zero") : "missing";
     const reason =
       data.source === "erp"
         ? (stock < 0
@@ -1549,16 +1586,16 @@
             : "재고가 소진된 LOT 입니다(재고 0).")
         : "ERP 원재료 목록에 없는 LOT 입니다.";
     setErpLotWarn(input, true, reason);
-    openErpLotModal(name, code, lot, reason, input);
+    openErpLotModal(name, code, lot, reason, reasonKind, input);
   }
 
-  // 미통과 LOT 경고 모달 — [다시 확인](포커스+선택) / [책임자 LOT 추가하기](즉석 인증 추가).
+  // ERP LOT 경고 모달 — [확인했습니다 · 계속](값 유지) / [책임자 LOT 추가하기](즉석 인증).
   // 본체·인증 POST 는 공용 컴포넌트(lotModal)가 담당. 인증 성공 시 입력의 .erp-lot-warn
   // 주황 테두리를 해제한다(onVerified) — 경고는 모달이 닫혀도 남지만, 수동 LOT 추가로
   // 해소되면 더 이상 강조하지 않는다.
-  function openErpLotModal(name, code, lot, reason, input) {
+  function openErpLotModal(name, code, lot, reason, reasonKind, input) {
     lotModal.openErp({
-      name, code, lot, reason, input,
+      name, code, lot, reason, reasonKind, input,
       onVerified: () => setErpLotWarn(input, false),
     });
   }
@@ -2774,8 +2811,8 @@
       notify(`허용 편차 ±${fmt(tol, 2)}g 초과 — 저장할 수 없습니다.`, "error");
       return;
     }
-    // 자재 LOT 필수 — 실제량을 넣은 행은 LOT 도 반드시 입력. 미등록 LOT '사유 적고 진행'
-    // 으로 승인된 행은 이미 material_lot 가 채워져 있어 여기서 만족된다(사유 분기 불필요).
+    // 자재 LOT 필수 — 실제량을 넣은 행은 LOT 도 반드시 입력. 앞 단계 기록에 없는 LOT 를
+    // '확인하고 진행' 한 행도 material_lot 가 채워져 있어 여기서 만족된다(분기 불필요).
     const lotMissing = missingLotNames(state.items);
     if (lotMissing.length) {
       const msg = missingLotBlockMessage(lotMissing);
@@ -2801,24 +2838,31 @@
     }
     // 작업자 칸이 세션과 다르면 먼저 교대(오귀속 방지) — 실패 시 저장 중단
     if (worker !== state.sessionWorker && !(await switchWorker(worker))) return;
-    // 미등록 LOT 차단 — 반제품(제안 있는 자재) 행의 비어있지 않은 LOT 를 순차 검증.
-    // 하나라도 미등록이면 첫 미등록 행의 모달을 띄우고 저장을 중단한다(일반 자재는 제외).
+    // 앞 단계 기록에 없는 반제품 LOT — **저장을 막지 않는다**(2026-08-04 차단 해제).
+    // 확인 창을 거치지 않고 여기까지 온 건(조회 실패 fail-open·붙여넣기·초안 복구 등)도
+    // acknowledged=false 로 그대로 보낸다 — 사유가 없다고 신호를 버리면 나중에 "그 LOT 이
+    // 결국 생겼는지" 대사할 것이 남지 않는다. 입력칸에는 주황 테두리를 남긴다.
+    const unacked = [];
+    const unackedSeen = new Set();
     for (let i = 0; i < state.items.length; i++) {
       const it = state.items[i];
       const name = (it.material_name || "").trim();
       if (!state.lotSuggest || !state.lotSuggest[name]) continue;
       const lot = (it.material_lot || "").trim();
       if (!lot) continue;
-      if (lotOverrideKey(name, lot) in state.lotOverrides) continue;  // 사유 입력 후 진행 승인됨
+      const key = lotOverrideKey(name, lot);
+      if (key in state.lotOverrides) continue;  // 확인 창을 거쳤다(사유는 선택)
+      if (unackedSeen.has(key)) continue;
       if (!(await checkLotRegistered(name, lot))) {
+        unackedSeen.add(key);
         const input = document.querySelector(`.blend-lot[data-idx="${i}"]`);
-        openLotInvalidModal(name, lot, input || null);
-        return;
+        if (input) setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT 입니다.");
+        unacked.push({ material_name: name, material_lot: lot, reason: "", acknowledged: false });
       }
     }
-    // 승인된 미등록 LOT 이 실제로 저장에 포함되면 사유를 비고 앞에 남긴다(책임자 사후 확인).
+    // 확인하고 진행한 LOT 은 사유(있으면)를 비고 앞에 남긴다(책임자 사후 확인).
     const overrideNote = buildOverrideNote();
-    const lotOverrides = buildLotOverrides();
+    const lotOverrides = buildLotOverrides().concat(unacked);
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
     // 이 저장 시도의 멱등 키 — 성공할 때까지 재사용한다(재시도 = 같은 요청).
@@ -2836,7 +2880,8 @@
       note: [overrideNote, buildManualApprovalNote(), $("blend-note").value.trim()].filter(Boolean).join("\n") || null,
       reactor: reactorRaw ? Number(reactorRaw) : null,
       worker_sign: state.workerPad ? state.workerPad.dataUrl() : null,
-      // 서버 백업: 미등록 LOT 사유를 구조화해 보내 클라이언트 fail-open 구멍을 막는다.
+      // 대사용: 앞 단계 기록에 없는 LOT 진행 기록(사유는 선택 + 확인 여부). 저장을 막지
+      // 않으므로 이건 '통과 허가증'이 아니라 '나중에 대조할 신호'다.
       lot_overrides: lotOverrides.length ? lotOverrides : null,
       // 증량 승인 이력 — 각 증량의 before/after 총량 + 승인(approval_id/approver) 또는
       // 부재 진행(absence_reason). 없으면 null. 서버가 유효성(승인 실재 여부)을 재검증한다.
@@ -2905,6 +2950,9 @@
       state.rescaleUndo = null;
       state.rescaleEvents = [];  // 저장 완료 → 증량 승인 이력 초기화(총 배합량 잠금 해제)
       state.lotOverrides = {};
+      // 저장 성공 → LOT 조회 캐시를 비운다. 방금 저장한 기록으로 '없던' LOT 이 생겼을 수
+      // 있고, 다음 배합이 그걸 곧바로 원료로 쓴다(B-1: 시킨 대로 해도 계속 막히던 원인).
+      lotCheckCache.clear();
       state.manualApproved = null;  // 저장 완료 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
       hideRescaleUndo();
       clearRescaleSummary();
@@ -3096,19 +3144,22 @@
     const rescaleUndoBtn = $("rescale-undo");
     if (rescaleUndoBtn) rescaleUndoBtn.addEventListener("click", restoreRescaleUndo);
     // LOT 검사 모달 — 공용 컴포넌트(lotModal)가 footer 버튼을 한 번에 묶는다.
-    // 화면별 동작만 콜백으로: '다시 확인'(차단)의 값 비우기, '사유 적고 진행'의 사유 보관.
+    // 화면별 동작만 콜백으로: 'LOT 지우고 다시 입력'의 값 비우기, '계속'의 확인 기록 보관.
     lotModal.bind({
-      // 미등록 반제품 LOT '다시 확인' — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
+      // 'LOT 지우고 다시 입력' — 명시 선택일 때만 값을 지운다(더 이상 자동 삭제 아님).
       onClear: (input) => {
         const idx = Number(input.dataset.idx);
         if (state.items[idx]) state.items[idx].material_lot = "";
         input.value = "";
+        setErpLotWarn(input, false);
         input.focus();
       },
-      // '사유 적고 진행'(안전밸브) — 그 (자재,LOT) 조합을 통과 처리하고 사유 보관
-      // (저장 시 비고·lot_overrides payload 에 남음). 값은 그대로 둔다.
+      // '확인했습니다 · 계속' — 그 (자재,LOT) 조합을 확인 완료로 표시하고 사유를 보관한다.
+      // **사유가 빈 문자열이어도 반드시 기록한다** — 사유를 조건으로 걸면 사유가 선택이 된
+      // 순간 대사할 신호가 통째로 사라진다. 값은 그대로 두고 주황 테두리만 남긴다.
       onProceed: (name, lot, reason, input) => {
-        state.lotOverrides[lotOverrideKey(name, lot)] = reason;
+        state.lotOverrides[lotOverrideKey(name, lot)] = reason || "";
+        if (input) setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT — 확인하고 진행함");
       },
     });
     // 파생 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
