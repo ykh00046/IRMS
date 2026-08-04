@@ -362,6 +362,26 @@
     return same(addModeIdx, idx) || (addWeighIdx != null && same(addWeighIdx, idx));
   }
 
+  // 추가 계량 값 해석(순수) — 저울 상태 선택(2026-08-04 시안)에 따라 PRINT/입력값을
+  // '이번 추가분'으로 환산한다. mode:
+  //   "tared"  — 영점이 잡혀 있음: 값 = 추가분 그대로.
+  //   "loaded" — 무게가 남아 있음: 값 = 지금까지 담은 누계 → 추가분 = 값 − 현재 누계.
+  // loaded 인데 값이 현재 누계보다 작거나 같으면 적용 불가 — 비커 교체·상태 오선택·
+  // 덜어냄 신호이므로 밀어붙이면 음수/0 회차가 기록된다. 반올림은 저울 해상도(2자리).
+  function resolveAddPortion(mode, value, currentSum) {
+    const v = Number(value);
+    const cur = Number(currentSum) || 0;
+    if (!Number.isFinite(v) || v <= 0) {
+      return { ok: false, reason: "invalid" };
+    }
+    if (mode === "loaded") {
+      const portion = Math.round((v - cur) * 100) / 100;
+      if (portion <= 0) return { ok: false, reason: "not-above-current" };
+      return { ok: true, portion };
+    }
+    return { ok: true, portion: Math.round(v * 100) / 100 };
+  }
+
   function varianceDisplay(it, toleranceG) {
     // 기준 자재 행은 편차 계량에서 제외 — 항상 '-' 표시(이론=실측이므로 편차 무의미).
     if (it && it.is_anchor) {
@@ -601,6 +621,7 @@
     bulkRowHtml,
     computeTotals,
     computeTheoryAmount,
+    resolveAddPortion,
     varianceDisplay,
     varianceWarnMessage,
     badVarianceNames,

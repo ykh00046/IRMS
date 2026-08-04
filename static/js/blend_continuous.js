@@ -28,7 +28,7 @@
     rescalePlan, exceedsBatchLimit,
     appliedRescaleRowHtml,
     createIdleLogout,
-    pickScaleRow, isAddModeRow, varianceVerdict,
+    pickScaleRow, isAddModeRow, resolveAddPortion, varianceVerdict,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -582,9 +582,10 @@
   // 차단·LOT 확인 모달도 버튼 선택을 기다리는 동안 들어온 PRINT 가 폴백('다음 미계량 셀')으로
   // 흘렀다(현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
   function printBlockingModalVisible() {
+    // cont-scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
     return ["cont-rescale-approve-modal", "cont-manual-approve-modal", "cont-rescale-modal",
       "cont-discard-modal", "cont-rescale-block-modal",
-      "cont-lot-invalid-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "cont-lot-invalid-modal", "cont-scale-state-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -668,7 +669,10 @@
   function setScaleTargetCell(i, j) {
     // 작업자가 ⚖ 로 다른 셀을 명시 지정하면, 열려 있던 추가 입력칸 참조는 놓는다.
     // 우선순위상 _addWeighCell 이 sticky 보다 위라, 안 놓으면 방금 고른 셀이 무시된다.
-    if (_addWeighCell && !(_addWeighCell.i === i && _addWeighCell.j === j)) _addWeighCell = null;
+    if (_addWeighCell && !(_addWeighCell.i === i && _addWeighCell.j === j)) {
+      _addWeighCell = null;
+      _addWeighMode = null;  // 해석 모드도 같은 수명 — 다른 셀에 옛 해석 적용 방지
+    }
     state.scaleTargetCell = { i, j };
     updateScaleTargetIndicator();
   }
@@ -724,6 +728,21 @@
     // addModeCell 만 보면 applyAddAmount 가 매번 null 로 되돌려 2회차 PRINT 가 덮어쓰기가
     // 되므로, 입력칸이 열려 있는 한 살아있는 _addWeighCell 도 함께 본다(blend.js isAddModeRow).
     if (isAddModeCell(i, j)) {
+      // 저울 상태 선택에 따라 환산: tared=추가분 그대로 / loaded=표시값−현재.
+      // 구분 없이 합산하면 영점 안 잡힌 저울의 PRINT(누계)가 이중 계산된다(2026-08-04 시안).
+      if (_addWeighMode) {
+        const cell = state.cells[i] && state.cells[i][j];
+        const cur = cell && cell.actual !== "" ? (Number(cell.actual) || 0) : 0;
+        const res = resolveAddPortion(_addWeighMode, Number(value), cur);
+        if (!res.ok) {
+          notify(res.reason === "not-above-current"
+            ? `PRINT 값(${value} g)이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 확인하세요.`
+            : `PRINT 값(${value} g)을 적용할 수 없습니다 — 값을 확인하세요.`, "error big");
+          return;
+        }
+        applyAddAmount(i, j, res.portion);
+        return;
+      }
       applyAddAmount(i, j, Number(value));
       return;
     }
@@ -892,6 +911,7 @@
     state.addPendingCells = {};     // 레시피 변경 → 증량 대기 셀 억제도 리셋
     state.scaleTargetCell = null;   // 레시피 변경 → 저울 대상 지정 해제
     _addWeighCell = null;           // 레시피 변경 → 열려 있던 추가 입력칸 참조도 해제
+    _addWeighMode = null;           // 해석 모드도 같은 수명
     state.manualApproved = null;    // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
     // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다
     // (blend.js 와 동일 규약).
@@ -1384,7 +1404,7 @@
         const i = Number(btn.dataset.i);
         const j = Number(btn.dataset.j);
         if (state.addPendingCells && state.addPendingCells[`${i}:${j}`] != null) {
-          openAddInline(i, j);
+          requestAddInline(i, j);
           return;
         }
         setScaleTargetCell(i, j);
@@ -1633,6 +1653,7 @@
     state.lotCount = next;
     $("cont-lot-count").textContent = String(next);
     _addWeighCell = null;  // 로트 수 변경 → 셀 매트릭스 재구성, 열려 있던 추가 입력칸 참조 해제
+    _addWeighMode = null;  // 해석 모드도 같은 수명
     rebuildCells();
     rebuildLotRescale();   // 로트 수 변경 → lotRescale 을 새 lotCount 에 맞춘다(기존 값 보존)
     render();
@@ -2017,7 +2038,7 @@
       badge.dataset.j = String(j);
       badge.textContent = `추가 +${fmt(r.addNeeded, dp())} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
-      badge.addEventListener("click", () => openAddInline(r.idx, j));
+      badge.addEventListener("click", () => requestAddInline(r.idx, j));
       td.appendChild(badge);
     });
     // 이전에 대기였다가 이번에 충족된 셀 — 빈칸으로 남지 않게 편차 표시를 다시 그린다.
@@ -2042,6 +2063,48 @@
   // 닫힐 때까지 살아있는 별도 참조를 둔다.
   let _addWeighCell = null;
 
+  // ── 저울 상태 선택 — blend.js 와 동일 규약(2026-08-04 시안) ──
+  // 추가 계량(인라인 입력) 진입 전 저울 상태를 그림으로 고른다:
+  //   "tared"  — 영점 잡힘: PRINT/입력 = 이번 추가분(현행 합산)
+  //   "loaded" — 무게 남음: PRINT/입력 = 지금까지 담은 누계 → 추가분 = 값 − 현재
+  // _addWeighMode 는 _addWeighCell 과 **같은 수명** — 입력칸이 닫혀도 잔여 부족분이
+  // 남아 PRINT 가 계속 이 셀에 합산되는 동안은 해석 방법도 함께 살아야 한다.
+  // 참조를 놓는 모든 지점에서 함께 놓는다(안 놓으면 다음 셀에 옛 해석이 적용된다).
+  let _addWeighMode = null;
+  let _contScaleStatePending = null;  // 선택 후 열 대상 {i, j}
+
+  function openContScaleStateModal(pending) {
+    const modal = $("cont-scale-state-modal");
+    if (!modal) {  // 옛 템플릿 폴백 — 선택 없이 현행(추가분 합산)으로 진행
+      if (pending) openAddInline(pending.i, pending.j, "tared");
+      return;
+    }
+    _contScaleStatePending = pending || null;
+    const mat = pending ? state.materials[pending.i] : null;
+    const matEl = $("cont-scale-state-material");
+    if (matEl) matEl.textContent = mat ? `${mat.material_name} · ${pending.j + 1}로트` : "";
+    modal.hidden = false;
+    const first = $("cont-scale-state-tared");
+    if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
+  }
+
+  function closeContScaleStateModal() {
+    const modal = $("cont-scale-state-modal");
+    if (modal) modal.hidden = true;
+    _contScaleStatePending = null;
+  }
+
+  function chooseContScaleState(mode) {
+    const pending = _contScaleStatePending;
+    closeContScaleStateModal();
+    if (pending) openAddInline(pending.i, pending.j, mode);
+  }
+
+  // 추가 계량(인라인 입력)의 유일한 진입문 — 항상 상태 선택을 거친다.
+  function requestAddInline(i, j) {
+    openContScaleStateModal({ i, j });
+  }
+
   // 저울 PRINT 가 들어갈 셀이 '추가(합산) 모드'인가 — addModeCell 또는 _addWeighCell.
   // 판정은 blend_lib.isAddModeRow 에 맡긴다(배합 화면과 동일 규칙, 테스트로 잠금).
   // 셀은 {i,j} 객체이므로 cellEq 로 동등 판정.
@@ -2050,12 +2113,16 @@
     return isAddModeRow(pos, state.addModeCell, _addWeighCell, cellEq);
   }
 
-  function openAddInline(i, j) {
+  function openAddInline(i, j, mode) {
     const td = document.querySelector(`.cont-var[data-i="${i}"][data-j="${j}"]`);
     if (!td) return;
     const badge = td.querySelector(".blend-add-badge");
     if (badge) badge.remove();
     if (td.querySelector(".blend-add-inline")) return;
+    // 값 해석 모드 — requestAddInline(상태 선택)을 거쳐 들어온다. 미지정 폴백은 현행과
+    // 같은 '추가분 합산'(tared) — 동작이 조용히 바뀌지 않게.
+    _addWeighMode = mode || "tared";
+    const loaded = _addWeighMode === "loaded";
     const input = document.createElement("input");
     input.type = "number";
     input.step = "any";
@@ -2063,31 +2130,48 @@
     input.className = "input blend-add-inline";
     input.dataset.i = String(i);
     input.dataset.j = String(j);
-    input.placeholder = "추가분 g";
-    input.title = "추가분 입력 후 Enter — 누계로 합산됩니다";
+    input.placeholder = loaded ? "저울 표시값(전체) g" : "추가분 g";
+    input.title = loaded
+      ? "저울 표시값 전체를 입력 — 이미 담은 양을 빼고 기록합니다"
+      : "추가분 입력 후 Enter — 누계로 합산됩니다";
     // 저울 전용 모드면 증량 추가분 인라인 입력도 잠금(저울 PRINT/addMode 합산으로만).
     // 단, 수기 입력 승인(manualApproved)이 있으면 이 배합에 한해 손입력을 허용한다.
     if (state.scaleOnlyInput && !state.manualApproved) {
       input.readOnly = true;
       input.title = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
     }
+    // 입력값을 모드에 따라 추가분으로 환산해 적용. 실패 시 false(입력 유지).
+    const applyFromInput = () => {
+      const cell = state.cells[i] && state.cells[i][j];
+      const cur = cell && cell.actual !== "" ? (Number(cell.actual) || 0) : 0;
+      const res = resolveAddPortion(_addWeighMode || "tared", Number(input.value), cur);
+      if (!res.ok) {
+        if (res.reason === "not-above-current") {
+          notify(`입력값이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 확인하세요.`, "error");
+        }
+        return false;
+      }
+      // Enter 확정 표시 — 입력칸 제거 시 blur 가 한 번 더 발화해 이중 합산되는 것 차단
+      input._applied = true;
+      applyAddAmount(i, j, res.portion);
+      return true;
+    };
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
       e.preventDefault();
       const add = Number(input.value);
       if (!add || !(add > 0)) { input.focus(); return; }
-      // (a) Enter 확정 표시 — 입력칸 제거 시 blur 가 한 번 더 발화해 이중 합산되는 것 차단
-      input._applied = true;
-      applyAddAmount(i, j, add);
+      if (!applyFromInput()) input.focus();
     });
     input.addEventListener("blur", () => {
       if (input._applied) return;
       const add = Number(input.value);
-      if (add > 0) { input._applied = true; applyAddAmount(i, j, add); return; }
+      if (add > 0) { applyFromInput(); return; }
       // (b) 빈 값으로 벗어나면 취소 — 추가 모드·누계 칸 잠금도 함께 해제해야 한다
       input.remove();
       state.addModeCell = null;
       _addWeighCell = null;  // 입력칸이 닫혔으므로 참조도 해제(다음 빈 셀로 새지 않게)
+      _addWeighMode = null;  // 해석 모드도 같은 수명
       const actualInput = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
       if (actualInput) {
         actualInput.classList.remove("add-mode");
@@ -2145,7 +2229,7 @@
     // 기준: renderAddBadges 가 다시 계산한 잔여(addPendingCells)가 없으면 놓는다.
     const stillPending = state.addPendingCells
       && state.addPendingCells[`${i}:${j}`] != null;
-    if (!stillPending) _addWeighCell = null;
+    if (!stillPending) { _addWeighCell = null; _addWeighMode = null; }
     updateContTotalLock();  // 추가분 합산으로 실제량이 채워진 경우도 총량 잠금 유지
     scheduleDraftSave();    // 추가분 합산 결과도 임시 저장(복구용)
   }
@@ -2522,6 +2606,21 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && manualModal && !manualModal.hidden) closeManualApproveModal();
+    });
+    // 저울 상태 선택 모달 — 그림 두 장 중 선택, 취소/Esc 로 되돌아가기.
+    // 바깥 클릭 봉인(다른 봉인 모달과 동일) — 실수 클릭이 선택을 건너뛰면 안 된다.
+    const ssModal = $("cont-scale-state-modal");
+    const ssTared = $("cont-scale-state-tared");
+    const ssLoaded = $("cont-scale-state-loaded");
+    const ssCancel = $("cont-scale-state-cancel");
+    if (ssTared) ssTared.addEventListener("click", () => chooseContScaleState("tared"));
+    if (ssLoaded) ssLoaded.addEventListener("click", () => chooseContScaleState("loaded"));
+    if (ssCancel) ssCancel.addEventListener("click", closeContScaleStateModal);
+    if (ssModal) ssModal.addEventListener("click", (e) => {
+      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 [취소]를 누르세요.", "warn");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && ssModal && !ssModal.hidden) closeContScaleStateModal();
     });
     // 빠른 사유 태그(증량·수기 부재 공용) — 누르면 사유칸 토글 채움.
     wireReasonTags();

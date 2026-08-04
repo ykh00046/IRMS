@@ -1,0 +1,60 @@
+{# ── 저울 상태 선택 모달(공용 partial) ───────────────────────────
+   나눠 담기·부족분 추가 계량에 들어가기 전에, 지금 저울이 어느 상태인지 그림으로
+   고르게 한다(2026-08-04 시안 확정). 이 선택이 이후 PRINT/입력값의 해석을 가른다:
+
+     · 영점이 잡혀 있음(비커 올린 채 0.00) → 값 = 이번에 담은 추가분 → 합산
+     · 무게가 남아 있음(예: 95.00)        → 값 = 지금까지 담은 누계 → 추가분 = 값 − 현재
+
+   구분 없이 무조건 합산하면 영점을 안 잡은 저울의 PRINT(누계)가 이중 계산된다
+   (95 담긴 상태에서 5 더 붓고 PRINT → 100 이 오는데 95+100=195 로 기록되는 사고).
+
+   포함 쪽에서 scale_state_prefix 를 넘긴다 — 배합 "", 다중 계량 "cont-"
+   (_lot_check_modal.html 과 같은 규약). hidden 토글 전용.
+   이 모달이 떠 있는 동안 저울 PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다
+   — 해석 방법이 정해지기 전의 값은 받지 않는 게 안전하다.
+#}
+{% set p = scale_state_prefix or "" %}
+<div class="ss-modal-overlay" id="{{ p }}scale-state-modal" hidden>
+  <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="{{ p }}scale-state-title">
+    <div class="ss-modal-header"><h3 id="{{ p }}scale-state-title">저울이 지금 어떤 상태인가요?</h3></div>
+    <div class="ss-modal-body">
+      <p class="add-weigh-material" id="{{ p }}scale-state-material"></p>
+      <p class="scale-state-guide">비커를 올린 채, 저울 표시창과 같은 그림을 눌러주세요.</p>
+      <div class="scale-state-options">
+        {# 왼쪽 — 영점이 잡혀 있음: 0.00 표시. 값은 '이번에 담는 양'만 나온다. #}
+        <button class="scale-state-btn" id="{{ p }}scale-state-tared" type="button" autofocus>
+          <svg viewBox="0 0 120 96" aria-hidden="true" focusable="false">
+            <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
+              <path d="M46 8 h28 l-3 34 h-22 z" />
+              <path class="scale-state-liquid" d="M47.5 24 h25 l-1.6 17 h-21.8 z" stroke="none" />
+              <rect x="30" y="46" width="60" height="8" rx="3" />
+              <rect x="18" y="58" width="84" height="30" rx="5" />
+              <rect class="scale-state-display" x="26" y="65" width="52" height="16" rx="3" />
+            </g>
+            <text class="scale-state-value" x="52" y="77.5" text-anchor="middle">0.00 g</text>
+          </svg>
+          <span class="scale-state-label">영점이 잡혀 있음</span>
+          <span class="scale-state-sub">표시창이 0.00 — 이번에 담는 양만 나옵니다</span>
+        </button>
+        {# 오른쪽 — 무게가 남아 있음: 담긴 만큼 표시. 값은 '지금까지 담은 전체'다. #}
+        <button class="scale-state-btn" id="{{ p }}scale-state-loaded" type="button">
+          <svg viewBox="0 0 120 96" aria-hidden="true" focusable="false">
+            <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
+              <path d="M46 8 h28 l-3 34 h-22 z" />
+              <path class="scale-state-liquid" d="M47.5 24 h25 l-1.6 17 h-21.8 z" stroke="none" />
+              <rect x="30" y="46" width="60" height="8" rx="3" />
+              <rect x="18" y="58" width="84" height="30" rx="5" />
+              <rect class="scale-state-display" x="26" y="65" width="52" height="16" rx="3" />
+            </g>
+            <text class="scale-state-value" x="52" y="77.5" text-anchor="middle">95.00 g</text>
+          </svg>
+          <span class="scale-state-label">무게가 남아 있음</span>
+          <span class="scale-state-sub">담은 무게가 그대로 — 전체 무게가 나옵니다</span>
+        </button>
+      </div>
+    </div>
+    <div class="ss-modal-footer blend-actions">
+      <button class="btn" id="{{ p }}scale-state-cancel" type="button">취소</button>
+    </div>
+  </div>
+</div>

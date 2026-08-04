@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260804h" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260804i" />
 {% endblock %}
 
 {% block content %}
@@ -221,6 +221,12 @@
               <!-- 자재명은 제목이 아니라 본문 첫 줄에 크게 — 긴 이름(PB 레시피 등)이 좁은
                    제목줄에 감겨 한눈에 안 읽히던 문제(2026-07-23). 자유 줄바꿈 허용. -->
               <div class="add-weigh-material" id="add-weigh-material"></div>
+              <!-- 저울 상태 칩 — 진입 때 고른 상태(영점/무게 남음)를 보여주고, 중간에
+                   영점을 잡았으면 [변경]으로 전환한다. 값 해석이 여기에 달려 있다. -->
+              <span class="scale-state-chip" id="add-weigh-state-chip" hidden>
+                저울 상태: <b id="add-weigh-state-label"></b>
+                <button type="button" id="add-weigh-state-change">변경</button>
+              </span>
               <!-- 처음 보는 작업자를 위한 한 줄 안내 — 이 창이 무엇을 하는 곳인지.
                    비커에 한 번에 안 들어가는 자재를 여러 번에 나눠 담는 자리다. -->
               <p class="add-weigh-guide">한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.</p>
@@ -365,6 +371,10 @@
              확인 버튼으로 닫으면 해당 LOT 칸을 비우고 다시 포커스. hidden 토글 전용. -->
         {% set lot_modal_prefix = "" %}{% include "_lot_check_modal.html" %}
 
+        <!-- 저울 상태 선택 모달(공용 partial) — 나눠 담기/추가 계량 진입 전 그림 선택.
+             선택이 PRINT/입력값 해석(추가분 vs 누계)을 가른다. hidden 토글 전용. -->
+        {% set scale_state_prefix = "" %}{% include "_scale_state_modal.html" %}
+
         <!-- 파생 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
              누르면 표시. 적용하면 1차 배합 총량을 이 행의 실제량으로 기록(계량 생략). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="carry-over-modal" hidden>
@@ -380,11 +390,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260804f"></script>
+    <script src="/static/js/blend_lib.js?v=20260804g"></script>
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260804l"></script>
+    <script src="/static/js/blend.js?v=20260804m"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

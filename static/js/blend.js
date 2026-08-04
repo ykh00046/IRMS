@@ -53,6 +53,7 @@
     exceedsBatchLimit,
     pickScaleRow,
     isAddModeRow,
+    resolveAddPortion,
     createIdleLogout,
   } = window.IRMS.blendLib;
 
@@ -376,6 +377,21 @@
     // 모달이 열려 있는 동안은 addModeIdx 가 회차마다 꺼지므로(_addWeighIdx) 함께 본다 —
     // 안 그러면 2회차 PRINT 가 합산이 아니라 덮어쓰기가 된다.
     if (isAddModeRow(idx, state.addModeIdx, _addWeighIdx)) {
+      // 모달의 저울 상태 선택에 따라 환산: tared=추가분 그대로 / loaded=표시값−현재.
+      // 구분 없이 합산하면 영점 안 잡힌 저울의 PRINT(누계)가 이중 계산된다(2026-08-04 시안).
+      if (idx === _addWeighIdx && _awMode) {
+        const awIt = state.items[idx];
+        const cur = awIt && awIt.actual_amount !== "" ? (Number(awIt.actual_amount) || 0) : 0;
+        const res = resolveAddPortion(_awMode, Number(value), cur);
+        if (!res.ok) {
+          notify(res.reason === "not-above-current"
+            ? `PRINT 값(${value} g)이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`
+            : `PRINT 값(${value} g)을 적용할 수 없습니다 — 값을 확인하세요.`, "error big");
+          return;
+        }
+        applyAddAmount(idx, res.portion);
+        return;
+      }
       applyAddAmount(idx, Number(value));
       return;
     }
@@ -519,7 +535,7 @@
     btn.title = "여기로 저울 입력";
     btn.addEventListener("click", () => {
       if (state.addPending && state.addPending[idx] != null) {
-        openAddWeighModal(idx);
+        requestAddWeigh(idx);
         return;
       }
       setScaleTarget(idx);
@@ -541,7 +557,7 @@
     btn.tabIndex = -1;
     btn.textContent = "⊞ 나눠 담기";
     btn.title = "비커에 한 번에 안 들어갈 때 — 이 창에서 끝까지 나눠 담습니다";
-    btn.addEventListener("click", () => openAddWeighModal(idx, { split: true }));
+    btn.addEventListener("click", () => requestAddWeigh(idx, { split: true }));
     return btn;
   }
 
@@ -557,9 +573,10 @@
   // (현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
   // 부족(shortage)·추가 계량(add-weigh) 모달은 제외 — PRINT 를 자기 행 합산으로 소비하는 창이다.
   function printBlockingModalVisible() {
+    // scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal",
-      "lot-invalid-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "lot-invalid-modal", "scale-state-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -592,10 +609,14 @@
       if (!scaleEventSynced) { scaleEventSynced = true; return; }
       if (!items.length || !state.items.length) return;
       for (const ev of items) {
-        // 부족 모달이 떠 있는 채로 들어온 PRINT 는 '추가로 채우기'를 고른 것으로 본다.
-        // 모달이 "저울 PRINT 가 현재 값에 합산됩니다"라고 약속해 두고, 정작 선택 전에는
-        // 합산 모드가 아니어서 그 PRINT 가 다음 빈 행(=다음 품목)에 담겼다.
-        if (_shortageIdx != null) shortageChooseAdd();
+        // 부족 모달이 떠 있는 채로 들어온 PRINT 는 '추가로 채우기'를 고른 것으로 보되,
+        // 값 자체는 소비하지 않는다 — 저울 상태(추가분/누계)를 고르기 전의 값은 해석할
+        // 방법이 없다(이중 계산 위험). 상태 선택 창을 열고 이번 PRINT 는 버린다.
+        if (_shortageIdx != null) {
+          shortageChooseAdd();
+          notify("저울 상태를 먼저 선택하세요 — 방금 PRINT 는 받지 않았습니다.", "warn");
+          break;
+        }
         const idx = activeScaleRow();
         if (idx === null) {
           notify("모든 자재의 실제량이 입력되어 있습니다. (PRINT 무시)", "warn");
@@ -1922,7 +1943,7 @@
     if (text) {
       text.textContent =
         `이론 ${fmt(it.theory_amount, dp())} g / 실제 ${fmt(Number(it.actual_amount), dp())} g — ${fmt(shortage, dp())} g 부족`
-        + "\n추가로 채우기: 더 올리는 무게(입력·저울 PRINT)가 현재 값에 합산됩니다.";
+        + "\n추가로 채우기: 저울 상태를 확인한 뒤, 부족분을 이어서 담습니다.";
     }
     $("shortage-modal").hidden = false;
   }
@@ -1933,7 +1954,7 @@
   function shortageChooseAdd() {
     const idx = _shortageIdx;
     closeShortageModal();
-    if (idx != null) openAddWeighModal(idx);
+    if (idx != null) requestAddWeigh(idx);  // 저울 상태 선택을 거쳐 추가 계량 모달로
   }
   // 허용 편차를 +방향으로 벗어난 행의 실제량을 모두 비운다 — 증량 제안/승인을
   // 거절(다시 계량)했을 때 초과 상태가 화면에 남아, 다음 자재로 넘어가며 누적되고
@@ -2407,7 +2428,7 @@
         ? `목표 ${fmt(r.newTheory, dp())} · 추가 +${fmt(r.addNeeded, dp())} g`
         : `추가 +${fmt(r.addNeeded, dp())} g`;
       badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
-      badge.addEventListener("click", () => openAddWeighModal(r.idx));
+      badge.addEventListener("click", () => requestAddWeigh(r.idx));
       td.appendChild(badge);
     });
     // 이전에 대기였다가 이번에 충족된 행 — 빈칸으로 남지 않게 편차 표시를 다시 그린다.
@@ -2521,6 +2542,88 @@
   // addModeIdx 를 null 로 되돌려도 모달 갱신 판정은 _addWeighIdx 로 한다).
   let _addWeighIdx = null;
 
+  // ── 저울 상태 선택(scale-state) ─────────────────────────────
+  // 나눠 담기/추가 계량 진입 전에 저울 상태를 그림으로 고른다(2026-08-04 시안 확정).
+  //   "tared"  — 영점 잡힘: PRINT/입력 = 이번 추가분(현행 합산)
+  //   "loaded" — 무게 남음: PRINT/입력 = 지금까지 담은 누계 → 추가분 = 값 − 현재
+  // 구분 없이 합산만 하면 영점 안 잡힌 저울의 PRINT(누계)가 이중 계산된다.
+  // _awMode 는 모달이 열려 있는 동안만 산다 — 초안에 저장하지 않는다(복구 시점의
+  // 물리 상태는 이미 다를 수 있어 다시 물어야 안전). 선택 모달이 떠 있는 동안의
+  // PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다.
+  let _awMode = null;            // 추가 계량 모달의 값 해석 모드
+  let _scaleStatePending = null; // 선택 후 열 대상 {idx, options} — null 이면 '변경' 재선택
+
+  const AW_MODE_LABEL = { tared: "영점이 잡혀 있음", loaded: "무게가 남아 있음" };
+
+  function openScaleStateModal(pending) {
+    const modal = $("scale-state-modal");
+    if (!modal) {  // 옛 템플릿 폴백 — 선택 없이 현행(추가분 합산)으로 진행
+      if (pending) openAddWeighModal(pending.idx, pending.options, "tared");
+      return;
+    }
+    _scaleStatePending = pending || null;
+    const it = state.items[pending ? pending.idx : _addWeighIdx];
+    const matEl = $("scale-state-material");
+    if (matEl) matEl.textContent = it ? it.material_name : "";
+    modal.hidden = false;
+    const first = $("scale-state-tared");
+    if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
+  }
+
+  function closeScaleStateModal() {
+    const modal = $("scale-state-modal");
+    if (modal) modal.hidden = true;
+    _scaleStatePending = null;
+  }
+
+  function chooseScaleState(mode) {
+    const pending = _scaleStatePending;
+    closeScaleStateModal();
+    if (pending) {
+      openAddWeighModal(pending.idx, pending.options, mode);
+      return;
+    }
+    // '변경' 재선택 — 열려 있는 추가 계량 모달의 해석 모드만 전환.
+    if (_addWeighIdx != null) {
+      _awMode = mode;
+      applyAwModeTexts();
+      refreshAddWeighModal(_addWeighIdx);
+    }
+  }
+
+  // 나눠 담기/추가 계량의 유일한 진입문 — 항상 상태 선택을 거친다.
+  function requestAddWeigh(idx, options) {
+    openScaleStateModal({ idx, options: options || null });
+  }
+
+  // 모드·저울 전용 여부에 따라 칩/안내문/note 를 맞춘다.
+  function applyAwModeTexts() {
+    const scaleOnly = Boolean(state.scaleOnlyInput);
+    const chip = $("add-weigh-state-chip");
+    const chipLabel = $("add-weigh-state-label");
+    if (chip) chip.hidden = _awMode == null;
+    if (chipLabel) chipLabel.textContent = AW_MODE_LABEL[_awMode] || "";
+    const guideEl = document.querySelector(".add-weigh-guide");
+    if (guideEl) {
+      if (_awMode === "loaded") {
+        guideEl.innerHTML = scaleOnly
+          ? "부은 뒤 <b>PRINT</b>를 누르세요 — 표시값(전체 무게)에서 이미 담은 양을 빼고 기록합니다."
+          : "부은 뒤 저울 <b>표시값 전체</b>를 입력하세요 — 이미 담은 양을 빼고 기록합니다.";
+      } else {
+        guideEl.innerHTML = scaleOnly
+          ? "저울에 담기는 만큼 담고 <b>PRINT</b>를 누르세요. 목표를 채우면 자동으로 끝납니다."
+          : "한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.";
+      }
+    }
+    const noteEl = $("add-weigh-note");
+    if (noteEl) {
+      noteEl.hidden = scaleOnly;  // 저울 전용이면 위 안내가 이미 PRINT 를 말한다
+      noteEl.textContent = _awMode === "loaded"
+        ? "저울이 있으면 PRINT 를 눌러도 됩니다 — 표시값에서 이미 담은 양을 빼고 기록합니다."
+        : "저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.";
+    }
+  }
+
   function addWeighRemaining(idx) {
     const it = state.items[idx];
     if (!it) return 0;
@@ -2529,7 +2632,7 @@
     return Math.max(0, Math.round((target - cur) * 100) / 100);
   }
 
-  function openAddWeighModal(idx, options) {
+  function openAddWeighModal(idx, options, mode) {
     // 모달 요소가 없으면(옛 템플릿) 기존 인라인 추가 입력으로 폴백.
     if (!$("add-weigh-modal")) { openAddInline(idx); return; }
     const it = state.items[idx];
@@ -2538,6 +2641,9 @@
     closeShortageModal();
     state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
+    // 값 해석 모드 — requestAddWeigh(상태 선택)를 거쳐 들어온다. 미지정이면 현행과
+    // 같은 '추가분 합산'(tared) — 폴백 경로에서도 동작이 조용히 바뀌지 않게.
+    _awMode = mode || "tared";
     // 이미 담긴 양이 있는데 회차 기록이 비어 있으면 그 값이 1회차다. 안 맞춰두면
     // "현재 9000 g"인데 목록은 비고 다음이 '1회차'로 안내돼 앞뒤가 어긋난다.
     // (Array 여부만 보면 '다시 계량'이 비워둔 [] 를 놓친다 — 실측으로 잡힘)
@@ -2549,19 +2655,12 @@
     $("add-weigh-title").textContent = (options && options.split) ? "나눠 담기" : "추가 계량";
     const matEl = $("add-weigh-material");
     if (matEl) matEl.textContent = it.material_name;
-    // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산). 안내 문구도
-    // 그에 맞춰 — 손입력 줄이 없는데 '담기를 누르세요'라고 하면 어긋난다.
+    // 저울 전용 모드면 수동 입력+더하기 줄 숨김(PRINT 만으로 합산). 안내 문구는
+    // 모드(추가분/누계)·저울 전용 여부에 따라 applyAwModeTexts 가 맞춘다.
     const scaleOnly = Boolean(state.scaleOnlyInput);
     const row = $("add-weigh-input-row");
     if (row) row.hidden = scaleOnly;
-    const guideEl = document.querySelector(".add-weigh-guide");
-    if (guideEl) {
-      guideEl.innerHTML = scaleOnly
-        ? "저울에 담기는 만큼 담고 <b>PRINT</b>를 누르세요. 목표를 채우면 자동으로 끝납니다."
-        : "한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.";
-    }
-    const noteEl = $("add-weigh-note");
-    if (noteEl) noteEl.hidden = scaleOnly;  // 저울 전용이면 위 안내가 이미 PRINT 를 말한다
+    applyAwModeTexts();
     // 반드시 '모달을 연 뒤' 숫자를 그린다 — refreshAddWeighModal 은 닫힌 모달이면
     // 갱신을 건너뛰므로, 열기 전에 부르면 목표/현재/남은이 초기 "-" 로 남는다
     // (현장 신고 2026-07-22: 추가 계량 화면 목표값이 "-" 표시).
@@ -2606,8 +2705,11 @@
         .join("");
     }
     // 다음이 몇 회차인지 입력칸에 — '계속 이어서 담는 중'이라는 신호.
+    // 누계 모드에선 넣을 값이 '저울 표시값 전체'다 — 추가분을 적으면 이중 차감된다.
     const inputEl = $("add-weigh-input");
-    if (inputEl) inputEl.placeholder = `${list.length + 1}회차 담을 양 g`;
+    if (inputEl) inputEl.placeholder = _awMode === "loaded"
+      ? `${list.length + 1}회차 — 저울 표시값(전체) g`
+      : `${list.length + 1}회차 담을 양 g`;
     // 자동 완료 — 목표에 '딱' 도달했을 때만. remaining 은 Math.max(0,…) 로 0 에서
     // 잘리므로 초과(음수 남음)도 0 으로 보여, 그것만 보면 넘겨 담아도 완료로 오인한다
     // ("완료" 성공 토스트 + "허용 편차 초과" 오류가 동시에 뜨던 버그). 실제 편차의
@@ -2619,14 +2721,23 @@
     }
   }
 
-  // 더하기/Enter — 값 합산 후 입력칸 비우고 포커스(모달 숫자는 applyAddAmount 끝에서 갱신).
+  // 더하기/Enter — 모드에 따라 값을 추가분으로 환산해 합산(모달 숫자는 applyAddAmount 끝에서 갱신).
   function applyAddWeighInput(idx) {
     const input = $("add-weigh-input");
     if (!input) return;
-    const add = Number(input.value);
-    if (!add || !(add > 0)) { input.focus(); return; }
+    const it = state.items[idx];
+    const cur = it && it.actual_amount !== "" ? (Number(it.actual_amount) || 0) : 0;
+    const res = resolveAddPortion(_awMode || "tared", Number(input.value), cur);
+    if (!res.ok) {
+      // 누계 모드인데 표시값이 현재 담은 양 이하 — 비커 교체·상태 오선택·덜어냄 신호.
+      if (res.reason === "not-above-current") {
+        notify(`입력값이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`, "error");
+      }
+      input.focus();
+      return;
+    }
     input.value = "";
-    applyAddAmount(idx, add);
+    applyAddAmount(idx, res.portion);
     // applyAddAmount 가 addModeIdx 를 null 로 되돌리므로 모달 진행 중엔 다시 올린다.
     state.addModeIdx = idx;
     if (!state.scaleOnlyInput) input.focus();
@@ -2636,6 +2747,7 @@
   function finishAddWeighModal(idx) {
     $("add-weigh-modal").hidden = true;
     _addWeighIdx = null;
+    _awMode = null;  // 해석 모드는 모달과 같은 수명 — 다음 진입 때 다시 고른다
     state.addModeIdx = null;
     const inline = document.querySelector(`.blend-add-inline[data-idx="${idx}"]`);
     if (inline) inline.remove();
@@ -2654,6 +2766,7 @@
   function closeAddWeighModal(idx, keepValue) {
     $("add-weigh-modal").hidden = true;
     _addWeighIdx = null;
+    _awMode = null;  // 해석 모드는 모달과 같은 수명 — 다음 진입 때 다시 고른다
     state.addModeIdx = null;
     if (!keepValue && idx != null) {
       const it = state.items[idx];
@@ -3246,6 +3359,23 @@
     if (awReweigh) awReweigh.addEventListener("click", () => {
       if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ false);
     });
+    // 저울 상태 선택 모달 — 그림 두 장 중 선택, 취소/Esc 로 되돌아가기.
+    // 바깥 클릭 봉인(다른 봉인 모달과 동일) — 실수 클릭이 선택을 건너뛰면 안 된다.
+    const ssModal = $("scale-state-modal");
+    const ssTared = $("scale-state-tared");
+    const ssLoaded = $("scale-state-loaded");
+    const ssCancel = $("scale-state-cancel");
+    if (ssTared) ssTared.addEventListener("click", () => chooseScaleState("tared"));
+    if (ssLoaded) ssLoaded.addEventListener("click", () => chooseScaleState("loaded"));
+    if (ssCancel) ssCancel.addEventListener("click", closeScaleStateModal);
+    if (ssModal) ssModal.addEventListener("click", (e) => {
+      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 [취소]를 누르세요.", "warn");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && ssModal && !ssModal.hidden) closeScaleStateModal();
+    });
+    const awStateChange = $("add-weigh-state-change");
+    if (awStateChange) awStateChange.addEventListener("click", () => openScaleStateModal(null));
     const awDismissGuard = () => {
       notify("담는 중입니다 — [지금까지 담은 값으로 마치기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
     };

@@ -106,10 +106,11 @@ test("차단 목록은 승인 모달만이 아니라 제안·폐기·3회 차단
   // ("포커스를 안 뺏으니 안전"이라던 86905ab 의 판단이 틀렸다 — 목록 축소 회귀를 여기서 고정.)
   const required = {
     "blend.js": [blend, ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
-      "discard-modal", "rescale-block-modal", "carry-over-modal", "lot-invalid-modal"]],
+      "discard-modal", "rescale-block-modal", "carry-over-modal", "lot-invalid-modal",
+      "scale-state-modal"]],
     "blend_continuous.js": [cont, ["cont-rescale-approve-modal", "cont-manual-approve-modal",
       "cont-rescale-modal", "cont-discard-modal", "cont-rescale-block-modal",
-      "cont-lot-invalid-modal"]],
+      "cont-lot-invalid-modal", "cont-scale-state-modal"]],
   };
   Object.entries(required).forEach(([name, [src, ids]]) => {
     const body = bodyOf(src, "printBlockingModalVisible");
@@ -165,4 +166,37 @@ test("기준 자재 모드의 배지는 화면 이론량과 같은 목표를 쓴
   assert.match(
     body, /theory_amount/,
     "anchor 모드 잔여는 화면이 실제로 쓰는 목표(it.theory_amount)로 계산해야 한다");
+});
+
+// ── 저울 상태 선택(2026-08-04 시안) — 진입·해석 계약 ─────────────────
+test("추가 계량 진입은 전부 저울 상태 선택을 거친다", () => {
+  // 진입문을 우회하면 상태 선택 없이 합산 모드가 열려, 영점 안 잡힌 저울의
+  // PRINT(누계)가 이중 계산된다. 버튼/배지/부족 모달의 직접 open* 호출 금지.
+  const direct = (blend.match(/openAddWeighModal\(/g) || []).length;
+  // 허용: 함수 정의 1 + chooseScaleState 1 + openScaleStateModal 폴백 1 + 주석 언급
+  const defs = (blend.match(/function openAddWeighModal\(/g) || []).length;
+  assert.strictEqual(defs, 1, "정의는 하나여야 한다");
+  assert.match(bodyOf(blend, "shortageChooseAdd"), /requestAddWeigh\(/,
+    "부족 모달의 '추가로 채우기'는 상태 선택을 거쳐야 한다");
+  assert.match(bodyOf(blend, "buildSplitButton"), /requestAddWeigh\(/,
+    "⊞ 나눠 담기 버튼은 상태 선택을 거쳐야 한다");
+  assert.match(bodyOf(cont, "requestAddInline"), /openContScaleStateModal\(/,
+    "다중 계량 추가 입력도 상태 선택을 거쳐야 한다");
+  assert.ok(direct >= defs, "sanity");
+});
+
+test("PRINT 는 두 화면 모두 상태 선택(resolveAddPortion)으로 환산된다", () => {
+  [["blend.js", blend], ["blend_continuous.js", cont]].forEach(([name, src]) => {
+    assert.match(bodyOf(src, "fillScaleValue"), /resolveAddPortion\(/,
+      `${name}: 추가 모드 PRINT 를 환산 없이 합산하면 누계 상태에서 이중 계산된다`);
+  });
+});
+
+test("부족 모달 중 PRINT 는 상태 선택 전이므로 소비하지 않는다", () => {
+  const body = bodyOf(blend, "pollScaleEvents");
+  const at = body.indexOf("_shortageIdx != null");
+  assert.notStrictEqual(at, -1, "부족 모달 전환 분기가 있어야 한다");
+  const after = body.slice(at, at + 400);
+  assert.match(after, /break\s*;/,
+    "전환 후 그 PRINT 를 이어서 소비하면 해석 방법이 정해지기 전의 값이 합산된다");
 });

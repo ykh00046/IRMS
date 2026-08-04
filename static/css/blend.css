@@ -506,6 +506,50 @@
 .add-weigh-note { font-size: 0.78rem; }
 .add-weigh-note[hidden] { display: none; }
 
+/* 저울 상태 선택 모달 — 나눠 담기/추가 계량 진입 전, 그림 두 장 중 하나를 고른다
+   (2026-08-04 시안). 큰 터치 대상 + 그림이 곧 답이 되게 카드형 버튼. */
+.scale-state-guide {
+  font-size: 0.9rem; color: var(--text-secondary, #56627b);
+  margin: 0 0 0.9rem; line-height: 1.4; text-align: center;
+}
+.scale-state-options {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0 0 0.4rem;
+}
+.scale-state-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  padding: 0.9rem 0.6rem 0.8rem; cursor: pointer;
+  background: var(--bg-surface-200, #fafbfd);
+  border: 2px solid var(--border-subtle, #d8dfeb); border-radius: 10px;
+  color: #1d3461; font: inherit;
+}
+.scale-state-btn:hover, .scale-state-btn:focus-visible {
+  border-color: var(--cal-accent, #e8722a); background: #fff; outline: none;
+}
+.scale-state-btn svg { width: 108px; height: 86px; }
+.scale-state-liquid { fill: #f8c8a0; }
+.scale-state-display { fill: #eef7ee; }
+.scale-state-value {
+  font-size: 13px; font-weight: 700; fill: #1a7f37;
+  font-family: "Consolas", "Courier New", monospace;
+}
+.scale-state-label { font-weight: 700; font-size: 0.98rem; color: var(--text-primary, #15233f); }
+.scale-state-sub {
+  font-size: 0.78rem; color: var(--text-secondary, #56627b); line-height: 1.35;
+}
+/* 선택 후 추가 계량 모달 상단에 남는 상태 칩 — 중간에 영점을 잡았으면 여기서 전환. */
+.scale-state-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.8rem; color: var(--text-secondary, #56627b);
+  background: var(--bg-surface-200, #f3f6fb); border: 1px solid var(--border-subtle, #e7ebf2);
+  border-radius: 999px; padding: 0.2rem 0.7rem; margin: 0 0 0.7rem;
+}
+.scale-state-chip b { color: var(--text-primary, #15233f); font-weight: 700; }
+.scale-state-chip button {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--cal-accent, #b45309); font-size: 0.78rem; text-decoration: underline;
+}
+.scale-state-chip[hidden] { display: none; }
+
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));

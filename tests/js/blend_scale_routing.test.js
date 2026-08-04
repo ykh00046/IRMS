@@ -148,3 +148,32 @@ test("[편차] toleranceG 미지정/0 이하 → 기본 TOLERANCE_G(0.05)", () =
   assert.strictEqual(varianceVerdict(100.03, 100.0).within, true);
   assert.strictEqual(varianceVerdict(100.06, 100.0, 0).over, true);
 });
+
+// ── 저울 상태 선택(2026-08-04 시안) — PRINT/입력값 해석 ─────────────
+const { resolveAddPortion } = global.window.IRMS.blendLib;
+
+test("영점 잡힘(tared): 값 = 추가분 그대로", () => {
+  assert.deepStrictEqual(resolveAddPortion("tared", 40, 400), { ok: true, portion: 40 });
+});
+
+test("무게 남음(loaded): 추가분 = 표시값 - 현재 누계", () => {
+  // 95 담긴 상태에서 5 더 붓고 PRINT → 100. 합산하면 195(이중 계산), 환산하면 +5.
+  assert.deepStrictEqual(resolveAddPortion("loaded", 100, 95), { ok: true, portion: 5 });
+});
+
+test("loaded: 표시값이 현재 이하면 적용 불가 — 비커 교체/상태 오선택 신호", () => {
+  assert.strictEqual(resolveAddPortion("loaded", 90, 95).ok, false);
+  assert.strictEqual(resolveAddPortion("loaded", 90, 95).reason, "not-above-current");
+  assert.strictEqual(resolveAddPortion("loaded", 95, 95).ok, false);  // 0 추가도 기록 금지
+});
+
+test("0 이하·비수치 값은 모드와 무관하게 거부", () => {
+  assert.strictEqual(resolveAddPortion("tared", 0, 10).ok, false);
+  assert.strictEqual(resolveAddPortion("tared", -5, 10).ok, false);
+  assert.strictEqual(resolveAddPortion("loaded", NaN, 10).ok, false);
+});
+
+test("저울 해상도(2자리) 반올림 — 3자리가 실제량에 스며들지 않게", () => {
+  assert.strictEqual(resolveAddPortion("loaded", 100.126, 95).portion, 5.13);
+  assert.strictEqual(resolveAddPortion("tared", 40.126, 0).portion, 40.13);
+});
