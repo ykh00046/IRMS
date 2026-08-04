@@ -7,7 +7,14 @@ from typing import Any, Callable
 
 import requests
 
-from .attendance_popup import PopupPayload, build_viscosity_popup_payload
+from .attendance_popup import (
+    FEEDBACK_ALERTED,
+    FEEDBACK_EMPTY,
+    FEEDBACK_FAILED,
+    PopupPayload,
+    build_viscosity_popup_payload,
+    emit_feedback,
+)
 from .schedule import current_slot_key, seconds_until_next_slot, stale_slot_key_on_startup
 
 logger = logging.getLogger("irms_notice")
@@ -55,10 +62,11 @@ class ViscosityAlertPoller:
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
-    def trigger_once(self) -> None:
+    def trigger_once(self, on_feedback: Callable[[str], None] | None = None) -> None:
+        """수동 '바로 확인' — on_feedback 를 주면 결과 코드를 돌려준다(선택)."""
         threading.Thread(
             target=self._poll_and_notify,
-            kwargs={"force": True},
+            kwargs={"force": True, "on_feedback": on_feedback},
             daemon=True,
         ).start()
 
@@ -83,20 +91,34 @@ class ViscosityAlertPoller:
             wait_seconds = min(seconds_until_next_slot(now), self._interval)
             self._stop_event.wait(wait_seconds)
 
-    def _poll_and_notify(self, force: bool = False, slot_key: str | None = None) -> bool:
+    def _poll_and_notify(
+        self,
+        force: bool = False,
+        slot_key: str | None = None,
+        on_feedback: Callable[[str], None] | None = None,
+    ) -> bool:
         today = self._now().date().isoformat()
         try:
             payload = self._poll_once(today)
         except requests.RequestException as exc:
             logger.warning("viscosity reminder poll failed: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
+            return False
+        except Exception as exc:  # noqa: BLE001 - 팝업 빌더 등 예기치 못한 오류가
+            # _run 루프까지 전파되면 폴러 스레드가 죽어 점도 알림이 조용히 전멸한다.
+            # 근태 폴러와 동일하게 여기서 삼키고 다음 주기에 재시도한다.
+            logger.exception("viscosity reminder unexpected error: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         if not payload:
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         items = list(payload.get("items") or [])
         if not items:
             self._last_signature = None
             self._last_signature_slot = slot_key
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         signature = reminder_signature(items)
@@ -107,6 +129,7 @@ class ViscosityAlertPoller:
             and slot_key == self._last_signature_slot
         ):
             logger.debug("viscosity reminder unchanged; duplicate popup suppressed")
+            emit_feedback(on_feedback, FEEDBACK_ALERTED)
             return True
 
         popup_payload = build_viscosity_popup_payload(payload)
@@ -114,6 +137,7 @@ class ViscosityAlertPoller:
         self._last_signature = signature
         self._last_signature_slot = slot_key
         logger.info("viscosity popup raised: %s / %s", popup_payload.title, popup_payload.summary)
+        emit_feedback(on_feedback, FEEDBACK_ALERTED)
         return True
 
     def _poll_once(self, target_date: str) -> dict[str, Any] | None:

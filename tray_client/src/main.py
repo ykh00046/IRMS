@@ -7,6 +7,8 @@ import threading
 import webbrowser
 from pathlib import Path
 
+import requests
+
 try:
     from PIL import Image
 except ModuleNotFoundError as exc:
@@ -38,17 +40,27 @@ else:
 
 from . import autostart
 from .attendance_alerts import AttendanceAlertPoller, today_iso
-from .attendance_popup import AttendanceAlertPopupManager, PopupPayload
+from .attendance_popup import (
+    FEEDBACK_ALERTED,
+    FEEDBACK_FAILED,
+    AttendanceAlertPopupManager,
+    PopupPayload,
+    build_info_popup_payload,
+)
 from .config import Config, logs_dir
 from .logger import setup_logger
 from .rescale_alerts import RescaleAlertPoller
 from .scale_service import ScaleService
 from .settings_window import SettingsWindow
+from .version import __version__
 from .viscosity_alerts import ViscosityAlertPoller
 
 # 통합 앱: 근태·점도 알림 + 저울 연동을 한 트레이에서. 각 기능은 메뉴에서 켜고 끌 수
 # 있고 설정은 config.json 에 저장돼 재부팅해도 유지된다(기본: 알림만 켜짐).
 APP_TITLE = "IRMS 현장 도우미"
+TRAY_TITLE = f"{APP_TITLE} v{__version__}"
+# 서버 주소 저장 시 연결 확인용(짧게 — 설정 저장을 오래 붙잡지 않는다).
+SERVER_CHECK_TIMEOUT_SECONDS = 3
 
 
 def asset_path(name: str) -> Path:
@@ -93,6 +105,11 @@ def blend_records_page_url(server_url: str) -> str:
 def home_page_url(server_url: str) -> str:
     # 공용 홈(런처) — 여기서 근태·반제품 제조·점도로 이동한다.
     return f"{server_url.rstrip('/')}/"
+
+
+def version_api_url(server_url: str) -> str:
+    # 서버 생존 확인용 경량 엔드포인트(자동 새로고침이 쓰는 것과 동일).
+    return f"{server_url.rstrip('/')}/api/version"
 
 
 def open_in_browser(url: str) -> None:
@@ -140,7 +157,7 @@ class TrayApp:
             ) from _PYSTRAY_IMPORT_ERROR
         self.logger.info(
             "starting %s (server=%s, attendance=%s, viscosity=%s, rescale=%s, scale=%s)",
-            APP_TITLE, self.config.server_url,
+            TRAY_TITLE, self.config.server_url,
             self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
             self.config.rescale_alerts_enabled, self.config.scale_enabled,
         )
@@ -156,7 +173,7 @@ class TrayApp:
         self._icon = pystray.Icon(
             "irms_field",
             icon=load_icon_image(),
-            title=APP_TITLE,
+            title=TRAY_TITLE,
             menu=self._build_menu(),
         )
         try:
@@ -233,6 +250,8 @@ class TrayApp:
         scale_enabled: bool,
         server_url: str,
         autostart_enabled: bool,
+        tray_api_token: str | None = None,
+        verify_server: bool = True,
     ) -> None:
         """설정 창의 '저장'에서 호출 — 값 반영·저장·저울 lifecycle·자동실행 일괄 적용."""
         self.config.attendance_alerts_enabled = bool(attendance_alerts)
@@ -241,6 +260,9 @@ class TrayApp:
         cleaned_url = (server_url or "").strip()
         if cleaned_url:
             self.config.server_url = cleaned_url
+        if tray_api_token is not None:
+            # 빈 값 허용 = 토큰 미사용(기본). 서버가 토큰을 요구할 때만 채운다.
+            self.config.tray_api_token = str(tray_api_token).strip()
 
         want_scale = bool(scale_enabled)
         if want_scale != self.config.scale_enabled:
@@ -261,12 +283,43 @@ class TrayApp:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("autostart set failed: %s", exc)
         self.logger.info(
-            "settings applied: attendance=%s viscosity=%s rescale=%s scale=%s server=%s",
+            "settings applied: attendance=%s viscosity=%s rescale=%s scale=%s server=%s token=%s",
             self.config.attendance_alerts_enabled, self.config.viscosity_alerts_enabled,
             self.config.rescale_alerts_enabled, self.config.scale_enabled, self.config.server_url,
+            "set" if self.config.tray_api_token else "none",
         )
         if self._icon is not None:
             self._icon.update_menu()
+        if verify_server:
+            # 주소 오타를 저장 직후에 알 수 있게 — 실패해도 저장은 이미 끝났다(차단 없음).
+            threading.Thread(
+                target=self._verify_server_connection,
+                args=(self.config.server_url,),
+                name="server-check",
+                daemon=True,
+            ).start()
+
+    # ── 서버 연결 확인 ───────────────────────────────────────────
+    def _verify_server_connection(self, server_url: str) -> None:
+        """GET /api/version 으로 서버 생존만 확인하고 결과를 안내 팝업으로 알린다."""
+        url = version_api_url(server_url)
+        try:
+            resp = requests.get(url, timeout=SERVER_CHECK_TIMEOUT_SECONDS)
+            resp.raise_for_status()
+        except Exception as exc:  # noqa: BLE001 - 확인 실패가 앱 동작을 막지 않는다
+            self.logger.warning("server check failed: %s (%s)", url, exc)
+            self._show_info_popup(
+                "서버 응답 없음",
+                "서버 응답 없음 — 주소를 확인하세요.",
+                [server_url],
+            )
+            return
+        self.logger.info("server check ok: %s", url)
+        self._show_info_popup("서버 연결 확인됨", "서버 연결 확인됨.", [server_url])
+
+    def _show_info_popup(self, title: str, summary: str, lines: list[str] | None = None) -> None:
+        """안내 팝업 — 팝업 매니저의 큐를 거치므로 어느 스레드에서 불러도 안전하다."""
+        self.alert_popup.show(build_info_popup_payload(title, summary, lines))
 
     def open_logs_folder(self) -> None:
         path = logs_dir()
@@ -295,19 +348,44 @@ class TrayApp:
             self._enable_alerts_today()
 
     # ── 액션 ─────────────────────────────────────────────────────
+    def _manual_check_feedback(self, label: str, status: str) -> None:
+        """수동 '바로 확인' 결과 안내 — '알림 없음'과 '서버 죽음'을 구분해 준다.
+
+        알림을 실제로 띄운 경우(FEEDBACK_ALERTED)엔 그 팝업이 곧 결과이므로 조용히 넘어간다.
+        """
+        if status == FEEDBACK_ALERTED:
+            return
+        if status == FEEDBACK_FAILED:
+            self._show_info_popup(
+                f"{label} 확인 실패",
+                "서버에 연결하지 못했습니다 — 설정에서 서버 주소를 확인하세요.",
+                [self.config.server_url],
+            )
+            return
+        self._show_info_popup(f"{label} 확인", "현재 알림이 없습니다.")
+
     def _show_attendance_anomalies(self, _icon, _item) -> None:
         self.logger.info("manual attendance anomaly check requested")
-        self.alert_poller.trigger_once()
+        self.alert_poller.trigger_once(
+            on_feedback=lambda status: self._manual_check_feedback("근태 알림", status)
+        )
 
     def _show_viscosity_reminders(self, _icon, _item) -> None:
         self.logger.info("manual viscosity reminder check requested")
-        self.viscosity_poller.trigger_once()
+        self.viscosity_poller.trigger_once(
+            on_feedback=lambda status: self._manual_check_feedback("점도 알림", status)
+        )
 
     def _show_rescale_alerts(self, _icon, _item) -> None:
         self.logger.info("manual rescale alert check requested")
-        self.rescale_poller.trigger_once()
+        self.rescale_poller.trigger_once(
+            on_feedback=lambda status: self._manual_check_feedback("증량 알림", status)
+        )
 
     def _open_popup_target(self, payload: PopupPayload) -> None:
+        if payload.action_key == "info":
+            # 안내 팝업의 '확인'은 창만 닫는다(열 페이지 없음).
+            return
         if payload.action_key == "viscosity":
             self._open_viscosity()
             return

@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - 헤드리스/비GUI 환경
     tk = None  # type: ignore[assignment]
 
 from . import autostart
+from .version import __version__
 
 logger = logging.getLogger("irms_notice")
 
@@ -38,6 +39,7 @@ class SettingsWindow:
         self._scale_var: Any = None
         self._autostart_var: Any = None
         self._server_var: Any = None
+        self._token_var: Any = None
         self._scale_status: Any = None
 
     # UI 스레드에서 호출됨 (popup.run_on_ui 경유)
@@ -72,6 +74,7 @@ class SettingsWindow:
         self._scale_var = tk.BooleanVar(value=bool(cfg.scale_enabled))
         self._autostart_var = tk.BooleanVar(value=autostart.is_enabled())
         self._server_var = tk.StringVar(value=str(cfg.server_url or ""))
+        self._token_var = tk.StringVar(value=str(getattr(cfg, "tray_api_token", "") or ""))
 
         # ── 알림 ──
         self._section(pad, "알림")
@@ -97,6 +100,13 @@ class SettingsWindow:
         self._section(pad, "일반")
         tk.Label(pad, text="서버 주소", bg=_BG, fg=_MUTED, font=(_FONT, 9), anchor="w").pack(fill="x", anchor="w")
         tk.Entry(pad, textvariable=self._server_var, font=(_FONT, 10), width=36).pack(fill="x", anchor="w", pady=(2, 8))
+        # 서버가 트레이 토큰을 요구하도록 설정된 경우에만 채운다. 비워두면 미사용(기본).
+        tk.Label(
+            pad, text="트레이 토큰 (선택)", bg=_BG, fg=_MUTED, font=(_FONT, 9), anchor="w",
+        ).pack(fill="x", anchor="w")
+        tk.Entry(
+            pad, textvariable=self._token_var, font=(_FONT, 10), width=36, show="*",
+        ).pack(fill="x", anchor="w", pady=(2, 8))
         self._check(pad, "부팅 시 자동 실행", self._autostart_var)
         tk.Button(
             pad, text="로그 폴더 열기", command=self._open_logs, relief="flat", bd=0,
@@ -115,6 +125,11 @@ class SettingsWindow:
             buttons, text="닫기", command=self._close, relief="flat", bd=0,
             bg="#f1f5f9", fg=_TEXT, font=(_FONT, 10), padx=14, pady=7, cursor="hand2",
         ).pack(side="left", padx=(8, 0))
+
+        # 버전 표기 — 현장 문의 시 설치본 확인용(version.py 단일 소스).
+        tk.Label(
+            pad, text=f"버전 {__version__}", bg=_BG, fg=_MUTED, font=(_FONT, 8), anchor="e",
+        ).pack(fill="x", anchor="e", pady=(10, 0))
 
         win.update_idletasks()
         w, h = win.winfo_reqwidth(), win.winfo_reqheight()
@@ -167,6 +182,7 @@ class SettingsWindow:
                 scale_enabled=bool(self._scale_var.get()),
                 server_url=str(self._server_var.get()),
                 autostart_enabled=bool(self._autostart_var.get()),
+                tray_api_token=str(self._token_var.get()),
             )
             self._refresh_status()
         except Exception as exc:  # noqa: BLE001

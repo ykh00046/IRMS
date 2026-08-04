@@ -70,9 +70,30 @@ ACCENT_TOKENS = {
 }
 
 # 알림 종류(action_key) → 섹션 라벨 / 표시 순서. 근태·점도·증량이 같이 오면 한 창에 이 순서로 쌓는다.
-KIND_LABEL = {"attendance": "근태", "viscosity": "점도", "rescale": "증량"}
-KIND_ORDER = ("attendance", "viscosity", "rescale")
-KIND_SECTION_TITLE = {"attendance": "근태 확인", "viscosity": "점도 입력", "rescale": "증량 확인"}
+KIND_LABEL = {"attendance": "근태", "viscosity": "점도", "rescale": "증량", "info": "안내"}
+KIND_ORDER = ("attendance", "viscosity", "rescale", "info")
+KIND_SECTION_TITLE = {
+    "attendance": "근태 확인",
+    "viscosity": "점도 입력",
+    "rescale": "증량 확인",
+    "info": "안내",
+}
+
+# 수동 '바로 확인'(trigger_once) 결과 코드 — 폴러가 콜백으로 돌려주고, 트레이가
+# 안내 팝업 여부를 결정한다. 자동(슬롯/주기) 폴링은 콜백이 없어 영향이 없다.
+FEEDBACK_ALERTED = "alerted"  # 알림 팝업을 띄웠음 → 추가 안내 불필요
+FEEDBACK_EMPTY = "empty"      # 폴링 성공 + 대상 0건
+FEEDBACK_FAILED = "failed"    # 서버 연결/응답 실패
+
+
+def emit_feedback(on_feedback: Callable[[str], None] | None, status: str) -> None:
+    """피드백 콜백을 안전하게 호출 — 콜백 오류가 폴러 스레드를 죽이지 않게."""
+    if on_feedback is None:
+        return
+    try:
+        on_feedback(status)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("manual check feedback failed: %s", exc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +196,31 @@ def build_test_popup_payload() -> PopupPayload:
         accent="test",
         action_key="attendance",
         confirm_text="근태 확인",
+    )
+
+
+def build_info_popup_payload(
+    title: str,
+    summary: str,
+    lines: list[str] | None = None,
+    *,
+    badge_text: str = "안내",
+) -> PopupPayload:
+    """단순 정보 팝업 — 수동 '바로 확인' 결과·서버 연결 확인 등 안내 전용.
+
+    action_key="info" 라 근태/점도/증량 섹션을 덮어쓰지 않고, 확인 버튼은 창만 닫는다.
+    창에 실제로 그려지는 건 lines 이므로(summary 는 로그용) 안내 문구를 첫 줄로 넣는다.
+    """
+    body = [summary] if summary else []
+    body.extend(lines or [])
+    return PopupPayload(
+        title=title,
+        badge_text=badge_text,
+        summary=summary,
+        lines=body,
+        accent="test",
+        action_key="info",
+        confirm_text="확인",
     )
 
 

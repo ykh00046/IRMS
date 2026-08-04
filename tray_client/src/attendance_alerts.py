@@ -10,9 +10,13 @@ from typing import Any, Callable
 import requests
 
 from .attendance_popup import (
+    FEEDBACK_ALERTED,
+    FEEDBACK_EMPTY,
+    FEEDBACK_FAILED,
     PopupPayload,
     build_live_popup_payload,
     build_test_popup_payload,
+    emit_feedback,
 )
 
 from .schedule import (  # 근태·점도 공통 스케줄
@@ -81,11 +85,15 @@ class AttendanceAlertPoller:
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
-    def trigger_once(self) -> None:
-        """Fire a single poll on a worker thread."""
+    def trigger_once(self, on_feedback: Callable[[str], None] | None = None) -> None:
+        """Fire a single poll on a worker thread.
+
+        on_feedback 를 주면 결과(FEEDBACK_ALERTED/EMPTY/FAILED)를 그 폴링 스레드에서
+        돌려준다 — 수동 '바로 확인'이 조용히 끝나는 문제를 막기 위한 선택 인자.
+        """
         threading.Thread(
             target=self._poll_and_notify,
-            kwargs={"force": True},
+            kwargs={"force": True, "on_feedback": on_feedback},
             daemon=True,
         ).start()
 
@@ -133,24 +141,34 @@ class AttendanceAlertPoller:
     def _seconds_until_next_schedule(self, now: _dt.datetime) -> int:
         return seconds_until_next_slot(now)
 
-    def _poll_and_notify(self, force: bool = False, slot_key: str | None = None) -> bool:
+    def _poll_and_notify(
+        self,
+        force: bool = False,
+        slot_key: str | None = None,
+        on_feedback: Callable[[str], None] | None = None,
+    ) -> bool:
         try:
             payload = self._poll_once()
         except _FileLockedRetry:
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         except requests.RequestException as exc:
             logger.warning("attendance alert poll failed: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         except Exception as exc:  # noqa: BLE001
             logger.exception("attendance alert unexpected error: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         if not payload:
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         items = payload.get("items") or []
         if not items:
             self._last_signature = None
             self._last_signature_slot = slot_key
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         signature = anomaly_signature(items)
@@ -161,6 +179,7 @@ class AttendanceAlertPoller:
             and slot_key == self._last_signature_slot
         ):
             logger.debug("attendance alert unchanged; duplicate popup suppressed")
+            emit_feedback(on_feedback, FEEDBACK_ALERTED)
             return True
 
         popup_payload = build_live_popup_payload(payload)
@@ -168,6 +187,7 @@ class AttendanceAlertPoller:
         self._last_signature = signature
         self._last_signature_slot = slot_key
         logger.info("attendance popup raised: %s / %s", popup_payload.title, popup_payload.summary)
+        emit_feedback(on_feedback, FEEDBACK_ALERTED)
         return True
 
     def _poll_once(self) -> dict[str, Any] | None:

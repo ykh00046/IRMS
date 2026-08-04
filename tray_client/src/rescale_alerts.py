@@ -16,7 +16,14 @@ from typing import Any, Callable
 
 import requests
 
-from .attendance_popup import PopupPayload, build_rescale_popup_payload
+from .attendance_popup import (
+    FEEDBACK_ALERTED,
+    FEEDBACK_EMPTY,
+    FEEDBACK_FAILED,
+    PopupPayload,
+    build_rescale_popup_payload,
+    emit_feedback,
+)
 
 logger = logging.getLogger("irms_notice")
 
@@ -50,11 +57,14 @@ class RescaleAlertPoller:
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
-    def trigger_once(self) -> None:
-        """수동 '바로 확인' — 한 번 폴링해 미확인이 있으면 알림(꺼져 있어도 강제)."""
+    def trigger_once(self, on_feedback: Callable[[str], None] | None = None) -> None:
+        """수동 '바로 확인' — 한 번 폴링해 미확인이 있으면 알림(꺼져 있어도 강제).
+
+        on_feedback 를 주면 결과 코드(FEEDBACK_ALERTED/EMPTY/FAILED)를 돌려준다(선택).
+        """
         threading.Thread(
             target=self._poll_and_notify,
-            kwargs={"force": True},
+            kwargs={"force": True, "on_feedback": on_feedback},
             daemon=True,
         ).start()
 
@@ -64,27 +74,36 @@ class RescaleAlertPoller:
             if self._is_enabled_getter():
                 self._poll_and_notify()
 
-    def _poll_and_notify(self, force: bool = False) -> bool:
+    def _poll_and_notify(
+        self,
+        force: bool = False,
+        on_feedback: Callable[[str], None] | None = None,
+    ) -> bool:
         if not force and not self._is_enabled_getter():
             return False
         try:
             payload = self._poll_once()
         except requests.RequestException as exc:
             logger.warning("rescale alert poll failed: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         except Exception as exc:  # noqa: BLE001
             logger.exception("rescale alert unexpected error: %s", exc)
+            emit_feedback(on_feedback, FEEDBACK_FAILED)
             return False
         if not payload:
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         count = int(payload.get("count") or len(payload.get("items") or []))
         if count <= 0:
+            emit_feedback(on_feedback, FEEDBACK_EMPTY)
             return True
 
         popup_payload = build_rescale_popup_payload(payload)
         self._present_alert(popup_payload)
         logger.info("rescale popup raised: %s (%d건)", popup_payload.title, count)
+        emit_feedback(on_feedback, FEEDBACK_ALERTED)
         return True
 
     def _poll_once(self) -> dict[str, Any] | None:

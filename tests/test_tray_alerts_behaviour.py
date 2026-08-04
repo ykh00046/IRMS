@@ -3,15 +3,21 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import requests
+
 import tray_client.src.main as tray_main
 from tray_client.src.attendance_alerts import AttendanceAlertPoller
 from tray_client.src.attendance_popup import (
+    FEEDBACK_ALERTED,
+    FEEDBACK_EMPTY,
+    FEEDBACK_FAILED,
     AttendanceAlertPopupManager,
     PopupPayload,
     build_live_popup_payload,
     build_viscosity_popup_payload,
 )
 from tray_client.src.config import Config
+from tray_client.src.rescale_alerts import RescaleAlertPoller
 from tray_client.src.viscosity_alerts import ViscosityAlertPoller
 
 
@@ -294,7 +300,7 @@ class TrayNavigationTests(unittest.TestCase):
             def __init__(self, name: str) -> None:
                 self._name = name
 
-            def trigger_once(self) -> None:
+            def trigger_once(self, on_feedback=None) -> None:
                 events.append(self._name)
 
         app = tray_main.TrayApp.__new__(tray_main.TrayApp)
@@ -375,6 +381,206 @@ class TrayNavigationTests(unittest.TestCase):
         with patch("tray_client.src.main.today_iso", return_value="2026-05-27"):
             self.assertFalse(app._attendance_active())
             self.assertFalse(app._viscosity_active())
+
+
+class ManualCheckFeedbackTests(unittest.TestCase):
+    """수동 '바로 확인' 피드백 — 0건과 서버 연결 실패를 구분해 알린다."""
+
+    def test_viscosity_empty_result_reports_empty_feedback(self) -> None:
+        presented: list[PopupPayload] = []
+        statuses: list[str] = []
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"date": "2026-08-04", "total": 0, "items": []}
+
+        class FakeSession:
+            def get(self, url, params=None, headers=None, timeout=None):
+                return FakeResponse()
+
+        poller = ViscosityAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: True,
+        )
+        poller._session = FakeSession()
+
+        poller._poll_and_notify(force=True, on_feedback=statuses.append)
+
+        self.assertEqual(statuses, [FEEDBACK_EMPTY])
+        self.assertEqual(presented, [])
+
+    def test_viscosity_connection_error_reports_failed_feedback(self) -> None:
+        statuses: list[str] = []
+
+        class FakeSession:
+            def get(self, url, params=None, headers=None, timeout=None):
+                raise requests.ConnectionError("no route to host")
+
+        poller = ViscosityAlertPoller(
+            config=Config(),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+        )
+        poller._session = FakeSession()
+
+        completed = poller._poll_and_notify(force=True, on_feedback=statuses.append)
+
+        self.assertFalse(completed)
+        self.assertEqual(statuses, [FEEDBACK_FAILED])
+
+    def test_viscosity_unexpected_error_is_swallowed_not_raised(self) -> None:
+        """팝업 빌더 등 예기치 못한 예외가 폴러 스레드를 죽이지 않아야 한다."""
+        statuses: list[str] = []
+        poller = ViscosityAlertPoller(
+            config=Config(),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+        )
+
+        with patch.object(poller, "_poll_once", side_effect=ValueError("boom")):
+            completed = poller._poll_and_notify(force=True, on_feedback=statuses.append)
+
+        self.assertFalse(completed)
+        self.assertEqual(statuses, [FEEDBACK_FAILED])
+
+    def test_attendance_reports_alerted_when_popup_raised(self) -> None:
+        presented: list[PopupPayload] = []
+        statuses: list[str] = []
+        poller = AttendanceAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: True,
+        )
+
+        with patch.object(
+            poller,
+            "_poll_once",
+            return_value={"total": 1, "items": [{"emp_id": "1", "name": "홍길동"}]},
+        ):
+            poller._poll_and_notify(force=True, on_feedback=statuses.append)
+
+        self.assertEqual(statuses, [FEEDBACK_ALERTED])
+        self.assertEqual(len(presented), 1)
+
+    def test_rescale_zero_count_reports_empty_feedback(self) -> None:
+        statuses: list[str] = []
+        poller = RescaleAlertPoller(
+            config=Config(),
+            present_alert=lambda _payload: None,
+            is_enabled_getter=lambda: True,
+        )
+
+        with patch.object(poller, "_poll_once", return_value={"count": 0, "items": []}):
+            poller._poll_and_notify(force=True, on_feedback=statuses.append)
+
+        self.assertEqual(statuses, [FEEDBACK_EMPTY])
+
+    def _feedback_app(self, shown: list[PopupPayload]):
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app.config = Config(server_url="http://192.168.11.194:9000")
+        app.logger = SimpleNamespace(
+            info=lambda *a, **k: None, warning=lambda *a, **k: None,
+        )
+        app.alert_popup = SimpleNamespace(show=shown.append)
+        return app
+
+    def test_empty_feedback_shows_no_alerts_info_popup(self) -> None:
+        shown: list[PopupPayload] = []
+        app = self._feedback_app(shown)
+
+        app._manual_check_feedback("점도 알림", FEEDBACK_EMPTY)
+
+        self.assertEqual(len(shown), 1)
+        self.assertEqual(shown[0].action_key, "info")
+        self.assertIn("현재 알림이 없습니다", shown[0].summary)
+        # 팝업에 실제로 그려지는 건 lines 다 — 안내 문구가 첫 줄에 있어야 보인다.
+        self.assertEqual(shown[0].lines[0], "현재 알림이 없습니다.")
+
+    def test_failed_feedback_points_at_server_setting(self) -> None:
+        shown: list[PopupPayload] = []
+        app = self._feedback_app(shown)
+
+        app._manual_check_feedback("근태 알림", FEEDBACK_FAILED)
+
+        self.assertEqual(len(shown), 1)
+        self.assertIn("서버에 연결하지 못했습니다", shown[0].summary)
+        self.assertIn("http://192.168.11.194:9000", shown[0].lines)
+
+    def test_alerted_feedback_shows_nothing_extra(self) -> None:
+        shown: list[PopupPayload] = []
+        app = self._feedback_app(shown)
+
+        app._manual_check_feedback("증량 알림", FEEDBACK_ALERTED)
+
+        self.assertEqual(shown, [])
+
+    def test_info_popup_confirm_opens_no_page(self) -> None:
+        opened: list[str] = []
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app.config = Config()
+        app.logger = SimpleNamespace(
+            info=lambda *a, **k: None, warning=lambda *a, **k: None,
+        )
+
+        with patch(
+            "tray_client.src.main.open_in_browser",
+            side_effect=lambda url: opened.append(url),
+        ):
+            app._open_popup_target(
+                tray_main.build_info_popup_payload("안내", "현재 알림이 없습니다.")
+            )
+
+        self.assertEqual(opened, [])
+
+
+class ServerCheckTests(unittest.TestCase):
+    """설정 저장 시 서버 주소 확인 — 성공/실패 모두 안내 팝업으로 알린다(저장은 차단 안 함)."""
+
+    def _app(self, shown: list[PopupPayload]):
+        app = tray_main.TrayApp.__new__(tray_main.TrayApp)
+        app.config = Config(server_url="http://192.168.11.194:9000")
+        app.logger = SimpleNamespace(
+            info=lambda *a, **k: None, warning=lambda *a, **k: None,
+        )
+        app.alert_popup = SimpleNamespace(show=shown.append)
+        return app
+
+    def test_version_api_url(self) -> None:
+        self.assertEqual(
+            tray_main.version_api_url("http://192.168.11.194:9000/"),
+            "http://192.168.11.194:9000/api/version",
+        )
+
+    def test_reachable_server_reports_ok(self) -> None:
+        shown: list[PopupPayload] = []
+        app = self._app(shown)
+
+        with patch(
+            "tray_client.src.main.requests.get",
+            return_value=SimpleNamespace(raise_for_status=lambda: None),
+        ):
+            app._verify_server_connection("http://192.168.11.194:9000")
+
+        self.assertEqual(len(shown), 1)
+        self.assertIn("연결 확인", shown[0].title)
+
+    def test_unreachable_server_reports_failure(self) -> None:
+        shown: list[PopupPayload] = []
+        app = self._app(shown)
+
+        with patch(
+            "tray_client.src.main.requests.get",
+            side_effect=requests.ConnectionError("refused"),
+        ):
+            app._verify_server_connection("http://10.0.0.9:9000")
+
+        self.assertEqual(len(shown), 1)
+        self.assertIn("응답 없음", shown[0].title)
+        self.assertIn("http://10.0.0.9:9000", shown[0].lines)
 
 
 class CombinedPopupTests(unittest.TestCase):
