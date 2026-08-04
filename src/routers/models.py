@@ -408,7 +408,8 @@ def role_for_access_level(access_level: str) -> str:
 
 def serialize_admin_user(row: Any) -> dict[str, Any]:
     payload = row_to_dict(row)
-    payload["role_label"] = ACCESS_LEVEL_LABEL.get(str(payload.get("access_level")), "User")
+    # 폴백도 한글 표시 라벨로 — 권한 2단계 용어(담당자/책임자) 통일(2026-08-05).
+    payload["role_label"] = ACCESS_LEVEL_LABEL.get(str(payload.get("access_level")), "담당자")
     payload["is_active"] = bool(payload.get("is_active"))
     return payload
 

@@ -43,7 +43,9 @@
                 <legend class="filter-label">레시피 속성 (선택)</legend>
                 <div class="imp-attrs-grid">
                   <div class="imp-attr-field">
-                    <label class="filter-label" for="register-base-total">기준 배합량 (g)</label>
+                    {# '기본' — 배합 화면의 [기본량 N 적용] 버튼이 채우는 그 값(용어 통일 2026-08-05).
+                       '기준'은 기준 자재(anchor)가 쓰는 말이라 한 화면에서 두 뜻이 충돌했다. #}
+                    <label class="filter-label" for="register-base-total">기본 배합량 (g)</label>
                     <input id="register-base-total" class="input base-total-input"
                       placeholder="선택 · 쉼표로 최대 3개"
                       title="배합 화면 '기준' 버튼이 채울 총량. 쉼표로 최대 3개 (예: 3924.38, 2000). 비우면 버튼 없음" />

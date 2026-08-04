@@ -85,7 +85,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 raise HTTPException(status_code=400, detail=str(exc))
             except sqlite3.IntegrityError:
                 raise HTTPException(
-                    status_code=400, detail="이미 같은 이름의 이용자가 있습니다."
+                    status_code=400, detail="이미 같은 이름의 담당자가 있습니다."
                 )
         if body.is_active is not None:
             # 마지막 책임자 보호 — 비활성화하면 관리 권한자가 0명이 되어 레시피·기록 관리와
@@ -98,7 +98,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         raise HTTPException(
                             status_code=400,
                             detail="마지막 책임자는 비활성화할 수 없습니다. "
-                                   "다른 이용자를 먼저 책임자로 지정하세요.",
+                                   "다른 담당자를 먼저 책임자로 지정하세요.",
                         )
             worker_service.set_active(connection, worker_id, body.is_active)
         # 분류(파트) 처리 — None 은 "변경 안 함", 빈 문자열은 미지정(NULL) 해제.

@@ -33,7 +33,8 @@ def to_public_user(row) -> dict[str, Any]:
         "username": row["username"],
         "display_name": row["display_name"],
         "role": row["role"],
-        "role_label": ACCESS_LEVEL_LABEL.get(access_level, "User"),
+        # 알 수 없는 등급의 폴백도 한국어 표시 라벨로 — 사이드바에 그대로 찍히는 값이다.
+        "role_label": ACCESS_LEVEL_LABEL.get(access_level, "담당자"),
         "access_level": access_level,
     }
 

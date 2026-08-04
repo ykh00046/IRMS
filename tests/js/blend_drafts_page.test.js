@@ -100,7 +100,7 @@ function clickButton(env, rowIndex, className) {
   body._listeners.click({ target });
 }
 
-test("초안이 없으면 '이어서 할 작업이 없습니다' 안내만 보인다", async () => {
+test("초안이 없으면 '작성 중 배합이 없습니다' 안내만 보인다", async () => {
   const env = makeEnv({});
   env.domListeners.DOMContentLoaded();
   await flush();

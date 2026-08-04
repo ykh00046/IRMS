@@ -191,7 +191,7 @@ def rename(connection: sqlite3.Connection, worker_id: int, new_name: str) -> dic
         "SELECT name FROM workers WHERE id = ?", (worker_id,)
     ).fetchone()
     if not row:
-        raise ValueError("이용자를 찾을 수 없습니다.")
+        raise ValueError("담당자를 찾을 수 없습니다.")
     old = row["name"]
     if old == clean:
         return {"old": old, "new": clean, "records_updated": 0}

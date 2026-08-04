@@ -134,15 +134,16 @@
       `<td class="num blend-var" data-idx="${idx}">-</td>`;
   }
 
-  // 1개면 '기준 N 적용', 여러 개면 '기준' 라벨 + 압축 표기 값 버튼들
+  // 1개면 '기본량 N 적용', 여러 개면 '기본량' 라벨 + 압축 표기 값 버튼들
+  // ('기준'은 같은 화면의 기준 자재(anchor) 배지가 이미 쓰는 말이라 뜻이 겹쳤다)
   function baseTotalLinksHtml(values) {
     if (!values.length) return "";
     const short = (v) => String(Number(v));  // 2000.00 → 2000 (라벨 줄 한 줄 유지)
-    const label = values.length === 1 ? "" : '<span class="blend-base-label">기준</span>';
+    const label = values.length === 1 ? "" : '<span class="blend-base-label">기본량</span>';
     return label + values.map((v) =>
       `<button class="blend-base-link" type="button" data-value="${v}" ` +
       `title="총 배합량에 ${fmt(v)} g 을 채웁니다">` +
-      `${values.length === 1 ? `기준 ${short(v)} 적용` : short(v)}</button>`
+      `${values.length === 1 ? `기본량 ${short(v)} 적용` : short(v)}</button>`
     ).join("");
   }
 

@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const currentUserIdInput = document.getElementById("current-user-id");
   const currentUserId = Number(currentUserIdInput?.value || 0);
 
-  // 이용자(사람) 명단 refs
+  // 담당자(사람) 명단 refs
   const addWorkerForm = document.getElementById("add-worker-form");
   const addWorkerName = document.getElementById("add-worker-name");
   const addWorkerSubmit = document.getElementById("add-worker-submit");
@@ -39,11 +39,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ["password_changed", "비밀번호 변경(본인)"],
       ["worker_manager_password_changed", "책임자 비번 변경(본인)"],
     ]],
-    ["이용자·권한", [
-      ["worker_register", "이용자 등록"],
-      ["worker_reactivated", "이용자 재활성화"],
-      ["worker_update", "이용자 수정"],
-      ["worker_deleted", "이용자 삭제"],
+    ["담당자·권한", [
+      ["worker_register", "담당자 등록"],
+      ["worker_reactivated", "담당자 재활성화"],
+      ["worker_update", "담당자 수정"],
+      ["worker_deleted", "담당자 삭제"],
       ["worker_manager_granted", "책임자 지정"],
       ["worker_manager_revoked", "책임자 해제"],
       ["worker_manager_password_reset", "책임자 비번 초기화"],
@@ -70,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_manual_entry_approved", "수기 입력 승인"],
       ["blend_manual_absence_saved", "수기 입력(책임자 부재)"],
       ["blend_rescale_saved", "증량 배합 저장"],
+      ["blend_discard_saved", "계량 중 자재 폐기"],
       ["blend_rescale_approve_denied", "증량 승인 거절"],
       // 총량 통제(2026-08-04) — 둘 다 저장을 막지 않고 기록만 남기는 사후 점검 신호.
       ["blend_total_oversize", "1회 배합 상한 초과 저장"],
@@ -144,7 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return IRMS.formatDateTime(value);
   }
 
-  // ── 이용자 명단 ──────────────────────────────────────────────
+  // ── 담당자 명단 ──────────────────────────────────────────────
   function renderSummary(items) {
     if (summaryTotal) summaryTotal.textContent = String(items.length);
     if (summaryManagers) summaryManagers.textContent = String(items.filter((w) => w.is_manager).length);
@@ -154,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const isSelf = worker.id === currentUserId;
     const roleChip = worker.is_manager
       ? '<span class="status-chip status-completed">책임자</span>'
-      : '<span class="status-chip">이용자</span>';
+      : '<span class="status-chip">담당자</span>';
     const managerCell = worker.is_manager
       ? `
         <div class="password-stack">
@@ -206,7 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderWorkers(items) {
     if (!items.length) {
       workersBody.innerHTML =
-        '<tr><td colspan="5"><div class="empty-state-block">등록된 이용자가 없습니다.</div></td></tr>';
+        '<tr><td colspan="5"><div class="empty-state-block">등록된 담당자가 없습니다.</div></td></tr>';
       return;
     }
     workersBody.innerHTML = items.map(renderWorkerRow).join("");
@@ -220,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderSummary(items);
       renderWorkers(items);
     } catch (error) {
-      IRMS.notify(`이용자 목록 조회 실패: ${error.message}`, "error");
+      IRMS.notify(`담당자 목록 조회 실패: ${error.message}`, "error");
     } finally {
       if (workersRefresh) workersRefresh.disabled = false;
     }
@@ -237,7 +238,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const result = await request("/workers", { method: "POST", body: { name } });
       addWorkerForm.reset();
-      IRMS.notify(result.created ? `${name} 이용자를 추가했습니다.` : `${name}은(는) 이미 명단에 있습니다.`, "success");
+      IRMS.notify(result.created ? `${name} 담당자를 추가했습니다.` : `${name}은(는) 이미 명단에 있습니다.`, "success");
       await refreshDashboard();
     } catch (error) {
       IRMS.notify(`추가 실패: ${error.message}`, "error");
@@ -277,7 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const workerErrorMap = {
-    WORKER_NOT_FOUND: "대상 이용자를 찾을 수 없습니다.",
+    WORKER_NOT_FOUND: "대상 담당자를 찾을 수 없습니다.",
     NOT_A_MANAGER: "책임자가 아닙니다.",
     CANNOT_REVOKE_SELF: "본인의 책임자 권한은 해제할 수 없습니다.",
     CANNOT_DELETE_MANAGER: "책임자는 삭제할 수 없습니다. 먼저 책임자를 해제한 뒤 삭제하세요.",
@@ -315,7 +316,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (passwordInput) passwordInput.value = "";
         IRMS.notify(action === "grant" ? `${name}을(를) 책임자로 지정했습니다.` : `${name}의 비밀번호를 초기화했습니다.`, "success");
       } else if (action === "revoke") {
-        if (!window.confirm(`'${name}'의 책임자 권한을 해제하시겠습니까? (이름만 쓰는 이용자로 돌아갑니다)`)) return;
+        if (!window.confirm(`'${name}'의 책임자 권한을 해제하시겠습니까? (이름만 쓰는 담당자로 돌아갑니다)`)) return;
         await request(`/workers/${workerId}/manager`, { method: "DELETE" });
         IRMS.notify(`${name}의 책임자 권한을 해제했습니다.`, "success");
       } else if (action === "deactivate") {

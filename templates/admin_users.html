@@ -16,7 +16,7 @@
 
         <section class="summary-grid">
           <article class="panel summary-card">
-            <span class="summary-label">전체 이용자</span>
+            <span class="summary-label">전체 담당자</span>
             <strong id="summary-total" class="summary-value">0</strong>
           </article>
           <article class="panel summary-card">
@@ -82,8 +82,8 @@
 
         <section class="admin-secondary-grid">
           <article class="panel">
-            <span class="kicker">이용자</span>
-            <h3 class="panel-title">이용자 추가</h3>
+            <span class="kicker">담당자</span>
+            <h3 class="panel-title">담당자 추가</h3>
             <form id="add-worker-form" class="create-user-grid">
               <div class="form-group">
                 <label class="filter-label" for="add-worker-name">이름</label>
@@ -105,7 +105,7 @@
                 <span class="kicker">감사 로그</span>
                 <h3 class="panel-title">최근 감사 로그</h3>
                 <p class="panel-subtitle audit-subtitle">
-                  로그인, 이용자·책임자 관리, 배합 기록, 레시피·점도 변경 이벤트를 최근 순서대로 보여줍니다.
+                  로그인, 담당자·책임자 관리, 배합 기록, 레시피·점도 변경 이벤트를 최근 순서대로 보여줍니다.
                 </p>
               </div>
               <button id="audit-refresh" type="button" class="btn">새로고침</button>
@@ -137,8 +137,8 @@
         <section class="panel">
           <div class="panel-head-row">
             <div>
-              <span class="kicker">이용자 명단</span>
-              <h3 class="panel-title">이용자 명단</h3>
+              <span class="kicker">담당자 명단</span>
+              <h3 class="panel-title">담당자 명단</h3>
             </div>
             <div class="button-row">
               <button id="workers-refresh" type="button" class="btn">새로고침</button>
@@ -272,5 +272,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260804i"></script>
+    <script src="/static/js/admin_users.js?v=20260805a"></script>
 {% endblock %}

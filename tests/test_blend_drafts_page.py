@@ -65,7 +65,7 @@ def test_blend_drafts_page_renders_for_worker():
     body = res.text
     assert "작성 중 배합" in body
     # 목록이 비었을 때의 안내 + 두 화면으로 가는 버튼
-    assert "이어서 할 작업이 없습니다" in body
+    assert "작성 중 배합이 없습니다" in body
     assert 'href="/blend"' in body
     assert 'href="/blend/continuous"' in body
     # 목록·복구는 전적으로 프론트엔드(localStorage) — 두 스크립트가 실려야 한다
