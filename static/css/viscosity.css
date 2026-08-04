@@ -539,3 +539,92 @@ body {
   padding: 8px 6px;
   background: var(--bg-surface-200, #f4f6fa);
 }
+
+/* ── 관리 밴드(controlBandHtml) — 관리 기준 요약 아래 가로 밴드 그림 ──
+   규격 전체 폭을 트랙으로, 그 안에 관리 한계(lcl~ucl)·경고 한계(lwl~uwl) 구간을
+   색으로, 중심을 파선으로, 최근 측정값을 삼각형 마커로 그린다. 색은 화면 토큰
+   (--status-*) 로만 — 인라인 hex 금지(rescaleBarsHtml 과 같은 규약). */
+.visc-control-summary-text {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.visc-band {
+  position: relative;
+  padding-top: 2px;
+}
+
+.visc-band-track {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--status-error) 10%, var(--bg-base));
+  border: 1px solid var(--border-subtle);
+}
+
+.visc-band-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.visc-band-zone.target {
+  background: color-mix(in srgb, var(--status-success) 22%, var(--bg-base));
+}
+
+.visc-band-zone.warn {
+  background: color-mix(in srgb, var(--status-warning) 22%, var(--bg-base));
+}
+
+.visc-band-zone.spec {
+  background: color-mix(in srgb, var(--status-error) 12%, var(--bg-base));
+}
+
+.visc-band-center {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 0;
+  border-left: 2px dashed color-mix(in srgb, var(--brand) 70%, var(--text-primary));
+}
+
+.visc-band-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* 최근 측정값 마커 — 트랙 위 아래꼭짓점 삼각형 + 값 라벨. left:% 는 JS 가 산술로 정한다. */
+.visc-band-marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.visc-band-marker-tri {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  /* 아래꼭짓점 삼각형 — 꼭짓점이 트랙 위를 가리킨다. */
+  border-top: 8px solid var(--text-primary);
+}
+
+.visc-band-marker-label {
+  margin-top: 1px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 12%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

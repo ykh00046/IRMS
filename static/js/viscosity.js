@@ -21,6 +21,7 @@
     appendDeltaCell,
     option,
     controlSummary,
+    controlBandHtml,
     periodChartDatasets,
     periodChartYBounds,
     readingOverlayDatasets,
@@ -304,7 +305,14 @@
     setCountCard("visc-card-anomaly", "visc-card-anomaly-on", analysis.counts.anomaly);
     setCountCard("visc-card-warn", "visc-card-warn-on", analysis.counts.warn);
     setCountCard("visc-card-excluded", "visc-card-excluded-on", excludedN);
-    $("visc-control-summary").textContent = controlSummary(analysis);
+    // 관리 기준 요약 텍스트 아래에 관리 밴드 그림을 함께 넣는다. controlSummary 는
+    // 값에서 만든 안전한 문자열이고, controlBandHtml 은 CSS 클래스만 쓰는 순수 빌더라
+    // innerHTML 로 합쳐 넣어도 안전하다. 밴드가 없으면(규격·관리한계 모두 없음) 텍스트만.
+    const summaryText = controlSummary(analysis);
+    const bandHtml = controlBandHtml(analysis, last ? last.viscosity : null);
+    $("visc-control-summary").innerHTML = bandHtml
+      ? `<span class="visc-control-summary-text">${IRMS.escapeHtml(summaryText)}</span>${bandHtml}`
+      : IRMS.escapeHtml(summaryText);
   }
 
   function renderCondition() {

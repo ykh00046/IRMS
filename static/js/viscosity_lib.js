@@ -12,7 +12,7 @@
  *   STATUS_LABEL, REASON_LABEL, TREND_LABEL, PERIOD_ALERT_LABEL,
  *   fmt, productLabel, linkedReadingsForRecord, latestViscosityLabel,
  *   appendTextCell, emptyRow, appendDeltaCell, option, controlSummary,
- *   periodChartDatasets
+ *   controlBandHtml, periodChartDatasets
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -121,6 +121,106 @@
       parts.push(`기준 축적 중 (측정 ${stats.n ?? 0}/${need}건 · 규격 판정만 적용)`);
     }
     return parts.length ? `관리 기준 · ${parts.join(" · ")}` : "관리 기준이 아직 없습니다.";
+  }
+
+  // 관리 기준 한 줄 텍스트(controlSummary) 옆에 두는 '관리 밴드' 그림(순수 HTML 빌더).
+  // 가로 밴드 하나(~44px)로 구간 관계와 최근 측정값의 위치를 한눈에 보여준다:
+  //   · 규격 범위(product.lower_limit~upper_limit) 를 트랙 전체 폭으로
+  //   · 그 안의 관리 한계(stats.lcl~ucl) 구간을 색으로(초록 = 관리 내)
+  //   · 경고 한계(stats.uwl/lwl)가 있으면 관리~경고 사이를 주황으로
+  //   · 중심(stats.center)을 세로 파선으로
+  //   · lastValue(최근 측정값, null 가능)를 아래꼭짓점 삼각형 마커+값 라벨로
+  // 좌표는 트랙 [lo, hi] 기준 백분율(순수 산술). 규격이 있으면 규격 기준, 없으면 관리
+  // 한계 기준, 둘 다 없으면 빈 문자열(그릴 게 없다). 색은 인라인 hex 금지 — CSS 클래스로
+  // (.visc-band-*) 빼고 viscosity.css 가 입힌다. rescaleBarsHtml(P-4) 와 같은 규약.
+  function controlBandHtml(analysis, lastValue) {
+    if (!analysis || !analysis.stats || !analysis.product) return "";
+    const stats = analysis.stats;
+    const product = analysis.product;
+    const lo = product.lower_limit;
+    const hi = product.upper_limit;
+    const hasSpec = lo != null && hi != null && Number(lo) < Number(hi);
+    // 트랙 범위 결정: 규격 우선, 없으면 관리 한계, 둘 다 없으면 그릴 게 없다.
+    let tLo, tHi;
+    if (hasSpec) {
+      tLo = Number(lo);
+      tHi = Number(hi);
+    } else if (stats.lcl != null && stats.ucl != null && Number(stats.lcl) < Number(stats.ucl)) {
+      tLo = Number(stats.lcl);
+      tHi = Number(stats.ucl);
+    } else {
+      return "";
+    }
+    const span = tHi - tLo;
+    // 값 → 트랙 기준 백분율(0~100, 클램프).
+    const pct = (v) => {
+      if (v == null || !Number.isFinite(Number(v))) return null;
+      return Math.max(0, Math.min(100, ((Number(v) - tLo) / span) * 100));
+    };
+
+    // 색 구간을 쌓는다. 관리 한계(lcl/ucl)·경고 한계(uwl/lwl) 모두 트랙 범위 안으로
+    // 클램프해 그린다(한계가 규격 밖이면 규격 끝까지가 그 색이다).
+    const segments = [];
+    const lclP = pct(stats.lcl);
+    const uclP = pct(stats.ucl);
+    const lwlP = pct(stats.lwl);
+    const uwlP = pct(stats.uwl);
+    const hasControl = lclP != null && uclP != null && uclP > lclP;
+    const hasWarn = lwlP != null && uwlP != null && uwlP > lwlP
+      && hasControl && lwlP > lclP && uwlP < uclP;
+    if (hasControl) {
+      // 관리 한계 바깥(규격 내) = 빨강(규격은 통과하지만 관리 밖). 규격이 곧 관리 한계면
+      // 이 구간은 0폭이 되어 자연히 보이지 않는다.
+      if (lclP > 0) segments.push(zone(0, lclP, "spec"));
+      if (hasWarn) {
+        // 경고 구간(관리~경고 사이) = 주황. 중앙(lwl~uwl) = 초록(목표).
+        segments.push(zone(lclP, lwlP, "warn"));
+        segments.push(zone(lwlP, uwlP, "target"));
+        segments.push(zone(uwlP, uclP, "warn"));
+      } else {
+        // 경고 한계가 없으면 관리 밴드(lcl~ucl) 통째로 초록.
+        segments.push(zone(lclP, uclP, "target"));
+      }
+      if (uclP < 100) segments.push(zone(uclP, 100, "spec"));
+    } else {
+      // 관리 한계가 없으면 트랙 전체를 중립(규격만 있는 상태)으로.
+      segments.push(zone(0, 100, "spec"));
+    }
+
+    // 중심 파선 — 값이 있을 때만.
+    const centerP = pct(stats.center);
+    const centerLine = centerP != null
+      ? `<span class="visc-band-center" style="left:${fmt(centerP, 2)}%"></span>`
+      : "";
+
+    // 최근 측정값 마커(아래꼭짓점 삼각형) + 값 라벨. null 이면 그리지 않는다.
+    const valueP = pct(lastValue);
+    const marker = valueP != null
+      ? `<span class="visc-band-marker" style="left:${fmt(valueP, 2)}%">`
+        + `<span class="visc-band-marker-tri"></span>`
+        + `<span class="visc-band-marker-label">${fmt(lastValue)}</span>`
+        + `</span>`
+      : "";
+
+    return `<div class="visc-band">`
+      + `<div class="visc-band-track">`
+      + segments.join("")
+      + centerLine
+      + `</div>`
+      + `<div class="visc-band-scale">`
+      + `<span class="visc-band-lo">${fmt(tLo)}</span>`
+      + `<span class="visc-band-hi">${fmt(tHi)}</span>`
+      + `</div>`
+      + marker
+      + `</div>`;
+  }
+
+  // 밴드 색 구간 하나의 HTML. left/width 는 퍼센트(순수 산술). colorClass 는 CSS 가
+  // 입히는 색(target=초록, warn=주황, spec=빨강 계열). 0폭 구간은 빈 문자열(안 그림).
+  function zone(left, right, colorClass) {
+    const w = Math.max(0, right - left);
+    if (w <= 0) return "";
+    return `<span class="visc-band-zone ${colorClass}" style="left:${fmt(left, 2)}%;width:${fmt(w, 2)}%"></span>`;
   }
 
   // 기간 차트의 labels/datasets 을 순수하게 조립한다. DOM 에서 CSS 변수를
@@ -277,6 +377,7 @@
     appendDeltaCell,
     option,
     controlSummary,
+    controlBandHtml,
     periodChartDatasets,
     periodChartYBounds,
     periodKeyForDate,
