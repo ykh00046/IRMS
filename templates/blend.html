@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260804i" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260805a" />
 {% endblock %}
 
 {% block content %}
@@ -197,20 +197,6 @@
           </div>
         </div>
 
-        <!-- 부족 계량 모달 — 자재를 이론량보다 적게 계량했을 때 '추가로 채우기(합산)' 또는
-             '다시 계량' 중 선택. 확인/취소의 의미가 헷갈리던 window.confirm 을 대체.
-             표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지) — rescale 모달과 동일 패턴. -->
-        <div class="ss-modal-overlay" id="shortage-modal" hidden>
-          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="shortage-modal-title">
-            <div class="ss-modal-header"><h3 id="shortage-modal-title">부족 계량</h3></div>
-            <div class="ss-modal-body"><p id="shortage-modal-text"></p></div>
-            <div class="ss-modal-footer blend-actions">
-              <button class="btn accent" id="shortage-add-btn" type="button">추가로 채우기 (합산 입력)</button>
-              <button class="btn" id="shortage-reweigh-btn" type="button">다시 계량</button>
-            </div>
-          </div>
-        </div>
-
         <!-- 추가 계량 모달 — 부족분을 한눈에 보면서 합산 입력. 큰 남은 양 숫자 + 목표/현재.
              저울 PRINT 도 addModeIdx 경로로 자동 합산(수동 입력칸은 저울 전용 모드에선 숨김).
              hidden 토글 전용 — rescale/shortage 모달과 동일 패턴. -->
@@ -394,7 +380,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260804m"></script>
+    <script src="/static/js/blend.js?v=20260805b"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

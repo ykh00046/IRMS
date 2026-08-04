@@ -145,13 +145,10 @@ function clickHandlerOf(src, varName) {
   throw new Error(`${varName} click 핸들러의 끝을 찾지 못했다`);
 }
 
-test("부족·추가 계량 모달은 바깥 클릭으로 닫히지 않는다", () => {
+test("추가 계량 모달은 바깥 클릭으로 닫히지 않는다", () => {
   // 2026-08-04 현장 신고: 나눠 담기/부족 채우기 창이 바깥 클릭 한 번에 사라져
   // 회차 진행 내역을 잃었다. 바깥 클릭은 안내만 하고, 나가는 길은 버튼뿐이어야 한다.
-  const shortageHandler = clickHandlerOf(blend, "shortageOverlay");
-  assert.doesNotMatch(
-    shortageHandler, /shortageChooseReweigh|closeShortageModal/,
-    "부족 모달 바깥 클릭이 창을 닫으면 선택 없이 빠져나간다 — 안내만 해야 한다");
+  // (부족 모달은 상태 선택 모달로 통합돼 소스에서 사라졌다 — 여기서는 추가 계량 창만 검사.)
   const awHandler = clickHandlerOf(blend, "awModal");
   assert.doesNotMatch(
     awHandler, /closeAddWeighModal|finishAddWeighModal/,
@@ -171,13 +168,16 @@ test("기준 자재 모드의 배지는 화면 이론량과 같은 목표를 쓴
 // ── 저울 상태 선택(2026-08-04 시안) — 진입·해석 계약 ─────────────────
 test("추가 계량 진입은 전부 저울 상태 선택을 거친다", () => {
   // 진입문을 우회하면 상태 선택 없이 합산 모드가 열려, 영점 안 잡힌 저울의
-  // PRINT(누계)가 이중 계산된다. 버튼/배지/부족 모달의 직접 open* 호출 금지.
+  // PRINT(누계)가 이중 계산된다. 부족 감지는 이제 상태 선택 모달을 직접 연다(부족 창 통합).
   const direct = (blend.match(/openAddWeighModal\(/g) || []).length;
   // 허용: 함수 정의 1 + chooseScaleState 1 + openScaleStateModal 폴백 1 + 주석 언급
   const defs = (blend.match(/function openAddWeighModal\(/g) || []).length;
   assert.strictEqual(defs, 1, "정의는 하나여야 한다");
-  assert.match(bodyOf(blend, "shortageChooseAdd"), /requestAddWeigh\(/,
-    "부족 모달의 '추가로 채우기'는 상태 선택을 거쳐야 한다");
+  // 부족 감지가 상태 선택 모달을 직접 연다 — showShortageModal 흐름은 소스에서 제거됐다.
+  assert.match(bodyOf(blend, "warnIfVariance"), /openScaleStateModal\(/,
+    "부족 감지가 상태 선택 모달을 직접 열어야 한다");
+  assert.ok(!blend.includes("showShortageModal"),
+    "blend 소스에 showShortageModal 이 남아 있으면 부족 창 통합이 덜 끝난 것이다");
   assert.match(bodyOf(blend, "buildSplitButton"), /requestAddWeigh\(/,
     "⊞ 나눠 담기 버튼은 상태 선택을 거쳐야 한다");
   assert.match(bodyOf(cont, "requestAddInline"), /openContScaleStateModal\(/,
@@ -192,11 +192,73 @@ test("PRINT 는 두 화면 모두 상태 선택(resolveAddPortion)으로 환산�
   });
 });
 
-test("부족 모달 중 PRINT 는 상태 선택 전이므로 소비하지 않는다", () => {
+test("부족 흐름 통합 후 폴러에 부족 분기가 남아 있지 않다", () => {
+  // 부족 모달 자체가 사라졌으므로 폴러의 _shortageIdx 분기도 함께 제거돼야 한다 —
+  // 남아 있으면 미해석 PRINT 를 소비하거나 제거된 함수(shortageChooseAdd)를 부른다.
   const body = bodyOf(blend, "pollScaleEvents");
-  const at = body.indexOf("_shortageIdx != null");
-  assert.notStrictEqual(at, -1, "부족 모달 전환 분기가 있어야 한다");
-  const after = body.slice(at, at + 400);
-  assert.match(after, /break\s*;/,
-    "전환 후 그 PRINT 를 이어서 소비하면 해석 방법이 정해지기 전의 값이 합산된다");
+  assert.doesNotMatch(body, /_shortageIdx/,
+    "pollScaleEvents 에 _shortageIdx 분기가 남아 있으면 부족 창 통합이 덜 끝난 것이다");
+  // 부족 흐름은 scale-state-modal 로 통합됐다 — 그 창이 떠 있을 때 PRINT 는 게이트가 버린다.
+  assert.ok(
+    bodyOf(blend, "printBlockingModalVisible").includes('"scale-state-modal"'),
+    'printBlockingModalVisible 목록에 "scale-state-modal" 이 있어야 한다 — 부족 흐름 통합 후 이 창이 PRINT 를 막는다');
+});
+
+/** keydown 핸들러(문서 등록) 본문을 anchor 부분문자열로 식별해 잘라낸다.
+ *  여러 개의 document.addEventListener("keydown", …) 등록 중 anchor 가 들어 있는
+ *  콜백 본문을 반환한다(기존 clickHandlerOf 와 같은 방식 — 변수명 대신 anchor 식별). */
+function keydownHandlerOf(src, anchor) {
+  let from = 0;
+  while (true) {
+    const reg = src.indexOf('document.addEventListener("keydown"', from);
+    if (reg === -1) break;
+    const open = src.indexOf("{", reg);
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+    if (end === -1) break;
+    const body = src.slice(open, end + 1);
+    if (body.includes(anchor)) return body;
+    from = end + 1;
+  }
+  throw new Error(`anchor "${anchor}" 가 들어간 keydown 핸들러를 찾지 못했다`);
+}
+
+test("부족 컨텍스트에서 scale-state 모달 Esc 는 닫지 않고 안내만 한다", () => {
+  // 부족 창 통합 후 저울 상태 선택 모달이 부족 컨텍스트(_scaleStateShortageIdx != null)를
+  // 띄운다. 이때 Esc 가 창을 닫으면 부족 자재가 미해결로 남으므로, 닫지 않고 notify 만 해야
+  // 한다(나가는 길은 그림 둘 또는 [처음부터 다시 계량] 뿐). 등록 지점을 잘라 검사한다.
+  const handler = keydownHandlerOf(blend, 'e.key === "Escape" && ssModal');
+  // 부족 컨텍스트 분기가 있어야 한다.
+  assert.match(handler, /_scaleStateShortageIdx\s*!=\s*null/,
+    "부족 컨텍스트(_scaleStateShortageIdx != null) 분기가 있어야 한다");
+  // 그 분기 본문은 notify 만 해야 한다 — closeScaleStateModal 이 껴 있으면 봉인이 깨진다.
+  const branchAt = handler.indexOf("_scaleStateShortageIdx");
+  // 분기 조건문 다음 블록(close 전까지)만 잘라 closeScaleStateModal 이 없는지 확인.
+  const after = handler.slice(branchAt);
+  // 같은 핸들러 안 else 쪽 closeScaleStateModal 은 정상이므로, 부족 분기 블록 내부만 검사:
+  // '_scaleStateShortageIdx != null) {' 직후부터 대응 '}' 닫기 전까지.
+  const condOpen = after.indexOf("{");
+  let depth = 0;
+  let branchEnd = -1;
+  for (let i = condOpen; i < after.length; i++) {
+    if (after[i] === "{") depth++;
+    else if (after[i] === "}") {
+      depth--;
+      if (depth === 0) { branchEnd = i; break; }
+    }
+  }
+  assert.notStrictEqual(branchEnd, -1, "부족 분기 블록의 끝을 찾지 못했다");
+  const branchBody = after.slice(condOpen, branchEnd + 1);
+  assert.ok(
+    !branchBody.includes("closeScaleStateModal"),
+    "부족 컨텍스트에서 Esc 가 closeScaleStateModal 을 부르면 봉인이 깨진다 — notify 만 해야 한다");
+  assert.match(branchBody, /notify\(/,
+    "부족 컨텍스트 Esc 분기는 안내(notify)를 내보내야 한다");
 });

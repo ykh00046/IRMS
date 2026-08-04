@@ -432,8 +432,8 @@
     // 엉뚱한 빈 행으로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 저울 전용 모드의
     // 부족 복구(타이핑 불가)도 이 라우팅이 있어야 성립한다.
     // 우선순위 규칙은 blend_lib.pickScaleRow 가 소유한다(테스트로 잠근 순수 함수).
-    // 모달이 열려 있는 행(_addWeighIdx)·부족 모달 대상 행(_shortageIdx)까지 포함해야
-    // 2회차 이후 PRINT 가 다음 품목으로 새지 않는다(현장 신고 2026-08-03).
+    // 모달이 열려 있는 행(_addWeighIdx)까지 포함해야 2회차 이후 PRINT 가 다음 품목으로
+    // 새지 않는다(현장 신고 2026-08-03).
     const focused = document.activeElement;
     const focusedIdx = (
       focused && focused.classList
@@ -442,7 +442,10 @@
     const picked = pickScaleRow({
       addModeIdx: state.addModeIdx,
       addWeighIdx: _addWeighIdx,
-      shortageIdx: _shortageIdx,
+      // 부족 창은 상태 선택 모달로 통합 — 떠 있는 동안 PRINT 는 게이트가 버린다
+      // (printBlockingModalVisible 의 scale-state-modal 항목). shortageIdx 는 더 이상
+      // 별도 플래그로 쓰지 않으니 null 로 둔다.
+      shortageIdx: null,
       stickyIdx: state.scaleTargetIdx,
       stickyValid: state.scaleTargetIdx != null && !!state.items[state.scaleTargetIdx],
       focusedIdx,
@@ -571,7 +574,8 @@
   // 포커스를 승인자 이름칸으로 옮겨 라우팅 플래그를 전부 비우고, 제안·폐기·3회 차단·이월·LOT 확인
   // 모달도 버튼 선택을 기다리는 동안 들어온 PRINT 가 폴백('다음 미계량 품목')으로 흘렀다
   // (현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
-  // 부족(shortage)·추가 계량(add-weigh) 모달은 제외 — PRINT 를 자기 행 합산으로 소비하는 창이다.
+  // 추가 계량(add-weigh) 모달은 제외 — PRINT 를 자기 행 합산으로 소비하는 창이다.
+  // 부족 흐름은 이제 scale-state-modal 로 통합됐으므로 그 창이 떠 있을 때 PRINT 는 게이트가 버린다.
   function printBlockingModalVisible() {
     // scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
@@ -609,14 +613,6 @@
       if (!scaleEventSynced) { scaleEventSynced = true; return; }
       if (!items.length || !state.items.length) return;
       for (const ev of items) {
-        // 부족 모달이 떠 있는 채로 들어온 PRINT 는 '추가로 채우기'를 고른 것으로 보되,
-        // 값 자체는 소비하지 않는다 — 저울 상태(추가분/누계)를 고르기 전의 값은 해석할
-        // 방법이 없다(이중 계산 위험). 상태 선택 창을 열고 이번 PRINT 는 버린다.
-        if (_shortageIdx != null) {
-          shortageChooseAdd();
-          notify("저울 상태를 먼저 선택하세요 — 방금 PRINT 는 받지 않았습니다.", "warn");
-          break;
-        }
         const idx = activeScaleRow();
         if (idx === null) {
           notify("모든 자재의 실제량이 입력되어 있습니다. (PRINT 무시)", "warn");
@@ -1917,45 +1913,22 @@
         if (_addWeighIdx === i) closeAddWeighModal(i, /*keepValue*/ true);
         offerRescale();
       } else if (state.addModeIdx !== i) {
-        // −방향(부족): 부족량 모달로 '추가로 채우기(합산)' 또는 '다시 계량' 제안.
+        // −방향(부족): 저울 상태 선택 모달에 부족 안내를 실어 바로 띄운다(부족 창 통합).
         // 실수로 저울 영점을 눌러 값이 부족하게 찍힌 경우, 처음부터 재계량이 아니라
-        // 추가로 올리는 무게를 합산해 목표를 맞추면 된다 — 추가 버튼 시 그 행에 합산 입력을
-        // 연다(저울 PRINT 도 합산). 이미 합산 입력 중(addModeIdx)이면 모달 생략.
+        // 추가로 올리는 무게를 합산해 목표를 맞추면 된다 — 그림 선택(추가 입력) 또는
+        // [처음부터 다시 계량]. 이미 합산 입력 중(addModeIdx)이면 모달 생략.
         const shortage = Math.abs(v);
-        showShortageModal(i, shortage);
+        openScaleStateModal({
+          idx: i,
+          options: null,
+          shortage: { theory: Number(it.theory_amount) || 0, actual: Number(it.actual_amount) || 0, missing: shortage },
+        });
       }
       return true;
     }
     return false;
   }
 
-  // ── 부족 계량 모달(shortage) ────────────────────────────────
-  // window.confirm([확인]/[취소]) 대신 의미가 적힌 두 버튼 모달. 확인/취소가 뭘
-  // 의미하는지 모르던 문제 해결. '추가로 채우기' → 그 행에 합산 입력(openAddInline),
-  // '다시 계량'(또는 Esc/overlay) → 해당 실제량 칸 포커스+선택.
-  let _shortageIdx = null;  // 모달이 열려 있는 동안 대상 행 인덱스 보관.
-
-  function showShortageModal(i, shortage) {
-    const it = state.items[i];
-    if (!it) return;
-    _shortageIdx = i;
-    const text = $("shortage-modal-text");
-    if (text) {
-      text.textContent =
-        `이론 ${fmt(it.theory_amount, dp())} g / 실제 ${fmt(Number(it.actual_amount), dp())} g — ${fmt(shortage, dp())} g 부족`
-        + "\n추가로 채우기: 저울 상태를 확인한 뒤, 부족분을 이어서 담습니다.";
-    }
-    $("shortage-modal").hidden = false;
-  }
-  function closeShortageModal() {
-    $("shortage-modal").hidden = true;
-    _shortageIdx = null;
-  }
-  function shortageChooseAdd() {
-    const idx = _shortageIdx;
-    closeShortageModal();
-    if (idx != null) requestAddWeigh(idx);  // 저울 상태 선택을 거쳐 추가 계량 모달로
-  }
   // 허용 편차를 +방향으로 벗어난 행의 실제량을 모두 비운다 — 증량 제안/승인을
   // 거절(다시 계량)했을 때 초과 상태가 화면에 남아, 다음 자재로 넘어가며 누적되고
   // 마지막 승인 한 번에 뭉뚱그려 재계산되던 사고 방지(현장 신고 2026-07-22).
@@ -1978,14 +1951,6 @@
       if (input) { input.focus(); if (input.select) input.select(); }
       notify("초과 계량 값을 비웠습니다 — 다시 계량하세요.", "warn");
     }
-  }
-
-  function shortageChooseReweigh() {
-    const idx = _shortageIdx;
-    closeShortageModal();
-    if (idx == null) return;
-    const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
-    if (input) { input.focus(); input.select(); }
   }
 
   // ── 초과 계량 증량(rescale) 통합 ─────────────────────────
@@ -2552,9 +2517,16 @@
   // PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다.
   let _awMode = null;            // 추가 계량 모달의 값 해석 모드
   let _scaleStatePending = null; // 선택 후 열 대상 {idx, options} — null 이면 '변경' 재선택
+  // 부족 감지로 이 모달이 열렸을 때의 대상 행 인덱스. null 이 아니면 부족 컨텍스트 —
+  // [처음부터 다시 계량] 버튼이 보이고 Esc/바깥 클릭으로 닫히지 않는다(부족 창 통합).
+  let _scaleStateShortageIdx = null;
 
   const AW_MODE_LABEL = { tared: "영점이 잡혀 있음", loaded: "무게가 남아 있음" };
 
+  // 저울 상태 선택 모달을 연다. pending 에는 선택적 shortage 컨텍스트 {theory, actual, missing} 가
+  // 붙을 수 있다 — 부족 감지로 열린 경우로, 이때 부족 안내줄을 띄우고 [처음부터 다시 계량] 버튼을
+  // 노출하며 [취소]는 숨긴다(나가는 글은 그림 둘/다시 계량 뿐). shortage 가 없으면(나눠 담기·변경)
+  // 부족줄·다시 계량 버튼을 숨기고 [취소]를 보여준다.
   function openScaleStateModal(pending) {
     const modal = $("scale-state-modal");
     if (!modal) {  // 옛 템플릿 폴백 — 선택 없이 현행(추가분 합산)으로 진행
@@ -2565,6 +2537,24 @@
     const it = state.items[pending ? pending.idx : _addWeighIdx];
     const matEl = $("scale-state-material");
     if (matEl) matEl.textContent = it ? it.material_name : "";
+    const shortage = pending && pending.shortage ? pending.shortage : null;
+    _scaleStateShortageIdx = shortage && pending && pending.idx != null ? pending.idx : null;
+    const shortageEl = $("scale-state-shortage");
+    const reweighBtn = $("scale-state-reweigh");
+    const cancelBtn = $("scale-state-cancel");
+    if (shortage) {
+      if (shortageEl) {
+        shortageEl.textContent =
+          `이론 ${fmt(shortage.theory, dp())} g / 실제 ${fmt(shortage.actual, dp())} g — ${fmt(shortage.missing, dp())} g 부족`;
+        shortageEl.hidden = false;
+      }
+      if (reweighBtn) reweighBtn.hidden = false;
+      if (cancelBtn) cancelBtn.hidden = true;
+    } else {
+      if (shortageEl) { shortageEl.textContent = ""; shortageEl.hidden = true; }
+      if (reweighBtn) reweighBtn.hidden = true;
+      if (cancelBtn) cancelBtn.hidden = false;
+    }
     modal.hidden = false;
     const first = $("scale-state-tared");
     if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
@@ -2574,6 +2564,7 @@
     const modal = $("scale-state-modal");
     if (modal) modal.hidden = true;
     _scaleStatePending = null;
+    _scaleStateShortageIdx = null;
   }
 
   function chooseScaleState(mode) {
@@ -2637,8 +2628,6 @@
     if (!$("add-weigh-modal")) { openAddInline(idx); return; }
     const it = state.items[idx];
     if (!it) return;
-    // 부족 모달을 거쳐 들어왔으면 닫는다 — 안 닫으면 두 모달이 겹쳐 뜬다(실측).
-    closeShortageModal();
     state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
     // 값 해석 모드 — requestAddWeigh(상태 선택)를 거쳐 들어온다. 미지정이면 현행과
@@ -3323,20 +3312,6 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("carry-over-modal").hidden) closeCarryOverModal();
     });
-    // 부족 계량 모달 — 추가로 채우기(합산) / 다시 계량. Esc/overlay 도 '다시 계량'과 동일.
-    const shortageAdd = $("shortage-add-btn");
-    if (shortageAdd) shortageAdd.addEventListener("click", shortageChooseAdd);
-    const shortageReweigh = $("shortage-reweigh-btn");
-    if (shortageReweigh) shortageReweigh.addEventListener("click", shortageChooseReweigh);
-    const shortageOverlay = $("shortage-modal");
-    if (shortageOverlay) shortageOverlay.addEventListener("click", (e) => {
-      // 바깥 클릭으로 닫지 않는다 — 실수 클릭 한 번에 선택 없이 빠져나가던 사고(2026-08-04).
-      // 나가는 길은 [추가 계량]/[다시 계량](Esc 동일) 두 가지뿐 — 승인 모달과 같은 봉인.
-      if (e.target === shortageOverlay) notify("추가 계량 또는 다시 계량 중에서 선택하세요.", "warn");
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !$("shortage-modal").hidden) shortageChooseReweigh();
-    });
     // 추가 계량 모달 — 더하기/Enter 합산, 완료(값 유지), 다시 계량(비움).
     // Esc·바깥 클릭으로는 닫지 않는다 — 나눠 담는 도중 실수 클릭 한 번에 진행 창(담은 회차
     // 내역)이 사라지던 사고(2026-08-04). 나가는 길은 두 버튼뿐.
@@ -3359,20 +3334,38 @@
     if (awReweigh) awReweigh.addEventListener("click", () => {
       if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ false);
     });
-    // 저울 상태 선택 모달 — 그림 두 장 중 선택, 취소/Esc 로 되돌아가기.
+    // 저울 상태 선택 모달 — 그림 두 장 중 선택, [취소]/[처음부터 다시 계량]/Esc.
     // 바깥 클릭 봉인(다른 봉인 모달과 동일) — 실수 클릭이 선택을 건너뛰면 안 된다.
+    // 부족 컨텍스트(_scaleStateShortageIdx)에서는 [취소]가 없고 Esc 도 닫지 않는다 —
+    // 나가는 길은 그림 둘 또는 [처음부터 다시 계량] 뿐이다.
     const ssModal = $("scale-state-modal");
     const ssTared = $("scale-state-tared");
     const ssLoaded = $("scale-state-loaded");
     const ssCancel = $("scale-state-cancel");
+    const ssReweigh = $("scale-state-reweigh");
     if (ssTared) ssTared.addEventListener("click", () => chooseScaleState("tared"));
     if (ssLoaded) ssLoaded.addEventListener("click", () => chooseScaleState("loaded"));
     if (ssCancel) ssCancel.addEventListener("click", closeScaleStateModal);
+    if (ssReweigh) ssReweigh.addEventListener("click", () => {
+      // 부족 행의 실제량 칸으로 돌아가 처음부터 다시 계량하게 한다 — 값은 지우지 않는다
+      // (옛 shortageChooseReweigh 과 동일). 칸 포커스+선택으로 재계량을 유도.
+      const idx = _scaleStateShortageIdx;
+      closeScaleStateModal();
+      if (idx == null) return;
+      const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
+      if (input) { input.focus(); input.select(); }
+    });
     if (ssModal) ssModal.addEventListener("click", (e) => {
-      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 [취소]를 누르세요.", "warn");
+      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 아래 버튼을 누르세요.", "warn");
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && ssModal && !ssModal.hidden) closeScaleStateModal();
+      if (e.key === "Escape" && ssModal && !ssModal.hidden) {
+        if (_scaleStateShortageIdx != null) {
+          notify("두 그림 중 하나를 고르거나 [처음부터 다시 계량]을 누르세요.", "warn");
+        } else {
+          closeScaleStateModal();
+        }
+      }
     });
     const awStateChange = $("add-weigh-state-change");
     if (awStateChange) awStateChange.addEventListener("click", () => openScaleStateModal(null));

@@ -1,6 +1,7 @@
 {# ── 저울 상태 선택 모달(공용 partial) ───────────────────────────
    나눠 담기·부족분 추가 계량에 들어가기 전에, 지금 저울이 어느 상태인지 그림으로
-   고르게 한다(2026-08-04 시안 확정). 이 선택이 이후 PRINT/입력값의 해석을 가른다:
+   고르게 한다(2026-08-04 시안 확정 — 바탕화면 저울상태_선택_시안.svg 아트워크 이식).
+   이 선택이 이후 PRINT/입력값의 해석을 가른다:
 
      · 영점이 잡혀 있음(비커 올린 채 0.00) → 값 = 이번에 담은 추가분 → 합산
      · 무게가 남아 있음(예: 95.00)        → 값 = 지금까지 담은 누계 → 추가분 = 값 − 현재
@@ -12,48 +13,69 @@
    (_lot_check_modal.html 과 같은 규약). hidden 토글 전용.
    이 모달이 떠 있는 동안 저울 PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다
    — 해석 방법이 정해지기 전의 값은 받지 않는 게 안전하다.
+
+   부족 흐름 통합용 요소(기본 hidden, JS 가 켠다):
+     {p}scale-state-shortage — "N g 부족" 안내줄(부족 감지로 열렸을 때만)
+     {p}scale-state-reweigh  — [처음부터 다시 계량] (부족 컨텍스트의 유일한 우회로)
+     {p}scale-state-cancel   — [취소] (⊞ 나눠 담기 등 자발적으로 열었을 때만)
+   SVG 는 카드마다 통째로 인라인(macro) — <defs>/<use> id 를 쓰면 카드 2개·두 화면에서
+   id 가 중복돼 깨진다. 도형 스타일은 blend.css 의 .sc-* 규칙이 입힌다.
 #}
+{% macro balance_svg(value) -%}
+<svg viewBox="0 0 184 176" aria-hidden="true" focusable="false">
+  {# 비커: 림 타원 + 몸통 + 담긴 액(윗면 타원) + 눈금 3개 #}
+  <path class="sc-glass" d="M64 26 h56 l-5 52 q-1 6 -7 6 h-32 q-6 0 -7 -6 z"/>
+  <path class="sc-liq" d="M67.5 46 h49 l-4 32 q-1 6 -7 6 h-27 q-6 0 -7 -6 z"/>
+  <ellipse class="sc-liq-top" cx="92" cy="46" rx="24.5" ry="4.5"/>
+  <ellipse class="sc-rim" cx="92" cy="26" rx="28" ry="5.5"/>
+  <line class="sc-tick" x1="72" y1="40" x2="79" y2="40"/>
+  <line class="sc-tick" x1="73" y1="53" x2="80" y2="53"/>
+  <line class="sc-tick" x1="74" y1="66" x2="81" y2="66"/>
+  {# 계량 접시(윗면 타원 + 판 + 기둥) #}
+  <ellipse class="sc-pan-top" cx="92" cy="90" rx="66" ry="7"/>
+  <rect class="sc-pan" x="26" y="90" width="132" height="9" rx="3"/>
+  <rect class="sc-pan" x="86" y="99" width="12" height="7"/>
+  {# 본체(상단 경사면 + 몸통 + 고무발) #}
+  <path class="sc-case-top" d="M10 106 h164 l-6 10 h-152 z"/>
+  <rect class="sc-case" x="10" y="116" width="164" height="44" rx="7"/>
+  <rect class="sc-foot" x="22" y="160" width="16" height="6" rx="3"/>
+  <rect class="sc-foot" x="146" y="160" width="16" height="6" rx="3"/>
+  {# 표시창(연녹 LCD): 안정표시 ▶ + 값 + 단위, 옆에 영점 버튼 #}
+  <rect class="sc-lcd" x="20" y="122" width="104" height="32" rx="4"/>
+  <text class="sc-stab" x="23" y="133">▶</text>
+  <text class="sc-num" x="103" y="147">{{ value }}</text>
+  <text class="sc-unit" x="108" y="147">g</text>
+  <rect class="sc-btn" x="132" y="127" width="34" height="22" rx="11"/>
+  <text class="sc-btn-t" x="149" y="142">영점</text>
+</svg>
+{%- endmacro %}
 {% set p = scale_state_prefix or "" %}
 <div class="ss-modal-overlay" id="{{ p }}scale-state-modal" hidden>
-  <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="{{ p }}scale-state-title">
+  <div class="ss-modal scale-state-box" role="dialog" aria-modal="true" aria-labelledby="{{ p }}scale-state-title">
     <div class="ss-modal-header"><h3 id="{{ p }}scale-state-title">저울이 지금 어떤 상태인가요?</h3></div>
     <div class="ss-modal-body">
       <p class="add-weigh-material" id="{{ p }}scale-state-material"></p>
-      <p class="scale-state-guide">비커를 올린 채, 저울 표시창과 같은 그림을 눌러주세요.</p>
+      {# 부족 컨텍스트 안내줄 — 부족 감지로 이 창이 열렸을 때만 JS 가 켠다. #}
+      <p class="scale-state-shortage" id="{{ p }}scale-state-shortage" hidden></p>
+      <p class="scale-state-guide">비커를 올린 채, <b>저울 표시창과 같은 그림</b>을 눌러주세요.</p>
       <div class="scale-state-options">
         {# 왼쪽 — 영점이 잡혀 있음: 0.00 표시. 값은 '이번에 담는 양'만 나온다. #}
         <button class="scale-state-btn" id="{{ p }}scale-state-tared" type="button" autofocus>
-          <svg viewBox="0 0 120 96" aria-hidden="true" focusable="false">
-            <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
-              <path d="M46 8 h28 l-3 34 h-22 z" />
-              <path class="scale-state-liquid" d="M47.5 24 h25 l-1.6 17 h-21.8 z" stroke="none" />
-              <rect x="30" y="46" width="60" height="8" rx="3" />
-              <rect x="18" y="58" width="84" height="30" rx="5" />
-              <rect class="scale-state-display" x="26" y="65" width="52" height="16" rx="3" />
-            </g>
-            <text class="scale-state-value" x="52" y="77.5" text-anchor="middle">0.00 g</text>
-          </svg>
+          {{ balance_svg("0.00") }}
           <span class="scale-state-label">영점이 잡혀 있음</span>
-          <span class="scale-state-sub">표시창이 0.00 — 이번에 담는 양만 나옵니다</span>
+          <span class="scale-state-sub">표시창이 <b>0.00</b> — 이번에 담는 양만 나옵니다</span>
         </button>
         {# 오른쪽 — 무게가 남아 있음: 담긴 만큼 표시. 값은 '지금까지 담은 전체'다. #}
         <button class="scale-state-btn" id="{{ p }}scale-state-loaded" type="button">
-          <svg viewBox="0 0 120 96" aria-hidden="true" focusable="false">
-            <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
-              <path d="M46 8 h28 l-3 34 h-22 z" />
-              <path class="scale-state-liquid" d="M47.5 24 h25 l-1.6 17 h-21.8 z" stroke="none" />
-              <rect x="30" y="46" width="60" height="8" rx="3" />
-              <rect x="18" y="58" width="84" height="30" rx="5" />
-              <rect class="scale-state-display" x="26" y="65" width="52" height="16" rx="3" />
-            </g>
-            <text class="scale-state-value" x="52" y="77.5" text-anchor="middle">95.00 g</text>
-          </svg>
+          {{ balance_svg("95.00") }}
           <span class="scale-state-label">무게가 남아 있음</span>
-          <span class="scale-state-sub">담은 무게가 그대로 — 전체 무게가 나옵니다</span>
+          <span class="scale-state-sub">담은 무게가 <b>그대로</b> — 전체 무게가 나옵니다</span>
         </button>
       </div>
     </div>
     <div class="ss-modal-footer blend-actions">
+      {# 부족 컨텍스트 전용 — 이어서 담지 않고 처음부터: 값은 지우지 않고 칸 포커스+선택. #}
+      <button class="btn" id="{{ p }}scale-state-reweigh" type="button" hidden>처음부터 다시 계량</button>
       <button class="btn" id="{{ p }}scale-state-cancel" type="button">취소</button>
     </div>
   </div>
