@@ -545,16 +545,18 @@
   // ── 저울 PRINT 키 연동: 에이전트 이벤트 폴링 → 활성 행 자동 입력 ──
   let scaleEventLast = 0;
   let scaleEventSynced = false;
-  // 책임자 승인 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
-  let _approvalModalPrintWarned = false;
+  // 차단 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
+  let _modalPrintWarned = false;
 
-  // 책임자 승인 모달(증량 승인·수기 입력 승인)이 보이는가 — 이 모달들은 포커스를 승인자 이름칸으로
-  // 옮겨 모든 라우팅 플래그를 null 로 만들어, 폴러 폴백이 PRINT 값을 '다음 미계량 품목'에 채운다.
-  // (증량 제안·폐기·3회 차단 모달은 포커스를 빼앗지 않아 그대로 둔다.)
-  function approvalModalVisible() {
-    const ra = $("rescale-approve-modal");
-    const ma = $("manual-approve-modal");
-    return (ra && !ra.hidden) || (ma && !ma.hidden);
+  // 저울 PRINT 를 소비하면 안 되는 차단 모달이 보이는가. 승인 모달(증량 승인·수기 입력 승인)은
+  // 포커스를 승인자 이름칸으로 옮겨 라우팅 플래그를 전부 비우고, 제안·폐기·3회 차단·이월·LOT 확인
+  // 모달도 버튼 선택을 기다리는 동안 들어온 PRINT 가 폴백('다음 미계량 품목')으로 흘렀다
+  // (현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
+  // 부족(shortage)·추가 계량(add-weigh) 모달은 제외 — PRINT 를 자기 행 합산으로 소비하는 창이다.
+  function printBlockingModalVisible() {
+    return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
+      "discard-modal", "rescale-block-modal", "carry-over-modal",
+      "lot-invalid-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -562,18 +564,18 @@
     // 덮으므로, 이 가드가 없으면 막힌 창이 다른 창에서 누른 PRINT 값을 자기 행에
     // 채워 넣는다(가드가 막으려던 바로 그 사고). 해제되면 잔여 이벤트는 버리고 재동기화.
     if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
-    // 책임자 승인 모달이 열려 있으면 PRINT 를 소비하지 않는다 — 모달이 승인자 이름칸으로
-    // 포커스를 옮겨 라우팅 플래그가 전부 null 이 되고, 폴백이 값을 다음 미계량 품목에 채운다.
+    // 차단 모달이 열려 있으면 PRINT 를 소비하지 않는다 — 필요한 위치가 확정되기 전의 값은
+    // 버리고, 창을 마친 뒤 다시 PRINT 를 받는 게 안전하다(엉뚱한 품목 채움 방지).
     // blendWindowBlocked 가드와 같은 방식(이벤트 버리고 재동기화). 1회만 안내(매 폴링 스팸 금지).
-    if (approvalModalVisible()) {
-      if (!_approvalModalPrintWarned) {
-        _approvalModalPrintWarned = true;
-        notify("승인 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 승인을 먼저 마쳐주세요.", "warn");
+    if (printBlockingModalVisible()) {
+      if (!_modalPrintWarned) {
+        _modalPrintWarned = true;
+        notify("안내 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 창의 버튼으로 먼저 마쳐주세요.", "warn");
       }
       scaleEventSynced = false;
       return;
     }
-    _approvalModalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
+    _modalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
@@ -3201,12 +3203,16 @@
     if (shortageReweigh) shortageReweigh.addEventListener("click", shortageChooseReweigh);
     const shortageOverlay = $("shortage-modal");
     if (shortageOverlay) shortageOverlay.addEventListener("click", (e) => {
-      if (e.target === shortageOverlay) shortageChooseReweigh();
+      // 바깥 클릭으로 닫지 않는다 — 실수 클릭 한 번에 선택 없이 빠져나가던 사고(2026-08-04).
+      // 나가는 길은 [추가 계량]/[다시 계량](Esc 동일) 두 가지뿐 — 승인 모달과 같은 봉인.
+      if (e.target === shortageOverlay) notify("추가 계량 또는 다시 계량 중에서 선택하세요.", "warn");
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !$("shortage-modal").hidden) shortageChooseReweigh();
     });
-    // 추가 계량 모달 — 더하기/Enter 합산, 완료(값 유지), 다시 계량(비움). Esc/overlay=완료.
+    // 추가 계량 모달 — 더하기/Enter 합산, 완료(값 유지), 다시 계량(비움).
+    // Esc·바깥 클릭으로는 닫지 않는다 — 나눠 담는 도중 실수 클릭 한 번에 진행 창(담은 회차
+    // 내역)이 사라지던 사고(2026-08-04). 나가는 길은 두 버튼뿐.
     const awModal = $("add-weigh-modal");
     const awAdd = $("add-weigh-add-btn");
     if (awAdd) awAdd.addEventListener("click", () => {
@@ -3226,12 +3232,15 @@
     if (awReweigh) awReweigh.addEventListener("click", () => {
       if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ false);
     });
+    const awDismissGuard = () => {
+      notify("담는 중입니다 — [지금까지 담은 값으로 마치기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
+    };
     if (awModal) awModal.addEventListener("click", (e) => {
-      if (e.target === awModal && _addWeighIdx != null) closeAddWeighModal(_addWeighIdx, true);
+      if (e.target === awModal && _addWeighIdx != null) awDismissGuard();
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && awModal && !awModal.hidden && _addWeighIdx != null) {
-        closeAddWeighModal(_addWeighIdx, true);
+        awDismissGuard();
       }
     });
     // 총 배합량 입력 후 Enter → 첫 자재 LOT 칸으로 커서 이동(계량은 LOT 먼저가 의도).

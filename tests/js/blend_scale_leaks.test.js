@@ -87,18 +87,74 @@ test("편차를 벗어난 PRINT 는 그 셀에 머문다 (다음 로트로 안 �
     "편차 초과면 focusNextFrom 전에 return 해야 한다 — 안 그러면 재계량이 다음 로트에 담긴다");
 });
 
-test("승인 모달이 열려 있으면 두 화면 모두 PRINT 를 소비하지 않는다", () => {
+test("차단 모달이 열려 있으면 두 화면 모두 PRINT 를 소비하지 않는다", () => {
   [["blend.js", blend], ["blend_continuous.js", cont]].forEach(([name, src]) => {
     const body = bodyOf(src, "pollScaleEvents");
     assert.match(
-      body, /approvalModalVisible\(\)/,
-      `${name}: 승인 모달은 포커스를 승인자 이름칸으로 옮겨 라우팅 플래그를 전부 비운다 — 폴러가 막아야 한다`);
-    const guardIdx = body.indexOf("approvalModalVisible()");
+      body, /printBlockingModalVisible\(\)/,
+      `${name}: 차단 모달이 떠 있는 동안의 PRINT 는 폴백을 타고 엉뚱한 품목에 꽂힌다 — 폴러가 막아야 한다`);
+    const guardIdx = body.indexOf("printBlockingModalVisible()");
     const fetchIdx = body.indexOf("fetch(");
     assert.ok(
       guardIdx !== -1 && fetchIdx !== -1 && guardIdx < fetchIdx,
       `${name}: 가드는 이벤트를 받아오기 전에 있어야 한다`);
   });
+});
+
+test("차단 목록은 승인 모달만이 아니라 제안·폐기·3회 차단·LOT 확인 모달까지 덮는다", () => {
+  // 2026-08-04 현장 실측: 증량 '제안' 모달이 떠 있는 동안 PRINT 가 다음 품목에 꽂혔다.
+  // ("포커스를 안 뺏으니 안전"이라던 86905ab 의 판단이 틀렸다 — 목록 축소 회귀를 여기서 고정.)
+  const required = {
+    "blend.js": [blend, ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
+      "discard-modal", "rescale-block-modal", "carry-over-modal", "lot-invalid-modal"]],
+    "blend_continuous.js": [cont, ["cont-rescale-approve-modal", "cont-manual-approve-modal",
+      "cont-rescale-modal", "cont-discard-modal", "cont-rescale-block-modal",
+      "cont-lot-invalid-modal"]],
+  };
+  Object.entries(required).forEach(([name, [src, ids]]) => {
+    const body = bodyOf(src, "printBlockingModalVisible");
+    ids.forEach((id) => {
+      assert.ok(
+        body.includes(`"${id}"`),
+        `${name}: printBlockingModalVisible 목록에 ${id} 가 빠졌다`);
+    });
+  });
+  // 부족/추가 계량 모달은 PRINT 를 자기 행 합산으로 '소비해야 하는' 창 — 목록에 넣으면 안 된다.
+  const blendBody = bodyOf(blend, "printBlockingModalVisible");
+  ["shortage-modal", "add-weigh-modal"].forEach((id) => {
+    assert.ok(
+      !blendBody.includes(`"${id}"`),
+      `blend.js: ${id} 는 PRINT 소비가 그 창의 역할이다 — 차단 목록에 넣으면 나눠 담기가 죽는다`);
+  });
+});
+
+/** id 로 addEventListener("click", …) 핸들러 본문을 잘라낸다(등록 변수명 기준). */
+function clickHandlerOf(src, varName) {
+  const reg = src.indexOf(`${varName}.addEventListener("click"`);
+  assert.notStrictEqual(reg, -1, `${varName} click 핸들러 등록을 찾지 못했다`);
+  const open = src.indexOf("{", reg);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(open, i + 1);
+    }
+  }
+  throw new Error(`${varName} click 핸들러의 끝을 찾지 못했다`);
+}
+
+test("부족·추가 계량 모달은 바깥 클릭으로 닫히지 않는다", () => {
+  // 2026-08-04 현장 신고: 나눠 담기/부족 채우기 창이 바깥 클릭 한 번에 사라져
+  // 회차 진행 내역을 잃었다. 바깥 클릭은 안내만 하고, 나가는 길은 버튼뿐이어야 한다.
+  const shortageHandler = clickHandlerOf(blend, "shortageOverlay");
+  assert.doesNotMatch(
+    shortageHandler, /shortageChooseReweigh|closeShortageModal/,
+    "부족 모달 바깥 클릭이 창을 닫으면 선택 없이 빠져나간다 — 안내만 해야 한다");
+  const awHandler = clickHandlerOf(blend, "awModal");
+  assert.doesNotMatch(
+    awHandler, /closeAddWeighModal|finishAddWeighModal/,
+    "추가 계량 모달 바깥 클릭이 창을 닫으면 나눠 담기 진행 내역이 사라진다 — 안내만 해야 한다");
 });
 
 test("기준 자재 모드의 배지는 화면 이론량과 같은 목표를 쓴다", () => {

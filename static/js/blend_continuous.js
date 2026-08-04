@@ -574,32 +574,33 @@
 
   let scaleEventLast = 0;
   let scaleEventSynced = false;
-  // 책임자 승인 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
-  let _approvalModalPrintWarned = false;
+  // 차단 모달이 열려 있을 때 저울 PRINT 를 한 번 알리고, 그 뒤론 조용히(매 폴링 스팸 방지).
+  let _modalPrintWarned = false;
 
-  // 책임자 승인 모달(증량 승인·수기 입력 승인)이 보이는가 — 이 모달들은 포커스를 승인자 이름칸으로
-  // 옮겨 모든 라우팅 플래그를 null 로 만들어, 폴러 폴백이 PRINT 값을 '다음 미계량 셀'에 채운다.
-  // (증량 제안·폐기·3회 차단 모달은 포커스를 빼앗지 않아 그대로 둔다.) blend.js 와 동일 가드.
-  function approvalModalVisible() {
-    const ra = $("cont-rescale-approve-modal");
-    const ma = $("cont-manual-approve-modal");
-    return (ra && !ra.hidden) || (ma && !ma.hidden);
+  // 저울 PRINT 를 소비하면 안 되는 차단 모달이 보이는가 — blend.js 와 동일 가드.
+  // 승인 모달은 포커스를 승인자 이름칸으로 옮겨 라우팅 플래그를 전부 비우고, 제안·폐기·3회
+  // 차단·LOT 확인 모달도 버튼 선택을 기다리는 동안 들어온 PRINT 가 폴백('다음 미계량 셀')으로
+  // 흘렀다(현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
+  function printBlockingModalVisible() {
+    return ["cont-rescale-approve-modal", "cont-manual-approve-modal", "cont-rescale-modal",
+      "cont-discard-modal", "cont-rescale-block-modal",
+      "cont-lot-invalid-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
     // 창 단일화 가드에 막힌 창은 저울 이벤트를 소비하지 않는다(blend.js 와 동일 이유).
     if (window.IRMS && window.IRMS.blendWindowBlocked) { scaleEventSynced = false; return; }
-    // 책임자 승인 모달이 열려 있으면 PRINT 를 소비하지 않는다(blend.js 와 동일 이유·방식).
+    // 차단 모달이 열려 있으면 PRINT 를 소비하지 않는다(blend.js 와 동일 이유·방식).
     // 1회만 안내(매 폴링 스팸 금지).
-    if (approvalModalVisible()) {
-      if (!_approvalModalPrintWarned) {
-        _approvalModalPrintWarned = true;
-        notify("승인 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 승인을 먼저 마쳐주세요.", "warn");
+    if (printBlockingModalVisible()) {
+      if (!_modalPrintWarned) {
+        _modalPrintWarned = true;
+        notify("안내 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 창의 버튼으로 먼저 마쳐주세요.", "warn");
       }
       scaleEventSynced = false;
       return;
     }
-    _approvalModalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
+    _modalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
     if (!state.scaleReady) { scaleEventSynced = false; return; }
     try {
       const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
