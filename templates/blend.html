@@ -239,9 +239,11 @@
               <p class="muted add-weigh-note" id="add-weigh-note">저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.</p>
             </div>
             <div class="ss-modal-footer blend-actions">
-              <!-- 완료: 목표에 못 미쳐도 지금까지 담은 값으로 마친다(드묾). 목표를 채우면
-                   자동으로 닫히므로 평소엔 안 눌러도 된다 — 그래서 보조(비강조) 버튼. -->
-              <button class="btn" id="add-weigh-done-btn" type="button">지금까지 담은 값으로 마치기</button>
+              <!-- '잠시 닫아두기' — 목표 미달이면 '마무리'가 존재하지 않는다(편차 강제라
+                   저장이 막힘). 이 버튼의 실제 용도는 자재를 가지러 가는 동안 창을 닫고
+                   다른 자재를 먼저 계량하는 '중단'이다 — 이름이 완료처럼 읽히면 채우는 걸
+                   잊는 함정이 된다(2026-08-05 이름 정직화). 값·회차는 유지된다. -->
+              <button class="btn" id="add-weigh-done-btn" type="button">잠시 닫아두기 (나중에 이어서)</button>
               <button class="btn" id="add-weigh-reweigh-btn" type="button">처음부터 다시</button>
             </div>
           </div>
@@ -361,6 +363,26 @@
              선택이 PRINT/입력값 해석(추가분 vs 누계)을 가른다. hidden 토글 전용. -->
         {% set scale_state_prefix = "" %}{% include "_scale_state_modal.html" %}
 
+        <!-- 자재 폐기 질문 모달 — '처음부터 다시' 재계량 때 비커에 담긴 자재의 행방을 묻는다.
+             숫자 오타 정정(자재 그대로)과 실제 폐기(기록 남김)는 완전히 다른 사건인데 버튼
+             하나로는 구분할 수 없다. 담긴 값이 있을 때만 뜬다. hidden 토글 전용.
+             (scale-state 모달보다 뒤에 두어 그 위에 겹쳐 뜬다 — DOM 순서 = 쌓임 순서.) -->
+        <div class="ss-modal-overlay" id="discard-ask-modal" hidden>
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="discard-ask-title">
+            <div class="ss-modal-header"><h3 id="discard-ask-title">비커에 담긴 자재는 어떻게 됩니까?</h3></div>
+            <div class="ss-modal-body">
+              <p class="add-weigh-material" id="discard-ask-material"></p>
+              <p class="scale-state-guide" id="discard-ask-text"></p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="discard-ask-back" type="button">돌아가기</button>
+              <!-- 실제 폐기 — 되돌릴 수 없는 실물 사건이므로 warn(주황). 기록으로 남는다. -->
+              <button class="btn warn" id="discard-ask-discard" type="button">자재를 버립니다 — 폐기로 기록</button>
+              <button class="btn accent" id="discard-ask-typo" type="button">숫자만 잘못 입력 — 자재는 그대로</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 파생 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
              누르면 표시. 적용하면 1차 배합 총량을 이 행의 실제량으로 기록(계량 생략). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="carry-over-modal" hidden>
@@ -380,7 +402,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805b"></script>
+    <script src="/static/js/blend.js?v=20260805c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

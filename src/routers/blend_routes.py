@@ -1022,6 +1022,23 @@ def build_router() -> APIRouter:
                     "totals": rescale["totals"],
                 },
             )
+        # 계량 중 자재 폐기 — '처음부터 다시' 재계량에서 실제로 버린 자재의 흔적.
+        # 저장을 막지 않는 순수 기록(편차 강제라 최종 수치엔 안 나타나는 소모를 남긴다).
+        discard_json = blend_service.apply_discard_events_to_record(
+            connection,
+            record_id,
+            [ev.model_dump() for ev in body.discard_events] if body.discard_events else None,
+        )
+        if discard_json is not None:
+            write_audit_log(
+                connection,
+                action="blend_discard_saved",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record["product_lot"],
+                details={"events": discard_json[:1000]},
+            )
         # 수기 입력 '책임자 부재 진행' — 사유를 기록에 남기고 미확인(ack 대기)으로 표시.
         # 증량 부재와 동일하게 책임자 확인 전까지 대시보드·트레이 알림에 남는다.
         if blend_service.apply_manual_absence_to_record(

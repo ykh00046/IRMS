@@ -107,7 +107,7 @@ test("차단 목록은 승인 모달만이 아니라 제안·폐기·3회 차단
   const required = {
     "blend.js": [blend, ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal", "lot-invalid-modal",
-      "scale-state-modal"]],
+      "scale-state-modal", "discard-ask-modal"]],
     "blend_continuous.js": [cont, ["cont-rescale-approve-modal", "cont-manual-approve-modal",
       "cont-rescale-modal", "cont-discard-modal", "cont-rescale-block-modal",
       "cont-lot-invalid-modal", "cont-scale-state-modal"]],

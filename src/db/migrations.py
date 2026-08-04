@@ -363,6 +363,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 확인(ack) 루프·트레이 반복 알림 대상이 된다(사용자 결정: 증량과 대칭으로 격상).
     ensure_column(connection, "blend_records", "manual_absence_reason", "TEXT")
     ensure_column(connection, "blend_records", "manual_unacked", "INTEGER NOT NULL DEFAULT 0")
+    # 계량 중 자재 폐기(2026-08-05): '처음부터 다시' 재계량 때 비커에 담긴 자재를 실제로
+    # 버린 경우의 기록 JSON([{material_name, material_code, amount_g}]). 편차 강제 체계라
+    # 최종 기록은 항상 이론량과 일치하므로, 이 컬럼이 없으면 버린 자재가 어디에도 남지 않는다.
+    ensure_column(connection, "blend_records", "discard_events_json", "TEXT")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_rescale_unacked "
         "ON blend_records(rescale_unacked) WHERE rescale_unacked = 1"

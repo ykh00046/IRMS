@@ -76,6 +76,10 @@
     // 이 창이 쓰고 있는 임시저장 슬롯 id(최대 3칸 중 하나). 같은 레시피로 이어서 작업하는
     // 동안은 이 슬롯만 갱신한다. 저장 완료·복구 실패 시 null 로 되돌린다.
     draftSlotId: null,
+    // 계량 중 자재 폐기 이력 [{material_name, material_code, amount_g}] — '처음부터 다시'
+    // 재계량에서 실제로 버린 자재. 저장 body.discard_events 로 전송돼 기록에 남는다
+    // (편차 강제라 최종 수치엔 안 보이는 소모의 유일한 흔적). 초안에도 왕복.
+    discardEvents: [],
     // 반제품 원료 LOT 자동 제안: 레시피 자재명 → 최근 product_lot 목록.
     // 자재명이 "배합 기록이 있는 반제품명"과 일치하면 그 제품의 최근 LOT 을 제안.
     // 레시피 선택 시 1회 호출(실패는 조용히 무시 — 제안 없이 기존 동작 유지).
@@ -580,7 +584,8 @@
     // scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal",
-      "lot-invalid-modal", "scale-state-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "lot-invalid-modal", "scale-state-modal",
+      "discard-ask-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -853,6 +858,7 @@
     state.rescaleAppliedPlan = null;
     state.rescaleUndo = null;
     state.rescaleEvents = [];  // 레시피 변경 → 증량 승인 이력 초기화(총 배합량 잠금도 함께 해제)
+    state.discardEvents = [];  // 레시피 변경 → 폐기 이력도 새 배합 기준으로 초기화
     state.lotOverrides = {};
     state.manualApproved = null;  // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
     // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다.
@@ -907,7 +913,10 @@
   function currentDraft() {
     if (!state.current || !state.current.recipe) return null;
     const hasInput = state.items.some((it) =>
-      (it.actual_amount !== "" && it.actual_amount != null) || (it.material_lot || "").trim());
+      (it.actual_amount !== "" && it.actual_amount != null) || (it.material_lot || "").trim())
+      // 폐기 이력도 의미 있는 입력 — 전량 폐기 직후엔 화면이 비지만, 그 폐기 기록은
+      // 초안에 남아야 창을 닫아도 다음 저장에 실린다(실물 소모의 유일한 흔적).
+      || (state.discardEvents && state.discardEvents.length > 0);
     if (!hasInput) return null;  // 의미 있는 입력이 없으면 초안 없음
     return {
       recipe_id: state.current.recipe.id,
@@ -930,6 +939,8 @@
       // 부재(absence_reason). 초안에 반드시 함께 보관해야 복구 후 저장 payload(rescale_events)
       // 로 전송되어 추적성이 유지된다(누락 시 서버가 '증량 없음'으로 조용히 저장 — 추적 구멍).
       rescaleEvents: (state.rescaleEvents || []).map((ev) => ({ ...ev })),
+      // 자재 폐기 이력 — 초안에 안 실으면 복구 후 저장에서 폐기 흔적이 사라진다.
+      discardEvents: (state.discardEvents || []).map((ev) => ({ ...ev })),
       // 수기 입력 승인/부재 진행 상태 — rescaleEvents 와 같은 이유로 반드시 왕복시킨다.
       // 누락하면 복구 후 저장 시 manual_absence_reason 이 null 이 되어, 승인 없이 손계량한
       // 배치가 '미확인' 표시도 사유도 없이 정상 배치로 기록된다(추적 구멍).
@@ -1037,6 +1048,10 @@
     // 총량 잠금·추가분 배지가 다시 뜨게 한다(일반 레시피는 rescaleTotalG=0 이라 이 신호가 필요).
     state.rescaleEvents = Array.isArray(draft.rescaleEvents)
       ? draft.rescaleEvents.map((ev) => ({ ...ev }))
+      : [];
+    // 자재 폐기 이력 복구 — 초안 저장 시점까지 기록된 폐기가 저장 payload 에 실리게.
+    state.discardEvents = Array.isArray(draft.discardEvents)
+      ? draft.discardEvents.map((ev) => ({ ...ev }))
       : [];
     if (state.rescaleEvents.length) state.rescaleActive = true;
     // '방금 증량 취소' 스냅샷은 세션을 넘겨 복구하지 않는다 — 직전 상태는 이번 세션에서만
@@ -2587,6 +2602,55 @@
     openScaleStateModal({ idx, options: options || null });
   }
 
+  // ── 자재 폐기 질문(discard-ask) ─────────────────────────────
+  // '처음부터 다시' 재계량 때 담긴 값이 있으면, 그 자재가 숫자 오타였는지(자재 그대로)
+  // 실제로 버려지는지(폐기 기록) 먼저 묻는다. 실물 사건과 입력 정정을 버튼 하나로
+  // 뭉개지 않기 위한 분기 — 폐기는 저장 시 discard_events 로 기록에 남는다(2026-08-05).
+  let _discardAskCtx = null;  // {idx} — 질문이 떠 있는 동안의 대상 행
+
+  function currentActualOf(idx) {
+    const it = state.items[idx];
+    if (!it || it.actual_amount === "" || it.actual_amount == null) return 0;
+    return Number(it.actual_amount) || 0;
+  }
+
+  // 재계량 리셋 실행 — 값·회차를 비우고 그 칸에 포커스(열려 있던 창은 모두 닫는다).
+  function performResetWeigh(idx) {
+    closeDiscardAskModal();
+    closeScaleStateModal();
+    closeAddWeighModal(idx, /*keepValue*/ false);
+  }
+
+  function openDiscardAskModal(idx) {
+    const modal = $("discard-ask-modal");
+    const it = state.items[idx];
+    if (!modal || !it) { performResetWeigh(idx); return; }  // 옛 템플릿 폴백 — 질문 없이 리셋
+    _discardAskCtx = { idx };
+    const matEl = $("discard-ask-material");
+    if (matEl) matEl.textContent = it.material_name;
+    const textEl = $("discard-ask-text");
+    if (textEl) {
+      textEl.textContent =
+        `지금까지 담은 ${fmt(currentActualOf(idx), dp())} g — 실제로 버리는 경우에만 폐기로 기록됩니다.`;
+    }
+    modal.hidden = false;
+    const back = $("discard-ask-back");
+    if (back) back.focus();  // 오버레이 뒤 입력 방지 + 실수 Enter 가 파괴적 선택이 안 되게
+  }
+
+  function closeDiscardAskModal() {
+    const modal = $("discard-ask-modal");
+    if (modal) modal.hidden = true;
+    _discardAskCtx = null;
+  }
+
+  // '처음부터 다시' 진입문 — 담긴 값이 있으면 폐기 여부를 먼저 묻는다.
+  function requestResetWeigh(idx) {
+    if (idx == null) return;
+    if (currentActualOf(idx) > 0) { openDiscardAskModal(idx); return; }
+    performResetWeigh(idx);
+  }
+
   // 모드·저울 전용 여부에 따라 칩/안내문/note 를 맞춘다.
   function applyAwModeTexts() {
     const scaleOnly = Boolean(state.scaleOnlyInput);
@@ -3028,6 +3092,8 @@
       // 증량 승인 이력 — 각 증량의 before/after 총량 + 승인(approval_id/approver) 또는
       // 부재 진행(absence_reason). 없으면 null. 서버가 유효성(승인 실재 여부)을 재검증한다.
       rescale_events: state.rescaleEvents.length ? state.rescaleEvents : null,
+      // 계량 중 자재 폐기 이력 — '처음부터 다시'에서 실제로 버린 자재(없으면 null).
+      discard_events: (state.discardEvents && state.discardEvents.length) ? state.discardEvents : null,
       // 수기 입력을 책임자 부재로 진행했으면 그 사유 — 서버가 기록에 남기고 책임자
       // 확인(ack) 전까지 미확인으로 표시한다(증량 부재와 동일한 사후 확인 루프).
       manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
@@ -3091,6 +3157,7 @@
       state.rescaleActive = false;
       state.rescaleUndo = null;
       state.rescaleEvents = [];  // 저장 완료 → 증량 승인 이력 초기화(총 배합량 잠금 해제)
+      state.discardEvents = [];  // 저장 완료 → 폐기 이력은 방금 기록에 실렸다
       state.lotOverrides = {};
       // 저장 성공 → LOT 조회 캐시를 비운다. 방금 저장한 기록으로 '없던' LOT 이 생겼을 수
       // 있고, 다음 배합이 그걸 곧바로 원료로 쓴다(B-1: 시킨 대로 해도 계속 막히던 원인).
@@ -3332,7 +3399,8 @@
     });
     const awReweigh = $("add-weigh-reweigh-btn");
     if (awReweigh) awReweigh.addEventListener("click", () => {
-      if (_addWeighIdx != null) closeAddWeighModal(_addWeighIdx, /*keepValue*/ false);
+      // 담긴 값이 있으면 폐기 여부를 먼저 묻는다(오타 정정 vs 실물 폐기 분기).
+      if (_addWeighIdx != null) requestResetWeigh(_addWeighIdx);
     });
     // 저울 상태 선택 모달 — 그림 두 장 중 선택, [취소]/[처음부터 다시 계량]/Esc.
     // 바깥 클릭 봉인(다른 봉인 모달과 동일) — 실수 클릭이 선택을 건너뛰면 안 된다.
@@ -3347,18 +3415,17 @@
     if (ssLoaded) ssLoaded.addEventListener("click", () => chooseScaleState("loaded"));
     if (ssCancel) ssCancel.addEventListener("click", closeScaleStateModal);
     if (ssReweigh) ssReweigh.addEventListener("click", () => {
-      // 부족 행의 실제량 칸으로 돌아가 처음부터 다시 계량하게 한다 — 값은 지우지 않는다
-      // (옛 shortageChooseReweigh 과 동일). 칸 포커스+선택으로 재계량을 유도.
-      const idx = _scaleStateShortageIdx;
-      closeScaleStateModal();
-      if (idx == null) return;
-      const input = document.querySelector(`.blend-actual[data-idx="${idx}"]`);
-      if (input) { input.focus(); input.select(); }
+      // 담긴 값이 있으므로 폐기 여부를 먼저 묻는다(질문이 이 창 위에 겹쳐 뜬다).
+      // [돌아가기]면 이 창으로 복귀, 선택하면 값·회차를 비우고 그 칸에 포커스.
+      requestResetWeigh(_scaleStateShortageIdx);
     });
     if (ssModal) ssModal.addEventListener("click", (e) => {
       if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 아래 버튼을 누르세요.", "warn");
     });
     document.addEventListener("keydown", (e) => {
+      // 폐기 질문이 위에 떠 있으면 그 창의 Esc(돌아가기)에 양보한다.
+      const da = $("discard-ask-modal");
+      if (da && !da.hidden) return;
       if (e.key === "Escape" && ssModal && !ssModal.hidden) {
         if (_scaleStateShortageIdx != null) {
           notify("두 그림 중 하나를 고르거나 [처음부터 다시 계량]을 누르세요.", "warn");
@@ -3367,15 +3434,49 @@
         }
       }
     });
+    // 자재 폐기 질문 모달 — [돌아가기]/[폐기 기록]/[숫자 오타]. 바깥 클릭 봉인.
+    const daModal = $("discard-ask-modal");
+    const daTypo = $("discard-ask-typo");
+    const daDiscard = $("discard-ask-discard");
+    const daBack = $("discard-ask-back");
+    if (daTypo) daTypo.addEventListener("click", () => {
+      if (_discardAskCtx) performResetWeigh(_discardAskCtx.idx);
+    });
+    if (daDiscard) daDiscard.addEventListener("click", () => {
+      if (!_discardAskCtx) return;
+      const idx = _discardAskCtx.idx;
+      const it = state.items[idx];
+      const amount = Math.round(currentActualOf(idx) * 100) / 100;
+      if (it && amount > 0) {
+        state.discardEvents.push({
+          material_name: it.material_name,
+          material_code: it.material_code || "",
+          amount_g: amount,
+        });
+        notify(`폐기 기록됨: ${it.material_name} ${fmt(amount, dp())} g — 저장 시 기록에 함께 남습니다.`, "warn");
+        scheduleDraftSave();  // 폐기 이력도 초안에 즉시(창 닫힘 대비)
+      }
+      performResetWeigh(idx);
+    });
+    if (daBack) daBack.addEventListener("click", closeDiscardAskModal);
+    if (daModal) daModal.addEventListener("click", (e) => {
+      if (e.target === daModal) notify("자재의 행방을 선택하거나 [돌아가기]를 누르세요.", "warn");
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && daModal && !daModal.hidden) closeDiscardAskModal();
+    });
     const awStateChange = $("add-weigh-state-change");
     if (awStateChange) awStateChange.addEventListener("click", () => openScaleStateModal(null));
     const awDismissGuard = () => {
-      notify("담는 중입니다 — [지금까지 담은 값으로 마치기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
+      notify("담는 중입니다 — [잠시 닫아두기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
     };
     if (awModal) awModal.addEventListener("click", (e) => {
       if (e.target === awModal && _addWeighIdx != null) awDismissGuard();
     });
     document.addEventListener("keydown", (e) => {
+      // 폐기 질문이 위에 떠 있으면 그 창의 Esc(돌아가기)에 양보한다.
+      const da = $("discard-ask-modal");
+      if (da && !da.hidden) return;
       if (e.key === "Escape" && awModal && !awModal.hidden && _addWeighIdx != null) {
         awDismissGuard();
       }

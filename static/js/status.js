@@ -140,6 +140,22 @@ document.addEventListener("DOMContentLoaded", () => {
       + `<p class="muted small" style="margin:0.3rem 0 0;">사유: ${esc(reason || "-")}</p></div>`;
   }
 
+  // 계량 중 자재 폐기 블록 — '처음부터 다시' 재계량에서 실제로 버린 자재의 흔적.
+  // 편차 강제라 최종 수치엔 안 보이는 소모를 여기서만 볼 수 있다(2026-08-05).
+  function discardBlock(rec) {
+    let events = [];
+    try {
+      const parsed = JSON.parse(rec.discard_events_json || "[]");
+      if (Array.isArray(parsed)) events = parsed;
+    } catch (_e) { /* 손상된 JSON — 표시 생략(저장 데이터는 서버가 정규화) */ }
+    if (!events.length) return "";
+    const rows = events
+      .map((e) => `<li>${esc(e.material_name || "-")}: ${fmt(e.amount_g)} g 폐기</li>`)
+      .join("");
+    return `<div class="blend-rescale-block"><b>계량 중 자재 폐기</b>`
+      + `<ul class="blend-rescale-list">${rows}</ul></div>`;
+  }
+
   // 기본 삭제 = '취소'(soft) — 기록은 남고 목록·출력·집계에서만 빠지며 복원할 수 있다.
   // 물리 삭제는 되돌릴 수 없어 별도 경로(cancelRecord 이후 '완전 삭제')로만 도달한다.
   async function cancelRecord(recordId, reason) {
@@ -330,6 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ${bulkLine}
       ${rescaleBlock(rec.id)}
       ${manualBlock(rec)}
+      ${discardBlock(rec)}
       <div class="table-wrap"><table class="blend-table">
         <thead><tr><th>#</th><th>품목</th><th class="num">비율(%)</th><th class="num">이론(g)</th><th class="num">실제(g)</th><th class="num">편차(g)</th><th>자재 LOT</th></tr></thead>
         <tbody>${rows}</tbody>

@@ -1859,6 +1859,15 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         record["rescale_events_json"] = None
         record["rescale_count"] = 0
         record["rescale_unacked"] = 0
+    # 계량 중 자재 폐기 이력 — 상세 화면이 "폐기: 자재 X g" 줄을 그릴 수 있게 실어 준다.
+    try:
+        dr = connection.execute(
+            "SELECT discard_events_json FROM blend_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        record["discard_events_json"] = dr["discard_events_json"] if dr else None
+    except sqlite3.OperationalError:  # 컬럼이 없는 구버전/테스트 DB
+        record["discard_events_json"] = None
     return record
 
 
@@ -2320,6 +2329,49 @@ def apply_rescale_to_record(
         "rescale_unacked = ? WHERE id = ?",
         (validated["events_json"], validated["count"], validated["unacked"], record_id),
     )
+
+
+# 계량 중 자재 폐기 기록 상한(모델 Field 와 동일) — 서비스 단독 호출에서도 방어.
+DISCARD_EVENTS_MAX = 20
+
+
+def apply_discard_events_to_record(
+    connection: sqlite3.Connection,
+    record_id: int,
+    events: list[dict[str, Any]] | None,
+) -> str | None:
+    """계량 중 자재 폐기 목록을 정규화해 blend_records.discard_events_json 에 기록한다.
+
+    '처음부터 다시' 재계량에서 비커에 담긴 자재를 실제로 버린 경우의 흔적 — 편차 강제
+    체계라 최종 기록은 항상 이론량과 일치하므로, 여기 남기지 않으면 버린 자재는 자재
+    사용량에도 DHR 에도 나타나지 않는다. 저장을 막지 않는 순수 기록(경고·검증 없음).
+    반환: 저장한 JSON 텍스트(없으면 None — 컬럼 미기록).
+    """
+    if not events:
+        return None
+    cleaned: list[dict[str, Any]] = []
+    for ev in events[:DISCARD_EVENTS_MAX]:
+        name = str(ev.get("material_name") or "").strip()[:200]
+        amount = ev.get("amount_g")
+        try:
+            amount_f = round(float(amount), 2)
+        except (TypeError, ValueError):
+            continue
+        if not name or amount_f <= 0:
+            continue
+        cleaned.append({
+            "material_name": name,
+            "material_code": str(ev.get("material_code") or "").strip()[:50],
+            "amount_g": amount_f,
+        })
+    if not cleaned:
+        return None
+    events_json = json.dumps(cleaned, ensure_ascii=False)
+    connection.execute(
+        "UPDATE blend_records SET discard_events_json = ? WHERE id = ?",
+        (events_json, record_id),
+    )
+    return events_json
 
 
 # 수기 입력 부재 사유 길이 상한(모델 Field 와 동일) — 서비스 단독 호출에서도 방어.

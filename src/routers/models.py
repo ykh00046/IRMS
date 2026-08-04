@@ -164,6 +164,17 @@ class LotOverrideBody(BaseModel):
     acknowledged: bool = True
 
 
+class DiscardEventBody(BaseModel):
+    """계량 중 자재 폐기 1건 — '처음부터 다시' 재계량에서 담은 자재를 실제로 버린 경우.
+
+    편차 강제 체계에서 최종 기록은 항상 이론량과 일치하므로, 이 목록이 없으면 버린
+    자재는 어떤 기록에도 남지 않는다(자재 사용량·DHR 사각). 저장을 막지 않는 순수 기록.
+    """
+    material_name: str = Field(min_length=1, max_length=200)
+    material_code: str = Field(default="", max_length=50)
+    amount_g: float = Field(gt=0)
+
+
 class BlendCreateBody(BaseModel):
     recipe_id: int | None = Field(default=None, gt=0)
     product_name: str = Field(min_length=1, max_length=200)
@@ -195,6 +206,8 @@ class BlendCreateBody(BaseModel):
     # 수기 입력 '책임자 부재 진행' 사유 — 저울 전용 모드에서 비밀번호 승인 없이 사유만
     # 남기고 손입력한 경우. 값이 있으면 그 기록은 책임자 확인 전까지 미확인으로 남는다.
     manual_absence_reason: str | None = Field(default=None, max_length=300)
+    # 계량 중 자재 폐기 목록(None/빈 리스트=없음). 최대 20건 — 서비스가 정규화·저장.
+    discard_events: list[DiscardEventBody] | None = Field(default=None, max_length=20)
     # 저장 멱등 키(클라이언트가 만드는 1회용 id). 같은 id 의 재전송은 기록을 두 벌 만들지
     # 않고 첫 결과를 그대로 돌려준다 — 타임아웃 재시도로 같은 계량값이 두 LOT 이 되는
     # 것을 막는다. 미전송(None)이면 종전과 동일하게 매번 새 기록(하위호환).
