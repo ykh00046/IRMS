@@ -26,6 +26,7 @@
     todayISO,
     nowTime,
     rowVariance,
+    varianceVerdict,
     baseTotalValues,
     materialRowHtml,
     baseTotalLinksHtml,
@@ -459,7 +460,7 @@
       if (!it) {
         state.scaleTargetIdx = null;
       } else if (it.actual_amount !== "" && !pend
-        && Math.abs(rowVariance(it)) <= state.toleranceG + 1e-9) {
+        && varianceVerdict(Number(it.actual_amount), it.theory_amount, state.toleranceG).within) {
         state.scaleTargetIdx = null;
       }
     }
@@ -1064,7 +1065,7 @@
     const overIdx = state.items.findIndex((it, i) =>
       i !== state.anchorIndex && it.actual_amount !== ""
       && !(state.addPending && state.addPending[i] != null)
-      && rowVariance(it) > tol + 1e-9);
+      && varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).over);
     if (overIdx >= 0) {
       notify("복구된 배합에 미해소 초과 계량이 있습니다 — 증량 승인 또는 다시 계량이 필요합니다.", "error");
       warnIfVariance(overIdx);
@@ -1893,9 +1894,10 @@
     // (warnAllVariance — 총량 변경 경로)는 루프에서 addPending 행을 건너뛰므로
     // 오탐 방지는 그대로 유지되고, 여기(직접 입력 경로)서는 팝업을 막지 않는다.
     // 합산 입력 중(addModeIdx)의 반복 팝업은 아래 부족 분기의 가드가 막는다.
-    const v = rowVariance(it);
     const tol = state.toleranceG;
-    if (Math.abs(v) > tol + 1e-9) {
+    const verdict = varianceVerdict(Number(it.actual_amount), it.theory_amount, tol);
+    const v = verdict.variance;  // raw 편차 — 판정은 verdict 로, 표시/부족량은 fmt/그대로
+    if (!verdict.within) {
       // 나눠 담는 중인 행은 '아직 덜 넣었다'가 정상 상태다 — 계획된 분할을 매 회차
       // 오류로 알리면 8kg 씩 3번 담을 때 경고가 2번 뜬다(실측). 부족 방향일 때만
       // 침묵하고, 초과는 그대로 알린다(그건 분할 중에도 실제 문제다).
@@ -1959,7 +1961,7 @@
     let first = null;
     state.items.forEach((it, i) => {
       if (i === state.anchorIndex || it.actual_amount === "") return;
-      if (rowVariance(it) > tol + 1e-9) {
+      if (varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).over) {
         it.actual_amount = "";
         const input = document.querySelector(`.blend-actual[data-idx="${i}"]`);
         if (input) input.value = "";
@@ -2602,7 +2604,7 @@
     // ("완료" 성공 토스트 + "허용 편차 초과" 오류가 동시에 뜨던 버그). 실제 편차의
     // 절댓값으로 판정해, 초과는 완료로 치지 않고 아래 warnIfVariance(초과 경고/증량)에 맡긴다.
     const overshoot = cur - target;  // 양수=초과, 음수=미달
-    if (Math.abs(overshoot) <= state.toleranceG + 1e-9) {
+    if (varianceVerdict(cur, target, state.toleranceG).within) {
       notify(`${it.material_name} 추가 계량 완료`, "success");
       finishAddWeighModal(idx);
     }
@@ -2679,7 +2681,7 @@
     state.items.forEach((it, i) => {
       if (i === state.anchorIndex || it.actual_amount === "") return;
       if (state.addPending && state.addPending[i] != null) return;  // 증량 대기 — 배지가 안내
-      if (Math.abs(rowVariance(it)) > tol + 1e-9) badIdx.push(i);
+      if (!varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).within) badIdx.push(i);
     });
     if (!badIdx.length) return;
     if (badIdx.length === 1) { warnIfVariance(badIdx[0]); return; }
@@ -2832,7 +2834,7 @@
     const ai = state.anchorIndex;
     const tol = state.toleranceG;
     const bad = state.items.filter((it, i) =>
-      i !== ai && Math.abs(rowVariance(it)) > tol + 1e-9
+      i !== ai && !varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).within
     );
     if (bad.length) {
       err.textContent = varianceBlockMessage(badVarianceNames(bad), tol);

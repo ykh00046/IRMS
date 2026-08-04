@@ -9,6 +9,7 @@
  *
  * Exports (window.IRMS.blendLib):
  *   esc, TOLERANCE_G, ANCHOR_BADGE, fmt, toleranceDecimals, todayISO, nowTime, rowVariance,
+ *   varianceVerdict,
  *   baseTotalValues, materialRowHtml, baseTotalLinksHtml, bulkRowHtml,
  *   computeTotals, computeTheoryAmount,
  *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
@@ -81,6 +82,30 @@
   function rowVariance(it) {
     if (!it || it.actual_amount === "" || it.theory_amount == null) return 0;
     return Math.round((Number(it.actual_amount) - it.theory_amount) * 1000) / 1000;
+  }
+
+  // 허용 편차 판정(순수) — 배합(행)·다중 계량(셀) 두 화면이 각자 rounds/비교를 두어
+  // 네 곳에서 규칙이 어긋났다(행=3자리 반올림 후 비교, 셀 표시/경고=2자리, 셀 일괄·저장 게이트=
+  // raw, 서버=raw). 한 곳에서 판정해 양쪽이 같은 결과를 쓰게 한다. 비교 전 반올림 없음 —
+  // 반올림은 표시(fmt) 전용이다. existing '+ 1e-9' 엡실론 유지(부동소수 끝 처리).
+  //   actual, theory: grams(숫자). toleranceG: 허용 편차(미지정/0 이하 → TOLERANCE_G).
+  // 반환: { variance, within, over, short }
+  //   variance = actual - theory (raw, 반올림 없음 — 표시는 fmt 로)
+  //   within   = |variance| <= tol + 1e-9   (정상 — 저장 허용·sticky 해제)
+  //   over     = variance  >  tol + 1e-9    (+초과 — 증량 제안·clearOver 게이트)
+  //   short    = variance  < -(tol + 1e-9)  (-초과 — 부족 알림)
+  function varianceVerdict(actual, theory, toleranceG) {
+    const a = Number(actual);
+    const th = Number(theory);
+    const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
+      ? Number(toleranceG) : TOLERANCE_G;
+    const variance = a - th;
+    return {
+      variance,
+      within: Math.abs(variance) <= tol + 1e-9,
+      over: variance > tol + 1e-9,
+      short: variance < -(tol + 1e-9),
+    };
   }
 
   function baseTotalValues(current) {
@@ -309,13 +334,16 @@
   // 순수 함수로 떼어 테스트로 잠근다.
   //
   // 우선순위(위가 강함):
-  //   addModeIdx   — 합산 입력이 실제로 켜져 있는 행
-  //   addWeighIdx  — 추가 계량/나눠 담기 모달이 열려 있는 행. applyAddAmount 가 매번
+  //   addModeIdx   — 합산 입력이 실제로 켜져 있는 위치
+  //   addWeighIdx  — 추가 계량/나눠 담기 모달이 열려 있는 위치. applyAddAmount 가 매번
   //                  addModeIdx 를 null 로 되돌리므로, 이게 없으면 2회차 PRINT 부터 샌다.
-  //   shortageIdx  — 부족 모달이 떠 있는 행. 아직 '추가로 채우기'를 안 눌러 합산 모드가
+  //   shortageIdx  — 부족 모달이 떠 있는 위치. 아직 '추가로 채우기'를 안 눌러 합산 모드가
   //                  아니지만, 모달이 "저울 PRINT 가 합산된다"고 약속한 상태다.
-  //   stickyIdx    — 작업자가 지정한 행(유효할 때만) / focusedIdx — 커서가 놓인 행
-  // 전부 해당 없으면 null → 호출부가 '첫 미입력 행' 폴백을 쓴다.
+  //   stickyIdx    — 작업자가 지정한 위치(유효할 때만) / focusedIdx — 커서가 놓인 위치
+  // 전부 해당 없으면 null → 호출부가 '첫 미입력 위치' 폴백을 쓴다.
+  //
+  // 위치는 불투명(opaque)하다 — 배합 화면은 행 인덱스(숫자), 다중 계량은 {i,j} 셀 객체.
+  // pickScaleRow 는 어떤 위치값이든 그대로 돌려주므로 양쪽 모두 쓸 수 있다(규칙은 같다).
   function pickScaleRow(ctx) {
     const c = ctx || {};
     if (c.addModeIdx != null) return c.addModeIdx;
@@ -326,10 +354,12 @@
     return null;
   }
 
-  // 이 행의 PRINT 를 기존 값에 합산해야 하는가(덮어쓰기 금지).
+  // 이 위치의 PRINT 를 기존 값에 합산해야 하는가(덮어쓰기 금지).
   // 모달이 열려 있는 동안은 addModeIdx 가 회차마다 꺼지므로 addWeighIdx 도 함께 본다.
-  function isAddModeRow(idx, addModeIdx, addWeighIdx) {
-    return addModeIdx === idx || (addWeighIdx != null && addWeighIdx === idx);
+  // 위치가 객체(셀)인 호출부는 eq 로 동등 판정을 넘긴다 — 기본 === 은 행 인덱스용.
+  function isAddModeRow(idx, addModeIdx, addWeighIdx, eq) {
+    const same = typeof eq === "function" ? eq : (a, b) => a === b;
+    return same(addModeIdx, idx) || (addWeighIdx != null && same(addWeighIdx, idx));
   }
 
   function varianceDisplay(it, toleranceG) {
@@ -343,11 +373,12 @@
     }
     const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
       ? Number(toleranceG) : TOLERANCE_G;
-    const v = Math.round((actual - it.theory_amount) * 1000) / 1000;
+    const verdict = varianceVerdict(actual, it.theory_amount, tol);
+    const v = verdict.variance;
     return {
       text: (v > 0 ? "+" : "") + fmt(v, 2),
       // 허용 편차(±tol g) 이내면 정상 표시, 초과 시에만 색으로 경고
-      className: "num blend-var " + (Math.abs(v) <= tol + 1e-9 ? "" : v > 0 ? "var-up" : "var-down"),
+      className: "num blend-var " + (verdict.within ? "" : v > 0 ? "var-up" : "var-down"),
     };
   }
 
@@ -563,6 +594,7 @@
     todayISO,
     nowTime,
     rowVariance,
+    varianceVerdict,
     baseTotalValues,
     materialRowHtml,
     baseTotalLinksHtml,

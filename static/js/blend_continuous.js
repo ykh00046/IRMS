@@ -28,6 +28,7 @@
     rescalePlan, exceedsBatchLimit,
     appliedRescaleRowHtml,
     createIdleLogout,
+    pickScaleRow, isAddModeRow, varianceVerdict,
   } = window.IRMS.blendLib;
 
   const $ = (id) => document.getElementById(id);
@@ -551,7 +552,7 @@
         const th = theoryFor(i, j);
         const raw = state.cells[i][j].actual;
         if (raw === "" || th == null) continue;
-        if (Number(raw) - th > tol + 1e-9) {
+        if (varianceVerdict(Number(raw), th, tol).over) {
           // warnIfVariance(+방향) → offerContRescale(j) → 제안/승인 모달. 첫 초과 셀 하나면 충분.
           warnIfVariance(i, j);
           return;
@@ -616,20 +617,30 @@
   // 동일). 인라인 추가 입력칸은 cont-actual 클래스가 아니어서 포커스 감지에 안 걸리고,
   // 그 셀의 actual 은 이미 채워져 있어 폴백도 건너뛰었다 — 부족 보충 PRINT 가 엉뚱한
   // 빈 셀로 가던 버그(2026-07-22 흐름 재검토 BUG-1). 커서 우선 → 첫 미입력 셀 폴백.
+  // 셀 동등 판정 — {i,j} 객체를 값으로 비교(pickScaleRow/isAddModeRow 의 eq 인자).
+  // pickScaleRow/isAddModeRow 는 행 인덱스(숫자)와 셀 객체 양쪽 모두에 쓰이도록
+  // 위치를 불투명하게 두었으므로, 셀 형태에서는 eq 로 넘겨 동등함을 판정한다.
+  const cellEq = (a, b) => !!a && !!b && a.i === b.i && a.j === b.j;
+
   function activeScaleCell() {
-    if (state.addModeCell) return state.addModeCell;
-    // 인라인 추가 입력칸이 열려 있는 셀(_addWeighCell) — addModeCell 은 applyAddAmount 가
-    // 매번 null 로 되돌리지만, 입력칸은 닫힐 때까지 살아 있어 2회차 PRINT 도 같은 셀로.
-    if (_addWeighCell) return { i: _addWeighCell.i, j: _addWeighCell.j };
-    // 작업자 수동 지정 셀(sticky) — 포커스보다 우선. 유효한 셀일 때만.
-    const t = state.scaleTargetCell;
-    if (t && state.cells[t.i] && state.cells[t.i][t.j] && t.j < state.lotCount) {
-      return { i: t.i, j: t.j };
-    }
+    // 우선순위 규칙은 blend_lib.pickScaleRow 가 소유(배합 화면과 동일 규칙, 테스트로 잠금).
+    // 위치는 {i,j} 셀 객체 — pickScaleRow 는 opaque 위치를 그대로 돌려준다.
     const focused = document.activeElement;
-    if (focused && focused.classList && focused.classList.contains("cont-actual")) {
-      return { i: Number(focused.dataset.i), j: Number(focused.dataset.j) };
-    }
+    const focusedCell = (focused && focused.classList && focused.classList.contains("cont-actual"))
+      ? { i: Number(focused.dataset.i), j: Number(focused.dataset.j) }
+      : null;
+    const t = state.scaleTargetCell;
+    const stickyValid = !!(t && state.cells[t.i] && state.cells[t.i][t.j] && t.j < state.lotCount);
+    const picked = pickScaleRow({
+      addModeIdx: state.addModeCell,
+      addWeighIdx: _addWeighCell,
+      shortageIdx: null,        // 다중 계량엔 부족 모달 라우팅이 없다(직접 alert 경로).
+      stickyIdx: t,
+      stickyValid,
+      focusedIdx: focusedCell,
+    });
+    if (picked != null) return { i: picked.i, j: picked.j };
+    // 폴백: 첫 미입력 셀(자재 열 우선).
     for (let i = 0; i < state.materials.length; i++) {
       for (let j = 0; j < state.lotCount; j++) {
         if (state.cells[i][j].actual === "") return { i, j };
@@ -659,7 +670,7 @@
       if (!cell || t.j >= state.lotCount) {
         state.scaleTargetCell = null;
       } else if (cell.actual !== "" && !pend && th != null
-        && Math.abs(Number(cell.actual) - th) <= state.toleranceG + 1e-9) {
+        && varianceVerdict(Number(cell.actual), th, state.toleranceG).within) {
         state.scaleTargetCell = null;
       }
     }
@@ -1534,8 +1545,9 @@
     const raw = state.cells[i][j].actual;
     const act = raw === "" ? null : Number(raw);
     if (act === null || th == null) { span.textContent = "-"; span.className = "cont-var"; return; }
-    const v = Math.round((act - th) * 100) / 100;
     const tol = state.toleranceG;
+    const verdict = varianceVerdict(act, th, tol);
+    const v = verdict.variance;  // raw 편차 — 판정은 verdict 로, 표시는 fmt 로
     // 편차 0(정확히 계량)은 "0.00" 반복 노이즈 대신 옅은 체크로 — 넓은 매트릭스가 차분해진다.
     // 편차가 있으면 부호 포함 숫자(허용 내는 중립색, 초과는 var-up/down 색).
     if (v === 0) {
@@ -1543,7 +1555,7 @@
       span.className = "cont-var cont-var-ok";
     } else {
       span.textContent = (v > 0 ? "+" : "") + fmt(v, 2);
-      span.className = "cont-var " + (Math.abs(v) <= tol + 1e-9 ? "" : (v > 0 ? "var-up" : "var-down"));
+      span.className = "cont-var " + (verdict.within ? "" : (v > 0 ? "var-up" : "var-down"));
     }
   }
 
@@ -1558,9 +1570,10 @@
     const th = theoryFor(i, j);
     const raw = state.cells[i][j].actual;
     if (raw === "" || th == null) return false;
-    const v = Math.round((Number(raw) - th) * 100) / 100;
     const tol = state.toleranceG;
-    if (Math.abs(v) > tol + 1e-9) {
+    const verdict = varianceVerdict(Number(raw), th, tol);
+    const v = verdict.variance;  // raw 편차 — 판정은 verdict 로, 표시·부족량은 fmt/그대로
+    if (!verdict.within) {
       const key = `${i}:${j}:${raw}`;
       const now = Date.now();
       if (_lastVarWarn.key === key && now - _lastVarWarn.at < 1500) return true;
@@ -1598,7 +1611,7 @@
         if (th == null) continue;
         const raw = state.cells[i][j].actual;
         if (raw === "") continue;
-        if (Math.abs(Number(raw) - th) > tol + 1e-9) {
+        if (!varianceVerdict(Number(raw), th, tol).within) {
           bad.push({ i, j });
         }
       }
@@ -1827,8 +1840,7 @@
       state.cells[i].forEach((cell, j) => {
         const th = theoryFor(i, j);
         if (cell.actual === "" || th == null) return;
-        const v = Number(cell.actual) - th;
-        if (v > tol + 1e-9) {
+        if (varianceVerdict(Number(cell.actual), th, tol).over) {
           cell.actual = "";
           const el = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
           if (el) { el.value = ""; if (!firstEl) firstEl = el; }
@@ -2060,11 +2072,11 @@
   let _addWeighCell = null;
 
   // 저울 PRINT 가 들어갈 셀이 '추가(합산) 모드'인가 — addModeCell 또는 _addWeighCell.
-  // blend_lib.isAddModeRow 의 셀 스코프 판정(blend.js fillScaleValue 사용 방식과 동일).
+  // 판정은 blend_lib.isAddModeRow 에 맡긴다(배합 화면과 동일 규칙, 테스트로 잠금).
+  // 셀은 {i,j} 객체이므로 cellEq 로 동등 판정.
   function isAddModeCell(i, j) {
-    const am = state.addModeCell;
-    if (am && am.i === i && am.j === j) return true;
-    return _addWeighCell != null && _addWeighCell.i === i && _addWeighCell.j === j;
+    const pos = { i, j };
+    return isAddModeRow(pos, state.addModeCell, _addWeighCell, cellEq);
   }
 
   function openAddInline(i, j) {
@@ -2223,8 +2235,11 @@
     const bad = [];
     for (let i = 0; i < state.materials.length; i++) {
       for (let j = 0; j < state.lotCount; j++) {
-        const v = Number(state.cells[i][j].actual) - (theoryFor(i, j) || 0);
-        if (Math.abs(v) > tol + 1e-9) bad.push(`로트 ${j + 1} · ${state.materials[i].material_name}(${v > 0 ? "+" : ""}${fmt(v, 2)}g)`);
+        const verdict = varianceVerdict(Number(state.cells[i][j].actual), theoryFor(i, j) || 0, tol);
+        if (!verdict.within) {
+          const v = verdict.variance;
+          bad.push(`로트 ${j + 1} · ${state.materials[i].material_name}(${v > 0 ? "+" : ""}${fmt(v, 2)}g)`);
+        }
       }
     }
     if (bad.length) {

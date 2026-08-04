@@ -69,3 +69,82 @@ test("모달이 열린 행의 PRINT 는 합산(덮어쓰기 금지)", () => {
   assert.strictEqual(isAddModeRow(0, null, 0), true);   // 0번 행
   assert.strictEqual(isAddModeRow(0, null, null), false);
 });
+
+// ── 셀 형태({i,j} 객체) — 다중 계량 화면. pickScaleRow/isAddModeRow 는 위치를
+// 불투명하게 다루므로 행 인덱스와 같은 규칙·같은 우선순위가 그대로 성립해야 한다.
+// 동등 판정은 호출부가 넘기는 eq 로(배합====, 다중 계량=cellEq). 0번 셀(0,0) 함정 포함.
+const cellEq = (a, b) => !!a && !!b && a.i === b.i && a.j === b.j;
+
+test("[셀] 합산 모드가 켜진 셀이 최우선", () => {
+  const picked = pickScaleRow({
+    addModeIdx: { i: 1, j: 1 },
+    addWeighIdx: { i: 2, j: 0 },
+    stickyIdx: { i: 3, j: 0 },
+    stickyValid: true,
+    focusedIdx: { i: 4, j: 0 },
+  });
+  assert.deepStrictEqual(picked, { i: 1, j: 1 });
+});
+
+test("[셀] 추가 입력칸이 열려 있으면 그 셀 — 2회차 PRINT 가 새지 않는다", () => {
+  // applyAddAmount 가 addModeCell 을 null 로 되돌린 직후 상태.
+  const picked = pickScaleRow({ addModeIdx: null, addWeighIdx: { i: 2, j: 1 } });
+  assert.deepStrictEqual(picked, { i: 2, j: 1 });
+});
+
+test("[셀] 유효하지 않은 sticky 는 무시하고 포커스로", () => {
+  assert.deepStrictEqual(
+    pickScaleRow({ stickyIdx: { i: 9, j: 9 }, stickyValid: false, focusedIdx: { i: 4, j: 2 } }),
+    { i: 4, j: 2 });
+});
+
+test("[셀] 0번 셀(0,0)도 정상 선택된다(falsy 인덱스 함정)", () => {
+  const z = { i: 0, j: 0 };
+  assert.deepStrictEqual(pickScaleRow({ addModeIdx: z }), z);
+  assert.deepStrictEqual(pickScaleRow({ addWeighIdx: z }), z);
+  assert.deepStrictEqual(pickScaleRow({ stickyIdx: z, stickyValid: true }), z);
+  assert.deepStrictEqual(pickScaleRow({ focusedIdx: z }), z);
+});
+
+test("[셀] 해당 없으면 null — 호출부 폴백으로", () => {
+  assert.strictEqual(pickScaleRow({}), null);
+});
+
+test("[셀] 열려 있는 셀의 PRINT 는 합산(덮어쓰기 금지) — eq 로 동등 판정", () => {
+  const pos = { i: 2, j: 1 };
+  assert.strictEqual(isAddModeRow(pos, null, { i: 2, j: 1 }, cellEq), true);   // 2회차 이후
+  assert.strictEqual(isAddModeRow(pos, { i: 2, j: 1 }, null, cellEq), true);   // 합산 모드 켜짐
+  assert.strictEqual(isAddModeRow({ i: 3, j: 1 }, null, { i: 2, j: 1 }, cellEq), false);  // 다른 셀
+  assert.strictEqual(isAddModeRow({ i: 0, j: 0 }, null, { i: 0, j: 0 }, cellEq), true);   // 0번 셀
+  assert.strictEqual(isAddModeRow(pos, null, null, cellEq), false);
+});
+
+// ── 허용 편차 판정 단일 헬퍼(varianceVerdict) — 비교 전 반올림 없음, +1e-9 엡실론.
+const { varianceVerdict } = global.window.IRMS.blendLib;
+
+test("[편차] 허용 편차 이내면 within, 초과/부족 플래그 모두 거짓", () => {
+  const v = varianceVerdict(100.03, 100.0, 0.05);
+  assert.strictEqual(v.within, true);
+  assert.strictEqual(v.over, false);
+  assert.strictEqual(v.short, false);
+});
+
+test("[편차] +초과면 over, 부족이면 short — 부호와 무관하게 within 은 거짓", () => {
+  assert.strictEqual(varianceVerdict(100.06, 100.0, 0.05).over, true);
+  assert.strictEqual(varianceVerdict(100.06, 100.0, 0.05).within, false);
+  assert.strictEqual(varianceVerdict(99.90, 100.0, 0.05).short, true);
+  assert.strictEqual(varianceVerdict(99.90, 100.0, 0.05).within, false);
+});
+
+test("[편차] 비교 전 반올림 없음 — 3자리/2자리 반올림이 판정을 바꾸지 않는다", () => {
+  // 예전 blend.js rowVariance(3자리 반올림)와 raw 비교가 0.0005 경계에서 어긋났다.
+  // 헬퍼는 raw 로 판정 — 정확히 tol+엡실론 경계의 값이 반올림에 뒤집히지 않는다.
+  const v = varianceVerdict(100.0503, 100.0, 0.05);
+  assert.strictEqual(v.variance, 100.0503 - 100.0);
+  assert.strictEqual(v.over, true);   // 0.0503 > 0.05 + 1e-9
+});
+
+test("[편차] toleranceG 미지정/0 이하 → 기본 TOLERANCE_G(0.05)", () => {
+  assert.strictEqual(varianceVerdict(100.03, 100.0).within, true);
+  assert.strictEqual(varianceVerdict(100.06, 100.0, 0).over, true);
+});
