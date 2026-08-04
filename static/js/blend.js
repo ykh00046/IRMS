@@ -2606,7 +2606,11 @@
   // '처음부터 다시' 재계량 때 담긴 값이 있으면, 그 자재가 숫자 오타였는지(자재 그대로)
   // 실제로 버려지는지(폐기 기록) 먼저 묻는다. 실물 사건과 입력 정정을 버튼 하나로
   // 뭉개지 않기 위한 분기 — 폐기는 저장 시 discard_events 로 기록에 남는다(2026-08-05).
-  let _discardAskCtx = null;  // {idx} — 질문이 떠 있는 동안의 대상 행
+  // ctx = {rows: [{idx, amount}], onProceed} — amount 는 '폐기'를 고르면 기록될 양.
+  // 부족 리셋은 담은 양 전체, 초과 비우기는 초과분(덜어낼 양)이다. 질문은 항상 부모
+  // 모달을 닫기 전에 그 위에 뜬다 — [돌아가기]가 게이트된 원래 상태로 복귀해, 미해소
+  // 초과가 창 없이 방치되는 사고 벡터(2026-07-22 계열)를 만들지 않는다.
+  let _discardAskCtx = null;
 
   function currentActualOf(idx) {
     const it = state.items[idx];
@@ -2621,18 +2625,19 @@
     closeAddWeighModal(idx, /*keepValue*/ false);
   }
 
-  function openDiscardAskModal(idx) {
+  function openDiscardAsk(rows, text, onProceed) {
     const modal = $("discard-ask-modal");
-    const it = state.items[idx];
-    if (!modal || !it) { performResetWeigh(idx); return; }  // 옛 템플릿 폴백 — 질문 없이 리셋
-    _discardAskCtx = { idx };
+    if (!modal || !rows.length) { onProceed(); return; }  // 옛 템플릿 폴백 — 질문 없이 진행
+    _discardAskCtx = { rows, onProceed };
     const matEl = $("discard-ask-material");
-    if (matEl) matEl.textContent = it.material_name;
-    const textEl = $("discard-ask-text");
-    if (textEl) {
-      textEl.textContent =
-        `지금까지 담은 ${fmt(currentActualOf(idx), dp())} g — 실제로 버리는 경우에만 폐기로 기록됩니다.`;
+    if (matEl) {
+      matEl.textContent = rows
+        .map((r) => (state.items[r.idx] ? state.items[r.idx].material_name : ""))
+        .filter(Boolean)
+        .join(" · ");
     }
+    const textEl = $("discard-ask-text");
+    if (textEl) textEl.textContent = text;
     modal.hidden = false;
     const back = $("discard-ask-back");
     if (back) back.focus();  // 오버레이 뒤 입력 방지 + 실수 Enter 가 파괴적 선택이 안 되게
@@ -2644,11 +2649,42 @@
     _discardAskCtx = null;
   }
 
-  // '처음부터 다시' 진입문 — 담긴 값이 있으면 폐기 여부를 먼저 묻는다.
+  // '처음부터 다시' 진입문(부족 리셋) — 담긴 값이 있으면 폐기 여부를 먼저 묻는다.
   function requestResetWeigh(idx) {
     if (idx == null) return;
-    if (currentActualOf(idx) > 0) { openDiscardAskModal(idx); return; }
-    performResetWeigh(idx);
+    const amount = Math.round(currentActualOf(idx) * 100) / 100;
+    if (amount <= 0) { performResetWeigh(idx); return; }
+    openDiscardAsk(
+      [{ idx, amount }],
+      `지금까지 담은 ${fmt(amount, dp())} g — 실제로 버리는 경우에만 폐기로 기록됩니다.`,
+      () => performResetWeigh(idx),
+    );
+  }
+
+  // 초과 비우기 진입문 — 초과 행들의 '덜어낼 양(초과분)'을 모아 폐기 여부를 묻는다.
+  // 부족만 묻고 초과는 안 묻던 비대칭 해소(2026-08-05 전수 감사 R-2). prepare 는
+  // '진행' 확정 후에만 실행된다(부모 모달 닫기 등 — 돌아가면 아무것도 안 바뀐다).
+  function requestClearOverActuals(prepare) {
+    const tol = state.toleranceG;
+    const rows = [];
+    state.items.forEach((it, i) => {
+      if (i === state.anchorIndex || it.actual_amount === "") return;
+      if (!varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).over) return;
+      const over = Math.round((Number(it.actual_amount) - it.theory_amount) * 100) / 100;
+      if (over > 0) rows.push({ idx: i, amount: over });
+    });
+    const proceed = () => {
+      closeDiscardAskModal();
+      if (prepare) prepare();
+      clearOverActuals();
+    };
+    if (!rows.length) { proceed(); return; }
+    const total = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+    openDiscardAsk(
+      rows,
+      `초과분 합계 ${fmt(total, dp())} g — 비커에서 덜어내 버리는 경우에만 폐기로 기록됩니다.`,
+      proceed,
+    );
   }
 
   // 모드·저울 전용 여부에 따라 칩/안내문/note 를 맞춘다.
@@ -3274,9 +3310,12 @@
     if (rescaleApply) rescaleApply.addEventListener("click", openRescaleApproveModal);
     const rescaleCancel = $("rescale-cancel");
     if (rescaleCancel) rescaleCancel.addEventListener("click", () => {
-      state.pendingRescale = null;
-      closeRescaleModal();
-      clearOverActuals();  // 닫기만 하면 초과 상태가 남아 누적된다 — 즉시 해소.
+      // 닫기만 하면 초과 상태가 남아 누적된다 — 비우되, 덜어낸 자재의 폐기 여부를 먼저
+      // 묻는다(질문이 제안 모달 위에 뜨고, 돌아가면 제안이 그대로 남는다).
+      requestClearOverActuals(() => {
+        state.pendingRescale = null;
+        closeRescaleModal();
+      });
     });
     const discardForce = $("discard-force");
     if (discardForce) discardForce.addEventListener("click", openRescaleApproveModal);
@@ -3295,11 +3334,12 @@
     // 나가는 길은 [승인]/[부재로 진행]/[다시 계량](Esc 동일) 세 가지뿐.
     function dismissApproveWithReweigh() {
       if (_rescaleReauthPending) { cancelRescaleApprove(); return; }
-      // 실수 클릭 보험 — 비워지는 건 방금 입력한 초과값이지만 확인 한 번은 거친다.
-      if (!window.confirm("입력한 초과값을 비우고 다시 계량합니다. 계속할까요?")) return;
-      state.pendingRescale = null;
-      closeRescaleApproveModal();
-      clearOverActuals();
+      // 옛 window.confirm 을 폐기 질문이 대체한다 — [돌아가기]가 실수 클릭 보험이고,
+      // 진행하면 초과값을 비우면서 덜어낸 자재의 폐기 여부까지 기록된다(R-2).
+      requestClearOverActuals(() => {
+        state.pendingRescale = null;
+        closeRescaleApproveModal();
+      });
     }
     const approveModal = $("rescale-approve-modal");
     if (approveModal) approveModal.addEventListener("click", (e) => {
@@ -3310,6 +3350,9 @@
     const approveReweigh = $("rescale-approve-reweigh");
     if (approveReweigh) approveReweigh.addEventListener("click", dismissApproveWithReweigh);
     document.addEventListener("keydown", (e) => {
+      // 폐기 질문이 위에 떠 있으면 그 창의 Esc(돌아가기)에 양보한다.
+      const daOpen = $("discard-ask-modal");
+      if (daOpen && !daOpen.hidden) return;
       if (e.key === "Escape" && approveModal && !approveModal.hidden) dismissApproveWithReweigh();
     });
     // 저울 전용 모드 수기 입력 승인 — 요청 버튼/모달 [승인]·[취소]·Enter·Esc.
@@ -3440,23 +3483,34 @@
     const daDiscard = $("discard-ask-discard");
     const daBack = $("discard-ask-back");
     if (daTypo) daTypo.addEventListener("click", () => {
-      if (_discardAskCtx) performResetWeigh(_discardAskCtx.idx);
+      if (!_discardAskCtx) return;
+      const proceed = _discardAskCtx.onProceed;
+      proceed();
     });
     if (daDiscard) daDiscard.addEventListener("click", () => {
       if (!_discardAskCtx) return;
-      const idx = _discardAskCtx.idx;
-      const it = state.items[idx];
-      const amount = Math.round(currentActualOf(idx) * 100) / 100;
-      if (it && amount > 0) {
+      const { rows, onProceed } = _discardAskCtx;
+      let count = 0;
+      let total = 0;
+      rows.forEach((r) => {
+        const it = state.items[r.idx];
+        if (!it || !(r.amount > 0)) return;
         state.discardEvents.push({
           material_name: it.material_name,
           material_code: it.material_code || "",
-          amount_g: amount,
+          amount_g: r.amount,
         });
-        notify(`폐기 기록됨: ${it.material_name} ${fmt(amount, dp())} g — 저장 시 기록에 함께 남습니다.`, "warn");
+        count += 1;
+        total += r.amount;
+      });
+      if (count) {
+        const label = count === 1
+          ? `${state.items[rows[0].idx].material_name} ${fmt(rows[0].amount, dp())} g`
+          : `${count}개 자재 합계 ${fmt(Math.round(total * 100) / 100, dp())} g`;
+        notify(`폐기 기록됨: ${label} — 저장 시 기록에 함께 남습니다.`, "warn");
         scheduleDraftSave();  // 폐기 이력도 초안에 즉시(창 닫힘 대비)
       }
-      performResetWeigh(idx);
+      onProceed();
     });
     if (daBack) daBack.addEventListener("click", closeDiscardAskModal);
     if (daModal) daModal.addEventListener("click", (e) => {

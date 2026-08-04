@@ -444,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <button class="btn btn-sm accent" id="e-save" type="button">저장</button>
       </div>
       <p class="login-error" id="e-error" hidden></p>
-      <p class="muted small">제품 LOT·서명·생성 정보는 그대로 유지됩니다. 자재별 편차는 ±0.05g 이내여야 저장됩니다.</p>`;
+      <p class="muted small">제품 LOT·서명·생성 정보는 그대로 유지됩니다. 자재별 편차는 레시피의 허용 편차(기본 ±0.05g) 이내여야 저장됩니다.</p>`;
 
     $("e-rows").addEventListener("click", (ev) => {
       const del = ev.target.closest(".e-del");
@@ -616,9 +616,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const cancelBtn = $("status-cancel-rec");
   if (cancelBtn) cancelBtn.addEventListener("click", async () => {
     if (!detailId) return;
+    // 보존 기한(기본 3일)을 결정하는 순간에 말한다 — 기한은 title 툴팁에만 있어서
+    // '기한 없는 약속'으로 읽히던 문제(2026-08-05 전수 감사 R-1). 기한이 지나면
+    // 서버가 기동 시 자동 완전 삭제한다(IRMS_CANCELED_RETENTION_DAYS).
     const reason = window.prompt(
       "이 배합 기록을 취소합니다. 사유를 입력하세요.\n" +
-      "(기록은 지워지지 않고 목록·출력에서 빠집니다. 나중에 복원할 수 있습니다.)"
+      "(기록은 목록·출력에서 빠지며, 취소 후 3일 안에는 복원할 수 있습니다.\n" +
+      " 3일이 지나면 자동으로 완전히 삭제됩니다.)"
     );
     if (reason === null) return;              // 취소 버튼
     if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }

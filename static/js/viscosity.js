@@ -401,7 +401,7 @@
         cell.colSpan = 9;
         cell.className = "muted visc-period-truncation";
         cell.textContent =
-          "최근 60개 구간만 표시 — 전체 구간은 Excel 내보내기를 이용하세요.";
+          "최근 60개 구간만 표시 — 전체 구간은 [전체 Excel] 버튼을 이용하세요.";
         note.appendChild(cell);
         body.appendChild(note);
       }
@@ -931,7 +931,12 @@
   }
 
   async function includeReading(readingId, lotNo) {
-    if (!window.confirm(`이 측정값을 다시 통계에 포함할까요? (LOT ${lotNo})`)) return;
+    // 해제는 사유·제외자·제외시각을 지운다(서버) — "언제든 되돌릴 수 있다"는 약속에서
+    // 사유만은 예외임을 결정하는 순간에 말한다(2026-08-05 전수 감사 R-5).
+    if (!window.confirm(
+      `이 측정값을 다시 통계에 포함할까요? (LOT ${lotNo})\n`
+      + "입력했던 제외 사유는 화면에서 지워집니다(감사 이력에는 남습니다)."
+    )) return;
     try {
       await request(`/viscosity/readings/${readingId}/include`, { method: "POST" });
       IRMS.notify("측정값을 통계에 다시 포함했습니다.", "success");

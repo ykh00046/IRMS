@@ -573,7 +573,8 @@ def build_router() -> APIRouter:
         wb = Workbook()
         ws = wb.active
         ws.title = "배합기록"
-        headers = ["작업일", "제품LOT", "제품", "잉크", "작업자", "총량(g)", "저울", "상태", "비고"]
+        # 열 내용은 레거시 ink_name 컬럼 — 사용자 노출 라벨에 '잉크'는 금칙어(CLAUDE.md).
+        headers = ["작업일", "제품LOT", "제품", "세부 품명", "작업자", "총량(g)", "저울", "상태", "비고"]
         ws.append(headers)
         for c in range(1, len(headers) + 1):
             ws.cell(row=1, column=c).font = Font(bold=True)

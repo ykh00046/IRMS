@@ -1570,16 +1570,14 @@
       if (v > 0) {
         offerContRescale(j);
       } else {
-        // 부족(-): 팝업으로 부족량 명시. 영점 실수 등은 추가로 올린 무게를 더한
-        // '합계'를 다시 입력해 맞춘다(다중 계량은 행별 합산 모드가 없어 합계 재입력 방식).
-        window.alert(
-          `부족 계량: ${state.materials[i].material_name} (로트 ${j + 1})
-`
-          + `이론 ${fmt(th, dp())} g / 실제 ${fmt(Number(raw), dp())} g — ${fmt(Math.abs(v), dp())} g 부족
-
-`
-          + `저울을 다시 올려 채운 뒤, 최종 무게(합계)를 이 칸에 다시 입력하세요.`
-        );
+        // 부족(-): 저울 상태 선택(그림) 모달에 부족 안내를 실어 바로 띄운다(배합 화면과 동일,
+        // 부족 창 통합). 그림 선택 시 chooseContScaleState → openAddInline(i, j, mode) 로 이어져
+        // 추가분 합산 입력을 열고, [처음부터 다시 계량] 시 그 칸으로 되돌아간다(값 유지).
+        const shortage = Math.abs(v);
+        openContScaleStateModal({
+          i, j,
+          shortage: { theory: Number(th) || 0, actual: Number(raw) || 0, missing: shortage },
+        });
       }
       return true;
     }
@@ -2072,7 +2070,15 @@
   // 참조를 놓는 모든 지점에서 함께 놓는다(안 놓으면 다음 셀에 옛 해석이 적용된다).
   let _addWeighMode = null;
   let _contScaleStatePending = null;  // 선택 후 열 대상 {i, j}
+  // 부족 감지로 이 모달이 열렸을 때의 대상 셀 {i, j}. null 이 아니면 부족 컨텍스트 —
+  // [처음부터 다시 계량] 버튼이 보이고 Esc/바깥 클릭으로 닫히지 않는다(blend.js 와 동일,
+  // 부족 창 통합). 그림 선택 시 chooseContScaleState 가 openAddInline(i, j, mode) 로 이어진다.
+  let _contScaleStateShortageCell = null;
 
+  // 저울 상태 선택 모달을 연다. pending 에는 선택적 shortage {theory, actual, missing} 가
+  // 붙을 수 있다 — 부족 감지로 열린 경우로, 이때 부족 안내줄을 띄우고 [처음부터 다시 계량]
+  // 버튼을 노출하며 [취소]는 숨긴다(blend.js openScaleStateModal 과 동일 패턴). shortage 가
+  // 없으면(나눠 담기·변경) 부족줄·다시 계량 버튼을 숨기고 [취소]를 보여준다.
   function openContScaleStateModal(pending) {
     const modal = $("cont-scale-state-modal");
     if (!modal) {  // 옛 템플릿 폴백 — 선택 없이 현행(추가분 합산)으로 진행
@@ -2083,6 +2089,25 @@
     const mat = pending ? state.materials[pending.i] : null;
     const matEl = $("cont-scale-state-material");
     if (matEl) matEl.textContent = mat ? `${mat.material_name} · ${pending.j + 1}로트` : "";
+    const shortage = pending && pending.shortage ? pending.shortage : null;
+    _contScaleStateShortageCell = shortage && pending && pending.i != null && pending.j != null
+      ? { i: pending.i, j: pending.j } : null;
+    const shortageEl = $("cont-scale-state-shortage");
+    const reweighBtn = $("cont-scale-state-reweigh");
+    const cancelBtn = $("cont-scale-state-cancel");
+    if (shortage) {
+      if (shortageEl) {
+        shortageEl.textContent =
+          `이론 ${fmt(shortage.theory, dp())} g / 실제 ${fmt(shortage.actual, dp())} g — ${fmt(shortage.missing, dp())} g 부족`;
+        shortageEl.hidden = false;
+      }
+      if (reweighBtn) reweighBtn.hidden = false;
+      if (cancelBtn) cancelBtn.hidden = true;
+    } else {
+      if (shortageEl) { shortageEl.textContent = ""; shortageEl.hidden = true; }
+      if (reweighBtn) reweighBtn.hidden = true;
+      if (cancelBtn) cancelBtn.hidden = false;
+    }
     modal.hidden = false;
     const first = $("cont-scale-state-tared");
     if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
@@ -2092,6 +2117,7 @@
     const modal = $("cont-scale-state-modal");
     if (modal) modal.hidden = true;
     _contScaleStatePending = null;
+    _contScaleStateShortageCell = null;
   }
 
   function chooseContScaleState(mode) {
@@ -2607,20 +2633,38 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && manualModal && !manualModal.hidden) closeManualApproveModal();
     });
-    // 저울 상태 선택 모달 — 그림 두 장 중 선택, 취소/Esc 로 되돌아가기.
+    // 저울 상태 선택 모달 — 그림 두 장 중 선택, [취소]/[처음부터 다시 계량]/Esc.
     // 바깥 클릭 봉인(다른 봉인 모달과 동일) — 실수 클릭이 선택을 건너뛰면 안 된다.
+    // 부족 컨텍스트(_contScaleStateShortageCell)에서는 [취소]가 없고 Esc 도 닫지 않는다 —
+    // 나가는 길은 그림 둘 또는 [처음부터 다시 계량] 뿐이다(blend.js 와 동일 패턴).
     const ssModal = $("cont-scale-state-modal");
     const ssTared = $("cont-scale-state-tared");
     const ssLoaded = $("cont-scale-state-loaded");
     const ssCancel = $("cont-scale-state-cancel");
+    const ssReweigh = $("cont-scale-state-reweigh");
     if (ssTared) ssTared.addEventListener("click", () => chooseContScaleState("tared"));
     if (ssLoaded) ssLoaded.addEventListener("click", () => chooseContScaleState("loaded"));
     if (ssCancel) ssCancel.addEventListener("click", closeContScaleStateModal);
+    if (ssReweigh) ssReweigh.addEventListener("click", () => {
+      // 부족 셀의 실제량 칸으로 돌아가 처음부터 다시 계량하게 한다 — 값은 지우지 않는다
+      // (재입력 대기). 칸 포커스+선택으로 재계량을 유도.
+      const cell = _contScaleStateShortageCell;
+      closeContScaleStateModal();
+      if (!cell) return;
+      const input = document.querySelector(`.cont-actual[data-i="${cell.i}"][data-j="${cell.j}"]`);
+      if (input) { input.focus(); input.select(); }
+    });
     if (ssModal) ssModal.addEventListener("click", (e) => {
-      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 [취소]를 누르세요.", "warn");
+      if (e.target === ssModal) notify("두 그림 중 하나를 고르거나 아래 버튼을 누르세요.", "warn");
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && ssModal && !ssModal.hidden) closeContScaleStateModal();
+      if (e.key === "Escape" && ssModal && !ssModal.hidden) {
+        if (_contScaleStateShortageCell) {
+          notify("두 그림 중 하나를 고르거나 [처음부터 다시 계량]을 누르세요.", "warn");
+        } else {
+          closeContScaleStateModal();
+        }
+      }
     });
     // 빠른 사유 태그(증량·수기 부재 공용) — 누르면 사유칸 토글 채움.
     wireReasonTags();
