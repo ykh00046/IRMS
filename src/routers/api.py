@@ -4,6 +4,7 @@ from ..auth import require_access_level
 from ..db import utc_now_text
 from . import (
     admin_routes,
+    blend_lot_audit_routes,
     blend_rescale_ack_routes,
     attendance_routes,
     auth_routes,
@@ -75,6 +76,7 @@ def build_router() -> APIRouter:
     router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
     router.include_router(material_lot_router)    # ERP 원재료 LOT 검증(배합 화면 무로그인)
     router.include_router(blend_rescale_ack_routes.build_router())   # 증량 사후 확인(책임자)
+    router.include_router(blend_lot_audit_routes.build_router())     # 미해소 LOT 대사·총량 이상(책임자)
     router.include_router(public_rescale_alert_routes.build_router())  # 증량 트레이 알림(내부망 공개)
     router.include_router(settings_router)        # 앱 설정(저울 전용 입력 모드 토글)
     return router

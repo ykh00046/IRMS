@@ -71,6 +71,9 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_manual_absence_saved", "수기 입력(책임자 부재)"],
       ["blend_rescale_saved", "증량 배합 저장"],
       ["blend_rescale_approve_denied", "증량 승인 거절"],
+      // 총량 통제(2026-08-04) — 둘 다 저장을 막지 않고 기록만 남기는 사후 점검 신호.
+      ["blend_total_oversize", "1회 배합 상한 초과 저장"],
+      ["blend_total_bypass_suspect", "증량 승인 우회 의심"],
     ]],
     ["레시피", [
       ["recipes_imported", "레시피 등록"],

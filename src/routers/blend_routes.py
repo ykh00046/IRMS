@@ -115,6 +115,69 @@ _SAVE_EP_SINGLE = "blend_create"
 _SAVE_EP_CONTINUOUS = "blend_create_continuous"
 
 
+def _flag_total_anomalies(
+    connection: sqlite3.Connection,
+    *,
+    record_id: int,
+    product_lot: str,
+    total_amount: Any,
+    recipe_id: int | None,
+    rescale_count: int,
+    current_user: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """총량 플래그 2종을 기록에 남기고(저장 차단 없음) 감사 로그까지 쓴다 → 플래그 dict.
+
+    ① oversize_total       — 현장 1회 배합 상한(25,000 g) 초과. 폐기 권장을 무시한
+                             '그래도 증량' 경로는 계속 저장돼야 하므로 표시만 남긴다.
+    ② total_bypass_suspect — 증량 이력이 없는데 총량이 레시피 기준 배합량을 크게 상회
+                             (증량 승인 우회 의심). 판정 규칙은
+                             blend_service.detect_total_bypass 참조.
+
+    단건 생성·수정(PUT)·다중 계량이 같은 함수를 쓴다. 어느 쪽도 저장을 막지 않는다.
+    """
+    flags = blend_service.apply_total_flags(
+        connection,
+        record_id,
+        total_amount,
+        recipe_id=recipe_id,
+        rescale_count=rescale_count,
+    )
+    if flags["oversize_total"]:
+        saved_total = float(total_amount)
+        write_audit_log(
+            connection,
+            action="blend_total_oversize",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=product_lot,
+            details={
+                "total_amount": saved_total,
+                "limit_g": blend_service.BLEND_OVERSIZE_FLAG_G,
+                "over_g": round(saved_total - blend_service.BLEND_OVERSIZE_FLAG_G, 2),
+            },
+        )
+    if flags["total_bypass_suspect"]:
+        base = float(flags["total_bypass_base"] or 0.0)
+        total = float(total_amount)
+        write_audit_log(
+            connection,
+            action="blend_total_bypass_suspect",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=product_lot,
+            details={
+                "total_amount": total,
+                "base_total": base,
+                "excess_g": round(total - base, 2),
+                "excess_pct": round((total - base) / base * 100, 2) if base else None,
+                "recipe_id": recipe_id,
+            },
+        )
+    return flags
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
@@ -975,12 +1038,26 @@ def build_router() -> APIRouter:
             )
         # 앞 단계 기록에 없는 LOT 진행 — 대사용 구조화 기록(사유가 비어도 반드시 남는다).
         blend_service.record_lot_acks(connection, record_id, lot_acks, utc_now_text())
+        # 총량 플래그(2026-08-04) — 저장을 막지 않고 표시만 남긴다.
+        #   oversize_total       현장 1회 상한(25,000 g) 초과 저장('그래도 증량' 경로)
+        #   total_bypass_suspect 증량 이력 없이 총량만 키운 증량 승인 우회 의심
+        total_flags = _flag_total_anomalies(
+            connection,
+            record_id=record_id,
+            product_lot=record["product_lot"],
+            total_amount=total_amount,
+            recipe_id=body.recipe_id,
+            rescale_count=(rescale["count"] if rescale else 0),
+            current_user=current_user,
+        )
         create_audit_details: dict[str, Any] = {
             "product_name": body.product_name,
             "total_amount": body.total_amount,
             "items": len(body.details),
             "manual_entry": body.manual_entry,
         }
+        if total_flags["oversize_total"] or total_flags["total_bypass_suspect"]:
+            create_audit_details["total_flags"] = total_flags
         # 감사에도 같은 항목을 구조화 보존한다(GAP-1 belt-and-braces). blend_lot_acks 가
         # 대사의 1차 소스이고, 감사는 삭제·수정에도 남는 원본 사본이다.
         if lot_acks:
@@ -1162,6 +1239,20 @@ def build_router() -> APIRouter:
         blend_service.record_lot_acks(
             connection, record_id, lot_acks, utc_now_text(), replace=True
         )
+        # 총량 플래그도 정정 후 총량 기준으로 다시 판정한다 — 잘못 친 총량을 고치면
+        # 플래그가 0 으로 되돌아가고, 정정으로 상한을 넘기면 새로 켜진다. 증량 이력은
+        # 수정 경로에서 바뀌지 않으므로 저장돼 있던 rescale_count 를 그대로 쓴다.
+        total_flags = _flag_total_anomalies(
+            connection,
+            record_id=record_id,
+            product_lot=updated["product_lot"],
+            total_amount=total_amount,
+            recipe_id=body.recipe_id,
+            rescale_count=int(record.get("rescale_count") or 0),
+            current_user=current_user,
+        )
+        if total_flags["oversize_total"] or total_flags["total_bypass_suspect"]:
+            after_summary["total_flags"] = total_flags
         if lot_acks:
             after_summary["lot_acks"] = lot_acks
         write_audit_log(
@@ -1493,9 +1584,30 @@ def build_router() -> APIRouter:
             blend_service.record_lot_acks(connection, ids[lot_idx], acks, saved_at)
             all_lot_acks.extend(acks)
         lots = [blend_service.get_blend_record(connection, rid)["product_lot"] for rid in ids]
+        # 총량 플래그 — 로트마다 판정한다(로트별 총량 오버라이드 lot_totals 때문에
+        # 한 회차 안에서도 로트마다 총량이 다를 수 있다). 단건과 동일하게 표시만 남긴다.
+        flagged_lots: list[dict[str, Any]] = []
+        for lot_idx, rid in enumerate(ids):
+            lot_total = body.total_amount
+            if body.lot_totals and lot_idx < len(body.lot_totals) and body.lot_totals[lot_idx]:
+                lot_total = body.lot_totals[lot_idx]
+            lot_rescale = lot_rescales[lot_idx] if lot_idx < len(lot_rescales) else None
+            lot_flags = _flag_total_anomalies(
+                connection,
+                record_id=rid,
+                product_lot=lots[lot_idx],
+                total_amount=lot_total,
+                recipe_id=body.recipe_id,
+                rescale_count=(lot_rescale["count"] if lot_rescale else 0),
+                current_user=current_user,
+            )
+            if lot_flags["oversize_total"] or lot_flags["total_bypass_suspect"]:
+                flagged_lots.append({"product_lot": lots[lot_idx], **lot_flags})
         continuous_audit_details: dict[str, Any] = {
             "recipe_id": body.recipe_id, "count": len(ids), "total_amount": body.total_amount,
         }
+        if flagged_lots:
+            continuous_audit_details["total_flags"] = flagged_lots
         # 감사에도 같은 항목을 구조화 보존(GAP-1 belt-and-braces).
         if all_lot_acks:
             continuous_audit_details["lot_acks"] = all_lot_acks

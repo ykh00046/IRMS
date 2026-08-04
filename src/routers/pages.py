@@ -255,6 +255,18 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def status_page(request: Request) -> Response:
         return _app_page_response(request, templates, "status.html")
 
+    @router.get("/lot-audit", response_class=HTMLResponse)
+    def lot_audit_page(request: Request) -> Response:
+        # 미해소 LOT 대사 + 총 배합량 이상 — 책임자 전용 사후 점검(2026-08-04).
+        #
+        # 위치 판단: /status(배합 기록)·/dashboard 는 사내 공용 단말 정책상 **무로그인
+        # 개방**이고 단위가 '한 건의 기록'이다. 이 화면은 ① 책임자 전용이고 ② 단위가
+        # 기록이 아니라 '미해소 LOT / 의심 배치'라는 별도 검토 대기열이며 ③ 경과 일수로
+        # 쌓이는 성격이라, 개방 화면의 체크박스 필터로 얹으면 권한이 어긋나거나(노출)
+        # 로그인 상태에서만 보이는 유령 필터가 된다. 그래서 /admin/users 와 같은
+        # _protected_page_response(manager) 전용 페이지로 둔다.
+        return _protected_page_response(request, templates, "blend_lot_audit.html", "manager")
+
     @router.get("/admin/users", response_class=HTMLResponse)
     def admin_users_page(request: Request) -> Response:
         return _protected_page_response(request, templates, "admin_users.html", "manager")

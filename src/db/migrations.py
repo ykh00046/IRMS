@@ -371,6 +371,27 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_blend_records_manual_unacked "
         "ON blend_records(manual_unacked) WHERE manual_unacked = 1"
     )
+    # 총 배합량 통제(2026-08-04). 서버의 유일한 상한이 10,000,000 g(10톤)이라 총량 칸의
+    # 자릿수 오타가 그대로 DHR·자재 사용량 집계에 실렸다. 상한은 현실적인 값으로 낮추고,
+    # 현장 1회 배합 상한(25,000 g — 화면 blend_lib.BATCH_LIMIT_G)을 넘는 저장은
+    # **막지 않고** 아래 플래그로만 남긴다('그래도 증량' 경로 보존).
+    #   oversize_total        총량 > 25,000 g 로 저장됨(폐기 권장을 무시하고 진행)
+    #   total_bypass_suspect  증량 승인 우회 의심 — 증량 이력이 없는데 총량이 레시피
+    #                         기준 배합량을 크게 상회(blend_service.detect_total_bypass)
+    #   total_bypass_base     그때 비교 기준으로 삼은 기준 배합량(g). 사후에 레시피가
+    #                         바뀌어도 판정 근거가 남도록 값 자체를 보존한다.
+    # 셋 다 추가 전용(nullable / NOT NULL DEFAULT 0) — 기존 행은 0/NULL 로 남는다.
+    ensure_column(connection, "blend_records", "oversize_total", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "blend_records", "total_bypass_suspect", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "blend_records", "total_bypass_base", "REAL")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_oversize_total "
+        "ON blend_records(oversize_total) WHERE oversize_total = 1"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_total_bypass "
+        "ON blend_records(total_bypass_suspect) WHERE total_bypass_suspect = 1"
+    )
     # 성장 대비 인덱스(2026-07-25 감사, 40,000기록/320,000상세 합성 DB 로 실측).
     # 자재 사용량 집계는 기간 1년 조회에서 758~988ms 가 걸렸고(기록당 상세를 반복 조회 +
     # GROUP BY 임시 B-tree), 아래 두 인덱스로 커버링 스캔이 되어 ~500ms 로 떨어진다.

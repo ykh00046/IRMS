@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..auth import ACCESS_LEVEL_LABEL
 from ..db import row_to_dict
+from ..services.blend_service import BLEND_TOTAL_MAX_G
 
 
 class LoginRequest(BaseModel):
@@ -171,7 +172,11 @@ class BlendCreateBody(BaseModel):
     worker: str = Field(min_length=1, max_length=100)
     work_date: str = Field(min_length=8, max_length=10)
     work_time: str | None = Field(default=None, max_length=8)
-    total_amount: float = Field(gt=0, le=10_000_000)
+    # 총량 상한 = BLEND_TOTAL_MAX_G(200,000 g). 예전 10,000,000 g(10톤)은 사실상
+    # 제약이 아니어서 자릿수 오타가 그대로 저장됐다. 현장 1회 상한(25,000 g)에서
+    # 하드 차단하지 않는 이유는 '그래도 증량'(폐기 권장 무시) 경로를 살려두기
+    # 위해서다 — 25,000 g 초과는 막지 않고 기록에 플래그(oversize_total)로 남는다.
+    total_amount: float = Field(gt=0, le=BLEND_TOTAL_MAX_G)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
@@ -217,7 +222,7 @@ class BlendContinuousBody(BaseModel):
     position: str | None = Field(default=None, max_length=200)
     work_date: str = Field(min_length=8, max_length=10)
     work_time: str | None = Field(default=None, max_length=8)
-    total_amount: float = Field(gt=0, le=10_000_000)   # 전 로트 동일 총량(기본)
+    total_amount: float = Field(gt=0, le=BLEND_TOTAL_MAX_G)   # 전 로트 동일 총량(기본)
     scale: str | None = Field(default=None, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
     reactor: int | None = Field(default=None, ge=1, le=4)
@@ -247,7 +252,7 @@ class BlendContinuousBody(BaseModel):
 
     @model_validator(mode="after")
     def _check_lot_totals(self) -> "BlendContinuousBody":
-        # lot_totals 가 주어지면 (a) 길이 == 로트 수, (b) 각 값 > 0 · ≤ 10,000,000.
+        # lot_totals 가 주어지면 (a) 길이 == 로트 수, (b) 각 값 > 0 · ≤ BLEND_TOTAL_MAX_G.
         # null 원소는 허용(해당 로트는 공용 total_amount 사용) — 기존 동작과 자연 정합.
         if self.lot_totals is None:
             return self
@@ -256,8 +261,10 @@ class BlendContinuousBody(BaseModel):
         for idx, value in enumerate(self.lot_totals):
             if value is None:
                 continue
-            if not (0 < value <= 10_000_000):
-                raise ValueError(f"lot_totals[{idx}] 는 0 초과 10,000,000 이하여야 합니다.")
+            if not (0 < value <= BLEND_TOTAL_MAX_G):
+                raise ValueError(
+                    f"lot_totals[{idx}] 는 0 초과 {BLEND_TOTAL_MAX_G:,.0f} 이하여야 합니다."
+                )
         return self
 
     @model_validator(mode="after")
@@ -302,7 +309,7 @@ class BlendApprovalBody(BaseModel):
 
 class BlendBulkEntryBody(BaseModel):
     work_date: str = Field(min_length=8, max_length=10)
-    total_amount: float = Field(gt=0, le=10_000_000)
+    total_amount: float = Field(gt=0, le=BLEND_TOTAL_MAX_G)
     work_time: str | None = Field(default=None, max_length=8)
     note: str | None = Field(default=None, max_length=1000)
 

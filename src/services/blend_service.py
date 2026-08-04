@@ -29,6 +29,40 @@ _MATERIAL_USAGE_MAX_ITEMS = 5000
 _BATCH_DETAILS_MAX_ROWS = 10000
 
 
+# ── 총 배합량 상한·이상 감지 (2026-08-04) ─────────────────────────────────────
+# 서버가 받아들이는 배합 총량의 절대 상한(g). 예전 값 10,000,000(10톤)은 사실상
+# 제약이 아니었다 — 총량 칸에 자릿수를 잘못 친 값이 그대로 DHR·자재 사용량 집계에
+# 실려도 아무것도 막지 않았다.
+#
+# 200,000 g(200 kg)으로 정한 근거:
+#   ① 현장 1회 배합 허용 상한은 25,000 g 이다(화면 blend_lib.BATCH_LIMIT_G, 초과 시
+#      폐기 권장 모달). 정상 배치는 여기서 끝난다.
+#   ② 그 위로 갈 수 있는 정당한 경로는 초과 계량 증량뿐이고, 증량은 기록당 최대 2회다
+#      (3회째는 화면·서버 모두 차단). 한 번의 증량이 현실적으로 총량을 두 배 넘게
+#      밀어 올리는 경우는 자재를 통째로 두 번 부은 사고 정도이므로, 최악의 현실
+#      시나리오는 25,000 × 2 × 2 = 100,000 g 이다.
+#   ③ 그 두 배(=현장 상한의 8배)를 상한으로 둔다. 정당한 '그래도 증량'이 이 선에
+#      닿는 일은 없고, 반대로 10 kg 이상 배치에서 0 하나를 더 친 오타는 전부 막힌다.
+BLEND_TOTAL_MAX_G = 200_000.0
+
+# 현장 1회 배합 허용 상한(화면 blend_lib.BATCH_LIMIT_G 와 같은 값).
+# **저장을 막지 않는다** — 폐기 권장을 무시하는 '그래도 증량'은 계속 살아 있어야 한다.
+# 넘긴 저장은 blend_records.oversize_total = 1 로만 남고 책임자 대사 화면에 뜬다.
+BLEND_OVERSIZE_FLAG_G = 25_000.0
+
+# ── 증량 승인 우회 감지 임계값 ────────────────────────────────────────────────
+# 우회 시나리오: 초과 계량 후 승인 모달을 받는 대신 새로고침하고 총량을 먼저 키워
+# 입력하면, 전 자재가 편차 이내가 되어 rescale_count=0 인 '정상 배치'로 저장된다.
+# 서버에서 남는 유일한 흔적은 "증량 이력이 없는데 총량이 레시피 기준과 다르다" 뿐이다.
+#
+# 감지는 기록만 남기고 저장은 절대 막지 않는다(정당한 커스텀 총량 차단 = 현장 정지).
+# 그래서 임계는 전부 '의심스러울 때만 켜지는' 방향으로 보수적으로 잡았다.
+BYPASS_EXCESS_RATIO = 0.05      # 기준 배합량 대비 5% 초과 상향일 때만
+BYPASS_EXCESS_MIN_G = 50.0      # 동시에 절대 초과분 50 g 초과 (작은 레시피 보호)
+BYPASS_MULTIPLE_TOL = 0.005     # 기준의 정수배(2배·3배 배치)는 ±0.5% 이내면 정상 관행
+BYPASS_ROUND_STEP_G = 10.0      # 10 g 단위로 떨어지는 총량은 '손으로 친 값'으로 보고 제외
+
+
 # ── 비율/이론량 환산 ────────────────────────────────────────────
 def compute_ratios(weights: list[float]) -> list[float]:
     """절대중량 리스트 → 비율(%) 리스트. 합이 0이면 모두 0."""
@@ -1108,6 +1142,160 @@ def record_lot_acks(
             ),
         )
     return len(acks)
+
+
+# ── 총 배합량 플래그(B) · 증량 승인 우회 감지(C) ──────────────────────────────
+
+
+def is_oversize_total(total_amount: Any) -> bool:
+    """현장 1회 배합 상한(25,000 g)을 넘긴 총량인가 — 저장 차단이 아니라 표시용 판정."""
+    try:
+        return float(total_amount) > BLEND_OVERSIZE_FLAG_G
+    except (TypeError, ValueError):
+        return False
+
+
+def recipe_base_totals(connection: sqlite3.Connection, recipe_id: int | None) -> list[float]:
+    """레시피에 지정된 기준 배합량(g) 목록. 미지정·구버전 DB·없는 id 는 빈 목록.
+
+    get_recipe_for_blend 의 default_totals 와 같은 규칙(base_totals CSV 우선,
+    없으면 구 단일 base_total 폴백, 0 이하 제외, 최대 3개)이지만 레시피 전체를
+    환산하지 않고 컬럼만 읽는다 — 저장 경로에서 매번 부르는 값이라 가볍게 둔다.
+    """
+    if not recipe_id:
+        return []
+    try:
+        row = connection.execute(
+            "SELECT base_total, base_totals FROM recipes WHERE id = ?", (int(recipe_id),)
+        ).fetchone()
+    except sqlite3.OperationalError:  # 구버전/테스트 DB — 컬럼 부재
+        return []
+    if row is None:
+        return []
+    totals: list[float] = []
+    raw = row["base_totals"]
+    if raw:
+        for token in str(raw).split(","):
+            token = token.strip()
+            try:
+                value = float(token)
+            except ValueError:
+                continue
+            if value > 0 and value not in totals:
+                totals.append(value)
+    elif row["base_total"] is not None:
+        try:
+            value = float(row["base_total"])
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            totals.append(value)
+    return totals[:3]
+
+
+def recipe_has_anchor(connection: sqlite3.Connection, recipe_id: int | None) -> bool:
+    """기준 자재(anchor) 레시피인가 — 우회 감지에서 통째로 제외할지 판정.
+
+    기준 자재 레시피는 총량이 **기준 자재 실측에서 파생**된다
+    (derive_details_from_recipe). 즉 총량이 기준 배합량과 다른 것이 정상이고
+    값도 라운드가 아니다 — 감지 대상으로 두면 전부 오탐이 된다.
+    반응기 이월(파생) 레시피도 이월 행이 기준 자재라 여기에 함께 걸린다.
+    """
+    if not recipe_id:
+        return False
+    try:
+        row = connection.execute(
+            "SELECT anchor_material_id FROM recipes WHERE id = ?", (int(recipe_id),)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return bool(row is not None and row["anchor_material_id"] is not None)
+
+
+def detect_total_bypass(
+    connection: sqlite3.Connection,
+    recipe_id: int | None,
+    total_amount: Any,
+    *,
+    rescale_count: int = 0,
+) -> float | None:
+    """증량 승인 우회 의심 판정 → 비교 기준으로 삼은 기준 배합량(g), 아니면 None.
+
+    **판정만 한다 — 저장을 막지 않는다.** 정당한 커스텀 총량이 차단되면 현장이 멈춘다.
+
+    아래를 모두 만족할 때만 의심으로 본다(하나라도 어긋나면 None):
+      1. 증량 이력이 없다(rescale_count = 0). 있으면 통제가 정상 작동한 배치다.
+      2. 레시피 연계 기록이고, 그 레시피에 기준 배합량이 지정돼 있다.
+         기준이 없는 레시피(현장에 많다)는 비교할 근거 자체가 없어 영영 제외된다.
+      3. 기준 자재(anchor) 레시피가 아니다 — 총량이 실측 파생이라 비교가 성립 안 함.
+      4. 총량이 **모든** 기준 배합량보다 크다. 하향(분할 배합)·기준 사이 값은 제외 —
+         우회는 항상 총량을 키우는 방향이다.
+      5. 초과분이 기준의 5% 초과 **그리고** 절대 50 g 초과.
+      6. 어떤 기준의 정수배(2배·3배 …, ±0.5%)도 아니다 — 배수 배치는 정상 관행.
+      7. 총량이 10 g 단위로 떨어지지 않는다.
+         우회 총량은 '초과 계량한 실측 × 100 / 비율' 에 사실상 고정된다(허용 편차가
+         0.05 g 수준이라 창이 아주 좁다) → 끝자리가 살아 있는 값이 된다. 반대로
+         작업자가 의도적으로 정하는 커스텀 총량은 5,000 · 12,000 처럼 라운드다.
+         이 조건이 오탐의 주 방어선이다(대신 라운드로 맞춰 친 우회는 놓친다 —
+         사용자 결정이 '기록만 남긴다' 이므로 과탐보다 미탐을 택했다).
+    """
+    if rescale_count:
+        return None
+    try:
+        total = float(total_amount)
+    except (TypeError, ValueError):
+        return None
+    if not (total > 0):
+        return None
+    if recipe_has_anchor(connection, recipe_id):
+        return None
+    bases = recipe_base_totals(connection, recipe_id)
+    if not bases:
+        return None
+    if any(total <= b for b in bases):
+        return None                       # 상향 초과가 아니다(기준 이하이거나 기준 사이)
+    base = max(bases)                     # 가장 가까운(=가장 큰) 기준을 비교 대상으로
+    excess = total - base
+    if excess <= BYPASS_EXCESS_MIN_G or excess <= base * BYPASS_EXCESS_RATIO:
+        return None
+    for b in bases:
+        n = round(total / b)
+        if n >= 2 and abs(total - b * n) <= b * n * BYPASS_MULTIPLE_TOL:
+            return None                   # 기준의 정수배 배치 — 정상 관행
+    nearest_round = round(total / BYPASS_ROUND_STEP_G) * BYPASS_ROUND_STEP_G
+    if abs(total - nearest_round) < 1e-6:
+        return None                       # 손으로 친 라운드 총량
+    return base
+
+
+def apply_total_flags(
+    connection: sqlite3.Connection,
+    record_id: int,
+    total_amount: Any,
+    *,
+    recipe_id: int | None,
+    rescale_count: int = 0,
+) -> dict[str, Any]:
+    """총량 플래그 2종을 기록에 반영 → {oversize_total, total_bypass_suspect, total_bypass_base}.
+
+    저장 성공 후(record_id 확보 뒤) 호출한다. 어느 쪽도 저장을 막지 않는다.
+    수정(PUT) 경로에서도 같은 함수를 부르면 총량이 정정될 때 플래그가 함께 갱신된다
+    (0 으로 되돌아가는 것도 정상 — 잘못 친 총량을 고쳤다는 뜻).
+    """
+    oversize = is_oversize_total(total_amount)
+    base = detect_total_bypass(
+        connection, recipe_id, total_amount, rescale_count=rescale_count
+    )
+    connection.execute(
+        "UPDATE blend_records SET oversize_total = ?, total_bypass_suspect = ?, "
+        "total_bypass_base = ? WHERE id = ?",
+        (1 if oversize else 0, 1 if base is not None else 0, base, record_id),
+    )
+    return {
+        "oversize_total": oversize,
+        "total_bypass_suspect": base is not None,
+        "total_bypass_base": base,
+    }
 
 
 def derive_details_from_recipe(
