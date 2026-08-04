@@ -1119,18 +1119,35 @@ def derive_details_from_recipe(
     # 기준 자재가 있으면 총량을 실측에서 되돌려 계산 (없으면 작업자가 고른 배치 총량 사용)
     total = float(total_amount)
     anchor = next((it for it in recipe["items"] if it.get("is_anchor")), None)
+    anchor_actual: float | None = None
+    anchor_weight: float | None = None
     if anchor is not None:
         anchor_actual = _opt_num(incoming_groups[str(anchor["material_name"])][0].get("actual_amount"))
         if anchor_actual is None or anchor_actual <= 0:
             raise RecipeMismatchError(
                 f"기준 자재({anchor['material_name']})를 먼저 계량하세요."
             )
-        ratio = float(anchor["ratio"] or 0)
-        if ratio <= 0:
-            raise RecipeMismatchError("기준 자재의 레시피 비율이 0 입니다.")
-        # 저울 해상도(2자리) — 기준 자재 실측에서 파생하는 배치 총량도 2자리로 맞춘다
-        # (자재 이론량은 2자리인데 총량만 3자리로 남는 불일치 방지).
-        total = round(anchor_actual * 100.0 / ratio, 2)
+        # 이론량은 화면(blend_lib.computeAnchorTheory)과 **같은 산술**로 낸다 —
+        # 레시피 원값(value_weight) 비례: theory_i = round(실측 × w_i / w_기준, 2).
+        #
+        # 옛 경로는 4자리로 반올림된 ratio(%) 를 두 번 통과시켰다(실측 → 총량 되돌리기 →
+        # 다시 비율 배분). ratio 의 반올림 오차(최대 0.00005%p)가 1/ratio_기준 배로
+        # 증폭돼, 기준 자재 비율이 작을수록 커진다 — 실측 0.6567%(131.33g/20kg) 기준
+        # 자재에서 주자재 이론량이 화면보다 0.93g 낮게 나왔다(허용 편차 0.05g 의 18배).
+        # 그 결과 작업자가 화면 목표대로 정확히 계량해도 저장이 400 으로 막히고,
+        # 저장되더라도 DHR 에 작업자가 본 값과 다른 이론량이 남았다(규제 기록 무결성).
+        anchor_weight = _opt_num(anchor.get("value_weight"))
+        if anchor_weight is None or anchor_weight <= 0:
+            # 폴백: 레시피 원값이 없는(0/NULL/컬럼 부재) 옛 데이터에서만 기존 ratio 경로.
+            # 현행 get_recipe_for_blend 는 value_weight<=0 인 자재를 기준으로 인정하지
+            # 않으므로(effective_anchor 무효화) 실질적으로는 도달하지 않는 방어선이다.
+            anchor_weight = None
+            ratio = float(anchor["ratio"] or 0)
+            if ratio <= 0:
+                raise RecipeMismatchError("기준 자재의 레시피 비율이 0 입니다.")
+            # 저울 해상도(2자리) — 기준 자재 실측에서 파생하는 배치 총량도 2자리로 맞춘다
+            # (자재 이론량은 2자리인데 총량만 3자리로 남는 불일치 방지).
+            total = round(anchor_actual * 100.0 / ratio, 2)
 
     derived: list[dict[str, Any]] = []
     for order, item in enumerate(recipe["items"], start=1):
@@ -1139,7 +1156,13 @@ def derive_details_from_recipe(
         ratio = float(item["ratio"] or 0)
         if anchor is not None:
             # 저울 해상도(2자리) — 기준 자재 파생 이론량도 2자리로 맞춘다.
-            theory = anchor_actual if item.get("is_anchor") else round(total * ratio / 100.0, 2)
+            if item.get("is_anchor"):
+                theory = anchor_actual          # 기준 행: 이론 = 실측 (편차 0)
+            elif anchor_weight is not None:
+                theory = round(anchor_actual * float(_opt_num(item.get("value_weight")) or 0.0)
+                               / anchor_weight, 2)
+            else:
+                theory = round(total * ratio / 100.0, 2)   # ratio 폴백(옛 데이터)
         else:
             theory = float(item["theory_amount"] or 0)
         derived.append({
@@ -1154,6 +1177,10 @@ def derive_details_from_recipe(
             "theory_amount": theory,                          # ← 서버 산출
             "sequence_order": order,
         })
+    if anchor is not None and anchor_weight is not None:
+        # 도출 총량 = 모든 행 이론량의 합(화면 computeAnchorTheory 와 동일).
+        # 총량을 먼저 되돌려 계산한 뒤 다시 배분하면(옛 경로) 행 합계와 총량이 어긋난다.
+        total = round(sum(float(d["theory_amount"] or 0) for d in derived), 2)
     return derived, total
 
 

@@ -2342,12 +2342,27 @@
   function recomputeAnchorRescale(plan) {
     const totalInput = $("blend-total");
     if (totalInput) totalInput.value = String(plan.newTotal);
+    // 기준 자재 모드의 증량 목표를 rescalePlan 의 newTheory(4자리 ratio 기반)로 두면
+    // 서버(원값 value_weight 비례)와 어긋난다 — 실측 0.84 g, 허용 편차의 16배.
+    // 기준 행의 newTheory 하나만 취하고 나머지는 computeAnchorTheory 로 다시 풀어
+    // 서버 산술과 정확히 일치시킨다(newTotal 결정은 지금의 ratio 기반 그대로 무방).
+    const anchorRow = state.anchorIndex >= 0
+      ? plan.rows.find((r) => r.idx === state.anchorIndex)
+      : null;
+    const anchorTheory = anchorRow && anchorRow.newTheory !== null ? anchorRow.newTheory : null;
+    const derived = anchorTheory !== null
+      ? computeAnchorTheory(state.items, state.anchorIndex, anchorTheory)
+      : null;
     plan.rows.forEach((r) => {
       const it = state.items[r.idx];
-      if (!it || r.newTheory === null) return;
-      it.theory_amount = r.newTheory;
+      if (!it) return;
+      const next = (derived && derived.theoryAmounts[r.idx] != null)
+        ? derived.theoryAmounts[r.idx]
+        : r.newTheory;
+      if (next === null || next === undefined) return;
+      it.theory_amount = next;
       const cell = document.querySelector(`.blend-theory[data-idx="${r.idx}"]`);
-      if (cell) cell.textContent = fmt(r.newTheory, dp());
+      if (cell) cell.textContent = fmt(next, dp());
     });
     state.items.forEach((_, i) => updateRowVar(i));
     updateTotals();
