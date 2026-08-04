@@ -291,3 +291,47 @@ test("이어서 하기 전달값은 한 번만 읽히고(재사용 방지) 화�
   assert.equal(d.takeResume("cont", ss), "slot-1");
   assert.equal(d.takeResume("cont", ss), null, "새로고침이 복구를 반복 트리거하면 안 된다");
 });
+
+// ── blend.js 초안 스냅샷/복구 소스 계약 ─────────────────────────────
+// currentDraft/restoreDraft/applyAddAmount/fillScaleValue 는 DOM·state 에 묶여
+// 순수 함수로 뗄 수 없다 — blend_scale_leaks.test.js 와 같은 방식으로 실제 소스의
+// 함수 본문을 잘라 계약을 고정한다(2026-08-04 현장 신고 후속).
+
+const path = require("node:path");
+const blendSrc = fs.readFileSync(path.join(__dirname, "..", "..", "static", "js", "blend.js"), "utf8");
+
+function bodyOf(src, name) {
+  const start = src.indexOf(`function ${name}(`);
+  assert.notStrictEqual(start, -1, `${name} 함수를 찾지 못했다`);
+  const open = src.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(open, i + 1);
+    }
+  }
+  throw new Error(`${name} 본문의 끝을 찾지 못했다`);
+}
+
+test("나눠 담기 회차(portions)는 초안에 실려 왕복한다", () => {
+  assert.match(
+    bodyOf(blendSrc, "currentDraft"), /portions/,
+    "스냅샷에 portions 가 없으면 복구 후 회차 내역이 '현재값=1회차'로 뭉개진다");
+  assert.match(
+    bodyOf(blendSrc, "restoreDraft"), /portions/,
+    "복구가 portions 를 되살리지 않으면 스냅샷에 실어도 소용없다");
+});
+
+test("input 이벤트 없는 계량 경로도 초안 저장을 건다", () => {
+  // 담기/PRINT 합산과 PRINT 직접 입력은 input 이벤트를 내지 않는다 — 여기서 안 걸면
+  // 마지막 자재의 계량값·회차가 초안에 빠져 창 닫힘 복구에서 사라진다.
+  // (blend_continuous.js 는 원래부터 걸고 있었다 — 단일 화면만 빠져 있던 회귀.)
+  assert.match(
+    bodyOf(blendSrc, "applyAddAmount"), /scheduleDraftSave\(\)/,
+    "담기(합산) 후 초안 저장이 빠지면 나눠 담은 값이 복구에서 사라진다");
+  assert.match(
+    bodyOf(blendSrc, "fillScaleValue"), /scheduleDraftSave\(\)/,
+    "PRINT 직접 입력 후 초안 저장이 빠지면 마지막 PRINT 값이 복구에서 사라진다");
+});

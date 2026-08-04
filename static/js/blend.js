@@ -386,6 +386,9 @@
     input.removeAttribute("title");
     updateRowVar(idx);
     updateTotals();
+    // PRINT 는 input 이벤트가 없어 초안 저장이 안 걸렸다 — 마지막 자재의 PRINT 값은
+    // 다음 LOT 타이핑이 없으면 초안에 빠져 창 닫힘 복구에서 사라졌다(2026-08-04).
+    scheduleDraftSave();
     // 저울 PRINT 값이 허용 편차를 벗어나면 다음 LOT 로 넘어가지 않는다 — 해당 실제량
     // 칸에 머물러 재계량(부족: 더 넣기 / 초과: 증량 제안)을 유도.
     if (warnIfVariance(idx)) {
@@ -920,6 +923,10 @@
         actual_amount: (it.actual_amount === "" || it.actual_amount == null) ? "" : String(it.actual_amount),
         carried_over: it.carried_over === true,
         manual: it.manual === true,
+        // 나눠 담기/추가 계량 회차 내역 — 안 실으면 복구 후 "현재값=1회차"로 뭉개져
+        // 몇 번에 얼마씩 담았는지가 사라진다(2026-08-04 봉인 후속). 빈 배열은 생략.
+        portions: (Array.isArray(it.portions) && it.portions.length)
+          ? it.portions.map(Number) : undefined,
       })),
       savedAt: new Date().toISOString(),
     };
@@ -1033,6 +1040,10 @@
       state.items[target].actual_amount = di.actual_amount === "" ? "" : di.actual_amount;
       state.items[target].carried_over = di.carried_over === true;
       state.items[target].manual = di.manual === true;
+      // 회차 내역 복구 — 없는 초안(옛 스키마·회차 없음)은 openAddWeighModal 의
+      // "현재값=1회차" 재구성에 맡긴다.
+      state.items[target].portions = Array.isArray(di.portions)
+        ? di.portions.map(Number) : [];
     });
     if (!hasAnchor() && draft.total) $("blend-total").value = draft.total;
     renderMatRows();  // state 값으로 다시 그림(actual/lot 표시)
@@ -2497,6 +2508,9 @@
     hideRescaleUndo();
     // 추가 계량 모달이 이 행에 열려 있으면 큰 숫자(남은 양) 갱신 + 자동 완료 판정.
     refreshAddWeighModal(idx);
+    // 프로그램 경로는 input 이벤트가 없어 초안 저장이 안 걸린다 — 담기/PRINT 합산 회차가
+    // 초안에 빠져, 창 닫힘 복구 시 나눠 담은 값·회차가 통째로 사라졌다(2026-08-04).
+    scheduleDraftSave();
   }
 
   // ── 추가 계량 모달(add-weigh) ───────────────────────────────
