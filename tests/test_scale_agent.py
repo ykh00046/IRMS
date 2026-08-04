@@ -90,6 +90,70 @@ def test_sics_print_template_lines():
     assert parse_frame("1 T 12.00 g", protocol="mt-sics") is None  # 용기 줄 제외
 
 
+# ── 단위 환산 누락 회귀 (2026-08-04) ─────────────────────────────
+# 저울을 kg/mg 로 설정한 채 PRINT 하면 소비자(blend.js/blend_continuous.js)는 unit 을
+# 안 보고 값만 g 로 쓴다. _parse_and(기본 프로토콜)와 _parse_sics 안정 프레임 분기가
+# 변환을 건너뛰어 kg 4.7757 이 4775.7g 이 아닌 4.7757g 으로 1/1000 과소 기록됐다.
+# _parse_cas_eb 규칙(kg×1000, mg÷1000, 알 수 없는 단위 거부)과 정확히 같아야 한다.
+def test_and_kg_frame_converts_to_grams():
+    """A&D(기본 프로토콜) kg 프레임 → g 환산. 회귀: 변환 누락으로 1/1000 과소 기록."""
+    frame = parse_frame("ST,+0004.7757   kg")
+    assert frame == {
+        "header": "ST", "stable": True, "overload": False,
+        "value": 4775.7, "unit": "g",
+    }
+
+
+def test_and_mg_frame_converts_to_grams():
+    """A&D mg 프레임 → g 환산(÷1000)."""
+    frame = parse_frame("ST,+004775700   mg")
+    assert frame["value"] == 4775.7
+    assert frame["unit"] == "g"
+    assert frame["stable"] is True
+
+
+def test_and_unknown_unit_rejected():
+    """A&D lb 등 무게가 아닌 단위는 g 로 받지 않는다(None) — 과소 기록 방지."""
+    assert parse_frame("ST,+00010.00   lb") is None
+
+
+def test_and_gram_frame_unchanged():
+    """A&D g 프레임은 환산 없이 값 그대로(기존 동작 보존)."""
+    frame = parse_frame("ST,+0004775.7   g")
+    assert frame == {
+        "header": "ST", "stable": True, "overload": False,
+        "value": 4775.7, "unit": "g",
+    }
+
+
+def test_sics_stable_kg_frame_converts_to_grams():
+    """MT-SICS 'S S' 안정 프레임 kg → g 환산. 회귀: 이 분기가 tokens[3] 을 변환 없이 내보냈다."""
+    frame = parse_frame("S S     4.7757 kg", protocol="mt-sics")
+    assert frame == {
+        "header": "ST", "stable": True, "overload": False,
+        "value": 4775.7, "unit": "g",
+    }
+
+
+def test_sics_stable_mg_frame_converts_to_grams():
+    """MT-SICS 'S S' 안정 프레임 mg → g 환산(÷1000)."""
+    frame = parse_frame("S S     4775700 mg", protocol="mt-sics")
+    assert frame["value"] == 4775.7
+    assert frame["unit"] == "g"
+    assert frame["stable"] is True
+
+
+def test_sics_stable_unknown_unit_rejected():
+    """MT-SICS 'S S' 안정 프레임의 알 수 없는 단위는 None(lb 를 g 로 받지 않음)."""
+    assert parse_frame("S S     10.00 lb", protocol="mt-sics") is None
+
+
+def test_sics_stable_gram_frame_unchanged():
+    """MT-SICS 'S S' 안정 프레임 g 는 환산 없이 값 그대로(기존 동작 보존)."""
+    frame = parse_frame("S S     105.00 g", protocol="mt-sics")
+    assert frame == {"header": "ST", "stable": True, "overload": False, "value": 105.0, "unit": "g"}
+
+
 def test_protocol_presets():
     and_comm = resolve_comm({"protocol": "and"})
     assert (and_comm["baudrate"], and_comm["bytesize"], and_comm["parity"]) == (2400, 7, "E")

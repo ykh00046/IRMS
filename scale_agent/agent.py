@@ -111,12 +111,22 @@ def _parse_and(text: str) -> dict | None:
         value = float(number)
     except ValueError:
         return None
+    # 단위 환산 — _parse_cas_eb 와 동일 규칙. 저울이 kg/mg 으로 설정된 채 PRINT 하면
+    # 소비자(blend.js/blend_continuous.js)는 unit 을 안 보고 값만 g 로 쓰므로, 여기를
+    # 안 거치면 kg 4.7757 이 4775.7g 이 아닌 4.7757g 으로 1/1000 과소 기록된다.
+    unit = (unit or "g").lower()
+    if unit == "kg":
+        value, unit = value * 1000, "g"
+    elif unit == "mg":
+        value, unit = value / 1000, "g"
+    if unit != "g":
+        return None  # lb·PCS·% 등 무게 단위가 아니면 g 로 받지 않는다(과소 기록 방지)
     return {
         "header": header,
         "stable": header in ("ST", "QT", "WT"),
         "overload": header == "OL",
         "value": value,
-        "unit": unit or "g",
+        "unit": unit,
     }
 
 
@@ -138,12 +148,22 @@ def _parse_sics(text: str) -> dict | None:
                 value = float(tokens[2])
             except ValueError:
                 return None
+            # 단위 환산 — _parse_cas_eb 와 동일 규칙. 아래 인쇄 템플릿 분기와 달리 이 안정
+            # 프레임 분기는 tokens[3] 을 단위로 그대로 내보내 변환을 건너뛰었었다 — 저울이
+            # kg 으로 설정되면 g 기록에 1/1000 로 과소 저장된다.
+            unit = (tokens[3] if len(tokens) > 3 else "g").lower()
+            if unit == "kg":
+                value, unit = value * 1000, "g"
+            elif unit == "mg":
+                value, unit = value / 1000, "g"
+            if unit != "g":
+                return None  # lb 등 무게 단위가 아니면 g 로 받지 않는다(과소 기록 방지)
             return {
                 "header": "ST" if tokens[1] == "S" else "US",
                 "stable": tokens[1] == "S",
                 "overload": False,
                 "value": value,
-                "unit": tokens[3] if len(tokens) > 3 else "g",
+                "unit": unit,
             }
         return None
     # 인쇄 템플릿(수신 전용 모드): 마지막이 단위, 그 앞이 값, 나머지 앞부분은
