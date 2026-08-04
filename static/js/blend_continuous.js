@@ -867,6 +867,9 @@
     state.scaleTargetCell = null;   // 레시피 변경 → 저울 대상 지정 해제
     _addWeighCell = null;           // 레시피 변경 → 열려 있던 추가 입력칸 참조도 해제
     state.manualApproved = null;    // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
+    // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다
+    // (blend.js 와 동일 규약).
+    _saveRequestId = null;
     rebuildCells();
     rebuildLotRescale();
     clearContRescaleSummary();
@@ -2157,11 +2160,40 @@
 
   // ── 저장 ────────────────────────────────────────────────────
   let _saving = false;   // 중복 저장 방지(blend.js 와 동일) — 늦으면 한 번 더 누른다.
+  // 저장 멱등 키(blend.js 와 동일 규약) — 성공할 때까지 유지한다. 재시도가 N로트를
+  // 두 벌 만드는 것을 서버가 이 키로 막는다.
+  let _saveRequestId = null;
 
+  function newRequestId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+    } catch (e) { /* 구형 브라우저 — 아래 폴백 */ }
+    return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  // 중복 저장 가드는 **첫 await 앞**에서 세운다 — 예전에는 `_saving = true` 가 작업자
+  // 교대·미등록 LOT 조회 await 뒤에 있어, 그 사이 재클릭이면 N로트가 두 벌 생겼다.
   async function save() {
+    if (_saving) return;
+    _saving = true;
+    const saveBtn = $("cont-save");
+    if (saveBtn) saveBtn.disabled = true;   // 즉시 비활성화 — 재클릭 자체를 막는다
+    try {
+      await saveInner(saveBtn);
+    } finally {
+      _saving = false;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        if (saveBtn.dataset.label) saveBtn.textContent = saveBtn.dataset.label;
+      }
+    }
+  }
+
+  async function saveInner(saveBtn) {
     const err = $("cont-error");
     err.hidden = true;
-    if (_saving) return;   // 이미 저장 중 — N로트가 두 벌 생기는 것을 막는다
     if (!state.current) { return fail(err, "레시피를 선택하세요."); }
     if (state.anchorBlocked) { return fail(err, "기준 자재 레시피는 다중 계량을 지원하지 않습니다."); }
     const worker = lockedWorkerName();
@@ -2240,6 +2272,8 @@
       }
     }
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 ${state.lotCount}개 로트를 저장합니다. 맞습니까?`)) return;
+    // 이 저장 시도의 멱등 키 — 성공할 때까지 재사용(재시도 = 같은 요청).
+    if (!_saveRequestId) _saveRequestId = newRequestId();
     // 승인된 미등록 LOT 이 저장에 포함되면 사유를 비고 앞에 남긴다(전 로트 공통 비고).
     const overrideNote = buildOverrideNote();
 
@@ -2275,6 +2309,8 @@
       // 서버 백업: 미등록 LOT 사유를 구조화해 보낸다(단건과 동일). 미전송이면 서버가
       // 사유를 모른 채 400 으로 막아 저장 자체가 불가능해진다.
       lot_overrides: (function () { const o = buildLotOverrides(); return o.length ? o : null; })(),
+      // 저장 멱등 키 — 응답 유실 후 재시도해도 로트가 두 벌 생기지 않는다.
+      request_id: _saveRequestId,
       lots,
     };
     // lotRescale 이 하나라도 있으면 lot_totals 전송(그 로트만 큰 총량).
@@ -2293,11 +2329,14 @@
         return e && e.length ? e : null;
       });
     }
-    const saveBtn = $("cont-save");
-    _saving = true;
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.label = saveBtn.textContent; saveBtn.textContent = "저장 중…"; }
+    // 가드·비활성화는 save 가 첫 await 전에 이미 세웠다 — 여기서는 라벨만 바꾼다.
+    if (saveBtn) {
+      if (!saveBtn.dataset.label) saveBtn.dataset.label = saveBtn.textContent;
+      saveBtn.textContent = "저장 중…";
+    }
     try {
       const res = await request("/blend/records/continuous", { method: "POST", body });
+      _saveRequestId = null;   // 저장 성공 → 다음 회차는 새 멱등 키
       clearDraft();  // 저장 완료 → 이 작업이 쓰던 임시저장 슬롯만 삭제
       notify(`${res.created}개 로트 저장 완료: ${(res.product_lots || []).join(", ")} — 배합 기록으로 이동합니다.`, "success");
       setTimeout(() => window.location.assign("/status"), 900);
@@ -2312,12 +2351,12 @@
           + "해당 로트의 초과 셀 값을 다시 확정하면 승인 창이 다시 뜹니다.", "error big");
         return fail(err, "증량 승인이 만료되었습니다(30분 경과). 초과 계량 증량을 다시 승인받은 뒤 저장하세요 — 책임자 재인증 필요.");
       }
+      // 실패 시 _saveRequestId 는 유지 — 재저장이 같은 멱등 키로 가서, 첫 요청이 사실
+      // 커밋됐다면 서버가 그 로트들을 돌려준다(두 벌 생성 방지).
       fail(err, msg);
       notify(`저장 실패: ${msg}`, "error");   // 폼 한 줄만으로는 놓치기 쉽다
-    } finally {
-      _saving = false;
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = saveBtn.dataset.label || "전 로트 저장"; }
     }
+    // 저장 버튼 복구·중복 가드 해제는 save 의 finally 가 담당한다.
   }
 
   function fail(err, msg) {

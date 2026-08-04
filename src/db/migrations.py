@@ -23,6 +23,7 @@ _ALLOWED_TABLES = frozenset({
     # 직후 발생하면 복구 수단이 없다). 실제 스키마에 있는 테이블은 모두 등재해 둔다.
     "app_settings",
     "blend_rescale_approvals",
+    "blend_save_requests",
     "item_code_master",
     "recipe_steps",
     "manual_material_lots",
@@ -400,9 +401,42 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             approver TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            used INTEGER NOT NULL DEFAULT 0
+            used INTEGER NOT NULL DEFAULT 0,
+            purpose TEXT
         )
         """
+    )
+    # 승인의 '목적' — 'rescale'(초과 계량 증량) | 'manual'(저울 전용 모드 수기 입력 허용).
+    # 없던 시절에는 두 승인이 같은 토큰이라, 수기입력 승인을 받아 그 approval_id 를
+    # 30분 안에 아무 배합의 증량 승인으로 통과시킬 수 있었다(책임자가 무엇을 승인했는지
+    # DB 로 구분 불가). 소비 시 목적이 'rescale' 인 토큰만 증량으로 인정한다.
+    ensure_column(connection, "blend_rescale_approvals", "purpose", "TEXT")
+    if not has_migration(connection, "blend_rescale_approvals_purpose"):
+        # 하위호환: 이미 발급된 옛 행은 목적을 알 수 없다. 옛 코드에서 실제로 소비되던
+        # 유일한 목적이 증량이므로 'rescale' 로 백필한다 — 배포 직후 저장을 앞둔
+        # 현장의 유효 승인이 갑자기 무효가 되어 작업이 멈추는 일을 막는다(1회만 수행).
+        connection.execute(
+            "UPDATE blend_rescale_approvals SET purpose = 'rescale' "
+            "WHERE purpose IS NULL OR TRIM(purpose) = ''"
+        )
+        record_migration(connection, "blend_rescale_approvals_purpose")
+
+    # 저장 멱등성(중복 방지): 클라이언트가 만든 1회용 request_id 를 기록한다.
+    # 저장이 커밋될 때 이 행도 같은 트랜잭션으로 함께 남으므로, 실패한 저장은 id 를
+    # 소모하지 않는다. 타임아웃 재시도(같은 id)는 첫 결과를 그대로 되돌려준다.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blend_save_requests (
+            request_id TEXT PRIMARY KEY,
+            endpoint TEXT NOT NULL,
+            record_ids TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_save_requests_created "
+        "ON blend_save_requests(created_at)"
     )
     ensure_column(connection, "blend_details", "manual_entry", "INTEGER NOT NULL DEFAULT 0")
     # 반응기 이월(carry-over) 행 표식 — 반응기 1차 배합의 총량을 2차 기준 자재 실제량으로

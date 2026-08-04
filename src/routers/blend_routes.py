@@ -31,6 +31,7 @@ Endpoints:
 """
 
 import io
+import logging
 import sqlite3
 from typing import Any
 
@@ -106,6 +107,14 @@ def _sanitize_zip_name(value: Any, fallback: str = "") -> str:
     return text or fallback
 
 
+logger = logging.getLogger(__name__)
+
+# 저장 멱등 키의 엔드포인트 구분 — 같은 request_id 라도 단건/다중 계량은 서로의
+# 결과를 되돌려주지 않는다(blend_save_requests.endpoint 에 그대로 저장된다).
+_SAVE_EP_SINGLE = "blend_create"
+_SAVE_EP_CONTINUOUS = "blend_create_continuous"
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
@@ -133,6 +142,58 @@ def build_router() -> APIRouter:
         for d in record.get("details", []) or []:
             d["manual_entry"] = False
         return record
+
+    def _log_duplicate_save(request_id: str, record_ids: list[int], label: str | None) -> None:
+        """중복 저장을 막고 첫 결과를 돌려줬음을 서버 로그에 남긴다.
+
+        작업자에게는 성공으로 보이므로(의도한 동작), 무엇이 억제됐는지 흔적이 없으면
+        "두 번 저장했는데 한 건뿐"이라는 현장 신고를 사후에 확인할 수 없다.
+        DB 쪽 근거는 blend_save_requests 행(request_id → record_ids, created_at)이 남긴다.
+        감사 로그가 아니라 서버 로그를 쓰는 이유: 새 감사 action 은 한글 라벨표
+        (static/js/admin_users.js AUDIT_GROUPS)와 짝을 맞춰야 하고, 그 표는 이 작업의
+        수정 범위 밖이다(tests/test_audit_action_labels.py 가 짝을 강제한다).
+        """
+        logger.info(
+            "blend save deduplicated: request_id=%s records=%s lot=%s",
+            request_id, record_ids, label,
+        )
+
+    def _resolve_duplicate_save(
+        connection: sqlite3.Connection,
+        request: Request,
+        request_id: str,
+        endpoint: str,
+    ) -> dict[str, Any]:
+        """동시 요청 경합에서 진 쪽의 응답 — 먼저 커밋된 저장 결과를 그대로 돌려준다.
+
+        이 저장은 이미 롤백된 상태로 호출된다. 같은 request_id 인데 결과를 찾을 수 없으면
+        (다른 엔드포인트가 그 id 를 선점한 경우 등) 409 로 되돌려 중복 생성을 막는다.
+        """
+        prior = blend_service.lookup_save_request(connection, request_id, endpoint)
+        if not prior:
+            raise HTTPException(
+                status_code=409,
+                detail="이미 처리 중이거나 처리된 저장 요청입니다. 배합 기록을 확인하세요.",
+            )
+        if endpoint == _SAVE_EP_SINGLE:
+            existing = blend_service.get_blend_record(connection, prior[0])
+            if not existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail="이미 처리된 저장 요청입니다. 배합 기록을 확인하세요.",
+                )
+            return _mask_manual_entry(request, existing)
+        return _continuous_result(connection, prior)
+
+    def _continuous_result(
+        connection: sqlite3.Connection, ids: list[int]
+    ) -> dict[str, Any]:
+        """다중 계량 저장 응답(기존 필드 그대로) — 멱등 재응답에서도 동일 형태를 쓴다."""
+        lots = []
+        for rid in ids:
+            rec = blend_service.get_blend_record(connection, rid)
+            lots.append(rec["product_lot"] if rec else None)
+        return {"created": len(ids), "ids": ids, "product_lots": lots}
 
     def _audit_dhr_export(
         connection: sqlite3.Connection,
@@ -707,8 +768,11 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         username = str(body.get("username") or "").strip()
         password = str(body.get("password") or "")
-        purpose = str(body.get("purpose") or "rescale").strip() or "rescale"
-        is_manual = purpose == "manual"
+        # 알려진 두 목적으로 좁힌다('manual' 외 전부 'rescale' — 옛 분기와 동일 결과).
+        # 이 값은 이제 감사 로그뿐 아니라 토큰 행(blend_rescale_approvals.purpose)에도
+        # 기록되어, 소비 시 목적이 다른 토큰(수기입력 승인)을 증량으로 쓰지 못하게 한다.
+        purpose = blend_service.normalize_approval_purpose(body.get("purpose"))
+        is_manual = purpose == blend_service.MANUAL_PURPOSE
         # management-login 과 동일한 순서로 책임자 자격을 검증한다(해시 로직 중복 금지):
         # 이름 기반 책임자(workers.is_manager) 우선, 없으면 레거시 admin(users) 폴백.
         user = authenticate_manager_worker(username, password)
@@ -742,7 +806,7 @@ def build_router() -> APIRouter:
             )
         # 통과 — 승인 토큰 발급(approver=표시명).
         approver = user.get("display_name") or user.get("username") or "책임자"
-        result = blend_service.create_rescale_approval(connection, approver)
+        result = blend_service.create_rescale_approval(connection, approver, purpose)
         write_audit_log(
             connection,
             action="blend_manual_entry_approved" if is_manual else "blend_rescale_approved",
@@ -761,6 +825,17 @@ def build_router() -> APIRouter:
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
+        # 멱등 재시도 먼저 — 저장이 커밋된 뒤 응답만 유실된 재전송은 그때 만든 기록을
+        # 그대로 돌려준다(검증보다 앞에 둔다 — 이미 저장된 요청을 뒤늦은 검증으로
+        # 400 내면 작업자가 또 저장을 눌러 진짜 중복이 생긴다).
+        request_id = (body.request_id or "").strip()
+        if request_id:
+            prior = blend_service.lookup_save_request(connection, request_id, _SAVE_EP_SINGLE)
+            if prior:
+                existing = blend_service.get_blend_record(connection, prior[0])
+                if existing:
+                    _log_duplicate_save(request_id, prior, existing["product_lot"])
+                    return _mask_manual_entry(request, existing)
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
         # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
@@ -793,6 +868,19 @@ def build_router() -> APIRouter:
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
+
+        # 전 자재 계량 완료 — 실제량이 빈 자재가 하나라도 있으면 저장 거부.
+        # 편차 검사는 이 결손을 못 잡는다(actual is None 이면 건너뛴다). 그대로 저장되면
+        # 자재 사용량 SUM 이 그 자재를 빼고 집계하고 DHR 에 빈 줄이 남는다.
+        # enforce_carry_over 이후라 반응기 이월 행은 이미 1차 총량으로 채워져 있다.
+        missing_actuals = blend_service.missing_actual_names(details)
+        if missing_actuals:
+            shown = missing_actuals[:5]
+            suffix = " …" if len(missing_actuals) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="실제량이 입력되지 않은 자재가 있습니다: " + ", ".join(shown) + suffix,
+            )
 
         # 자재 LOT 필수 — 추적성 핵심. enforce_carry_over·derive 이후 최종 행 상태로 검사.
         missing_lots = blend_service.missing_lot_names(details)
@@ -912,6 +1000,19 @@ def build_router() -> APIRouter:
             target_label=record["product_lot"],
             details=create_audit_details,
         )
+        # 멱등 기록 — 저장과 같은 트랜잭션으로 남긴다(400 으로 중단된 저장은 id 를
+        # 소모하지 않는다). 동시 요청이 먼저 커밋했으면 IntegrityError → 이 저장을
+        # 통째로 롤백하고 먼저 커밋된 결과를 돌려준다.
+        if request_id:
+            try:
+                blend_service.remember_save_request(
+                    connection, request_id, _SAVE_EP_SINGLE, [record_id]
+                )
+            except sqlite3.IntegrityError:
+                connection.rollback()
+                return _resolve_duplicate_save(
+                    connection, request, request_id, _SAVE_EP_SINGLE
+                )
         connection.commit()
         return _mask_manual_entry(request, record)
 
@@ -971,6 +1072,21 @@ def build_router() -> APIRouter:
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
+        # 전 자재 계량 완료 — 정정 저장이 채워져 있던 실제량을 비우지 못하게 한다.
+        # 단, 이미 실제량이 비어 있던 옛 기록(이 통제가 없던 시절 저장분)은 그대로 둔다 —
+        # 그런 기록의 비고 오타 정정까지 막으면 되돌릴 방법이 없어진다. 그래서 '새로
+        # 생기는 결손'만 차단한다(기존 결손 자재명 집합과의 차집합).
+        new_missing = sorted(
+            set(blend_service.missing_actual_names(details))
+            - set(blend_service.missing_actual_names(record.get("details") or []))
+        )
+        if new_missing:
+            shown = new_missing[:5]
+            suffix = " …" if len(new_missing) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail="실제량을 비울 수 없습니다: " + ", ".join(shown) + suffix,
+            )
         # 자재 LOT 필수 — 추적성 핵심(create 와 동일 통제). enforce_carry_over·derive 이후 검사.
         missing_lots = blend_service.missing_lot_names(details)
         if missing_lots:
@@ -1218,6 +1334,15 @@ def build_router() -> APIRouter:
         각 로트를 기존 단건 저장과 동일하게 서버 도출·편차검사한 뒤, 모두 통과하면 순차
         저장한다(하나라도 실패하면 아무것도 저장하지 않음). product_lot 은 로트마다 연속 채번.
         """
+        # 멱등 재시도 먼저(단건과 동일) — 이미 저장된 회차의 재전송은 그때 만든 N로트를
+        # 그대로 돌려준다. 재시도가 로트 N건을 두 벌 만드는 것을 막는다.
+        request_id = (body.request_id or "").strip()
+        if request_id:
+            prior = blend_service.lookup_save_request(connection, request_id, _SAVE_EP_CONTINUOUS)
+            if prior:
+                result = _continuous_result(connection, prior)
+                _log_duplicate_save(request_id, prior, f"{len(prior)}건")
+                return result
         if not body.lots:
             raise HTTPException(status_code=400, detail="저장할 로트가 없습니다.")
         if any(not lot for lot in body.lots):
@@ -1251,6 +1376,17 @@ def build_router() -> APIRouter:
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
+            # 전 자재 계량 완료(단건과 동일 규칙) — 실제량이 빈 셀이 있으면 400.
+            # 화면(blend_continuous.js)에도 같은 검사가 있으나 서버가 최종 방어선이다.
+            missing_actuals = blend_service.missing_actual_names(derived)
+            if missing_actuals:
+                shown = missing_actuals[:5]
+                suffix = " …" if len(missing_actuals) > 5 else ""
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"로트 {lot_no}: 실제량이 입력되지 않은 자재가 있습니다: "
+                    + ", ".join(shown) + suffix,
+                )
             # 자재 LOT 필수 — 추적성 핵심(단건과 동일 규칙).
             missing_lots = blend_service.missing_lot_names(derived)
             if missing_lots:
@@ -1378,6 +1514,17 @@ def build_router() -> APIRouter:
             target_label=f"{len(ids)}건",
             details=continuous_audit_details,
         )
+        # 멱등 기록 — 단건과 동일(저장과 같은 트랜잭션, 경합 시 롤백 후 먼저 커밋된 결과).
+        if request_id:
+            try:
+                blend_service.remember_save_request(
+                    connection, request_id, _SAVE_EP_CONTINUOUS, ids
+                )
+            except sqlite3.IntegrityError:
+                connection.rollback()
+                return _resolve_duplicate_save(
+                    connection, request, request_id, _SAVE_EP_CONTINUOUS
+                )
         connection.commit()
         return {"created": len(ids), "ids": ids, "product_lots": lots}
 

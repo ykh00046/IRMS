@@ -819,6 +819,10 @@
     state.rescaleEvents = [];  // 레시피 변경 → 증량 승인 이력 초기화(총 배합량 잠금도 함께 해제)
     state.lotOverrides = {};
     state.manualApproved = null;  // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
+    // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다.
+    // (그대로 두면 옛 키로 저장돼, 앞 요청이 사실 커밋돼 있었을 때 새 배합 대신 옛
+    //  기록이 되돌아온다.)
+    _saveRequestId = null;
     hideRescaleUndo();
     clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
@@ -2753,11 +2757,42 @@
   }
 
   let _saving = false;   // 중복 저장 방지 — 응답이 늦으면 작업자가 한 번 더 누른다.
+  // 저장 멱등 키 — 저장이 성공할 때까지 유지한다. 네트워크가 끊겨 "저장 실패"가 뜬 뒤
+  // 다시 저장하면 같은 id 가 실려 가고, 서버는 첫 저장이 이미 커밋됐으면 그 기록을
+  // 그대로 돌려준다(같은 계량값이 두 LOT 이 되는 것을 막는다).
+  let _saveRequestId = null;
 
+  function newRequestId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+    } catch (e) { /* 구형 브라우저 — 아래 폴백 */ }
+    return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  // 중복 저장 가드는 **첫 await 앞**에서 세운다. 예전에는 `if (_saving) return` 검사만
+  // 앞에 있고 `_saving = true` 는 작업자 교대·미등록 LOT 조회 등 여러 await 뒤에 있어서,
+  // 그 사이에 저장 버튼을 다시 누르면 두 번째 호출도 그대로 통과했다(로트 2건 생성).
   async function saveBlend() {
+    if (_saving) return;
+    _saving = true;
+    const saveBtn = $("blend-save");
+    if (saveBtn) saveBtn.disabled = true;   // 즉시 비활성화 — 재클릭 자체를 막는다
+    try {
+      await saveBlendInner(saveBtn);
+    } finally {
+      _saving = false;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        if (saveBtn.dataset.label) saveBtn.textContent = saveBtn.dataset.label;
+      }
+    }
+  }
+
+  async function saveBlendInner(saveBtn) {
     const err = $("blend-error");
     err.hidden = true;
-    if (_saving) return;   // 이미 저장 중 — 두 번째 클릭은 무시(로트 2건 생성 차단)
     if (!state.current) { err.textContent = "레시피를 선택하세요."; err.hidden = false; return; }
     // 실제량이 하나도 없으면 저장하지 않는다. 저장 성공 후 화면은 레시피·총량을 유지하므로,
     // 습관적으로 Enter/저장을 한 번 더 누르면 '전부 빈' 기록이 새 LOT 을 받아 저장됐다.
@@ -2765,6 +2800,26 @@
       err.textContent = "계량한 실제량이 없습니다 — 자재를 계량한 뒤 저장하세요.";
       err.hidden = false;
       notify("계량값이 없어 저장하지 않았습니다.", "error");
+      return;
+    }
+    // 전 자재 계량 완료 — 하나라도 실제량이 비면 저장하지 않는다(다중 계량 화면과 대칭).
+    // 빈 실제량은 rowVariance 가 편차 0 으로 돌려주기 때문에 위의 편차 차단을 그냥
+    // 통과했고, 서버도 예전에는 NULL 로 저장해 그 자재가 '투입 안 됨'으로 집계됐다.
+    // 반응기 이월 행은 이월 적용 시 실제량이 채워지므로 여기서 자연히 만족된다.
+    const unweighed = state.items
+      .filter((it) => it.actual_amount === "" || it.actual_amount == null)
+      .map((it) => it.material_name);
+    if (unweighed.length) {
+      err.textContent = "실제량 미입력: " + unweighed.slice(0, 6).join(", ")
+        + (unweighed.length > 6 ? " 외" : "") + ". 모든 자재를 계량한 뒤 저장하세요.";
+      err.hidden = false;
+      notify("계량하지 않은 자재가 있습니다 — 저장할 수 없습니다.", "error");
+      const firstIdx = state.items.findIndex(
+        (it) => it.actual_amount === "" || it.actual_amount == null);
+      if (firstIdx >= 0) {
+        const input = document.querySelector(`.blend-actual[data-idx="${firstIdx}"]`);
+        if (input) input.focus();
+      }
       return;
     }
     const worker = lockedWorkerName();
@@ -2832,6 +2887,8 @@
     const lotOverrides = buildLotOverrides();
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
     if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
+    // 이 저장 시도의 멱등 키 — 성공할 때까지 재사용한다(재시도 = 같은 요청).
+    if (!_saveRequestId) _saveRequestId = newRequestId();
     const body = {
       recipe_id: state.current.recipe.id,
       product_name: state.current.recipe.product_name,
@@ -2855,6 +2912,8 @@
       manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
       // 저울 연결 중 손입력 행이 하나라도 있으면 배치를 '수동 입력'으로 기록
       manual_entry: state.items.some((it) => it.manual === true),
+      // 저장 멱등 키 — 응답 유실 후 재시도해도 기록이 두 벌 생기지 않는다.
+      request_id: _saveRequestId,
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,
         material_name: it.material_name,
@@ -2868,12 +2927,15 @@
         carried_over: it.carried_over === true,
       })),
     };
-    const saveBtn = $("blend-save");
-    _saving = true;
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.label = saveBtn.textContent; saveBtn.textContent = "저장 중…"; }
+    // 가드·비활성화는 saveBlend 가 첫 await 전에 이미 세웠다 — 여기서는 라벨만 바꾼다.
+    if (saveBtn) {
+      if (!saveBtn.dataset.label) saveBtn.dataset.label = saveBtn.textContent;
+      saveBtn.textContent = "저장 중…";
+    }
     try {
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
+      _saveRequestId = null;   // 저장 성공 → 다음 배합은 새 멱등 키
       clearDraft();  // 저장 완료 → 임시 저장 삭제
       // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
       // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다. 이월 표식도 함께 지운다.
@@ -2932,13 +2994,13 @@
         beginRescaleReauth();
         return;
       }
+      // 실패 시 _saveRequestId 는 그대로 둔다 — 다시 저장하면 같은 멱등 키가 실려 가고,
+      // 첫 요청이 사실은 서버에 커밋됐다면 서버가 그 기록을 돌려준다(중복 생성 방지).
       err.textContent = e.message;
       err.hidden = false;
       notify(`저장 실패: ${e.message}`, "error");   // 폼 한 줄만으로는 놓치기 쉽다
-    } finally {
-      _saving = false;
-      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = saveBtn.dataset.label || "배합 실적 저장"; }
     }
+    // 저장 버튼 복구·중복 가드 해제는 saveBlend 의 finally 가 담당한다.
   }
 
   function bind() {

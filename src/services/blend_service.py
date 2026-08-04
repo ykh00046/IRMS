@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..db.queries import normalize_token
@@ -1184,6 +1184,28 @@ def derive_details_from_recipe(
     return derived, total
 
 
+def missing_actual_names(details: list[dict[str, Any]]) -> list[str]:
+    """실제량(actual_amount)이 비어 있는 행의 자재명 목록(순서 보존).
+
+    배합은 레시피의 **모든** 자재를 계량해야 성립한다. 실제량이 NULL 로 저장되면
+    ① 자재 사용량 집계의 SUM 이 NULL 을 무시해 그 자재가 '투입되지 않은 것'처럼 잡히고
+    ② DHR 에 실제량이 빈 줄로 남는다(규제 기록 결손). 편차 검사는 이 결손을 못 잡는다 —
+    weighing_tolerance_violations 는 actual is None 이면 건너뛰고, 화면의 rowVariance 도
+    빈 실제량의 편차를 0 으로 돌려주기 때문이다(그래서 화면·서버 양쪽을 다 통과했다).
+
+    호출 시점은 enforce_carry_over · derive_details_from_recipe **이후**여야 한다 —
+    반응기 이월(carried_over) 행은 enforce_carry_over 가 1차 배합 총량으로 실제량을
+    강제 채우므로, 그 시점에는 정당하게 값이 있다(예외 분기 불필요).
+
+    0 은 '계량됨(0g)' 으로 본다 — 비어 있음(None/"")만 미계량으로 판정한다.
+    """
+    missing: list[str] = []
+    for d in details:
+        if _opt_num(d.get("actual_amount")) is None:
+            missing.append(str(d.get("material_name") or "").strip() or "(이름 없음)")
+    return missing
+
+
 def weighing_tolerance_violations(
     details: list[dict[str, Any]], tolerance_g: float | None = None
 ) -> list[str]:
@@ -1765,23 +1787,116 @@ def _variance_summary(details: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# ── 저장 멱등성(중복 저장 방지) ────────────────────────────────
+# 저장 중 네트워크가 끊기면 화면은 "저장 실패"를 띄우지만 서버는 이미 커밋했을 수 있다.
+# 작업자가 다시 저장하면 같은 계량값이 두 LOT 으로 남고(동일 작업자·시각·서명·자재 LOT),
+# 자재 사용량 집계가 2배가 되며 둘 중 무엇이 실물인지 판별할 근거가 없다.
+# generate_product_lot 이 매번 새 순번을 주므로 UNIQUE(product_lot) 도 이를 막지 못한다.
+# → 클라이언트가 만든 1회용 request_id 를 저장과 **같은 트랜잭션**에 함께 기록한다.
+_SAVE_REQUEST_RETENTION_DAYS = 7   # 이 기간이 지난 멱등 기록은 정리(테이블 무한 증가 방지)
+
+
+def lookup_save_request(
+    connection: sqlite3.Connection, request_id: str, endpoint: str
+) -> list[int] | None:
+    """이미 처리된 request_id 면 그때 만든 기록 id 목록을 반환(없으면 None).
+
+    endpoint 가 다르면 None — 단건/다중 계량이 같은 id 를 우연히 공유해도 서로의
+    결과를 되돌려주지 않는다(호출부가 409 로 되돌린다).
+    """
+    rid = (request_id or "").strip()
+    if not rid:
+        return None
+    try:
+        row = connection.execute(
+            "SELECT endpoint, record_ids FROM blend_save_requests WHERE request_id = ?",
+            (rid,),
+        ).fetchone()
+    except sqlite3.OperationalError:  # 테이블이 없는 구버전/단위테스트 스키마
+        return None
+    if row is None or row["endpoint"] != endpoint:
+        return None
+    try:
+        ids = json.loads(row["record_ids"])
+    except (TypeError, ValueError):
+        return None
+    return [int(i) for i in ids] if isinstance(ids, list) else None
+
+
+def remember_save_request(
+    connection: sqlite3.Connection, request_id: str, endpoint: str, record_ids: list[int]
+) -> None:
+    """이 request_id 로 만든 기록 id 를 남긴다(호출부의 최종 commit 에 함께 실린다).
+
+    같은 id 가 이미 있으면 sqlite3.IntegrityError 를 그대로 올린다 — 호출부가
+    롤백하고 먼저 커밋된 결과를 되돌려주게 하기 위함이다(동시 요청 경합 처리).
+    저장이 400 등으로 중단되면 커밋되지 않으므로 id 는 소모되지 않는다.
+    """
+    from ..db.time_utils import utc_now_text
+
+    rid = (request_id or "").strip()
+    if not rid:
+        return
+    now = utc_now_text()
+    connection.execute(
+        "INSERT INTO blend_save_requests (request_id, endpoint, record_ids, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (rid, endpoint, json.dumps([int(i) for i in record_ids]), now),
+    )
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=_SAVE_REQUEST_RETENTION_DAYS)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    connection.execute("DELETE FROM blend_save_requests WHERE created_at < ?", (cutoff,))
+
+
 # ── 증량(rescale) 승인 — 책임자 인증 토큰 발급·소비 ─────────────
 _RESCALE_APPROVAL_TTL_MINUTES = 30  # 승인 유효 시간(분) — 30분 내 저장에만 쓸 수 있다.
 
 
-def create_rescale_approval(connection: sqlite3.Connection, approver: str) -> dict[str, Any]:
-    """책임자 인증 성공 시 blend_rescale_approvals 행을 INSERT 하고 {id, approver} 반환.
+RESCALE_PURPOSE = "rescale"     # 초과 계량 증량 승인 — 저장 시 approval_id 로 소비된다.
+MANUAL_PURPOSE = "manual"       # 저울 전용 모드의 수기 입력 허용 승인 — 발급이 곧 승인.
 
-    증량(rescale) 은 2회까지 책임자 현장 인증으로 허용되며, 그 인증 토큰을 발급한다.
-    실제 소비(used=1 표시)는 저장 시 validate_rescale_events 에서 이루어진다.
+
+def normalize_approval_purpose(purpose: Any) -> str:
+    """승인 목적을 알려진 두 값으로 좁힌다(클라이언트 문자열 신뢰 금지).
+
+    'manual' 외의 모든 값은 기존 동작 그대로 증량('rescale')으로 본다 — 옛 라우터가
+    `purpose == "manual"` 여부만 보고 나머지를 증량으로 취급했던 것과 동일하다.
+    """
+    return MANUAL_PURPOSE if str(purpose or "").strip() == MANUAL_PURPOSE else RESCALE_PURPOSE
+
+
+def create_rescale_approval(
+    connection: sqlite3.Connection, approver: str, purpose: str = RESCALE_PURPOSE
+) -> dict[str, Any]:
+    """책임자 인증 성공 시 blend_rescale_approvals 행을 INSERT 하고 {approval_id, approver} 반환.
+
+    purpose 로 '무엇을 승인했는가'를 함께 남긴다. 목적이 없던 시절에는 수기입력 승인
+    토큰이 그대로 증량 승인으로 소비될 수 있었고(같은 발급 함수·같은 검사), DB 만으로는
+    책임자가 무엇을 승인했는지 구분할 수 없었다.
+
+    - purpose='rescale': 저장 시 validate_rescale_events 가 used=1 로 소비한다.
+    - purpose='manual' : 소비 지점이 없다(화면이 approval_id 를 되돌려 보내지 않고
+      통제는 '책임자 승인 + 기록의 manual_entry 표시'로 이루어진다). 발급 자체가
+      승인 행위이므로 발급 시점에 used=1 로 닫는다 — used=0 이 '아직 안 쓴 증량 토큰'
+      만을 뜻하게 되고, 쓰이지 않는 토큰이 무한히 쌓이지 않는다.
     """
     from ..db.time_utils import utc_now_text
 
-    cursor = connection.execute(
-        "INSERT INTO blend_rescale_approvals (approver, created_at, used) VALUES (?, ?, 0)",
-        (approver, utc_now_text()),
-    )
-    return {"approval_id": cursor.lastrowid, "approver": approver}
+    purpose = normalize_approval_purpose(purpose)
+    used = 1 if purpose == MANUAL_PURPOSE else 0
+    try:
+        cursor = connection.execute(
+            "INSERT INTO blend_rescale_approvals (approver, created_at, used, purpose) "
+            "VALUES (?, ?, ?, ?)",
+            (approver, utc_now_text(), used, purpose),
+        )
+    except sqlite3.OperationalError:  # purpose 컬럼이 없는 구버전/단위테스트 스키마
+        cursor = connection.execute(
+            "INSERT INTO blend_rescale_approvals (approver, created_at, used) VALUES (?, ?, ?)",
+            (approver, utc_now_text(), used),
+        )
+    return {"approval_id": cursor.lastrowid, "approver": approver, "purpose": purpose}
 
 
 class RescaleApprovalError(Exception):
@@ -1884,12 +1999,20 @@ def validate_rescale_events(
         if drivers:
             norm_ev["drivers"] = drivers
         if approval_id is not None:
-            # 승인 행 조회 — used=0 이고 30분 이내여야 한다.
+            # 승인 행 조회 — 목적이 증량이고, used=0 이고, 30분 이내여야 한다.
             row = connection.execute(
-                "SELECT id, approver, created_at, used FROM blend_rescale_approvals WHERE id = ?",
+                "SELECT * FROM blend_rescale_approvals WHERE id = ?",
                 (int(approval_id),),
             ).fetchone()
             if not row or row["used"]:
+                raise RescaleApprovalError(
+                    "증량 승인이 유효하지 않습니다 — 다시 인증하세요."
+                )
+            # 목적 검사 — 수기입력 승인(manual)을 증량으로 돌려쓰는 것을 막는다.
+            # purpose 컬럼이 없는 구스키마·마이그레이션 이전 행(NULL)은 증량으로 본다
+            # (하위호환 — 옛 코드에서 실제로 소비되던 유일한 목적이 증량이었다).
+            row_purpose = row["purpose"] if "purpose" in row.keys() else None
+            if (row_purpose or RESCALE_PURPOSE) != RESCALE_PURPOSE:
                 raise RescaleApprovalError(
                     "증량 승인이 유효하지 않습니다 — 다시 인증하세요."
                 )

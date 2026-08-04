@@ -180,6 +180,10 @@ class BlendCreateBody(BaseModel):
     # 수기 입력 '책임자 부재 진행' 사유 — 저울 전용 모드에서 비밀번호 승인 없이 사유만
     # 남기고 손입력한 경우. 값이 있으면 그 기록은 책임자 확인 전까지 미확인으로 남는다.
     manual_absence_reason: str | None = Field(default=None, max_length=300)
+    # 저장 멱등 키(클라이언트가 만드는 1회용 id). 같은 id 의 재전송은 기록을 두 벌 만들지
+    # 않고 첫 결과를 그대로 돌려준다 — 타임아웃 재시도로 같은 계량값이 두 LOT 이 되는
+    # 것을 막는다. 미전송(None)이면 종전과 동일하게 매번 새 기록(하위호환).
+    request_id: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":
@@ -221,6 +225,9 @@ class BlendContinuousBody(BaseModel):
     lot_rescale_events: list[list[dict[str, Any]] | None] | None = Field(default=None)
     # 수기 입력 '책임자 부재 진행' 사유 — 화면 단위 승인이라 전 로트에 동일 적용(비고와 같은 성격).
     manual_absence_reason: str | None = Field(default=None, max_length=300)
+    # 저장 멱등 키 — 단건(BlendCreateBody.request_id)과 동일 규약. 재시도가 N로트를
+    # 두 벌 만드는 것을 막는다(미전송이면 종전 동작).
+    request_id: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendContinuousBody":
