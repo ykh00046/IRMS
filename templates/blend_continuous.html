@@ -145,46 +145,10 @@
           </div>
         </div>
 
-        <!-- 미등록 LOT 차단 모달 — 반제품(중간체) 자재 LOT 칸에 완료 기록에 없는 LOT 가 들어오면
-             표시. 확인 버튼으로 닫으면 해당 LOT 칸을 비우고 다시 포커스. hidden 토글 전용. -->
-        <div class="ss-modal-overlay" id="cont-lot-invalid-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-lot-invalid-modal-title">
-            <div class="ss-modal-header"><h3 id="cont-lot-invalid-modal-title">등록되지 않은 로트</h3></div>
-            <div class="ss-modal-body" id="cont-lot-invalid-modal-body"></div>
-            <!-- 사유 입력 후 진행(안전밸브) — 배합 화면과 동일. 사유는 전 로트 공통 비고에 남는다. -->
-            <div class="lot-override-box" id="cont-lot-override-box" hidden>
-              <label class="filter-label" for="cont-lot-override-reason">진행 사유 (책임자 확인용)</label>
-              <textarea class="input" id="cont-lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
-            </div>
-            <div class="ss-modal-footer blend-actions">
-              <button class="btn" id="cont-lot-invalid-proceed" type="button">사유 적고 진행</button>
-              <button class="btn accent" id="cont-lot-invalid-confirm" type="button">다시 확인</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ERP 원재료 LOT 검사 미통과 경고(다중 계량) — 저장은 막지 않는다(값 유지).
-             배합 화면 #erp-lot-modal 의 다중 계량 버전. -->
-        <div class="ss-modal-overlay" id="cont-erp-lot-modal" hidden>
-          <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="cont-erp-lot-modal-title">
-            <div class="ss-modal-header"><h3 id="cont-erp-lot-modal-title">등록되지 않은 LOT</h3></div>
-            <div class="ss-modal-body" id="cont-erp-lot-modal-body"></div>
-            <div class="lot-override-box" id="cont-erp-lot-add-box" hidden>
-              <label class="filter-label" for="cont-erp-add-username">책임자 이름</label>
-              <input class="input" id="cont-erp-add-username" autocomplete="off" />
-              <label class="filter-label" for="cont-erp-add-password">비밀번호</label>
-              <input class="input" id="cont-erp-add-password" type="password" autocomplete="off" />
-              <label class="filter-label" for="cont-erp-add-note">메모 (선택)</label>
-              <input class="input" id="cont-erp-add-note" />
-              <p class="login-error" id="cont-erp-lot-add-error" hidden></p>
-            </div>
-            <div class="ss-modal-footer blend-actions">
-              <button class="btn" id="cont-erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
-              <button class="btn accent" id="cont-erp-lot-add-submit" type="button" hidden>추가</button>
-              <button class="btn accent" id="cont-erp-lot-confirm" type="button">다시 확인</button>
-            </div>
-          </div>
-        </div>
+        <!-- 미등록 LOT 검사 모달(공용 partial) — 반제품 미등록 LOT 차단 + ERP 원료 LOT 경고를
+             하나의 모달 요소가 모두 구동한다(blend_lot_modal.js 가 케이스별로 표시 전환).
+             cont- 접두어로 이 화면의 기존 element id 를 그대로 유지. hidden 토글 전용. -->
+        {% set lot_modal_prefix = "cont-" %}{% include "_lot_check_modal.html" %}
 
         <!-- 증량 책임자 승인 모달(로트별 스코프) — 배합 화면 #rescale-approve-modal 의 다중 계량
              버전. 로트 증량 [증량 적용]/[그래도 증량] 클릭 시 즉시 적용하지 않고 이 모달로 게이트한다.
@@ -289,5 +253,6 @@
     <script src="/static/js/blend_lib.js?v=20260804f"></script>
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260804f"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260804g"></script>
+    <script src="/static/js/blend_continuous.js?v=20260804g"></script>
 {% endblock %}

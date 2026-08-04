@@ -33,6 +33,14 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // LOT 검사 모달(공용 컴포넌트) — 배합·다중 계량이 공유. cont- 접두어로 기존 id 유지.
+  const lotModal = window.IRMS.blendLotModal.create({
+    prefix: "cont-",
+    esc,
+    notify,
+    csrfToken,
+  });
+
   const MIN_LOTS = 1;
   const MAX_LOTS = 12;
 
@@ -1081,26 +1089,10 @@
   }
 
   function openContLotInvalidModal(name, lot, input) {
-    const body = $("cont-lot-invalid-modal-body");
-    if (body) {
-      body.innerHTML = ""
-        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
-        + `<p><strong>입력한 로트:</strong> ${esc(lot)}</p>`
-        + `<p>등록되지 않은 로트입니다. 1차 배합 기록이 저장되었는지, LOT 번호가 맞는지 확인하세요.</p>`
-        + `<p class="muted small">1차 기록이 아직 없는 정당한 경우에는 아래에 사유를 적고 진행할 수 있습니다(사유는 기록에 남습니다).</p>`;
-    }
-    const box = $("cont-lot-override-box");
-    const reason = $("cont-lot-override-reason");
-    if (reason) reason.value = "";
-    if (box) box.hidden = true;
-    const modal = $("cont-lot-invalid-modal");
-    modal._lotInput = input || null;
-    modal._lotName = name;
-    modal._lotValue = lot;
-    modal.hidden = false;
+    lotModal.openInvalid({ name, lot, input });
   }
 
-  function closeContLotInvalidModal() { $("cont-lot-invalid-modal").hidden = true; }
+  function closeContLotInvalidModal() { lotModal.close(); }
 
   // ── ERP 원재료 LOT 검사(반제품 자재는 제외) ─────────────────────
   // 반제품(제안이 있는 자재)은 위 validateLotInput 가 다루므로 건드리지 않는다.
@@ -1159,75 +1151,16 @@
     openContErpLotModal(name, code, lot, reason, input);
   }
 
+  // 미통과 LOT 경고 모달 — 본체·인증 POST 는 공용 컴포넌트(lotModal)가 담당.
+  // 인증 성공 시 입력의 .erp-lot-warn 주황 테두리 해제(onVerified).
   function openContErpLotModal(name, code, lot, reason, input) {
-    const body = $("cont-erp-lot-modal-body");
-    if (body) {
-      body.innerHTML = ""
-        + `<p><strong>자재명:</strong> ${esc(name)}</p>`
-        + `<p><strong>품목코드:</strong> ${esc(code)}</p>`
-        + `<p><strong>입력한 LOT:</strong> ${esc(lot)}</p>`
-        + `<p>${esc(reason)}</p>`
-        + `<p>LOT 를 제대로 확인해주세요.</p>`;
-    }
-    const box = $("cont-erp-lot-add-box");
-    const err = $("cont-erp-lot-add-error");
-    if (err) { err.textContent = ""; err.hidden = true; }
-    if (box) box.hidden = true;
-    const submitBtn = $("cont-erp-lot-add-submit");
-    if (submitBtn) submitBtn.hidden = true;
-    ["cont-erp-add-username", "cont-erp-add-password", "cont-erp-add-note"].forEach((id) => {
-      const el = $(id);
-      if (el) el.value = "";
+    lotModal.openErp({
+      name, code, lot, reason, input,
+      onVerified: () => setErpLotWarn(input, false),
     });
-    const modal = $("cont-erp-lot-modal");
-    modal._erpInput = input || null;
-    modal._erpCode = code;
-    modal._erpLot = lot;
-    modal.hidden = false;
   }
 
-  function closeContErpLotModal() { $("cont-erp-lot-modal").hidden = true; }
-
-  async function submitContErpLotAdd() {
-    const err = $("cont-erp-lot-add-error");
-    const username = ($("cont-erp-add-username").value || "").trim();
-    const password = $("cont-erp-add-password").value || "";
-    const note = ($("cont-erp-add-note").value || "").trim();
-    if (!username || !password) {
-      if (err) { err.textContent = "책임자 이름과 비밀번호를 입력하세요."; err.hidden = false; }
-      return;
-    }
-    const modal = $("cont-erp-lot-modal");
-    const code = modal._erpCode;
-    const lot = modal._erpLot;
-    try {
-      const res = await fetch("/api/material-lots/manual-verify", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
-        body: JSON.stringify({
-          username, password, material_code: code, lot,
-          note: note || undefined,
-        }),
-      });
-      if (!res.ok) {
-        let detail = "추가에 실패했습니다.";
-        try {
-          const j = await res.json();
-          if (j && j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
-          // 서버 규약 코드는 현장 문구로 — 영문 코드가 그대로 보이면 원인을 알 수 없다.
-          if (detail === "INVALID_CREDENTIALS") detail = "책임자 이름 또는 비밀번호가 올바르지 않습니다.";
-        } catch (_e) { /* 무시 */ }
-        if (err) { err.textContent = detail; err.hidden = false; }
-        return;
-      }
-      notify("수동 LOT 를 추가했습니다.", "success");
-      if (modal._erpInput) setErpLotWarn(modal._erpInput, false);
-      closeContErpLotModal();
-    } catch (e) {
-      if (err) { err.textContent = e.message || "추가에 실패했습니다."; err.hidden = false; }
-    }
-  }
+  function closeContErpLotModal() { lotModal.close(); }
 
   function renderReactorField() {
     const field = $("cont-reactor-field");
@@ -2540,58 +2473,24 @@
       if (approveModal && !approveModal.hidden) { dismissContApproveWithReweigh(); return; }
       if (blockModal && !blockModal.hidden) { closeContRescaleBlockModal(); return; }
     });
-    // 미등록 LOT 확인 버튼 — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
-    const lotConfirm = $("cont-lot-invalid-confirm");
-    if (lotConfirm) lotConfirm.addEventListener("click", () => {
-      const modal = $("cont-lot-invalid-modal");
-      const input = modal && modal._lotInput;
-      closeContLotInvalidModal();
-      if (input) {
+    // LOT 검사 모달 — 공용 컴포넌트(lotModal)가 footer 버튼을 한 번에 묶는다.
+    // 화면별 동작만 콜백으로: '다시 확인'(차단)의 값 비우기, '사유 적고 진행'의 사유 보관.
+    lotModal.bind({
+      // 미등록 반제품 LOT '다시 확인' — 모달 닫고 해당 LOT 칸 값·state 비운 뒤 다시 포커스.
+      onClear: (input) => {
         const i = Number(input.dataset.i);
         const j = Number(input.dataset.j);
         if (state.cells[i] && state.cells[i][j]) state.cells[i][j].lot = "";
         input.value = "";
         input.focus();
-      }
+      },
+      // '사유 적고 진행'(안전밸브) — 그 (자재,LOT) 통과 처리 + 사유 보관(저장 시 비고).
+      // 다중 계량은 진행 승인·사유도 임시 저장(복구용)한다(scheduleDraftSave).
+      onProceed: (name, lot, reason) => {
+        state.lotOverrides[lotOverrideKey(name, lot)] = reason;
+        scheduleDraftSave();
+      },
     });
-    // 미등록 LOT '사유 적고 진행'(안전밸브) — 배합 화면과 동일. 1클릭: 사유칸 표시 /
-    // 2클릭(사유 입력됨): 그 (자재,LOT) 통과 처리 + 사유 보관(저장 시 비고).
-    const lotProceed = $("cont-lot-invalid-proceed");
-    if (lotProceed) lotProceed.addEventListener("click", () => {
-      const box = $("cont-lot-override-box");
-      const reason = $("cont-lot-override-reason");
-      if (box && box.hidden) { box.hidden = false; if (reason) reason.focus(); return; }
-      const text = (reason && reason.value.trim()) || "";
-      if (!text) { notify("진행 사유를 입력하세요.", "error"); if (reason) reason.focus(); return; }
-      const modal = $("cont-lot-invalid-modal");
-      state.lotOverrides[lotOverrideKey(modal._lotName, modal._lotValue)] = text;
-      scheduleDraftSave();  // 미등록 LOT 진행 승인·사유도 임시 저장(복구용)
-      const input = modal._lotInput;
-      closeContLotInvalidModal();
-      if (input) input.focus();
-      notify("사유를 남기고 진행합니다 — 이 로트는 기록에 '미등록 진행'으로 남습니다.", "warn");
-    });
-    // ERP 미통과 LOT 경고 모달 — '다시 확인' / '책임자 LOT 추가하기'. 경고는 저장을 막지 않는다.
-    const erpConfirm = $("cont-erp-lot-confirm");
-    if (erpConfirm) erpConfirm.addEventListener("click", () => {
-      const modal = $("cont-erp-lot-modal");
-      const input = modal && modal._erpInput;
-      closeContErpLotModal();
-      if (input) { input.focus(); if (typeof input.select === "function") { try { input.select(); } catch (_e) {} } }
-    });
-    const erpAddToggle = $("cont-erp-lot-add-toggle");
-    if (erpAddToggle) erpAddToggle.addEventListener("click", () => {
-      const box = $("cont-erp-lot-add-box");
-      if (box) {
-        box.hidden = false;
-        const submitBtn = $("cont-erp-lot-add-submit");
-        if (submitBtn) submitBtn.hidden = false;
-        const u = $("cont-erp-add-username");
-        if (u) u.focus();
-      }
-    });
-    const erpAddSubmit = $("cont-erp-lot-add-submit");
-    if (erpAddSubmit) erpAddSubmit.addEventListener("click", submitContErpLotAdd);
   }
 
   document.addEventListener("DOMContentLoaded", () => {

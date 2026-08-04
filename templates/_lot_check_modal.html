@@ -1,0 +1,44 @@
+{# ── LOT 검사 모달(공용 partial) ─────────────────────────────────
+   배합(단건)·다중 계량 두 화면이 각자 4개씩 들고 있던 LOT 검사 모달을 하나로 합쳤다.
+   두 케이스(미등록 반제품 LOT 차단 / ERP 원료 LOT 경고)를 '하나의 모달 요소'가 모두
+   구동한다 — 케이스에 따라 사유칸(reason) 또는 책임자 인증칸(auth) 만 노출한다.
+   blend_lot_modal.js 가 open 시 케이스를 판별해 footer 버튼·보조칸 표시를 바꾼다.
+
+   포함 쪽에서 lot_modal_prefix 를 넘긴다 — 배합은 ""(빈), 다중 계량은 "cont-".
+   그래야 두 화면 모두 기존에 쓰던 element id(lot-invalid-modal / cont-lot-invalid-modal)를
+   그대로 유지한다(JS·CSS 가 id/클래스로 이미 타겟). hidden 속성 토글로만 표시/숨김.
+
+   두 보조칸(reason, auth)은 같은 모달 안에 함께 두고 케이스에 따라 한쪽만 보인다.
+   footer 의 세 버튼도 항상 렌더하되, open 시 케이스에 맞게 표시/숨김한다.
+#}
+{% set p = lot_modal_prefix or "" %}
+<div class="ss-modal-overlay" id="{{ p }}lot-invalid-modal" hidden>
+  <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="{{ p }}lot-invalid-modal-title">
+    <div class="ss-modal-header"><h3 id="{{ p }}lot-invalid-modal-title">등록되지 않은 LOT</h3></div>
+    <div class="ss-modal-body" id="{{ p }}lot-invalid-modal-body"></div>
+
+    {# 케이스 A — 미등록 반제품 LOT: 사유 입력 후 진행(안전밸브). 차단 케이스에서만 노출. #}
+    <div class="lot-override-box" id="{{ p }}lot-override-box" hidden>
+      <label class="filter-label" for="{{ p }}lot-override-reason">진행 사유 (책임자 확인용)</label>
+      <textarea class="input" id="{{ p }}lot-override-reason" rows="2" placeholder="예: 1차 배합은 종이 기록만 있음 — 나중에 등록 예정"></textarea>
+    </div>
+
+    {# 케이스 B — ERP 원료 LOT 경고: 책임자 즉석 인증으로 수동 LOT 추가. 경고 케이스에서만 노출. #}
+    <div class="lot-override-box" id="{{ p }}erp-lot-add-box" hidden>
+      <label class="filter-label" for="{{ p }}erp-add-username">책임자 이름</label>
+      <input class="input" id="{{ p }}erp-add-username" autocomplete="off" />
+      <label class="filter-label" for="{{ p }}erp-add-password">비밀번호</label>
+      <input class="input" id="{{ p }}erp-add-password" type="password" autocomplete="off" />
+      <label class="filter-label" for="{{ p }}erp-add-note">메모 (선택)</label>
+      <input class="input" id="{{ p }}erp-add-note" />
+      <p class="login-error" id="{{ p }}erp-lot-add-error" hidden></p>
+    </div>
+
+    <div class="ss-modal-footer blend-actions">
+      <button class="btn" id="{{ p }}lot-invalid-proceed" type="button">사유 적고 진행</button>
+      <button class="btn" id="{{ p }}erp-lot-add-toggle" type="button">책임자 LOT 추가하기</button>
+      <button class="btn accent" id="{{ p }}erp-lot-add-submit" type="button" hidden>추가</button>
+      <button class="btn accent" id="{{ p }}lot-invalid-confirm" type="button">다시 확인</button>
+    </div>
+  </div>
+</div>
