@@ -161,7 +161,8 @@
           tolEditor +
           `<label class="filter-label" for="lookup-category-select">분류</label>` +
           `<span class="muted">현재:</span><span id="lookup-category-current">${catCurrentText}</span>` +
-          catEditor;
+          catEditor +
+          renderLossCompEditor(detail, uniq, canManage);
         wrap.hidden = false;
         if (canManage) {
           const saveBtn = document.getElementById("lookup-anchor-save");
@@ -170,10 +171,135 @@
           if (tolSaveBtn) tolSaveBtn.addEventListener("click", () => handleSaveTolerance(recipeId));
           const catSaveBtn = document.getElementById("lookup-category-save");
           if (catSaveBtn) catSaveBtn.addEventListener("click", () => handleSaveCategory(recipeId));
+          wireLossCompEditor(recipeId, uniq);
         }
       } catch (error) {
         wrap.hidden = false;
         wrap.innerHTML = `<span class="muted">기준 자재 정보를 불러오지 못했습니다: ${IRMS.escapeHtml(error.message || String(error))}</span>`;
+      }
+    }
+
+    // 투입 로스 보정(파우더 투입 손실 보정) 에디터 — [자재 ▼][보정 g][✕] 반복 행 + [+ 보정 추가].
+    // BOM 표 자체(엑셀 붙여넣기 포함)는 건드리지 않고, 별도 속성 줄에서 자재별 고정 g 보정을
+    // 지정한다. 저장은 PUT /api/recipes/{id}/loss-comp {items:[{material_name, loss_comp_g}]}.
+    function renderLossCompEditor(detail, itemNames, canManage) {
+      const existing = (detail.items || []).filter(
+        (it) => Number(it.loss_comp_g) > 0 && it.material_name,
+      );
+      const currentText = existing.length
+        ? existing.map((it) => `<span class="lookup-losscomp-badge">+${it.loss_comp_g}g 보정</span> ${IRMS.escapeHtml(it.material_name)}`).join(" · ")
+        : '<span class="muted">없음</span>';
+      if (!canManage) {
+        return `<label class="filter-label">투입 로스 보정</label>`
+          + `<span class="muted">현재:</span><span>${currentText}</span>`;
+      }
+      const options = itemNames.length
+        ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("")
+        : "";
+      const rowsHtml = existing.map((it) => lossCompRowHtml(itemNames, it.material_name, it.loss_comp_g)).join("");
+      return `<label class="filter-label lookup-losscomp-label">투입 로스 보정</label>`
+        + `<span class="muted">현재:</span><span id="lookup-losscomp-current">${currentText}</span>`
+        + `<div class="lookup-losscomp-rows" id="lookup-losscomp-rows">${rowsHtml}</div>`
+        + `<div class="lookup-losscomp-actions">`
+        + `<button id="lookup-losscomp-add" class="btn btn-sm" type="button">+ 보정 추가</button>`
+        + `<button id="lookup-losscomp-save" class="btn" type="button">저장</button>`
+        + `</div>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 — 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
+        + (itemNames.length ? "" : '<p class="login-error lookup-losscomp-error">BOM 자재가 없습니다.</p>')
+        + `<input type="hidden" id="lookup-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`;
+    }
+
+    function lossCompRowHtml(itemNames, selectedName, value) {
+      const opts = itemNames.length
+        ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === selectedName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`).join("")
+        : "";
+      return `<div class="lookup-losscomp-row">`
+        + `<select class="input lookup-losscomp-mat">${opts}</select>`
+        + `<input class="input lookup-losscomp-g" type="number" step="0.1" min="0" max="100" placeholder="보정 g" value="${value != null ? IRMS.escapeHtml(String(value)) : ""}" />`
+        + `<button class="btn btn-sm lookup-losscomp-del" type="button" title="삭제">✕</button>`
+        + `</div>`;
+    }
+
+    function wireLossCompEditor(recipeId, itemNames) {
+      const rowsEl = document.getElementById("lookup-losscomp-rows");
+      const addBtn = document.getElementById("lookup-losscomp-add");
+      const saveBtn = document.getElementById("lookup-losscomp-save");
+      if (addBtn) addBtn.addEventListener("click", () => {
+        if (!rowsEl) return;
+        const tmp = document.createElement("div");
+        tmp.innerHTML = lossCompRowHtml(itemNames, "", "");
+        rowsEl.appendChild(tmp.firstChild);
+      });
+      if (rowsEl) rowsEl.addEventListener("click", (e) => {
+        const del = e.target.closest(".lookup-losscomp-del");
+        if (del) del.closest(".lookup-losscomp-row").remove();
+      });
+      if (saveBtn) saveBtn.addEventListener("click", () => handleSaveLossComp(recipeId));
+    }
+
+    async function handleSaveLossComp(recipeId) {
+      const saveBtn = document.getElementById("lookup-losscomp-save");
+      const rowsEl = document.getElementById("lookup-losscomp-rows");
+      const errEl = document.querySelector(".lookup-losscomp-error");
+      if (errEl) errEl.remove();
+      const items = [];
+      const seen = new Set();
+      let bad = "";
+      if (rowsEl) {
+        rowsEl.querySelectorAll(".lookup-losscomp-row").forEach((row) => {
+          const matSel = row.querySelector(".lookup-losscomp-mat");
+          const gInput = row.querySelector(".lookup-losscomp-g");
+          const name = (matSel && matSel.value || "").trim();
+          const rawG = (gInput && gInput.value || "").trim();
+          if (!name && !rawG) return;  // 빈 행은 무시
+          const g = Number(rawG);
+          if (!name) { bad = "자재를 선택하세요."; return; }
+          if (!Number.isFinite(g) || g <= 0 || g > 100) { bad = `보정값은 0 초과 100 이하여야 합니다: ${name}`; return; }
+          if (seen.has(name)) { bad = `같은 자재가 중복됩니다: ${name}`; return; }
+          seen.add(name);
+          items.push({ material_name: name, loss_comp_g: g });
+        });
+      }
+      if (bad) {
+        IRMS.notify(bad, "error");
+        return;
+      }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/loss-comp`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({ items }),
+        });
+        if (!resp.ok) {
+          let detail = "";
+          try {
+            const payload = await resp.json();
+            const d = payload && payload.detail;
+            detail = d && typeof d === "object" && d.message ? d.message
+              : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+          } catch (_e) {
+            detail = await resp.text().catch(() => `Request failed (${resp.status})`);
+          }
+          throw new Error(String(detail || `Request failed (${resp.status})`));
+        }
+        await resp.json();
+        // 성공 — 패널 다시 그려 현재 값 갱신(편집기도 리셋).
+        await renderAnchorPanel(recipeId);
+        IRMS.notify(
+          items.length
+            ? `투입 로스 보정 ${items.length}건을 저장했습니다.`
+            : "투입 로스 보정을 모두 해제했습니다.",
+          "success",
+        );
+      } catch (error) {
+        IRMS.notify(`투입 로스 보정 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
       }
     }
 

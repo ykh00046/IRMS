@@ -208,6 +208,96 @@ def build_router() -> APIRouter:
             "tolerance_g": tolerance_g,
         }
 
+    @router.put("/recipes/{recipe_id}/loss-comp")
+    def set_recipe_loss_comp(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """레시피 아이템별 투입 로스 보정(loss_comp_g) 지정 — 책임자 전용.
+
+        body: {"items": [{material_name, loss_comp_g}, ...]}.
+        - material_name 은 이 레시피의 BOM 자재명이어야 한다(없으면 400).
+        - loss_comp_g 는 0 이상 100 이하(음수 거부, 상한 100g). 0=보정 없음(해제).
+        보정은 총량과 무관한 고정 g 이고, 배합 저장 시 theory_amount = 비율×총량+보정.
+        """
+        raw_items = body.get("items")
+        if not isinstance(raw_items, list):
+            raise HTTPException(status_code=400, detail="items 목록이 필요합니다.")
+
+        # 정규화 + 검증(이름·값). 값은 0~100g.
+        normalized: list[tuple[str, float]] = []
+        for entry in raw_items:
+            if not isinstance(entry, dict):
+                raise HTTPException(status_code=400, detail="각 보정 항목은 객체여야 합니다.")
+            name = str(entry.get("material_name") or "").strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="자재명이 비었습니다.")
+            raw_val = entry.get("loss_comp_g")
+            try:
+                val = float(raw_val)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400, detail=f"보정값은 숫자여야 합니다: {name}"
+                )
+            if not (0 <= val <= 100):
+                raise HTTPException(
+                    status_code=400, detail=f"보정값은 0 이상 100 이하여야 합니다: {name}"
+                )
+            normalized.append((name, val))
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            # 이 레시피의 BOM 자재명 → recipe_items.id 매핑. BOM 에 없는 자재명 거부.
+            bom_rows = connection.execute(
+                """
+                SELECT ri.id, m.name AS material_name
+                FROM recipe_items ri JOIN materials m ON m.id = ri.material_id
+                WHERE ri.recipe_id = ?
+                """,
+                (recipe_id,),
+            ).fetchall()
+            bom_by_name: dict[str, int] = {}
+            for r in bom_rows:
+                # 같은 이름의 자재가 여러 행이면 첫째 행(등록 순)에 적용 — 실제로는 드물다.
+                bom_by_name.setdefault(str(r["material_name"]).strip(), int(r["id"]))
+
+            missing: list[str] = []
+            applied: list[dict[str, Any]] = []
+            for name, val in normalized:
+                item_id = bom_by_name.get(name)
+                if item_id is None:
+                    missing.append(name)
+                    continue
+                connection.execute(
+                    "UPDATE recipe_items SET loss_comp_g = ? WHERE id = ?",
+                    (val, item_id),
+                )
+                applied.append({"material_name": name, "loss_comp_g": val})
+            if missing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="BOM 에 없는 자재명입니다: " + ", ".join(missing),
+                )
+
+            write_audit_log(
+                connection,
+                action="recipe_loss_comp_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"items": applied},
+            )
+            connection.commit()
+
+        return {"status": "ok", "recipe_id": recipe_id, "items": applied}
+
     @router.put("/recipes/{recipe_id}/category")
     def set_recipe_category(
         recipe_id: int,

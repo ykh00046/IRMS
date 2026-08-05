@@ -200,3 +200,59 @@ test("증량 막대: 담은 자재는 채움/더 담을 양, 미계량 자재는
 test("증량 막대: 계획이 비면 빈 문자열(모달 본문 오염 금지)", () => {
   assert.strictEqual(rescaleBarsHtml([], { rows: [] }, 2), "");
 });
+
+// ── 투입 로스 보정(2라운드 2026-08-05) — 순수 이론·증량 산술에 보정 반영 ──
+const {
+  computeTheoryAmount,
+  theoryFromWeights,
+  computeAnchorTheory,
+} = global.window.IRMS.blendLib;
+
+test("rescalePlan: 보정 자재의 newTheory = 비율×신총량+보정, addNeeded 도 그 기준", () => {
+  // A(50%) 보정 +1g, B(30%) 보정 없음, C(20%) 미계량. A 를 600 으로 초과 → newTotal 1200.
+  const items = [
+    { material_name: "A", ratio: 50, actual_amount: "600", theory_amount: 501, loss_comp_g: 1 },
+    { material_name: "B", ratio: 30, actual_amount: "300", theory_amount: 300, loss_comp_g: 0 },
+    { material_name: "C", ratio: 20, actual_amount: "", theory_amount: 200, loss_comp_g: 0 },
+  ];
+  const plan = rescalePlan(items, 1000, 0.05);
+  const a = plan.rows[0];
+  const b = plan.rows[1];
+  // A: 비율×1200 = 600 + 보정 1 = 601
+  assert.strictEqual(a.newTheory, 601, "보정 자재 newTheory = 비율×신총량+보정(601)");
+  assert.strictEqual(a.addNeeded, 1, "A 를 600 담았고 목표 601 → addNeeded = 1");
+  // B: 비율×1200 = 360 (보정 없음)
+  assert.strictEqual(b.newTheory, 360, "보정 없는 자재는 비율×신총량 그대로(360)");
+  assert.strictEqual(b.addNeeded, 60, "B 300 담았고 목표 360 → +60");
+});
+
+test("computeTheoryAmount: lossComp 가 있으면 비율×총량+보정", () => {
+  assert.strictEqual(computeTheoryAmount(50, 1000), 500, "보정 없으면 비율×총량");
+  assert.strictEqual(computeTheoryAmount(50, 1000, 1), 501, "보정 1g → 501");
+  assert.strictEqual(computeTheoryAmount(30, 1000, 2.5), 302.5, "보정 2.5g → 302.5");
+});
+
+test("theoryFromWeights: value_weight 비례 결과에 loss_comp_g 를 더한다", () => {
+  // value_weight 60/40, 총량 100 → 60/40. A 보정 +1 → 61.
+  const items = [
+    { value_weight: 60, loss_comp_g: 1 },
+    { value_weight: 40, loss_comp_g: 0 },
+  ];
+  const out = theoryFromWeights(items, 100);
+  assert.strictEqual(out[0], 61, "A = 60 + 보정 1");
+  assert.strictEqual(out[1], 40, "B = 40 (보정 없음)");
+  // 보정 없는 기존 계약 유지
+  const plain = theoryFromWeights([{ value_weight: 60 }, { value_weight: 40 }], 100);
+  assert.deepStrictEqual(plain, [60, 40], "보정 필드 없으면 기존과 동일");
+});
+
+test("computeAnchorTheory: 비기준 자재 파생 이론량에 보정 더한다(기준 자재는 무시)", () => {
+  // 기준 A(value_weight 100) 실측 1000, 비기준 B(value_weight 50) → 파생 500 + 보정 1 = 501.
+  const items = [
+    { value_weight: 100, is_anchor: true, loss_comp_g: 5 },  // 기준 자재 — 보정 무시(실측=이론)
+    { value_weight: 50, loss_comp_g: 1 },                     // 비기준 — 파생 500 + 1 = 501
+  ];
+  const { theoryAmounts } = computeAnchorTheory(items, 0, 1000);
+  assert.strictEqual(theoryAmounts[0], 1000, "기준 자재는 실측 그대로(보정 무시)");
+  assert.strictEqual(theoryAmounts[1], 501, "비기준 자재 파생량 + 보정(501)");
+});

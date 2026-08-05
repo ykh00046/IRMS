@@ -1211,6 +1211,16 @@
   // 계산·검증·저장은 그대로 2자리 이론 기준을 유지한다.
   function dp() { return toleranceDecimals(state.toleranceG); }
 
+  // 이론량 셀의 내용(숫자 + 투입 로스 보정 배지)을 채운다. textContent 가 배지를 지우지
+  // 않도록 innerHTML 로 재구성한다(2라운드 2026-08-05). materialRowHtml 의 배지 마크업과 동일.
+  function setTheoryCellContent(cell, it) {
+    const comp = Number(it && it.loss_comp_g);
+    const badge = comp > 0
+      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(comp, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(comp, 2)}g</span>`
+      : "";
+    cell.innerHTML = fmt(it.theory_amount, dp()) + badge;
+  }
+
   function recomputeTheory() {
     // 기준 자재 모드에서는 총량 입력이 읽기 전용 — 이론량은 기준 자재 실측값에서
     // 도출되므로 이 총량 기반 재계산 경로를 타지 않는다.
@@ -1223,7 +1233,7 @@
     state.items.forEach((it, i) => {
       it.theory_amount = byWeights[i] !== null
         ? byWeights[i]
-        : computeTheoryAmount(it.ratio, total);
+        : computeTheoryAmount(it.ratio, total, it.loss_comp_g);
     });
   }
 
@@ -1915,7 +1925,7 @@
     // 이론량 셀·실제량 placeholder·입력 활성화 상태 갱신(재렌더 없이 DOM 갱신 — 포커스 유지)
     document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
       const i = Number(cell.dataset.idx);
-      cell.textContent = fmt(state.items[i].theory_amount, dp());
+      setTheoryCellContent(cell, state.items[i]);
     });
     document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
       const i = Number(act.dataset.idx);
@@ -2369,7 +2379,7 @@
       if (next === null || next === undefined) return;
       it.theory_amount = next;
       const cell = document.querySelector(`.blend-theory[data-idx="${r.idx}"]`);
-      if (cell) cell.textContent = fmt(next, dp());
+      if (cell) setTheoryCellContent(cell, it);
     });
     state.items.forEach((_, i) => updateRowVar(i));
     updateTotals();
@@ -3399,7 +3409,7 @@
       // 이론량 셀 + 실제량 입력칸 안내값 갱신 — data-idx 기준(설명 줄이 끼어도 안전)
       document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
         const it = state.items[Number(cell.dataset.idx)];
-        if (it) cell.textContent = fmt(it.theory_amount, dp());
+        if (it) setTheoryCellContent(cell, it);
       });
       document.querySelectorAll("#blend-mat-body .blend-actual").forEach((act) => {
         const it = state.items[Number(act.dataset.idx)];

@@ -84,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_dhr_set", "DHR 전용 지정"],
       ["recipe_anchor_set", "기준 자재 지정"],
       ["recipe_tolerance_set", "허용 편차 지정"],
+      ["recipe_loss_comp_set", "투입 로스 보정 지정"],
       ["recipe_category_set", "레시피 분류 지정"],
       ["recipe_stage1_set", "1차 레시피 연결"],
       ["recipe_use_reactor_set", "반응기 사용 지정"],

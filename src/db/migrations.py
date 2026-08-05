@@ -77,6 +77,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipe_items", "measured_at", "TEXT")
     ensure_column(connection, "recipe_items", "measured_by", "TEXT")
     ensure_column(connection, "recipe_items", "actual_weight", "REAL")
+    # 투입 로스 보정(파우더 투입 손실 보정, 2026-08-05) — 붓는 과정 로스가 있는 파우더를
+    # 지정량(예: +1g) 더 계량하도록 레시피 아이템별 고정 g 보정량. 0=보정 없음(기본).
+    # 배합 저장 시 이 값이 blend_details.theory_amount 에 더해져 '공정 기준 투입량'이 된다.
+    ensure_column(connection, "recipe_items", "loss_comp_g", "REAL NOT NULL DEFAULT 0")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_items_measured_at ON recipe_items(measured_at)"
     )
@@ -295,6 +299,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_blend_details_material_lot "
         "ON blend_details(material_lot) WHERE material_lot IS NOT NULL"
     )
+    # 투입 로스 보정 스냅샷(2026-08-05) — 저장 시점 레시피의 loss_comp_g 를 그대로 찍어둔다.
+    # 기록의 theory_amount 는 이미 (비율×총량+보정) 이므로, 이 컬럼은 메타(분해 표시)용.
+    ensure_column(connection, "blend_details", "loss_comp_g", "REAL NOT NULL DEFAULT 0")
     # blend 결재 기록 (작성/검토/승인 — 이름+시각). 원본의 서명 이미지 위조 대체.
     ensure_column(connection, "blend_records", "reviewed_by", "TEXT")
     ensure_column(connection, "blend_records", "reviewed_at", "TEXT")

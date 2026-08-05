@@ -318,3 +318,18 @@ for (const [label, src] of [["blend.js", blend], ["blend_continuous.js", cont]])
       "게이트 분기가 synced=false 로 되돌리면 닫힌 뒤 첫 폴이 유효 PRINT 까지 삼킨다");
   });
 }
+
+// 투입 로스 보정 분해 표시(2라운드 2026-08-05) — 상세 이론량 옆 배지가 loss_comp_g 를 참조.
+test("status.js 상세 이론 셀은 detail.loss_comp_g>0 일 때 보정 배지를 그린다", () => {
+  assert.match(statusSrc, /loss_comp_g/,
+    "status.js detail 행이 detail.loss_comp_g 를 참조해야 한다 — 없으면 분해 배지가 안 그려진다");
+  assert.match(statusSrc, /blend-losscomp-badge/,
+    "status.js 가 blend-losscomp-badge 클래스를 써야 한다 — 보정 분해 표시");
+});
+
+// 배합·다중 계량 이론 셀도 보정 배지를 그린다.
+test("배합(blend_lib materialRowHtml)·다중 계량 이론 셀은 보정 자재에 배지를 그린다", () => {
+  const blendLib = fs.readFileSync(path.join(SRC, "blend_lib.js"), "utf8");
+  assert.match(blendLib, /blend-losscomp-badge/, "blend_lib.js materialRowHtml 이론 셀에 보정 배지 클래스");
+  assert.match(cont, /blend-losscomp-badge/, "blend_continuous.js 이론 셀에 보정 배지 클래스");
+});

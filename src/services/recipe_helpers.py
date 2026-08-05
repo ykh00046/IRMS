@@ -9,6 +9,7 @@ routers can import without crossing the routers/ ↔ services/
 layer boundary in the wrong direction.
 """
 
+import sqlite3
 from typing import Any
 
 from fastapi import HTTPException
@@ -31,8 +32,27 @@ def fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict
     """Shared helper to fetch recipe items with material info."""
     if not recipe_ids:
         return {}
-    item_rows = connection.execute(
-        """
+    # ri.loss_comp_g(투입 로스 보정) — 컬럼이 없는 구버전/테스트 DB 폴백(try/except 2단 쿼리).
+    select_with_loss = """
+        SELECT
+            ri.recipe_id,
+            ri.material_id,
+            m.name AS material_name,
+            m.unit_type,
+            m.unit,
+            m.color_group,
+            ri.value_weight,
+            ri.value_text,
+            ri.actual_weight,
+            ri.measured_at,
+            ri.measured_by,
+            ri.loss_comp_g
+        FROM recipe_items ri
+        JOIN materials m ON m.id = ri.material_id
+        WHERE ri.recipe_id IN ({ids})
+        ORDER BY ri.recipe_id ASC, ri.id ASC
+    """.format(ids=", ".join("?" for _ in recipe_ids))
+    select_without_loss = """
         SELECT
             ri.recipe_id,
             ri.material_id,
@@ -50,16 +70,19 @@ def fetch_recipe_items(connection, recipe_ids: list[int]) -> dict[int, list[dict
         WHERE ri.recipe_id IN ({ids})
         ORDER BY ri.recipe_id ASC, ri.id ASC  -- 등록(투입) 순서 보존 — 이름순이면
                                               -- 수정 등록 때마다 배합 순서가 뒤바뀐다
-        """.format(
-            ids=", ".join("?" for _ in recipe_ids)
-        ),
-        recipe_ids,
-    ).fetchall()
+    """.format(ids=", ".join("?" for _ in recipe_ids))
+    try:
+        item_rows = connection.execute(select_with_loss, recipe_ids).fetchall()
+    except sqlite3.OperationalError:  # ri.loss_comp_g 컬럼이 없는 구버전/테스트 DB
+        item_rows = connection.execute(select_without_loss, recipe_ids).fetchall()
 
     item_map: dict[int, list[dict[str, Any]]] = {}
     for item_row in item_rows:
         item = row_to_dict(item_row)
         item["target_value"] = format_display_value(item.get("value_weight"), item.get("value_text"))
+        # 투입 로스 보정(2026-08-05) — 구버전 DB/단위테스트 스키마(loss_comp_g 컬럼 없음) 폴백.
+        if "loss_comp_g" not in item or item.get("loss_comp_g") is None:
+            item["loss_comp_g"] = 0.0
         item_map.setdefault(int(item_row["recipe_id"]), []).append(item)
     return item_map
 

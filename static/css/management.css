@@ -756,3 +756,33 @@
   line-height: 1.5;
 }
 .mg-flow-note b { color: #15233f; }
+
+/* 투입 로스 보정(파우더 투입 손실 보정) 반복 행 에디터 — lookup-anchor 패널 안.
+   [자재 ▼][보정 g][✕] 행 + [+ 보정 추가]/[저장]. BOM 표는 건드리지 않는 별도 속성 줄. */
+.lookup-losscomp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.lookup-losscomp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.lookup-losscomp-row .lookup-losscomp-mat { flex: 1 1 11rem; min-width: 11rem; }
+.lookup-losscomp-row .lookup-losscomp-g { width: 7rem; flex: 0 0 7rem; }
+.lookup-losscomp-row .lookup-losscomp-del {
+  flex: 0 0 auto; padding: 0.2rem 0.5rem; line-height: 1;
+  color: #b91c1c; border-color: #fecaca;
+}
+.lookup-losscomp-actions {
+  display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem;
+}
+.lookup-losscomp-desc { max-width: 46rem; }
+.lookup-losscomp-error { margin: 0.3rem 0 0; }
+.lookup-losscomp-badge {
+  display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px;
+  background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 700;
+  white-space: nowrap;
+}

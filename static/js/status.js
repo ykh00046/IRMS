@@ -359,14 +359,21 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
     const rows = (rec.details || [])
       .map(
-        (d, i) =>
-          stepRowsAt(i) +
+        (d, i) => {
+          // 투입 로스 보정 분해 표시(2라운드) — detail.loss_comp_g>0 행의 이론량 옆 작은 배지.
+          // DHR 인쇄물·Excel·다른 API 출력은 건드리지 않는다(이 상세 화면만).
+          const comp = Number(d.loss_comp_g);
+          const compBadge = comp > 0
+            ? ` <span class="blend-losscomp-badge" title="기본 ${fmt(Number(d.theory_amount) - comp)} + 투입 로스 보정 ${fmt(comp)} = ${fmt(d.theory_amount)}">보정 +${fmt(comp)}g</span>`
+            : "";
+          return stepRowsAt(i) +
           `<tr><td>${i + 1}</td><td>${esc(d.material_name)}</td>` +
-          `<td class="num">${fmt(d.ratio, 2)}</td><td class="num">${fmt(d.theory_amount)}</td>` +
+          `<td class="num">${fmt(d.ratio, 2)}</td><td class="num">${fmt(d.theory_amount)}${compBadge}</td>` +
           // 저울 연동 중 손입력한 자재는 실제량 옆에 행별 ⚠ (상세에서만 표시)
           `<td class="num">${fmt(d.actual_amount)}${d.manual_entry ? ' <span class="manual-entry-mark" title="수동 입력">⚠</span>' : ""}</td>` +
           `<td class="num ${d.variance > 0 ? "var-up" : d.variance < 0 ? "var-down" : ""}">${d.variance == null ? "-" : (d.variance > 0 ? "+" : "") + fmt(d.variance, 2)}</td>` +
-          `<td>${esc(d.material_lot || "-")}</td></tr>`,
+          `<td>${esc(d.material_lot || "-")}</td></tr>`;
+        },
       )
       .join("") + stepRowsAt((rec.details || []).length);
     const linkedVisc = (rec.viscosity || []).length

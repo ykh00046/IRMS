@@ -63,6 +63,15 @@ BYPASS_MULTIPLE_TOL = 0.005     # 기준의 정수배(2배·3배 배치)는 ±0.
 BYPASS_ROUND_STEP_G = 10.0      # 10 g 단위로 떨어지는 총량은 '손으로 친 값'으로 보고 제외
 
 
+def _blend_details_has_loss_comp(connection: sqlite3.Connection) -> bool:
+    """blend_details 테이블에 loss_comp_g 컬럼이 있는가. 구버전/단위테스트 스키마 폴백용."""
+    try:
+        cols = {row["name"] for row in connection.execute("PRAGMA table_info(blend_details)").fetchall()}
+        return "loss_comp_g" in cols
+    except sqlite3.OperationalError:
+        return False
+
+
 # ── 비율/이론량 환산 ────────────────────────────────────────────
 def compute_ratios(weights: list[float]) -> list[float]:
     """절대중량 리스트 → 비율(%) 리스트. 합이 0이면 모두 0."""
@@ -162,6 +171,22 @@ def get_recipe_for_blend(
             (recipe_id,),
         ).fetchall()
 
+    # 투입 로스 보정(2026-08-05) — recipe_items.loss_comp_g 를 recipe_item_id 별로 읽는다.
+    # 컬럼이 없는 구버전/테스트 DB 는 빈 맵 폴백(보정 0). 메인 rows 쿼리를 건드리지 않아
+    # materials.code 폴백 경로가 그대로 살아있다.
+    loss_comp_by_item: dict[int, float] = {}
+    try:
+        loss_rows = connection.execute(
+            "SELECT id AS recipe_item_id, loss_comp_g FROM recipe_items WHERE recipe_id = ?",
+            (recipe_id,),
+        ).fetchall()
+        for lr in loss_rows:
+            val = lr["loss_comp_g"]
+            if val is not None:
+                loss_comp_by_item[int(lr["recipe_item_id"])] = float(val)
+    except sqlite3.OperationalError:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+        pass
+
     # 공정 설명 줄(자재 사이 안내문) — 화면 표시 전용, 계산·집계와 무관
     try:
         step_rows = connection.execute(
@@ -177,6 +202,11 @@ def get_recipe_for_blend(
     total = float(total_amount) if total_amount and total_amount > 0 else base_total
     ratios = compute_ratios(weights)
     theory = scale_theory(weights, total)
+    # 투입 로스 보정(2026-08-05) — 아이템별 고정 g. 컬럼이 없는 구버전/테스트 DB 폴백(0).
+    # 보정은 총량과 무관한 고정 g 이므로 총량 스케일(비율×총량) 결과에 그대로 더한다.
+    loss_comps = [
+        float(loss_comp_by_item.get(int(r["recipe_item_id"]), 0.0)) for r in rows
+    ]
 
     # 방어: 기준 자재가 지정돼 있어도 (1) 해당 자재가 항목에 없거나 (2) 그 자재의
     # 기준 중량(value_weight)이 0 이하면 기준으로 쓸 수 없다 — anchor 를 무효(None) 처리.
@@ -199,7 +229,12 @@ def get_recipe_for_blend(
             "unit": r["unit"],
             "value_weight": weights[idx],
             "ratio": ratios[idx],
-            "theory_amount": theory[idx],
+            "theory_amount": round(theory[idx] + loss_comps[idx], 2),
+            # 보정 전 순수 환산량(비율×총량) — derive_details_from_recipe 가 보정을 한 번만
+            # 더하기 위해 쓴다(theory_amount 에는 이미 보정이 포함돼 있어 중복 방지).
+            "theory_amount_base": round(theory[idx], 2),
+            # 보정량(고정 g) — 화면이 목표를 (비율환산량 + 보정) 으로 계산하게 병기.
+            "loss_comp_g": round(loss_comps[idx], 3),
             "sequence_order": idx + 1,
             # 기준 자재 여부 — 배합 시 이 자재의 실측값으로 다른 자재 이론량을 산출.
             "is_anchor": effective_anchor is not None
@@ -1406,6 +1441,8 @@ def derive_details_from_recipe(
         name = str(item["material_name"])
         sent = take_incoming(name)
         ratio = float(item["ratio"] or 0)
+        # 투입 로스 보정(고정 g) — 총량 스케일과 무관하게 더한다. 메타로도 스냅샷 저장.
+        loss_comp = float(item.get("loss_comp_g") or 0)
         if anchor is not None:
             # 저울 해상도(2자리) — 기준 자재 파생 이론량도 2자리로 맞춘다.
             if item.get("is_anchor"):
@@ -1416,7 +1453,15 @@ def derive_details_from_recipe(
             else:
                 theory = round(total * ratio / 100.0, 2)   # ratio 폴백(옛 데이터)
         else:
-            theory = float(item["theory_amount"] or 0)
+            # 비기준 경로 — get_recipe_for_blend 가 보정 전 순수 환산량(theory_amount_base) 을
+            # 별도 내려주므로 그것을 쓴다. theory_amount(보정 포함)를 쓰면 보정이 중복 더해진다.
+            base = item.get("theory_amount_base")
+            theory = float(base) if base is not None else float(item["theory_amount"] or 0)
+        # 보정(고정 g) 추가 — 기록의 theory_amount = (비율×총량) + 보정. 허용 편차 판정도
+        # 이 값 기준(아래 weighing_tolerance_violations 가 derived 의 theory_amount 를 본다).
+        # 보정이 0 이면 원래 이론량(기준 행은 실측 그대로)을 그대로 둬 기존 계약·정밀도 유지.
+        if loss_comp:
+            theory = round(theory + loss_comp, 2)
         derived.append({
             "material_id": item.get("material_id"),
             "material_code": item.get("material_code"),
@@ -1426,7 +1471,8 @@ def derive_details_from_recipe(
             "manual_entry": bool(sent.get("manual_entry")),
             "carried_over": bool(sent.get("carried_over")),  # 반응기 이월 표식(사람이 지정)
             "ratio": ratio,                                   # ← 서버 산출
-            "theory_amount": theory,                          # ← 서버 산출
+            "theory_amount": theory,                          # ← 서버 산출(보정 포함)
+            "loss_comp_g": round(loss_comp, 3),               # ← 메타 스냅샷(2라운드 분해 표시)
             "sequence_order": order,
         })
     if anchor is not None and anchor_weight is not None:
@@ -1596,30 +1642,57 @@ def create_blend_record(
         raise last_error  # 3회 모두 위반 — 비정상 상황을 그대로 드러낸다(500)
     record_id = int(cur.lastrowid)
 
+    has_loss_comp = _blend_details_has_loss_comp(connection)
     for idx, d in enumerate(details):
-        connection.execute(
-            """
-            INSERT INTO blend_details
-                (blend_record_id, material_id, material_code, material_name,
-                 material_lot, ratio, theory_amount, actual_amount, sequence_order,
-                 manual_entry, carried_over, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record_id,
-                d.get("material_id"),
-                (d.get("material_code") or None),
-                str(d.get("material_name") or "").strip(),
-                (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
-                _opt_num(d.get("ratio")),
-                _opt_num(d.get("theory_amount")),
-                _opt_num(d.get("actual_amount")),
-                int(d.get("sequence_order") or (idx + 1)),
-                1 if d.get("manual_entry") else 0,
-                1 if d.get("carried_over") else 0,
-                created_at,
-            ),
-        )
+        if has_loss_comp:
+            connection.execute(
+                """
+                INSERT INTO blend_details
+                    (blend_record_id, material_id, material_code, material_name,
+                     material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                     manual_entry, carried_over, loss_comp_g, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    d.get("material_id"),
+                    (d.get("material_code") or None),
+                    str(d.get("material_name") or "").strip(),
+                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    _opt_num(d.get("ratio")),
+                    _opt_num(d.get("theory_amount")),
+                    _opt_num(d.get("actual_amount")),
+                    int(d.get("sequence_order") or (idx + 1)),
+                    1 if d.get("manual_entry") else 0,
+                    1 if d.get("carried_over") else 0,
+                    float(d.get("loss_comp_g") or 0),
+                    created_at,
+                ),
+            )
+        else:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+            connection.execute(
+                """
+                INSERT INTO blend_details
+                    (blend_record_id, material_id, material_code, material_name,
+                     material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                     manual_entry, carried_over, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    d.get("material_id"),
+                    (d.get("material_code") or None),
+                    str(d.get("material_name") or "").strip(),
+                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    _opt_num(d.get("ratio")),
+                    _opt_num(d.get("theory_amount")),
+                    _opt_num(d.get("actual_amount")),
+                    int(d.get("sequence_order") or (idx + 1)),
+                    1 if d.get("manual_entry") else 0,
+                    1 if d.get("carried_over") else 0,
+                    created_at,
+                ),
+            )
     return record_id
 
 
@@ -1660,30 +1733,57 @@ def update_blend_record(
         ),
     )
     connection.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (record_id,))
+    has_loss_comp = _blend_details_has_loss_comp(connection)
     for idx, d in enumerate(details):
-        connection.execute(
-            """
-            INSERT INTO blend_details
-                (blend_record_id, material_id, material_code, material_name,
-                 material_lot, ratio, theory_amount, actual_amount, sequence_order,
-                 manual_entry, carried_over, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record_id,
-                d.get("material_id"),
-                (d.get("material_code") or None),
-                str(d.get("material_name") or "").strip(),
-                (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
-                _opt_num(d.get("ratio")),
-                _opt_num(d.get("theory_amount")),
-                _opt_num(d.get("actual_amount")),
-                int(d.get("sequence_order") or (idx + 1)),
-                1 if d.get("manual_entry") else 0,
-                1 if d.get("carried_over") else 0,
-                updated_at,
-            ),
-        )
+        if has_loss_comp:
+            connection.execute(
+                """
+                INSERT INTO blend_details
+                    (blend_record_id, material_id, material_code, material_name,
+                     material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                     manual_entry, carried_over, loss_comp_g, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    d.get("material_id"),
+                    (d.get("material_code") or None),
+                    str(d.get("material_name") or "").strip(),
+                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    _opt_num(d.get("ratio")),
+                    _opt_num(d.get("theory_amount")),
+                    _opt_num(d.get("actual_amount")),
+                    int(d.get("sequence_order") or (idx + 1)),
+                    1 if d.get("manual_entry") else 0,
+                    1 if d.get("carried_over") else 0,
+                    float(d.get("loss_comp_g") or 0),
+                    updated_at,
+                ),
+            )
+        else:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+            connection.execute(
+                """
+                INSERT INTO blend_details
+                    (blend_record_id, material_id, material_code, material_name,
+                     material_lot, ratio, theory_amount, actual_amount, sequence_order,
+                     manual_entry, carried_over, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    d.get("material_id"),
+                    (d.get("material_code") or None),
+                    str(d.get("material_name") or "").strip(),
+                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    _opt_num(d.get("ratio")),
+                    _opt_num(d.get("theory_amount")),
+                    _opt_num(d.get("actual_amount")),
+                    int(d.get("sequence_order") or (idx + 1)),
+                    1 if d.get("manual_entry") else 0,
+                    1 if d.get("carried_over") else 0,
+                    updated_at,
+                ),
+            )
 
 
 def _opt_num(value: Any) -> float | None:
@@ -1830,17 +1930,31 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     ).fetchone()
     if not row:
         return None
-    details = connection.execute(
-        """
-        SELECT id, material_id, material_code, material_name, material_lot,
-               ratio, theory_amount, actual_amount, sequence_order, manual_entry,
-               carried_over
-        FROM blend_details
-        WHERE blend_record_id = ?
-        ORDER BY sequence_order, id
-        """,
-        (record_id,),
-    ).fetchall()
+    # loss_comp_g 컬럼이 없는 구버전/테스트 DB 폴백 — try/except 2단 쿼리(materials.code 와 동일 패턴).
+    try:
+        details = connection.execute(
+            """
+            SELECT id, material_id, material_code, material_name, material_lot,
+                   ratio, theory_amount, actual_amount, sequence_order, manual_entry,
+                   carried_over, loss_comp_g
+            FROM blend_details
+            WHERE blend_record_id = ?
+            ORDER BY sequence_order, id
+            """,
+            (record_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+        details = connection.execute(
+            """
+            SELECT id, material_id, material_code, material_name, material_lot,
+                   ratio, theory_amount, actual_amount, sequence_order, manual_entry,
+                   carried_over
+            FROM blend_details
+            WHERE blend_record_id = ?
+            ORDER BY sequence_order, id
+            """,
+            (record_id,),
+        ).fetchall()
     record = _serialize_record(row)
     record["details"] = [_serialize_detail(d) for d in details]
     record["variance"] = _variance_summary(record["details"])
@@ -2035,6 +2149,8 @@ def _serialize_detail(row: sqlite3.Row) -> dict[str, Any]:
         "sequence_order": int(row["sequence_order"]),
         "manual_entry": bool(row["manual_entry"]) if "manual_entry" in row.keys() else False,
         "carried_over": bool(row["carried_over"]) if "carried_over" in row.keys() else False,
+        # 투입 로스 보정 스냅샷(2라운드 상세 분해 표시용) — 컬럼 없는 구버전/테스트 DB 폴백(0).
+        "loss_comp_g": float(row["loss_comp_g"]) if "loss_comp_g" in row.keys() and row["loss_comp_g"] is not None else 0.0,
     }
 
 

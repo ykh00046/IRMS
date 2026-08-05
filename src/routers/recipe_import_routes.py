@@ -14,6 +14,7 @@ Endpoints:
 
 import hashlib
 import logging
+import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -476,6 +477,43 @@ def build_router() -> APIRouter:
                         """,
                         (recipe_id, item["material_id"], item["value_weight"], item["value_text"]),
                     )
+
+                # 투입 로스 보정 승계(2026-08-05) — 수정 등록(revision_of)일 때 부모 레시피의
+                # 자재별 loss_comp_g 를 같은 이름의 자재로 물려받는다(anchor_material·tolerance_g
+                # 승계와 같은 자리). 붙여넣기 BOM 자체는 보정값을 싣지 않으므로, 승계가 없으면
+                # 개정마다 보정이 리셋된다. loss_comp_g 컬럼이 없는 구버전/테스트 DB 는 try/except 폴백.
+                if body.revision_of is not None:
+                    try:
+                        parent_loss = connection.execute(
+                            """
+                            SELECT m.name AS material_name, ri.loss_comp_g
+                            FROM recipe_items ri JOIN materials m ON m.id = ri.material_id
+                            WHERE ri.recipe_id = ? AND ri.loss_comp_g IS NOT NULL AND ri.loss_comp_g > 0
+                            """,
+                            (body.revision_of,),
+                        ).fetchall()
+                        if parent_loss:
+                            # 새 레시피의 자재명 → recipe_items.id 매핑(같은 이름 첫 행).
+                            child_rows = connection.execute(
+                                """
+                                SELECT ri.id, m.name AS material_name
+                                FROM recipe_items ri JOIN materials m ON m.id = ri.material_id
+                                WHERE ri.recipe_id = ?
+                                """,
+                                (recipe_id,),
+                            ).fetchall()
+                            child_by_name: dict[str, int] = {}
+                            for cr in child_rows:
+                                child_by_name.setdefault(str(cr["material_name"]).strip(), int(cr["id"]))
+                            for pl in parent_loss:
+                                cid = child_by_name.get(str(pl["material_name"]).strip())
+                                if cid is not None and float(pl["loss_comp_g"]) > 0:
+                                    connection.execute(
+                                        "UPDATE recipe_items SET loss_comp_g = ? WHERE id = ?",
+                                        (float(pl["loss_comp_g"]), cid),
+                                    )
+                    except sqlite3.OperationalError:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+                        pass
 
                 # 공정 설명 줄('설명' 열) — 자재 사이 안내문. 공식 배합일지 출력 미포함.
                 for step in parsed_row.get("steps", []):

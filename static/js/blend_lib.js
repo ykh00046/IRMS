@@ -123,10 +123,14 @@
       ? `<td>${esc(it.material_name)} <span class="blend-anchor-badge">${esc(ANCHOR_BADGE)}</span></td>`
       : `<td>${esc(it.material_name)}</td>`;
     const actualAttr = o.disableActual ? " disabled" : "";
+    // 투입 로스 보정 자재 — 이론량 옆 작은 배지(2라운드 2026-08-05).
+    const compBadge = Number(it.loss_comp_g) > 0
+      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(it.loss_comp_g, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(it.loss_comp_g, 2)}g</span>`
+      : "";
     return `<td>${idx + 1}</td>` +
       nameCell +
       `<td class="num">${fmt(it.ratio, 2)}</td>` +
-      `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}</td>` +
+      `<td class="num blend-theory" data-idx="${idx}">${fmt(it.theory_amount)}${compBadge}</td>` +
       `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
       // blend-actual-cell: 입력칸+⚖+⊞ 버튼이 함께 사는 칸 — flex 로 폭을 나눠 갖는다.
       // 클래스 없이는 input(100%)+버튼이 셀 폭을 넘어 편차 열 위로 흘러넘쳤다(2026-08-05).
@@ -159,10 +163,14 @@
     return { theory, actual, net: actual - theory };
   }
 
-  function computeTheoryAmount(ratio, total) {
+  function computeTheoryAmount(ratio, total, lossComp) {
     // 이론량을 저울/표시 단위(0.01g)로 반올림. 표시값=내부값이라 표시된 이론값을
     // 그대로 계량하면 편차 0. 허용 편차(±0.05g) 판정과도 같은 눈금.
-    return Math.round((ratio / 100) * total * 100) / 100;
+    // lossComp(투입 로스 보정, 고정 g) 가 있으면 더한다 — 총량과 무관한 고정 g 이므로
+    // 비율×총량 결과에 그대로 더해 서버(blend_service)와 일치시킨다(2라운드 2026-08-05).
+    const base = Math.round((ratio / 100) * total * 100) / 100;
+    const comp = Number(lossComp);
+    return comp > 0 ? Math.round((base + comp) * 100) / 100 : base;
   }
 
   // 기준 자재(anchor) 행 인덱스. is_anchor 가 true 인 첫 행, 없으면 -1.
@@ -193,8 +201,12 @@
       if (i === anchorIndex) {
         out[i] = Math.round(a * 100) / 100;
       } else {
-        const w = Number(items[i] && items[i].value_weight);
-        out[i] = Math.round((a * (w / anchorW)) * 100) / 100;
+        const w = Number(items[i].value_weight);
+        const derived = Math.round((a * (w / anchorW)) * 100) / 100;
+        // 투입 로스 보정(고정 g) — 비기준 자재의 파생 이론량에 더한다(서버 derive 와 일치).
+        // 기준 자재 자신은 실측=이론 이므로 보정을 무시한다(실측이 곧 목표).
+        const comp = Number(items[i] && items[i].loss_comp_g);
+        out[i] = comp > 0 ? Math.round((derived + comp) * 100) / 100 : derived;
       }
       total += (out[i] || 0);
     }
@@ -231,7 +243,10 @@
     for (let i = 0; i < list.length; i++) {
       const w = Number(list[i].value_weight);
       // 저울 해상도(2자리)에 맞춰 반올림 — 3자리 목표는 저울로 맞출 수 없다.
-      out[i] = Math.round((w / baseSum) * t * 100) / 100;
+      const base = Math.round((w / baseSum) * t * 100) / 100;
+      // 투입 로스 보정(고정 g) — 총량과 무관하게 더한다(서버 blend_service 와 일치).
+      const comp = Number(list[i] && list[i].loss_comp_g);
+      out[i] = comp > 0 ? Math.round((base + comp) * 100) / 100 : base;
     }
     return out;
   }
@@ -310,7 +325,12 @@
     const rows = list.map((it, idx) => {
       const item = it || {};
       const r = Number(item.ratio);
-      const newTheory = r > 0 ? Math.round((r / 100) * newTotal * 100) / 100 : null;
+      // 투입 로스 보정(고정 g) — 총량 스케일(비율×newTotal) 결과에 더한다(서버 재산출과 일치).
+      // 보정은 총량과 무관한 고정 g 이므로 증량(newTotal 변경) 에도 그대로 더해진다.
+      const comp = Number(item.loss_comp_g);
+      const baseTheory = r > 0 ? Math.round((r / 100) * newTotal * 100) / 100 : null;
+      const newTheory = baseTheory !== null && comp > 0
+        ? Math.round((baseTheory + comp) * 100) / 100 : baseTheory;
       let addNeeded = null;
       const actualRaw = item.actual_amount;
       if (actualRaw !== "" && actualRaw !== null && actualRaw !== undefined) {

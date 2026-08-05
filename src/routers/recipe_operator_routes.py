@@ -149,6 +149,7 @@ def build_router() -> APIRouter:
                     "material_name": it["material_name"],
                     "unit": it.get("unit"),
                     "value": it["target_value"],
+                    "loss_comp_g": it.get("loss_comp_g", 0.0),
                 }
                 for it in recipe_items
             ]
@@ -234,6 +235,8 @@ def build_router() -> APIRouter:
                 "unit": it.get("unit"),
                 "color_group": it.get("color_group"),
                 "value": it["target_value"],
+                # 투입 로스 보정(고정 g) — 관리 화면이 보정 지정 자재를 표시·편집하게.
+                "loss_comp_g": it.get("loss_comp_g", 0.0),
             }
             for it in recipe_items
         ]

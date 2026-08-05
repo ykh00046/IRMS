@@ -933,6 +933,8 @@
       ratio: it.ratio,
       is_anchor: it.is_anchor,
       value_weight: it.value_weight,
+      // 투입 로스 보정(고정 g) — 클라이언트 이론 재계산·증량(rescalePlan) 에 반영(2라운드).
+      loss_comp_g: Number(it.loss_comp_g) || 0,
     }));
     state.toleranceG = (data.recipe && data.recipe.tolerance_g) || TOLERANCE_G;
 
@@ -1289,7 +1291,7 @@
     state.theory = state.materials.map((m, i) =>
       byWeights[i] !== null
         ? byWeights[i]
-        : (state.total > 0 ? computeTheoryAmount(m.ratio, state.total) : null)
+        : (state.total > 0 ? computeTheoryAmount(m.ratio, state.total, m.loss_comp_g) : null)
     );
   }
 
@@ -1311,7 +1313,11 @@
     if (!(total > 0)) return null;
     const byWeights = theoryFromWeights(state.materials, total);
     if (byWeights[i] !== null) return byWeights[i];
-    return Math.round((Number(m.ratio) / 100) * total * 100) / 100;
+    // 폴백 — 비율×총량 + 보정(고정 g). theoryFromWeights 가 loss_comp_g 를 반영하므로
+    // 여기도 동일하게 더해 서버 재산출과 일치시킨다(2라운드 2026-08-05).
+    const base = Math.round((Number(m.ratio) / 100) * total * 100) / 100;
+    const comp = Number(m.loss_comp_g);
+    return comp > 0 ? Math.round((base + comp) * 100) / 100 : base;
   }
 
   // lotRescale(과 lotRescalePlan)을 lotCount 에 맞춘다 — 기존 값 보존, 늘어난 칸은 null.
@@ -1411,11 +1417,15 @@
         );
       }
       // 자재 행 홀짝 줄무늬(cont-mrow-alt) — 넓은 표에서 같은 원재료 행을 가로로 추적.
+      // 투입 로스 보정 자재 — 이론량 옆 작은 배지(2라운드 2026-08-05).
+      const compBadge = Number(m.loss_comp_g) > 0
+        ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(m.loss_comp_g, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(m.loss_comp_g, 2)}g</span>`
+        : "";
       parts.push(`<tr class="cont-mrow${i % 2 ? " cont-mrow-alt" : ""}">`
         + `<td>${i + 1}</td>`
         + `<td class="cont-matname">${esc(m.material_name)}</td>`
         + `<td class="num">${fmt(m.ratio, 2)}</td>`
-        + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i], dp())}</td>`
+        + `<td class="num cont-theory" data-i="${i}">${fmt(state.theory[i], dp())}${compBadge}</td>`
         + cells.join("")
         + "</tr>");
     });
@@ -1648,7 +1658,12 @@
   function refreshTheoryCells() {
     document.querySelectorAll("#cont-mat-body .cont-theory").forEach((cell) => {
       const i = Number(cell.dataset.i);
-      cell.textContent = fmt(state.theory[i], dp());
+      // 보정 배지가 있으면 textContent 가 지우지 않도록 innerHTML 로 재구성(2라운드).
+      const comp = Number(state.materials[i] && state.materials[i].loss_comp_g);
+      const badge = comp > 0
+        ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(comp, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(comp, 2)}g</span>`
+        : "";
+      cell.innerHTML = fmt(state.theory[i], dp()) + badge;
     });
     document.querySelectorAll("#cont-mat-body .cont-actual").forEach((act) => {
       const i = Number(act.dataset.i);
@@ -1715,12 +1730,14 @@
       return;
     }
     const currentTotal = lotTotal(j);
-    // rescalePlan 은 items=[{ratio, actual_amount, theory_amount, material_name}] 받는다 — 로트 j 의 셀로 구성.
+    // rescalePlan 은 items=[{ratio, actual_amount, theory_amount, material_name, loss_comp_g}] 받는다 — 로트 j 의 셀로 구성.
+    // loss_comp_g 를 실어야 newTheory(=비율×newTotal+보정) 가 서버 재산출과 일치한다(2라운드).
     const items = state.materials.map((m, i) => ({
       ratio: m.ratio,
       actual_amount: state.cells[i][j].actual,
       theory_amount: theoryFor(i, j),
       material_name: m.material_name,
+      loss_comp_g: m.loss_comp_g,
     }));
     const plan = rescalePlan(items, currentTotal, state.toleranceG);
     if (!plan.changed) return;
@@ -2052,6 +2069,7 @@
       actual_amount: state.cells[i][j].actual,
       theory_amount: theoryFor(i, j),
       material_name: m.material_name,
+      loss_comp_g: m.loss_comp_g,
     }));
     const plan = rescalePlan(items, lotTotal(j), tol);
     // 직전 대기 집합(이 lot 만) 기억 — 이번에 빠진(충족된) 셀은 편차 표시를 복원해야 한다.
