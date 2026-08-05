@@ -2740,8 +2740,8 @@
     if (guideEl) {
       if (_awMode === "loaded") {
         guideEl.innerHTML = scaleOnly
-          ? "부은 뒤 <b>PRINT</b>를 누르세요 — 표시값(전체 무게)에서 이미 담은 양을 빼고 기록합니다."
-          : "부은 뒤 저울 <b>표시값 전체</b>를 입력하세요 — 이미 담은 양을 빼고 기록합니다.";
+          ? "저울 표시가 <b>아래 목표 값</b>이 될 때까지 담고 <b>PRINT</b>를 누르세요."
+          : "저울 표시가 <b>아래 목표 값</b>이 될 때까지 담고, 표시값 전체를 입력하세요.";
       } else {
         guideEl.innerHTML = scaleOnly
           ? "저울에 담기는 만큼 담고 <b>PRINT</b>를 누르세요. 목표를 채우면 자동으로 끝납니다."
@@ -2813,8 +2813,25 @@
     const cur = it.actual_amount === "" ? 0 : (Number(it.actual_amount) || 0);
     const remaining = addWeighRemaining(idx);
     const remEl = $("add-weigh-remaining");
-    // '+' 없이 값만 — 큰 숫자 위 라벨('더 담아야 할 양')이 의미를 말해준다.
-    if (remEl) remEl.textContent = `${fmt(remaining, dp())} g`;
+    const remLabelEl = $("add-weigh-remaining-label");
+    // 큰 숫자 = 작업자가 저울 표시창에서 맞춰야 할 값(모드별로 다르다 — 2026-08-05 현장
+    // 지적: 두 모드가 같은 '더 담아야 할 양'을 띄워 차이가 안 보였고, 누계 모드에선
+    // 표시창이 그 값이 될 때까지만 담는 실수를 부른다).
+    //   영점 잡힘: 표시창 = 이번에 담는 양 → 남은 양을 띄운다.
+    //   무게 남음: 표시창 = 전체 무게    → 목표 전체를 띄운다.
+    if (_awMode === "loaded") {
+      if (remLabelEl) remLabelEl.textContent = "저울 표시가 이 값이 될 때까지 담으세요";
+      if (remEl) {
+        remEl.textContent = `${fmt(target, dp())} g`;
+        remEl.classList.add("is-cumulative");
+      }
+    } else {
+      if (remLabelEl) remLabelEl.textContent = "더 담아야 할 양";
+      if (remEl) {
+        remEl.textContent = `${fmt(remaining, dp())} g`;
+        remEl.classList.remove("is-cumulative");
+      }
+    }
     const subEl = $("add-weigh-sub");
     if (subEl) subEl.textContent = `목표 ${fmt(target, dp())} g · 현재 ${fmt(cur, dp())} g`;
     // 담은 회차를 1회차부터 쌓아 보여준다 — 이 창 안에서 한 자재를 끝낸다는 감각을

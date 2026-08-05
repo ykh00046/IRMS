@@ -496,6 +496,9 @@
   text-align: center; font-size: 3.1rem; font-weight: 800;
   color: #b45309; line-height: 1.05; margin: 0;
 }
+/* 누계 모드('무게 남음') — 큰 숫자가 '남은 양'이 아니라 '저울 표시로 맞출 목표 전체'.
+   색을 갈라 영점 모드(주황=추가분)와 한눈에 구분되게 한다. */
+.add-weigh-remaining.is-cumulative { color: #1d4ed8; }
 .add-weigh-sub { font-size: 0.95rem; color: var(--muted, #6b7280); margin: 0.15rem 0 0.9rem; }
 /* 담은 내역 — 아직 안 담았을 때도 영역을 보여줘 창의 목적이 드러나게. */
 .add-weigh-portions-wrap {

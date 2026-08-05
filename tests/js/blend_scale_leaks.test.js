@@ -262,3 +262,12 @@ test("부족 컨텍스트에서 scale-state 모달 Esc 는 닫지 않고 안내�
   assert.match(branchBody, /notify\(/,
     "부족 컨텍스트 Esc 분기는 안내(notify)를 내보내야 한다");
 });
+
+test("담기 창의 큰 숫자는 모드별로 다르다 — 누계 모드는 목표 전체(2026-08-05 현장 지적)", () => {
+  // 두 모드가 같은 '더 담아야 할 양'을 띄우면, 누계 모드에서 저울 표시가 그 값이
+  // 될 때까지만 담는 실수를 부른다(표시창은 전체 무게인데). 회귀 고정.
+  const body = bodyOf(blend, "refreshAddWeighModal");
+  assert.match(body, /_awMode === "loaded"/, "모드 분기가 있어야 한다");
+  assert.match(body, /저울 표시가 이 값이 될 때까지/, "누계 모드 라벨 = 표시창 기준 목표");
+  assert.match(body, /is-cumulative/, "누계 모드는 색으로도 구분한다");
+});

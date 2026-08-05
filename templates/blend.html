@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260805d" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260805e" />
 {% endblock %}
 
 {% block content %}
@@ -215,8 +215,12 @@
               <p class="add-weigh-guide">한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.</p>
               <!-- 큰 숫자에 라벨을 붙인다 — 예전엔 '+24000 g' 만 커서 이게 담을 양인지
                    담은 양인지 처음 보면 몰랐다. '더 담아야 할 양'으로 명시. -->
+              <!-- 큰 숫자는 모드에 따라 다르다(2026-08-05 현장 지적 — 두 모드가 같아 보임):
+                   영점 잡힘 = 더 담아야 할 양(저울 표시가 이 값이 되면 끝),
+                   무게 남음 = 목표 전체(저울 표시가 이 값이 될 때까지 담기). 라벨·값을
+                   refreshAddWeighModal 이 모드별로 채운다. -->
               <div class="add-weigh-remaining-block">
-                <span class="add-weigh-remaining-label">더 담아야 할 양</span>
+                <span class="add-weigh-remaining-label" id="add-weigh-remaining-label">더 담아야 할 양</span>
                 <div class="add-weigh-remaining" id="add-weigh-remaining">0 g</div>
               </div>
               <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
@@ -460,7 +464,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805g"></script>
+    <script src="/static/js/blend.js?v=20260805h"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
