@@ -2005,7 +2005,9 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
               "worker_sign", "reviewed_sign", "approved_sign", "reactor",
               # 수기 입력(책임자 부재) 사유·미확인 플래그 — SELECT 에는 있었지만 여기서
               # 빠뜨려 상세 응답에 실리지 않았다(화면이 '사유: -' 로 표시되던 원인).
-              "manual_absence_reason", "manual_unacked"):
+              "manual_absence_reason", "manual_unacked",
+              # 취소 시각·자동 삭제 예정일 계산(F15) — 취소가 마지막 쓰기라 updated_at 이 기준.
+              "updated_at"):
         out[f] = row[f] if f in keys else None
     return out
 

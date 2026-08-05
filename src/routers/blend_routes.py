@@ -31,8 +31,10 @@ Endpoints:
 """
 
 import io
+import json
 import logging
 import sqlite3
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -46,6 +48,7 @@ from ..auth import (
     require_access_level,
 )
 from ..blend_session import current_blend_worker, touch_worker_session
+from ..config import CANCELED_RETENTION_DAYS
 from ..db import get_db, utc_now_text, write_audit_log
 from ..limiter import limiter
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
@@ -758,6 +761,44 @@ def build_router() -> APIRouter:
                 ]
             except sqlite3.OperationalError:
                 pass
+        # 취소된 기록 — 사유·취소자·시각·자동 삭제 예정일을 상세에 실어준다(F15).
+        # 취소 시 기록엔 status/updated_at 만 남고 사유·행위자는 감사 로그가 원본이라,
+        # 스키마 변경 없이 로그에서 읽는다(과거 취소분도 소급 표시).
+        if record.get("status") == "canceled":
+            reason = None
+            actor = None
+            canceled_at = record.get("updated_at")
+            row = connection.execute(
+                "SELECT actor_display_name, actor_username, details_json, created_at "
+                "FROM audit_logs WHERE action = 'blend_record_cancel' "
+                "AND target_type = 'blend_record' AND target_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (str(record_id),),
+            ).fetchone()
+            if row:
+                try:
+                    reason = (json.loads(row["details_json"] or "{}") or {}).get("reason")
+                except (ValueError, TypeError):
+                    reason = None
+                actor = row["actor_display_name"] or row["actor_username"]
+                canceled_at = row["created_at"] or canceled_at
+            purge_at = None
+            if CANCELED_RETENTION_DAYS > 0 and record.get("updated_at"):
+                # 자동 정리 기준은 updated_at(취소가 마지막 쓰기) — purge_expired_canceled 와 동일.
+                try:
+                    base = datetime.strptime(record["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
+                    purge_at = (base + timedelta(days=CANCELED_RETENTION_DAYS)).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    )
+                except ValueError:
+                    purge_at = None
+            record["cancel_info"] = {
+                "reason": reason,
+                "actor": actor,
+                "canceled_at": canceled_at,
+                "retention_days": CANCELED_RETENTION_DAYS,
+                "purge_at": purge_at,
+            }
         return _mask_manual_entry(request, record)
 
     @router.post("/blend/records/{record_id}/viscosity")

@@ -305,6 +305,36 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // 취소된 기록 상세 — 사유·취소자·시각·자동 삭제 예정일(F15). 목록의 '취소됨' 배지만으론
+  // 복원/완전 삭제를 판단할 근거(왜·언제·언제 사라지는지)가 화면에 없었다. 서버가 감사
+  // 로그에서 읽어 cancel_info 로 내려준다(과거 취소분 소급 표시).
+  function cancelBlock(rec) {
+    if (rec.status !== "canceled") return "";
+    const info = rec.cancel_info || {};
+    // 감사 로그 시각은 UTC(Z) — 화면의 작성 시각(로컬)과 섞이면 9시간 어긋나 보인다.
+    // Z 가 붙은 값은 로컬로 변환해 표시한다.
+    const dt = (s) => {
+      if (!s) return "";
+      const str = String(s);
+      if (str.endsWith("Z")) {
+        const d = new Date(str);
+        if (!Number.isNaN(d.getTime())) {
+          const p = (n) => String(n).padStart(2, "0");
+          return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+      }
+      return esc(str.slice(0, 16).replace("T", " "));
+    };
+    const who = info.actor ? ` · 취소: ${esc(info.actor)}` : "";
+    const at = info.canceled_at ? ` (${dt(info.canceled_at)})` : "";
+    const purge = info.purge_at
+      ? `<br />자동 삭제 예정: <b>${dt(info.purge_at)}</b> (취소 후 ${esc(String(info.retention_days))}일 보존, 그 전까지 [기록 복원] 가능)`
+      : "";
+    return `<div class="blend-cancel-block">
+      <b>취소된 기록</b> — 사유: ${info.reason ? esc(info.reason) : '<span class="muted">(기록 없음)</span>'}${who}${at}${purge}
+    </div>`;
+  }
+
   function approvalCell(label, name, at, sign) {
     const img = sign ? `<img class="dhr-sign-img" src="${sign}" alt="서명" />` : "";
     return `<div class="dhr-sign">
@@ -365,6 +395,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
       </div>
       ${bulkLine}
+      ${cancelBlock(rec)}
       ${rescaleBlock(rec)}
       ${manualBlock(rec)}
       ${discardBlock(rec)}

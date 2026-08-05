@@ -857,6 +857,15 @@
   background: #fdf6ea;
   border-radius: 8px;
 }
+/* 취소된 기록 안내(F15) — 사유·취소자·자동 삭제 예정일. 붉은 톤으로 상태를 분명히. */
+.blend-cancel-block {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid #ecc8c5;
+  background: #fdf0ef;
+  border-radius: 8px;
+  color: #7f1d1d;
+}
 .blend-rescale-list {
   margin: 6px 0 0;
   padding-left: 18px;
