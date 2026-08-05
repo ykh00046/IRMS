@@ -1104,6 +1104,8 @@
       // 증량 이력이 있으면 총량 잠금·추가분 배지를 명시적으로 다시 그리고 1회 안내한다.
       updateTotalLock();
       renderAddBadges();
+      // 복구된 증량 상태 상시 표시줄도 다시 그린다(F7) — state.rescaleEvents 에서 읽는다.
+      renderRescaleSummary();
       notify(`복구된 배합에 증량 ${state.rescaleEvents.length}회가 포함되어 있습니다.`, "warn");
     } else if (state.rescaleActive) {
       renderAddBadges();
@@ -1258,10 +1260,18 @@
       }
       tr.innerHTML = materialRowHtml(idx, it, opts);
       // 실제량 칸에 ⚖ 저울 대상 지정 버튼을 붙인다(저울 연결 시에만 노출 — CSS).
+      // 입력칸+버튼을 <span class="blend-actual-flex"> 로 감싸 td(table-cell) 안에서 flex 로
+      // 폭을 나눠 갖는다 — td 자체를 display:flex 로 쓰면 행 경계선(border-bottom)이
+      // 이웃 셀과 미세하게 어긋난다(1366px, F4). span 은 td 의 자식이므로 기존 조회
+      // (.blend-actual[data-idx] 등)는 그대로 동작한다.
       const actualCell = tr.querySelector(".blend-actual");
       if (actualCell && actualCell.parentElement) {
-        actualCell.parentElement.appendChild(buildScaleTargetButton(idx));
-        actualCell.parentElement.appendChild(buildSplitButton(idx));
+        const wrap = document.createElement("span");
+        wrap.className = "blend-actual-flex";
+        actualCell.parentElement.appendChild(wrap);
+        wrap.appendChild(actualCell);
+        wrap.appendChild(buildScaleTargetButton(idx));
+        wrap.appendChild(buildSplitButton(idx));
       }
       body.appendChild(tr);
     });
@@ -2122,6 +2132,8 @@
     // 증량을 몰아온 자재(이론/실제/초과량) — 미확인 증량 알림에서 '어디를 증량했는지' 보여준다.
     if (Array.isArray(plan.drivers) && plan.drivers.length) ev.drivers = plan.drivers;
     state.rescaleEvents.push(ev);
+    // applyRescale() 시점엔 이 이벤트가 아직 없어 요약줄이 비어 숨는다 — push 후 재렌더.
+    renderRescaleSummary();
   }
 
   async function submitManagerApproval() {
@@ -2260,12 +2272,29 @@
     notify(`배합량을 ${fmt(plan.newTotal, dp())} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
   }
 
-  // 증량 적용 요약줄 — 자재별 '더 넣을 양'을 상시 표시(작업자가 얼마나 넣었는지 잊지 않게).
-  // 저장 성공·초기화·레시피 변경 전까지 유지(타이핑 중에는 사라지지 않는다).
+  // 증량 적용 상시 표시줄 — 증량 N회 적용 사실과 직전 before→after·승인자/부재 사유를
+  // 자재 표 위에 한 줄로 남긴다(F7). 총량 잠금만으로는 '지금 증량된 상태인지'가 안 보였다.
+  // plan 인자는 호출부 보존을 위해 유지하되, 실제 내용은 state.rescaleEvents(마지막 요소)에서
+  // 읽는다 — finalizeRescale 이 채우는 실제 필드(before_total/after_total/approver/absence_reason).
   function renderRescaleSummary(plan) {
-    // 상단 요약줄은 시선 밖이라 폐기(2026-07-22) — 목표·추가분은 각 행 편차 셀의
-    // 배지("목표 Y · 추가 +X")가 상시 표시한다. 함수는 호출부 보존을 위해 no-op 으로 남긴다.
-    void plan;
+    void plan;  // 호환 — 실제 소스는 state.rescaleEvents
+    const el = $("rescale-applied-summary");
+    if (!el) return;  // 요소가 없으면 조용히 무동작
+    const events = state.rescaleEvents || [];
+    if (!events.length) { el.hidden = true; el.innerHTML = ""; return; }
+    const last = events[events.length - 1];
+    // 승인 정보 — approver(정식 승인) 또는 absence_reason(책임자 부재). finalizeRescale 이
+    // 둘 중 하나만 채운다. 어느 쪽도 없으면(구경로) 승인 정보 없이 회수만 표시.
+    const approval = last.approver
+      ? ` · 승인: ${esc(String(last.approver))}`
+      : last.absence_reason
+        ? ` · 책임자 부재(${esc(String(last.absence_reason))})`
+        : "";
+    el.innerHTML =
+      `증량 ${events.length}회 적용 — `
+      + `(${fmt(last.before_total)} → ${fmt(last.after_total)} g)`
+      + approval;
+    el.hidden = false;
   }
   function clearRescaleSummary() {
     const el = $("rescale-applied-summary");
@@ -2549,6 +2578,14 @@
 
   // 나눠 담기/추가 계량의 유일한 진입문 — 항상 상태 선택을 거친다.
   function requestAddWeigh(idx, options) {
+    // 총 배합량 미입력(이론량 없음) 상태에선 목표가 0이라 그림 선택→담기 창이 열리자마자
+    // 자동 완료되는 무의미 흐름이 된다(F2). 목표가 있어야만 진입한다.
+    if (!state.items[idx] || !(Number(state.items[idx].theory_amount) > 0)) {
+      notify('총 배합량을 먼저 입력하세요 — 목표가 있어야 나눠 담기·추가 계량을 시작할 수 있습니다.', 'warn');
+      const totalInput = document.getElementById('blend-total');
+      if (totalInput) totalInput.focus();
+      return;
+    }
     openScaleStateModal({ idx, options: options || null });
   }
 
@@ -3258,6 +3295,9 @@
       lotCheckCache.clear();
       state.manualApproved = null;  // 저장 완료 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
       clearRescaleSummary();
+      // 저장 성공 직후 LOT 미리보기가 방금 저장한 LOT 을 그대로 보여주던 문제(F5) —
+      // 다음 순번을 즉시 재조회해 갱신한다(다음 입력 때에야 바뀌던 것을 고친다).
+      updateLotPreview();
       if (state.workerPad) state.workerPad.clear();
       // 증량 총량을 되돌렸으면 이론량도 그 총량 기준으로 다시 산출(표시값 정합).
       if (restoredTotal !== null) {

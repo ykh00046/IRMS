@@ -97,9 +97,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 상세 모달 — 증량 이력(전 총량→후 총량, 승인자 또는 부재 사유).
-  function rescaleBlock(id) {
-    const info = rescaleMap[id];
-    const events = (info && info.rescale_events) || [];
+  // 이벤트 목록은 상세 API 가 내려주는 rec.rescale_events_json 에서 그린다 — rescaleMap
+  // 의 rescale_events 는 프라이버시 마스킹판이라 approver 가 빠져 정식 승인 건도
+  // '(책임자 부재)'로 허위 표시되었다(F8). rescaleMap 은 미확인 플래그·[확인 처리] 버튼
+  // 판정에만 계속 쓴다.
+  function rescaleBlock(rec) {
+    if (!rec) return "";
+    const id = rec.id;
+    const info = rescaleMap[id] || {};
+    let events = [];
+    if (rec.rescale_events_json) {
+      try {
+        const parsed = JSON.parse(rec.rescale_events_json);
+        if (Array.isArray(parsed)) events = parsed;
+      } catch (_e) { events = []; }  // 손상된 JSON — 빈 배열로 폴백
+    }
     if (!events.length) return "";
     const rows = events
       .map((e, i) => {
@@ -353,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
       </div>
       ${bulkLine}
-      ${rescaleBlock(rec.id)}
+      ${rescaleBlock(rec)}
       ${manualBlock(rec)}
       ${discardBlock(rec)}
       <div class="table-wrap"><table class="blend-table">

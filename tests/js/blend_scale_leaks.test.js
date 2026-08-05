@@ -22,6 +22,7 @@ const path = require("node:path");
 const SRC = path.join(__dirname, "..", "..", "static", "js");
 const cont = fs.readFileSync(path.join(SRC, "blend_continuous.js"), "utf8");
 const blend = fs.readFileSync(path.join(SRC, "blend.js"), "utf8");
+const statusSrc = fs.readFileSync(path.join(SRC, "status.js"), "utf8");
 
 /** 이름으로 함수 본문만 잘라낸다. */
 function bodyOf(src, name) {
@@ -270,4 +271,31 @@ test("담기 창의 큰 숫자는 모드별로 다르다 — 누계 모드는 �
   assert.match(body, /_awMode === "loaded"/, "모드 분기가 있어야 한다");
   assert.match(body, /저울 표시가 이 값이 될 때까지/, "누계 모드 라벨 = 표시창 기준 목표");
   assert.match(body, /is-cumulative/, "누계 모드는 색으로도 구분한다");
+});
+
+// F8 — 상세 증량 이력(rescaleBlock)은 마스킹된 rescaleMap 이 아닌 rec.rescale_events_json
+// 에서 그려야 정식 승인 건이 '(책임자 부재)'로 허위 표시되지 않는다.
+test("rescaleBlock(status.js) 은 rescaleMap 이 아닌 rec.rescale_events_json 에서 이벤트를 그린다", () => {
+  const body = bodyOf(statusSrc, "rescaleBlock");
+  assert.match(body, /rescale_events_json/,
+    "rescaleBlock 은 rec.rescale_events_json(JSON.parse) 에서 이벤트를 읽어야 한다 — rescaleMap 은 마스킹판");
+  // 마스킹판 rescaleMap 의 rescale_events 에서 직접 읽으면 안 된다.
+  assert.ok(
+    !/info\.rescale_events\b|rescaleMap\[.+\]\.rescale_events/.test(body),
+    "rescaleMap.rescale_events(마스킹)에서 읽으면 정식 승인 건도 부재로 허위 표시된다",
+  );
+  // 미확인 플래그·[확인 처리] 버튼 판정은 rescaleMap 을 계속 쓴다(별개 목적).
+  assert.match(body, /rescale_unacked/,
+    "미확인 플래그·[확인 처리] 버튼 판정은 rescaleMap.rescale_unacked 를 계속 쓴다");
+});
+
+// F2 — 총 배합량 미입력(이론량 없음) 상태에서 나눠 담기/추가 계량 진입을 막는 가드.
+test("requestAddWeigh(blend.js) 는 theory_amount 가 0/없으면 진입을 막는다", () => {
+  const body = bodyOf(blend, "requestAddWeigh");
+  assert.match(body, /theory_amount/,
+    "requestAddWeigh 는 state.items[idx].theory_amount 가드를 가져야 한다 — 목표 0인 무의미 흐름 방지");
+  assert.match(body, /총 배합량을 먼저 입력하세요/,
+    "이론량이 없으면 '총 배합량을 먼저 입력하세요' 안내 후 돌아가야 한다");
+  assert.match(body, /blend-total/,
+    "가드에 걸리면 총 배합량 입력(#blend-total)으로 포커스를 보내야 한다");
 });

@@ -882,9 +882,16 @@
    전엔 입력칸이 100% 를 차지해 버튼들이 셀 폭을 넘어 편차 열 위로 흘러넘쳤다
    (증량 배합 시 "글자가 겹쳐 보인다" 현장 신고). 좁으면 버튼이 아랫줄로 감싼다
    — 옆 열을 침범하는 것보다 낫다. */
+/* td 자체는 table-cell 로 둬 행 경계선(border-bottom)이 전 열에서 일직선이 되게 하고,
+   입력칸+버튼 폭 분배는 td 안의 .blend-actual-flex 래퍼가 flex 로 담당한다(1366px F4 —
+   td 에 display:flex 를 주면 셀 경계가 이웃 열과 미세하게 어긋났다). */
 .blend-table td.blend-actual-cell {
+  white-space: normal;
+  min-width: 11rem;
+}
+.blend-table td.blend-actual-cell .blend-actual-flex {
   display: flex; align-items: center; flex-wrap: wrap;
-  justify-content: flex-end; gap: 4px; min-width: 11rem;
+  justify-content: flex-end; gap: 4px;
 }
 .blend-table td.blend-actual-cell .blend-actual {
   flex: 1 1 6.5rem; min-width: 6.5rem; width: auto;

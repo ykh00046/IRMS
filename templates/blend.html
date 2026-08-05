@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260805f" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260805g" />
 {% endblock %}
 
 {% block content %}
@@ -108,6 +108,11 @@
               </div>
             </section>
           </div>
+
+          <!-- 증량 적용 상시 표시줄 — 증량 N회·직전 before→after·승인자/부재 사유 한 줄.
+               총량 잠금만으로는 '지금 증량된 상태인지'가 안 보여 추가(다중 계량의
+               #cont-rescale-applied-summary 와 대응, F7). blend.js renderRescaleSummary 가 채운다. -->
+          <div id="rescale-applied-summary" class="rescale-applied-summary" hidden></div>
 
           <section class="panel">
             <div class="table-wrap">
@@ -464,7 +469,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805h"></script>
+    <script src="/static/js/blend.js?v=20260805j"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
