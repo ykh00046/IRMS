@@ -775,12 +775,24 @@ def build_router() -> APIRouter:
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
         now = utc_now_text()
-        # 제품(레시피)명으로 점도 제품을 자동 확보 — 사용자는 점도 숫자만 입력.
-        product = viscosity_service.ensure_product_by_code(
-            connection, record["product_name"], record["product_name"], now
-        )
-        if not product:
-            raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
+        # 점도 화면이 선택한 반제품(product_id)이 들어오면 그 제품으로 귀속한다(F13).
+        # 없으면(레거시 호환) 배합 기록의 제품(레시피)명으로 자동 확보한다. product_id 경로가
+        # 있어야 화면이 고른 반제품(스펙 있음)으로 들어가고, ensure_product_by_code 가 화면
+        # 선택을 무시하고 유령 반제품(스펙 없음)을 조용히 만드는 사고가 막힌다.
+        product = None
+        if body.product_id is not None:
+            product = viscosity_service.get_product(connection, body.product_id)
+            if not product or not product.get("is_active"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="선택한 반제품을 찾을 수 없습니다 — 반제품을 다시 선택하세요.",
+                )
+        else:
+            product = viscosity_service.ensure_product_by_code(
+                connection, record["product_name"], record["product_name"], now
+            )
+            if not product:
+                raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
         first_lot = record["details"][0]["material_lot"] if record["details"] else None
         try:
             viscosity_service.add_reading(

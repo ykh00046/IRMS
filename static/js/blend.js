@@ -599,7 +599,19 @@
         _modalPrintWarned = true;
         notify("안내 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 창의 버튼으로 먼저 마쳐주세요.", "warn");
       }
-      scaleEventSynced = false;
+      // 모달이 열려 있는 동안에도 이벤트 커서는 전진시켜 stale PRINT 를 그 자리에서 버린다.
+      // 종전에는 synced=false 로 두고 닫힌 뒤 첫 폴을 통째로 재동기화로 삼켰는데, 그 폴
+      // 주기(≤0.8s) 안에 들어온 '그림 선택 직후의 유효한 PRINT'까지 무음 소실됐다(주행
+      // 재현 2026-08-05). 커서만 전진하고 적용은 안 하므로 차단 성질은 그대로다.
+      try {
+        const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
+          signal: AbortSignal.timeout(1500),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          scaleEventLast = data.last_id || scaleEventLast;
+        }
+      } catch (_e) { /* 폴링 실패는 조용히 */ }
       return;
     }
     _modalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
@@ -982,6 +994,30 @@
       if (blendDrafts && state.draftSlotId) blendDrafts.removeSlot(DRAFT_KIND, state.draftSlotId);
     } catch (_e) { /* 무시 */ }
     state.draftSlotId = null;
+  }
+
+  // F12: 본인 초안(이 kind)이 1건 이상이면 페이지 로드당 1회 안내 + 사이드바
+  // [작성 중 배합] 링크에 개수 배지. 초안 복구로 진입한 경우는 호출부에서 제외한다(중복 안내 금지).
+  // localStorage 직접 파싱 금지 — blendDrafts.listAll(localStorage) 사용.
+  function notifyDraftCount(kind) {
+    if (!blendDrafts || typeof blendDrafts.listAll !== "function") return;
+    let slots = [];
+    try { slots = blendDrafts.listAll(localStorage).filter((s) => s.kind === kind); }
+    catch (_e) { return; }  // 저장소 접근 불가 등 — 조용히 무동작
+    if (!slots.length) return;
+    notify(`작성 중 배합 ${slots.length}건이 있습니다 — 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
+    // 사이드바 링크에 개수 배지(이미 있으면 갱신).
+    const link = document.querySelector('a[href="/blend/drafts"]');
+    if (link) {
+      const badgeCls = "nav-draft-count-badge";
+      let badge = link.querySelector("." + badgeCls);
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = badgeCls;
+        link.appendChild(badge);
+      }
+      badge.textContent = String(slots.length);
+    }
   }
 
   // 초안 즉시 저장(동기 flush) — 유휴 자동 로그아웃 직전 진행분을 잃지 않도록,
@@ -3685,6 +3721,11 @@
     // 그 화면의 [이어서 하기]가 sessionStorage 에 슬롯 id 를 남기고 여기로 보낸다.
     const resumeId = blendDrafts ? blendDrafts.takeResume("blend") : null;
     if (resumeId) restoreDraft(resumeId).catch((e) => notify(e.message, "error"));
+    // F12: 초안 복구로 진입한 경우(resumeId)가 아니면, 본인 초안이 있는데 빈 폼일 때
+    // 안내가 전혀 없던 문제를 고친다 — 초안이 1건 이상이면 페이지 로드당 1회 안내 +
+    // 사이드바 [작성 중 배합] 링크에 개수 배지. localStorage 직접 파싱 금지: 라이브러리
+    // listAll(localStorage) 사용.
+    if (!resumeId) notifyDraftCount("blend");
     const noticeClose = $("blend-draft-notice-close");
     if (noticeClose) noticeClose.addEventListener("click", () => showDraftNotice(""));
     // 총량·비고·반응기 변경도 임시 저장에 반영.

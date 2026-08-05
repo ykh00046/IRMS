@@ -542,6 +542,109 @@ def test_blend_viscosity_route_links_reading():
     assert dup.status_code == 409  # 같은 LOT 중복 등록 차단
 
 
+def test_blend_viscosity_product_id_uses_chosen_product_no_ghost():
+    """F13 — POST /blend/records/{id}/viscosity 에 product_id 를 주면 그 반제품으로 귀속되고,
+    유령 반제품(스펙 없음)이 새로 생기지 않는다. 화면이 선택한 반제품이 정확히 쓰여야 한다."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    from src.db import get_connection
+
+    client = TestClient(mainmod.app)
+    worker = "점도F13" + uuid.uuid4().hex[:6]
+    prod = "VF13" + uuid.uuid4().hex[:4]  # 배합 기록의 제품명(= ensure_product_by_code 의 code)
+
+    def headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")  # csrf 쿠기 확보
+    client.post("/api/workers", json={"name": worker}, headers=headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-08-05",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
+    }, headers=headers())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    # 화면이 고를 '정식' 반제품 하나를 별도로 만든다(스펙 포함) — product_id 로 지정할 대상.
+    chosen_code = "CHOSEN" + uuid.uuid4().hex[:4]
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO viscosity_products (code, name, target, lower_limit, upper_limit, "
+            "sigma_k, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+            (chosen_code, chosen_code, 5000.0, 4800.0, 5200.0, 3, "2026-08-05T00:00:00Z"),
+        )
+        conn.commit()
+        chosen_id = conn.execute(
+            "SELECT id FROM viscosity_products WHERE code = ?", (chosen_code,)
+        ).fetchone()["id"]
+
+    # product_id 지정 등록 → 그 제품으로 귀속.
+    res = client.post(f"/api/blend/records/{rid}/viscosity",
+                      json={"viscosity": 4950.0, "product_id": chosen_id}, headers=headers())
+    assert res.status_code == 200, res.text
+
+    # 유령 반제품이 새로 생기지 않았는지 확인 — prod(code=prod) 제품은 존재하지 않아야 한다.
+    with get_connection() as conn:
+        ghost = conn.execute(
+            "SELECT id FROM viscosity_products WHERE code = ?", (prod,)
+        ).fetchone()
+        assert ghost is None, "product_id 를 줬는데도 ensure_product_by_code 가 유령 제품을 만들었다(F13)"
+        # 방금 등록된 측정이 chosen_id 제품에 귀속됐는지 확인.
+        linked = conn.execute(
+            "SELECT product_id FROM viscosity_readings WHERE blend_record_id = ?", (rid,)
+        ).fetchone()
+        assert linked is not None and linked["product_id"] == chosen_id, "측정이 지정한 반제품에 귀속되지 않았다"
+
+
+def test_blend_viscosity_invalid_product_id_400():
+    """F13 — product_id 가 존재하지 않거나 비활성이면 400 '선택한 반제품을 찾을 수 없습니다'."""
+    import importlib
+    import uuid
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    worker = "점도F13b" + uuid.uuid4().hex[:6]
+    prod = "VF13B" + uuid.uuid4().hex[:4]
+
+    def headers():
+        tok = client.cookies.get("csrftoken")
+        return {"x-csrftoken": tok} if tok else {}
+
+    client.get("/api/blend/records")
+    client.post("/api/workers", json={"name": worker}, headers=headers())
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers())
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-08-05",
+        "total_amount": 100,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100, "actual_amount": 100, "material_lot": "LA"}],
+    }, headers=headers())
+    assert created.status_code == 200, created.text
+    rid = created.json()["id"]
+
+    # 존재하지 않는 product_id → 400.
+    res = client.post(f"/api/blend/records/{rid}/viscosity",
+                      json={"viscosity": 4950.0, "product_id": 99999999}, headers=headers())
+    assert res.status_code == 400, res.text
+    assert "선택한 반제품을 찾을 수 없습니다" in res.json().get("detail", "")
+
+
 def test_list_blend_records_filters():
     conn = _make_db()
     rid = _seed_recipe(conn)

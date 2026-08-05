@@ -299,3 +299,22 @@ test("requestAddWeigh(blend.js) 는 theory_amount 가 0/없으면 진입을 막�
   assert.match(body, /blend-total/,
     "가드에 걸리면 총 배합량 입력(#blend-total)으로 포커스를 보내야 한다");
 });
+
+// 게이트 해제 직후 첫 PRINT 무음 소실 방지 — 차단 모달이 열려 있는 동안에도 이벤트
+// 커서(scaleEventLast)는 전진시켜 stale 을 그 자리에서 버려야 한다. 종전처럼 synced=false
+// 로 두면 닫힌 뒤 첫 폴을 통째로 재동기화로 삼켜, 그 폴 주기(≤0.8s) 안에 들어온
+// '그림 선택 직후의 유효한 PRINT'까지 조용히 사라졌다(주행 재현 2026-08-05).
+for (const [label, src] of [["blend.js", blend], ["blend_continuous.js", cont]]) {
+  test(`pollScaleEvents(${label}) 게이트 분기는 커서를 전진시키고 synced 를 유지한다`, () => {
+    const body = bodyOf(src, "pollScaleEvents");
+    const gateStart = body.indexOf("printBlockingModalVisible()");
+    assert.notStrictEqual(gateStart, -1, "게이트 분기(printBlockingModalVisible)가 있어야 한다");
+    const gateEnd = body.indexOf("_modalPrintWarned = false", gateStart);
+    assert.notStrictEqual(gateEnd, -1, "게이트 분기의 끝 표식(_modalPrintWarned = false)을 찾지 못했다");
+    const gate = body.slice(gateStart, gateEnd);
+    assert.match(gate, /scaleEventLast\s*=/,
+      "게이트 분기 안에서 이벤트 커서(scaleEventLast)를 전진시켜 stale 을 즉시 버려야 한다");
+    assert.ok(!gate.includes("scaleEventSynced = false"),
+      "게이트 분기가 synced=false 로 되돌리면 닫힌 뒤 첫 폴이 유효 PRINT 까지 삼킨다");
+  });
+}

@@ -425,6 +425,30 @@
     state.draftSlotId = null;
   }
 
+  // F12: 본인 초안(이 kind)이 1건 이상이면 페이지 로드당 1회 안내 + 사이드바
+  // [작성 중 배합] 링크에 개수 배지. 초안 복구로 진입한 경우는 호출부에서 제외한다(중복 안내 금지).
+  // localStorage 직접 파싱 금지 — blendDrafts.listAll(localStorage) 사용.
+  function notifyDraftCount(kind) {
+    if (!blendDrafts || typeof blendDrafts.listAll !== "function") return;
+    let slots = [];
+    try { slots = blendDrafts.listAll(localStorage).filter((s) => s.kind === kind); }
+    catch (_e) { return; }  // 저장소 접근 불가 등 — 조용히 무동작
+    if (!slots.length) return;
+    notify(`작성 중 배합 ${slots.length}건이 있습니다 — 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
+    // 사이드바 링크에 개수 배지(이미 있으면 갱신).
+    const link = document.querySelector('a[href="/blend/drafts"]');
+    if (link) {
+      const badgeCls = "nav-draft-count-badge";
+      let badge = link.querySelector("." + badgeCls);
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = badgeCls;
+        link.appendChild(badge);
+      }
+      badge.textContent = String(slots.length);
+    }
+  }
+
   // 복구 후 남는 안내 상자(사라진 재료의 계량값·신규 재료·기준 배합량 변경).
   // 토스트는 사라지므로, 값이 걸린 고지는 화면에 남긴다.
   function showDraftNotice(html) {
@@ -598,7 +622,19 @@
         _modalPrintWarned = true;
         notify("안내 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 창의 버튼으로 먼저 마쳐주세요.", "warn");
       }
-      scaleEventSynced = false;
+      // 모달이 열려 있는 동안에도 이벤트 커서는 전진시켜 stale PRINT 를 그 자리에서 버린다.
+      // 종전에는 synced=false 로 두고 닫힌 뒤 첫 폴을 통째로 재동기화로 삼켰는데, 그 폴
+      // 주기(≤0.8s) 안에 들어온 '그림 선택 직후의 유효한 PRINT'까지 무음 소실됐다(주행
+      // 재현 2026-08-05). 커서만 전진하고 적용은 안 하므로 차단 성질은 그대로다.
+      try {
+        const res = await fetch(`${SCALE_URL}/events?after=${scaleEventLast}`, {
+          signal: AbortSignal.timeout(1500),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          scaleEventLast = data.last_id || scaleEventLast;
+        }
+      } catch (_e) { /* 폴링 실패는 조용히 */ }
       return;
     }
     _modalPrintWarned = false;  // 모달이 닫혔으니 다음 열림 때 다시 안내
@@ -647,7 +683,10 @@
     const picked = pickScaleRow({
       addModeIdx: state.addModeCell,
       addWeighIdx: _addWeighCell,
-      shortageIdx: null,        // 다중 계량엔 부족 모달 라우팅이 없다(직접 alert 경로).
+      // 부족 채움 대기 중인 셀(_contScaleStateShortageCell) — 그림 선택 창이 떠 있는 동안
+      // PRINT 는 게이트가 버리지만, 강조 표시·라우팅은 이 셀을 가리켜야 한다(F11′).
+      // 지금까지 null 이라 강조가 다음 빈 셀로 가 표시와 실제 PRINT 가 어긋났다.
+      shortageIdx: _contScaleStateShortageCell,
       stickyIdx: t,
       stickyValid,
       focusedIdx: focusedCell,
@@ -2113,6 +2152,9 @@
     modal.hidden = false;
     const first = $("cont-scale-state-tared");
     if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
+    // 부족 컨텍스트가 잡혔으면 저울 대상 강조를 부족 셀로 옮긴다(F11′) — 그림 선택 창이
+    // 떠 있는 동안 강조가 다음 빈 셀에 가면 표시와 실제 PRINT 라우팅이 어긋난다.
+    updateScaleTargetIndicator();
   }
 
   function closeContScaleStateModal() {
@@ -2219,9 +2261,10 @@
       actualInput.readOnly = true;
     }
     input.focus();
+    // 추가 모드 진입 직후 저울 대상 표시 갱신(F11′) — 부족 셀 강조가 추가 모드 셀로
+    // 자연스럽게 이어지게(모달에서 그림을 고른 직후의 표시·라우팅 일치).
+    updateScaleTargetIndicator();
   }
-
-  // 추가분을 셀의 누계(actual) 에 합산하고 UI 갱신. blend.js applyAddAmount(91caf17) 이식.
   function applyAddAmount(i, j, add) {
     const cell = state.cells[i] && state.cells[i][j];
     if (!cell) return;
@@ -2238,8 +2281,13 @@
       input.classList.remove("manual-warn");
     }
     // 인라인 입력칸 제거 + 추가 모드 해제(단일 추가 완료). 잔여 배지는 renderAddBadges 가 갱신.
+    // ⚠️ _applied 를 먼저 세운다 — 포커스된 입력칸을 remove() 하면 Chrome 이 제거 도중
+    // blur 를 동기 발화하고, blur 취소 경로가 재진입해 입력칸을 먼저 제거하면 이
+    // remove() 가 NotFoundError 로 죽는다. 그 예외가 폴러의 조용한 catch 로 삼켜져
+    // 아래 편차 갱신·배지 렌더가 전부 건너뛰어졌다(편차 -20 고착, 주행 재현 2026-08-05).
+    // Enter 확정 경로가 같은 이유로 이미 쓰는 플래그를 PRINT 경로도 세우는 것.
     const inline = document.querySelector(`.blend-add-inline[data-i="${i}"][data-j="${j}"]`);
-    if (inline) inline.remove();
+    if (inline) { inline._applied = true; inline.remove(); }
     state.addModeCell = null;
     const actualInput = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
     if (actualInput) {
@@ -2249,6 +2297,11 @@
     updateCellVar(i, j);
     warnIfVariance(i, j);
     renderAddBadges(j);
+    // F10: 저울 PRINT 로 부족분을 채운 뒤에도 편차 표시(.cont-var)가 옛 값(빨간 -20.00)
+    // 에 멈추는 현장 신고. renderAddBadges 가 대기 셀(배지 표시)의 텍스트를 비우므로, 그
+    // 이후에 한 번 더 updateCellVar 를 돌려 채워진 셀의 편차가 실제 상태를 반영하게 한다.
+    // (대기 셀은 updateCellVar 내부에서 억제되어 배지가 살아있고, 충족된 셀은 편차로 복원.)
+    updateCellVar(i, j);
     // ⚠️ _addWeighCell 수명 — 여기서 놓으면 이후 모든 PRINT 가 이 셀에 계속 합산된다.
     // 이 참조는 "아직 더 담아야 하는 동안"만 살아야 한다. 배합 화면은 모달이 열려 있는
     // 동안으로 묶여 있고 닫힐 때 반드시 해제되지만, 여기 인라인 입력칸은 한 번 적용하면
@@ -2716,6 +2769,8 @@
     // 그 화면의 [이어서 하기]가 sessionStorage 에 슬롯 id 를 남기고 여기로 보낸다.
     const resumeId = blendDrafts ? blendDrafts.takeResume("cont") : null;
     if (resumeId) restoreDraft(resumeId).catch((e) => notify(e.message, "error"));
+    // F12: 초안 복구로 진입(resumeId)이 아니면 본인 초안이 있을 때 안내 + 사이드바 배지.
+    if (!resumeId) notifyDraftCount("cont");
     detectScale();
     setInterval(detectScale, 30000);
     setInterval(pollScaleEvents, 800);

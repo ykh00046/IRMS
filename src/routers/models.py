@@ -315,10 +315,13 @@ class BlendContinuousBody(BaseModel):
 
 
 class BlendViscosityBody(BaseModel):
-    # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요.
-    # 반응기는 배합 실적에서 물려받으므로 여기서 입력하지 않는다.
+    # 제품은 배합 기록의 제품(레시피)명으로 자동 확보 — product_id 입력 불필요(레거시).
+    # 단, 점도 화면이 선택한 반제품(product_id)이 들어오면 그 제품으로 귀속한다(F13) —
+    # 없으면 ensure_product_by_code 가 화면 선택을 무시하고 유령 반제품(스펙 없음)을
+    # 조용히 만들었다. 반응기는 배합 실적에서 물려받으므로 여기서 입력하지 않는다.
     viscosity: float = Field(gt=0, le=100000)
     memo: str | None = Field(default=None, max_length=1000)
+    product_id: int | None = Field(default=None, gt=0)
 
 
 def _validate_signature(value: str | None) -> str | None:

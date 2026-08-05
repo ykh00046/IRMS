@@ -95,7 +95,17 @@
       `"${worker}" 님은 처음 등록하는 작업자입니다. 소속 파트를 선택해 주세요.`;
     partDialog.hidden = false;
     isPartDialogOpen = true;
-    const firstBtn = partDialog.querySelector("[data-part]");
+    // F9: 폼에서 이미 파트를 골랐으면 모달에서 해당 파트를 사전 선택(하이라이트)한다.
+    // 안 그러면 처음부터 다시 골라야 해서 한 번의 확인이 두 번이 된다. 미선택이면 기존 동작.
+    const preselect = currentPart();
+    const buttons = partDialog.querySelectorAll("[data-part]");
+    let focusBtn = null;
+    buttons.forEach((b) => {
+      const match = preselect && preselect !== "__none__" && b.dataset.part === preselect;
+      b.classList.toggle("accent", Boolean(match));  // 기존 .btn.accent 로 하이라이트
+      if (match) focusBtn = b;
+    });
+    const firstBtn = focusBtn || partDialog.querySelector("[data-part]");
     if (firstBtn) firstBtn.focus();
     return new Promise((resolve) => {
       partDialogResolver = resolve;

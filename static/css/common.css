@@ -373,6 +373,20 @@ body {
   color: #fff;
 }
 
+/* 작성 중 배합 개수 배지 — blend.js/blend_continuous.js notifyDraftCount 가 붙인다(F12). */
+.nav-draft-count-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--accent, #e8842c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 16px;
+}
+
 .side-link:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.72);
   outline-offset: 2px;

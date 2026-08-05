@@ -820,9 +820,11 @@
     const lotNo = submittedRecord ? submittedRecord.product_lot : null;
     try {
       // 반응기는 배합 실적에서 지정하고 점도는 실적에서 물려받는다(여기서 입력하지 않음).
+      // product_id: 현재 선택한 반제품으로 귀속(F13) — 없으면 서버가 레거시 경로(레코드
+      // 제품명으로 자동 확보)를 쓴다. 화면 선택을 서버가 무시해 유령 반제품이 생기던 사고 방지.
       await request(`/blend/records/${recordId}/viscosity`, {
         method: "POST",
-        body: { viscosity: value, memo: $("visc-memo").value.trim() || null },
+        body: { viscosity: value, memo: $("visc-memo").value.trim() || null, product_id: state.currentId },
       });
       $("visc-value").value = "";
       $("visc-memo").value = "";
