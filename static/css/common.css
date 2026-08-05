@@ -436,8 +436,10 @@ body {
 .side-ico-viscosity::after { inset: 9px 5px 4px; }
 .side-ico-status::before { inset: 4px 3px 11px; box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
 .side-ico-status::after { display: none; }
-.side-ico-bulk::before { inset: 4px 8px; }
-.side-ico-bulk::after { inset: 8px 4px; }
+/* '+' 십자 — 막대 2px 는 소수 DPI 배율(듀얼 모니터 100%↔125% 등)에서 장치 픽셀
+   반올림으로 사라져 보인다(현장 신고 2026-08-05). 4px 로 두껍게 유지. */
+.side-ico-bulk::before { inset: 3px 7px; border-radius: 2px; }
+.side-ico-bulk::after { inset: 7px 3px; border-radius: 2px; }
 .side-ico-dashboard::before { inset: 10px 4px 4px; }
 .side-ico-dashboard::after { inset: 4px 4px 11px; box-shadow: 0 5px 0 currentColor; }
 .side-ico-recipes::before { inset: 4px 3px 11px; box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
