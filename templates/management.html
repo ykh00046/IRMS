@@ -96,6 +96,38 @@
                     <select id="imp-stage1" class="input"><option value="">없음</option></select>
                     <p class="imp-attr-desc">이 레시피(2차)의 1차 레시피를 고릅니다. 지정하면 현황에서 1차/2차가 한 가족으로 묶이고, 재료로 넣은 1차 반제품(예: SBCT-1)은 코드 없이도 정상 인식됩니다.</p>
                   </div>
+                  <!-- 기준 자재 3단 그림(중순위, 2026-08-05) — '실측이 목표를 만든다'는 역전이
+                       글로는 안 읽힌다: 보통은 목표→계량인데 기준 자재는 계량→목표다. -->
+                  <div class="imp-attr-span">
+                    <details class="mg-flow">
+                      <summary>기준 자재가 뭘 하는지 그림으로 보기</summary>
+                      <div class="mg-flow-body">
+                        <svg viewBox="0 0 680 128" class="mg-flow-svg" role="img"
+                             aria-label="기준 자재 3단 — 기준 자재를 먼저 실측하면, 그 실측값으로 총량이 도출되고, 나머지 자재의 목표가 다시 계산된다">
+                          <rect x="10" y="22" width="200" height="76" rx="10" class="mg-flow-box"/>
+                          <text x="110" y="46" class="mg-flow-title">① 기준 자재 먼저 계량</text>
+                          <text x="110" y="68" class="mg-flow-line">예: PB 실측 <tspan class="mg-flow-strong">1,020 g</tspan></text>
+                          <text x="110" y="88" class="mg-flow-line">(이 행은 편차 검사 없음)</text>
+                          <line x1="210" y1="60" x2="228" y2="60" class="mg-flow-arrow"/>
+                          <polygon points="228,53 242,60 228,67" class="mg-flow-arrow-head"/>
+                          <rect x="242" y="22" width="196" height="76" rx="10" class="mg-flow-box"/>
+                          <text x="340" y="46" class="mg-flow-title">② 총량이 따라온다</text>
+                          <text x="340" y="68" class="mg-flow-line">실측 ÷ 비율 = 총 배합량</text>
+                          <text x="340" y="88" class="mg-flow-line">(총량을 손으로 안 넣음)</text>
+                          <line x1="438" y1="60" x2="456" y2="60" class="mg-flow-arrow"/>
+                          <polygon points="456,53 470,60 456,67" class="mg-flow-arrow-head"/>
+                          <rect x="470" y="22" width="200" height="76" rx="10" class="mg-flow-box mg-flow-box2"/>
+                          <text x="570" y="46" class="mg-flow-title">③ 나머지 목표 재계산</text>
+                          <text x="570" y="68" class="mg-flow-line">다른 자재의 이론량이</text>
+                          <text x="570" y="88" class="mg-flow-line">실측 기준으로 다시 잡힘</text>
+                        </svg>
+                        <p class="mg-flow-note">
+                          보통 배합은 <b>목표 → 계량</b>이지만, 기준 자재 레시피는
+                          <b>계량(실측) → 목표</b>로 방향이 반대입니다. 그래서 기준 자재를 항상 먼저 답니다.
+                        </p>
+                      </div>
+                    </details>
+                  </div>
                   <!-- 2단 제조 흐름도(P-3, 2026-08-05) — 파생/1차 레시피/반응기 세 설정은 서로
                        독립인데 글 설명만으로는 구분이 안 돼, 잘못 지정하면 2차 배합의 총량
                        자체가 틀린다. 그림이 세 개념을 분리해 보여준다. 기본 접힘. -->

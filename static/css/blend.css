@@ -385,23 +385,9 @@
   text-decoration: none;
 }
 
-/* 증량 취소 링크(#rescale-undo)만 절대배치 오버레이로 — 일반 흐름에 두면 필드 높이가
-   커져 총 배합량 입력칸이 이웃 필드보다 위로 밀린다(하단 정렬 그리드). 버튼 아래는 어차피
-   빈 공간이라 겹쳐 그린다. 기준 버튼(#blend-base-links)은 라벨 줄(.blend-label-row)로
-   옮겨 다중 계량 화면과 배치를 통일(2026-07-31). */
+/* '방금 증량 취소' 버튼·도구줄은 2026-08-05 제거 — 승인제 이후 유령 승인(승인 기록만
+   남고 증량 이벤트가 사라짐)을 만들던 기능(사용자 결정). blend.js 주석 참조. */
 .blend-field-total { position: relative; }
-.blend-total-tools {
-  position: absolute; top: 100%; left: 0; min-width: 100%;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-  margin-top: 3px; z-index: 5; white-space: nowrap;
-}
-.blend-total-tools:has(#rescale-undo[hidden]) { display: none; }
-/* 방금 증량 취소 — 총량 도구줄 안의 링크형 버튼(blend.html 인라인 <style>에서 이동 2026-07-31) */
-.blend-undo-link {
-  margin-left: auto; padding: 0; border: 0; background: none; cursor: pointer;
-  color: #b45309; font-size: 0.75rem; font-weight: 600; text-decoration: underline;
-}
-.blend-undo-link[hidden] { display: none; }
 
 /* 증량 적용 요약 — 증량 후 저장·초기화·레시피 변경 전까지 자재별 추가분 상시 표시.
    주황 계열(기존 rescale 배지·취소 링크와 동일 톤)으로 증량 상태임을 강조. */
@@ -601,6 +587,33 @@
   color: var(--cal-accent, #b45309); font-size: 0.78rem; text-decoration: underline;
 }
 .scale-state-chip[hidden] { display: none; }
+
+/* 폐기 질문 그림 2장(2026-08-05) — 숫자 정정(자재 그대로) vs 실물 폐기(폐기통).
+   버튼이 곧 선택지이고 그림은 실물 차이만 보여준다(비상호작용, aria-hidden). */
+.discard-ask-pics {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;
+  margin: 0.7rem 0 0.4rem;
+}
+.discard-ask-pic {
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  padding: 0.7rem 0.5rem; border-radius: 10px;
+  background: var(--bg-surface-200, #fafbfd);
+  border: 1.5px solid var(--border-subtle, #d8dfeb);
+}
+.discard-ask-pic svg { width: 110px; height: auto; }
+.discard-ask-pic-label { font-size: 0.8rem; font-weight: 700; color: var(--text-primary, #15233f); }
+.discard-ask-pic.is-discard { border-color: #fdba74; background: #fffbf5; }
+.discard-ask-pic.is-discard .discard-ask-pic-label { color: #b45309; }
+.discard-ask-pic .da-glass { fill: #ffffff; stroke: #1b4079; stroke-width: 2.5; stroke-linejoin: round; }
+.discard-ask-pic .da-rim { fill: #ffffff; stroke: #1b4079; stroke-width: 2.5; }
+.discard-ask-pic .da-liq { fill: #f47c26; opacity: 0.4; }
+.discard-ask-pic .da-num {
+  font: 700 12px sans-serif; fill: #2563eb; text-anchor: middle;
+}
+.discard-ask-pic .da-pour { fill: none; stroke: #f47c26; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 2 4; }
+.discard-ask-pic .da-bin { fill: #fef3c7; stroke: #b45309; stroke-width: 2.5; stroke-linejoin: round; }
+.discard-ask-pic .da-bin-line { stroke: #b45309; stroke-width: 1.5; }
+.discard-ask-pic .da-bin-lid { fill: #fde68a; stroke: #b45309; stroke-width: 2; }
 
 /* 배합 기록 전체 수정(책임자) */
 .edit-head-grid {

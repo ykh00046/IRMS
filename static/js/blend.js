@@ -114,9 +114,6 @@
     // 증량 적용 요약줄(#rescale-applied-summary) 표시용 plan 스냅샷. 저장·초기화·
     // 레시피 변경 시까지 유지(타이핑 중에는 사라지지 않는다).
     rescaleAppliedPlan: null,
-    // '방금 증량 취소'용 스냅샷(증량 직전 총량·이론량). 추가분을 넣기 시작하거나
-    // 레시피 변경·저장 시 무효화(null). 있으면 #rescale-undo 버튼이 보인다.
-    rescaleUndo: null,
     // 저울 전용 입력 모드(운영 대시보드 토글). true 면 실제량·증량 인라인 입력이
     // readonly 가 되고 저울 PRINT 로만 입력된다. false(기본)면 동작 변화 없음.
     scaleOnlyInput: false,
@@ -857,7 +854,6 @@
     state.addPending = {};
     state.rescaleActive = false;
     state.rescaleAppliedPlan = null;
-    state.rescaleUndo = null;
     state.rescaleEvents = [];  // 레시피 변경 → 증량 승인 이력 초기화(총 배합량 잠금도 함께 해제)
     state.discardEvents = [];  // 레시피 변경 → 폐기 이력도 새 배합 기준으로 초기화
     state.lotOverrides = {};
@@ -866,7 +862,6 @@
     // (그대로 두면 옛 키로 저장돼, 앞 요청이 사실 커밋돼 있었을 때 새 배합 대신 옛
     //  기록이 되돌아온다.)
     _saveRequestId = null;
-    hideRescaleUndo();
     clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준 버튼).
@@ -1055,9 +1050,6 @@
       ? draft.discardEvents.map((ev) => ({ ...ev }))
       : [];
     if (state.rescaleEvents.length) state.rescaleActive = true;
-    // '방금 증량 취소' 스냅샷은 세션을 넘겨 복구하지 않는다 — 직전 상태는 이번 세션에서만
-    // 의미가 있다. null 로 두어 복구 후 '방금 증량 취소' 버튼이 계속 비활성(숨김)으로 남게 한다.
-    state.rescaleUndo = null;
     // ── 레시피 변경 정합성 ──────────────────────────────────────
     // 초안의 계량값을 '위치'가 아니라 '품목 식별자'로 현재 레시피 줄에 얹는다. 순서가
     // 바뀌거나 중간에 재료가 삽입/삭제돼도 사람이 저울로 잰 값이 제 자리를 찾는다.
@@ -1096,7 +1088,6 @@
     // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
     applyScaleOnlyToRows();
     updateManualEntryControl();
-    hideRescaleUndo();  // 복구 세션엔 '방금 증량 취소' 없음(스냅샷을 복구하지 않으므로)
     notify("작성 중이던 배합을 복원했습니다.", "success");
     // 레시피 변경 고지 — 사라진 재료의 계량값은 조용히 버리지 않고 값까지 적어 남긴다.
     if (blendDrafts) {
@@ -2250,14 +2241,6 @@
     state.pendingRescale = null;
     closeRescaleModal();
     closeDiscardModal();
-    // 되돌리기용 스냅샷(증량 직전 상태) — '방금 증량 취소' 1회 제공. 실수로 증량이 걸렸을 때
-    // 레시피를 다시 고르지 않고 이전 총량·이론량으로 복원한다. 추가분을 넣기 시작하면 무효화.
-    const totalEl = $("blend-total");
-    state.rescaleUndo = {
-      total: totalEl ? totalEl.value : "",
-      theories: state.items.map((it) => it.theory_amount),
-      rescaleTotalG: state.rescaleTotalG || 0,
-    };
     if (hasAnchor()) {
       // 기준 파생 총량을 넘는 증량분을 보관 — applyAnchorRecompute 가 max 로 반영.
       if (plan.newTotal > (state.rescaleTotalG || 0)) state.rescaleTotalG = plan.newTotal;
@@ -2273,7 +2256,6 @@
     state.rescaleAppliedPlan = plan;  // 요약줄 표시용(저장·초기화·레시피 변경 시 까지 유지).
     // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
     renderAddBadges();
-    showRescaleUndo();
     renderRescaleSummary(plan);
     notify(`배합량을 ${fmt(plan.newTotal, dp())} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
   }
@@ -2291,42 +2273,10 @@
     state.rescaleAppliedPlan = null;
   }
 
-  // ── 증량 되돌리기(방금 증량 취소) ─────────────────────────────
-  // 증량 직전 스냅샷으로 총량·이론량·증량 상태를 복원한다. 추가분을 넣기 전까지만 유효.
-  function showRescaleUndo() {
-    const btn = $("rescale-undo");
-    if (btn) btn.hidden = false;
-  }
-  function hideRescaleUndo() {
-    const btn = $("rescale-undo");
-    if (btn) btn.hidden = true;
-  }
-  function restoreRescaleUndo() {
-    const snap = state.rescaleUndo;
-    if (!snap) { hideRescaleUndo(); return; }
-    state.rescaleTotalG = snap.rescaleTotalG || 0;
-    state.rescaleActive = false;
-    state.addPending = {};
-    state.pendingRescale = null;
-    state.rescaleEvents.pop();  // 방금 증량의 승인 이벤트도 함께 되돌린다
-    state.items.forEach((it, i) => { it.theory_amount = snap.theories[i]; });
-    const totalEl = $("blend-total");
-    if (totalEl) totalEl.value = snap.total;
-    // 추가분 배지 제거 + 이론 셀·편차·합계 갱신.
-    document.querySelectorAll("#blend-mat-body .blend-add-badge").forEach((el) => el.remove());
-    document.querySelectorAll("#blend-mat-body .blend-theory").forEach((cell) => {
-      const i = Number(cell.dataset.idx);
-      if (state.items[i]) cell.textContent = fmt(state.items[i].theory_amount, dp());
-    });
-    state.items.forEach((_, i) => updateRowVar(i));
-    updateTotals();
-    updateLotPreview();
-    state.rescaleUndo = null;
-    state.rescaleAppliedPlan = null;
-    hideRescaleUndo();
-    clearRescaleSummary();
-    notify("증량을 취소하고 이전 배합량으로 되돌렸습니다.", "warn");
-  }
+  // '방금 증량 취소'는 2026-08-05 제거 — 승인제(2026-07-22) 이전의 '실수 클릭 보험'인데,
+  // 이제 증량 적용은 책임자 인증을 거치므로 실수 적용이 사실상 불가능하고, 되돌리기는
+  // 소비된 승인 토큰만 남기고 기록의 증량 이벤트를 지워 '승인은 있는데 증량 기록이 없는'
+  // 유령 승인을 만들었다(사용자 결정). 드문 오승인 복구 = 레시피 재선택 또는 기록 수정.
 
   // 기준 자재 레시피 증량 반영 — rescalePlan 의 newTheory/addNeeded 를 각 행에 적용.
   // 기준 자재 행도 이론량이 newTheory 로 갱신되고 addNeeded 배지가 표시된다
@@ -2507,9 +2457,6 @@
     updateTotals();
     warnIfVariance(idx);
     renderAddBadges();
-    // 추가분을 넣기 시작했으면 증량 되돌리기는 위험(추가 실제량과 이전 이론량이 어긋남) — 무효화.
-    state.rescaleUndo = null;
-    hideRescaleUndo();
     // 추가 계량 모달이 이 행에 열려 있으면 큰 숫자(남은 양) 갱신 + 자동 완료 판정.
     refreshAddWeighModal(idx);
     // 프로그램 경로는 input 이벤트가 없어 초안 저장이 안 걸린다 — 담기/PRINT 합산 회차가
@@ -3286,7 +3233,6 @@
       state.pendingRescale = null;
       state.addPending = {};
       state.rescaleActive = false;
-      state.rescaleUndo = null;
       state.rescaleEvents = [];  // 저장 완료 → 증량 승인 이력 초기화(총 배합량 잠금 해제)
       state.discardEvents = [];  // 저장 완료 → 폐기 이력은 방금 기록에 실렸다
       state.lotOverrides = {};
@@ -3294,7 +3240,6 @@
       // 있고, 다음 배합이 그걸 곧바로 원료로 쓴다(B-1: 시킨 대로 해도 계속 막히던 원인).
       lotCheckCache.clear();
       state.manualApproved = null;  // 저장 완료 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
-      hideRescaleUndo();
       clearRescaleSummary();
       if (state.workerPad) state.workerPad.clear();
       // 증량 총량을 되돌렸으면 이론량도 그 총량 기준으로 다시 산출(표시값 정합).
@@ -3506,9 +3451,6 @@
       state.pendingRescale = null;
       closeDiscardModal();
     });
-    // 방금 증량 취소 — 증량 직전 상태로 복원(추가분 넣기 전까지만 노출).
-    const rescaleUndoBtn = $("rescale-undo");
-    if (rescaleUndoBtn) rescaleUndoBtn.addEventListener("click", restoreRescaleUndo);
     // LOT 검사 모달 — 공용 컴포넌트(lotModal)가 footer 버튼을 한 번에 묶는다.
     // 화면별 동작만 콜백으로: 'LOT 지우고 다시 입력'의 값 비우기, '계속'의 확인 기록 보관.
     lotModal.bind({

@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260805c" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260805d" />
 {% endblock %}
 
 {% block content %}
@@ -51,9 +51,6 @@
                     <span class="blend-base-links" id="blend-base-links" hidden></span>
                   </div>
                   <input class="input" id="blend-total" type="number" step="0.1" min="0" />
-                  <div id="blend-total-tools" class="blend-total-tools">
-                    <button type="button" id="rescale-undo" class="blend-undo-link" hidden>↩ 방금 증량 취소</button>
-                  </div>
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-worker">작업자 <span class="blend-worker-hint">(클릭해 교대)</span></label>
@@ -406,6 +403,34 @@
             <div class="ss-modal-body">
               <p class="add-weigh-material" id="discard-ask-material"></p>
               <p class="scale-state-guide" id="discard-ask-text"></p>
+              <!-- 두 선택지의 실물 차이를 그림으로(중순위 그림 2026-08-05) — 왼쪽: 자재는
+                   비커에 그대로(숫자만 정정), 오른쪽: 비커를 비워 폐기(기록으로 남음). -->
+              <div class="discard-ask-pics" aria-hidden="true">
+                <div class="discard-ask-pic">
+                  <svg viewBox="0 0 120 96" focusable="false">
+                    <path class="da-glass" d="M38 14 h44 l-4 44 q-1 5 -6 5 h-24 q-5 0 -6 -5 z"/>
+                    <path class="da-liq" d="M41 30 h38 l-3 28 q-1 5 -6 5 h-20 q-5 0 -6 -5 z"/>
+                    <ellipse class="da-rim" cx="60" cy="14" rx="22" ry="4.5"/>
+                    <text class="da-num" x="60" y="86">123 → 수정</text>
+                  </svg>
+                  <span class="discard-ask-pic-label">숫자만 정정 — 자재 그대로</span>
+                </div>
+                <div class="discard-ask-pic is-discard">
+                  <svg viewBox="0 0 120 96" focusable="false">
+                    <g transform="rotate(-38 34 30)">
+                      <path class="da-glass" d="M16 10 h36 l-3 34 q-1 4 -5 4 h-20 q-4 0 -5 -4 z"/>
+                      <ellipse class="da-rim" cx="34" cy="10" rx="18" ry="4"/>
+                    </g>
+                    <path class="da-pour" d="M52 30 q10 10 12 24"/>
+                    <path class="da-bin" d="M56 58 h44 l-5 30 h-34 z"/>
+                    <line class="da-bin-line" x1="68" y1="64" x2="70" y2="82"/>
+                    <line class="da-bin-line" x1="78" y1="64" x2="78" y2="82"/>
+                    <line class="da-bin-line" x1="88" y1="64" x2="86" y2="82"/>
+                    <rect class="da-bin-lid" x="52" y="52" width="52" height="6" rx="3"/>
+                  </svg>
+                  <span class="discard-ask-pic-label">자재를 버림 — 폐기로 기록</span>
+                </div>
+              </div>
             </div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="discard-ask-back" type="button">돌아가기</button>
@@ -435,7 +460,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805f"></script>
+    <script src="/static/js/blend.js?v=20260805g"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
