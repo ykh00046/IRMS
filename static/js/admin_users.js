@@ -90,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_use_reactor_set", "반응기 사용 지정"],
       ["recipe_is_derived_set", "파생 레시피 지정"],
       ["material_code_set", "품목코드 지정"],
+      ["material_loss_comp_set", "품목 로스 보정 지정"],
       ["recipes_exported", "레시피 전체 내보내기"],
     ]],
     ["점도", [

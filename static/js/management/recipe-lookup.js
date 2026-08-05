@@ -205,6 +205,7 @@
         + `<button id="lookup-losscomp-save" class="btn" type="button">저장</button>`
         + `</div>`
         + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 — 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다 — 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
         + (itemNames.length ? "" : '<p class="login-error lookup-losscomp-error">BOM 자재가 없습니다.</p>')
         + `<input type="hidden" id="lookup-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`;
     }

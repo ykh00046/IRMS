@@ -357,3 +357,137 @@ def test_loss_comp_zero_keeps_existing_theory_contract():
     assert items["원료1"]["theory_amount"] == 60.0
     assert items["원료2"]["theory_amount"] == 40.0
     assert items["원료1"]["loss_comp_g"] == 0.0
+
+
+# ── 3라운드: 자재 마스터 기본값 ────────────────────────────────
+def test_material_master_loss_comp_applied_to_recipe():
+    """(a) 자재 마스터에만 보정 지정 → get_recipe_for_blend/저장 theory 에 반영.
+    레시피 아이템 보정은 없고 자재(materials) 보정만 있을 때 그 값이 쓰인다."""
+    client = _client()
+    headers = _login(client)
+    product = f"PLCMM{_uid()}"
+    rid = _import(client, headers, product, {"PowderA": 60, "LiquidB": 40}).json()["created_ids"][0]
+
+    # 자재 마스터에 PowderA 보정 1g 지정(레시피 아이템 보정은 없음).
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        mid = conn.execute(
+            "SELECT id FROM materials WHERE name = 'PowderA' ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+    res = client.put(
+        f"/api/materials/{mid}/loss-comp",
+        json={"loss_comp_g": 1.0},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+
+    # get_recipe_for_blend(?total=100) → PowderA 비율환산 60 + 마스터 보정 1 = 61
+    recipe = client.get(f"/api/blend/recipes/{rid}?total=100").json()
+    items = {it["material_name"]: it for it in recipe["items"]}
+    assert items["PowderA"]["theory_amount"] == 61.0, "자재 마스터 보정이 theory 에 반영되어야 한다"
+    assert items["PowderA"]["loss_comp_g"] == 1.0
+
+    # 저장 시에도 보정 포함 theory 로 저장된다(actual=목표면 통과).
+    worker = "마스터보정" + uuid.uuid4().hex[:6]
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    saved = client.post(
+        "/api/blend/records",
+        json={
+            "recipe_id": rid, "product_name": product, "worker": worker, "work_date": "2026-08-05",
+            "total_amount": 100.0,
+            "details": [
+                {"material_name": "PowderA", "actual_amount": 61.0, "material_lot": "LP"},
+                {"material_name": "LiquidB", "actual_amount": 40.0, "material_lot": "LB"},
+            ],
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT material_name, theory_amount, loss_comp_g FROM blend_details WHERE blend_record_id = ?",
+            (saved.json()["id"],),
+        ).fetchall()
+    by_name = {r["material_name"]: r for r in rows}
+    assert float(by_name["PowderA"]["theory_amount"]) == 61.0
+    assert float(by_name["PowderA"]["loss_comp_g"]) == 1.0
+
+
+def test_recipe_item_loss_comp_overrides_material_master():
+    """(b) 레시피 아이템 보정이 있으면 자재 마스터보다 우선(override)."""
+    client = _client()
+    headers = _login(client)
+    product = f"PLCOV{_uid()}"
+    rid = _import(client, headers, product, {"PowderA": 50, "LiquidB": 50}).json()["created_ids"][0]
+
+    # 자재 마스터 보정 1g, 레시피 아이템 보정 3g → 레시피 값(3g) 이 우선.
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        mid = conn.execute(
+            "SELECT id FROM materials WHERE name = 'PowderA' ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+    client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": 1.0}, headers=headers)
+    client.put(
+        f"/api/recipes/{rid}/loss-comp",
+        json={"items": [{"material_name": "PowderA", "loss_comp_g": 3.0}]},
+        headers=headers,
+    )
+
+    # ?total=200 → PowderA 비율환산 100 + 보정 3(레시피 우선) = 103 (마스터 1 아님)
+    recipe = client.get(f"/api/blend/recipes/{rid}?total=200").json()
+    items = {it["material_name"]: it for it in recipe["items"]}
+    assert items["PowderA"]["theory_amount"] == 103.0, "레시피 보정(3) 이 마스터(1) 보다 우선"
+    assert items["PowderA"]["loss_comp_g"] == 3.0
+
+
+def test_material_loss_comp_put_validation():
+    """(c) PUT /materials/{id}/loss-comp 검증 — 음수/과대 400, 비책임자 401/403."""
+    client = _client()
+    headers = _login(client)
+    _import(client, headers, f"PLCV{_uid()}", {"PowderA": 60}).json()["created_ids"][0]
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        mid = conn.execute(
+            "SELECT id FROM materials WHERE name = 'PowderA' ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+
+    # 음수 → 400
+    res_neg = client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": -1}, headers=headers)
+    assert res_neg.status_code == 400, res_neg.text
+    # 100 초과 → 400
+    res_hi = client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": 101}, headers=headers)
+    assert res_hi.status_code == 400, res_hi.text
+    # 비책임자(미인증) → 401/403
+    res_noauth = client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": 1.0})
+    assert res_noauth.status_code in (401, 403), res_noauth.text
+    # 정상 — null 은 해제(0)
+    res_ok = client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": 2.0}, headers=headers)
+    assert res_ok.status_code == 200, res_ok.text
+    assert res_ok.json()["loss_comp_g"] == 2.0
+    res_clear = client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": None}, headers=headers)
+    assert res_clear.status_code == 200, res_clear.text
+    # null 은 해제(0) — 컬럼이 NOT NULL DEFAULT 0.
+    assert res_clear.json()["loss_comp_g"] == 0.0
+
+
+def test_item_codes_materials_exposes_loss_comp_g():
+    """GET /item-codes/materials 응답에 loss_comp_g 필드가 포함된다."""
+    client = _client()
+    headers = _login(client)
+    _import(client, headers, f"PLCIC{_uid()}", {"PowderA": 60}).json()["created_ids"][0]
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        mid = conn.execute(
+            "SELECT id FROM materials WHERE name = 'PowderA' ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+    client.put(f"/api/materials/{mid}/loss-comp", json={"loss_comp_g": 1.5}, headers=headers)
+
+    data = client.get("/api/item-codes/materials").json()
+    item = next((it for it in data["items"] if it["id"] == mid), None)
+    assert item is not None, "자재가 목록에 있어야 한다"
+    assert item["loss_comp_g"] == 1.5

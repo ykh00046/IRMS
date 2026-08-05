@@ -60,7 +60,7 @@
         const items = data.items || [];
         if (!items.length) {
           dom.codesBody.innerHTML =
-            '<tr><td colspan="4"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
+            '<tr><td colspan="5"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
           return;
         }
         dom.codesBody.innerHTML = items
@@ -78,11 +78,16 @@
               ? `<button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`
               : "";
             const actionHtml = `${codeActions}${deleteBtn}`;
+            // 투입 로스 보정(자재 마스터 기본값, 3라운드) — 인라인 입력+저장. 값이 있으면 표시.
+            const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
+            const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
+              + `<button class="btn btn-sm mat-losscomp-save" data-id="${m.id}" type="button">저장</button>`;
             return `
               <tr class="codes-row" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td>${IRMS.escapeHtml(m.name)}</td>
                 <td class="code-cell">${codeHtml}</td>
                 <td>${m.category ? IRMS.escapeHtml(m.category) : '<span class="muted">-</span>'}</td>
+                <td class="losscomp-cell">${lossCompHtml}</td>
                 <td class="action-cell">${actionHtml}</td>
               </tr>`;
           })
@@ -287,6 +292,60 @@
           startInlineDeleteConfirm(row);
         });
       });
+      // 투입 로스 보정(자재 마스터, 3라운드) 저장 버튼 + Enter.
+      dom.codesBody.querySelectorAll(".mat-losscomp-save").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const row = btn.closest(".codes-row");
+          const input = row && row.querySelector(".mat-losscomp-input");
+          if (input) saveLossComp(row, input.value);
+        });
+      });
+      dom.codesBody.querySelectorAll(".mat-losscomp-input").forEach((input) => {
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const row = input.closest(".codes-row");
+            if (row) saveLossComp(row, input.value);
+          }
+        });
+      });
+    }
+
+    // 자재 마스터 투입 로스 보정 저장 — PUT /api/materials/{id}/loss-comp.
+    // 빈 값/0 은 해제(0). 0~100g. 저장 후 행 갱신.
+    async function saveLossComp(row, rawValue) {
+      const id = Number(row.dataset.id);
+      const text = String(rawValue || "").trim();
+      let lossComp = null;
+      if (text !== "") {
+        const v = Number(text);
+        if (!Number.isFinite(v) || v < 0 || v > 100) {
+          IRMS.notify("로스 보정은 0 이상 100 이하의 숫자여야 합니다. (비우면 해제)", "error");
+          return;
+        }
+        lossComp = v;
+      }
+      try {
+        const resp = await fetch(`/api/materials/${id}/loss-comp`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({ loss_comp_g: lossComp }),
+        });
+        if (!resp.ok) {
+          const detail = await detailOf(resp);
+          IRMS.notify(`로스 보정 저장 실패: ${detail}`, "error");
+          return;
+        }
+        IRMS.notify(
+          lossComp != null ? `로스 보정을 ${lossComp}g 으로 지정했습니다.` : "로스 보정을 해제했습니다(0).",
+          "success",
+        );
+        await refresh();
+      } catch (err) {
+        IRMS.notify(`로스 보정 저장 실패: ${err.message}`, "error");
+      }
     }
 
     // 인라인 편집 시작 — 행 안에 input + 제안 목록 + 저장/취소 버튼 표시.

@@ -288,15 +288,27 @@ def create_item_code_router() -> APIRouter:
 
         where_sql = " AND ".join(where_parts)
         with get_connection() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT id, name, code, category, is_active
-                FROM materials
-                WHERE {where_sql}
-                ORDER BY name
-                """,
-                params,
-            ).fetchall()
+            # loss_comp_g 컬럼이 없는 구버전/테스트 DB 폴백(0) — try/except 2단 쿼리.
+            try:
+                rows = connection.execute(
+                    f"""
+                    SELECT id, name, code, category, is_active, loss_comp_g
+                    FROM materials
+                    WHERE {where_sql}
+                    ORDER BY name
+                    """,
+                    params,
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = connection.execute(
+                    f"""
+                    SELECT id, name, code, category, is_active
+                    FROM materials
+                    WHERE {where_sql}
+                    ORDER BY name
+                    """,
+                    params,
+                ).fetchall()
 
         return {
             "items": [
@@ -306,6 +318,8 @@ def create_item_code_router() -> APIRouter:
                     "code": r["code"],
                     "category": r["category"],
                     "is_active": r["is_active"],
+                    # 투입 로스 보정(자재 마스터 기본값, 3라운드) — 컬럼 없으면 0.
+                    "loss_comp_g": float(r["loss_comp_g"]) if "loss_comp_g" in r.keys() and r["loss_comp_g"] is not None else 0.0,
                 }
                 for r in rows
             ]
@@ -417,6 +431,72 @@ def create_item_code_router() -> APIRouter:
             "code": code,
             "master_name": master_name,
             "moved_from": moved_from_name,
+        }
+
+    # ------------------------------------------------------------------
+    # A3b. PUT /materials/{material_id}/loss-comp — 자재(품목) 투입 로스 보정 지정/해제
+    # ------------------------------------------------------------------
+    # 붓는 로스가 있는 파우더 품목에 고정 g 보정을 한 번 지정하면, 그 자재가 들어가는
+    # 모든 레시피에 자동 적용된다(레시피 아이템별 지정이 있으면 그것이 우선 override).
+    # set_material_code(A3) 와 같은 패턴 — 책임자 전용, 0~100g.
+    @router.put("/materials/{material_id}/loss-comp")
+    def set_material_loss_comp(
+        material_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        raw = body.get("loss_comp_g")
+        loss_comp_g: float | None
+        if raw is None:
+            # null 은 해제(0) — 컬럼이 NOT NULL DEFAULT 0 이라 null 저장 불가. 0 으로 정규화.
+            loss_comp_g = 0.0
+        else:
+            try:
+                loss_comp_g = float(raw)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400, detail="loss_comp_g 는 숫자 또는 null 이어야 합니다."
+                )
+            if not (0 <= loss_comp_g <= 100):
+                raise HTTPException(
+                    status_code=400,
+                    detail="투입 로스 보정은 0 이상 100 이하여야 합니다.",
+                )
+
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, loss_comp_g FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+
+            # loss_comp_g 컬럼이 없는 구버전/테스트 DB — 500 대신 안내(다른 ensure_column 컬럼과 동일).
+            try:
+                connection.execute(
+                    "UPDATE materials SET loss_comp_g = ? WHERE id = ?",
+                    (loss_comp_g, material_id),
+                )
+            except sqlite3.OperationalError:
+                raise HTTPException(
+                    status_code=500,
+                    detail="이 서버의 자재 테이블에 loss_comp_g 컬럼이 없습니다 — DB 마이그레이션이 필요합니다.",
+                )
+
+            write_audit_log(
+                connection,
+                action="material_loss_comp_set",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=material_row["name"],
+                details={"loss_comp_g": loss_comp_g},
+            )
+            connection.commit()
+
+        return {
+            "status": "ok",
+            "material_id": material_id,
+            "loss_comp_g": loss_comp_g,
         }
 
     # ------------------------------------------------------------------

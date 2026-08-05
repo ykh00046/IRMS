@@ -147,6 +147,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # ERP 품목코드 도입(item-code P1). 마스터는 item_code_master, 부여된 코드는
     # materials.code / recipes.product_code. NULL=미부여(하위호환 — 기존 동작 불변).
     ensure_column(connection, "materials", "code", "TEXT")
+    # 투입 로스 보정(3라운드 2026-08-05) — 자재(품목) 마스터 기본 보정값. 붓는 로스가 있는
+    # 파우더 품목에 한 번 지정하면 그 자재가 들어가는 모든 레시피에 자동 적용된다.
+    # 레시피 아이템별 loss_comp_g(>0) 가 있으면 그것이 우선(예외 override).
+    ensure_column(connection, "materials", "loss_comp_g", "REAL NOT NULL DEFAULT 0")
     connection.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_materials_code "
         "ON materials(code) WHERE code IS NOT NULL"

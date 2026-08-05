@@ -187,6 +187,19 @@ def get_recipe_for_blend(
     except sqlite3.OperationalError:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
         pass
 
+    # 3라운드(자재 마스터 기본값) — 자재(materials) 의 loss_comp_g 를 material_id 별로 읽는다.
+    # 레시피 아이템 보정(>0) 이 우선(예외 override), 없으면 이 마스터 기본값. 컬럼이 없는
+    # 구버전/테스트 DB 는 빈 맵 폴백(보정 0).
+    material_loss_by_id: dict[int, float] = {}
+    try:
+        mrows = connection.execute(
+            "SELECT id, loss_comp_g FROM materials WHERE loss_comp_g IS NOT NULL AND loss_comp_g > 0"
+        ).fetchall()
+        for mr in mrows:
+            material_loss_by_id[int(mr["id"])] = float(mr["loss_comp_g"])
+    except sqlite3.OperationalError:  # loss_comp_g 컬럼이 없는 구버전/테스트 DB
+        pass
+
     # 공정 설명 줄(자재 사이 안내문) — 화면 표시 전용, 계산·집계와 무관
     try:
         step_rows = connection.execute(
@@ -204,9 +217,14 @@ def get_recipe_for_blend(
     theory = scale_theory(weights, total)
     # 투입 로스 보정(2026-08-05) — 아이템별 고정 g. 컬럼이 없는 구버전/테스트 DB 폴백(0).
     # 보정은 총량과 무관한 고정 g 이므로 총량 스케일(비율×총량) 결과에 그대로 더한다.
-    loss_comps = [
-        float(loss_comp_by_item.get(int(r["recipe_item_id"]), 0.0)) for r in rows
-    ]
+    # 3라운드(자재 마스터 기본값) — 레시피 아이템 보정(>0) 이 우선, 없으면 자재 마스터 값.
+    loss_comps = []
+    for r in rows:
+        item_comp = float(loss_comp_by_item.get(int(r["recipe_item_id"]), 0.0))
+        if item_comp > 0:
+            loss_comps.append(item_comp)
+        else:
+            loss_comps.append(float(material_loss_by_id.get(int(r["material_id"]), 0.0)))
 
     # 방어: 기준 자재가 지정돼 있어도 (1) 해당 자재가 항목에 없거나 (2) 그 자재의
     # 기준 중량(value_weight)이 0 이하면 기준으로 쓸 수 없다 — anchor 를 무효(None) 처리.

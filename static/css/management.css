@@ -786,3 +786,8 @@
   background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 700;
   white-space: nowrap;
 }
+
+/* 품목코드 탭 자재 목록 — 투입 로스 보정 인라인 편집 셀(3라운드 2026-08-05). */
+.losscomp-cell { white-space: nowrap; }
+.losscomp-cell .mat-losscomp-input { width: 5rem; display: inline-block; }
+.losscomp-cell .mat-losscomp-save { margin-left: 0.3rem; }
