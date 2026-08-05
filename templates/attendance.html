@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260805a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260805b" />
   </head>
   <body
     class="att-page"
@@ -237,6 +237,16 @@
 
       <section class="att-table-wrap">
         <h3>일자별 상세</h3>
+        <!-- 행 색 범례(2026-08-05) — 6가지 색 구분이 있는데 설명이 없어 뜻을 알 수 없었다.
+             색상은 아래 tr 규칙(att-row-issue/att-day-*)의 강조 톤과 일치해야 한다. -->
+        <div class="att-legend" role="note" aria-label="행 색상 안내">
+          <span class="att-legend-item"><i class="att-legend-swatch is-issue"></i>이상(지각·조퇴·누락)</span>
+          <span class="att-legend-item"><i class="att-legend-swatch is-leave"></i>휴가(연차·반차)</span>
+          <span class="att-legend-item"><i class="att-legend-swatch is-rest"></i>비번·휴무</span>
+          <span class="att-legend-item"><i class="att-legend-swatch is-sat"></i>토요일</span>
+          <span class="att-legend-item"><i class="att-legend-swatch is-sun"></i>일요일</span>
+          <span class="att-legend-item"><i class="att-legend-swatch is-hol"></i>공휴일</span>
+        </div>
         <div class="att-table-scroll">
           <table class="att-table" id="att-rows-table">
             <thead>

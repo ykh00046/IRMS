@@ -874,3 +874,20 @@
 .att-rules-svg .att-tl-hatch-line { stroke: #cbd5e1; stroke-width: 2; }
 .att-rules-svg .att-tl-mark { stroke: #b45309; stroke-width: 2.5; }
 .att-rules-svg .att-tl-basis { font-size: 11px; font-weight: 700; fill: #b45309; text-anchor: middle; }
+
+/* 일자별 상세 행 색 범례(2026-08-05) — 스와치 색은 위 tr 강조 톤과 동일 계열. */
+.att-legend {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1rem;
+  margin: 0.35rem 0 0.6rem; font-size: 0.78rem; color: #56627b;
+}
+.att-legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+.att-legend-swatch {
+  display: inline-block; width: 13px; height: 13px; border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.att-legend-swatch.is-issue { background: #fecaca; }
+.att-legend-swatch.is-leave { background: #dcfce7; }
+.att-legend-swatch.is-rest { background: #eef2f7; }
+.att-legend-swatch.is-sat { background: #dbeafe; }
+.att-legend-swatch.is-sun { background: #ffe4e6; }
+.att-legend-swatch.is-hol { background: #ffedd5; }

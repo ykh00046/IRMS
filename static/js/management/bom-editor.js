@@ -223,6 +223,18 @@
     }
 
     function removeRow(idx) {
+      // 값이 든 행만 확인 — 25줄 입력 중 ✕ 오클릭 한 번에 그 줄이 소리 없이 사라지던
+      // 경로(2026-08-05 감사, 사용자 승인). 빈 행 정리는 종전대로 조용히.
+      const row = bom.rows[idx] || {};
+      const filled = row.type === "step"
+        ? String(row.note || "").trim() !== ""
+        : String(row.name || "").trim() !== "" || String(row.value || "").trim() !== "";
+      if (filled) {
+        const label = row.type === "step"
+          ? `공정 설명 "${String(row.note).trim().slice(0, 30)}"`
+          : `자재 "${String(row.name || "(이름 없음)").trim().slice(0, 30)}"`;
+        if (!window.confirm(`${label} 행을 삭제할까요? 입력된 값이 사라집니다.`)) return;
+      }
       bom.rows.splice(idx, 1);
       if (!bom.rows.length) bom.rows.push(emptyMaterial());
       render();

@@ -37,6 +37,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     function close() {
       if (overlay.hidden) return;
+      // beforeClose 가 false 를 돌려주면 닫지 않는다 — 편집 폼 위에서 닫기·배경 클릭·
+      // Esc 가 저장 안 한 변경을 무경고로 버리던 구멍의 마개(2026-08-05 감사 R-13).
+      if (opts.beforeClose && !opts.beforeClose()) return;
       overlay.hidden = true;
       if (opts.onClose) opts.onClose();
       if (opener && opener.focus) { try { opener.focus(); } catch (_e) { /* noop */ } }
@@ -48,7 +51,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     return { open, close };
   }
-  const detailModal = createModal("status-detail-modal", { initialFocus: "status-detail-close" });
+  // 편집 폼(#e-rows)이 열려 있으면 닫기 전에 한 번 묻는다 — 25줄 수정 중 배경 오클릭
+  // 한 번에 전부 날아가던 경로(R-13). '취소' 버튼은 상세 보기로 돌아가는 명시 동작이라 예외.
+  const detailModal = createModal("status-detail-modal", {
+    initialFocus: "status-detail-close",
+    beforeClose: () => !document.getElementById("e-rows")
+      || window.confirm("수정 중입니다 — 저장하지 않은 변경이 사라집니다. 닫을까요?"),
+  });
   // 증량 요약 맵(record_id → {rescale_count, rescale_unacked, rescale_events}).
   // 목록/상세 응답에 rescale 필드가 없어 자체 요약 엔드포인트로 병합 안전하게 채운다.
   let rescaleMap = {};
@@ -448,7 +457,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     $("e-rows").addEventListener("click", (ev) => {
       const del = ev.target.closest(".e-del");
-      if (del) del.closest("tr").remove();
+      if (!del) return;
+      const tr = del.closest("tr");
+      // 값이 든 행만 확인 — 빈 행 삭제는 조용히(BOM 편집기 행 삭제와 동일 규칙 2026-08-05).
+      const filled = [...tr.querySelectorAll("input")].some((i) => i.value.trim() !== "");
+      if (filled && !window.confirm("이 행을 삭제할까요? 입력된 값이 사라집니다.")) return;
+      tr.remove();
     });
     $("e-add-row").addEventListener("click", () => {
       $("e-rows").insertAdjacentHTML("beforeend", editRow({}));

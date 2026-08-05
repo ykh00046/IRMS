@@ -923,3 +923,10 @@
 .add-weigh-portion.is-last .add-weigh-portion-amt { font-weight: 700; }
 /* ERP 원재료 LOT 검사 미통과 — 저장을 막지 않는 경고 표시 */
 .erp-lot-warn { border-color: #f59e0b; }
+
+/* 출력 버튼 결과물 아이콘(2026-08-05) — 겹친 문서=병합 PDF, 폴더=ZIP, 표=요약 Excel,
+   낱장=단건 공식 양식. 이름만으론 결과물 형태를 알 수 없던 문제. */
+.btn .out-ico {
+  width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px;
+  fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round;
+}

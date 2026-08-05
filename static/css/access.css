@@ -508,3 +508,17 @@
   display: block;
   width: 100%;
 }
+
+/* 홈 타일 입장 조건 배지(2026-08-05) — 근태=사번 로그인 필요(잠긴 자물쇠),
+   제조=바로 입장(열린 자물쇠). 두 타일의 유일한 실질 차이가 표시가 없었다. */
+.launch-tile-access {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 8px; padding: 3px 10px; border-radius: 999px;
+  font-size: 0.74rem; font-weight: 700;
+  background: rgba(148, 163, 184, 0.16); color: #56627b;
+}
+.launch-tile-access svg {
+  width: 12px; height: 12px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round;
+}
+.launch-tile-access.is-open { background: rgba(22, 163, 74, 0.14); color: #15803d; }

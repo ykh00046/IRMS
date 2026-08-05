@@ -6,7 +6,7 @@
     <title>BRM · 통합 제조 · 근태 관리</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260805a" />
   </head>
   <body class="launch-body">
 
@@ -19,16 +19,26 @@
       </header>
 
       <div class="launch-grid">
+        <!-- 입장 조건 배지(2026-08-05) — 두 타일의 유일한 실질 차이(사번 로그인 필요 vs
+             바로 입장)가 어디에도 없었다. 자물쇠 유무로 표시. -->
         <a href="/attendance" class="launch-tile">
           <span class="launch-tile-ico launch-tile-ico-att" aria-hidden="true">◷</span>
           <span class="launch-tile-title">근태 확인</span>
           <span class="launch-tile-desc">출퇴근 · 근무시간 · 지각 · 연차 등<br />월별 근태 현황을 조회합니다</span>
+          <span class="launch-tile-access" aria-label="사번과 비밀번호로 로그인해야 합니다">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="6" rx="1.2"/><path d="M4.5 6 V4.5 a2.5 2.5 0 0 1 5 0 V6"/></svg>
+            사번 로그인
+          </span>
           <span class="launch-tile-go">바로가기 <span aria-hidden="true">→</span></span>
         </a>
         <a href="/dashboard" class="launch-tile launch-tile-accent">
           <span class="launch-tile-ico launch-tile-ico-mfg" aria-hidden="true">◎</span>
           <span class="launch-tile-title">반제품 제조 관리</span>
           <span class="launch-tile-desc">배합 · 점도 · 레시피 · DHR 등<br />반제품 제조 전반을 관리합니다</span>
+          <span class="launch-tile-access is-open" aria-label="로그인 없이 바로 들어갑니다">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="6" width="8" height="6" rx="1.2"/><path d="M4.5 6 V4.5 a2.5 2.5 0 0 1 5 0"/></svg>
+            바로 입장
+          </span>
           <span class="launch-tile-go launch-tile-go-accent">바로가기 <span aria-hidden="true">→</span></span>
         </a>
       </div>

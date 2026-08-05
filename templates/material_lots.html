@@ -25,6 +25,9 @@
   /* 상태 셀은 공용 .status-chip 모양 위에 상태색만 얹는다(JS 가 status-chip 클래스 부여). */
   .mlot-status-valid { background: var(--status-success-bg); color: var(--status-success); }
   .mlot-status-spent { background: var(--status-error-bg); color: var(--status-error); }
+  /* 재고 음수 — 소진(빨강)과 구분되는 경고(주황): 실물이 아니라 전산이 이상한 상태. */
+  .mlot-status-negative { background: var(--status-warning-bg); color: var(--status-warning); }
+  .mlot-status-hint { margin-left: 6px; font-size: 0.72rem; color: var(--text-tertiary); white-space: nowrap; }
   .mlot-status-manual { background: var(--status-info-bg); color: var(--status-info); }
   .mlot-source-erp { color: var(--text-tertiary); }
   .mlot-source-manual { color: var(--status-info); font-weight: 600; }
@@ -157,5 +160,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/material_lots.js?v=20260731a"></script>
+    <script src="/static/js/material_lots.js?v=20260805a"></script>
 {% endblock %}

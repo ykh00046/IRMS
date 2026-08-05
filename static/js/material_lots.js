@@ -43,7 +43,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return '<span class="status-chip mlot-status-valid">사용 가능</span>';
     }
     if (Number(lot.stock) < 0) {
-      return '<span class="status-chip mlot-status-spent" title="ERP 재고가 마이너스 — 전표 반영 지연·누락일 수 있습니다">재고 이상(−)</span>';
+      // 소진과 다른 칩색 + 설명을 칩 옆 텍스트로 — 차이가 title 툴팁에만 있어 장갑·터치
+      // 단말에선 안 보였다(2026-08-05 감사). 전산 정리 대상임이 화면에서 바로 읽히게.
+      return '<span class="status-chip mlot-status-negative">재고 이상(−)</span>'
+        + '<span class="mlot-status-hint">ERP 전표 지연·누락 가능</span>';
     }
     return '<span class="status-chip mlot-status-spent">소진</span>';
   }
