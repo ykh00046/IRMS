@@ -444,9 +444,12 @@ def build_router() -> APIRouter:
     ):
         """레시피 전체 Excel 내보내기 — 책임자 전용.
 
-        시트1 '레시피 목록'(레시피당 1행)·시트2 '자재 구성'(자재행당 1행) 두 장으로
-        내려준다. 배합 전체 Excel(blend_export_all)과 같은 openpyxl + StreamingResponse
-        패턴. 파일명은 ASCII recipes_YYYYMMDD.xlsx.
+        시트1 '레시피 목록'·시트2 '자재 구성'은 **현재판(tip)만** 담는다 — 종전엔
+        recipes 전 행(개정판마다 1행)을 쏟아 같은 반제품명이 개정 수만큼 반복돼
+        목록이 중복으로 보였다(현장 지적 2026-08-06). tip 판정은 화면 목록과 같은
+        규칙(SUPERSEDED_RECIPE_IDS_SQL)을 쓰고 취소·초안도 제외한다. 대체된 옛
+        개정판·취소본은 시트3 '개정 이력'으로 옮겨 정보는 보존한다.
+        파일명은 ASCII recipes_YYYYMMDD.xlsx.
 
         정적 경로(/recipes/export)는 동적 경로보다 먼저 선언돼 있으므로 FastAPI 가
         /recipes/{recipe_id} 로 해석하지 않는다.
@@ -462,7 +465,7 @@ def build_router() -> APIRouter:
             recipe_rows = connection.execute(
                 """
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
-                       r.category, r.created_at,
+                       r.category, r.created_at, r.revision_of,
                        r.base_totals, r.tolerance_g, r.anchor_material_id,
                        am.name AS anchor_material_name,
                        COALESCE(r.is_dhr, 0) AS is_dhr,
@@ -477,7 +480,20 @@ def build_router() -> APIRouter:
                 ORDER BY r.created_at DESC, r.id DESC
                 """
             ).fetchall()
-            recipe_ids = [row["id"] for row in recipe_rows]
+            # 현재판(tip)만 목록·구성에 싣는다 — 화면 목록과 같은 판정(대체·취소·초안 제외).
+            superseded = {
+                int(r["ancestor"])
+                for r in connection.execute(SUPERSEDED_RECIPE_IDS_SQL).fetchall()
+                if r["ancestor"] is not None
+            }
+            tip_rows = [
+                row for row in recipe_rows
+                if row["id"] not in superseded
+                and (row["status"] or "") not in ("canceled", "draft")
+            ]
+            tip_ids = {row["id"] for row in tip_rows}
+            history_rows = [row for row in recipe_rows if row["id"] not in tip_ids]
+            recipe_ids = [row["id"] for row in tip_rows]
             # fetch_recipe_items 는 materials 조인까지 끌어온다(자재명·단위). 자재코드는
             # materials.code 에 있으므로 별도로 모은다.
             item_map = fetch_recipe_items(connection, recipe_ids)
@@ -519,7 +535,7 @@ def build_router() -> APIRouter:
             for c in range(1, len(headers1) + 1):
                 ws1.cell(row=1, column=c).font = Font(bold=True)
             status_map = {"completed": "사용중", "canceled": "취소"}
-            for row in recipe_rows:
+            for row in tip_rows:
                 ws1.append([
                     row["id"],
                     row["product_name"] or "",
@@ -545,7 +561,7 @@ def build_router() -> APIRouter:
             ws2.append(headers2)
             for c in range(1, len(headers2) + 1):
                 ws2.cell(row=1, column=c).font = Font(bold=True)
-            name_by_id = {row["id"]: (row["product_name"] or "") for row in recipe_rows}
+            name_by_id = {row["id"]: (row["product_name"] or "") for row in tip_rows}
             for rid in recipe_ids:
                 items = item_map.get(rid, [])
                 weights = [
@@ -566,6 +582,25 @@ def build_router() -> APIRouter:
                         code_map.get(it.get("material_id"), ""),
                         weight if weight is not None else (it.get("value_text") or ""),
                         ratio,
+                    ])
+
+            # 시트3 — 개정 이력(대체된 옛 개정판·취소본). 목록에서 뺀 정보의 보존처.
+            if history_rows:
+                ws3 = wb.create_sheet("개정 이력")
+                headers3 = ["ID", "반제품명", "상태", "개정 원본 ID", "등록일"]
+                ws3.append(headers3)
+                for c in range(1, len(headers3) + 1):
+                    ws3.cell(row=1, column=c).font = Font(bold=True)
+                for row in history_rows:
+                    status = status_map.get(row["status"], row["status"] or "")
+                    if row["id"] in superseded and (row["status"] or "") == "completed":
+                        status = "대체됨(개정)"
+                    ws3.append([
+                        row["id"],
+                        row["product_name"] or "",
+                        status,
+                        row["revision_of"] if row["revision_of"] is not None else "",
+                        (row["created_at"] or "")[:19],
                     ])
 
         buf = io.BytesIO()
