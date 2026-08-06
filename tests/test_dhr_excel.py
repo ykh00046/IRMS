@@ -146,3 +146,23 @@ def test_official_dhr_marks_signature_failure():
     xb = dhr_excel.build_official_dhr_xlsx(_sample_record(), sign_failed=True)
     ws = openpyxl.load_workbook(io.BytesIO(xb)).active
     assert ws["G2"].value == "(서명 합성 실패)"
+
+
+def test_dhr_loss_comp_included_in_theory_no_extra_column():
+    """투입 로스 보정(2026-08-05): 보정분은 theory_amount 에 이미 포함돼 그대로 출력되고,
+    보정 관련 별도 열/헤더는 추가되지 않는다(배합일지·Excel 출력은 변경 없이 501 로).
+    loss_comp_g 메타가 detail 에 있어도 양식 열 구조는 동일해야 한다."""
+    record = _sample_record()
+    # 첫 자재에 보정 스냅샷이 있어도(저장 시 theory_amount 에 이미 반영됨) 출력은 그대로.
+    record["details"][0]["loss_comp_g"] = 1.0
+    xb = dhr_excel.build_official_dhr_xlsx(record)
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    # 기존 양식 열 구조 보존 — 보정 전용 열이 새로 생기지 않는다(헤더 변화 없음).
+    assert ws["C5"].value == "배합원료명"  # 헤더 그대로
+    # theory_amount(F열) 가 detail 의 값(714.3) 을 그대로 출력 — 보정이 이미 포함된 값.
+    assert ws["F6"].value == 714.3
+    # 보정량 자체가 별도 셀로 찍히지 않는다(메타는 출력에 등장하지 않음).
+    # H열(비고 영역 이후) 에 '1.0' 같은 보정값이 단독으로 들어가지 않음을 확인.
+    for row in range(6, 8):
+        val = ws[f"H{row}"].value
+        assert val != 1.0, "보정량이 별도 열로 출력되면 안 된다 — theory_amount 에 포함돼야"

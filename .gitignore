@@ -22,6 +22,7 @@ excel/
 
 # 구 배합프로그램 원본(74MB exe + 구글 시트 API 키 포함) — 이관 대조용 사본, 절대 커밋 금지
 배합프로그램_v1.2/
+배합프로그램_v1.2.zip
 
 # Auto-generated DB backups (kept locally, never pushed)
 backups/*.db
