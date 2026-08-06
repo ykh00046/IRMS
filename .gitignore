@@ -18,6 +18,10 @@ data/*.db-wal
 
 # 사내 실데이터(한글 엑셀 수기 원본) — 루트 이탈로 /*.xlsx 규칙이 커버하지 않으므로 명시
 excel/legacy/
+excel/
+
+# 구 배합프로그램 원본(74MB exe + 구글 시트 API 키 포함) — 이관 대조용 사본, 절대 커밋 금지
+배합프로그램_v1.2/
 
 # Auto-generated DB backups (kept locally, never pushed)
 backups/*.db
