@@ -87,6 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_loss_comp_set", "투입 로스 보정 지정"],
       ["recipe_category_set", "레시피 분류 지정"],
       ["recipe_stage1_set", "1차 레시피 연결"],
+      ["recipe_chain_linked", "개정 계보 소급 연결"],
       ["recipe_use_reactor_set", "반응기 사용 지정"],
       ["recipe_is_derived_set", "파생 레시피 지정"],
       ["material_code_set", "품목코드 지정"],
