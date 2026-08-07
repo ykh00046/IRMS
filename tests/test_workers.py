@@ -63,8 +63,12 @@ def test_deactivate_then_reregister_reactivates():
     wid = conn.execute("SELECT id FROM workers WHERE name='박철수'").fetchone()["id"]
     ws.set_active(conn, wid, False)
     assert ws.exists(conn, "박철수") is False
-    # 같은 이름 재등록 → created False + 재활성화
-    assert ws.register(conn, "박철수", "t")["created"] is False
+    # 되살리기는 책임자 경로에서만 — 무인증 등록(allow_reactivate=False)은 거부한다.
+    with pytest.raises(ws.InactiveWorkerError):
+        ws.register(conn, "박철수", "t")
+    assert ws.exists(conn, "박철수") is False
+    # 책임자 경로: created False + 재활성화
+    assert ws.register(conn, "박철수", "t", allow_reactivate=True)["created"] is False
     assert ws.exists(conn, "박철수") is True
 
 
@@ -152,14 +156,14 @@ def test_name_validation_blocks_obvious_mistakes():
 
 
 def test_reactivation_does_not_revive_manager():
-    """비활성화된 책임자를 이름 재등록으로 살려도 책임자 권한·비밀번호는 부활하지 않는다."""
+    """책임자를 되살려도 책임자 권한·비밀번호는 부활하지 않는다(권한은 다시 부여해야 한다)."""
     conn = _make_db()
     ws.register(conn, "복귀책임", "t")
     wid = conn.execute("SELECT id FROM workers WHERE name='복귀책임'").fetchone()["id"]
     ws.set_manager(conn, wid, "hashed-pw")
     ws.set_active(conn, wid, False)
 
-    r = ws.register(conn, "복귀책임", "t")  # 무인증 등록 경로로 재활성화
+    r = ws.register(conn, "복귀책임", "t", allow_reactivate=True)  # 책임자 경로로 재활성화
     assert r["reactivated"] is True
     row = conn.execute(
         "SELECT is_active, is_manager, password_hash, session_token FROM workers WHERE id=?",

@@ -118,12 +118,21 @@ def exists(connection: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
+class InactiveWorkerError(Exception):
+    """비활성 담당자를 무인증 등록 경로로 되살리려 했다 — 책임자만 되살릴 수 있다."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
 def register(
     connection: sqlite3.Connection,
     name: str,
     created_at: str,
     *,
     category: str | None = None,
+    allow_reactivate: bool = False,
 ) -> dict[str, Any]:
     """이름을 명단에 등록(이미 있으면 그대로). {name, created, reactivated, category} 반환.
 
@@ -139,8 +148,13 @@ def register(
     if existing:
         reactivated = False
         if not existing["is_active"]:
-            # 재활성화 시 책임자 권한·비밀번호는 부활시키지 않는다(무인증 등록 경로라
-            # 비활성화된 책임자 계정이 이름 입력만으로 살아나는 것을 차단).
+            # 비활성 담당자를 되살리는 건 책임자만 — 이 경로는 배합 로그인 화면이 이름을
+            # 넣을 때마다 무인증으로 부르기 때문에, 종전에는 책임자가 명단에서 뺀 사람이
+            # 자기 이름을 치는 순간 그대로 복귀했다(2026-08-08 재현: reactivated=true).
+            # 확인창까지 눌러 내린 통제가 무효였다. 되살리려면 사용자 관리의 [활성화]로.
+            if not allow_reactivate:
+                raise InactiveWorkerError(clean)
+            # 재활성화 시 책임자 권한·비밀번호는 부활시키지 않는다(권한은 다시 부여해야 한다).
             connection.execute(
                 "UPDATE workers SET is_active = 1, is_manager = 0, "
                 "password_hash = NULL, session_token = NULL, "

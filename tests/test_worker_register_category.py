@@ -82,10 +82,32 @@ def test_unit_reactivate_updates_category():
     ).fetchone()["id"]
     ws.set_active(conn, wid, False)
 
-    r = ws.register(conn, "재활성", "t", category="용수")
+    # 되살리기는 책임자 경로에서만(allow_reactivate) — 무인증 등록은 아래 테스트 참조.
+    r = ws.register(conn, "재활성", "t", category="용수", allow_reactivate=True)
     assert r == {"name": "재활성", "created": False, "reactivated": True,
                  "category": "용수"}
     assert _category_of(conn, "재활성") == "용수"
+
+
+def test_unit_reactivate_requires_permission():
+    """무인증 등록 경로(allow_reactivate=False)는 비활성 담당자를 되살리지 않는다.
+
+    배합 로그인이 이름을 넣을 때마다 부르는 경로라, 되살아나면 책임자가 내린 통제가
+    무효가 된다(2026-08-08 감사).
+    """
+    import pytest
+
+    conn = _unit_db()
+    ws.register(conn, "되살리기금지", "t", category="약품")
+    wid = conn.execute(
+        "SELECT id FROM workers WHERE name='되살리기금지'"
+    ).fetchone()["id"]
+    ws.set_active(conn, wid, False)
+
+    with pytest.raises(ws.InactiveWorkerError):
+        ws.register(conn, "되살리기금지", "t")
+    row = conn.execute("SELECT is_active FROM workers WHERE id = ?", (wid,)).fetchone()
+    assert not row["is_active"]
 
 
 def test_unit_reactivate_without_category_keeps_existing():
@@ -97,7 +119,7 @@ def test_unit_reactivate_without_category_keeps_existing():
     ).fetchone()["id"]
     ws.set_active(conn, wid, False)
 
-    r = ws.register(conn, "파트유지", "t")
+    r = ws.register(conn, "파트유지", "t", allow_reactivate=True)
     assert r["reactivated"] is True
     assert _category_of(conn, "파트유지") == "잉크"
 

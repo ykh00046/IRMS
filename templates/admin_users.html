@@ -11,8 +11,14 @@
 {% block main_class %}admin-users-grid{% endblock %}
 
 {% block content %}
-        <!-- 본인 계정 식별용(자기 계정 삭제/권한변경 방지 등에 사용) — 화면엔 안 보임 -->
-        <input id="current-user-id" type="hidden" value="{{ current_user.id }}" />
+        <!-- 본인 계정 식별용(자기 계정 삭제/권한변경 방지 등에 사용) — 화면엔 안 보임.
+             ⚠️ 이 값은 **명단(workers)의 id** 여야 한다. 로그인 계정이 레거시 admin(users
+             테이블)이면 명단과 id 공간이 달라, 그대로 넘기면 workers 의 같은 번호를 쓰는
+             엉뚱한 담당자에게 '본인' 배지가 붙고 자기 보호가 그 사람에게 걸린다
+             (2026-08-08 화면 확인: admin 로그인인데 workers id=1 담당자가 '본인'). 이름
+             기반 책임자(is_worker_manager)일 때만 id 를 넘기고, 아니면 0(=일치 없음). -->
+        <input id="current-user-id" type="hidden"
+               value="{{ current_user.id if current_user.is_worker_manager else 0 }}" />
 
         <section class="summary-grid">
           <article class="panel summary-card">
