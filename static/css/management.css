@@ -380,15 +380,20 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* 펼친 상세 = 자재 구성 칩 → 속성 편집기 → 액션 버튼, 위에서 아래로.
+   종전 가로 배치(align-items:center)는 속성 편집기가 들어오면서 왼쪽 칩 묶음이 세로
+   가운데에 뜨고 왼쪽 절반이 텅 비었다(2026-08-07 검토). 각 블록이 전 폭을 쓴다. */
 .history-detail-content {
   padding: 0.75rem 1rem;
   background: var(--bg-surface-200);
   border-top: 1px solid var(--border-subtle);
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.75rem;
 }
+/* 속성 편집기는 상세 안에서만 폭을 제한 — 입력칸이 화면 끝까지 늘어지지 않게. */
+.history-detail-content .lookup-anchor { margin-top: 0; max-width: 62rem; }
 
 .detail-items {
   display: flex;

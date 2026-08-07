@@ -379,6 +379,7 @@
               detailRow.innerHTML = `<td colspan="11">
                 <div class="history-detail-content">
                   <div class="detail-items">${itemsHtml}</div>
+                  <div class="history-attrs" data-attrs-for="${recipeId}"></div>
                   <div class="detail-actions">
                     <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
                     <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
@@ -392,6 +393,10 @@
                   </div>
                 </div>
               </td>`;
+              // 속성 편집기(기준 자재·허용 편차·분류·투입 로스 보정) — detailRow 스코프 내 렌더.
+              // 펼침은 한 번에 한 행만(위에서 다른 detail-row 를 닫는다)이므로 id 충돌은 없지만,
+              // 안전하게 detailRow.querySelector 스코프로 저장 핸들러를 건다.
+              await renderAttributePanel(detailRow, detail, recipeId);
               row.after(detailRow);
               if (!ctx.canManage) {
                 detailRow
@@ -547,6 +552,309 @@
       exportBtn.addEventListener("click", () => {
         window.location.assign("/api/recipes/export");
       });
+    }
+
+    // ── 속성 편집기(3단계 정리 2026-08-06) — recipe-lookup.js 에서 이전 ──
+    // 현황 행 펼침(detailRow) 안에 4줄(기준 자재·허용 편차·분류·투입 로스 보정)을 그린다.
+    // detailRow 스코프 내 querySelector 로 저장 핸들러를 묶는다(여러 행 동시 열림 방지).
+    // 책임자가 아니면 현재값만 읽기 전용으로 표시.
+
+    async function renderAttributePanel(detailRow, detail, recipeId) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      if (!wrap) return;
+      const canManage = !!ctx.canManage;
+      const currentName = detail.anchor_material_name || "";
+      const itemNames = (detail.items || [])
+        .map((it) => it.material_name)
+        .filter((n) => !!n);
+      const seen = new Set();
+      const uniq = [];
+      for (const n of itemNames) {
+        if (!seen.has(n)) { seen.add(n); uniq.push(n); }
+      }
+
+      const attrRow = (labelHtml, currentHtml, editorHtml) =>
+        `<div class="lookup-attr-row">${labelHtml}`
+        + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentHtml}</span>`
+        + (editorHtml ? `<span class="lookup-attr-editor">${editorHtml}</span>` : "")
+        + `</div>`;
+
+      // 기준 자재
+      const currentText = currentName
+        ? IRMS.escapeHtml(currentName)
+        : '<span class="muted">없음</span>';
+      const anchorOptions = '<option value="">없음</option>'
+        + uniq.map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === currentName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`).join("");
+      const anchorEditor = canManage
+        ? `<select class="input attr-anchor-select">${anchorOptions}</select>` +
+          `<button class="btn attr-anchor-save" type="button">저장</button>`
+        : "";
+
+      // 허용 편차
+      const tolCurrent = detail.tolerance_g != null ? Number(detail.tolerance_g) : null;
+      const tolCurrentText = tolCurrent != null && Number.isFinite(tolCurrent)
+        ? `±${IRMS.escapeHtml(String(tolCurrent))} g`
+        : '<span class="muted">기본 ±0.05 g</span>';
+      const tolEditor = canManage
+        ? `<input class="input attr-tolerance-input" type="number" step="0.01" min="0" `
+          + `placeholder="선택 · 비우면 기본 0.05" value="${tolCurrent != null && Number.isFinite(tolCurrent) ? IRMS.escapeHtml(String(tolCurrent)) : ""}" />`
+          + `<button class="btn attr-tolerance-save" type="button">저장</button>`
+        : "";
+
+      // 분류
+      const CATS = ["약품", "합성", "잉크", "용수"];
+      const catCurrent = detail.category || "";
+      const catCurrentText = catCurrent
+        ? IRMS.escapeHtml(catCurrent)
+        : '<span class="muted">미분류</span>';
+      const catOptions = '<option value="">미분류</option>'
+        + CATS.map((c) => `<option value="${c}"${c === catCurrent ? " selected" : ""}>${c}</option>`).join("");
+      const catEditor = canManage
+        ? `<select class="input attr-category-select">${catOptions}</select>`
+          + `<button class="btn attr-category-save" type="button">저장</button>`
+        : "";
+
+      wrap.innerHTML =
+        attrRow(`<label class="filter-label">기준 자재</label>`, `<span class="attr-anchor-current">${currentText}</span>`, anchorEditor) +
+        attrRow(`<label class="filter-label">허용 편차</label>`, `<span class="attr-tolerance-current">${tolCurrentText}</span>`, tolEditor) +
+        attrRow(`<label class="filter-label">분류</label>`, `<span class="attr-category-current">${catCurrentText}</span>`, catEditor) +
+        renderLossCompBlock(detail, uniq, canManage);
+
+      if (canManage) {
+        wrap.querySelector(".attr-anchor-save")?.addEventListener("click", () => handleSaveAnchor(detailRow, recipeId));
+        wrap.querySelector(".attr-tolerance-save")?.addEventListener("click", () => handleSaveTolerance(detailRow, recipeId));
+        wrap.querySelector(".attr-category-save")?.addEventListener("click", () => handleSaveCategory(detailRow, recipeId));
+        wireLossCompEditor(detailRow, recipeId, uniq);
+      }
+    }
+
+    function renderLossCompBlock(detail, itemNames, canManage) {
+      const existing = (detail.items || []).filter(
+        (it) => Number(it.loss_comp_g) > 0 && it.material_name,
+      );
+      const currentText = existing.length
+        ? existing.map((it) => `<span class="lookup-losscomp-badge">+${it.loss_comp_g}g 보정</span> ${IRMS.escapeHtml(it.material_name)}`).join(" · ")
+        : '<span class="muted">없음</span>';
+      if (!canManage) {
+        return `<div class="lookup-attr-row"><label class="filter-label">투입 로스 보정</label>`
+          + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentText}</span></div>`;
+      }
+      const options = itemNames.length
+        ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("")
+        : "";
+      const rowsHtml = existing.map((it) => lossCompRowHtml(itemNames, it.material_name, it.loss_comp_g)).join("");
+      return `<div class="lookup-attr-row lookup-attr-row-block">`
+        + `<label class="filter-label lookup-losscomp-label">투입 로스 보정</label>`
+        + `<span class="lookup-attr-current"><span class="muted">현재:</span> <span class="attr-losscomp-current">${currentText}</span></span>`
+        + `<div class="lookup-losscomp-rows attr-losscomp-rows">${rowsHtml}</div>`
+        + `<div class="lookup-losscomp-actions">`
+        + `<button class="btn btn-sm attr-losscomp-add" type="button">+ 보정 추가</button>`
+        + `<button class="btn attr-losscomp-save" type="button">저장</button>`
+        + `</div>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 — 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다 — 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
+        + (itemNames.length ? "" : '<p class="login-error attr-losscomp-error">BOM 자재가 없습니다.</p>')
+        + `<input type="hidden" class="attr-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`
+        + `</div>`;
+    }
+
+    function lossCompRowHtml(itemNames, selectedName, value) {
+      const opts = itemNames.length
+        ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === selectedName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`).join("")
+        : "";
+      return `<div class="lookup-losscomp-row">`
+        + `<select class="input attr-losscomp-mat">${opts}</select>`
+        + `<input class="input attr-losscomp-g" type="number" step="0.1" min="0" max="100" placeholder="보정 g" value="${value != null ? IRMS.escapeHtml(String(value)) : ""}" />`
+        + `<button class="btn btn-sm attr-losscomp-del" type="button" title="삭제">✕</button>`
+        + `</div>`;
+    }
+
+    function wireLossCompEditor(detailRow, recipeId, itemNames) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      if (!wrap) return;
+      const rowsEl = wrap.querySelector(".attr-losscomp-rows");
+      const addBtn = wrap.querySelector(".attr-losscomp-add");
+      const saveBtn = wrap.querySelector(".attr-losscomp-save");
+      if (addBtn) addBtn.addEventListener("click", () => {
+        if (!rowsEl) return;
+        const tmp = document.createElement("div");
+        tmp.innerHTML = lossCompRowHtml(itemNames, "", "");
+        rowsEl.appendChild(tmp.firstChild);
+      });
+      if (rowsEl) rowsEl.addEventListener("click", (e) => {
+        const del = e.target.closest(".attr-losscomp-del");
+        if (del) del.closest(".lookup-losscomp-row").remove();
+      });
+      if (saveBtn) saveBtn.addEventListener("click", () => handleSaveLossComp(detailRow, recipeId));
+    }
+
+    // ── 저장 핸들러(모두 detailRow 스코프) ──
+    async function handleSaveAnchor(detailRow, recipeId) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      const sel = wrap && wrap.querySelector(".attr-anchor-select");
+      const saveBtn = wrap && wrap.querySelector(".attr-anchor-save");
+      if (!sel) return;
+      let materialId = null;
+      const chosenName = sel.value.trim();
+      if (chosenName) {
+        try {
+          const detail = await IRMS.getRecipeDetail(recipeId);
+          const match = (detail.items || []).find((it) => it.material_name === chosenName);
+          if (!match || match.material_id == null) {
+            IRMS.notify("선택한 자재의 식별자를 찾을 수 없습니다.", "error");
+            return;
+          }
+          materialId = Number(match.material_id);
+        } catch (error) {
+          IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+          return;
+        }
+      }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/anchor`, {
+          method: "PUT", credentials: "same-origin", headers,
+          body: JSON.stringify({ material_id: materialId }),
+        });
+        if (!resp.ok) throw new Error(await fetchErrDetail(resp));
+        await resp.json();
+        const cur = wrap.querySelector(".attr-anchor-current");
+        if (cur) cur.innerHTML = chosenName ? IRMS.escapeHtml(chosenName) : '<span class="muted">없음</span>';
+        IRMS.notify(chosenName ? `기준 자재를 '${chosenName}'(으)로 지정했습니다.` : "기준 자재를 해제했습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    async function handleSaveTolerance(detailRow, recipeId) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      const input = wrap && wrap.querySelector(".attr-tolerance-input");
+      const saveBtn = wrap && wrap.querySelector(".attr-tolerance-save");
+      if (!input) return;
+      const raw = (input.value || "").trim();
+      let toleranceG = null;
+      let label;
+      if (raw !== "") {
+        const v = Number(raw);
+        if (!Number.isFinite(v) || !(v > 0)) {
+          IRMS.notify("허용 편차는 0 초과 숫자여야 합니다. (비우면 기본 0.05g)", "error");
+          return;
+        }
+        toleranceG = v;
+        label = `±${v} g`;
+      } else {
+        label = '<span class="muted">기본 ±0.05 g</span>';
+      }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/tolerance`, {
+          method: "PUT", credentials: "same-origin", headers,
+          body: JSON.stringify({ tolerance_g: toleranceG }),
+        });
+        if (!resp.ok) throw new Error(await fetchErrDetail(resp));
+        await resp.json();
+        const cur = wrap.querySelector(".attr-tolerance-current");
+        if (cur) cur.innerHTML = label;
+        IRMS.notify(toleranceG != null ? `허용 편차를 ±${toleranceG} g 으로 지정했습니다.` : "허용 편차를 기본값(±0.05 g)으로 되돌렸습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`허용 편차 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    async function handleSaveCategory(detailRow, recipeId) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      const sel = wrap && wrap.querySelector(".attr-category-select");
+      const saveBtn = wrap && wrap.querySelector(".attr-category-save");
+      if (!sel) return;
+      const category = sel.value ? sel.value : null;
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/category`, {
+          method: "PUT", credentials: "same-origin", headers,
+          body: JSON.stringify({ category }),
+        });
+        if (!resp.ok) throw new Error(await fetchErrDetail(resp));
+        await resp.json();
+        const cur = wrap.querySelector(".attr-category-current");
+        if (cur) cur.innerHTML = category ? IRMS.escapeHtml(category) : '<span class="muted">미분류</span>';
+        IRMS.notify(category ? `분류를 '${category}'(으)로 지정했습니다.` : "분류를 미분류로 되돌렸습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`분류 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    async function handleSaveLossComp(detailRow, recipeId) {
+      const wrap = detailRow.querySelector(".history-attrs");
+      const saveBtn = wrap && wrap.querySelector(".attr-losscomp-save");
+      const rowsEl = wrap && wrap.querySelector(".attr-losscomp-rows");
+      const errEl = wrap && wrap.querySelector(".attr-losscomp-error");
+      if (errEl) errEl.remove();
+      const items = [];
+      const seen = new Set();
+      let bad = "";
+      if (rowsEl) {
+        rowsEl.querySelectorAll(".lookup-losscomp-row").forEach((row) => {
+          const matSel = row.querySelector(".attr-losscomp-mat");
+          const gInput = row.querySelector(".attr-losscomp-g");
+          const name = (matSel && matSel.value || "").trim();
+          const rawG = (gInput && gInput.value || "").trim();
+          if (!name && !rawG) return;
+          const g = Number(rawG);
+          if (!name) { bad = "자재를 선택하세요."; return; }
+          if (!Number.isFinite(g) || g <= 0 || g > 100) { bad = `보정값은 0 초과 100 이하여야 합니다: ${name}`; return; }
+          if (seen.has(name)) { bad = `같은 자재가 중복됩니다: ${name}`; return; }
+          seen.add(name);
+          items.push({ material_name: name, loss_comp_g: g });
+        });
+      }
+      if (bad) { IRMS.notify(bad, "error"); return; }
+      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
+        if (token) headers["x-csrftoken"] = token;
+        const resp = await fetch(`/api/recipes/${recipeId}/loss-comp`, {
+          method: "PUT", credentials: "same-origin", headers,
+          body: JSON.stringify({ items }),
+        });
+        if (!resp.ok) throw new Error(await fetchErrDetail(resp));
+        await resp.json();
+        // 성공 — 속성 영역을 detail 재조회로 다시 그린다.
+        const detail = await IRMS.getRecipeDetail(recipeId);
+        await renderAttributePanel(detailRow, detail, recipeId);
+        IRMS.notify(items.length ? `투입 로스 보정 ${items.length}건을 저장했습니다.` : "투입 로스 보정을 모두 해제했습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`투입 로스 보정 저장 실패: ${error.message}`, "error");
+      } finally {
+        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+      }
+    }
+
+    // 에러 응답 detail 추출 헬퍼(저장 핸들러 공용).
+    async function fetchErrDetail(resp) {
+      try {
+        const payload = await resp.json();
+        const d = payload && payload.detail;
+        return d && typeof d === "object" && d.message ? d.message
+          : (d !== undefined ? String(d) : `Request failed (${resp.status})`);
+      } catch (_e) {
+        return `Request failed (${resp.status})`;
+      }
     }
 
     return {

@@ -321,24 +321,24 @@
     // management.js 의 switchToLookupTab(recipeId) 가 이 함수를 호출해 데이터를 채운다.
     async function openVersionCompareTab(recipeId) {
       // 탭 전환은 호출부(switchToLookupTab)가 담당. 여기선 데이터 로드만.
-      // 검색창에 제품명을 채우고 loadVersionsForProduct 로 타임라인+비교표를 그린다.
+      // 제품명을 상단에 표시하고 loadVersionsForProduct 로 타임라인+비교표를 그린다.
       try {
-        // recipeId 의 제품명을 history 에서 얻어 검색창에 반영(칩/검색 일치).
         const hres = await fetch(`/api/recipes/${recipeId}/history`, { credentials: "same-origin" });
         if (hres.ok) {
           const h = await hres.json();
-          const first = (h.items || [])[0];
-          if (first && first.product_name && dom.lookupProduct) {
-            dom.lookupProduct.value = first.product_name;
+          const items = h.items || [];
+          // 제목은 **현재판** 이름. items[0](체인의 첫 판)을 쓰면 이름을 갈아탄 계보에서
+          // 옛 이름이 제목이 된다("버전 비교 · NPR" — 실제 현재 이름은 NPR-S, 2026-08-07 확인).
+          const head = items.find((it) => it.is_current) || items[items.length - 1] || items[0];
+          if (head && head.product_name) {
+            const titleEl = document.getElementById("vc-product-title");
+            if (titleEl) titleEl.textContent = head.product_name;
           }
         }
       } catch (_e) { /* 무시 */ }
-      const currentId = await loadVersionsForProduct(recipeId);
       // 현황에서 옛 판의 [버전 이력]으로 들어왔더라도 편집 대상은 체인의 현재판으로.
-      if (ctx.recipeLookup && ctx.recipeLookup.setLookupSelection) {
-        ctx.recipeLookup.setLookupSelection(currentId || recipeId);
-      }
-      return currentId;
+      // (loadVersionsForProduct 가 현재판 id 반환 — 옛 이름 계보 회귀 방지)
+      await loadVersionsForProduct(recipeId);
     }
 
     return {

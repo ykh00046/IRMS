@@ -33,21 +33,10 @@ document.addEventListener("DOMContentLoaded", () => {
     historyResetBtn: document.getElementById("management-history-reset"),
     tabBtns: document.querySelectorAll(".mgmt-tab"),
     tabPanels: document.querySelectorAll(".tab-panel"),
-    lookupProduct: document.getElementById("lookup-product"),
-    productList: document.getElementById("product-list"),
-    lookupBtn: document.getElementById("lookup-btn"),
-    lookupResult: document.getElementById("lookup-result"),
-    lookupAnchor: document.getElementById("lookup-anchor"),
-    lookupActions: document.getElementById("lookup-actions"),
-    lookupSelectedLabel: document.getElementById("lookup-selected-label"),
-    lookupCopyBtn: document.getElementById("lookup-copy-btn"),
-    lookupCloneBtn: document.getElementById("lookup-clone-btn"),
-    lookupHistoryBtn: document.getElementById("lookup-history-btn"),
-    lookupDhr: document.getElementById("lookup-dhr"),
-    lookupDhrBtn: document.getElementById("lookup-dhr-btn"),
     vcLayout: document.getElementById("vc-layout"),
     vcTimeline: document.getElementById("vc-timeline"),
     vcCompare: document.getElementById("vc-compare"),
+    vcBackBtn: document.getElementById("vc-back-btn"),
     codesSearch: document.getElementById("codes-search"),
     codesUncoded: document.getElementById("codes-uncoded"),
     codesRefreshBtn: document.getElementById("codes-refresh-btn"),
@@ -85,11 +74,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // 돌아오면 목록이 낡아 새 레시피가 안 보이던 문제(탭 전환은 재조회하지 않았음).
       if (btn.dataset.tab === "history" && ctx.recipeHistory) {
         ctx.recipeHistory.renderHistory();
-      }
-      // 버전 비교 탭 진입 시 반제품 목록·칩 최신화 — 현황 탭과 같은 이유(새 레시피가
-      // 등록돼도 탭 전환만으로는 칩/목록이 낡은 채 유지되던 문제).
-      if (btn.dataset.tab === "lookup" && ctx.recipeLookup) {
-        ctx.recipeLookup.loadProducts();
       }
     });
   });
@@ -169,7 +153,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const recipeLookup = IRMS.management.createRecipeLookup(ctx);
   ctx.recipeLookup = recipeLookup;
-  ctx.onEditFromVersion = recipeLookup.handleLookupClone;
   ctx.copyToClipboard = recipeLookup.copyToClipboard;
 
   const versionCompare = IRMS.management.createVersionCompare(ctx);
@@ -267,30 +250,18 @@ document.addEventListener("DOMContentLoaded", () => {
     dom.rawInput.addEventListener("input", () => ctx.onDirty());
   }
 
-  if (dom.lookupBtn) {
-    dom.lookupBtn.addEventListener("click", recipeLookup.handleLookup);
-  }
-  if (dom.lookupProduct) {
-    dom.lookupProduct.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        recipeLookup.handleLookup();
-      }
+  // 3단계 정리(2026-08-06) — 비교 화면 검색·칩·액션 제거. 남은 바인딩: 현황으로 복귀 버튼.
+  if (dom.vcBackBtn) {
+    dom.vcBackBtn.addEventListener("click", () => {
+      dom.tabBtns.forEach((b) => b.classList.remove("active"));
+      dom.tabPanels.forEach((p) => p.classList.remove("active"));
+      const historyTab = document.querySelector('[data-tab="history"]');
+      if (historyTab) historyTab.classList.add("active");
+      document.getElementById("tab-history").classList.add("active");
+      syncTopbarTitle("history");
+      // 필터는 건드리지 않는다 — 그 반제품 행이 보이도록.
     });
   }
-  if (dom.lookupCopyBtn) {
-    dom.lookupCopyBtn.addEventListener("click", recipeLookup.handleLookupCopy);
-  }
-  if (dom.lookupCloneBtn) {
-    dom.lookupCloneBtn.addEventListener("click", recipeLookup.handleLookupClone);
-  }
-  if (dom.lookupDhrBtn) {
-    dom.lookupDhrBtn.addEventListener("click", recipeLookup.handleSetDhr);
-  }
-  if (dom.lookupDhr) {
-    dom.lookupDhr.addEventListener("change", recipeLookup.handleDhrModeChange);
-  }
-  // 버전 이력/비교 모달 제거(2026-08-06) — 탭이 대체. 모달 관련 바인딩 없음.
 
   // ── Init sequence ──
   (async () => {

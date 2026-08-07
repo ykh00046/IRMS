@@ -6,14 +6,13 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260807a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260807b" />
 {% endblock %}
 
 {% block content %}
         <nav class="mgmt-tabs">
           <button class="mgmt-tab active" data-tab="history" type="button">레시피 현황</button>
           <button class="mgmt-tab" data-tab="import" type="button" {% if not can_manage %}hidden{% endif %}>레시피 등록·수정</button>
-          <button class="mgmt-tab" data-tab="lookup" type="button">버전 비교</button>
           <button class="mgmt-tab" data-tab="codes" type="button" {% if not can_manage %}hidden{% endif %}>품목코드</button>
         </nav>
 
@@ -249,37 +248,19 @@
           </section>
         </div>
 
-        <!-- ── 레시피 조회 ── -->
+        <!-- 버전 비교(3단계 정리 2026-08-06) — 탭 버튼 없이 [버전 이력]으로만 진입.
+             검색·칩·액션·속성편집기는 현황으로 이전/중복 제거됐다. 비교 전용 화면. -->
         <div class="tab-panel" id="tab-lookup">
           <section class="panel">
-            <h3 class="panel-title">버전 비교</h3>
-            <p class="panel-subtitle">여러 버전의 자재 구성을 나란히 비교합니다. 아래 목록에서 반제품을 고르거나 이름으로 검색하세요.</p>
-            <div class="lookup-search">
-              <div class="filter-group">
-                <label class="filter-label">반제품명</label>
-                <input id="lookup-product" class="input" list="product-list" placeholder="반제품명 입력 또는 선택" />
-                <datalist id="product-list"></datalist>
-              </div>
-              <button id="lookup-btn" class="btn accent">검색</button>
-              <label class="filter-label checkbox-label">
-                <input type="checkbox" id="lookup-dhr" /> DHR 전용
-              </label>
+            <div class="vc-header">
+              <button id="vc-back-btn" class="btn" type="button">← 레시피 현황으로</button>
+              <h3 class="panel-title">버전 비교 · <span id="vc-product-title">-</span></h3>
             </div>
-            <div id="lookup-result" class="lookup-result">
-              <p class="empty-state">반제품명을 선택하면 버전별 자재 구성이 표시됩니다.</p>
-              <div id="lookup-chips" class="lookup-chips"></div>
-            </div>
+            <p class="panel-subtitle">여러 버전의 자재 구성을 나란히 비교합니다. 왼쪽에서 비교할 버전을 2개 이상 선택하세요.</p>
             <div class="vc-layout" id="vc-layout" hidden>
               <div class="vc-timeline" id="vc-timeline"></div>
               <div class="vc-detail">
                 <div id="vc-compare"></div>
-                <div id="lookup-anchor" class="lookup-anchor" hidden></div>
-                <div id="lookup-actions" class="button-row lookup-actions" hidden>
-                  <span id="lookup-selected-label" class="muted">선택: 없음</span>
-                  <button id="lookup-copy-btn" class="btn" disabled>엑셀로 복사</button>
-                  <button id="lookup-dhr-btn" class="btn" disabled {% if not can_manage %}hidden{% endif %}>DHR 전용 지정/해제</button>
-                  <button id="lookup-clone-btn" class="btn accent" disabled {% if not can_manage %}hidden{% endif %}>수정 등록</button>
-                </div>
               </div>
             </div>
           </section>
@@ -336,9 +317,9 @@
     <script src="/static/js/management/bom-editor.js?v=20260805a"></script>
     <script src="/static/js/management/recipe-edit-loader.js?v=20260726a"></script>
     <script src="/static/js/management/import-validate.js?v=20260726a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260806b"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260807a"></script>
-    <script src="/static/js/management/version-compare.js?v=20260807b"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260807a"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260807b"></script>
+    <script src="/static/js/management/version-compare.js?v=20260807d"></script>
     <script src="/static/js/management/item-codes.js?v=20260805a"></script>
-    <script src="/static/js/management.js?v=20260807a"></script>
+    <script src="/static/js/management.js?v=20260807b"></script>
 {% endblock %}
