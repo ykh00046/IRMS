@@ -160,7 +160,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── 담당자 명단 ──────────────────────────────────────────────
   function renderSummary(items) {
     if (summaryTotal) summaryTotal.textContent = String(items.length);
-    if (summaryManagers) summaryManagers.textContent = String(items.filter((w) => w.is_manager).length);
+    // 활성 책임자만 센다 — 서버의 "마지막 책임자" 가드가 활성 기준이라, 비활성까지 세면
+    // 화면엔 3명인데 해제가 막히는 어긋남이 생긴다(2026-08-08 감사).
+    if (summaryManagers) {
+      summaryManagers.textContent = String(
+        items.filter((w) => w.is_manager && w.is_active).length,
+      );
+    }
   }
 
   function renderWorkerRow(worker) {
@@ -179,18 +185,28 @@ document.addEventListener("DOMContentLoaded", () => {
               : '<button type="button" class="btn danger" data-action="revoke">책임자 해제</button>'}
           </div>
         </div>`
+      // 담당자 행: 비밀번호 칸은 [책임자 지정]을 눌렀을 때만 편다 — 종전엔 모든 행에
+      // 상시 노출돼(8명이면 8칸) 이 화면의 주 용도가 '비밀번호 설정'처럼 보였다.
       : `
         <div class="password-stack">
-          <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
-            placeholder="비밀번호 설정(8자 이상)" />
-          <button type="button" class="btn accent" data-action="grant">책임자 지정</button>
+          <button type="button" class="btn accent" data-action="grant-open">책임자 지정</button>
+          <div class="grant-fields" hidden>
+            <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
+              placeholder="비밀번호 설정(8자 이상)" />
+            <div class="button-row">
+              <button type="button" class="btn accent" data-action="grant">지정</button>
+              <button type="button" class="btn" data-action="grant-cancel">취소</button>
+            </div>
+          </div>
         </div>`;
+    // 삭제는 '정리 모드'에서만 — 되돌릴 수 없는 버튼이 모든 행에 상시 떠 있으면
+    // 실수 클릭 거리 안에 있다(레시피 관리 품목코드 탭과 같은 방식).
     const statusCell = `
       <div class="button-row">
         ${worker.is_active
           ? '<button type="button" class="btn" data-action="deactivate">비활성화</button>'
           : '<button type="button" class="btn" data-action="activate">활성화</button>'}
-        <button type="button" class="btn danger" data-action="delete">삭제</button>
+        <button type="button" class="btn danger worker-delete-btn" data-action="delete" hidden>삭제</button>
       </div>`;
     // 파트(약품/합성/잉크/용수) — 변경 즉시 저장. 빈 값 = 미지정(해제).
     // 작업자 로그인 화면의 파트 필터가 이 값으로 명단을 거른다.
@@ -223,6 +239,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     workersBody.innerHTML = items.map(renderWorkerRow).join("");
+    // 다시 그린 뒤에도 정리 모드 상태를 유지한다(삭제 버튼 노출 여부).
+    if (typeof applyCleanupMode === "function") applyCleanupMode();
   }
 
   async function loadWorkers() {
@@ -308,6 +326,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const passwordInput = row.querySelector('[data-field="new-password"]');
     const password = String(passwordInput?.value || "");
 
+    // 책임자 지정 — 비밀번호 칸을 펴고/접는 두 동작은 서버 호출이 없다.
+    const fields = row.querySelector(".grant-fields");
+    if (action === "grant-open" || action === "grant-cancel") {
+      const opening = action === "grant-open";
+      if (fields) fields.hidden = !opening;
+      button.hidden = opening;                       // [책임자 지정] 버튼은 펼치면 감춘다
+      const openBtn = row.querySelector('[data-action="grant-open"]');
+      if (openBtn && !opening) openBtn.hidden = false;
+      if (passwordInput) {
+        passwordInput.value = "";
+        if (opening) passwordInput.focus();
+      }
+      button.disabled = false;
+      return;
+    }
+
     button.disabled = true;
     try {
       if (action === "grant" || action === "reset-password") {
@@ -388,29 +422,33 @@ document.addEventListener("DOMContentLoaded", () => {
       auditLogList.innerHTML = '<div class="empty-state-block">표시할 감사 로그가 없습니다.</div>';
       return;
     }
-    auditLogList.innerHTML = items
+    // 표로 본다 — 카드 한 장이 140px 이라 50건이면 7,000px 를 훑어야 했고, 감사 로그를
+    // 보는 이유가 대개 "언제 누가 무엇을"의 훑기라 세로 나열은 그 일에 최악이었다.
+    const rows = items
       .map((log) => {
         const actor = actorSummary(log);
         const targetLabel = log.targetLabel || `${log.targetType || "target"} ${log.targetId || "-"}`;
+        const detail = detailsSummary(log);
         return `
-          <article class="audit-item">
-            <div class="audit-item-top">
-              <span class="audit-action-chip">${esc(actionLabel(log.action))}</span>
-              <time class="audit-time">${esc(formatCreatedAt(log.createdAt))}</time>
-            </div>
-            <div class="audit-item-main">
-              <div class="audit-actor-block">
-                <strong>${esc(actor.display)}</strong>
-                <span class="audit-meta">${esc(usernameWithRole(actor))}</span>
-              </div>
-              <div class="audit-target-block">
-                <span class="audit-target-label">${esc(targetLabel)}</span>
-                <span class="audit-detail-text">${esc(detailsSummary(log))}</span>
-              </div>
-            </div>
-          </article>`;
+          <tr>
+            <td class="audit-c-time mono">${esc(formatCreatedAt(log.createdAt))}</td>
+            <td class="audit-c-action"><span class="status-chip">${esc(actionLabel(log.action))}</span></td>
+            <td class="audit-c-actor">
+              <strong>${esc(actor.display)}</strong>
+              <span class="audit-meta">${esc(usernameWithRole(actor))}</span>
+            </td>
+            <td class="audit-c-target">${esc(targetLabel)}</td>
+            <td class="audit-c-detail">${detail ? esc(detail) : "<span class='audit-meta'>-</span>"}</td>
+          </tr>`;
       })
       .join("");
+    auditLogList.innerHTML = `
+      <table class="user-table audit-table">
+        <thead>
+          <tr><th>시각</th><th>이벤트</th><th>수행자</th><th>대상</th><th>내용</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
   }
 
   async function loadAuditLogs() {
@@ -433,6 +471,48 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   buildAuditFilterOptions();
+
+  // ── 탭 전환 ──────────────────────────────────────────────────
+  // 성격이 다른 블록이 한 화면에 6,800px 로 쌓여 있던 것을 담당자/근태/감사/서명/설정으로
+  // 나눴다(2026-08-08). 레시피 관리와 같은 규약: .mgmt-tab + .tab-panel#tab-<name>.
+  const adminTabBtns = document.querySelectorAll(".admin-tabs .mgmt-tab");
+  const adminTabTitles = {
+    people: "담당자", attendance: "근태 계정", audit: "감사 로그",
+    signature: "서명", system: "시스템 설정",
+  };
+  adminTabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      adminTabBtns.forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      const panel = document.getElementById(`tab-${btn.dataset.tab}`);
+      if (panel) panel.classList.add("active");
+      const heading = document.querySelector(".topbar-heading");
+      const name = adminTabTitles[btn.dataset.tab];
+      if (heading && name) heading.textContent = `사용자 관리 · ${name}`;
+      // 탭에 들어갈 때 최신화 — 근태·감사는 다른 사람이 바꿀 수 있는 목록이다.
+      if (btn.dataset.tab === "attendance") loadAttendanceUsers();
+      if (btn.dataset.tab === "audit") loadAuditLogs();
+    });
+  });
+
+  // 정리 모드 — 켤 때만 행 삭제 버튼이 보인다.
+  const cleanupToggle = document.getElementById("workers-cleanup");
+  function applyCleanupMode() {
+    const on = !!(cleanupToggle && cleanupToggle.checked);
+    document.querySelectorAll(".worker-delete-btn").forEach((b) => { b.hidden = !on; });
+  }
+  cleanupToggle?.addEventListener("change", applyCleanupMode);
+
+  // 비상 코드 보기 — 기본은 가려 두고 누를 때만 드러낸다.
+  const codeInput = document.getElementById("blend-window-code-input");
+  const codeReveal = document.getElementById("blend-window-code-reveal");
+  codeReveal?.addEventListener("click", () => {
+    if (!codeInput) return;
+    const hidden = codeInput.type === "password";
+    codeInput.type = hidden ? "text" : "password";
+    codeReveal.textContent = hidden ? "가리기" : "보기";
+  });
 
   addWorkerForm?.addEventListener("submit", handleAddWorker);
   changePwForm?.addEventListener("submit", handleChangePassword);
@@ -636,14 +716,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const preview = document.getElementById("sig-preview");
     const req = IRMS._core && IRMS._core.request;
     if (!grid || !req) return;
+    // 라벨만 있고 설명이 없어서(2026-08-08 검토) "펜압 노이즈 0.35"를 올려야 할지
+    // 내려야 할지 화면만 봐선 알 수 없었다. 값을 올렸을 때 무슨 일이 나는지 적는다.
     const LABELS = {
-      gaussian_blur_sigma: "가우시안 블러", pressure_noise_strength: "펜압 노이즈",
-      ink_alpha_factor: "서명 진하기", signature_brightness_factor: "서명 밝기",
-      final_contrast_factor: "최종 대비", rotation_angle: "회전 각도(°)",
-      scale_min: "최소 크기", scale_max: "최대 크기",
-      scan_noise_range: "스캔 노이즈", scan_blur_radius: "스캔 블러",
-      scan_contrast: "스캔 대비", scan_brightness: "스캔 밝기",
-      scan_paper_tone: "종이톤(여백)",
+      gaussian_blur_sigma: ["가우시안 블러", "올릴수록 획이 뭉개져 번진 느낌"],
+      pressure_noise_strength: ["펜압 노이즈", "올릴수록 획 굵기가 불규칙해짐(손 떨림)"],
+      ink_alpha_factor: ["서명 진하기", "올릴수록 서명이 진해짐"],
+      signature_brightness_factor: ["서명 밝기", "올릴수록 서명이 밝아짐(연해짐)"],
+      final_contrast_factor: ["최종 대비", "올릴수록 진한 곳과 옅은 곳 차이가 커짐"],
+      rotation_angle: ["회전 각도(°)", "서명을 무작위로 기울이는 최대 각도"],
+      scale_min: ["최소 크기", "서명 크기를 무작위로 고르는 범위의 아래쪽 배율"],
+      scale_max: ["최대 크기", "위쪽 배율. 최소보다 작으면 크기가 고정됨"],
+      scan_noise_range: ["스캔 노이즈", "올릴수록 종이 잡티가 많아짐"],
+      scan_blur_radius: ["스캔 블러", "올릴수록 스캔한 듯 흐릿해짐"],
+      scan_contrast: ["스캔 대비", "올릴수록 종이 전체 대비가 세짐"],
+      scan_brightness: ["스캔 밝기", "올릴수록 종이가 밝아짐"],
+      scan_paper_tone: ["종이톤(여백)", "낮출수록 여백이 어둡고 누런 종이색"],
     };
     let defaults = {};
 
@@ -653,9 +741,14 @@ document.addEventListener("DOMContentLoaded", () => {
     function render(cfg, ranges) {
       grid.innerHTML = Object.keys(LABELS).map((k) => {
         const r = ranges[k] || [0, 10];
+        const [label, hint] = LABELS[k];
+        const def = defaults[k];
+        const range = `${r[0]}~${r[1]}${def === undefined ? "" : ` · 기본 ${def}`}`;
         return `<div class="form-group">
-          <label class="filter-label">${LABELS[k]}</label>
-          <input type="number" data-key="${k}" value="${cfg[k]}" step="0.05" min="${r[0]}" max="${r[1]}" class="input" />
+          <label class="filter-label" for="sig-f-${k}">${label}</label>
+          <input id="sig-f-${k}" type="number" data-key="${k}" value="${cfg[k]}" step="0.05"
+            min="${r[0]}" max="${r[1]}" class="input" />
+          <span class="helper-text">${esc(hint)}<br />범위 ${esc(range)}</span>
         </div>`;
       }).join("");
     }

@@ -54,4 +54,7 @@ def test_filter_options_are_not_hardcoded_in_template() -> None:
     html = (ROOT / "templates" / "admin_users.html").read_text(encoding="utf-8")
     block = html[html.index('id="audit-action-filter"') :]
     block = block[: block.index("</select>")]
-    assert block.count("<option") == 1, "이벤트 필터는 AUDIT_GROUPS 에서 생성해야 합니다"
+    # 허용 상한은 1 — '전체' 자리표시자까지가 한계고, 그 이상은 목록을 템플릿에 다시
+    # 적었다는 뜻이다. 자리표시자마저 없어도(0) 무방하다: JS 가 채우기 전 잠깐 빈 칸일
+    # 뿐이고, buildAuditFilterOptions 가 '전체'를 항상 먼저 넣는다.
+    assert block.count("<option") <= 1, "이벤트 필터는 AUDIT_GROUPS 에서 생성해야 합니다"

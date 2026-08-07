@@ -5,7 +5,7 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260808a" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
@@ -20,6 +20,17 @@
         <input id="current-user-id" type="hidden"
                value="{{ current_user.id if current_user.is_worker_manager else 0 }}" />
 
+        <!-- 탭 — 한 화면에 성격이 다른 11개 블록이 6,800px 로 쌓여 있어(서명 관련만 41%)
+             사람 관리가 묻혔다(2026-08-08 검토). 레시피 관리와 같은 탭 방식으로 나눈다. -->
+        <nav class="mgmt-tabs admin-tabs">
+          <button class="mgmt-tab active" data-tab="people" type="button">담당자</button>
+          <button class="mgmt-tab" data-tab="attendance" type="button">근태 계정</button>
+          <button class="mgmt-tab" data-tab="audit" type="button">감사 로그</button>
+          <button class="mgmt-tab" data-tab="signature" type="button">서명</button>
+          <button class="mgmt-tab" data-tab="system" type="button">시스템 설정</button>
+        </nav>
+
+        <div class="tab-panel active" id="tab-people">
         <section class="summary-grid">
           <article class="panel summary-card">
             <span class="summary-label">전체 담당자</span>
@@ -30,114 +41,15 @@
             <strong id="summary-managers" class="summary-value">0</strong>
           </article>
         </section>
-
         <section class="panel">
-          <span class="kicker">내 계정</span>
-          <h3 class="panel-title">내 비밀번호 변경</h3>
-          <p class="panel-subtitle">
-            로그인한 책임자 본인의 비밀번호를 직접 변경합니다. 변경하려면 현재 비밀번호를 확인해야 합니다.
-          </p>
-          <form id="change-pw-form" class="create-user-grid">
-            <div class="form-group">
-              <label class="filter-label" for="cpw-current">현재 비밀번호</label>
-              <input id="cpw-current" class="input" type="password" autocomplete="current-password" maxlength="100" />
-            </div>
-            <div class="form-group">
-              <label class="filter-label" for="cpw-new">새 비밀번호 (8자 이상)</label>
-              <input id="cpw-new" class="input" type="password" autocomplete="new-password" minlength="8" maxlength="100" />
-            </div>
-            <div class="button-row create-actions">
-              <button id="cpw-submit" type="submit" class="btn accent">변경</button>
-            </div>
+          <p class="panel-eyebrow">담당자</p>
+          <h3 class="panel-title">담당자 추가</h3>
+          <form id="add-worker-form" class="stack-form" autocomplete="off">
+            <label class="filter-label" for="add-worker-name">이름</label>
+            <input id="add-worker-name" class="input" placeholder="예: 홍길동" maxlength="40" required />
+            <button id="add-worker-submit" class="btn accent" type="submit">추가</button>
           </form>
-        </section>
-
-        <!-- 저울 전용 입력 모드 설정 카드 — 이 페이지 자체가 책임자 전용(서버도 PUT 권한 검증) -->
-        <section class="panel" id="scale-only-card">
-          <span class="kicker">현장 설정</span>
-          <h3 class="panel-title">저울 전용 입력</h3>
-          <div class="scale-only-row">
-            <div class="scale-only-desc">
-              현재 상태: <strong id="scale-only-status">불러오는 중…</strong>
-              <p class="scale-only-help muted small">켜면 배합·다중 계량에서 실제량 수기 입력이 차단되고 저울 PRINT 로만 입력됩니다.</p>
-            </div>
-            <button class="btn accent" id="scale-only-toggle" type="button" disabled>켜기</button>
-          </div>
-        </section>
-
-        <!-- 배합 창 예외 코드 — 여러 창 병렬 배합을 막는 가드의 비상 예외 코드(blend_window_guard.js).
-             책임자 전용. 작업자가 정말 오류로 잘못 막혔을 때만, 관리자가 이 코드를 알려준다. -->
-        <section class="panel" id="blend-window-code-card">
-          <span class="kicker">현장 설정</span>
-          <h3 class="panel-title">배합 창 예외 코드</h3>
-          <div class="scale-only-row">
-            <div class="scale-only-desc">
-              <p class="scale-only-help muted small">
-                배합 창을 두 개 열면 두 번째 창이 막힙니다. 정말 오류로 잘못 막혔을 때만,
-                작업자에게 이 코드를 알려주세요(경고 아이콘을 5번 누르면 코드 입력칸이 나타납니다).
-                기본값은 <strong>111111</strong> 입니다.
-              </p>
-            </div>
-            <div class="blend-window-code-edit">
-              <input class="input" id="blend-window-code-input" type="text" autocomplete="off"
-                     inputmode="text" placeholder="코드" maxlength="32" />
-              <button class="btn accent" id="blend-window-code-save" type="button" disabled>저장</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="admin-secondary-grid">
-          <article class="panel">
-            <span class="kicker">담당자</span>
-            <h3 class="panel-title">담당자 추가</h3>
-            <form id="add-worker-form" class="create-user-grid">
-              <div class="form-group">
-                <label class="filter-label" for="add-worker-name">이름</label>
-                <input id="add-worker-name" class="input" maxlength="100" placeholder="예: 홍길동" />
-              </div>
-              <div class="button-row create-actions">
-                <button id="add-worker-submit" type="submit" class="btn accent">추가</button>
-              </div>
-            </form>
-            <p class="panel-subtitle">
-              현장 배합·점도는 이름만 입력하면 됩니다. 레시피·기록 <b>수정·삭제</b> 등 관리 권한이
-              필요한 사람만 아래 명단에서 <b>"책임자 지정"</b>으로 개인 비밀번호를 부여하세요.
-            </p>
-          </article>
-
-          <article class="panel audit-panel">
-            <div class="panel-head-row">
-              <div>
-                <span class="kicker">감사 로그</span>
-                <h3 class="panel-title">최근 감사 로그</h3>
-                <p class="panel-subtitle audit-subtitle">
-                  로그인, 담당자·책임자 관리, 배합 기록, 레시피·점도 변경 이벤트를 최근 순서대로 보여줍니다.
-                </p>
-              </div>
-              <button id="audit-refresh" type="button" class="btn">새로고침</button>
-            </div>
-
-            <div class="audit-toolbar">
-              <div class="form-group audit-filter">
-                <label class="filter-label" for="audit-action-filter">이벤트 필터</label>
-                <!-- 이벤트 목록은 admin_users.js 의 AUDIT_GROUPS 에서 생성한다.
-                     여기 손으로 적어두면 서버가 새 이벤트를 남길 때마다 낡는다 -->
-                <select id="audit-action-filter" class="input">
-                  <option value="">전체</option>
-                </select>
-              </div>
-              <div class="form-group audit-filter audit-limit-group">
-                <label class="filter-label" for="audit-limit-filter">조회 개수</label>
-                <select id="audit-limit-filter" class="input">
-                  <option value="20">20</option>
-                  <option value="50" selected>50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
-            </div>
-
-            <div id="audit-log-list" class="audit-stream"></div>
-          </article>
+          <p class="helper-text">현장 배합·점도는 이름만 입력하면 됩니다. 레시피·기록 <strong>수정·삭제</strong> 등 관리 권한이 필요한 사람만 아래 명단에서 <strong>"책임자 지정"</strong>으로 개인 비밀번호를 부여하세요.</p>
         </section>
 
         <section class="panel">
@@ -147,6 +59,12 @@
               <h3 class="panel-title">담당자 명단</h3>
             </div>
             <div class="button-row">
+              <!-- 삭제는 평소 숨긴다 — 명단에서 가장 자주 하는 일은 '보기'인데 행마다
+                   삭제 버튼이 있으면 오조작 한 번에 사람이 사라진다(기록은 남지만). -->
+              <label class="cleanup-toggle" for="workers-cleanup">
+                <input id="workers-cleanup" type="checkbox" />
+                <span>정리 모드(삭제 표시)</span>
+              </label>
               <button id="workers-refresh" type="button" class="btn">새로고침</button>
             </div>
           </div>
@@ -166,7 +84,9 @@
             </table>
           </div>
         </section>
+        </div>
 
+        <div class="tab-panel" id="tab-attendance">
         <section class="panel">
           <div class="panel-head-row">
             <div>
@@ -205,7 +125,41 @@
             </table>
           </div>
         </section>
+        </div>
 
+        <div class="tab-panel" id="tab-audit">
+        <section class="panel">
+          <!-- panel-header-row 는 어느 CSS 에도 없는 이름이었다 — 새로고침 단추가
+               제목 아래로 떨어져 있었다(2026-08-08). 이 화면의 다른 카드와 같은
+               .panel-head-row 로 맞춘다. -->
+          <div class="panel-head-row">
+            <div>
+              <p class="panel-eyebrow">전 시스템</p>
+              <h3 class="panel-title">감사 로그</h3>
+            </div>
+            <button id="audit-refresh" class="btn" type="button">새로고침</button>
+          </div>
+          <p class="helper-text">배합·점도·레시피·계정 등 시스템 전체의 쓰기 기록입니다. 이벤트 종류로 걸러 볼 수 있습니다.</p>
+          <div class="filter-bar audit-filter-bar">
+            <div class="filter-group">
+              <label class="filter-label" for="audit-action-filter">이벤트 종류</label>
+              <select id="audit-action-filter" class="input"></select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label" for="audit-limit-filter">조회 개수</label>
+              <select id="audit-limit-filter" class="input">
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </div>
+          </div>
+          <div id="audit-log-list" class="audit-stream"></div>
+        </section>
+
+        </div>
+
+        <div class="tab-panel" id="tab-signature">
         <section class="panel">
           <span class="kicker">배합일지</span>
           <h3 class="panel-title">서명 합성 설정</h3>
@@ -220,7 +174,6 @@
           </div>
           <img id="sig-preview" class="sig-preview" alt="서명 미리보기" />
         </section>
-
         <section class="panel">
           <span class="kicker">배합일지</span>
           <h3 class="panel-title">서명 샘플 관리</h3>
@@ -248,7 +201,64 @@
           </div>
           <div id="sig-sample-list" class="sig-sample-list"></div>
         </section>
+        </div>
 
+        <div class="tab-panel" id="tab-system">
+        <section class="panel">
+          <span class="kicker">내 계정</span>
+          <h3 class="panel-title">내 비밀번호 변경</h3>
+          <p class="panel-subtitle">
+            로그인한 책임자 본인의 비밀번호를 직접 변경합니다. 변경하려면 현재 비밀번호를 확인해야 합니다.
+          </p>
+          <form id="change-pw-form" class="create-user-grid">
+            <div class="form-group">
+              <label class="filter-label" for="cpw-current">현재 비밀번호</label>
+              <input id="cpw-current" class="input" type="password" autocomplete="current-password" maxlength="100" />
+            </div>
+            <div class="form-group">
+              <label class="filter-label" for="cpw-new">새 비밀번호 (8자 이상)</label>
+              <input id="cpw-new" class="input" type="password" autocomplete="new-password" minlength="8" maxlength="100" />
+            </div>
+            <div class="button-row create-actions">
+              <button id="cpw-submit" type="submit" class="btn accent">변경</button>
+            </div>
+          </form>
+        </section>
+        <section class="panel" id="scale-only-card">
+          <span class="kicker">현장 설정</span>
+          <h3 class="panel-title">저울 전용 입력</h3>
+          <div class="scale-only-row">
+            <div class="scale-only-desc">
+              현재 상태: <strong id="scale-only-status">불러오는 중…</strong>
+              <p class="scale-only-help muted small">켜면 배합·다중 계량에서 실제량 수기 입력이 차단되고 저울 PRINT 로만 입력됩니다.</p>
+            </div>
+            <button class="btn accent" id="scale-only-toggle" type="button" disabled>켜기</button>
+          </div>
+        </section>
+        <section class="panel" id="blend-window-code-card">
+          <span class="kicker">현장 설정</span>
+          <h3 class="panel-title">배합 창 예외 코드</h3>
+          <div class="scale-only-row">
+            <div class="scale-only-desc">
+              <p class="scale-only-help muted small">
+                배합 창을 두 개 열면 두 번째 창이 막힙니다. 정말 오류로 잘못 막혔을 때만,
+                작업자에게 이 코드를 알려주세요(경고 아이콘을 5번 누르면 코드 입력칸이 나타납니다).
+                <!-- 초기값을 여기 적어 두면 입력칸을 가린 의미가 없다 — 아직 안 바꿨다면
+                     [보기]로 확인하면 된다(2026-08-08). -->
+                아직 바꾼 적이 없다면 초기값 그대로이니, <strong>[보기]</strong>로 확인한 뒤
+                이 화면에서 바꿔 두세요.
+              </p>
+            </div>
+            <!-- 비상 코드는 가려 둔다 — 화면 공유·어깨너머로 그대로 읽히던 값이다
+                 (2026-08-08 검토). [보기]로 필요할 때만 드러낸다. -->
+            <div class="blend-window-code-edit">
+              <input class="input" id="blend-window-code-input" type="password" autocomplete="off"
+                     inputmode="text" placeholder="코드" maxlength="32" />
+              <button class="btn" id="blend-window-code-reveal" type="button">보기</button>
+              <button class="btn accent" id="blend-window-code-save" type="button" disabled>저장</button>
+            </div>
+          </div>
+        </section>
         <section class="panel">
           <span class="kicker">백업</span>
           <h3 class="panel-title">Google Sheets 백업 (선택)</h3>
@@ -274,9 +284,11 @@
             <button id="sheets-backup-now" class="btn" type="button">지금 백업</button>
           </div>
         </section>
+        </div>
+
 
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260807a"></script>
+    <script src="/static/js/admin_users.js?v=20260808a"></script>
 {% endblock %}

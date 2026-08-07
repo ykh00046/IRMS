@@ -2,9 +2,91 @@
   grid-template-columns: 1fr;
 }
 
+/* 탭 — 레시피 관리와 같은 규약(.mgmt-tabs/.mgmt-tab/.tab-panel)이지만
+   management.css 는 이 화면에서 안 부른다(그 파일의 나머지가 전부 레시피 전용).
+   탭 부분만 여기에 둔다. .tab-panel.active 가 display:contents 인 이유는
+   패널이 사라져도 그 안의 카드들이 본문 그리드의 직속 자식으로 남게 하기 위함. */
+.admin-tabs {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.25rem;
+  background: var(--bg-surface-100);
+  padding: 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-tabs .mgmt-tab {
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-tabs .mgmt-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-200);
+}
+
+.admin-tabs .mgmt-tab.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: contents;
+}
+
+/* 책임자 지정 시에만 펼치는 비밀번호 칸 */
+.grant-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.grant-fields[hidden] {
+  display: none;
+}
+
+/* 명단 삭제 버튼 노출 토글 */
+.cleanup-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* 근태 계정 행의 버튼 묶음 — 잠금 해제가 붙으면서 두 개가 될 수 있다. */
+.att-actions .button-row {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* 카드가 2장뿐이라 4열 그리드는 오른쪽 절반을 비워 둔 채로 남았다 — 내용만큼만
+   차지하게 고정폭으로 둔다(2026-08-08). */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(0, 220px));
   gap: 1rem;
 }
 
@@ -15,7 +97,7 @@
 }
 
 .summary-card {
-  min-height: 132px;
+  min-height: 104px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -94,84 +176,56 @@
   max-width: 140px;
 }
 
+/* 필터 둘은 붙여 둔다 — 공용 .filter-bar 의 space-between 은 두 개짜리에선
+   조회 개수를 화면 반대편까지 밀어내 서로 무관해 보였다. */
+.audit-filter-bar {
+  justify-content: flex-start;
+}
+
+.audit-filter-bar .filter-group {
+  min-width: 200px;
+}
+
 .audit-stream {
-  display: grid;
-  gap: 0.75rem;
-  max-height: 560px;
-  overflow-y: auto;
-  padding-right: 0.2rem;
+  max-height: 620px;
+  overflow: auto;
 }
 
-.audit-item {
-  position: relative;
-  padding: 1rem 1rem 1rem 1.15rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.01)),
-    var(--bg-surface-100);
+/* 감사 로그 표 — 머리줄은 스크롤에 붙여 둔다(200건을 훑을 때 열 이름이 필요). */
+.audit-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface-100);
 }
 
-.audit-item::before {
-  content: "";
-  position: absolute;
-  top: 0.95rem;
-  left: 0;
-  bottom: 0.95rem;
-  width: 3px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent-primary), rgba(51, 65, 85, 0.15));
+.audit-table td {
+  vertical-align: top;
+  font-size: 0.82rem;
 }
 
-.audit-item-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
-}
-
-.audit-action-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.24rem 0.55rem;
-  border-radius: var(--radius-full);
-  background: rgba(51, 65, 85, 0.16);
-  color: var(--text-secondary);
-  border: 1px solid rgba(51, 65, 85, 0.35);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.audit-time {
-  font-size: 0.78rem;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-}
-
-.audit-item-main {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.audit-actor-block,
-.audit-target-block {
-  display: grid;
-  gap: 0.18rem;
-}
-
-.audit-meta,
-.audit-detail-text {
-  font-size: 0.78rem;
+.audit-c-time {
+  white-space: nowrap;
   color: var(--text-secondary);
 }
 
-.audit-target-label {
-  font-size: 0.92rem;
-  color: var(--text-primary);
-  font-weight: 600;
+.audit-c-actor strong {
+  display: block;
+}
+
+.audit-c-target {
+  min-width: 180px;
+}
+
+.audit-c-detail {
+  color: var(--text-secondary);
+  max-width: 420px;
+  word-break: break-word;
+}
+
+.audit-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
 }
 
 .user-table td {
@@ -221,6 +275,11 @@
   min-width: 220px;
 }
 
+/* 지정 전에는 버튼 하나뿐이라 열 너비만큼 늘어나 과하게 보였다. */
+.password-stack > [data-action="grant-open"] {
+  align-self: flex-start;
+}
+
 .helper-text {
   font-size: 0.72rem;
   color: var(--text-tertiary);
@@ -237,10 +296,6 @@
 }
 
 @media (max-width: 1200px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .admin-secondary-grid,
   .create-user-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -248,7 +303,6 @@
 }
 
 @media (max-width: 768px) {
-  .summary-grid,
   .admin-secondary-grid,
   .create-user-grid {
     grid-template-columns: 1fr;
@@ -301,8 +355,13 @@
    명명 클래스로 통일. 라벨은 .form-group + .filter-label 공용 클래스를 쓴다. */
 .sig-config-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.sig-config-grid .helper-text {
+  line-height: 1.45;
 }
 .sig-sample-form {
   display: flex;
