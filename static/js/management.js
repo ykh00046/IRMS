@@ -274,10 +274,10 @@ document.addEventListener("DOMContentLoaded", () => {
         importValidate.renderIssues([], dom.warningList, "확인 사항 없음");
         importValidate.syncRegisterState();
       }
-      await Promise.all([
-        recipeHistory.renderHistory(),
-        recipeLookup.loadProducts(),
-      ]);
+      // 반제품 목록·칩 로드는 3단계 정리(2026-08-07)에서 사라졌다 — 비교 화면이 더는
+      // 입구가 아니라 현황 [버전 이력]으로만 열리기 때문. 호출이 남아 있어 매 진입마다
+      // "초기화 실패: recipeLookup.loadProducts is not a function" 토스트가 떴다.
+      await recipeHistory.renderHistory();
     } catch (error) {
       IRMS.notify(`초기화 실패: ${error.message}`, "error");
     }
