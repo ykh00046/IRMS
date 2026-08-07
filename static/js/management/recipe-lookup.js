@@ -152,16 +152,30 @@
           ? `<select id="lookup-category-select" class="input">${catOptions}</select>`
             + `<button id="lookup-category-save" class="btn" type="button">저장</button>`
           : "";
+        // 속성 한 줄 = [라벨][현재값][편집기]. 종전엔 label·span·select 를 감싸는 요소 없이
+        // 평면으로 이어 붙여 "기준 자재현재:없음"처럼 글자가 붙고 [저장]이 다음 항목 라벨과
+        // 같은 줄에 엉켰다(.lookup-anchor 에 CSS 가 아예 없었다 — 2026-08-06 검토).
+        const attrRow = (labelHtml, currentHtml, editorHtml) =>
+          `<div class="lookup-attr-row">${labelHtml}`
+          + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentHtml}</span>`
+          + (editorHtml ? `<span class="lookup-attr-editor">${editorHtml}</span>` : "")
+          + `</div>`;
         wrap.innerHTML =
-          `<label class="filter-label" for="lookup-anchor-select">기준 자재</label>` +
-          `<span class="muted">현재:</span><span id="lookup-anchor-current">${currentText}</span>` +
-          editor +
-          `<label class="filter-label" for="lookup-tolerance-input">허용 편차</label>` +
-          `<span class="muted">현재:</span><span id="lookup-tolerance-current">${tolCurrentText}</span>` +
-          tolEditor +
-          `<label class="filter-label" for="lookup-category-select">분류</label>` +
-          `<span class="muted">현재:</span><span id="lookup-category-current">${catCurrentText}</span>` +
-          catEditor +
+          attrRow(
+            `<label class="filter-label" for="lookup-anchor-select">기준 자재</label>`,
+            `<span id="lookup-anchor-current">${currentText}</span>`,
+            editor,
+          ) +
+          attrRow(
+            `<label class="filter-label" for="lookup-tolerance-input">허용 편차</label>`,
+            `<span id="lookup-tolerance-current">${tolCurrentText}</span>`,
+            tolEditor,
+          ) +
+          attrRow(
+            `<label class="filter-label" for="lookup-category-select">분류</label>`,
+            `<span id="lookup-category-current">${catCurrentText}</span>`,
+            catEditor,
+          ) +
           renderLossCompEditor(detail, uniq, canManage);
         wrap.hidden = false;
         if (canManage) {
@@ -190,15 +204,18 @@
         ? existing.map((it) => `<span class="lookup-losscomp-badge">+${it.loss_comp_g}g 보정</span> ${IRMS.escapeHtml(it.material_name)}`).join(" · ")
         : '<span class="muted">없음</span>';
       if (!canManage) {
-        return `<label class="filter-label">투입 로스 보정</label>`
-          + `<span class="muted">현재:</span><span>${currentText}</span>`;
+        return `<div class="lookup-attr-row"><label class="filter-label">투입 로스 보정</label>`
+          + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentText}</span></div>`;
       }
       const options = itemNames.length
         ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("")
         : "";
       const rowsHtml = existing.map((it) => lossCompRowHtml(itemNames, it.material_name, it.loss_comp_g)).join("");
-      return `<label class="filter-label lookup-losscomp-label">투입 로스 보정</label>`
-        + `<span class="muted">현재:</span><span id="lookup-losscomp-current">${currentText}</span>`
+      // 보정 줄은 [자재▼][g][✕] 반복 행·설명문까지 딸려 다층이라, 한 줄짜리 속성과 달리
+      // 세로로 쌓는 블록 변형(lookup-attr-row-block)으로 감싼다.
+      return `<div class="lookup-attr-row lookup-attr-row-block">`
+        + `<label class="filter-label lookup-losscomp-label">투입 로스 보정</label>`
+        + `<span class="lookup-attr-current"><span class="muted">현재:</span> <span id="lookup-losscomp-current">${currentText}</span></span>`
         + `<div class="lookup-losscomp-rows" id="lookup-losscomp-rows">${rowsHtml}</div>`
         + `<div class="lookup-losscomp-actions">`
         + `<button id="lookup-losscomp-add" class="btn btn-sm" type="button">+ 보정 추가</button>`
@@ -207,7 +224,8 @@
         + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 — 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
         + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다 — 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
         + (itemNames.length ? "" : '<p class="login-error lookup-losscomp-error">BOM 자재가 없습니다.</p>')
-        + `<input type="hidden" id="lookup-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`;
+        + `<input type="hidden" id="lookup-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`
+        + `</div>`;
     }
 
     function lossCompRowHtml(itemNames, selectedName, value) {

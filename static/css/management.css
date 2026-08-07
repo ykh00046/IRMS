@@ -617,10 +617,29 @@
 .panel-header-row .input { width: 200px; }
 .num { text-align: right; }
 .btn.btn-sm { padding: 2px 8px; font-size: 12px; }
+/* 모달 오버레이 — 종전엔 이 파일에 [hidden] 숨김 규칙 하나뿐이라, 버전 이력·버전 비교
+   창이 오버레이가 아니라 페이지 맨 아래에 그냥 블록으로 붙었다(배경·그림자 없이 static).
+   "버튼을 눌러도 아무 일도 안 일어난 것처럼 보이고 스크롤을 내려야 나온다"는 현장 지적의
+   정체(2026-08-06). blend.css/viscosity.css 와 같은 규칙을 이 화면에도 둔다. */
+.ss-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
 .ss-modal-overlay[hidden] { display: none !important; }
+.ss-modal {
+  background: var(--surface, #fff); border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: min(520px, 92vw); max-height: 85vh; display: flex; flex-direction: column;
+}
+.ss-modal-header {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+}
+.ss-modal-header h3 { margin: 0; font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.ss-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
 
 /* Version history & compare */
-.ss-modal-wide { max-width: 1100px; width: 95vw; }
+.ss-modal-wide { width: min(1100px, 95vw); }
 .history-table th, .history-table td { padding: 8px 10px; }
 .compare-scroll { overflow-x: auto; max-height: 60vh; }
 .compare-table { border-collapse: collapse; min-width: 100%; }
@@ -756,6 +775,41 @@
   line-height: 1.5;
 }
 .mg-flow-note b { color: #15233f; }
+
+/* 레시피 속성 편집기(기준 자재·허용 편차·분류·투입 로스 보정) — .lookup-anchor 에 CSS 가
+   아예 없어 "기준 자재현재:없음" 처럼 글자가 붙고 [저장] 이 다음 항목 라벨과 같은 줄에
+   엉켰다(2026-08-06 검토). 한 줄 = [라벨][현재값][편집기]. */
+.lookup-anchor {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.lookup-attr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+.lookup-attr-row:last-child { border-bottom: none; }
+.lookup-attr-row > .filter-label { flex: 0 0 7.5rem; margin: 0; }
+.lookup-attr-current { flex: 1 1 12rem; min-width: 9rem; font-weight: 600; }
+.lookup-attr-editor { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 22rem; }
+/* .input 은 공용 width:100% 라 그대로 두면 편집기가 줄을 통째로 차지한다. */
+.lookup-attr-editor .input { width: auto; flex: 1 1 8rem; min-width: 7rem; }
+.lookup-attr-editor .btn { flex: 0 0 auto; }
+/* 보정 줄은 반복 행·설명문까지 딸려 다층이라 세로로 쌓는다. 세로 방향에서는 flex-grow 가
+   '높이'로 작동하므로 현재값 칸의 grow 를 반드시 꺼야 한다(안 그러면 빈 칸이 세로로 늘어나
+   설명문과 버튼 사이가 텅 빈다). */
+.lookup-attr-row-block { flex-direction: column; align-items: stretch; }
+.lookup-attr-row-block > .filter-label { flex: none; }
+.lookup-attr-row-block > .lookup-attr-current { flex: 0 0 auto; }
+
+/* 품목코드 빠른 지정·검색 — 위와 같은 이유(.input width:100%)로 입력칸이 한 줄씩
+   차지해 세로로 쌓였다. 한 줄에 나란히 놓는다. */
+.codes-quick-assign { justify-content: flex-start; }
+#tab-codes .filter-bar .input { width: auto; flex: 1 1 16rem; min-width: 11rem; }
+#tab-codes .filter-bar .btn { flex: 0 0 auto; }
 
 /* 투입 로스 보정(파우더 투입 손실 보정) 반복 행 에디터 — lookup-anchor 패널 안.
    [자재 ▼][보정 g][✕] 행 + [+ 보정 추가]/[저장]. BOM 표는 건드리지 않는 별도 속성 줄. */

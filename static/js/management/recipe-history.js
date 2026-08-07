@@ -160,31 +160,51 @@
               </tr>`;
         };
 
-        // 1차/2차 가족 묶음 — 2차(stage1RecipeId 지정) 와 그 1차를 인접 그룹으로 묶어 표시.
+        // 1차/2차 가족 묶음 — 1차 하나 아래 그 1차를 쓰는 2차를 **전부** 묶어 표시한다.
         // 가족은 먼저 등장한 멤버 위치에 나타나고(최신순 반영), 다른 멤버는 그 자리로 끌어온다.
+        //
+        // 종전엔 1차의 자식을 rows.find 로 **하나만** 찾고, 이미 그린 1차인지 확인하지 않아
+        // 1차를 여러 2차가 공유하면 같은 1차 행이 2차 수만큼 복제됐다(SBCT-1 이 'SBCT-A
+        // 가족'과 'SBCT-B 가족'에 각각 한 번씩 — 2026-08-06 화면 확인). 가족 이름표도 2차
+        // 이름을 써서 한 1차가 여러 '가족'으로 쪼개졌다. 이제 1차 기준으로 한 번만 묶는다.
         const byId = new Map(rows.map((r) => [r.id, r]));
+        const childrenOf = new Map();   // 1차 id → [2차...]
+        rows.forEach((r) => {
+          if (!r.stage1RecipeId || !byId.has(r.stage1RecipeId)) return;
+          const list = childrenOf.get(r.stage1RecipeId) || [];
+          list.push(r);
+          childrenOf.set(r.stage1RecipeId, list);
+        });
         const emitted = new Set();
         const COLSPAN = 11;
         const parts = [];
         rows.forEach((r) => {
           if (emitted.has(r.id)) return;
-          let two = null;
-          let one = null;
-          if (r.stage1RecipeId && byId.has(r.stage1RecipeId)) {
-            two = r; one = byId.get(r.stage1RecipeId);           // r = 2차
-          } else {
-            const child = rows.find((x) => x.stage1RecipeId === r.id);
-            if (child) { one = r; two = child; }                 // r = 1차(2차가 뒤에 있음)
-          }
-          if (two && one) {
-            parts.push(`<tr class="family-head-row"><td colspan="${COLSPAN}">◆ ${IRMS.escapeHtml(two.productName)} · 2단 제조 가족</td></tr>`);
-            parts.push(rowHtml(one, "1차"));
-            parts.push(rowHtml(two, "2차"));
-            emitted.add(one.id); emitted.add(two.id);
-          } else {
+          // r 이 1차면 자기 id, 2차면 자기 1차의 id — 어느 쪽으로 만나든 같은 가족을 그린다.
+          const oneId = childrenOf.has(r.id)
+            ? r.id
+            : (r.stage1RecipeId && byId.has(r.stage1RecipeId) ? r.stage1RecipeId : null);
+          if (oneId == null) {
             parts.push(rowHtml(r));
             emitted.add(r.id);
+            return;
           }
+          if (emitted.has(oneId)) return;   // 이 가족은 이미 그렸다(공유 1차의 두 번째 2차)
+          const one = byId.get(oneId);
+          const kids = childrenOf.get(oneId) || [];
+          const kidNames = kids.map((k) => k.productName).filter(Boolean).join(", ");
+          parts.push(
+            `<tr class="family-head-row"><td colspan="${COLSPAN}">`
+            + `◆ ${IRMS.escapeHtml(one.productName)} · 2단 제조 가족`
+            + `<span class="muted"> — 2차 ${kids.length}종${kidNames ? `: ${IRMS.escapeHtml(kidNames)}` : ""}</span>`
+            + `</td></tr>`,
+          );
+          parts.push(rowHtml(one, "1차"));
+          emitted.add(one.id);
+          kids.forEach((k) => {
+            parts.push(rowHtml(k, "2차"));
+            emitted.add(k.id);
+          });
         });
         dom.historyBody.innerHTML = parts.join("");
 
