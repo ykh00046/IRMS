@@ -81,7 +81,6 @@
       }
       if (dom.lookupCopyBtn) dom.lookupCopyBtn.disabled = !recipeId;
       if (dom.lookupCloneBtn) dom.lookupCloneBtn.disabled = !canManage || !recipeId;
-      if (dom.lookupHistoryBtn) dom.lookupHistoryBtn.disabled = !recipeId;
       if (dom.lookupDhrBtn) {
         dom.lookupDhrBtn.disabled = !canManage || !recipeId;
         dom.lookupDhrBtn.textContent = dhrMode() ? "DHR 전용 해제" : "DHR 전용 지정";
@@ -526,74 +525,30 @@
 
       IRMS.btnLoading(dom.lookupBtn, true);
       try {
-        const data = await IRMS.getRecipesByProduct(productName, undefined, dhrMode());
+        // 전 버전(개정 체인 전체)을 불러 버전 비교 타임라인+비교표를 채운다.
+        // current_only=false 로 체인 전체를 가져온 뒤 최신판 id 를 versionCompare 에 넘긴다.
+        const query = { product_name: productName, current_only: "false" };
+        if (dhrMode()) query.dhr = "1";
+        const resp = await fetch(`/api/recipes/by-product?${new URLSearchParams(query)}`, {
+          credentials: "same-origin",
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
         const recipes = data.items || [];
-
         if (!recipes.length) {
           dom.lookupResult.innerHTML = '<p class="empty-state">해당 반제품의 레시피가 없습니다.</p>';
           setLookupSelection(null);
+          const layout = document.getElementById("vc-layout");
+          if (layout) layout.hidden = true;
           return;
         }
-
-        // Collect all unique material names across recipes for pivot columns
-        const allMaterials = [];
-        const materialSet = new Set();
-        for (const recipe of recipes) {
-          for (const item of recipe.items || []) {
-            if (!materialSet.has(item.material_name)) {
-              materialSet.add(item.material_name);
-              allMaterials.push(item.material_name);
-            }
-          }
+        // 최신판(정렬상 첫 행) id 로 버전 비교 로드.
+        const latestId = recipes[0].id;
+        if (ctx.versionCompare && ctx.versionCompare.loadVersionsForProduct) {
+          await ctx.versionCompare.loadVersionsForProduct(latestId);
         }
-
-        // Build pivot table
-        const headerCells = [
-          "<th>ID</th>",
-          ...allMaterials.map((m) => `<th>${IRMS.escapeHtml(m)}</th>`),
-          "<th>항목수</th>",
-          "<th>상태</th>",
-          "<th>등록일</th>",
-          "<th>등록자</th>",
-        ].join("");
-
-        const bodyRows = recipes
-          .map((recipe) => {
-            const valueMap = {};
-            for (const item of recipe.items || []) {
-              valueMap[item.material_name] = item.value;
-            }
-            const materialCells = allMaterials
-              .map((m) => {
-                const val = valueMap[m];
-                return val != null && val !== ""
-                  ? `<td class="value-cell">${IRMS.escapeHtml(String(val))}</td>`
-                  : '<td class="value-cell muted">-</td>';
-              })
-              .join("");
-
-            return `<tr data-recipe-id="${recipe.id}">
-              <td>${recipe.id}</td>
-              ${materialCells}
-              <td class="value-cell">${(recipe.items || []).length}</td>
-              <td><span class="status-chip ${IRMS.statusClass(recipe.status)}">${IRMS.statusLabel(recipe.status)}</span></td>
-              <td>${IRMS.formatDateTime(recipe.created_at)}</td>
-              <td>${IRMS.escapeHtml(recipe.created_by || "-")}</td>
-            </tr>`;
-          })
-          .join("");
-
-        dom.lookupResult.innerHTML = `<table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
-
-        // Row click to select
-        dom.lookupResult.querySelectorAll("tbody tr").forEach((row) => {
-          row.addEventListener("click", () => {
-            setLookupSelection(Number(row.dataset.recipeId));
-          });
-        });
-
-        setLookupSelection(null);
-        if (dom.lookupActions) dom.lookupActions.hidden = false;
+        // 최신판을 선택된 '현재판' 으로 — 속성편집기·액션이 현재판 기준으로 동작.
+        setLookupSelection(latestId);
       } catch (error) {
         IRMS.notify(`조회 실패: ${error.message}`, "error");
       } finally {

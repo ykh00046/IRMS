@@ -45,17 +45,9 @@ document.addEventListener("DOMContentLoaded", () => {
     lookupHistoryBtn: document.getElementById("lookup-history-btn"),
     lookupDhr: document.getElementById("lookup-dhr"),
     lookupDhrBtn: document.getElementById("lookup-dhr-btn"),
-    historyModal: document.getElementById("history-modal"),
-    historyModalClose: document.getElementById("history-modal-close"),
-    historyModalTitle: document.getElementById("history-modal-title"),
-    historyModalSubtitle: document.getElementById("history-modal-subtitle"),
-    versionHistoryBody: document.getElementById("version-history-body"),
-    historyCompareBtn: document.getElementById("history-compare-btn"),
-    compareModal: document.getElementById("compare-modal"),
-    compareModalClose: document.getElementById("compare-modal-close"),
-    compareModalTitle: document.getElementById("compare-modal-title"),
-    compareThead: document.getElementById("compare-thead"),
-    compareTbody: document.getElementById("compare-tbody"),
+    vcLayout: document.getElementById("vc-layout"),
+    vcTimeline: document.getElementById("vc-timeline"),
+    vcCompare: document.getElementById("vc-compare"),
     codesSearch: document.getElementById("codes-search"),
     codesUncoded: document.getElementById("codes-uncoded"),
     codesRefreshBtn: document.getElementById("codes-refresh-btn"),
@@ -111,6 +103,23 @@ document.addEventListener("DOMContentLoaded", () => {
     syncTopbarTitle("import");
   }
 
+  // 현황 [버전 이력] 버튼 → 버전 비교 탭 전환 + 반제품 자동 선택(2026-08-06 재설계).
+  // versionCompare.openVersionCompareTab 가 데이터 로드를 담당한다.
+  function switchToLookupTab(recipeId) {
+    dom.tabBtns.forEach((b) => b.classList.remove("active"));
+    dom.tabPanels.forEach((p) => p.classList.remove("active"));
+    const lookupTab = document.querySelector('[data-tab="lookup"]');
+    if (lookupTab) lookupTab.classList.add("active");
+    document.getElementById("tab-lookup").classList.add("active");
+    syncTopbarTitle("lookup");
+    if (ctx.versionCompare && ctx.versionCompare.openVersionCompareTab) {
+      ctx.versionCompare.openVersionCompareTab(recipeId);
+    }
+  }
+  // ⚠️ ctx 에 다는 건 ctx 가 정의된 뒤에(switchToImportTab 과 같은 자리). 여기서 대입하면
+  // const ctx 의 TDZ 에 걸려 ReferenceError 로 초기화 전체가 죽는다(칩·목록이 아무것도
+  // 안 그려졌다 — 2026-08-07 브라우저 검증에서 적발).
+
   // ── Shared constants ──
   const stageLabels = {
     registered: "Registered",
@@ -144,6 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const: { stageLabels, preferenceKeys },
   };
   ctx.switchToImportTab = switchToImportTab;
+  ctx.switchToLookupTab = switchToLookupTab;
 
   // ── Module assembly (2-stage wiring; order is convention, see design §5) ──
   // 세로 BOM 편집기(item-code P5) — 인터페이스는 구 spreadsheet-editor 와 호환
@@ -274,24 +284,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (dom.lookupCloneBtn) {
     dom.lookupCloneBtn.addEventListener("click", recipeLookup.handleLookupClone);
   }
-  if (dom.lookupHistoryBtn) {
-    dom.lookupHistoryBtn.addEventListener("click", versionCompare.handleLookupHistory);
-  }
   if (dom.lookupDhrBtn) {
     dom.lookupDhrBtn.addEventListener("click", recipeLookup.handleSetDhr);
   }
   if (dom.lookupDhr) {
     dom.lookupDhr.addEventListener("change", recipeLookup.handleDhrModeChange);
   }
-  if (dom.historyModalClose) {
-    dom.historyModalClose.addEventListener("click", () => { dom.historyModal.hidden = true; });
-  }
-  if (dom.historyCompareBtn) {
-    dom.historyCompareBtn.addEventListener("click", versionCompare.handleCompareVersions);
-  }
-  if (dom.compareModalClose) {
-    dom.compareModalClose.addEventListener("click", () => { dom.compareModal.hidden = true; });
-  }
+  // 버전 이력/비교 모달 제거(2026-08-06) — 탭이 대체. 모달 관련 바인딩 없음.
 
   // ── Init sequence ──
   (async () => {

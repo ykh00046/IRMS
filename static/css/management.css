@@ -845,3 +845,74 @@
 .losscomp-cell { white-space: nowrap; }
 .losscomp-cell .mat-losscomp-input { width: 5rem; display: inline-block; }
 .losscomp-cell .mat-losscomp-save { margin-left: 0.3rem; }
+
+/* ── 버전 비교 탭 재설계(2026-08-06) — 모달 없는 한 화면 ──
+   좌: 버전 타임라인(고정폭 약 18rem) + 우: 비교표 가변. ≤900px 세로 스택. */
+.vc-layout {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
+  gap: var(--space-4, 1rem);
+  align-items: start;
+  margin-top: 1rem;
+}
+.vc-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.vc-version-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 8px;
+  background: var(--bg-surface, #fff);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.vc-version-row:hover { border-color: var(--brand-mid, #93c5fd); }
+.vc-version-row.is-current { border-color: var(--brand, #2563eb); background: var(--brand-soft, #eff6ff); }
+.vc-version-row.is-canceled { opacity: 0.55; }
+.vc-version-row .vc-version-check { margin-top: 0.2rem; flex: 0 0 auto; }
+.vc-version-main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.vc-version-label { font-weight: 700; font-size: 0.85rem; }
+.vc-version-meta { font-size: 0.72rem; line-height: 1.4; }
+.vc-version-status { margin-top: 0.15rem; }
+
+.vc-detail { min-width: 0; }
+.vc-single-note { font-size: 0.8rem; color: var(--text-secondary, #64748b); margin: 0 0 0.5rem; }
+.vc-compare-table { border-collapse: collapse; min-width: 100%; }
+.vc-compare-table th, .vc-compare-table td { padding: 6px 10px; border-bottom: 1px solid var(--border-subtle, #e2e8f0); white-space: nowrap; text-align: left; }
+.vc-compare-table thead th { background: var(--bg-surface-200, #f4f6fa); position: sticky; top: 0; z-index: 2; }
+.vc-compare-table .compare-sticky { position: sticky; left: 0; background: var(--bg-surface, #fff); z-index: 1; font-weight: 600; min-width: 8rem; }
+.vc-compare-table thead .compare-sticky { z-index: 3; background: var(--bg-surface-200, #f4f6fa); }
+.vc-compare-table .vc-mat-cell { font-weight: 600; }
+/* 변경 강조 — 직전 버전 대비 값이 바뀐 셀. */
+.vc-compare-table td.vc-changed { background: rgba(250, 204, 21, 0.18); }
+.vc-delta { font-size: 0.7rem; font-weight: 700; margin-left: 0.2rem; }
+.vc-delta.up { color: var(--status-error, #dc2626); }
+.vc-delta.down { color: var(--brand, #2563eb); }
+/* 행 상태 색 — 추가/제거 구분. */
+.vc-compare-table tr.compare-partial { background: rgba(59, 130, 246, 0.06); }
+.vc-compare-table tr.compare-removed { background: rgba(100, 116, 139, 0.08); opacity: 0.7; }
+.vc-compare-table tr.compare-modified .compare-sticky { background: var(--status-warning-bg, #fef3c7); }
+.vc-compare-table tr.compare-partial .compare-sticky { background: rgba(59, 130, 246, 0.12); }
+.vc-compare-table tr.vc-total-row { font-weight: 800; background: var(--bg-surface-200, #f4f6fa); }
+.vc-compare-table tr.vc-total-row .compare-sticky { background: var(--bg-surface-200, #f4f6fa); }
+.vc-status-cell { font-size: 0.78rem; font-weight: 700; color: var(--text-secondary, #64748b); }
+.vc-mat-head { min-width: 8rem; }
+/* 범례 */
+.vc-legend { margin-top: 0.5rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+.vc-legend-item { display: inline-flex; align-items: center; gap: 0.25rem; }
+.vc-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; }
+.vc-dot-modified { background: rgba(250, 204, 21, 0.5); }
+.vc-dot-partial { background: rgba(59, 130, 246, 0.3); }
+
+@media (max-width: 900px) {
+  .vc-layout { grid-template-columns: 1fr; }
+  .vc-timeline { max-height: none; }
+}

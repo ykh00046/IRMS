@@ -425,8 +425,11 @@
 
               detailRow.querySelector(".history-version-btn").addEventListener("click", (e) => {
                 e.stopPropagation();
-                state.selectedRecipeId = recipeId;
-                ctx.versionCompare.handleLookupHistory();
+                // 2026-08-06 재설계 — 버전 비교 탭으로 전환 + 이 반제품 자동 선택.
+                // 모달(handleLookupHistory) 대신 탭 렌더러(openVersionCompareTab) 로.
+                if (ctx.switchToLookupTab) {
+                  ctx.switchToLookupTab(recipeId);
+                }
               });
 
               detailRow.querySelector(".history-dhr-btn").addEventListener("click", async (e) => {
