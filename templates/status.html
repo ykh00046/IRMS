@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260805i" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260808a" />
     <style>
       /* status(배합 기록) 전용 소량 스타일 — 페이지 자립 CSS 가 없어 여기 인라인.
          공용 토큰만 사용하고, 색·모양 하드코딩을 두지 않는다. */
@@ -101,18 +101,21 @@
         </section>
 
         <section class="panel">
+          {# 조회 결과가 몇 건인지, 어떤 조건인지, 취소분이 몇 건 숨겨졌는지 화면이
+             말하지 않았다 — 다른 화면(레시피 현황·배합 분석)엔 있는 요약 줄을 붙인다. #}
+          <p id="status-rec-summary" class="filter-summary muted small"></p>
           <p id="status-rec-note" class="trunc-note" hidden></p>
           <div class="table-wrap">
-            <table class="blend-table">
+            <table class="blend-table status-sortable">
               <thead>
                 <tr>
                   <th class="chk-col"><input type="checkbox" id="status-rec-all" title="전체 선택" /></th>
-                  <th>작업일</th>
-                  <th>제품 LOT</th>
-                  <th>제품</th>
-                  <th>작업자</th>
-                  <th class="num">총량(g)</th>
-                  <th>저울</th>
+                  <th data-sort="work_date">작업일</th>
+                  <th data-sort="product_lot">제품 LOT</th>
+                  <th data-sort="product_name">제품</th>
+                  <th data-sort="worker">작업자</th>
+                  <th class="num" data-sort="total_amount">총량(g)</th>
+                  <th data-sort="scale">저울</th>
                 </tr>
               </thead>
               <tbody id="status-rec-body">
@@ -153,5 +156,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260805e"></script>
+    <script src="/static/js/status.js?v=20260808a"></script>
 {% endblock %}

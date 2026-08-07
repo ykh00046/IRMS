@@ -201,9 +201,14 @@
 }
 
 /* 수동 입력 기록 표시(기록 목록·상세에서 나중에 확인 — 작업 중엔 안내 없음) */
-.manual-entry-chip { background: #fef3c7 !important; color: #92400e !important; }
-.manual-entry-mark { color: #f59e0b; font-weight: 700; font-size: 0.85em; }
-.manual-entry-dot { color: #f59e0b; font-weight: 700; }
+/* 수동 입력 표시 — 공용 상태 토큰만 쓴다. 예전엔 raw hex(#f59e0b/#fef3c7/#92400e)라
+   같은 '주의' 뜻인데도 다른 화면의 경고색과 톤이 어긋났다(2026-08-08). */
+.manual-entry-chip {
+  background: var(--status-warning-bg) !important;
+  color: var(--status-warning) !important;
+}
+.manual-entry-mark { color: var(--status-warning); font-weight: 700; font-size: 0.85em; }
+.manual-entry-dot { color: var(--status-warning); font-weight: 700; }
 
 /* 투입 로스 보정 배지(2라운드 2026-08-05) — 이론량 옆 작은 알약. 배합·다중계량·상세 공용.
    보정 자재의 이론량이 (비율환산 + 보정 g) 임을 표시. */

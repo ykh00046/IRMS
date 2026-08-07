@@ -1,0 +1,85 @@
+/* =========================================================================
+   IRMS 자재 LOT (/material-lots)
+   -------------------------------------------------------------------------
+   2026-08-08: 템플릿 안 <style> 블록에서 분리. 인라인이면 브라우저가 캐시하지 못하고
+   ?v= 로 배포 시점을 통제할 수도 없다(다른 화면은 전부 파일로 갖고 있다).
+   기존 클래스(.panel/.input/.btn/.metric-card/.table-wrap)를 우선 재사용하고,
+   이 화면에서만 필요한 배치·상태 색만 최소로 둔다. 색은 공용 상태 토큰만 쓴다.
+   ========================================================================= */
+
+.mlot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.mlot-search {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+/* 상태·출처·경과일 색은 공용 상태 토큰만 사용(하드코딩 hex 금지). */
+.mlot-stale-warn { color: var(--status-warning); font-weight: 600; }
+.mlot-stale-ok { color: var(--status-success); }
+/* 상태 셀은 공용 .status-chip 모양 위에 상태색만 얹는다(JS 가 status-chip 클래스 부여). */
+.mlot-status-valid { background: var(--status-success-bg); color: var(--status-success); }
+.mlot-status-spent { background: var(--status-error-bg); color: var(--status-error); }
+/* 재고 음수 — 소진(빨강)과 구분되는 경고(주황): 실물이 아니라 전산이 이상한 상태. */
+.mlot-status-negative { background: var(--status-warning-bg); color: var(--status-warning); }
+.mlot-status-hint { margin-left: 6px; font-size: 0.72rem; color: var(--text-tertiary); white-space: nowrap; }
+.mlot-status-manual { background: var(--status-info-bg); color: var(--status-info); }
+.mlot-source-erp { color: var(--text-tertiary); }
+.mlot-source-manual { color: var(--status-info); font-weight: 600; }
+.mlot-add-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr auto;
+  gap: 10px;
+  align-items: end;
+}
+@media (max-width: 720px) {
+  .mlot-add-form { grid-template-columns: 1fr; }
+}
+/* 경고 배너 — 토큰 기반(viscosity 의 .visc-trend-banner 와 같은 방식). raw amber 금지. */
+.mlot-warn {
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
+  border-radius: 10px;
+  color: color-mix(in srgb, var(--status-warning) 78%, var(--text-primary));
+}
+.mlot-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+/* 초기 로딩 스피너 자리 — 공용 .spinner 중앙 배치. */
+.mlot-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2rem;
+  color: var(--text-tertiary);
+}
+.mlot-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-top: 0.7rem; }
+.mlot-pager[hidden] { display: none; }
+.mlot-pager-info { font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* 기준 파일 카드 — 파일명은 숫자 지표가 아니라 긴 문자열이라 .metric-value 의 큰 글자를
+   그대로 쓰면 카드를 넘친다(예전엔 인라인 style 로 눌러 두었다). */
+.mlot-card-file {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+/* 표 머리 — 제목(왼쪽) + 건수 요약(오른쪽). 다른 화면의 .panel-head-row 정의는 각
+   화면 CSS 에 있고 이 화면은 그 파일들을 부르지 않으므로 여기에 둔다. */
+.mlot-table-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}

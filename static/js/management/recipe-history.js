@@ -193,10 +193,22 @@
           const one = byId.get(oneId);
           const kids = childrenOf.get(oneId) || [];
           const kidNames = kids.map((k) => k.productName).filter(Boolean).join(", ");
+          // 1차 하나를 2차 여럿이 쓰는 경우를 눈에 띄게 한다 — 이 1차를 고치거나
+          // 취소하면 아래 2차가 전부 영향을 받는다는 뜻이다.
+          const sharedChip = kids.length > 1
+            ? '<span class="family-shared-chip">공유 1차</span> '
+            : "";
+          // 저장된 링크가 옛 1차 버전을 가리키는 멤버 — 서버가 현재 버전으로 이어 줬다.
+          const staleCount = kids.filter((k) => k.stage1Superseded).length;
+          const staleNote = staleCount
+            ? `<span class="family-stale-note"> · 2차 ${staleCount}종은 옛 1차 버전에 연결돼 있어 현재 버전으로 이어 표시합니다</span>`
+            : "";
           parts.push(
             `<tr class="family-head-row"><td colspan="${COLSPAN}">`
+            + sharedChip
             + `◆ ${IRMS.escapeHtml(one.productName)} · 2단 제조 가족`
             + `<span class="muted"> — 2차 ${kids.length}종${kidNames ? `: ${IRMS.escapeHtml(kidNames)}` : ""}</span>`
+            + staleNote
             + `</td></tr>`,
           );
           parts.push(rowHtml(one, "1차"));

@@ -167,18 +167,8 @@
   background: var(--bg-surface-100);
 }
 
-/* ── 정렬 가능한 표 ──────────────────────────────────────────────────── */
-.insight-sortable th[data-sort] {
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.insight-sortable th[data-sort]:hover { color: var(--text-primary); }
-
-/* 정렬 방향은 화살표로 — 어느 열 기준인지 색만으로는 구분되지 않는다. */
-.insight-sortable th.sorted-asc::after { content: " ▲"; font-size: 0.7em; }
-.insight-sortable th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
+/* 정렬 가능한 표(th[data-sort])의 커서·화살표는 common.css 공용 규칙 — 배합 기록도
+   같은 규약을 쓰므로 화면별로 다시 정의하지 않는다(2026-08-08). */
 
 /* 이론량 대비 차이 — 계량은 허용 편차 안으로 강제되므로 0 근처가 정상이다. */
 .variance-over { color: var(--status-warning); font-weight: 600; }

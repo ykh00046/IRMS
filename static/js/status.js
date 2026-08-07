@@ -270,12 +270,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
       if (!items.length) {
+        renderRecordSummary(data, 0);
         const unackedOnly = $("status-rec-unacked") && $("status-rec-unacked").checked;
         body.innerHTML = unackedOnly
           ? '<tr><td colspan="7" class="muted">미확인 증량·수기 입력이 없습니다.</td></tr>'
           : '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
         return;
       }
+      renderRecordSummary(data, items.length);
+      items = sortRecords(items);
+      markSortHeaders();
       body.innerHTML = "";
       const allChk = $("status-rec-all");
       if (allChk) allChk.checked = false;
@@ -303,6 +307,55 @@ document.addEventListener("DOMContentLoaded", () => {
       const note = $("status-rec-note");
       if (note) note.hidden = true;
     }
+  }
+
+  // 목록 정렬 — 기본은 작업일 역순(서버 순서). 머리글을 누르면 그 열로 다시 정렬한다.
+  // 서버가 최신 limit 건만 주므로 정렬 대상은 '지금 화면에 온 것'이고, 상한에 걸리면
+  // 위 안내 줄이 그 사실을 말한다(정렬이 전체를 뒤진다고 오해하지 않도록).
+  let recSort = { key: null, dir: "desc" };
+
+  function sortRecords(items) {
+    if (!recSort.key) return items;
+    const { key, dir } = recSort;
+    return items.slice().sort((a, b) => {
+      const x = a[key];
+      const y = b[key];
+      let c;
+      if (typeof x === "number" && typeof y === "number") c = x - y;
+      else c = String(x == null ? "" : x).localeCompare(String(y == null ? "" : y), "ko");
+      return dir === "asc" ? c : -c;
+    });
+  }
+
+  function markSortHeaders() {
+    document.querySelectorAll(".status-sortable th[data-sort]").forEach((th) => {
+      th.classList.toggle("sorted-asc", th.dataset.sort === recSort.key && recSort.dir === "asc");
+      th.classList.toggle("sorted-desc", th.dataset.sort === recSort.key && recSort.dir === "desc");
+    });
+  }
+
+  // 조회 요약 — 몇 건을 어떤 조건으로 보고 있는지, 취소분이 몇 건 숨겨졌는지.
+  function renderRecordSummary(data, shown) {
+    const el = $("status-rec-summary");
+    if (!el) return;
+    const parts = [];
+    const from = $("status-rec-from").value;
+    const to = $("status-rec-to").value;
+    parts.push(from || to ? `기간 ${from || "처음"} ~ ${to || "오늘"}` : "기간 전체");
+    const worker = $("status-rec-worker").value;
+    if (worker) parts.push(`작업자 ${worker}`);
+    const product = $("status-rec-product").value;
+    if (product) parts.push(`제품 ${product}`);
+    const search = $("status-rec-search").value.trim();
+    if (search) parts.push(`검색 "${search}"`);
+    if ($("status-rec-unacked") && $("status-rec-unacked").checked) parts.push("미확인만");
+    let text = `${parts.join(" · ")} · ${fmt(shown, 0)}건`;
+    const total = Number(data.total_available || 0);
+    if (total > shown) text += ` (조건 전체 ${fmt(total, 0)}건)`;
+    // 취소분은 기본으로 숨긴다 — 몇 건이 빠졌는지 말해 주지 않으면 없는 줄 안다.
+    const hidden = Number(data.canceled_hidden || 0);
+    if (hidden > 0) text += ` · 취소 ${fmt(hidden, 0)}건 숨김`;
+    el.textContent = text;
   }
 
   // 취소된 기록 상세 — 사유·취소자·시각·자동 삭제 예정일(F15). 목록의 '취소됨' 배지만으론
@@ -588,6 +641,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   $("status-rec-apply").addEventListener("click", loadRecords);
+  // 머리글 정렬 — 같은 열을 다시 누르면 방향만 뒤집는다. 서버를 다시 부르지 않고
+  // 이미 받아 둔 목록만 다시 그린다(조회 조건은 그대로).
+  document.querySelectorAll(".status-sortable th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      recSort = {
+        key,
+        dir: recSort.key === key && recSort.dir === "desc" ? "asc" : "desc",
+      };
+      loadRecords();
+    });
+  });
   // 미확인만 — 체크 즉시 다시 그린다(조회 버튼을 또 누르게 하지 않는다).
   if ($("status-rec-unacked")) $("status-rec-unacked").addEventListener("change", loadRecords);
   $("status-rec-all").addEventListener("change", (e) => {

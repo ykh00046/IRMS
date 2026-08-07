@@ -677,9 +677,44 @@ def build_router() -> APIRouter:
             recipe_ids = [row["id"] for row in recipe_rows]
             item_map = fetch_recipe_items(connection, recipe_ids)
 
+            # 1차 연계는 특정 개정본 id 를 가리킨다. 그 1차를 개정하면 원래 id 는
+            # superseded 가 되어 이 목록에서 빠지는데, 2차는 여전히 옛 id 를 들고 있어
+            # 화면이 짝을 못 찾고 가족 묶음이 통째로 사라졌다(2026-08-08 확인: 1차를
+            # 개정하자 그 1차를 쓰던 2차 2종이 한꺼번에 떨어져 나감). 1차를 공유하는
+            # 2차가 여럿이면 그 수만큼 한 번에 끊긴다.
+            #
+            # 저장된 링크를 다시 쓰지는 않는다 — 2차의 그 개정본이 어느 1차 버전에
+            # 걸려 있었는지는 그대로 두는 게 맞다. 대신 읽을 때 체인의 현재 버전으로
+            # 해석한다(목록의 tip 판정과 같은 규칙).
+            stage1_ids = {
+                int(row["stage1_recipe_id"])
+                for row in recipe_rows
+                if row["stage1_recipe_id"] is not None
+            }
+            stage1_tip: dict[int, int] = {
+                sid: resolve_chain_tip(connection, sid) for sid in stage1_ids
+            }
+            tip_names: dict[int, str] = {}
+            for tip in set(stage1_tip.values()):
+                name_row = connection.execute(
+                    "SELECT product_name FROM recipes WHERE id = ?", (tip,)
+                ).fetchone()
+                if name_row:
+                    tip_names[tip] = name_row["product_name"]
+
         items = []
         for recipe_row in recipe_rows:
             payload = row_to_dict(recipe_row)
+            raw_stage1 = recipe_row["stage1_recipe_id"]
+            if raw_stage1 is not None:
+                tip = stage1_tip.get(int(raw_stage1), int(raw_stage1))
+                payload["stage1_recipe_id"] = tip
+                payload["stage1_product_name"] = tip_names.get(
+                    tip, recipe_row["stage1_product_name"]
+                )
+                # 저장된 원본 id — 화면이 "예전 버전에 걸려 있었다"를 말할 수 있게 남긴다.
+                payload["stage1_recipe_id_stored"] = int(raw_stage1)
+                payload["stage1_superseded"] = tip != int(raw_stage1)
             recipe_items = item_map.get(recipe_row["id"], [])
             payload["items"] = [
                 {

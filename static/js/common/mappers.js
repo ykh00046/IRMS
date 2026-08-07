@@ -69,7 +69,13 @@
       productCode: row.product_code || null,
       useReactor: !!row.use_reactor,
       isDerived: !!row.is_derived,
+      // stage1RecipeId 는 서버가 체인의 현재 버전으로 해석해 준 값이다. 저장된 원본은
+      // stage1RecipeIdStored 로 따로 오고, 둘이 다르면(=1차가 그 뒤 개정됨)
+      // stage1Superseded 가 참이다.
       stage1RecipeId: row.stage1_recipe_id != null ? Number(row.stage1_recipe_id) : null,
+      stage1RecipeIdStored:
+        row.stage1_recipe_id_stored != null ? Number(row.stage1_recipe_id_stored) : null,
+      stage1Superseded: !!row.stage1_superseded,
       stage1ProductName: row.stage1_product_name || null,
       isDhr: !!row.is_dhr,
       createdBy: row.created_by,

@@ -85,6 +85,38 @@ document.addEventListener("DOMContentLoaded", () => {
   const PAGE_SIZE = 50;
   let page = 1;
 
+  // 정렬 — 700행짜리 목록을 품목코드 순서 그대로만 볼 수 있어서, 재고가 적은 LOT 이나
+  // 수동으로 넣은 LOT 을 찾으려면 눈으로 훑어야 했다. 머리글로 정렬한다.
+  // 정렬은 필터링된 전체에 적용하고 그 뒤에 페이지를 자른다(현재 쪽만 섞이지 않게).
+  let sortState = { key: null, dir: "asc" };
+  const SORT_VALUE = {
+    code: ({ item }) => item.code || "",
+    name: ({ item }) => item.name || "",
+    lot: ({ lot }) => lot.lot || "",
+    stock: ({ lot }) => (lot.stock == null ? -Infinity : Number(lot.stock)),
+    status: ({ lot }) => (lot.manual ? "2수동" : (Number(lot.stock) > 0 ? "0유효" : "1소진")),
+    source: ({ lot }) => (lot.manual ? "수동" : "ERP"),
+  };
+
+  function sortRows(rows) {
+    const pick = SORT_VALUE[sortState.key];
+    if (!pick) return rows;
+    const dir = sortState.dir === "asc" ? 1 : -1;
+    return rows.slice().sort((a, b) => {
+      const x = pick(a);
+      const y = pick(b);
+      if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+      return String(x).localeCompare(String(y), "ko") * dir;
+    });
+  }
+
+  function markSortHeaders() {
+    document.querySelectorAll("#mlot-table-panel th[data-sort]").forEach((th) => {
+      th.classList.toggle("sorted-asc", th.dataset.sort === sortState.key && sortState.dir === "asc");
+      th.classList.toggle("sorted-desc", th.dataset.sort === sortState.key && sortState.dir === "desc");
+    });
+  }
+
   function renderLots() {
     const body = $("mlot-body");
     const empty = $("mlot-empty");
@@ -110,14 +142,30 @@ document.addEventListener("DOMContentLoaded", () => {
       body.innerHTML = "";
       empty.hidden = false;
       if (pager) pager.hidden = true;
+      const summary0 = $("mlot-summary");
+      if (summary0) summary0.textContent = q ? `검색 "${q}" · 0건` : "0건";
       return;
     }
     empty.hidden = true;
-    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const sorted = sortRows(filtered);
+    markSortHeaders();
+    // 건수 요약 — 유효/소진/수동을 나눠 적는다. 카드의 '유효 N / 수동 M' 만으로는
+    // 목록에 왜 그보다 많은 줄이 있는지(소진분) 설명되지 않았다.
+    const summary = $("mlot-summary");
+    if (summary) {
+      const valid = sorted.filter(({ lot }) => lot.manual || Number(lot.stock) > 0).length;
+      const manual = sorted.filter(({ lot }) => lot.manual).length;
+      const parts = [`${sorted.length.toLocaleString("ko-KR")}건`];
+      if (q) parts.push(`검색 "${q}"`);
+      parts.push(`유효 ${valid} · 소진 ${sorted.length - valid}`);
+      if (manual) parts.push(`수동 ${manual}`);
+      summary.textContent = parts.join(" · ");
+    }
+    const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     if (page > pages) page = pages;
     if (page < 1) page = 1;
     const start = (page - 1) * PAGE_SIZE;
-    const slice = filtered.slice(start, start + PAGE_SIZE);
+    const slice = sorted.slice(start, start + PAGE_SIZE);
     body.innerHTML = slice.map(({ item, lot }) => rowHtml(item, lot)).join("");
     Array.from(body.querySelectorAll(".mlot-del")).forEach((btn) => {
       btn.addEventListener("click", () => onDelete(btn));
@@ -127,7 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const info = $("mlot-page-info");
       if (info) {
         info.textContent =
-          `${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)} / 전체 ${filtered.length}건 (${page}/${pages}쪽)`;
+          `${start + 1}–${Math.min(start + PAGE_SIZE, sorted.length)} / 전체 ${sorted.length}건 (${page}/${pages}쪽)`;
       }
       const prev = $("mlot-page-prev");
       const next = $("mlot-page-next");
@@ -286,6 +334,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const _next = $("mlot-page-next");
   if (_prev) _prev.addEventListener("click", () => { page -= 1; renderLots(); });
   if (_next) _next.addEventListener("click", () => { page += 1; renderLots(); });
+  document.querySelectorAll("#mlot-table-panel th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      // 같은 열을 다시 누르면 방향만 뒤집는다. 재고는 '적은 것부터'가 쓸모 있어
+      // 오름차순으로 시작하고, 나머지도 가나다순이 자연스럽다.
+      sortState = {
+        key,
+        dir: sortState.key === key && sortState.dir === "asc" ? "desc" : "asc",
+      };
+      page = 1;
+      renderLots();
+    });
+  });
   if ($("mlot-refresh")) $("mlot-refresh").addEventListener("click", loadStatus);
   const addForm = $("mlot-add-form");
   if (addForm) addForm.addEventListener("submit", onAdd);

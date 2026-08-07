@@ -5,74 +5,14 @@
 {% block heading %}자재 LOT{% endblock %}
 
 {% block styles %}
-<style>
-  /* 자재 LOT 화면 전용 — 기존 클래스(.panel/.input/.btn/.metric-card/.table-wrap)를
-     우선 재사용하고, 이 화면에서만 필요한 배치·상태 색만 최소로 추가한다. */
-  .mlot-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: flex-end;
-    justify-content: space-between;
-  }
-  .mlot-search {
-    flex: 1 1 280px;
-    max-width: 420px;
-  }
-  /* 상태·출처·경과일 색은 공용 상태 토큰만 사용(하드코딩 hex 금지). */
-  .mlot-stale-warn { color: var(--status-warning); font-weight: 600; }
-  .mlot-stale-ok { color: var(--status-success); }
-  /* 상태 셀은 공용 .status-chip 모양 위에 상태색만 얹는다(JS 가 status-chip 클래스 부여). */
-  .mlot-status-valid { background: var(--status-success-bg); color: var(--status-success); }
-  .mlot-status-spent { background: var(--status-error-bg); color: var(--status-error); }
-  /* 재고 음수 — 소진(빨강)과 구분되는 경고(주황): 실물이 아니라 전산이 이상한 상태. */
-  .mlot-status-negative { background: var(--status-warning-bg); color: var(--status-warning); }
-  .mlot-status-hint { margin-left: 6px; font-size: 0.72rem; color: var(--text-tertiary); white-space: nowrap; }
-  .mlot-status-manual { background: var(--status-info-bg); color: var(--status-info); }
-  .mlot-source-erp { color: var(--text-tertiary); }
-  .mlot-source-manual { color: var(--status-info); font-weight: 600; }
-  .mlot-add-form {
-    display: grid;
-    grid-template-columns: 1fr 1fr 2fr auto;
-    gap: 10px;
-    align-items: end;
-  }
-  @media (max-width: 720px) {
-    .mlot-add-form { grid-template-columns: 1fr; }
-  }
-  /* 경고 배너 — 토큰 기반(viscosity 의 .visc-trend-banner 와 같은 방식). raw amber 금지. */
-  .mlot-warn {
-    padding: 18px 20px;
-    border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
-    background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
-    border-radius: 10px;
-    color: color-mix(in srgb, var(--status-warning) 78%, var(--text-primary));
-  }
-  .mlot-empty {
-    padding: 24px;
-    text-align: center;
-    color: var(--text-tertiary);
-  }
-  /* 초기 로딩 스피너 자리 — 공용 .spinner 중앙 배치. */
-  .mlot-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
-    padding: 2rem;
-    color: var(--text-tertiary);
-  }
-      .mlot-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-top: 0.7rem; }
-      .mlot-pager[hidden] { display: none; }
-      .mlot-pager-info { font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-</style>
+    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260808b" />
 {% endblock %}
 
 {% block content %}
         <section class="dashboard-cards">
           <div class="metric-card">
             <div class="metric-label">기준 파일</div>
-            <div class="metric-value" id="mlot-card-file" style="font-size:1.05rem;">-</div>
+            <div class="metric-value mlot-card-file" id="mlot-card-file">-</div>
             <div class="metric-unit" id="mlot-card-filedate">-</div>
           </div>
           <div class="metric-card">
@@ -131,16 +71,24 @@
         </section>
 
         <section class="panel" id="mlot-table-panel" hidden>
+          {# 건수를 말하는 곳이 페이저뿐이었는데, 쪽이 하나면 페이저가 숨어서 44행짜리
+             목록에 '몇 건인지'가 화면 어디에도 없었다(2026-08-08). #}
+          <div class="panel-head-row mlot-table-head">
+            <h3 class="panel-title">자재 LOT 목록</h3>
+            <span class="muted small" id="mlot-summary"></span>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
+                {# 머리글 정렬 — 700행을 품목코드 순서로만 훑어야 했다. 정렬은 필터된
+                   전체에 적용하고 그 뒤에 쪽을 자른다(현재 쪽만 섞이지 않게). #}
                 <tr>
-                  <th>품목코드</th>
-                  <th>품목명</th>
-                  <th>LOT</th>
-                  <th class="num">재고</th>
-                  <th>상태</th>
-                  <th>출처</th>
+                  <th data-sort="code">품목코드</th>
+                  <th data-sort="name">품목명</th>
+                  <th data-sort="lot">LOT</th>
+                  <th class="num" data-sort="stock">재고</th>
+                  <th data-sort="status">상태</th>
+                  <th data-sort="source">출처</th>
                   {% if can_manage %}<th>관리</th>{% endif %}
                 </tr>
               </thead>
@@ -160,5 +108,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/material_lots.js?v=20260805a"></script>
+    <script src="/static/js/material_lots.js?v=20260808b"></script>
 {% endblock %}

@@ -375,6 +375,25 @@
 }
 .stage-pin.two { color: var(--text-muted, #64748b); border-color: var(--border-strong, #cbd5e1); }
 
+/* 한 1차를 2차 여럿이 쓰는 가족 — 이 1차를 손대면 아래가 전부 영향받는다는 표시. */
+.family-shared-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0 6px;
+  border-radius: 6px;
+  margin-right: 6px;
+  background: var(--status-warning-bg, #fbf1df);
+  color: var(--status-warning, #c98212);
+  border: 1px solid var(--status-warning, #c98212);
+}
+
+/* 저장된 링크가 옛 1차 버전을 가리키는 경우의 안내 — 경고가 아니라 설명이다. */
+.family-stale-note {
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+}
+
 .history-detail-row td {
   padding: 0 !important;
   border-bottom: 1px solid var(--border-subtle);
@@ -432,10 +451,8 @@
   flex-shrink: 0;
 }
 
-.btn-sm {
-  padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
-}
+/* .btn-sm 정의는 common.css 로 이관(2026-08-08) — 여기 있으면 이 파일을 부르지 않는
+   화면에서 작은 버튼이 작아지지 않는다. */
 
 /* Chat panel (floating sidebar, styles in common.css) */
 
@@ -621,7 +638,6 @@
 .panel-header-row .button-row { gap: 8px; }
 .panel-header-row .input { width: 200px; }
 .num { text-align: right; }
-.btn.btn-sm { padding: 2px 8px; font-size: 12px; }
 /* 모달 오버레이 — 종전엔 이 파일에 [hidden] 숨김 규칙 하나뿐이라, 버전 이력·버전 비교
    창이 오버레이가 아니라 페이지 맨 아래에 그냥 블록으로 붙었다(배경·그림자 없이 static).
    "버튼을 눌러도 아무 일도 안 일어난 것처럼 보이고 스크롤을 내려야 나온다"는 현장 지적의

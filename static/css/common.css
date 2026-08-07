@@ -206,6 +206,29 @@ body {
   white-space: nowrap;
 }
 
+/* 작은 버튼 — 템플릿·JS 에서 64곳이 쓰는데 정의는 management.css 에만 있었다. 그 파일을
+   부르지 않는 화면(배합 기록·자재 LOT 등)에서는 .btn-sm 이 아무 일도 하지 않아 표 안
+   버튼이 본문 버튼과 같은 크기로 나왔다(2026-08-08). 모든 화면이 부르는 여기로 옮긴다.
+   management.css 에 있던 두 정의(0.3rem/0.75rem 과 2px 8px/12px)는 서로 달랐고, 나중
+   것이 이겨 세로 2px 이 됐다 — 현장 PC 에서 누르기엔 너무 얇아 앞의 값을 택한다. */
+.btn.btn-sm {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* 정렬 가능한 표 머리글 — 배합 분석·배합 기록이 같은 규약을 쓴다(th[data-sort]).
+   방향은 화살표로 말한다: 색만으로는 어느 열 기준인지 구분되지 않는다. */
+th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th[data-sort]:hover { color: var(--text-primary); }
+th.sorted-asc::after { content: " ▲"; font-size: 0.7em; }
+th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
+
 .nav-toggle {
   display: none;
   flex-direction: column;

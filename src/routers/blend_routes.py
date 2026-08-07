@@ -727,12 +727,26 @@ def build_router() -> APIRouter:
             search=search,
             include_canceled=include_canceled,
         )
+        # 취소분을 숨기고 보는 게 기본인데, 몇 건이 숨겨졌는지 화면이 말할 방법이 없었다.
+        # ('취소된 기록 포함'을 켜 보기 전에는 0건인지 12건인지 알 수 없다.)
+        canceled_hidden = 0
+        if not include_canceled:
+            canceled_hidden = blend_service.count_blend_records(
+                connection,
+                start_date=start_date,
+                end_date=end_date,
+                worker=worker,
+                product=product,
+                search=search,
+                include_canceled=True,
+            ) - total_available
         return {
             "items": items,
             "total": len(items),
             "total_available": total_available,
             "truncated": total_available > len(items),
             "limit": limit,
+            "canceled_hidden": max(0, canceled_hidden),
         }
 
     @router.get("/blend/records/export-all")
