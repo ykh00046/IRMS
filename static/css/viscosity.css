@@ -334,6 +334,18 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* 점도 알림 정리 기준일 — 반제품 설정 안의 한 블록. 설명이 길어 좌측 텍스트 + 우측 버튼. */
+.visc-reminder-since {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.visc-reminder-since p { margin: 0.25rem 0 0; }
+.visc-reminder-since .visc-reminder-since-value { margin-top: 0.4rem; font-size: 0.85rem; }
+.visc-reminder-since .btn { flex: 0 0 auto; }
+
 .visc-gran-toggle {
   display: flex;
   gap: var(--space-1);

@@ -21,6 +21,11 @@ SCALE_ONLY_INPUT_KEY = "scale_only_input"
 BLEND_WINDOW_OVERRIDE_KEY = "blend_window_override_code"
 BLEND_WINDOW_OVERRIDE_DEFAULT = "111111"
 
+# 점도 알림 정리 기준일(YYYY-MM-DD). 이 날짜보다 앞선 배합은 "이미 정리된 것"으로 보고
+# 점도 미측정 알림을 만들지 않는다 — 지나간 배합은 이제 와서 점도를 잴 수 없기 때문
+# (현장 요청 2026-08-07). 행 부재 = 기준일 없음 = 종전 동작.
+VISCOSITY_REMINDER_SINCE_KEY = "viscosity_reminder_since"
+
 
 def _table_exists(connection: sqlite3.Connection) -> bool:
     """app_settings 테이블 존재 여부. 구버전 DB 방어."""
@@ -92,6 +97,30 @@ def set_blend_window_override_code(
         connection,
         BLEND_WINDOW_OVERRIDE_KEY,
         (code or "").strip(),
+        updated_by=updated_by,
+    )
+
+
+def get_viscosity_reminder_since(connection: sqlite3.Connection) -> str | None:
+    """점도 알림 정리 기준일(YYYY-MM-DD). 행 없음/형식 불량 → None(=기준일 없음)."""
+    raw = (get_setting(connection, VISCOSITY_REMINDER_SINCE_KEY) or "").strip()
+    # 형식만 얕게 검사 — 저장은 서버가 today 로만 하지만, 손으로 넣은 값이 쿼리에
+    # 그대로 들어가지 않게 막는다.
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        return raw
+    return None
+
+
+def set_viscosity_reminder_since(
+    connection: sqlite3.Connection,
+    day: str,
+    updated_by: str | None = None,
+) -> None:
+    """점도 알림 정리 기준일 저장(YYYY-MM-DD)."""
+    set_setting(
+        connection,
+        VISCOSITY_REMINDER_SINCE_KEY,
+        (day or "").strip(),
         updated_by=updated_by,
     )
 

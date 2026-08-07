@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260805a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260807a" />
 {% endblock %}
 
 {% block content %}
@@ -224,6 +224,22 @@
               <p class="muted small">행을 선택하면 아래에서 수정합니다. 코드는 기록과 연결된 식별자라 변경할 수 없습니다.</p>
 
               <hr class="visc-divider" />
+              <!-- 점도 알림 정리 기준일 — 지나간 배합은 이제 와서 점도를 잴 수 없는데도
+                   대상 품목이면 매일 팝업이 뜬다(현장 요청 2026-08-07). 버튼을 누르면 그
+                   시점 이전 배합은 알림에서 빠지고, 이후 배합분만 다시 알린다. 기록은 불변. -->
+              <div class="visc-reminder-since">
+                <div>
+                  <b>점도 알림 정리 기준일</b>
+                  <p class="muted small">
+                    기준일 이후에 <b>배합한 반제품</b> 중 그날 점도가 없는 것만 알립니다.
+                    지나간 미등록분은 기록에 그대로 남고 알림에서만 빠집니다.
+                  </p>
+                  <p class="visc-reminder-since-value">현재 기준일: <b id="visc-reminder-since-value">-</b></p>
+                </div>
+                <button id="visc-reminder-since-btn" class="btn accent" type="button">지금까지 정리</button>
+              </div>
+
+              <hr class="visc-divider" />
               <form id="visc-settings-form" class="visc-form" autocomplete="off">
                 <label class="filter-label" for="visc-set-name">반제품명</label>
                 <input class="input" id="visc-set-name" required />
@@ -316,5 +332,5 @@
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
     <script src="/static/js/viscosity_lib.js?v=20260805a"></script>
-    <script src="/static/js/viscosity.js?v=20260805c"></script>
+    <script src="/static/js/viscosity.js?v=20260807a"></script>
 {% endblock %}

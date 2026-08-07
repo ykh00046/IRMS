@@ -111,6 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ["설정·백업", [
       ["attendance_viewed_by_admin", "근태 조회"],
       ["setting_scale_only_set", "저울 전용 입력 설정"],
+      ["setting_viscosity_reminder_since_set", "점도 알림 정리 기준일 갱신"],
       ["setting_blend_window_override_set", "배합 창 예외 코드 변경"],
       ["signature_config_updated", "서명 설정 변경"],
       ["signature_sample_added", "서명 이미지 등록"],

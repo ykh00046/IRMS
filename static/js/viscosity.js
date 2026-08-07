@@ -982,8 +982,43 @@
     loadRecipeCandidates().catch(() => {});
     $("visc-settings-error").hidden = true;
     $("visc-new-error").hidden = true;
+    refreshReminderSince();
     if (settingsModal) settingsModal.open();
     else $("visc-settings-modal").hidden = false;
+  }
+
+  // ── 점도 알림 정리 기준일 ────────────────────────────────────
+  // 기준일 이후에 배합한 반제품만 알림 대상이 된다. [지금까지 정리]는 기준일을 오늘로
+  // 당겨, 이제 와서 잴 수 없는 지난 배합분을 알림에서 덮는다(기록은 그대로).
+  async function refreshReminderSince() {
+    const el = $("visc-reminder-since-value");
+    if (!el) return;
+    try {
+      const data = await request("/settings/viscosity-reminder-since");
+      el.textContent = data.since || "없음 (전체 대상 알림)";
+    } catch (_e) {
+      el.textContent = "-";
+    }
+  }
+
+  async function handleReminderSinceUpdate() {
+    if (!window.confirm(
+      "지금까지의 미등록 점도를 정리합니다.\n"
+      + "오늘 이전에 배합한 건은 앞으로 점도 알림에 뜨지 않습니다"
+      + "(기록에는 그대로 남습니다). 계속할까요?",
+    )) return;
+    const btn = $("visc-reminder-since-btn");
+    if (btn) btn.disabled = true;
+    try {
+      const data = await request("/settings/viscosity-reminder-since", { method: "POST" });
+      const el = $("visc-reminder-since-value");
+      if (el) el.textContent = data.since;
+      notify(`정리했습니다 — ${data.since} 이후 배합분부터 알립니다.`, "success");
+    } catch (error_) {
+      notify(`정리 실패: ${error_.message}`, "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   // 반제품 추가 후보 = (완성) 레시피 중 아직 점도 반제품이 없는 제품명
@@ -1179,6 +1214,8 @@
       $("visc-settings-close").addEventListener("click", () => settingsModal.close());
       $("visc-settings-form").addEventListener("submit", saveSettings);
       $("visc-new-form").addEventListener("submit", createProduct);
+      const sinceBtn = $("visc-reminder-since-btn");
+      if (sinceBtn) sinceBtn.addEventListener("click", handleReminderSinceUpdate);
       $("visc-export-btn").addEventListener("click", exportCsv);
       $("visc-export-all-btn").addEventListener("click", () => {
         window.location.assign("/api/viscosity/export-all");

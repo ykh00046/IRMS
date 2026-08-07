@@ -4,6 +4,7 @@ GET 은 인증 불요(배합 화면이 무로그인이므로 공개). PUT 은 �
 감사 로그를 남긴다. 기본값은 OFF(행 부재 = false).
 """
 
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -66,6 +67,48 @@ def build_router() -> APIRouter:
             connection.commit()
 
         return {"status": "ok", "enabled": raw}
+
+    # ── 점도 알림 정리 기준일 ──────────────────────────────────────
+    # GET 은 공개(점도 화면이 현재 기준일을 보여준다). POST 는 책임자 전용이며 오늘 날짜로만
+    # 갱신한다 — 임의 날짜를 받지 않는 이유는 "지금까지 정리" 외의 용도가 없고, 과거로
+    # 되돌려 통제를 넓히거나 미래로 밀어 알림을 통째로 끄는 길을 만들지 않기 위해서다.
+    @router.get("/settings/viscosity-reminder-since")
+    def get_viscosity_reminder_since() -> dict[str, Any]:
+        """점도 알림 정리 기준일. 없으면 null(=전 대상 품목 알림, 종전 동작)."""
+        with get_connection() as connection:
+            since = settings_service.get_viscosity_reminder_since(connection)
+        return {"since": since}
+
+    @router.post("/settings/viscosity-reminder-since")
+    def set_viscosity_reminder_since(
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """[지금까지 정리] — 기준일을 오늘로 갱신. 책임자 전용, 감사 로그.
+
+        이후 점도 알림은 '기준일 이후에 배합한 반제품 중 오늘 점도가 없는 것'만 대상이다.
+        지나간 미측정분은 기록에 그대로 남고 알림에서만 빠진다.
+        """
+        today = date.today().isoformat()
+        actor_label = (
+            current_user.get("display_name")
+            or current_user.get("username")
+            or None
+        )
+        with get_connection() as connection:
+            previous = settings_service.get_viscosity_reminder_since(connection)
+            settings_service.set_viscosity_reminder_since(
+                connection, today, updated_by=actor_label
+            )
+            write_audit_log(
+                connection,
+                action="setting_viscosity_reminder_since_set",
+                actor=current_user,
+                target_type="app_setting",
+                target_label=settings_service.VISCOSITY_REMINDER_SINCE_KEY,
+                details={"since": today, "previous": previous},
+            )
+            connection.commit()
+        return {"status": "ok", "since": today, "previous": previous}
 
     # ── 배합 창 단일화 가드 비상 예외 코드 ──────────────────────────
     # GET/PUT 은 책임자 전용(사용자 관리 화면에서 조회·변경). verify 는 무로그인(배합 화면)

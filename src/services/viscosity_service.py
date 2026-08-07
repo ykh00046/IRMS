@@ -21,6 +21,8 @@ import statistics
 from datetime import date, datetime
 from typing import Any
 
+from . import settings_service
+
 # 추세 룰 파라미터
 RUN_LENGTH = 5  # 연속 단조 상승/하락 N회 → 추세 경보
 SHIFT_LENGTH = 7  # 중심선 한쪽 연속 M회 → 시프트 경보
@@ -723,6 +725,11 @@ def daily_reading_reminders(
 
     알림 대상 여부는 웹 점도 설정이 소유한다(remind_daily 플래그). codes 는 선택적
     추가 필터일 뿐이며, 비어 있으면 알림 대상 전체를 대상으로 한다(서버 주도).
+
+    정리 기준일(app_settings.viscosity_reminder_since)이 있으면, **그 날짜 이후에 실제로
+    배합한 반제품만** 알린다. 지나간 배합은 이제 와서 점도를 잴 수 없는데도 대상 품목이면
+    매일 팝업이 떠서(현장 요청 2026-08-07), 책임자가 [지금까지 정리] 를 누른 시점 이전은
+    덮는다. 기준일이 없으면 종전대로 전 대상 품목을 본다.
     """
     normalized_codes: list[str] = []
     seen_codes: set[str] = set()
@@ -738,6 +745,18 @@ def daily_reading_reminders(
         placeholders = ",".join("?" for _code in normalized_codes)
         where.append(f"upper(p.code) IN ({placeholders})")
         params.extend(normalized_codes)
+    # 정리 기준일 이후 배합이 있는 품목만 — 반제품명(product_name)으로 대조한다.
+    # 점도 제품과 배합 레시피는 이름으로 이어져 있다(blend_add_viscosity 의 ensure_product
+    # 규약과 동일). 이름이 안 맞는 옛 품목은 조용해지는데, 그건 이 기능의 의도다.
+    since = settings_service.get_viscosity_reminder_since(connection)
+    if since:
+        where.append(
+            "EXISTS (SELECT 1 FROM blend_records b"
+            " WHERE b.status != 'canceled'"
+            "   AND b.work_date >= ?"
+            "   AND (b.product_name = p.name OR b.product_name = p.code))"
+        )
+        params.append(since)
     params.append(target_date)  # NOT EXISTS today.measured_date = ?
 
     rows = connection.execute(
