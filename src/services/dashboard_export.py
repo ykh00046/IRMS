@@ -49,55 +49,26 @@ def build_dashboard_excel(
                COUNT(DISTINCT product_name) AS products,
                COUNT(DISTINCT worker) AS workers
         FROM blend_records
-        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
+        WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+          AND work_date BETWEEN ? AND ?
         """,
         (from_date, to_date),
     ).fetchone()
-    approval_pending = connection.execute(
-        "SELECT COUNT(*) AS c FROM blend_records "
-        "WHERE status = 'completed' AND (approved_by IS NULL OR approved_by = '')"
-    ).fetchone()["c"]
 
     row = 4
+    # 화면과 같은 기준(완료·비-bulk)으로 센다 — 예전엔 여기만 일괄 재생성분을 빼지 않아
+    # 같은 기간인데 엑셀 건수가 화면보다 컸다. '결재 대기'는 결재를 현장에서 쓰지 않아
+    # 2026-07 에 화면·API 에서 지웠는데 이 보고서에만 남아 있었다(2026-08-08 제거).
     row = _section(ws, row, "[요약]", None, [
         ["배합 건수", int(summary["cnt"] or 0)],
         ["총 배합량(g)", round(float(summary["w"] or 0), 2)],
         ["반제품 종류", int(summary["products"] or 0)],
         ["작업자 수", int(summary["workers"] or 0)],
-        ["결재 대기(전체)", int(approval_pending or 0)],
     ])
 
-    # 반제품별 배합 TOP 10
-    product_rows = connection.execute(
-        """
-        SELECT product_name, COUNT(*) AS c, COALESCE(SUM(total_amount), 0) AS w
-        FROM blend_records
-        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
-        GROUP BY product_name ORDER BY w DESC LIMIT 10
-        """,
-        (from_date, to_date),
-    ).fetchall()
-    row = _section(
-        ws, row, "[반제품별 배합 TOP 10]", ["반제품", "건수", "총량(g)"],
-        [[r["product_name"], int(r["c"]), round(float(r["w"] or 0), 2)] for r in product_rows],
-    )
-
-    # 작업자 통계
-    worker_rows = connection.execute(
-        """
-        SELECT COALESCE(NULLIF(worker, ''), '(미기록)') AS op,
-               COUNT(*) AS c, COALESCE(SUM(total_amount), 0) AS w
-        FROM blend_records
-        WHERE status != 'canceled' AND work_date BETWEEN ? AND ?
-        GROUP BY op ORDER BY c DESC
-        """,
-        (from_date, to_date),
-    ).fetchall()
-    row = _section(
-        ws, row, "[작업자 통계]", ["작업자", "배합 건수", "총량(g)"],
-        [[r["op"], int(r["c"]), round(float(r["w"] or 0), 2)] for r in worker_rows],
-    )
-
+    # 반제품별 TOP·작업자 통계는 뺐다(2026-08-08) — 배합 분석 리포트
+    # (/api/blend/analysis/export)의 제품·품질 시트와 같은 표였고, 세는 기준만 서로
+    # 달랐다. 이 보고서는 운영 스냅샷(요약·점도 현황)만 담는다.
     # 점도 현황 (제품별 최신 연도 기준)
     overview = viscosity_service.overview(connection)
     due = viscosity_service.daily_reading_reminders(

@@ -4,13 +4,17 @@
 /blend 전환 이후 데이터가 더 이상 쌓이지 않아 2026-07 전면 재구축했다. 모든
 지표는 배합 실적과 점도에서 나온다. 배합은 편차 0 강제 저장이라 편차 지표는 없다.
 
+역할 분리(2026-08-08): 이 화면은 **지금 해야 할 일**을 본다 — 오늘·최근 며칠의 배합,
+점도 미입력, 확인 대기 중인 증량·수기 입력, 최근 기록. 기간을 잡고 경향·성과·자재 소비를
+분석하는 일은 배합 분석(/insight, GET /blend/analysis)이 맡는다. 예전에는 반제품 TOP·
+작업자별 실적이 양쪽에 다 있었고, 정작 세는 기준이 서로 달랐다(여기 `status != 'canceled'`
+= 초안 포함, 저기 `status = 'completed'`). 지금은 양쪽 다 완료·비-bulk 기준이다.
+
 Endpoints (무로그인 개방, 조회 전용):
     GET /dashboard/summary   기간 KPI + 현재 상태(점도 이상·오늘 점도 미입력)
     GET /dashboard/trend     일별 배합 건수·총량
-    GET /dashboard/products  반제품별 배합 TOP
-    GET /dashboard/workers   작업자별 실적
     GET /dashboard/recent    최근 배합 기록 (점도·결재 여부 포함)
-    GET /dashboard/export    Excel 보고서
+    GET /dashboard/export    Excel 보고서(운영 스냅샷 — 기간 분석은 /insight 리포트)
 """
 
 import io
@@ -66,7 +70,7 @@ def build_router() -> APIRouter:
                        COUNT(DISTINCT product_name) AS products,
                        COUNT(DISTINCT worker) AS workers
                 FROM blend_records
-                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
                   AND work_date BETWEEN ? AND ?
                 """,
                 (from_date, to_date),
@@ -99,7 +103,7 @@ def build_router() -> APIRouter:
                 SELECT work_date AS d, COUNT(*) AS cnt,
                        COALESCE(SUM(total_amount), 0) AS total_weight
                 FROM blend_records
-                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
+                WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
                   AND work_date BETWEEN ? AND ?
                 GROUP BY work_date
                 """,
@@ -115,69 +119,6 @@ def build_router() -> APIRouter:
             for d in _daterange(from_date, to_date)
         ]
         return {"range": {"from": from_date, "to": to_date}, "points": points}
-
-    @router.get("/products")
-    def dashboard_products(
-        from_: str | None = Query(default=None, alias="from"),
-        to: str | None = Query(default=None),
-        limit: int = Query(default=10, ge=1, le=100),
-    ) -> dict[str, Any]:
-        from_date, to_date = _parse_range(from_, to)
-        with get_connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT product_name, COUNT(*) AS cnt,
-                       COALESCE(SUM(total_amount), 0) AS total_weight
-                FROM blend_records
-                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
-                  AND work_date BETWEEN ? AND ?
-                GROUP BY product_name
-                ORDER BY total_weight DESC
-                LIMIT ?
-                """,
-                (from_date, to_date, limit),
-            ).fetchall()
-        items = [
-            {
-                "product_name": r["product_name"],
-                "blend_count": int(r["cnt"]),
-                "total_weight_g": round(float(r["total_weight"] or 0.0), 2),
-            }
-            for r in rows
-        ]
-        return {"range": {"from": from_date, "to": to_date}, "items": items}
-
-    @router.get("/workers")
-    def dashboard_workers(
-        from_: str | None = Query(default=None, alias="from"),
-        to: str | None = Query(default=None),
-    ) -> dict[str, Any]:
-        from_date, to_date = _parse_range(from_, to)
-        with get_connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT COALESCE(NULLIF(worker, ''), '(미기록)') AS worker,
-                       COUNT(*) AS cnt,
-                       COALESCE(SUM(total_amount), 0) AS total_weight,
-                       COUNT(DISTINCT product_name) AS products
-                FROM blend_records
-                WHERE status != 'canceled' AND COALESCE(is_bulk_regenerated, 0) = 0
-                  AND work_date BETWEEN ? AND ?
-                GROUP BY worker
-                ORDER BY cnt DESC
-                """,
-                (from_date, to_date),
-            ).fetchall()
-        items = [
-            {
-                "worker": r["worker"],
-                "blend_count": int(r["cnt"]),
-                "total_weight_g": round(float(r["total_weight"] or 0.0), 2),
-                "product_count": int(r["products"]),
-            }
-            for r in rows
-        ]
-        return {"range": {"from": from_date, "to": to_date}, "items": items}
 
     @router.get("/recent")
     def dashboard_recent(
@@ -195,7 +136,7 @@ def build_router() -> APIRouter:
                            WHERE vr.blend_record_id = br.id
                        ) AS has_viscosity
                 FROM blend_records br
-                WHERE br.status != 'canceled'
+                WHERE br.status = 'completed'
                 ORDER BY br.id DESC
                 LIMIT ?
                 """,

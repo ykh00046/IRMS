@@ -5,7 +5,7 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260808b" />
 {% endblock %}
 
 {% block content %}
@@ -172,13 +172,18 @@
           </section>
 
           <section class="panel">
-            <h3 class="panel-title">작업자별</h3>
+            <h3 class="panel-title">작업자별 실적·이상</h3>
+            {# 예전엔 생산 실적은 대시보드에, 이상 통계는 여기에 따로 있어서 한 사람을
+               보려면 두 화면을 오갔다(2026-08-08 통합). 한 표에서 같이 본다. #}
+            <p class="panel-subtitle">생산 실적과 이상 신호를 한 표에서 봅니다.</p>
             <div class="table-wrap">
               <table class="blend-table insight-sortable" id="insight-worker-table">
                 <thead>
                   <tr>
                     <th data-sort="worker">작업자</th>
                     <th class="num" data-sort="records">완료</th>
+                    <th class="num" data-sort="total_amount">생산량(kg)</th>
+                    <th class="num" data-sort="product_count">제품 종수</th>
                     <th class="num" data-sort="manual_records">수동 입력</th>
                     <th class="num" data-sort="manual_rate">수동 비율</th>
                     <th class="num" data-sort="canceled_records">취소</th>
@@ -256,5 +261,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260808a"></script>
+    <script src="/static/js/insight.js?v=20260808b"></script>
 {% endblock %}

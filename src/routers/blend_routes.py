@@ -472,13 +472,32 @@ def build_router() -> APIRouter:
             ])
 
         ws = wb.create_sheet("품질")
-        ws.append(["작업자별"])
+        ws.append(["작업자별 실적·이상"])
         ws.cell(row=ws.max_row, column=1).font = head
-        _sheet(ws, ["작업자", "완료", "수동 입력", "수동 비율(%)", "취소"],
-               [16, 10, 12, 14, 10])
+        _sheet(
+            ws,
+            ["작업자", "완료", "생산량(kg)", "제품 종수", "수동 입력", "수동 비율(%)", "취소"],
+            [16, 10, 14, 12, 12, 14, 10],
+        )
+        # 생산 실적과 이상 통계는 대상이 조금 다르다(취소만 있는 사람 / 완료만 있는 사람)
+        # — 화면과 같은 합집합 기준으로 쓴다.
+        production = {w["worker"]: w for w in data["workers"]}
+        seen: set[str] = set()
         for w in data["quality"]["by_worker"]:
-            ws.append([w["worker"], w["records"], w["manual_records"],
-                       w["manual_rate"], w["canceled_records"]])
+            name = w["worker"] or ""
+            seen.add(name)
+            p = production.get(name, {})
+            ws.append([
+                name, w["records"], round(p.get("total_amount", 0) / 1000, 2),
+                p.get("product_count", 0), w["manual_records"],
+                w["manual_rate"], w["canceled_records"],
+            ])
+        for name, p in production.items():
+            if name not in seen:
+                ws.append([
+                    name, p["records"], round(p["total_amount"] / 1000, 2),
+                    p["product_count"], 0, 0.0, 0,
+                ])
         ws.append([])
         ws.append(["자재별 (수동 입력이 있었던 자재만)"])
         ws.cell(row=ws.max_row, column=1).font = head

@@ -3,6 +3,11 @@
  *
  * 배합 실적(blend_records) + 점도 현황 기반. 구 계량 지표(완료 레시피·계량
  * 단계·처리량·계량 편차)는 데이터가 더 이상 쌓이지 않아 2026-07 재구축.
+ *
+ * 이 화면이 답하는 것은 '지금 해야 할 일'이다 — 오늘·최근 며칠의 배합, 점도 미입력,
+ * 확인 대기 중인 증량·수기 입력, 최근 기록. 기간을 잡고 경향·자재 소비·품질 추세를
+ * 보는 일은 배합 분석(/insight)이 맡는다. 반제품 TOP·작업자별 실적이 양쪽에 다 있고
+ * 세는 기준마저 달랐던 것을 2026-08-08 에 정리했다.
  */
 document.addEventListener("DOMContentLoaded", () => {
   const presetBtns = document.querySelectorAll(".preset-btn");
@@ -10,7 +15,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const toInput = document.getElementById("dash-to");
 
   let trendChart = null;
-  let productsChart = null;
 
   const PREF_KEY = "irms_dashboard_range";
 
@@ -82,17 +86,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const main = document.querySelector("main.page-grid") || document.body;
     IRMS.showLoading(main);
     try {
-      const [summary, trend, products, workers, recent] = await Promise.all([
+      // 반제품 TOP·작업자별 실적은 배합 분석(/insight)으로 옮겼다(2026-08-08).
+      const [summary, trend, recent] = await Promise.all([
         fetchJSON(`/api/dashboard/summary?${qs(range)}`),
         fetchJSON(`/api/dashboard/trend?${qs(range)}`),
-        fetchJSON(`/api/dashboard/products?${qs(range)}&limit=10`),
-        fetchJSON(`/api/dashboard/workers?${qs(range)}`),
         fetchJSON("/api/dashboard/recent?limit=10"),
       ]);
       renderSummary(summary);
       renderTrend(trend);
-      renderProducts(products);
-      renderWorkers(workers);
       renderRecent(recent);
     } catch (error) {
       IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
@@ -106,8 +107,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // 지우므로 innerHTML 로 단위 span 을 함께 넣는다.
     document.getElementById("card-blend-count").innerHTML =
       `${fmtNumber(data.blend_count)}<span class="metric-unit">건</span>`;
+    // 합계는 kg — 7일치도 g 로 두면 여섯 자리가 되고, 배합 분석도 합계는 kg 로 쓴다.
+    // (개별 배치 총량은 두 화면 모두 g 그대로 — 현장이 g 로 다루는 값이다.)
     document.getElementById("card-weight").innerHTML =
-      `${fmtNumber(data.total_weight_g, 1)}<span class="metric-unit">g</span>`;
+      `${fmtNumber((data.total_weight_g || 0) / 1000, 1)}<span class="metric-unit">kg</span>`;
     document.getElementById("card-products").innerHTML =
       `${fmtNumber(data.product_count)}<span class="metric-unit">종</span>`;
     // '결재 대기' 카드·API 필드(approval_pending)는 제거됨(결재 현장 미사용, 2026-07-23).
@@ -126,7 +129,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderTrend(data) {
     const labels = data.points.map((point) => point.date.slice(5));
     const counts = data.points.map((point) => point.blend_count);
-    const weights = data.points.map((point) => point.total_weight_g);
+    // 카드가 kg 로 말하는데 그래프 축만 g 면 같은 화면에서 단위가 갈린다.
+    const weights = data.points.map((point) => (point.total_weight_g || 0) / 1000);
     if (trendChart) trendChart.destroy();
     trendChart = new Chart(document.getElementById("chart-trend"), {
       type: "line",
@@ -142,7 +146,7 @@ document.addEventListener("DOMContentLoaded", () => {
             tension: 0.25,
           },
           {
-            label: "총 배합량 (g)",
+            label: "총 배합량 (kg)",
             data: weights,
             // 주의: 이 앱에서 --accent 는 네이비 별칭 — 오렌지는 --accent-secondary
             borderColor: cssVar("--accent-secondary", "#f47c26"),
@@ -167,54 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
         },
       },
     });
-  }
-
-  function renderProducts(data) {
-    const items = data.items || [];
-    const labels = items.map((item) => item.product_name);
-    const values = items.map((item) => item.total_weight_g);
-    if (productsChart) productsChart.destroy();
-    productsChart = new Chart(document.getElementById("chart-products"), {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [{
-          label: "총 배합량 (g)",
-          data: values,
-          backgroundColor: cssVar("--brand-mid", "#2c5d9b"),
-          // 항목이 1~2개일 때 가로 막대가 패널 높이를 다 채우는 과대 표시 방지
-          maxBarThickness: 48,
-        }],
-      },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true } },
-      },
-    });
-  }
-
-  function renderWorkers(data) {
-    const body = document.getElementById("workers-body");
-    const items = data.items || [];
-    if (!items.length) {
-      body.innerHTML = '<tr><td colspan="4"><div class="empty-state">데이터 없음</div></td></tr>';
-      return;
-    }
-    body.innerHTML = items
-      .map(
-        (w) => `
-          <tr>
-            <td>${IRMS.escapeHtml(w.worker)}</td>
-            <td class="num">${fmtNumber(w.blend_count)}</td>
-            <td class="num">${fmtNumber(w.total_weight_g, 1)}</td>
-            <td class="num">${fmtNumber(w.product_count)}</td>
-          </tr>
-        `,
-      )
-      .join("");
   }
 
   function renderRecent(data) {

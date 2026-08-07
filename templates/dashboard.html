@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260808a" />
 {% endblock %}
 
 {% block content %}
@@ -35,7 +35,7 @@
           </div>
           <div class="metric-card">
             <div class="metric-label">총 배합량</div>
-            <strong class="metric-value" id="card-weight">-<span class="metric-unit">g</span></strong>
+            <strong class="metric-value" id="card-weight">-<span class="metric-unit">kg</span></strong>
           </div>
           <div class="metric-card">
             <div class="metric-label">반제품 종류</div>
@@ -72,34 +72,20 @@
         </section>
         {% endif %}
 
+        {# 반제품별 TOP 10 차트와 작업자별 실적 표는 뺐다(2026-08-08) — 배합 분석에
+           같은 표가 더 나은 형태(비중·전기 대비·정렬)로 있었고, 세는 기준마저 서로
+           달랐다. 이 화면은 '지금 해야 할 일', 기간 분석은 /insight 가 맡는다. #}
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">일별 배합 추이</h3>
+            <div class="panel-head-row">
+              <h3 class="panel-title">일별 배합 추이</h3>
+              <a class="muted small" href="/insight">기간 분석 · 자재 소비 · 품질 추세 →</a>
+            </div>
             <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
-          </div>
-          <div class="panel dashboard-chart-panel">
-            <h3 class="panel-title">반제품별 배합 TOP 10</h3>
-            <div class="chart-wrap"><canvas id="chart-products"></canvas></div>
           </div>
         </section>
 
         <section class="dashboard-grid">
-          <div class="panel dashboard-operators-panel">
-            <h3 class="panel-title">작업자별 실적</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>작업자</th>
-                    <th class="num">배합 건수</th>
-                    <th class="num">총량(g)</th>
-                    <th class="num">반제품 종류</th>
-                  </tr>
-                </thead>
-                <tbody id="workers-body"></tbody>
-              </table>
-            </div>
-          </div>
           <div class="panel dashboard-operators-panel">
             <h3 class="panel-title">최근 배합 기록 <a class="muted small" href="/status">전체 보기 →</a></h3>
             <div class="table-wrap">
@@ -123,5 +109,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260731a"></script>
+    <script src="/static/js/dashboard.js?v=20260808a"></script>
 {% endblock %}

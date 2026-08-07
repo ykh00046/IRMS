@@ -226,20 +226,50 @@
       : emptyRow(7, "해당 기간 자재 사용 기록이 없습니다.");
   }
 
+  // 생산 실적(state.workers)과 이상 통계(state.quality.by_worker)를 사람 단위로 합친다.
+  // 두 목록은 대상이 조금 다르다 — 이상 통계에는 취소만 있는 사람도 들어 있고, 실적에는
+  // 완료가 있는 사람만 들어 있다. 어느 쪽에만 있어도 빠뜨리지 않도록 합집합으로 만든다.
+  function mergedWorkers() {
+    const byName = new Map();
+    (state.quality.by_worker || []).forEach((w) => {
+      byName.set(w.worker || "", {
+        worker: w.worker || "",
+        records: w.records || 0,
+        manual_records: w.manual_records || 0,
+        manual_rate: w.manual_rate || 0,
+        canceled_records: w.canceled_records || 0,
+        total_amount: 0,
+        product_count: 0,
+      });
+    });
+    (state.workers || []).forEach((p) => {
+      const row = byName.get(p.worker) || {
+        worker: p.worker, records: 0, manual_records: 0, manual_rate: 0,
+        canceled_records: 0, total_amount: 0, product_count: 0,
+      };
+      row.total_amount = p.total_amount || 0;
+      row.product_count = p.product_count || 0;
+      // 완료 건수는 생산 쪽이 '(미기록)' 로 정규화한 이름을 쓰므로 이상 통계 값을 우선한다.
+      if (!row.records) row.records = p.records || 0;
+      byName.set(row.worker, row);
+    });
+    return [...byName.values()];
+  }
+
   function renderQualityTables() {
-    const workers = sortRows(
-      "insight-worker-table", state.quality.by_worker || [], "manual_records",
-    );
+    const workers = sortRows("insight-worker-table", mergedWorkers(), "records");
     $("insight-mistake-worker").innerHTML = workers.length
       ? workers.map((w) => `
         <tr>
           <td>${esc(w.worker || "")}</td>
           <td class="num">${num(w.records)}</td>
+          <td class="num">${kg(w.total_amount)}</td>
+          <td class="num">${num(w.product_count)}</td>
           <td class="num">${num(w.manual_records)}</td>
           <td class="num">${num(w.manual_rate, 1)}%</td>
           <td class="num">${num(w.canceled_records)}</td>
         </tr>`).join("")
-      : emptyRow(5, "해당 기간 기록 없음");
+      : emptyRow(7, "해당 기간 기록 없음");
 
     const mats = sortRows(
       "insight-mat-quality-table", state.quality.by_material || [], "manual_rows",
@@ -684,7 +714,7 @@
 
     bindSort("insight-product-table", "batch_count", renderProductTable);
     bindSort("insight-material-table", "total_actual", renderMaterialTable);
-    bindSort("insight-worker-table", "manual_records", renderQualityTables);
+    bindSort("insight-worker-table", "records", renderQualityTables);
     bindSort("insight-mat-quality-table", "manual_rows", renderQualityTables);
 
     $("insight-trace-btn").addEventListener("click", traceMaterialLot);

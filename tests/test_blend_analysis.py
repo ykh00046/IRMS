@@ -249,3 +249,52 @@ def test_week_bucket_span_uses_monday_week() -> None:
     assert full[0]["partial"] is False
     cut = bs.analysis(conn, "2026-03-03", "2026-03-08", bucket="week")["trend"]
     assert cut[0]["partial"] is True
+
+
+def test_workers_block_carries_production_stats() -> None:
+    """작업자별 생산 실적 — 대시보드에 있던 표를 여기로 합쳤다(2026-08-08)."""
+    conn = _make_db()
+    _add(conn, date="2026-03-02", worker="김철수", product="APB", total=1000)
+    _add(conn, date="2026-03-03", worker="김철수", product="CSPB", total=2000)
+    _add(conn, date="2026-03-04", worker="이영희", product="APB", total=500)
+    _add(conn, date="2026-03-05", worker="김철수", total=9999, status="canceled")
+    _add(conn, date="2026-03-06", worker="김철수", total=8888, bulk=1)
+
+    workers = bs.analysis(conn, "2026-03-01", "2026-03-31")["workers"]
+    assert [w["worker"] for w in workers] == ["김철수", "이영희"]  # 완료 건수 내림차순
+    kim = workers[0]
+    assert kim["records"] == 2               # 취소·일괄 재생성분 제외
+    assert kim["total_amount"] == 3000.0
+    assert kim["product_count"] == 2
+
+
+def test_workers_blank_name_is_labelled() -> None:
+    """이름이 빈 기록도 표에서 사라지지 않는다 — 대시보드가 쓰던 표기를 유지한다."""
+    conn = _make_db()
+    _add(conn, date="2026-03-02", worker="")
+    workers = bs.analysis(conn, "2026-03-01", "2026-03-31")["workers"]
+    assert workers[0]["worker"] == "(미기록)"
+
+
+def test_dashboard_and_analysis_count_the_same_records() -> None:
+    """두 화면이 같은 기간에 다른 숫자를 내놓지 않는다.
+
+    2026-08-08 이전에는 대시보드가 status != 'canceled'(=초안 포함), 배합 분석이
+    status = 'completed' 로 세어 정의부터 어긋나 있었다.
+    """
+    conn = _make_db()
+    _add(conn, date="2026-03-02", total=1000)
+    _add(conn, date="2026-03-03", total=2000, status="draft")
+    _add(conn, date="2026-03-04", total=4000, status="canceled")
+    _add(conn, date="2026-03-05", total=8000, bulk=1)
+
+    analysis = bs.analysis(conn, "2026-03-01", "2026-03-31")["summary"]
+    # 대시보드 /summary 와 같은 SQL 조건.
+    dash = conn.execute(
+        "SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount), 0) AS w FROM blend_records "
+        "WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0 "
+        "  AND work_date BETWEEN ? AND ?",
+        ("2026-03-01", "2026-03-31"),
+    ).fetchone()
+    assert analysis["records"] == dash["cnt"] == 1
+    assert analysis["total_weight_g"] == round(float(dash["w"]), 3) == 1000.0

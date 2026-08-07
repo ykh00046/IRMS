@@ -101,3 +101,13 @@
   background: var(--status-warning-bg); color: var(--status-warning);
 }
 .rescale-kind.is-manual { background: var(--bg-surface-300); color: var(--text-secondary); }
+
+/* 패널 제목 + 오른쪽 안내 링크 한 줄 — 다른 화면의 .panel-head-row 와 같은 모양이지만
+   그 정의는 insight.css/admin_users.css 에 있고 이 화면은 그 파일을 부르지 않는다. */
+.dashboard-chart-panel .panel-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}

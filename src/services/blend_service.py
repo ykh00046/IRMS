@@ -908,6 +908,31 @@ def analysis(
         for r in product_rows
     ]
 
+    # 작업자별 생산 실적 — 예전엔 대시보드에도 같은 표가 있었다(2026-08-08 통합).
+    # 이상 통계(quality.by_worker)와 사람 단위로 합쳐 화면에서 한 표로 보여준다.
+    worker_rows = connection.execute(
+        f"""
+        SELECT COALESCE(NULLIF(br.worker, ''), '(미기록)') AS worker,
+               COUNT(*) AS records,
+               COALESCE(SUM(br.total_amount), 0) AS total_amount,
+               COUNT(DISTINCT br.product_name) AS product_count
+        FROM blend_records br
+        WHERE {wsql}
+        GROUP BY worker
+        ORDER BY records DESC, worker ASC
+        """,
+        params,
+    ).fetchall()
+    workers = [
+        {
+            "worker": r["worker"],
+            "records": int(r["records"] or 0),
+            "total_amount": round(float(r["total_amount"] or 0), 3),
+            "product_count": int(r["product_count"] or 0),
+        }
+        for r in worker_rows
+    ]
+
     material_rows = connection.execute(
         f"""
         SELECT bd.material_name AS material_name,
@@ -956,6 +981,7 @@ def analysis(
         "trend": trend,
         "products": products,
         "materials": materials,
+        "workers": workers,
         "quality": mistake_stats(connection, start_date, end_date),
     }
 

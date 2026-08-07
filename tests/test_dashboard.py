@@ -74,12 +74,14 @@ def test_dashboard_excel_builds_from_blend_records():
     wb = load_workbook(io.BytesIO(xlsx))
     ws = wb.active
     values = [cell.value for row in ws.iter_rows() for cell in row if cell.value is not None]
-    # 요약: canceled 제외 1건 / 결재 대기 1건 / 반제품·작업자 섹션 존재
+    # 이 보고서는 운영 스냅샷만 담는다 — 반제품 TOP·작업자 통계는 배합 분석 리포트와
+    # 같은 표라서 뺐고(2026-08-08), '결재 대기'는 결재 미사용으로 죽은 값이었다.
     assert "[요약]" in values
     assert "배합 건수" in values
-    assert "[반제품별 배합 TOP 10]" in values
-    assert "[작업자 통계]" in values
     assert "[점도 현황 (최신 연도 기준)]" in values
+    assert "[반제품별 배합 TOP 10]" not in values
+    assert "[작업자 통계]" not in values
+    assert "결재 대기(전체)" not in values
     idx = values.index("배합 건수")
     assert values[idx + 1] == 1  # canceled 제외
 
@@ -111,9 +113,12 @@ def test_dashboard_routes_respond_without_login():
     assert trend.status_code == 200
     assert len(trend.json()["points"]) == 3
 
-    assert client.get("/api/dashboard/products").status_code == 200
-    assert client.get("/api/dashboard/workers").status_code == 200
     assert client.get("/api/dashboard/recent").status_code == 200
+
+    # 반제품 TOP·작업자별 실적은 배합 분석(/insight)으로 일원화하며 제거했다(2026-08-08)
+    # — 같은 표가 양쪽에 있었고 세는 기준마저 서로 달랐다. 되살아나지 않는지 확인한다.
+    assert client.get("/api/dashboard/products").status_code == 404
+    assert client.get("/api/dashboard/workers").status_code == 404
 
     # 잘못된 기간은 400
     assert client.get("/api/dashboard/summary?from=2026-07-05&to=2026-07-01").status_code == 400
