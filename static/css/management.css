@@ -805,6 +805,19 @@
 .lookup-attr-row-block > .filter-label { flex: none; }
 .lookup-attr-row-block > .lookup-attr-current { flex: 0 0 auto; }
 
+/* 이름을 갈아탄 계보의 판별 이름표(NPR / NPR-S2 / NPR-S) — 버전 라벨 옆 작은 회색 알약. */
+.vc-version-name {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* 품목코드 빠른 지정·검색 — 위와 같은 이유(.input width:100%)로 입력칸이 한 줄씩
    차지해 세로로 쌓였다. 한 줄에 나란히 놓는다. */
 .codes-quick-assign { justify-content: flex-start; }

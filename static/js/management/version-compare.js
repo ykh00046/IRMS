@@ -78,6 +78,10 @@
         }
         renderTimeline(historyItems, defaultIds);
         rerenderCompare();
+        // 체인의 현재판 id 를 돌려준다 — 호출부(handleLookup)가 속성 편집기·[수정 등록]을
+        // 현재판에 걸기 위해 쓴다. 옛 이름으로 들어오면 이름 매칭 결과가 대체된 옛 판이라
+        // 그대로 두면 저장이 죽은 판으로 간다(2026-08-07 확인).
+        return current ? current.id : null;
       } catch (error) {
         layout.hidden = false;
         timeline.innerHTML = `<p class="empty-state">버전 이력 조회 실패: ${IRMS.escapeHtml(error.message)}</p>`;
@@ -98,13 +102,22 @@
           ? '<span class="status-chip status-completed">사용중</span>'
           : '<span class="status-chip">이전 버전</span>';
       };
+      // 이름을 갈아탄 계보(예: NPR → NPR-S2 → NPR-S 를 소급 연결한 체인)에서는 판마다
+      // 그 시절 반제품명을 함께 보여준다 — 안 그러면 v1~v5 만 보여 "어느 판이 어느 이름
+      // 시절인지" 알 수 없다(2026-08-07 운영 계보 확인). 이름이 하나뿐인 흔한 체인에서는
+      // 중복 표기가 되므로 붙이지 않는다.
+      const names = new Set(items.map((it) => it.product_name).filter(Boolean));
+      const showName = names.size > 1;
       timeline.innerHTML = items
         .map((it) => {
           const checked = selectedIds.has(it.id) ? " checked" : "";
+          const nameTag = showName && it.product_name
+            ? ` <span class="vc-version-name">${IRMS.escapeHtml(it.product_name)}</span>`
+            : "";
           return `<label class="vc-version-row${it.is_current ? " is-current" : ""}${it.status === "canceled" ? " is-canceled" : ""}" data-recipe-id="${it.id}">`
             + `<input type="checkbox" class="vc-version-check" value="${it.id}"${checked} />`
             + `<span class="vc-version-main">`
-            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
+            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
             + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count}</span>`
             + `<span class="vc-version-status">${statusChip(it)}</span>`
             + `</span>`
@@ -320,7 +333,12 @@
           }
         }
       } catch (_e) { /* 무시 */ }
-      await loadVersionsForProduct(recipeId);
+      const currentId = await loadVersionsForProduct(recipeId);
+      // 현황에서 옛 판의 [버전 이력]으로 들어왔더라도 편집 대상은 체인의 현재판으로.
+      if (ctx.recipeLookup && ctx.recipeLookup.setLookupSelection) {
+        ctx.recipeLookup.setLookupSelection(currentId || recipeId);
+      }
+      return currentId;
     }
 
     return {

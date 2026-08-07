@@ -542,13 +542,16 @@
           if (layout) layout.hidden = true;
           return;
         }
-        // 최신판(정렬상 첫 행) id 로 버전 비교 로드.
-        const latestId = recipes[0].id;
+        // 이름 매칭 결과의 첫 행으로 체인을 로드하고, 로더가 돌려준 **체인의 현재판**을
+        // 선택으로 삼는다. 이름을 갈아탄 계보에서 옛 이름(예: NPR-S2)으로 들어오면
+        // 매칭 결과는 대체된 옛 판이라, 그걸 선택으로 두면 기준 자재·허용 편차·분류 저장과
+        // [수정 등록]이 **죽은 판**을 대상으로 조용히 나간다(2026-08-07 PUT 경로로 확인).
+        const matchedId = recipes[0].id;
+        let currentId = null;
         if (ctx.versionCompare && ctx.versionCompare.loadVersionsForProduct) {
-          await ctx.versionCompare.loadVersionsForProduct(latestId);
+          currentId = await ctx.versionCompare.loadVersionsForProduct(matchedId);
         }
-        // 최신판을 선택된 '현재판' 으로 — 속성편집기·액션이 현재판 기준으로 동작.
-        setLookupSelection(latestId);
+        setLookupSelection(currentId || matchedId);
       } catch (error) {
         IRMS.notify(`조회 실패: ${error.message}`, "error");
       } finally {
