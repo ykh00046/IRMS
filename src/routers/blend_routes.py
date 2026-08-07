@@ -11,6 +11,8 @@ Endpoints:
     GET    /blend/recipes/{id}?total=...      비율·이론량 환산 (개정 자동 귀결)
     GET    /blend/next-lot                    저장 시 부여될 제품 LOT 미리보기
     GET    /blend/workers                     작업자 목록(필터용)
+    GET    /blend/analysis                    배합 분석 통합 집계(/insight 전용)
+    GET    /blend/analysis/export             배합 분석 리포트 Excel(5시트)
     GET    /blend/material-usage              자재별 사용량 집계
     GET    /blend/product-usage               제품별 배치 빈도
     GET    /blend/batch-details[/export]      배치 상세(+Excel)
@@ -330,6 +332,175 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         """배합 기록 기반 자재 사용 분석(기간별 자재별 실제/이론 사용량·건수)."""
         return blend_service.material_usage(connection, start_date or None, end_date or None)
+
+    @router.get("/blend/analysis")
+    def blend_analysis(
+        start_date: str = "",
+        end_date: str = "",
+        bucket: str = "month",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """배합 분석 화면 한 판 — 지표(전기 대비)·기간 추세·제품·자재·품질을 한 번에."""
+        return blend_service.analysis(
+            connection, start_date or None, end_date or None, bucket
+        )
+
+    @router.get("/blend/analysis/export")
+    def blend_analysis_export(
+        start_date: str = "",
+        end_date: str = "",
+        bucket: str = "month",
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> StreamingResponse:
+        """배합 분석 리포트 Excel — 화면에서 본 그대로 5시트(요약/추세/제품/자재/품질)."""
+        data = blend_service.analysis(
+            connection, start_date or None, end_date or None, bucket
+        )
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
+
+        head = Font(bold=True)
+        title_font = Font(bold=True, size=14)
+        wb = Workbook()
+
+        def _sheet(ws, headers: list[str], widths: list[int]) -> None:
+            ws.append(headers)
+            for c in range(1, len(headers) + 1):
+                ws.cell(row=ws.max_row, column=c).font = head
+            for col, w in enumerate(widths, start=1):
+                ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = w
+
+        s = data["summary"]
+        rng = data["range"]
+        period = f"{rng['start'] or '전체'} ~ {rng['end'] or '전체'}"
+        prev = data.get("previous")
+
+        ws = wb.active
+        ws.title = "요약"
+        ws["A1"] = "배합 분석 리포트"
+        ws["A1"].font = title_font
+        ws["A2"] = f"분석 기간: {period}" + (
+            f" ({rng['days']}일)" if rng.get("days") else ""
+        )
+        ws["A3"] = (
+            f"비교 기간: {prev['start']} ~ {prev['end']}"
+            if prev
+            else "비교 기간: 없음 (시작·종료를 모두 지정하면 전기 대비를 계산합니다)"
+        )
+        ws["A4"] = f"생성 시각: {utc_now_text()} (UTC)"
+        ws.append([])
+        # 지표는 '값 / 전기 / 증감'을 나란히 둔다 — 리포트로 뽑았을 때 숫자 하나만
+        # 남으면 읽는 사람이 많고 적음을 판단할 근거가 없다.
+        ws.append(["지표", "이번 기간", "직전 기간", "증감"])
+        for c in range(1, 5):
+            ws.cell(row=ws.max_row, column=c).font = head
+
+        def _delta(cur: Any, prv: Any, unit: str = "") -> str:
+            if prv is None:
+                return "-"
+            diff = round(float(cur) - float(prv), 1)
+            sign = "+" if diff > 0 else ""
+            return f"{sign}{diff:g}{unit}"
+
+        rows = [
+            ("배합 건수", s["records"], s["records_prev"], "건"),
+            ("총 생산량(kg)", round(s["total_weight_g"] / 1000, 2),
+             None if s["total_weight_prev"] is None else round(s["total_weight_prev"] / 1000, 2),
+             "kg"),
+            ("제품 종수", s["product_count"], s["product_count_prev"], "종"),
+            ("자재 종수", s["material_count"], s["material_count_prev"], "종"),
+            ("저울 계량률(%)", s["scale_rate"], s["scale_rate_prev"], "%p"),
+            ("취소율(%)", s["cancel_rate"], s["cancel_rate_prev"], "%p"),
+        ]
+        for label, cur, prv, unit in rows:
+            ws.append([label, cur, prv if prv is not None else "-", _delta(cur, prv, unit)])
+        ws.append([])
+        ws.append(["보조 지표", "값"])
+        for c in (1, 2):
+            ws.cell(row=ws.max_row, column=c).font = head
+        for label, value in [
+            ("수동 입력 배합", s["manual_records"]),
+            ("취소 배합", s["canceled_records"]),
+            ("증량 적용 배합", s["rescale_records"]),
+            ("1회 상한 초과 배합", s["oversize_records"]),
+            ("투입 로스 보정 누계(g)", s["loss_comp_total_g"]),
+        ]:
+            ws.append([label, value])
+        for col, w in [("A", 24), ("B", 16), ("C", 16), ("D", 12)]:
+            ws.column_dimensions[col].width = w
+        ws["A1"].alignment = Alignment(vertical="center")
+
+        ws = wb.create_sheet("추세")
+        _sheet(
+            ws,
+            ["구간", "배합 건수", "생산량(kg)", "수동 입력", "취소", "저울 계량률(%)", "비고"],
+            [14, 12, 14, 12, 10, 16, 20],
+        )
+        for t in data["trend"]:
+            ws.append([
+                t["bucket"], t["records"], round(t["weight_g"] / 1000, 2),
+                t["manual_records"], t["canceled_records"], t["scale_rate"],
+                # 양 끝 구간은 대개 잘려 있다 — 표시가 없으면 생산 급감으로 읽힌다.
+                "기간이 잘린 구간(다른 구간과 길이가 다름)" if t.get("partial") else "",
+            ])
+
+        ws = wb.create_sheet("제품")
+        _sheet(
+            ws,
+            ["제품", "배치 수", "총 생산량(kg)", "생산 비중(%)", "최근 작업일"],
+            [20, 10, 16, 14, 14],
+        )
+        for p in data["products"]:
+            ws.append([
+                p["product_name"], p["batch_count"], round(p["total_amount"] / 1000, 2),
+                p["share"], p["last_work_date"] or "",
+            ])
+
+        ws = wb.create_sheet("자재")
+        _sheet(
+            ws,
+            ["자재", "실제 사용량(kg)", "이론량(kg)", "차이(g)", "투입 배치 수",
+             "소비 비중(%)", "로스 보정 누계(g)"],
+            [20, 18, 16, 12, 14, 14, 18],
+        )
+        for m in data["materials"]:
+            ws.append([
+                m["material_name"], round(m["total_actual"] / 1000, 3),
+                round(m["total_theory"] / 1000, 3),
+                round(m["total_actual"] - m["total_theory"], 2),
+                m["usage_count"], m["share"], m["loss_comp_g"],
+            ])
+
+        ws = wb.create_sheet("품질")
+        ws.append(["작업자별"])
+        ws.cell(row=ws.max_row, column=1).font = head
+        _sheet(ws, ["작업자", "완료", "수동 입력", "수동 비율(%)", "취소"],
+               [16, 10, 12, 14, 10])
+        for w in data["quality"]["by_worker"]:
+            ws.append([w["worker"], w["records"], w["manual_records"],
+                       w["manual_rate"], w["canceled_records"]])
+        ws.append([])
+        ws.append(["자재별 (수동 입력이 있었던 자재만)"])
+        ws.cell(row=ws.max_row, column=1).font = head
+        ws.append(["자재", "계량 행", "수동 입력", "수동 비율(%)"])
+        for c in range(1, 5):
+            ws.cell(row=ws.max_row, column=c).font = head
+        for m in data["quality"]["by_material"]:
+            ws.append([m["material_name"], m["rows"], m["manual_rows"], m["manual_rate"]])
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from datetime import date as _date
+
+        filename = f"blend-analysis-{_date.today().isoformat()}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @router.get("/blend/product-usage")
     def blend_product_usage(

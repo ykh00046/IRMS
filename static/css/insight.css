@@ -1,60 +1,208 @@
 /* =========================================================================
-   IRMS Insight Mode
+   IRMS 배합 분석 (/insight)
    ========================================================================= */
 
-.insight-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr) auto;
-  gap: 1rem;
-  background: var(--bg-surface-200);
-  padding: 1.25rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  align-items: flex-end;
-}
-
-/* 기간 필터 행 — 날짜 입력 바로 뒤에 빠른 기간 버튼을 붙인다. 기본 4열 그리드로는
-   버튼 묶음이 가운데에 떠 오른쪽에 빈 공간이 생기므로, 이 행만 flex 로 오버라이드해
-   시작일·종료일 → 기간 버튼 → 조회를 한 줄에 나란히 둔다(좁은 화면은 wrap). */
-.insight-filter-grid.insight-filter-row {
+/* 기간 막대 — 네 탭이 같은 기간을 본다. 한 줄에 날짜·프리셋·단위·동작을 넣고,
+   좁아지면 wrap 시킨다(그리드로 칸을 고정하면 버튼 묶음 옆에 빈 칸이 생겼다). */
+.insight-control-row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 1rem;
+  background: var(--bg-surface-200);
+  padding: 1.1rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
 }
+
 .insight-period-buttons { gap: 0.4rem; }
+.insight-bucket-group { min-width: 110px; }
+.insight-bucket-group .input { min-width: 110px; }
+/* 조회·내보내기·인쇄는 오른쪽 끝으로 — 왼쪽은 '무엇을 볼지', 오른쪽은 '무엇을 할지'. */
+.insight-control-actions { margin-left: auto; gap: 0.4rem; align-items: flex-end; }
 
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.5rem;
+.filter-summary { margin-top: 0.75rem; }
+
+/* 탭 — 레시피 관리·사용자 관리와 같은 규약(.mgmt-tab + .tab-panel#tab-<name>). */
+.insight-tabs {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.25rem;
+  background: var(--bg-surface-100);
+  padding: 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
-/* 자재 LOT 추적 — 입력 1칸 + 추적 버튼 + 우측 요약. 4열 필터 그리드를 그대로 쓰면
-   입력이 과도하게 좁아져 전용 3열로 오버라이드 */
-.insight-trace-grid { grid-template-columns: minmax(220px, 320px) auto 1fr; }
-.insight-trace-lot-link { color: var(--accent-primary, #2563eb); text-decoration: none; font-weight: 600; }
-.insight-trace-lot-link:hover { text-decoration: underline; }
-/* 추적 입력 행 — 버튼은 입력칸 하단선에 맞추고, 요약은 오른쪽 끝으로 민다. */
-.insight-trace-actions { align-items: flex-end; }
-.insight-trace-summary-wrap { margin-left: auto; align-items: center; }
-
-/* 이상 통계 2단 표 — 넓으면 좌우, 좁으면 자동 1열(auto-fit). 인라인 style 대체. */
-.insight-mistake-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+.insight-tabs .mgmt-tab {
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-/* 지표 카드 스타일은 common.css 로 통합 — 여기서 다시 정의하지 않는다.
-   (예전 정의는 한글 라벨에 uppercase + letter-spacing 을 걸어 자간이 벌어졌고,
-    같은 카드가 대시보드·점도와 달라 보였다) */
+.insight-tabs .mgmt-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-200);
+}
 
+.insight-tabs .mgmt-tab.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: contents; }
+
+/* ── 지표 카드 ───────────────────────────────────────────────────────── */
+.insight-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.insight-metric-grid-3 {
+  grid-template-columns: repeat(auto-fill, minmax(0, 260px));
+}
+
+/* 카드가 4장인 탭 — 6열 그리드를 그대로 쓰면 3+1 로 접혀 마지막 한 장이 외따로 남는다. */
+.insight-metric-grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.insight-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 116px;
+  justify-content: space-between;
+}
+
+.insight-metric-foot {
+  display: flex;
+  align-items: center;
+  min-height: 1.4rem;
+}
+
+/* 전기 대비 칩 — 색은 '좋아졌나'를 말한다(지표마다 방향이 다르므로 JS 가 정한다).
+   비율 지표는 %p 로만 적는다: 30%→33% 를 "10% 증가"로 쓰면 오독된다. */
+.delta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.delta-good {
+  color: var(--status-success);
+  background: var(--status-success-bg);
+  border-color: rgba(30, 157, 107, 0.3);
+}
+
+.delta-bad {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  border-color: rgba(216, 69, 63, 0.3);
+}
+
+.delta-neutral,
+.delta-flat {
+  color: var(--text-secondary);
+  background: var(--bg-surface-200);
+  border-color: var(--border-subtle);
+}
+
+.delta-none {
+  color: var(--text-tertiary);
+  background: transparent;
+  border-color: var(--border-subtle);
+  font-weight: 500;
+}
+
+/* ── 차트 ────────────────────────────────────────────────────────────── */
 .insight-chart-wrap {
   position: relative;
-  height: 300px;
+  height: 320px;
   margin-top: 0.75rem;
 }
+
+.insight-chart-tall { height: 420px; }
+.insight-chart-donut { height: 320px; margin-top: 0; }
+
+/* 도넛 + 표를 나란히. 좁아지면 표가 아래로 내려간다. */
+.insight-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 0.75rem;
+}
+
+.insight-scroll-table {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.insight-scroll-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-surface-100);
+}
+
+/* ── 정렬 가능한 표 ──────────────────────────────────────────────────── */
+.insight-sortable th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.insight-sortable th[data-sort]:hover { color: var(--text-primary); }
+
+/* 정렬 방향은 화살표로 — 어느 열 기준인지 색만으로는 구분되지 않는다. */
+.insight-sortable th.sorted-asc::after { content: " ▲"; font-size: 0.7em; }
+.insight-sortable th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
+
+/* 이론량 대비 차이 — 계량은 허용 편차 안으로 강제되므로 0 근처가 정상이다. */
+.variance-over { color: var(--status-warning); font-weight: 600; }
+.variance-under { color: var(--status-error); font-weight: 600; }
+
+/* ── LOT 추적 ────────────────────────────────────────────────────────── */
+.insight-trace-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.insight-trace-row .filter-group { min-width: 240px; }
+.insight-trace-row > span { margin-left: auto; }
+
+.insight-trace-lot-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.insight-trace-lot-link:hover { text-decoration: underline; }
 
 .panel-head-row {
   display: flex;
@@ -64,33 +212,54 @@
   flex-wrap: wrap;
 }
 
-.variance-over {
-  color: var(--status-warning);
-  font-weight: 600;
-}
-
-.variance-under {
-  color: var(--status-error);
-  font-weight: 600;
+/* ── 반응형 ──────────────────────────────────────────────────────────── */
+@media (max-width: 1500px) {
+  .insight-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1200px) {
-  .insight-filter-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .insight-split { grid-template-columns: 1fr; }
+  .insight-chart-donut { height: 280px; }
 }
 
 @media (max-width: 900px) {
-  .metric-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .insight-filter-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  .insight-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .insight-control-actions { margin-left: 0; }
 }
 
 @media (max-width: 600px) {
-  .metric-grid, .insight-filter-grid {
-    grid-template-columns: 1fr;
+  .insight-metric-grid { grid-template-columns: 1fr; }
+  .table-wrap { overflow-x: auto; }
+}
+
+/* ── 인쇄 ────────────────────────────────────────────────────────────── */
+/* 지금 보고 있는 탭을 A4 한 장짜리 보고서로 뽑는다. 숨은 탭까지 펼치지 않는 이유는
+   display:none 안의 캔버스는 크기가 0이라 차트가 빈칸으로 인쇄되기 때문이다.
+   기간·기준이 종이에서 사라지지 않도록 요약 줄은 남긴다. */
+@media print {
+  .app-sidebar,
+  .topbar-actions,
+  .insight-tabs,
+  .insight-control-row,
+  #insight-export,
+  #insight-print {
+    display: none !important;
   }
+
+  .filter-summary {
+    display: block !important;
+    font-size: 11px;
+    color: #000;
+    margin: 0 0 8px;
+  }
+
+  .panel {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+
+  .insight-metric-grid { grid-template-columns: repeat(3, 1fr); }
+  .insight-chart-wrap { height: 240px; }
+  .insight-scroll-table { max-height: none; overflow: visible; }
 }

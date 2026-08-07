@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..db.queries import normalize_token
+from ..db.time_utils import local_today_text
 from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
 
 logger = logging.getLogger(__name__)
@@ -653,6 +654,310 @@ def mistake_stats(
             "manual_rate": round(manual / rows_count * 100, 1) if rows_count else 0.0,
         })
     return {"by_worker": by_worker, "by_material": by_material}
+
+
+# ── 배합 분석(/insight) 통합 집계 ────────────────────────────────────────────
+# 화면 하나가 지표·추세·제품·자재·품질을 한꺼번에 그리므로 왕복 5번 대신 한 번에 준다.
+# 여기서 '완료 기록'은 어디서나 같은 뜻이다: status='completed' AND is_bulk_regenerated=0.
+# 일괄 재생성분을 빼는 이유는 그것이 이미 센 배치의 사본이기 때문이다(2026-07 일괄 생성
+# 기능 도입 때 자재 사용량이 두 배로 뛴 적이 있다).
+_ANALYSIS_DONE = "br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0"
+
+
+def _analysis_window(
+    start_date: str | None, end_date: str | None, alias: str = "br"
+) -> tuple[str, list[Any]]:
+    """기간 WHERE 조각 — 완료 조건까지 붙여서 돌려준다(양끝 포함)."""
+    where = [_ANALYSIS_DONE.replace("br.", f"{alias}.")]
+    params: list[Any] = []
+    if start_date:
+        where.append(f"{alias}.work_date >= ?")
+        params.append(start_date)
+    if end_date:
+        where.append(f"{alias}.work_date <= ?")
+        params.append(end_date)
+    return " AND ".join(where), params
+
+
+def _analysis_core(
+    connection: sqlite3.Connection, start_date: str | None, end_date: str | None
+) -> dict[str, Any]:
+    """한 기간의 핵심 수치 — 현재 기간과 직전 기간에 같은 함수를 두 번 쓴다."""
+    wsql, params = _analysis_window(start_date, end_date)
+    row = connection.execute(
+        f"""
+        SELECT COUNT(*) AS records,
+               COALESCE(SUM(br.total_amount), 0) AS total_weight,
+               COUNT(DISTINCT br.product_name) AS product_count,
+               SUM(CASE WHEN COALESCE(br.manual_entry, 0) = 1 THEN 1 ELSE 0 END) AS manual_records,
+               SUM(CASE WHEN COALESCE(br.rescale_count, 0) > 0 THEN 1 ELSE 0 END) AS rescale_records,
+               SUM(CASE WHEN COALESCE(br.oversize_total, 0) = 1 THEN 1 ELSE 0 END) AS oversize_records
+        FROM blend_records br
+        WHERE {wsql}
+        """,
+        params,
+    ).fetchone()
+    records = int(row["records"] or 0)
+    manual = int(row["manual_records"] or 0)
+
+    material_count = connection.execute(
+        f"""
+        SELECT COUNT(DISTINCT bd.material_name)
+        FROM blend_details bd JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE {wsql}
+        """,
+        params,
+    ).fetchone()[0]
+    loss_comp = connection.execute(
+        f"""
+        SELECT COALESCE(SUM(bd.loss_comp_g), 0)
+        FROM blend_details bd JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE {wsql}
+        """,
+        params,
+    ).fetchone()[0]
+
+    # 취소는 완료 조건 밖이라 따로 센다(일괄 재생성 제외는 동일하게 적용).
+    cwhere = ["br.status = 'canceled'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    cparams: list[Any] = []
+    if start_date:
+        cwhere.append("br.work_date >= ?")
+        cparams.append(start_date)
+    if end_date:
+        cwhere.append("br.work_date <= ?")
+        cparams.append(end_date)
+    canceled = int(
+        connection.execute(
+            f"SELECT COUNT(*) FROM blend_records br WHERE {' AND '.join(cwhere)}", cparams
+        ).fetchone()[0]
+        or 0
+    )
+    attempted = records + canceled
+    return {
+        "records": records,
+        "total_weight_g": round(float(row["total_weight"] or 0), 3),
+        "product_count": int(row["product_count"] or 0),
+        "material_count": int(material_count or 0),
+        "manual_records": manual,
+        "canceled_records": canceled,
+        "rescale_records": int(row["rescale_records"] or 0),
+        "oversize_records": int(row["oversize_records"] or 0),
+        "loss_comp_total_g": round(float(loss_comp or 0), 3),
+        # 저울 계량률 — 수동 입력의 반대편. 이 화면에서 '개선됐다'를 말할 수 있는 유일한
+        # 비율 지표다(편차는 허용치 내로 강제되므로 신호가 되지 못한다).
+        "scale_rate": round((records - manual) / records * 100, 1) if records else 0.0,
+        "cancel_rate": round(canceled / attempted * 100, 1) if attempted else 0.0,
+    }
+
+
+def _bucket_span(any_date: str | None, bucket: str) -> tuple[str, str] | None:
+    """그 구간의 달력상 전체 범위 — 구간 안의 아무 날짜 하나로 구한다.
+
+    버킷 키 문자열('2026-08', '2026-W31')에서 역산하지 않는 이유는 주 버킷 때문이다:
+    SQLite 의 %W 는 월요일 시작에 연초 자투리를 00 주로 몰아넣어, 키만으로 달력 범위를
+    되돌리려면 그 규칙을 JS·Python 양쪽에 복제해야 한다. 구간에 실제로 존재하는 날짜
+    하나를 받아 거기서 그 달/그 주를 구하면 규칙이 한 군데에만 남는다.
+    """
+    if not any_date:
+        return None
+    try:
+        day = datetime.strptime(any_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    if bucket == "week":
+        start = day - timedelta(days=day.weekday())  # 월요일
+        return start.isoformat(), (start + timedelta(days=6)).isoformat()
+    first = day.replace(day=1)
+    next_first = (first + timedelta(days=32)).replace(day=1)
+    return first.isoformat(), (next_first - timedelta(days=1)).isoformat()
+
+
+def _previous_window(start_date: str, end_date: str) -> tuple[str, str] | None:
+    """직전 동일 일수 구간 — 양끝 포함으로 센 일수만큼 앞으로 물린다."""
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    if end < start:
+        return None
+    days = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=days - 1)
+    return prev_start.isoformat(), prev_end.isoformat()
+
+
+def analysis(
+    connection: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    bucket: str = "month",
+) -> dict[str, Any]:
+    """배합 분석 화면 한 판을 채우는 집계 — 지표·추세·제품·자재·품질.
+
+    bucket 은 'month' | 'week'(그 외 값은 month 로 떨어진다). 전기 대비 비교는 시작·종료가
+    모두 있을 때만 계산한다 — 한쪽이 열린 기간에는 '같은 길이의 직전 구간'이 정의되지 않고,
+    억지로 만들면 '전체' 조회에서 아무 의미 없는 증감률이 뜬다.
+    """
+    bucket = "week" if bucket == "week" else "month"
+    bucket_expr = (
+        "strftime('%Y-W%W', br.work_date)" if bucket == "week" else "substr(br.work_date, 1, 7)"
+    )
+
+    summary = _analysis_core(connection, start_date, end_date)
+    previous: dict[str, str] | None = None
+    prev_core: dict[str, Any] | None = None
+    if start_date and end_date:
+        window = _previous_window(start_date, end_date)
+        if window:
+            previous = {"start": window[0], "end": window[1]}
+            prev_core = _analysis_core(connection, window[0], window[1])
+    for key in (
+        "records", "total_weight_g", "product_count", "material_count",
+        "scale_rate", "cancel_rate",
+    ):
+        summary[f"{key}_prev" if key != "total_weight_g" else "total_weight_prev"] = (
+            prev_core[key] if prev_core else None
+        )
+
+    wsql, params = _analysis_window(start_date, end_date)
+
+    trend_rows = connection.execute(
+        f"""
+        SELECT {bucket_expr} AS bucket,
+               COUNT(*) AS records,
+               COALESCE(SUM(br.total_amount), 0) AS weight_g,
+               SUM(CASE WHEN COALESCE(br.manual_entry, 0) = 1 THEN 1 ELSE 0 END) AS manual_records,
+               MIN(br.work_date) AS first_date
+        FROM blend_records br
+        WHERE {wsql}
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        """,
+        params,
+    ).fetchall()
+    # 취소는 완료가 아니라 같은 쿼리로 못 센다 — 버킷별로 따로 세서 합친다.
+    cwhere = ["br.status = 'canceled'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    cparams: list[Any] = []
+    if start_date:
+        cwhere.append("br.work_date >= ?")
+        cparams.append(start_date)
+    if end_date:
+        cwhere.append("br.work_date <= ?")
+        cparams.append(end_date)
+    canceled_by_bucket = {
+        r["bucket"]: int(r["c"] or 0)
+        for r in connection.execute(
+            f"SELECT {bucket_expr} AS bucket, COUNT(*) AS c FROM blend_records br "
+            f"WHERE {' AND '.join(cwhere)} GROUP BY bucket",
+            cparams,
+        ).fetchall()
+    }
+    # 양 끝 구간은 대개 잘려 있다 — 5/11~8/8 을 월별로 보면 5월은 21일치, 8월은 8일치인데
+    # 막대만 보면 생산이 급감한 것처럼 읽힌다. 잘린 구간에 partial 을 달아 화면·리포트가
+    # 그렇게 말할 수 있게 한다(값 자체는 손대지 않는다).
+    eff_end = end_date or local_today_text()
+    trend = []
+    for r in trend_rows:
+        recs = int(r["records"] or 0)
+        manual = int(r["manual_records"] or 0)
+        span = _bucket_span(r["first_date"], bucket)
+        partial = False
+        if span:
+            span_start, span_end = span
+            if start_date and span_start < start_date:
+                partial = True
+            if eff_end and span_end > eff_end:
+                partial = True
+        trend.append({
+            "bucket": r["bucket"],
+            "records": recs,
+            "weight_g": round(float(r["weight_g"] or 0), 3),
+            "manual_records": manual,
+            "canceled_records": canceled_by_bucket.get(r["bucket"], 0),
+            "scale_rate": round((recs - manual) / recs * 100, 1) if recs else 0.0,
+            "partial": partial,
+        })
+
+    product_rows = connection.execute(
+        f"""
+        SELECT br.product_name AS product_name,
+               COUNT(*) AS batch_count,
+               COALESCE(SUM(br.total_amount), 0) AS total_amount,
+               MAX(br.work_date) AS last_work_date
+        FROM blend_records br
+        WHERE {wsql}
+        GROUP BY br.product_name
+        ORDER BY batch_count DESC, br.product_name ASC
+        """,
+        params,
+    ).fetchall()
+    weight_total = summary["total_weight_g"]
+    products = [
+        {
+            "product_name": r["product_name"],
+            "batch_count": int(r["batch_count"] or 0),
+            "total_amount": round(float(r["total_amount"] or 0), 3),
+            "share": (
+                round(float(r["total_amount"] or 0) / weight_total * 100, 1)
+                if weight_total
+                else 0.0
+            ),
+            "last_work_date": r["last_work_date"],
+        }
+        for r in product_rows
+    ]
+
+    material_rows = connection.execute(
+        f"""
+        SELECT bd.material_name AS material_name,
+               COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
+               COALESCE(SUM(bd.theory_amount), 0) AS total_theory,
+               COALESCE(SUM(bd.loss_comp_g), 0) AS loss_comp_g,
+               COUNT(DISTINCT bd.blend_record_id) AS usage_count
+        FROM blend_details bd
+        JOIN blend_records br ON br.id = bd.blend_record_id
+        WHERE {wsql}
+        GROUP BY bd.material_name
+        ORDER BY total_actual DESC
+        """,
+        params,
+    ).fetchall()
+    actual_total = sum(float(r["total_actual"] or 0) for r in material_rows)
+    materials = [
+        {
+            "material_name": r["material_name"],
+            "total_actual": round(float(r["total_actual"] or 0), 3),
+            "total_theory": round(float(r["total_theory"] or 0), 3),
+            "usage_count": int(r["usage_count"] or 0),
+            "share": (
+                round(float(r["total_actual"] or 0) / actual_total * 100, 1)
+                if actual_total
+                else 0.0
+            ),
+            "loss_comp_g": round(float(r["loss_comp_g"] or 0), 3),
+        }
+        for r in material_rows
+    ]
+
+    days = None
+    if start_date and end_date:
+        window = _previous_window(start_date, end_date)
+        if window:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+            days = (end - start).days + 1
+
+    return {
+        "range": {"start": start_date, "end": end_date, "days": days},
+        "previous": previous,
+        "bucket": bucket,
+        "summary": summary,
+        "trend": trend,
+        "products": products,
+        "materials": materials,
+        "quality": mistake_stats(connection, start_date, end_date),
+    }
 
 
 def batch_details(

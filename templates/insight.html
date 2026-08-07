@@ -5,130 +5,256 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260808a" />
 {% endblock %}
 
 {% block content %}
-        <section class="panel">
-          <p class="panel-subtitle">완료된 배합 기록을 분석해 자재별 사용량과 제품별 배합 현황을 산출합니다.</p>
-          <div class="insight-filter-grid insight-filter-row">
+        {# 기간 막대 — 네 탭이 같은 기간을 본다(추적 탭만 전 기간). 여기서 고른 기간이
+           지표·추세·표·리포트 전부의 기준이 되므로 화면 맨 위에 고정으로 둔다. #}
+        <section class="panel insight-controls">
+          <div class="insight-control-row">
             <div class="filter-group">
-              <label class="filter-label">시작일</label>
+              <label class="filter-label" for="insight-from">시작일</label>
               <input id="insight-from" type="date" class="input" />
             </div>
             <div class="filter-group">
-              <label class="filter-label">종료일</label>
+              <label class="filter-label" for="insight-to">종료일</label>
               <input id="insight-to" type="date" class="input" />
             </div>
             <div class="button-row insight-period-buttons">
               <button id="insight-range-month" type="button" class="btn compact">최근 30일</button>
               <button id="insight-range-90" type="button" class="btn compact">최근 90일</button>
+              <button id="insight-range-year" type="button" class="btn compact">올해</button>
               <button id="insight-range-all" type="button" class="btn compact">전체</button>
-              <button id="insight-query" type="button" class="btn accent compact">조회</button>
+            </div>
+            <div class="filter-group insight-bucket-group">
+              <label class="filter-label" for="insight-bucket">추세 단위</label>
+              <select id="insight-bucket" class="input">
+                <option value="month" selected>월별</option>
+                <option value="week">주별</option>
+              </select>
+            </div>
+            <div class="button-row insight-control-actions">
+              <button id="insight-query" type="button" class="btn accent">조회</button>
+              <button id="insight-export" type="button" class="btn">리포트 Excel</button>
+              <button id="insight-print" type="button" class="btn">인쇄</button>
             </div>
           </div>
           <p id="insight-filter-summary" class="filter-summary muted small"></p>
         </section>
 
-        <section class="metric-grid">
-          <article class="metric-card">
-            <span class="metric-label">배합 건수</span>
-            <strong id="metric-records" class="metric-value">-<span class="metric-unit">건</span></strong>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">총 사용 중량</span>
-            <strong id="metric-weight" class="metric-value">-<span class="metric-unit">g</span></strong>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">자재 종수</span>
-            <strong id="metric-materials" class="metric-value">-<span class="metric-unit">종</span></strong>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">제품 종수</span>
-            <strong id="metric-products" class="metric-value">-<span class="metric-unit">종</span></strong>
-          </article>
-        </section>
+        <nav class="mgmt-tabs insight-tabs">
+          <button class="mgmt-tab active" data-tab="overview" type="button">개요</button>
+          <button class="mgmt-tab" data-tab="materials" type="button">자재 소비</button>
+          <button class="mgmt-tab" data-tab="quality" type="button">품질·이상</button>
+          <button class="mgmt-tab" data-tab="trace" type="button">LOT 추적</button>
+        </nav>
 
-        <!-- 이상 통계 — 배합은 편차를 허용치 내로 강제하므로, 편차 대신 '수동 입력(저울 미사용)'과
-             '취소'를 이상 신호로 본다. 작업자별·자재별로 집계(위 기간 필터 공통). -->
-        <section class="panel">
-          <h3 class="panel-title">이상 통계 (수동 입력·취소)</h3>
-          <p class="filter-summary muted small">배합은 계량 편차를 허용치 내로 강제합니다. 여기서는 저울을 쓰지 않은 <b>수동 입력</b>과 <b>취소</b> 건을 이상 신호로 봅니다.</p>
-          <div class="insight-mistake-grid">
-            <div>
-              <h4 class="filter-label">작업자별</h4>
-              <div class="table-wrap">
-                <table class="blend-table">
-                  <thead><tr><th>작업자</th><th class="num">완료</th><th class="num">수동</th><th class="num">수동%</th><th class="num">취소</th></tr></thead>
-                  <tbody id="insight-mistake-worker"><tr><td colspan="5" class="muted">조회하세요.</td></tr></tbody>
+        {# ── 개요 ───────────────────────────────────────────────────────── #}
+        <div class="tab-panel active" id="tab-overview">
+          {# 지표에는 반드시 직전 동기간 대비를 붙인다 — 숫자 하나만으로는 많고 적음을
+             판단할 근거가 없어서, 예전 화면의 '배합 102건'은 아무 말도 하지 않았다. #}
+          <section class="insight-metric-grid" id="insight-metrics"></section>
+
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">생산 추세</span>
+                <h3 class="panel-title">기간별 배합 추이</h3>
+              </div>
+              <span class="muted small" id="insight-trend-note"></span>
+            </div>
+            <div class="insight-chart-wrap">
+              <canvas id="insight-trend-chart"></canvas>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">제품 구성</span>
+                <h3 class="panel-title">제품별 생산 실적</h3>
+              </div>
+              <span class="muted small" id="insight-product-note"></span>
+            </div>
+            <div class="insight-split">
+              <div class="insight-chart-wrap insight-chart-donut">
+                <canvas id="insight-product-chart"></canvas>
+              </div>
+              <div class="table-wrap insight-scroll-table">
+                <table class="blend-table insight-sortable" id="insight-product-table">
+                  <thead>
+                    <tr>
+                      <th data-sort="product_name">제품</th>
+                      <th class="num" data-sort="batch_count">배치 수</th>
+                      <th class="num" data-sort="total_amount">생산량(kg)</th>
+                      <th class="num" data-sort="share">비중</th>
+                      <th data-sort="last_work_date">최근 작업일</th>
+                    </tr>
+                  </thead>
+                  <tbody id="insight-product-body"></tbody>
                 </table>
               </div>
             </div>
-            <div>
-              <h4 class="filter-label">자재별 (수동 입력)</h4>
-              <div class="table-wrap">
-                <table class="blend-table">
-                  <thead><tr><th>자재</th><th class="num">계량행</th><th class="num">수동</th><th class="num">수동%</th></tr></thead>
-                  <tbody id="insight-mistake-material"><tr><td colspan="4" class="muted">조회하세요.</td></tr></tbody>
-                </table>
+          </section>
+        </div>
+
+        {# ── 자재 소비 ──────────────────────────────────────────────────── #}
+        <div class="tab-panel" id="tab-materials">
+          <section class="insight-metric-grid insight-metric-grid-3" id="insight-material-metrics"></section>
+
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">소비 순위</span>
+                <h3 class="panel-title">자재별 사용량 상위 12</h3>
               </div>
             </div>
-          </div>
-        </section>
+            <div class="insight-chart-wrap insight-chart-tall">
+              <canvas id="insight-material-chart"></canvas>
+            </div>
+          </section>
 
-        <!-- 자재 LOT 추적 — 원재료 LOT 하나가 어느 배합(제품 LOT)에 투입됐는지 역추적(리콜 대응) -->
-        <section class="panel">
-          <div class="panel-head-row">
-            <div>
-              <h3 class="panel-title">자재 LOT 추적</h3>
-              <p class="panel-subtitle">원재료 LOT 번호로 그 LOT이 투입된 모든 배합 기록을 찾습니다. 부분 입력도 가능합니다.</p>
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">전체 목록</span>
+                <h3 class="panel-title">자재별 소비 상세</h3>
+              </div>
+              <span class="muted small">머리글을 눌러 정렬할 수 있습니다.</span>
             </div>
-          </div>
-          <div class="insight-filter-grid insight-trace-grid">
-            <div class="filter-group">
-              <label class="filter-label" for="insight-trace-lot">자재 LOT</label>
-              <input id="insight-trace-lot" class="input" placeholder="예: RM-2601" />
+            {# 차이 열의 색 기준을 적어 둔다 — 예전엔 ±0.2g 에도 경고색이 붙어 모든 줄이
+               빨갛게 보였고, 그러면 정작 봐야 할 줄이 묻힌다. #}
+            <p class="panel-subtitle">
+              <b>차이</b>는 실제 사용량 − 이론량입니다. 계량은 허용 편차(기본 0.05g/행) 안으로
+              강제되므로 배치 수만큼 미세하게 쌓이는 것이 정상이고, 그 누적 범위를 넘을 때만
+              색으로 표시합니다.
+            </p>
+            <div class="table-wrap">
+              <table class="blend-table insight-sortable" id="insight-material-table">
+                <thead>
+                  <tr>
+                    <th data-sort="material_name">자재</th>
+                    <th class="num" data-sort="total_actual">실제 사용량(kg)</th>
+                    <th class="num" data-sort="total_theory">이론량(kg)</th>
+                    <th class="num" data-sort="diff">차이(g)</th>
+                    <th class="num" data-sort="usage_count">투입 배치</th>
+                    <th class="num" data-sort="share">소비 비중</th>
+                    <th class="num" data-sort="loss_comp_g">로스 보정(g)</th>
+                  </tr>
+                </thead>
+                <tbody id="insight-material-body"></tbody>
+              </table>
             </div>
-            <div class="button-row insight-trace-actions">
+          </section>
+        </div>
+
+        {# ── 품질·이상 ──────────────────────────────────────────────────── #}
+        <div class="tab-panel" id="tab-quality">
+          <section class="insight-metric-grid insight-metric-grid-4" id="insight-quality-metrics"></section>
+
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">개선 추세</span>
+                <h3 class="panel-title">저울 계량률 추이</h3>
+              </div>
+            </div>
+            {# 배합은 계량 편차를 허용치 이내로 강제하므로 편차는 이상 신호가 되지 못한다.
+               남는 신호가 '저울을 안 쓴 수동 입력'과 '취소'뿐이라 이 둘을 추세로 본다. #}
+            <p class="panel-subtitle">
+              배합은 계량 편차를 허용치 안으로 강제하므로 편차 자체는 이상 신호가 되지 못합니다.
+              저울 PRINT 대신 손으로 입력한 <b>수동 입력</b>과 <b>취소</b>를 이상 신호로 봅니다.
+            </p>
+            <div class="insight-chart-wrap">
+              <canvas id="insight-quality-chart"></canvas>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3 class="panel-title">작업자별</h3>
+            <div class="table-wrap">
+              <table class="blend-table insight-sortable" id="insight-worker-table">
+                <thead>
+                  <tr>
+                    <th data-sort="worker">작업자</th>
+                    <th class="num" data-sort="records">완료</th>
+                    <th class="num" data-sort="manual_records">수동 입력</th>
+                    <th class="num" data-sort="manual_rate">수동 비율</th>
+                    <th class="num" data-sort="canceled_records">취소</th>
+                  </tr>
+                </thead>
+                <tbody id="insight-mistake-worker"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3 class="panel-title">자재별 수동 입력</h3>
+            <p class="panel-subtitle">수동 입력이 한 번이라도 있었던 자재만 나옵니다.</p>
+            <div class="table-wrap">
+              <table class="blend-table insight-sortable" id="insight-mat-quality-table">
+                <thead>
+                  <tr>
+                    <th data-sort="material_name">자재</th>
+                    <th class="num" data-sort="rows">계량 행</th>
+                    <th class="num" data-sort="manual_rows">수동 입력</th>
+                    <th class="num" data-sort="manual_rate">수동 비율</th>
+                  </tr>
+                </thead>
+                <tbody id="insight-mistake-material"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        {# ── LOT 추적 ───────────────────────────────────────────────────── #}
+        <div class="tab-panel" id="tab-trace">
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">리콜 대응</span>
+                <h3 class="panel-title">자재 LOT 추적</h3>
+              </div>
+            </div>
+            {# 기간 필터와 무관하게 전 기간을 뒤진다 — 추적은 누락이 훨씬 위험하다. #}
+            <p class="panel-subtitle">
+              원재료 LOT 번호로 그 LOT이 투입된 모든 배합을 찾습니다. 부분 입력도 됩니다.
+              <b>위 기간 필터와 무관하게 전 기간</b>을 뒤집니다.
+            </p>
+            <div class="insight-trace-row">
+              <div class="filter-group">
+                <label class="filter-label" for="insight-trace-lot">자재 LOT</label>
+                <input id="insight-trace-lot" class="input" placeholder="예: RM-2601" />
+              </div>
               <button id="insight-trace-btn" type="button" class="btn accent">추적</button>
-            </div>
-            <div class="button-row insight-trace-summary-wrap">
               <span id="insight-trace-summary" class="muted small"></span>
             </div>
-          </div>
-          <p id="insight-trace-note" class="trunc-note" hidden></p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>작업일</th>
-                  <th>제품 LOT</th>
-                  <th>제품</th>
-                  <th>자재</th>
-                  <th>자재 LOT</th>
-                  <th class="num">실제량(g)</th>
-                  <th>작업자</th>
-                  <th>상태</th>
-                </tr>
-              </thead>
-              <tbody id="insight-trace-body">
-                <tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-title">제품별 배합 빈도 (배치 수 · 상위 10)</h3>
-          <p class="panel-subtitle">기간 내 완료된 배합 기록을 제품 단위로 집계합니다.</p>
-          <div class="insight-chart-wrap">
-            <canvas id="insight-product-chart" height="120"></canvas>
-          </div>
-        </section>
-
+            <p id="insight-trace-note" class="trunc-note" hidden></p>
+            <div class="table-wrap">
+              <table class="blend-table">
+                <thead>
+                  <tr>
+                    <th>작업일</th>
+                    <th>제품 LOT</th>
+                    <th>제품</th>
+                    <th>자재</th>
+                    <th>자재 LOT</th>
+                    <th class="num">실제량(g)</th>
+                    <th>작업자</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody id="insight-trace-body">
+                  <tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260729a"></script>
+    <script src="/static/js/insight.js?v=20260808a"></script>
 {% endblock %}
