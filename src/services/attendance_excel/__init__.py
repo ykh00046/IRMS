@@ -35,6 +35,7 @@ from . import summary
 # --- models.py: COL_* constants, header map tables, exceptions, dataclasses ---
 from .models import (
     ANNUAL_LEAVE_KEYWORDS,
+    AttendanceSourceUnavailable,
     normalize_emp_id,
     COL_DATE,
     COL_WEEKDAY,

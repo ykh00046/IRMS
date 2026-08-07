@@ -47,10 +47,13 @@ document.addEventListener("DOMContentLoaded", () => {
       ["worker_manager_granted", "책임자 지정"],
       ["worker_manager_revoked", "책임자 해제"],
       ["worker_manager_password_reset", "책임자 비번 초기화"],
+      ["user_created", "로그인 계정 생성"],
+      ["user_updated", "로그인 계정 수정"],
       ["user_deleted", "로그인 계정 삭제"],
       ["user_password_reset", "로그인 계정 비번 초기화"],
       ["admin_deactivate_others", "admin 외 계정 일괄 비활성화"],
       ["attendance_password_reset", "근태 비번 초기화"],
+      ["attendance_lockout_cleared", "근태 잠금 해제"],
     ]],
     ["배합 기록", [
       ["blend_record_create", "배합 기록 생성"],
@@ -60,8 +63,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_record_cancel", "배합 기록 취소"],
       ["blend_record_restore", "배합 기록 취소 해제"],
       ["blend_record_deleted", "배합 기록 삭제"],
-      ["blend_record_review", "검토 기록"],
-      ["blend_record_approve", "승인 기록"],
+      ["blend_rescale_acked", "증량 확인 처리"],
+      ["blend_manual_absence_acked", "수기 입력 확인 처리"],
       ["dhr_exported", "배합일지 출력"],
       ["product_lot_dedup", "제품 LOT 중복 정리"],
       ["blend_record_purged", "배합 기록 자동 정리(취소 경과)"],
@@ -91,6 +94,10 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_use_reactor_set", "반응기 사용 지정"],
       ["recipe_is_derived_set", "파생 레시피 지정"],
       ["material_code_set", "품목코드 지정"],
+      ["material_code_cleared", "품목코드 해제"],
+      ["material_created", "자재 등록"],
+      ["material_deleted", "자재 삭제"],
+      ["recipe_product_code_set", "반제품 코드 지정"],
       ["material_loss_comp_set", "품목 로스 보정 지정"],
       ["recipes_exported", "레시피 전체 내보내기"],
     ]],
@@ -462,6 +469,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // (예: 근태 엑셀에 없는 사번을 최초 발급 시도 → 404 EMP_NOT_IN_EXCEL).
   const attErrorMap = {
     EMP_NOT_IN_EXCEL: "근태 자료(엑셀)에 없는 사번입니다. 사번을 확인하세요.",
+    // 엑셀을 한 파일도 못 읽은 상태 — 종전엔 이것도 '없는 사번'으로 안내해 사번을
+    // 의심하며 헛수고하게 만들었다(2026-08-08 감사).
+    ATTENDANCE_SOURCE_UNAVAILABLE:
+      "근태 자료(엑셀)를 읽을 수 없습니다 — 사번 문제가 아닙니다. "
+      + "누군가 파일을 열어두었는지(잠김) 확인한 뒤 다시 시도하세요.",
   };
   const attErrorMessage = (msg) => attErrorMap[msg] || msg;
 
@@ -492,9 +504,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return response.json();
   }
 
+  // 근태 표의 시각 — 저장값은 UTC(...Z)다. 종전엔 T/Z 만 지우고 그대로 찍어, 같은 화면의
+  // 감사 로그(현지 시각 변환)와 9시간 어긋났다. "잠금 해제 15:12"를 보고 이미 풀렸다고
+  // 판단하는데 실제로는 자정인 식(2026-08-08 감사). 감사 로그와 같은 변환기를 쓴다.
   function formatAttDate(text) {
     if (!text) return "—";
-    return String(text).replace("T", " ").replace("Z", "");
+    return IRMS.formatDateTime(text);
   }
 
   async function loadAttendanceUsers() {
@@ -520,7 +535,12 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${formatAttDate(item.locked_until)}</td>
           <td>${formatAttDate(item.last_login_at)}</td>
           <td>${formatAttDate(item.created_at)}</td>
-          <td><button type="button" class="btn compact danger" data-emp-id="${item.emp_id}">임시 비밀번호 발급</button></td>`;
+          <td class="att-actions">
+            ${item.locked_until
+              ? `<button type="button" class="btn compact" data-unlock-emp-id="${item.emp_id}">잠금 해제</button>`
+              : ""}
+            <button type="button" class="btn compact danger" data-emp-id="${item.emp_id}">임시 비밀번호 발급</button>
+          </td>`;
         attUsersBody.appendChild(tr);
       });
       attUsersBody.querySelectorAll("button[data-emp-id]").forEach((btn) => {
@@ -539,6 +559,29 @@ document.addEventListener("DOMContentLoaded", () => {
             loadAttendanceUsers();
           } catch (err) {
             IRMS.notify(`초기화 실패: ${attErrorMessage(err.message)}`, "error");
+            event.currentTarget.disabled = false;
+          }
+        });
+      });
+      // 잠금 해제 — 비밀번호를 그대로 두고 잠금만 푼다. 종전에는 잠긴 직원을 풀려면
+      // 임시 비밀번호를 발급해 그 사람의 비밀번호를 반드시 잃어야 했다.
+      attUsersBody.querySelectorAll("button[data-unlock-emp-id]").forEach((btn) => {
+        btn.addEventListener("click", async (event) => {
+          const empId = event.currentTarget.dataset.unlockEmpId;
+          if (!empId) return;
+          if (!window.confirm(
+            `사번 ${empId}의 잠금을 풀까요?\n비밀번호는 그대로 두고 잠금만 해제합니다.`,
+          )) return;
+          try {
+            event.currentTarget.disabled = true;
+            await attendanceFetch("/api/attendance/admin/unlock", {
+              method: "POST",
+              body: { emp_id: empId },
+            });
+            IRMS.notify(`사번 ${empId} 잠금을 해제했습니다.`, "success");
+            loadAttendanceUsers();
+          } catch (err) {
+            IRMS.notify(`잠금 해제 실패: ${attErrorMessage(err.message)}`, "error");
             event.currentTarget.disabled = false;
           }
         });

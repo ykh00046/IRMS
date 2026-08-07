@@ -19,6 +19,7 @@ from .models import (
     AttendanceAnnualSummary,
     AttendanceProfile,
     AttendanceRow,
+    AttendanceSourceUnavailable,
     AttendanceSummary,
     FileLocked,
     FileFormatInvalid,
@@ -105,15 +106,22 @@ def employee_exists_in_any_month(emp_id: str) -> bool:
     target = normalize_emp_id(emp_id)
     if not target:
         return False
+    readable = 0
     for ym in files.available_months():
         for path in files.month_file_paths(ym):
             try:
                 records = parser._records_from_path(path)
             except (MonthFileNotFound, FileLocked, FileFormatInvalid):
                 continue
+            readable += 1
             for rec in records:
                 if normalize_emp_id(rec["emp_id"]) == target:
                     return True
+    # 한 파일도 못 읽었으면 "명단에 없다"가 아니라 "확인할 수 없다"다. 종전엔 둘을 똑같이
+    # False 로 뭉개, 누군가 근태 엑셀을 열어둔(잠긴) 동안 **모든 사번이 '없는 사번'**으로
+    # 안내됐다 — 책임자는 사번을 의심하며 헛수고한다(2026-08-08 감사).
+    if readable == 0:
+        raise AttendanceSourceUnavailable()
     return False
 
 

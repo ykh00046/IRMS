@@ -226,7 +226,10 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
 
     Raises ``AttendanceAuthError`` with the public error code on failure.
     """
-    from .services.attendance_excel import employee_exists_in_any_month
+    from .services.attendance_excel import (
+        AttendanceSourceUnavailable,
+        employee_exists_in_any_month,
+    )
 
     emp_id = (emp_id or "").strip()
     password = password or ""
@@ -238,7 +241,15 @@ def authenticate(emp_id: str, password: str) -> dict[str, Any]:
     record = _fetch(emp_id)
     if record is None:
         # 실제 실패 원인은 감사 로그에만 남기고 공개 응답은 통일한다.
-        employee_exists = employee_exists_in_any_month(emp_id)
+        # 엑셀을 못 읽는 상태(잠김 등)는 '명단에 없음'과 다르지만, 로그인 응답은
+        # 존재 여부를 흘리지 않기 위해 어차피 동일하다 — 사유만 구분해 남긴다.
+        try:
+            employee_exists = employee_exists_in_any_month(emp_id)
+        except AttendanceSourceUnavailable:
+            _log_failed_login(emp_id, "attendance_source_unavailable")
+            raise AttendanceAuthError(
+                code="INVALID_CREDENTIALS", status_code=status.HTTP_401_UNAUTHORIZED
+            )
         if not employee_exists:
             _log_failed_login(emp_id, "employee_not_in_excel")
         else:
@@ -306,11 +317,44 @@ def change_password(emp_id: str, current_password: str, new_password: str) -> No
     _set_password(emp_id, new_password, reset_required=0)
 
 
+def clear_lockout(emp_id: str) -> None:
+    """잠금만 푼다 — 비밀번호는 그대로.
+
+    종전엔 잠긴 직원을 즉시 풀 방법이 임시 비밀번호 발급뿐이라, 잠금을 풀려면 그 사람의
+    비밀번호를 **반드시 잃어야** 했다(표엔 잠금 열만 있고 해제 수단이 없었다, 2026-08-08 감사).
+    """
+    record = _fetch((emp_id or "").strip())
+    if record is None:
+        raise AttendanceAuthError(
+            code="ACCOUNT_NOT_PROVISIONED", status_code=status.HTTP_404_NOT_FOUND
+        )
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE attendance_users "
+            "SET failed_attempts = 0, locked_until = NULL, last_failed_at = NULL "
+            "WHERE emp_id = ?",
+            ((emp_id or "").strip(),),
+        )
+        connection.commit()
+
+
 def reset_password_to_temporary(emp_id: str) -> str:
-    from .services.attendance_excel import employee_exists_in_any_month
+    from .services.attendance_excel import (
+        AttendanceSourceUnavailable,
+        employee_exists_in_any_month,
+    )
 
     emp_id = (emp_id or "").strip()
-    if not emp_id or not employee_exists_in_any_month(emp_id):
+    # 책임자가 쓰는 경로라 원인을 그대로 알려준다 — 엑셀을 못 읽는 상태를 '없는 사번'으로
+    # 안내하면 사번을 의심하며 헛수고한다(2026-08-08 감사).
+    try:
+        found = bool(emp_id) and employee_exists_in_any_month(emp_id)
+    except AttendanceSourceUnavailable:
+        raise AttendanceAuthError(
+            code="ATTENDANCE_SOURCE_UNAVAILABLE",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    if not found:
         raise AttendanceAuthError(
             code="EMP_NOT_IN_EXCEL", status_code=status.HTTP_404_NOT_FOUND
         )

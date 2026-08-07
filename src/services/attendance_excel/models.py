@@ -117,6 +117,14 @@ class FileFormatInvalid(AttendanceError):
     pass
 
 
+class AttendanceSourceUnavailable(AttendanceError):
+    """근태 엑셀을 한 파일도 읽지 못했다 — '명단에 없음'과 구분해야 하는 상태.
+
+    누군가 파일을 열어두면(잠김) 전부 읽기 실패인데, 이를 '없는 사번'으로 안내하면
+    책임자가 사번을 의심하며 헛수고한다(2026-08-08 감사).
+    """
+
+
 @dataclass
 class AttendanceRow:
     date: str

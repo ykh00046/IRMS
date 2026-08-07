@@ -226,6 +226,34 @@ def build_router() -> APIRouter:
             "password_reset_required": True,
         }
 
+    @router.post("/admin/unlock")
+    def admin_unlock(body: ResetPasswordRequest, request: Request) -> dict[str, Any]:
+        """잠금 해제 — 비밀번호는 그대로 두고 실패 횟수·잠금만 푼다(책임자 전용)."""
+        user = require_irms_manager(request)
+        emp_id = body.emp_id.strip()
+        try:
+            attendance_auth.clear_lockout(emp_id)
+        except AttendanceAuthError as exc:
+            raise exc.to_http() from exc
+        profile = excel_service.employee_profile_from_any_month(emp_id)
+        target_label = (
+            f"{profile.name} (사번 {emp_id})"
+            if profile and profile.name
+            else f"사번 {emp_id}"
+        )
+        with get_connection() as connection:
+            write_audit_log(
+                connection,
+                action="attendance_lockout_cleared",
+                actor=user,
+                target_type="attendance",
+                target_id=emp_id,
+                target_label=target_label,
+                details={},
+            )
+            connection.commit()
+        return {"status": "ok"}
+
     @router.get("/admin/users")
     def admin_users(request: Request) -> dict[str, Any]:
         require_irms_manager(request)
