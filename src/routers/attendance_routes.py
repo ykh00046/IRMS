@@ -226,6 +226,23 @@ def build_router() -> APIRouter:
             "password_reset_required": True,
         }
 
+    @router.get("/admin/header-check")
+    def admin_header_check(
+        request: Request, month: str | None = Query(default=None, max_length=7)
+    ) -> dict[str, Any]:
+        """근태 엑셀의 열 인식 상태 — 책임자 전용.
+
+        ERP 가 열 순서를 바꾸면(2026-06 실제 발생) 고정 인덱스로 읽던 값이 조용히
+        어긋난다. 헤더 자동 매핑이 그 대책이고 폴백 경고가 안전망인데, 그 경고가 서버
+        로그에만 남아 아무도 보지 않았다(2026-08-08). 화면이 물어볼 수 있게 연다.
+        """
+        require_irms_manager(request)
+        year_month = _resolve_month(month)
+        return {
+            "month": year_month,
+            "files": excel_service.header_diagnostics(year_month),
+        }
+
     @router.post("/admin/unlock")
     def admin_unlock(body: ResetPasswordRequest, request: Request) -> dict[str, Any]:
         """잠금 해제 — 비밀번호는 그대로 두고 실패 횟수·잠금만 푼다(책임자 전용)."""

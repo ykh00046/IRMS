@@ -95,11 +95,16 @@ class ColumnMapWarningTests(unittest.TestCase):
 
     def test_shifted_optional_column_warns_but_parses(self) -> None:
         group, sub = self._headers_missing_outing()
-        colmap, warnings = ex._build_column_map(group, sub)
+        # 세 번째 값 = 헤더에서 실제로 잡힌 필드. 병합된 colmap 은 늘 전 필드를 갖고
+        # 있어 무엇이 폴백됐는지 구분할 수 없어서, 진단(header_diagnostics)이 쓰라고
+        # 2026-08-08 에 함께 돌려주게 했다.
+        colmap, warnings, detected = ex._build_column_map(group, sub)
 
         # 경고가 있고, 외출시간(outing)이 폴백 대상으로 명시된다.
         self.assertTrue(warnings)
         self.assertIn("outing", warnings[0])
+        self.assertNotIn("outing", detected)
+        self.assertIn("name", detected)
 
         # 필수/검출된 선택 열은 헤더 인덱스로 매핑(기본 인덱스가 아님).
         self.assertEqual(colmap["name"], 3)
@@ -112,16 +117,21 @@ class ColumnMapWarningTests(unittest.TestCase):
 
     def test_full_layout_has_no_warning(self) -> None:
         # 2026-06 정상 레이아웃(모든 선택 열 포함)은 경고가 없어야 한다.
-        _colmap, warnings = ex._build_column_map(
+        _colmap, warnings, detected = ex._build_column_map(
             tuple(_JUNE_HEADER_GROUP), tuple(_JUNE_HEADER_SUB)
         )
         self.assertEqual(warnings, [])
+        # 정상 레이아웃에서는 선택 열까지 전부 헤더에서 잡힌다.
+        self.assertIn("outing", detected)
+        self.assertIn("next_day", detected)
 
     def test_missing_required_falls_back_without_warning(self) -> None:
         # 필수 미충족 → 통째 폴백은 정상 시나리오라 경고 없음.
-        colmap, warnings = ex._build_column_map(None, None)
+        colmap, warnings, detected = ex._build_column_map(None, None)
         self.assertEqual(colmap, ex.DEFAULT_COLUMNS)
         self.assertEqual(warnings, [])
+        # 통째 폴백이면 헤더에서 잡힌 필드가 하나도 없다 — 진단이 이걸로 구분한다.
+        self.assertEqual(detected, set())
 
 
 class ParentalLeaveExclusionTests(unittest.TestCase):

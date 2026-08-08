@@ -112,6 +112,7 @@ from .parser import (
     _row_to_record,
     _column_map_from_ws,
     _records_from_path,
+    header_diagnostics,
 )
 
 # --- anomaly.py: leave / shift / anomaly detection ---
@@ -224,6 +225,7 @@ __all__ = [
     "AttendanceAnnualSummary",
     # files
     "ATTENDANCE_DIR",
+    "header_diagnostics",
     "FILENAME_PATTERN",
     "FILENAME_REGEX",
     "DEFAULT_COLUMNS",

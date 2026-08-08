@@ -93,8 +93,8 @@ def _cell_time(value: Any) -> str | None:
 def _build_column_map(
     header_group: tuple[Any, ...] | None,
     header_sub: tuple[Any, ...] | None,
-) -> tuple[dict[str, int], list[str]]:
-    """헤더 두 행에서 ``(열맵, 경고목록)`` 을 만든다.
+) -> tuple[dict[str, int], list[str], set[str]]:
+    """헤더 두 행에서 ``(열맵, 경고목록, 헤더에서 잡힌 필드)`` 를 만든다.
 
     필수 필드를 모두 찾지 못하면 ``DEFAULT_COLUMNS`` 로 통째 폴백한다(경고
     없음 — 헤더 없는 단위테스트/구버전 레이아웃의 정상 시나리오). 필수는
@@ -103,7 +103,7 @@ def _build_column_map(
     계속한다.
     """
     if not header_sub:
-        return dict(files.DEFAULT_COLUMNS), []
+        return dict(files.DEFAULT_COLUMNS), [], set()
 
     group = list(header_group or ())
     sub = list(header_sub)
@@ -140,7 +140,7 @@ def _build_column_map(
             detected["note"] = idx
 
     if not _HEADER_REQUIRED_FIELDS.issubset(detected):
-        return dict(files.DEFAULT_COLUMNS), []
+        return dict(files.DEFAULT_COLUMNS), [], set()
 
     warnings: list[str] = []
     missing_optional = sorted(_OPTIONAL_HEADER_FIELDS - detected.keys())
@@ -149,7 +149,9 @@ def _build_column_map(
             "선택 열을 헤더에서 찾지 못해 구 기본 인덱스로 폴백: "
             + ", ".join(missing_optional)
         )
-    return {**files.DEFAULT_COLUMNS, **detected}, warnings
+    # 세 번째 값은 '헤더에서 실제로 잡힌' 키다 — 병합된 맵은 늘 전 필드를 갖고 있어
+    # 무엇이 폴백됐는지 구분할 수 없다(진단이 늘 정상으로 보였다).
+    return {**files.DEFAULT_COLUMNS, **detected}, warnings, set(detected)
 
 
 def _make_column_map(
@@ -162,7 +164,7 @@ def _make_column_map(
     돌려준다(구버전 레이아웃·헤더 없는 입력에 대한 안전한 폴백). 선택 열이
     헤더에서 안 잡혀 기본 인덱스로 폴백되면 서버 로그로 한 번 경고한다(GAP-1).
     """
-    colmap, warnings = _build_column_map(header_group, header_sub)
+    colmap, warnings, _detected = _build_column_map(header_group, header_sub)
     for message in warnings:
         _LOGGER.warning("attendance 헤더 매핑: %s", message)
     return colmap
@@ -264,6 +266,57 @@ def _column_map_from_ws(ws) -> dict[str, int]:
     if len(header_rows) < 2:
         return dict(files.DEFAULT_COLUMNS)
     return _make_column_map(header_rows[0], header_rows[1])
+
+
+def header_diagnostics(year_month: str) -> list[dict[str, Any]]:
+    """월 파일별 헤더 인식 상태 — 책임자에게 보여 주기 위한 진단.
+
+    ERP 는 2026-06 에 신원/근무정보 블록의 열 순서를 바꿔 내보내기 시작했고, 고정
+    인덱스로 읽던 코드가 이름을 '근무공장' 값으로 잡는 등 조용히 어긋났다. 헤더 자동
+    매핑이 그 대책이고 폴백 경고가 안전망인데, 그 경고는 서버 로그에만 남는다 — 로그를
+    보는 사람이 없으면 안전망이 아니다(2026-08-08). 이 함수는 데이터 행은 건드리지 않고
+    헤더 두 줄만 다시 읽어 상태를 돌려준다(조회 경로에 영향 없음).
+
+    반환: [{file, ok, fallback, missing_optional:[...]}]
+      fallback=True  → 필수 열을 못 찾아 파일 전체를 구 기본 인덱스로 읽고 있다(위험).
+      missing_optional → 그 열들만 기본 인덱스로 폴백했다(값이 어긋날 수 있다).
+    """
+    out: list[dict[str, Any]] = []
+    for path in files.month_file_paths(year_month):
+        entry: dict[str, Any] = {
+            "file": path.name, "ok": True, "fallback": False, "missing_optional": [],
+        }
+        try:
+            wb = _load_workbook(path)
+        except (MonthFileNotFound, FileLocked, FileFormatInvalid) as exc:
+            entry.update(ok=False, error=type(exc).__name__)
+            out.append(entry)
+            continue
+        try:
+            ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
+            header_rows = list(ws.iter_rows(values_only=True, max_row=2))
+        except Exception:  # noqa: BLE001 — 진단이 조회를 막지 않는다
+            entry.update(ok=False, error="HEADER_UNREADABLE")
+            out.append(entry)
+            continue
+        finally:
+            try:
+                wb.close()
+            except Exception:  # noqa: BLE001
+                pass
+        if len(header_rows) < 2:
+            entry.update(fallback=True)
+            out.append(entry)
+            continue
+        _colmap, warnings, detected = _build_column_map(header_rows[0], header_rows[1])
+        # 필수 열을 못 찾으면 _build_column_map 이 DEFAULT_COLUMNS 를 통째로 돌려준다
+        # (경고 없이) — 그 경우를 폴백으로 표면화한다.
+        # 필수 열을 못 찾으면 잡힌 필드가 하나도 없다(통째 폴백).
+        entry["fallback"] = not detected
+        entry["missing_optional"] = sorted(_OPTIONAL_HEADER_FIELDS - detected)
+        entry["ok"] = not entry["fallback"] and not entry["missing_optional"]
+        out.append(entry)
+    return out
 
 
 def _records_from_path(path: Path) -> list[dict[str, Any]]:

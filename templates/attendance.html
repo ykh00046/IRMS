@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260805b" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260808a" />
   </head>
   <body
     class="att-page"
@@ -27,6 +27,14 @@
         {% elif admin_mode %}
           <span class="att-badge att-badge-admin">책임자 + 본인 로그인</span>
         {% endif %}
+
+      {# 근태 엑셀 열 인식 경고 — 책임자에게만. ERP 가 열 순서를 바꾸면 값이 조용히
+         어긋나는데(2026-06 실제 발생), 그 경고가 서버 로그에만 남아 아무도 보지
+         않았다. 이상이 있을 때만 attendance.js 가 문구를 채우고 연다. #}
+      <section class="att-warning-banner" id="att-header-banner" hidden>
+        <span class="att-warning-icon" aria-hidden="true">⚠</span>
+        <span class="att-warning-text" id="att-header-banner-text"></span>
+      </section>
         <div class="att-header-group">
           {% if admin_mode %}
             <a href="/admin/users" class="btn compact">사용자 관리</a>
@@ -300,7 +308,7 @@
     <script src="/static/js/common/ui.js?v=20260726a"></script>
     <script src="/static/js/common/audio.js?v=20260707b"></script>
     <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance.js?v=20260731a"></script>
+    <script src="/static/js/attendance.js?v=20260808a"></script>
     <script src="/static/js/attendance_session.js?v=20260624a"></script>
   </body>
 </html>

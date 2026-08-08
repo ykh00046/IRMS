@@ -8,10 +8,31 @@ are consumed by anomaly detection are owned by ``anomaly``.
 from __future__ import annotations
 
 import datetime as _dt
+import os
 import re
 from pathlib import Path
 
-ATTENDANCE_DIR = Path(r"C:\ErpExcel")
+
+def _attendance_dir() -> Path:
+    r"""근태 엑셀 폴더 — 환경변수로 바꿀 수 있다.
+
+    같은 C:\ErpExcel 을 읽는 자재 LOT(erp_lot_service)은 IRMS_ERP_EXCEL_DIR 로
+    경로를 옮길 수 있는데 근태만 상수로 박혀 있었다(2026-08-08). ERP 내보내기
+    폴더가 바뀌거나 다른 PC 에 올리면 근태만 코드를 고쳐야 했다.
+
+    두 기능을 한꺼번에 옮기는 게 보통이라 IRMS_ERP_EXCEL_DIR 을 그대로 따르고,
+    근태만 따로 두어야 할 때 IRMS_ATTENDANCE_EXCEL_DIR 이 우선한다.
+    """
+    return Path(
+        os.environ.get("IRMS_ATTENDANCE_EXCEL_DIR")
+        or os.environ.get("IRMS_ERP_EXCEL_DIR")
+        or r"C:\ErpExcel"
+    )
+
+
+# 모듈 속성으로 둔다 — 기존 테스트가 patch.object(files, "ATTENDANCE_DIR", ...) 로
+# 갈아끼우고, 호출부도 이 이름을 그대로 읽는다.
+ATTENDANCE_DIR = _attendance_dir()
 FILENAME_PATTERN = "monthly_attendance_{year_month}.xlsx"
 FILENAME_REGEX = re.compile(r"^monthly_attendance(?:_.+)?_(\d{4}-\d{2})\.xlsx$")
 

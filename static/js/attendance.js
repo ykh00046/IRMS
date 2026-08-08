@@ -561,9 +561,40 @@
     refreshView();
   }
 
+  // 근태 엑셀 열 인식 상태 — 책임자에게만, 이상이 있을 때만 띄운다.
+  // ERP 가 열 순서를 바꾸면 값이 조용히 어긋나는데(2026-06 실제 발생), 지금까지 그
+  // 경고는 서버 로그에만 남아 아무도 보지 않았다(2026-08-08).
+  async function checkHeaderMapping() {
+    const banner = document.getElementById("att-header-banner");
+    const text = document.getElementById("att-header-banner-text");
+    if (!banner || !text) return;
+    try {
+      const res = await fetch(
+        `/api/attendance/admin/header-check?month=${encodeURIComponent(state.month || "")}`,
+        { credentials: "same-origin" },
+      );
+      if (!res.ok) { banner.hidden = true; return; }
+      const data = await res.json();
+      const bad = (data.files || []).filter((f) => !f.ok);
+      if (!bad.length) { banner.hidden = true; return; }
+      const parts = bad.map((f) => {
+        if (f.error) return `${f.file}: 읽지 못함(${f.error})`;
+        if (f.fallback) return `${f.file}: 헤더를 인식하지 못해 예전 열 순서로 읽는 중`;
+        return `${f.file}: 열 ${f.missing_optional.join(", ")} 을(를) 찾지 못함`;
+      });
+      text.textContent =
+        `근태 엑셀의 열 인식에 문제가 있습니다 — ${parts.join(" · ")}. `
+        + "표시된 값이 실제와 다를 수 있으니 ERP 내보내기 형식을 확인하세요.";
+      banner.hidden = false;
+    } catch (_e) {
+      banner.hidden = true;   // 진단 실패가 근태 조회를 막지 않는다
+    }
+  }
+
   async function refreshView() {
     if (adminMode) {
       await loadEmployeesForAdmin();
+      checkHeaderMapping();   // 조회를 기다리게 하지 않는다
     }
     await loadView();
   }
