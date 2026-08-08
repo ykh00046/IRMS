@@ -6,7 +6,7 @@
     <title>BRM · 통합 제조 · 근태 관리</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260805a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260808b" />
   </head>
   <body class="launch-body">
 
@@ -15,6 +15,7 @@
         <span class="brand-logo launch-logo">BR</span>
         <h1 class="launch-title">BRM</h1>
         <p class="launch-sub">통합 제조 · 근태 관리 시스템</p>
+        <p class="launch-clock" id="launch-clock"></p>
         <p class="launch-date" id="launch-date"></p>
       </header>
 
@@ -45,7 +46,15 @@
 
       <footer class="launch-foot">
         {% if current_user %}
-        <span>{{ current_user.display_name }} · {{ current_user.role_label }} · @{{ current_user.username }}</span>
+        {# admin 계정은 표시명도 '책임자'라 "책임자 · 책임자 · @admin" 으로 겹쳐 보였다.
+           같으면 한 번만 적는다(이름이 따로 있는 책임자는 그대로 둘 다 나온다). #}
+        <span>
+          {%- if current_user.display_name == current_user.role_label -%}
+          {{ current_user.role_label }} · @{{ current_user.username }}
+          {%- else -%}
+          {{ current_user.display_name }} · {{ current_user.role_label }} · @{{ current_user.username }}
+          {%- endif -%}
+        </span>
         <button id="logout-btn" type="button" class="btn compact launch-logout">로그아웃</button>
         {% else %}
         <a href="/management/login" class="launch-foot-link">책임자 로그인</a>
@@ -56,15 +65,28 @@
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <script>
       (function () {
-        var el = document.getElementById("launch-date");
-        if (el) {
-          el.textContent = new Date().toLocaleDateString("ko-KR", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            weekday: "long",
-          });
+        // 현장 PC 에 늘 떠 있는 화면이라 날짜만으로는 부족하다 — 시:분을 크게 두고
+        // 분이 바뀔 때 맞춰 갱신한다(1초 폴링 대신 다음 분 경계에 한 번씩).
+        var dateEl = document.getElementById("launch-date");
+        var clockEl = document.getElementById("launch-clock");
+        function pad(n) { return String(n).padStart(2, "0"); }
+        function tick() {
+          var now = new Date();
+          if (dateEl) {
+            dateEl.textContent = now.toLocaleDateString("ko-KR", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              weekday: "long",
+            });
+          }
+          if (clockEl) {
+            clockEl.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes());
+          }
+          var msToNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+          setTimeout(tick, Math.max(1000, msToNextMinute));
         }
+        tick();
       })();
     </script>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->

@@ -150,3 +150,24 @@ def test_root_is_the_home_launcher():
     assert 'href="/attendance"' in body        # 근태 타일
     assert 'href="/dashboard"' in body         # 반제품 제조 → 대시보드
     assert 'href="/blend"' not in body         # 예전 제조 목적지가 아님
+
+
+def test_home_launcher_shows_a_clock_and_a_manager_entrance():
+    """홈 런처는 현장 PC 에 늘 떠 있는 화면이다 — 시계와 책임자 입구가 있어야 한다.
+
+    시각은 날짜만으로 부족하고(교대·출퇴근 확인), 책임자 로그인은 매일 쓰는 입구인데
+    12.5px 회색 글씨로 맨 아래 있었다(2026-08-08).
+    """
+    client, _cfg = _client()
+    body = client.get("/").text
+    assert 'id="launch-clock"' in body
+    assert 'id="launch-date"' in body
+    assert 'href="/management/login"' in body
+
+
+def test_home_launcher_marks_the_manufacturing_tile_as_open_access():
+    """두 타일의 실질 차이(사번 로그인 vs 바로 입장)가 화면에 남아 있어야 한다."""
+    client, _cfg = _client()
+    body = client.get("/").text
+    assert "사번 로그인" in body
+    assert "바로 입장" in body
