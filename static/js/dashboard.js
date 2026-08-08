@@ -87,14 +87,18 @@ document.addEventListener("DOMContentLoaded", () => {
     IRMS.showLoading(main);
     try {
       // 반제품 TOP·작업자별 실적은 배합 분석(/insight)으로 옮겼다(2026-08-08).
-      const [summary, trend, recent] = await Promise.all([
+      const [summary, trend, recent, attention] = await Promise.all([
         fetchJSON(`/api/dashboard/summary?${qs(range)}`),
         fetchJSON(`/api/dashboard/trend?${qs(range)}`),
         fetchJSON("/api/dashboard/recent?limit=10"),
+        fetchJSON("/api/dashboard/attention"),
       ]);
       renderSummary(summary);
       renderTrend(trend);
       renderRecent(recent);
+      // 점도 이상은 /summary 가, 나머지는 /attention 이 준다 — 한 렌더러가 합쳐 그린다.
+      renderAttention({ ...attention, viscosity_anomaly: summary.viscosity_anomaly });
+      stampUpdated();
     } catch (error) {
       IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
     } finally {
@@ -114,16 +118,62 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("card-products").innerHTML =
       `${fmtNumber(data.product_count)}<span class="metric-unit">종</span>`;
     // '결재 대기' 카드·API 필드(approval_pending)는 제거됨(결재 현장 미사용, 2026-07-23).
-    const anomaly = document.getElementById("card-visc-anomaly");
-    anomaly.textContent = fmtNumber(data.viscosity_anomaly);
-    anomaly.style.color = data.viscosity_anomaly > 0 ? cssVar("--status-error", "#d8453f") : "";
+    // 점도 이상·미입력은 기간과 무관한 값이라 '지금 조치' 묶음(renderAttention)이 그린다.
+  }
+
+  // ── 지금 조치 ────────────────────────────────────────────────
+  // 기간 필터를 30일로 바꿔도 여기 숫자는 변하지 않는다 — 그래서 기간 카드와 줄을 나눴다.
+  function markAct(id, on) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("needs-action", !!on);
+  }
+
+  function renderAttention(data) {
+    const anomaly = data.viscosity_anomaly;
+    const anomalyEl = document.getElementById("card-visc-anomaly");
+    if (anomalyEl) anomalyEl.textContent = fmtNumber(anomaly);
+    markAct("act-visc-anomaly", Number(anomaly) > 0);
+
     const due = data.viscosity_due_today || [];
     const dueEl = document.getElementById("card-visc-due");
-    dueEl.textContent = fmtNumber(due.length);
-    dueEl.style.color = due.length > 0 ? cssVar("--status-error", "#d8453f") : "";
+    if (dueEl) dueEl.textContent = fmtNumber(due.length);
     document.getElementById("card-visc-due-codes").textContent = due.length
       ? due.join(", ")
       : "알림 대상 모두 입력됨";
+    markAct("act-visc-due", due.length > 0);
+
+    // 자재 LOT 기준 파일 — 며칠 지났는지. 파일이 없으면 LOT 검증 자체가 못 돈다.
+    const file = data.material_lot_file || {};
+    const staleEl = document.getElementById("card-lot-stale");
+    const fileEl = document.getElementById("card-lot-file");
+    if (!file.found) {
+      if (staleEl) staleEl.textContent = "없음";
+      if (fileEl) fileEl.textContent = "ERP 파일을 찾지 못했습니다";
+      markAct("act-lot-file", true);
+    } else {
+      const days = file.stale_days;
+      if (staleEl) staleEl.textContent = days === null || days === undefined ? "-" : `${days}일 전`;
+      if (fileEl) fileEl.textContent = file.file_name || "-";
+      // 3일 넘게 지난 파일로 원료 LOT 을 판정하고 있으면 알린다.
+      markAct("act-lot-file", Number(days) >= 3);
+    }
+
+    const todayEl = document.getElementById("card-today-count");
+    if (todayEl) todayEl.textContent = `${fmtNumber(data.today_blend_count)}건`;
+    const lastEl = document.getElementById("card-last-blend");
+    if (lastEl) {
+      lastEl.textContent = data.last_blend_at
+        ? `마지막 ${data.last_blend_at}`
+        : "기록 없음";
+    }
+  }
+
+  function stampUpdated() {
+    const el = document.getElementById("dash-updated");
+    if (!el) return;
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    el.textContent = `${p(d.getHours())}:${p(d.getMinutes())} 기준`;
   }
 
   function renderTrend(data) {
@@ -309,6 +359,44 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("dash-export").addEventListener("click", () => {
     window.location.assign(`/api/dashboard/export?${qs(getCurrentRange())}`);
   });
+
+  // 자동 갱신 — 이 화면은 현장 PC 에 띄워 둔다. 수동 새로고침만 있으면 아무도 누르지
+  // 않은 채 몇 시간 전 숫자를 현재로 읽는다. 탭이 숨어 있을 때는 부르지 않고(백그라운드
+  // 폴링 낭비), 다시 보이면 즉시 한 번 갱신한다. 선택은 이 PC 에 기억한다.
+  const AUTO_MS = 180000;
+  const AUTO_KEY = "irms_dashboard_auto";
+  const autoChk = document.getElementById("dash-auto");
+  let autoTimer = null;
+
+  function refreshAll() {
+    loadAll();
+    loadRescaleAlert();
+  }
+
+  function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  }
+
+  function startAuto() {
+    stopAuto();
+    autoTimer = setInterval(() => {
+      if (document.hidden) return;
+      refreshAll();
+    }, AUTO_MS);
+  }
+
+  if (autoChk) {
+    const saved = IRMS.loadPreference ? IRMS.loadPreference(AUTO_KEY, "1") : "1";
+    autoChk.checked = saved !== "0";
+    autoChk.addEventListener("change", () => {
+      if (IRMS.savePreference) IRMS.savePreference(AUTO_KEY, autoChk.checked ? "1" : "0");
+      if (autoChk.checked) startAuto(); else stopAuto();
+    });
+    if (autoChk.checked) startAuto();
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && autoChk.checked) refreshAll();
+    });
+  }
 
   restoreRange();
   loadAll();

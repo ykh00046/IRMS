@@ -66,6 +66,25 @@ def latest_erp_file() -> str | None:
     return best[1] if best else None
 
 
+def latest_file_summary() -> dict[str, Any]:
+    """기준 ERP 파일의 이름·날짜만 — 엑셀을 열지 않는다.
+
+    대시보드는 "기준 파일이 며칠 지났는가"만 알면 되는데, /material-lots/status 는
+    700행짜리 LOT 목록을 통째로 만들어 준다. 상시 띄워 두는 화면이 그걸 주기적으로
+    부르면 값이 크다. 파일명에 날짜가 들어 있으므로(ERP_YYYY-MM-DD.xlsx) 워크북을
+    열지 않고도 이 신호는 만들 수 있다.
+    """
+    path = latest_erp_file()
+    if path is None:
+        return {"file_name": None, "file_date": None, "found": False}
+    file_date = _parse_file_date(path)
+    return {
+        "file_name": os.path.basename(path),
+        "file_date": file_date.isoformat() if file_date else None,
+        "found": True,
+    }
+
+
 def _to_float(value: Any) -> float:
     """재고 숫자 변환 — None/빈칸/문자는 0.0."""
     if value is None:

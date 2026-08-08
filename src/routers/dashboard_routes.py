@@ -13,6 +13,7 @@
 Endpoints (무로그인 개방, 조회 전용):
     GET /dashboard/summary   기간 KPI + 현재 상태(점도 이상·오늘 점도 미입력)
     GET /dashboard/trend     일별 배합 건수·총량
+    GET /dashboard/attention 지금 조치 필요(점도 미입력·미확인·자재 LOT 파일 경과·오늘 실적)
     GET /dashboard/recent    최근 배합 기록 (점도·결재 여부 포함)
     GET /dashboard/export    Excel 보고서(운영 스냅샷 — 기간 분석은 /insight 리포트)
 """
@@ -25,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from ..db import get_connection
-from ..services import dashboard_export, viscosity_service
+from ..services import dashboard_export, erp_lot_service, viscosity_service
 
 
 def _parse_range(from_: str | None, to_: str | None) -> tuple[str, str]:
@@ -119,6 +120,67 @@ def build_router() -> APIRouter:
             for d in _daterange(from_date, to_date)
         ]
         return {"range": {"from": from_date, "to": to_date}, "points": points}
+
+    @router.get("/attention")
+    def dashboard_attention() -> dict[str, Any]:
+        """지금 조치가 필요한 것들 — 기간 필터와 무관한 '현재 상태' 신호.
+
+        기간 지표(건수·총량)와 섞이면 안 되는 값들이다: 기간을 30일로 바꿔도 '오늘
+        점도 미입력'은 그대로여야 하는데, 한 줄에 나란히 있으면 같은 기준으로 읽힌다.
+
+        자재 LOT 기준 파일이 며칠 지났는지는 여기서 처음 나온다. 그 파일이 낡으면
+        배합 화면의 원료 LOT 검증이 낡은 재고로 판정하는데, 그 사실을 알려면 자재 LOT
+        화면까지 들어가야 했다(2026-08-08).
+        """
+        today = date.today().isoformat()
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS cnt,
+                       MAX(work_date || ' ' || COALESCE(work_time, '')) AS last_at
+                FROM blend_records
+                WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                """
+            ).fetchone()
+            today_row = connection.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM blend_records
+                WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND work_date = ?
+                """,
+                (today,),
+            ).fetchone()
+            due = viscosity_service.daily_reading_reminders(connection, target_date=today)
+            unacked = connection.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM blend_records
+                WHERE (rescale_unacked = 1 OR manual_unacked = 1) AND status != 'canceled'
+                """
+            ).fetchone()
+
+        erp = erp_lot_service.latest_file_summary()
+        stale_days = None
+        if erp.get("file_date"):
+            try:
+                stale_days = (
+                    date.today() - date.fromisoformat(erp["file_date"])
+                ).days
+            except ValueError:
+                stale_days = None
+
+        return {
+            "today": today,
+            "today_blend_count": int(today_row["cnt"] or 0),
+            "last_blend_at": (row["last_at"] or "").strip() or None,
+            "viscosity_due_today": [item["code"] for item in due],
+            "unacked_count": int(unacked["cnt"] or 0),
+            "material_lot_file": {
+                "file_name": erp.get("file_name"),
+                "file_date": erp.get("file_date"),
+                "found": bool(erp.get("found")),
+                "stale_days": stale_days,
+            },
+        }
 
     @router.get("/recent")
     def dashboard_recent(

@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260808c" />
 {% endblock %}
 
 {% block content %}
@@ -24,34 +24,44 @@
               <button id="dash-apply" class="btn accent" type="button">적용</button>
             </div>
             <button id="dash-refresh" class="btn" type="button">새로고침</button>
+            {# 띄워 두는 화면이라 주기 갱신이 필요하다. 언제 것을 보고 있는지도 적는다. #}
+            <label class="dash-auto"><input type="checkbox" id="dash-auto" checked /> 자동 갱신</label>
+            <span class="dash-updated muted small" id="dash-updated"></span>
             <button id="dash-export" class="btn" type="button">Excel 내보내기</button>
           </div>
         </section>
 
-        <section class="dashboard-cards">
-          <div class="metric-card">
-            <div class="metric-label">배합 건수</div>
-            <strong class="metric-value" id="card-blend-count">-<span class="metric-unit">건</span></strong>
+        {# 지금 조치가 필요한 것 — 기간 필터와 무관하다. 예전에는 '오늘 점도 미입력'이
+           '배합 건수'와 한 줄에 나란히 있어, 기간을 30일로 바꿔도 안 변하는 값과
+           바뀌는 값이 같은 기준으로 읽혔다(2026-08-08). 두 묶음으로 갈라 놓는다. #}
+        <section class="dash-attention" id="dash-attention">
+          <div class="dash-section-head">
+            <h3 class="dash-section-title">지금 조치</h3>
+            <span class="dash-section-note">기간 선택과 무관 · 현재 상태</span>
           </div>
-          <div class="metric-card">
-            <div class="metric-label">총 배합량</div>
-            <strong class="metric-value" id="card-weight">-<span class="metric-unit">kg</span></strong>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">반제품 종류</div>
-            <strong class="metric-value" id="card-products">-<span class="metric-unit">종</span></strong>
-          </div>
-          <!-- '결재 대기' 카드 제거(2026-07-15): 결재는 현장 미사용 정책 — 죽은 지표가
-               상시 주황 숫자로 떠서 혼란만 줬다. approval_pending 필드는 2026-07-23 제거됨 -->
-          <div class="metric-card">
-            <div class="metric-label">점도 이상</div>
-            <div class="metric-value" id="card-visc-anomaly">-</div>
-            <div class="metric-unit">건 · 최신 연도</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">오늘 점도 미입력</div>
-            <div class="metric-value" id="card-visc-due">-</div>
-            <div class="metric-unit" id="card-visc-due-codes">알림 대상 기준</div>
+          <div class="dash-attention-grid">
+            <a class="panel dash-act" id="act-visc-due" href="/viscosity">
+              <span class="dash-act-label">오늘 점도 미입력</span>
+              <strong class="dash-act-value" id="card-visc-due">-</strong>
+              <span class="dash-act-note" id="card-visc-due-codes">알림 대상 기준</span>
+            </a>
+            <a class="panel dash-act" id="act-visc-anomaly" href="/viscosity">
+              <span class="dash-act-label">점도 이상</span>
+              <strong class="dash-act-value" id="card-visc-anomaly">-</strong>
+              <span class="dash-act-note">건 · 최신 연도</span>
+            </a>
+            {# 자재 LOT 기준 파일이 낡으면 배합 화면의 원료 LOT 검증이 낡은 재고로
+               판정한다. 그 사실을 알려면 자재 LOT 화면까지 들어가야 했다. #}
+            <a class="panel dash-act" id="act-lot-file" href="/material-lots">
+              <span class="dash-act-label">자재 LOT 기준 파일</span>
+              <strong class="dash-act-value" id="card-lot-stale">-</strong>
+              <span class="dash-act-note" id="card-lot-file">-</span>
+            </a>
+            <a class="panel dash-act" id="act-today" href="/status">
+              <span class="dash-act-label">오늘 배합</span>
+              <strong class="dash-act-value" id="card-today-count">-</strong>
+              <span class="dash-act-note" id="card-last-blend">-</span>
+            </a>
           </div>
         </section>
 
@@ -71,6 +81,37 @@
           </div>
         </section>
         {% endif %}
+
+        {# 빠른 시작 — 현장 PC 의 홈이 이 화면이라, 실제로 할 일로 가는 입구가
+           사이드바 글자 링크뿐이었다. #}
+        <section class="dash-quick" id="dash-quick">
+          <a class="btn accent dash-quick-btn" href="/blend">배합 시작</a>
+          <a class="btn dash-quick-btn" href="/blend/continuous">다중 계량</a>
+          <a class="btn dash-quick-btn" href="/viscosity">점도 등록</a>
+          <a class="btn dash-quick-btn" href="/blend/drafts">작성 중 배합</a>
+        </section>
+
+        <div class="dash-section-head">
+          <h3 class="dash-section-title">기간 실적</h3>
+          <span class="dash-section-note" id="dash-period-note">위에서 고른 기간 기준</span>
+        </div>
+        <section class="dashboard-cards">
+          <div class="metric-card">
+            <div class="metric-label">배합 건수</div>
+            <strong class="metric-value" id="card-blend-count">-<span class="metric-unit">건</span></strong>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">총 배합량</div>
+            <strong class="metric-value" id="card-weight">-<span class="metric-unit">kg</span></strong>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">반제품 종류</div>
+            <strong class="metric-value" id="card-products">-<span class="metric-unit">종</span></strong>
+          </div>
+          <!-- '결재 대기' 카드 제거(2026-07-15): 결재는 현장 미사용 정책 — 죽은 지표가
+               상시 주황 숫자로 떠서 혼란만 줬다. approval_pending 필드는 2026-07-23 제거됨 -->
+        </section>
+
 
         {# 반제품별 TOP 10 차트와 작업자별 실적 표는 뺐다(2026-08-08) — 배합 분석에
            같은 표가 더 나은 형태(비중·전기 대비·정렬)로 있었고, 세는 기준마저 서로
@@ -109,5 +150,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260808a"></script>
+    <script src="/static/js/dashboard.js?v=20260808c"></script>
 {% endblock %}

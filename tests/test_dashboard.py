@@ -191,3 +191,72 @@ def test_batch_details_truncation_flag():
     assert res2["truncated"] is True
     assert res2["limit"] == 2
     assert res2["total"] == 2
+
+
+def test_dashboard_attention_is_independent_of_the_period_filter():
+    """'지금 조치'는 기간 선택과 무관해야 한다.
+
+    예전에는 '오늘 점도 미입력'이 '배합 건수'와 한 줄에 나란히 있어, 기간을 30일로
+    바꿔도 안 변하는 값과 바뀌는 값이 같은 기준으로 읽혔다(2026-08-08 분리).
+    """
+    import importlib
+
+    import src.config as cfg
+    import src.main as mainmod
+
+    importlib.reload(cfg)
+    importlib.reload(mainmod)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(mainmod.app)
+    res = client.get("/api/dashboard/attention")
+    assert res.status_code == 200
+    body = res.json()
+    for key in (
+        "today", "today_blend_count", "last_blend_at",
+        "viscosity_due_today", "unacked_count", "material_lot_file",
+    ):
+        assert key in body, key
+    assert isinstance(body["viscosity_due_today"], list)
+    assert isinstance(body["material_lot_file"], dict)
+    for key in ("file_name", "file_date", "found", "stale_days"):
+        assert key in body["material_lot_file"], key
+
+    # 기간 파라미터를 붙여도 무시된다 — 이 엔드포인트에 기간 개념이 없어야 한다.
+    same = client.get("/api/dashboard/attention?from=2000-01-01&to=2000-01-02")
+    assert same.status_code == 200
+    assert same.json() == body
+
+
+def test_material_lot_file_summary_does_not_open_the_workbook(tmp_path, monkeypatch):
+    """대시보드가 700행짜리 LOT 목록을 끌어오지 않고 파일명만으로 경과일을 낸다."""
+    from openpyxl import Workbook
+
+    from src.services import erp_lot_service
+
+    erp_dir = tmp_path / "erp"
+    erp_dir.mkdir()
+    wb = Workbook()
+    wb.active.append(["창고", "구분", "품목코드", "품목명"])
+    wb.save(erp_dir / "ERP_2026-08-02.xlsx")
+    monkeypatch.setenv("IRMS_ERP_EXCEL_DIR", str(erp_dir))
+
+    def _boom(*_a, **_k):  # 워크북을 열면 실패시킨다
+        raise AssertionError("latest_file_summary 는 엑셀을 열지 않아야 한다")
+
+    monkeypatch.setattr(erp_lot_service, "load_workbook", _boom, raising=False)
+    summary = erp_lot_service.latest_file_summary()
+    assert summary == {
+        "file_name": "ERP_2026-08-02.xlsx",
+        "file_date": "2026-08-02",
+        "found": True,
+    }
+
+
+def test_material_lot_file_summary_when_no_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("IRMS_ERP_EXCEL_DIR", str(tmp_path))
+    from src.services import erp_lot_service
+
+    assert erp_lot_service.latest_file_summary() == {
+        "file_name": None, "file_date": None, "found": False,
+    }

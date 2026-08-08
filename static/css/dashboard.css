@@ -111,3 +111,72 @@
   gap: 1rem;
   flex-wrap: wrap;
 }
+
+/* ── 지금 조치 / 기간 실적 구분 (2026-08-08) ─────────────────────────────
+   예전에는 '오늘 점도 미입력'과 '배합 건수'가 한 줄에 나란히 있었다. 기간을 30일로
+   바꿔도 앞은 그대로고 뒤만 바뀌는데, 같은 줄에 있으면 같은 기준으로 읽힌다. */
+.dash-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.6rem;
+}
+
+.dash-section-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dash-section-note { font-size: 0.78rem; color: var(--text-tertiary); }
+
+.dash-attention { margin-bottom: 18px; }
+
+.dash-attention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* 조치 카드는 그 화면으로 가는 링크다 — 숫자를 보고 바로 갈 수 있어야 한다. */
+.dash-act {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.dash-act:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+
+.dash-act-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.dash-act-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.03em; }
+.dash-act-note { font-size: 12px; color: var(--text-tertiary); word-break: break-all; }
+
+/* 손을 대야 하는 상태만 색이 붙는다 — 평상시엔 조용해야 눈에 띌 때 눈에 띈다. */
+.dash-act.needs-action { border-color: var(--status-warning); }
+.dash-act.needs-action .dash-act-value { color: var(--status-warning); }
+
+/* 빠른 시작 — 현장 PC 의 홈에서 실제로 할 일로 가는 입구. */
+.dash-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 18px;
+}
+
+.dash-quick-btn { min-width: 130px; justify-content: center; }
+
+.dash-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dash-updated { white-space: nowrap; }
