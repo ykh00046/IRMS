@@ -80,13 +80,25 @@
     const prog = drafts.progressOf(entry.kind, slot);
     const progText = prog.total ? `${prog.filled} / ${prog.total} 칸` : "-";
     const name = slot.product_name || "(제품명 없음)";
+    // 같은 제품의 초안이 두 칸에 걸릴 수 있다 — 총 배합량까지 보여야 어느 작업인지 갈린다.
+    const total = drafts.totalOf(slot);
+    const totalHtml = total ? `<span class="drafts-total">총량 ${esc(total)}g</span>` : "";
+    // "방금 하던 게 어느 것인가"가 이 화면의 용도라 상대 시간이 먼저 읽혀야 한다.
+    const ago = drafts.savedAgoText(slot);
+    const exp = drafts.expiryText(slot);
     // 삭제 확인 문구에 쓸 제품명은 data 속성으로 따로 싣는다 — 셀 textContent 에는
     // 변경 배지·상세 문구가 섞여 있어 그대로 쓰면 확인창이 읽을 수 없게 된다.
     return `<tr data-kind="${esc(entry.kind)}" data-id="${esc(slot.id)}" data-name="${esc(name)}">`
-      + `<td class="product-cell">${esc(name)}${changeHtml}</td>`
+      + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${totalHtml}</div>${changeHtml}</td>`
       + `<td>${esc(entry.label)}</td>`
       + `<td class="drafts-progress">${esc(progText)}</td>`
-      + `<td class="drafts-saved">${esc(drafts.savedAtText(slot) || "-")}</td>`
+      + `<td class="drafts-saved">`
+      + `<span class="drafts-ago">${esc(ago || "-")}</span>`
+      + `<span class="drafts-abs">${esc(drafts.savedAtText(slot) || "-")}</span>`
+      // 24시간이 지나면 목록에서 사라진다 — 다 채운 계량값이 조용히 없어지지 않도록
+      // 임박한 것은 눈에 띄게 적는다(안내문에만 적혀 있으면 어느 것이 임박인지 모른다).
+      + `<span class="drafts-expiry${exp.soon ? " soon" : ""}">${esc(exp.text)}</span>`
+      + `</td>`
       + '<td><div class="drafts-actions">'
       + '<button type="button" class="btn btn-sm accent drafts-resume">이어서 하기</button>'
       + '<button type="button" class="btn btn-sm drafts-delete">삭제</button>'
@@ -109,6 +121,14 @@
     const rows = entries.map((e, i) => rowHtml(e, changeCellHtml(e.kind, e.slot, recipes[i])));
 
     $("drafts-body").innerHTML = rows.join("");
+    // 건수 — 다른 목록 화면과 같은 요약 줄. 임박 건이 있으면 함께 알린다.
+    const summary = $("drafts-summary");
+    if (summary) {
+      const soon = entries.filter((e) => drafts.expiryText(e.slot).soon).length;
+      summary.textContent = `${entries.length}건`
+        + (soon ? ` · ${soon}건은 곧 사라집니다` : "");
+      summary.classList.toggle("drafts-summary-warn", soon > 0);
+    }
     $("drafts-loading").hidden = true;
     $("drafts-empty-panel").hidden = true;
     $("drafts-list-panel").hidden = false;

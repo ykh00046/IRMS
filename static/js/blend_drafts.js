@@ -451,11 +451,70 @@
     return { filled, total: items.length };
   }
 
-  /** "2026-08-03T09:12:33.000Z" → "2026-08-03 09:12" (저장 시각 표시용). */
+  /** 저장 시각(로컬) — "2026-08-08 09:12".
+   *
+   * savedAt 은 new Date().toISOString() 이라 UTC(Z)다. 예전에는 앞 16자를 잘라 T 만
+   * 공백으로 바꿔 그대로 보여줬는데, 그러면 KST 에서 9시간 어긋난다 — 4분 전에 저장한
+   * 초안이 어제 자정으로 표시됐다(2026-08-08). 이 화면의 용도가 "방금 하던 게 어느
+   * 것인가"라 시각이 틀리면 화면 자체가 쓸모없어진다.
+   */
   function savedAtText(slot) {
     const raw = slot && slot.savedAt;
     if (!raw) return "";
-    return String(raw).slice(0, 16).replace("T", " ");
+    const t = Date.parse(raw);
+    if (Number.isNaN(t)) return String(raw).slice(0, 16).replace("T", " ");
+    const d = new Date(t);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+      + `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  /** "4분 전" / "3시간 전" — 절대 시각보다 이게 먼저 읽힌다(방금 하던 것 찾기). */
+  function savedAgoText(slot, now) {
+    const raw = slot && slot.savedAt;
+    if (!raw) return "";
+    const t = Date.parse(raw);
+    if (Number.isNaN(t)) return "";
+    const diff = (typeof now === "number" ? now : Date.now()) - t;
+    if (diff < 0) return "방금";
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return "방금";
+    if (min < 60) return `${min}분 전`;
+    const hour = Math.floor(min / 60);
+    if (hour < 24) return `${hour}시간 전`;
+    return `${Math.floor(hour / 24)}일 전`;
+  }
+
+  /** 만료(24시간)까지 남은 ms. 시각이 없거나 이미 지났으면 0. */
+  function expiresInMs(slot, now) {
+    const raw = slot && slot.savedAt;
+    if (!raw) return 0;
+    const t = Date.parse(raw);
+    if (Number.isNaN(t)) return 0;
+    const left = TTL_MS - ((typeof now === "number" ? now : Date.now()) - t);
+    return left > 0 ? left : 0;
+  }
+
+  /** 남은 시간 문구 + 임박 여부 — 다 채운 계량값이 조용히 사라지는 것을 막는다. */
+  function expiryText(slot, now) {
+    const left = expiresInMs(slot, now);
+    if (left <= 0) return { text: "곧 사라짐", soon: true };
+    const min = Math.round(left / 60000);
+    if (min < 60) return { text: `${min}분 뒤 사라짐`, soon: true };
+    const hour = Math.floor(min / 60);
+    // 2시간 안쪽이면 임박으로 본다 — 교대 한 번을 못 버티는 시간.
+    return { text: `${hour}시간 뒤 사라짐`, soon: hour < 2 };
+  }
+
+  /** 초안이 들고 있는 총 배합량(g) — 배합은 total_amount, 다중 계량은 total. */
+  function totalOf(slot) {
+    if (!slot) return "";
+    const raw = slot.total_amount !== undefined && slot.total_amount !== null && slot.total_amount !== ""
+      ? slot.total_amount
+      : slot.total;
+    if (raw === undefined || raw === null || raw === "") return "";
+    const n = Number(raw);
+    return Number.isFinite(n) ? n.toLocaleString("ko-KR") : String(raw);
   }
 
   /**
@@ -513,6 +572,10 @@
     buildDiff,
     progressOf,
     savedAtText,
+    savedAgoText,
+    expiresInMs,
+    expiryText,
+    totalOf,
     restoreNoticeHtml,
     fmtG,
     esc,

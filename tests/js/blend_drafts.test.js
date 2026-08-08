@@ -335,3 +335,59 @@ test("input 이벤트 없는 계량 경로도 초안 저장을 건다", () => {
     bodyOf(blendSrc, "fillScaleValue"), /scheduleDraftSave\(\)/,
     "PRINT 직접 입력 후 초안 저장이 빠지면 마지막 PRINT 값이 복구에서 사라진다");
 });
+
+// ── 저장 시각·만료 표시 (2026-08-08) ───────────────────────────────────────
+// savedAt 은 UTC(Z)인데 예전에는 앞 16자를 그대로 잘라 보여줘 KST 에서 9시간
+// 어긋났다 — 4분 전 초안이 어제 자정으로 표시됐다. 이 화면의 용도가 "방금 하던
+// 게 어느 것인가"라 시각이 틀리면 화면 자체가 쓸모없어진다.
+test("savedAtText renders the local wall clock, not the raw UTC string", () => {
+  const d = load();
+  const iso = "2026-08-08T00:26:00.000Z";
+  const expected = (() => {
+    const x = new Date(Date.parse(iso));
+    const p = (n) => String(n).padStart(2, "0");
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())} `
+      + `${p(x.getHours())}:${p(x.getMinutes())}`;
+  })();
+  assert.equal(d.savedAtText({ savedAt: iso }), expected);
+  // 로컬이 UTC 가 아닌 환경에서는 잘라 쓰던 옛 결과와 반드시 달라야 한다.
+  if (new Date().getTimezoneOffset() !== 0) {
+    assert.notEqual(d.savedAtText({ savedAt: iso }), "2026-08-08 00:26");
+  }
+  assert.equal(d.savedAtText({}), "");
+});
+
+test("savedAgoText speaks in elapsed time", () => {
+  const d = load();
+  const now = Date.parse("2026-08-08T09:00:00.000Z");
+  const at = (ms) => ({ savedAt: new Date(now - ms).toISOString() });
+  assert.equal(d.savedAgoText(at(30 * 1000), now), "방금");
+  assert.equal(d.savedAgoText(at(4 * 60000), now), "4분 전");
+  assert.equal(d.savedAgoText(at(3 * 3600000), now), "3시간 전");
+  assert.equal(d.savedAgoText(at(50 * 3600000), now), "2일 전");
+  assert.equal(d.savedAgoText({}, now), "");
+});
+
+test("expiryText marks drafts that are about to vanish", () => {
+  const d = load();
+  const now = Date.parse("2026-08-08T09:00:00.000Z");
+  const at = (ms) => ({ savedAt: new Date(now - ms).toISOString() });
+  const fresh = d.expiryText(at(60000), now);
+  assert.equal(fresh.soon, false);
+  assert.match(fresh.text, /시간 뒤 사라짐/);
+  const soon = d.expiryText(at(23 * 3600000 + 40 * 60000), now);
+  assert.equal(soon.soon, true);
+  assert.equal(soon.text, "20분 뒤 사라짐");
+  // 이미 만료된 것도 0 으로 떨어질 뿐 음수 문구가 나오지 않는다.
+  assert.equal(d.expiresInMs(at(30 * 3600000), now), 0);
+  assert.equal(d.expiryText(at(30 * 3600000), now).soon, true);
+});
+
+test("totalOf reads either screen's total field", () => {
+  const d = load();
+  assert.equal(d.totalOf({ total_amount: "15000" }), "15,000");   // 배합
+  assert.equal(d.totalOf({ total: "18000" }), "18,000");          // 다중 계량
+  assert.equal(d.totalOf({ total_amount: "", total: "9000" }), "9,000");
+  assert.equal(d.totalOf({}), "");
+  assert.equal(d.totalOf(null), "");
+});

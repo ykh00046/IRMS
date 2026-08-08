@@ -68,9 +68,11 @@ def test_blend_drafts_page_renders_for_worker():
     assert "작성 중 배합이 없습니다" in body
     assert 'href="/blend"' in body
     assert 'href="/blend/continuous"' in body
-    # 목록·복구는 전적으로 프론트엔드(localStorage) — 두 스크립트가 실려야 한다
-    assert "/static/js/blend_drafts.js?v=20260803d" in body
-    assert "/static/js/blend_drafts_page.js?v=20260803d" in body
+    # 목록·복구는 전적으로 프론트엔드(localStorage) — 두 스크립트가 실려야 한다.
+    # ?v= 값까지 박아 두지 않는다: 캐시버스팅 값은 배포마다 바뀌는 게 정상이라
+    # 그때마다 이 테스트가 깨질 뿐, 검증하려는 것(스크립트가 실렸는가)과는 무관하다.
+    assert "/static/js/blend_drafts.js?v=" in body
+    assert "/static/js/blend_drafts_page.js?v=" in body
 
 
 def test_sidebar_exposes_drafts_menu_on_every_page():

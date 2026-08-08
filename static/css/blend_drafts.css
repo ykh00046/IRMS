@@ -1,0 +1,54 @@
+/* =========================================================================
+   IRMS 작성 중 배합 (/blend/drafts)
+   -------------------------------------------------------------------------
+   2026-08-08: 템플릿 안 <style> 블록에서 분리(자재 LOT 과 같은 이유 — 인라인이면
+   브라우저가 캐시하지 못하고 ?v= 로 배포 시점을 통제할 수도 없다).
+   기존 클래스(.panel/.table-wrap/.btn/.status-chip/.empty-state)를 우선 재사용하고,
+   이 화면에서만 필요한 배치·정렬만 최소로 둔다. 색은 공용 상태 토큰만 쓴다.
+   ========================================================================= */
+
+.drafts-progress { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 저장 시각 칸 — 상대 시간(먼저 읽히는 값) / 절대 시각 / 만료 안내를 세로로 쌓는다. */
+.drafts-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.drafts-ago { font-weight: 600; color: var(--text-primary); }
+.drafts-abs { font-size: 0.78rem; color: var(--text-tertiary); }
+.drafts-expiry { font-size: 0.75rem; color: var(--text-tertiary); }
+/* 임박 — 다 채운 계량값이 조용히 사라지는 것을 막는 유일한 신호. */
+.drafts-expiry.soon { color: var(--status-warning); font-weight: 600; }
+
+.drafts-name-row { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.drafts-total { font-size: 0.78rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.drafts-actions { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
+
+/* 레시피 변경 배지 — 공용 .status-chip 모양 위에 상태색만 얹는다(하드코딩 hex 금지). */
+.drafts-badges { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.drafts-badge-warn { background: var(--status-warning-bg); color: var(--status-warning); }
+.drafts-badge-error { background: var(--status-error-bg); color: var(--status-error); }
+.drafts-badge-info { background: var(--status-info-bg); color: var(--status-info); }
+.drafts-change-note { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--text-secondary); }
+.drafts-change-note ul { margin: 0.2rem 0 0; padding-left: 1.2em; }
+
+.drafts-loading {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.6rem; padding: 2rem; color: var(--text-tertiary);
+}
+.drafts-empty-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
+
+/* 표 머리 — 제목 + 건수 요약(다른 목록 화면과 같은 규약). */
+.drafts-table-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.drafts-summary-warn { color: var(--status-warning); font-weight: 600; }

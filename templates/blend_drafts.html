@@ -5,25 +5,7 @@
 {% block heading %}작성 중 배합{% endblock %}
 
 {% block styles %}
-<style>
-  /* 작성 중 배합 화면 전용 — 기존 클래스(.panel/.table-wrap/.btn/.status-chip/.empty-state)를
-     우선 재사용하고, 이 화면에서만 필요한 배치·정렬만 최소로 추가한다(새 디자인 없음). */
-  .drafts-progress { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .drafts-saved { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
-  .drafts-actions { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
-  /* 레시피 변경 배지 — 공용 .status-chip 모양 위에 상태색만 얹는다(하드코딩 hex 금지). */
-  .drafts-badges { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.3rem; }
-  .drafts-badge-warn { background: var(--status-warning-bg); color: var(--status-warning); }
-  .drafts-badge-error { background: var(--status-error-bg); color: var(--status-error); }
-  .drafts-badge-info { background: var(--status-info-bg); color: var(--status-info); }
-  .drafts-change-note { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--text-secondary); }
-  .drafts-change-note ul { margin: 0.2rem 0 0; padding-left: 1.2em; }
-  .drafts-loading {
-    display: flex; align-items: center; justify-content: center;
-    gap: 0.6rem; padding: 2rem; color: var(--text-tertiary);
-  }
-  .drafts-empty-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
-</style>
+    <link rel="stylesheet" href="/static/css/blend_drafts.css?v=20260808a" />
 {% endblock %}
 
 {% block content %}
@@ -37,6 +19,11 @@
         </section>
 
         <section class="panel" id="drafts-list-panel" hidden>
+          {# 건수를 말하는 곳이 없었다 — 다른 목록 화면과 같은 요약 줄을 붙인다. #}
+          <div class="drafts-table-head">
+            <h3 class="panel-title">임시저장 목록</h3>
+            <span class="muted small" id="drafts-summary"></span>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -65,6 +52,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_drafts.js?v=20260803d"></script>
-    <script src="/static/js/blend_drafts_page.js?v=20260803d"></script>
+    <script src="/static/js/blend_drafts.js?v=20260808a"></script>
+    <script src="/static/js/blend_drafts_page.js?v=20260808a"></script>
 {% endblock %}
