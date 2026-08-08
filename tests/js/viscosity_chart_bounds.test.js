@@ -11,7 +11,7 @@ function loadViscLib() {
   return context.window.IRMS.viscLib;
 }
 
-const { periodChartYBounds, controlBandHtml } = loadViscLib();
+const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib();
 
 // 기간 평균 막대 그래프의 y축이 데이터에 맞춰 확대되면, 4,850 과 4,900 처럼 거의
 // 같은 값이 두 배 차이나는 막대로 보인다. 축을 관리한계·규격에 걸어 고정한다.
@@ -144,6 +144,63 @@ const { periodChartYBounds, controlBandHtml } = loadViscLib();
     99999,  // 규격 상한을 크게 벗어남
   );
   assert.ok(html.includes("left:100.00%"), "트랙을 벗어난 값은 100% 에 클램프");
+}
+
+
+// ── 한계 밖 값에서도 막대가 보이는가 (2026-08-08) ─────────────────────────
+// suggestedMin/Max 는 범위를 넓히기만 한다. 관리한계만 후보로 두면, 데이터 최솟값이
+// suggestedMin 보다 낮을 때 Chart.js 가 축 하한을 그 값에 정확히 맞춰 그 막대의 윗변이
+// 축 바닥과 겹치고 높이가 0 이 된다 — 하필 그 값이 이상 측정이라 가장 봐야 할 막대만
+// 사라졌다(PB 목표 50, 이상 35.0 관측).
+{
+  const bounds = periodChartYBounds(
+    { center: 50, lcl: 41.2, ucl: 58.8, min: 35, max: 54.5 },
+    { lower_limit: 45, upper_limit: 55 },
+    [{ mean: 48 }, { mean: 35 }, { mean: 51 }],
+  );
+  assert.ok(bounds.suggestedMin < 35,
+    `축 하한(${bounds.suggestedMin})은 데이터 최솟값 35 보다 낮아야 막대가 보인다`);
+  assert.ok(bounds.suggestedMax > 58.8, "상한은 관리상한보다 위여야 한다");
+}
+
+// 한계 안쪽 데이터만 있으면 눈금이 기간마다 흔들리지 않게 하려던 원래 의도는 유지된다.
+{
+  const bounds = periodChartYBounds(
+    { center: 50, lcl: 41.2, ucl: 58.8, min: 48, max: 52 },
+    { lower_limit: 45, upper_limit: 55 },
+    [{ mean: 49 }, { mean: 51 }],
+  );
+  assert.ok(bounds.suggestedMin < 41.2, "하한은 여전히 관리하한보다 아래");
+  assert.ok(bounds.suggestedMax > 58.8, "상한은 여전히 관리상한보다 위");
+}
+
+// periods 를 안 넘기는 옛 호출부도 그대로 동작한다.
+{
+  const bounds = periodChartYBounds({ center: 50, lcl: 45, ucl: 55 }, {});
+  assert.ok(Number.isFinite(bounds.suggestedMin) && Number.isFinite(bounds.suggestedMax));
+}
+
+// 규격 상·하한 선 — 이상 판정 근거가 그림에 있어야 한다.
+{
+  // vm 컨텍스트가 다르면 배열 프로토타입도 달라 deepEqual 이 참조 비교로 실패한다 —
+  // 위에서 한 번 로드한 것을 그대로 쓰고, 비교는 원시값으로만 한다.
+  const css = (name) => name;
+  const periods = [{ period: "2026-08-01", mean: 50, anomaly_count: 0, warn_count: 0 }];
+  const withLimits = periodChartDatasets(periods, 50, css, { lower: 45, upper: 55 });
+  const labels = withLimits.datasets.map((d) => d.label);
+  assert.ok(labels.includes("규격 하한"), "규격 하한 선이 있어야 한다");
+  assert.ok(labels.includes("규격 상한"), "규격 상한 선이 있어야 한다");
+  const lower = withLimits.datasets.find((d) => d.label === "규격 하한");
+  assert.equal(lower.data.length, 1);
+  assert.equal(lower.data[0], 45);
+
+  // 규격이 없는 반제품은 선을 그리지 않는다(없는 기준을 그리면 거짓말이 된다).
+  const noLimits = periodChartDatasets(periods, 50, css, { lower: null, upper: null });
+  assert.equal(
+    noLimits.datasets.filter((d) => d.label.startsWith("규격")).length, 0,
+    "규격을 정하지 않은 반제품에는 규격선을 그리지 않는다(Number(null)=0 함정)");
+  // limits 인자 자체를 안 주는 옛 호출부도 안전하다.
+  assert.equal(periodChartDatasets(periods, 50, css).datasets.length, 2);
 }
 
 console.log("viscosity_chart_bounds.test.js OK");

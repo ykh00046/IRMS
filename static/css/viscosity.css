@@ -361,22 +361,14 @@ body {
   height: 220px;
 }
 
-.visc-delta-up,
-.visc-delta-down,
-.visc-delta-flat {
-  font-weight: 800;
-}
-
-.visc-delta-up {
-  color: var(--status-error);
-}
-
-.visc-delta-down {
-  color: var(--brand);
-}
-
-.visc-delta-flat {
-  color: var(--text-tertiary);
+/* 전기 대비 — 방향만 표시한다. 색으로 좋고 나쁨을 말하지 않는 이유는
+   viscosity_lib.js appendDeltaCell 주석 참조(점도는 오르는 게 아니라 중심에서
+   벗어나는 게 나쁜 값이라, 증감 방향에 빨강/파랑을 칠하면 반대로 읽힌다). */
+.visc-delta {
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .visc-table tr.row-anomaly {
@@ -640,3 +632,20 @@ body {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* 차트 빈 자리 안내 — 캔버스 위에 겹쳐 놓고, 그릴 데이터가 생기면 JS 가 감춘다.
+   (캔버스를 없애면 Chart.js 가 잡을 대상이 사라지므로 겹치는 방식으로 둔다.) */
+.visc-period-chart { position: relative; }
+.visc-chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+  text-align: center;
+  pointer-events: none;
+}
+.visc-chart-empty[hidden] { display: none; }

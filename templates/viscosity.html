@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260807a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260808a" />
 {% endblock %}
 
 {% block content %}
@@ -155,7 +155,15 @@
               <button class="btn btn-sm" data-gran="year" type="button" aria-pressed="false">연도</button>
             </div>
           </div>
-          <div class="chart-wrap visc-period-chart"><canvas id="visc-period-chart"></canvas></div>
+          {# 반제품을 고르기 전에는 차트 자리가 안내 없는 400px 공백이었다 — 첫 진입에
+             특정 반제품을 자동 선택하지 않는 건 의도된 동작이므로(2026-07-22 요청),
+             빈 자리에 무엇을 해야 하는지만 적는다. #}
+          <div class="chart-wrap visc-period-chart">
+            <canvas id="visc-period-chart"></canvas>
+            <p class="visc-chart-empty" id="visc-chart-empty">
+              위에서 <b>반제품</b>을 선택하면 기간별 추세가 표시됩니다.
+            </p>
+          </div>
           <div class="table-wrap">
             <table class="visc-table">
               <thead>
@@ -331,6 +339,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260805a"></script>
-    <script src="/static/js/viscosity.js?v=20260807a"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260808a"></script>
+    <script src="/static/js/viscosity.js?v=20260808a"></script>
 {% endblock %}

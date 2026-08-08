@@ -81,6 +81,13 @@
     return row;
   }
 
+  // 전기 대비 — 방향만 말하고 좋고 나쁨은 말하지 않는다.
+  //
+  // 예전에는 오르면 빨강(--status-error), 내리면 파랑(--brand)이었다. 그런데 점도는
+  // 오르는 게 나쁜 값이 아니라 중심에서 벗어나는 게 나쁜 값이다. 목표 50 인 반제품에서
+  // 47.0(-4.45)은 파랑, 51.4(+3.00)은 빨강으로 떴는데 중심에 가까운 쪽은 51.4 다 —
+  // 색이 정확히 반대를 말하고 있었다(2026-08-08). 방향은 화살표로 충분하고, 규격
+  // 이탈은 '이상'·'경고' 열과 행 배경색이 이미 말한다.
   function appendDeltaCell(row, delta) {
     const cell = document.createElement("td");
     cell.className = "num";
@@ -88,9 +95,9 @@
       cell.textContent = "-";
     } else {
       const span = document.createElement("span");
-      const isFlat = delta === 0;
-      span.className = isFlat ? "visc-delta-flat" : delta > 0 ? "visc-delta-up" : "visc-delta-down";
-      span.textContent = `${delta > 0 ? "+" : ""}${fmt(delta, 2)}`;
+      span.className = "visc-delta";
+      const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "";
+      span.textContent = `${arrow}${arrow ? " " : ""}${delta > 0 ? "+" : ""}${fmt(delta, 2)}`;
       cell.appendChild(span);
     }
     row.appendChild(cell);
@@ -227,7 +234,7 @@
   // 읽는 일은 컨트롤러가 resolveCss 콜백으로 주입한다(라이브러리는 DOM 를
   // 직접 참조하지 않는다). 동일 periods/center/resolveCss 에 대해 동일한
   // datasets 을 반환한다.
-  function periodChartDatasets(periods, center, resolveCss) {
+  function periodChartDatasets(periods, center, resolveCss, limits) {
     const labels = periods.map((period) => period.period);
     const data = periods.map((period) => period.mean);
     const colors = periods.map((period) => {
@@ -253,6 +260,32 @@
         pointRadius: 0,
         order: 1,
       });
+    }
+    // 규격 상·하한 — 이상 여부를 판단하는 화면인데 그림에는 중심선 하나뿐이라,
+    // 막대가 규격을 넘었는지는 표의 '이상' 열을 따로 봐야 알 수 있었다(2026-08-08).
+    // 관리한계(±kσ)가 아니라 규격을 그린다: 현장이 합불을 가르는 선은 규격이다.
+    if (limits && labels.length) {
+      const line = (label, value) => ({
+        type: "line",
+        label,
+        data: labels.map(() => value),
+        borderColor: resolveCss("--status-error"),
+        borderDash: [2, 3],
+        borderWidth: 1,
+        pointRadius: 0,
+        order: 1,
+      });
+      // ⚠ Number(null) 은 0 이고 0 은 유한수다 — Number.isFinite 만으로 거르면 규격을
+      // 정하지 않은 반제품에 0 위치의 '규격 하한' 선이 그어진다(없는 기준을 그리는 셈).
+      const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+      const lower = num(limits.lower);
+      const upper = num(limits.upper);
+      if (lower !== null && Number.isFinite(lower)) {
+        datasets.push(line("규격 하한", lower));
+      }
+      if (upper !== null && Number.isFinite(upper)) {
+        datasets.push(line("규격 상한", upper));
+      }
     }
     return { labels, datasets };
   }
@@ -347,8 +380,14 @@
   // 4,850 과 4,900 처럼 사실상 같은 값이 두 배 차이나는 막대로 보인다 — 품질 판단을
   // 하는 화면에서 이건 그림이 거짓말을 하는 것이다. 축을 관리한계·규격에 걸어두면
   // 기간이 바뀌어도 눈금이 흔들리지 않고, 막대 길이를 서로 비교할 수 있다.
-  // suggested* 는 범위를 넓히기만 하므로 실제 값이 한계를 벗어나면 그건 그대로 보인다.
-  function periodChartYBounds(stats, product) {
+  //
+  // ⚠ 관리한계만 후보로 두면 한계를 벗어난 값에서 막대가 사라진다: suggested* 는
+  // 범위를 넓히기만 하므로, 데이터 최솟값이 suggestedMin 보다 낮으면 Chart.js 가 축
+  // 하한을 그 값에 정확히 맞춘다. 그러면 그 막대의 윗변이 축 바닥과 같아져 높이 0 이
+  // 되고, 하필 그 값이 이상 측정이라 가장 봐야 할 막대만 안 보인다(2026-08-08 확인:
+  // PB 35.0 이상 측정의 막대가 통째로 사라졌다). 그래서 실제 데이터 범위도 후보에
+  // 넣어 축이 항상 데이터보다 아래위로 여유를 갖게 한다.
+  function periodChartYBounds(stats, product, periods) {
     const candidates = [];
     const push = (v) => { if (v !== null && v !== undefined && Number.isFinite(Number(v))) candidates.push(Number(v)); };
     push(stats && stats.center);
@@ -356,6 +395,10 @@
     push(stats && stats.ucl);
     push(product && product.lower_limit);
     push(product && product.upper_limit);
+    // 실제 값(구간 평균 + 전체 최소/최대) — 한계 밖으로 나간 값도 막대로 보이게.
+    (periods || []).forEach((period) => push(period && period.mean));
+    push(stats && stats.min);
+    push(stats && stats.max);
     if (candidates.length < 2) return {};   // 기준이 없으면 기존대로 자동
     const min = Math.min(...candidates);
     const max = Math.max(...candidates);

@@ -140,6 +140,11 @@
     $("visc-cond").textContent = "측정 조건 -";
     $("visc-trend-banner").hidden = true;
     $("visc-period-alert").hidden = true;
+    // 그릴 데이터가 없으면 차트 자리에 안내를 되살린다(앞 반제품의 그림이 남지 않도록
+    // 인스턴스도 함께 버린다 — 남겨두면 빈 상태인데 이전 추세가 그대로 보인다).
+    if (state.periodChart) { state.periodChart.destroy(); state.periodChart = null; }
+    const emptyNote = $("visc-chart-empty");
+    if (emptyNote) emptyNote.hidden = false;
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
     blendBody.appendChild(emptyRow(BLEND_COLS, "반제품을 선택하면 배합 기록이 표시됩니다."));
@@ -436,8 +441,14 @@
 
   function renderPeriodChart(periods) {
     const canvas = $("visc-period-chart");
+    const emptyNote = $("visc-chart-empty");
+    if (emptyNote) emptyNote.hidden = (periods || []).length > 0;
     const center = state.analysis.stats.center;
-    const { labels, datasets } = periodChartDatasets(periods, center, getCssVar);
+    const product = state.analysis.product || {};
+    const { labels, datasets } = periodChartDatasets(periods, center, getCssVar, {
+      lower: product.lower_limit,
+      upper: product.upper_limit,
+    });
     // 이상·제외 개별 측정을 기간 막대 위에 점으로 얹는다 — 통계에서 빠졌어도(제외) /
     // 집계에 묻혀도(이상) 규격 이탈 사건이 눈에 남게. periodChartDatasets 은 순수라
     // 여기서 병합한다. 표시 중인 구간(labels)에 속한 측정만 오버레이한다.
@@ -480,7 +491,7 @@
           x: { type: "category" },
           y: Object.assign(
             { beginAtZero: false },
-            periodChartYBounds(state.analysis.stats, state.analysis.product),
+            periodChartYBounds(state.analysis.stats, state.analysis.product, periods),
           ),
         },
       },
