@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260805i" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260808b" />
 {% endblock %}
 
 {% block content %}
@@ -101,11 +101,16 @@
                   <span class="blend-dhr-metric-label">실제 합계</span>
                   <span class="blend-dhr-metric-value"><span id="blend-actual-total">-</span><em>g</em></span>
                 </div>
-                <div class="blend-dhr-metric blend-dhr-metric-var">
-                  <span class="blend-dhr-metric-label">순편차</span>
+                {# 순편차는 계량이 끝나야 뜻이 생긴다 — 도중에는 '아직 안 넣은 양'이라
+                   늘 큰 음수다. 라벨을 상태에 따라 바꾸고(남은 양 / 순편차), 색도
+                   완료 후에만 붙인다(blend.js updateTotals). #}
+                <div class="blend-dhr-metric blend-dhr-metric-var" id="blend-net-metric">
+                  <span class="blend-dhr-metric-label" id="blend-net-label">순편차</span>
                   <span class="blend-dhr-metric-value"><span id="blend-net-var">-</span><em>g</em></span>
                 </div>
               </div>
+              {# 계량 진행 — 순편차가 왜 아직 큰지 한 줄로 설명해 준다. #}
+              <p class="blend-dhr-progress" id="blend-progress"></p>
             </section>
           </div>
 
@@ -469,7 +474,7 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend.js?v=20260805m"></script>
+    <script src="/static/js/blend.js?v=20260808b"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

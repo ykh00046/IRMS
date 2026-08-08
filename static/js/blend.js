@@ -3048,6 +3048,32 @@
     $("blend-actual-total").textContent = state.items.length ? fmt(actual, dp()) : "-";
     const nv = $("blend-net-var");
     nv.textContent = state.items.length ? (net > 0 ? "+" : "") + fmt(net, dp()) : "-";
+
+    // 순편차는 계량이 끝나야 뜻이 생긴다. 도중에는 '아직 안 넣은 양'이라 늘 큰 음수인데
+    // 예전에는 값과 무관하게 늘 주황(#f6a26a)이라, 정상적으로 계량하는 내내 경고처럼
+    // 보였다 — 색이 아무 정보도 주지 않으면서 잘못된 뜻만 전했다(2026-08-08).
+    // 진행 중에는 라벨을 '남은 양'으로 바꾸고 색을 빼며, 다 채운 뒤에만 판정색을 준다.
+    const filled = state.items.filter(
+      (it) => it.actual_amount !== "" && it.actual_amount != null,
+    ).length;
+    const total = state.items.length;
+    const done = total > 0 && filled === total;
+    const metric = $("blend-net-metric");
+    const label = $("blend-net-label");
+    if (label) label.textContent = done || !total ? "순편차" : "남은 양";
+    if (metric) {
+      metric.classList.toggle("is-pending", Boolean(total) && !done);
+      // 완료 후 판정 — 각 행이 허용 편차 안으로 강제되므로 합계도 그 범위 안이 정상.
+      const envelope = Math.max(state.toleranceG * total, state.toleranceG);
+      metric.classList.toggle("is-off", done && Math.abs(net) > envelope);
+    }
+    const prog = $("blend-progress");
+    if (prog) {
+      prog.textContent = !total
+        ? ""
+        : (done ? `계량 완료 — ${total}개 자재` : `계량 ${filled} / ${total} 자재`);
+      prog.classList.toggle("done", done);
+    }
     updateTotalLock();
   }
 

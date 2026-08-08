@@ -74,7 +74,21 @@
   color: rgba(255, 255, 255, 0.5);
   margin-left: 3px;
 }
-.blend-dhr-metric-var .blend-dhr-metric-value { color: #f6a26a; }
+/* 순편차 — 계량이 끝나야 뜻이 생기는 값이다. 예전에는 값과 무관하게 늘 주황
+   (#f6a26a raw hex)이라, 정상 계량 중에도 내내 경고처럼 보였다(2026-08-08).
+   진행 중(is-pending)에는 색을 빼고, 완료 후 허용 범위를 벗어났을 때(is-off)만 칠한다. */
+.blend-dhr-metric-var .blend-dhr-metric-value { color: rgba(255, 255, 255, 0.92); }
+.blend-dhr-metric-var.is-pending .blend-dhr-metric-value { color: rgba(255, 255, 255, 0.62); }
+.blend-dhr-metric-var.is-off .blend-dhr-metric-value { color: #f6a26a; }
+
+/* 계량 진행 — 순편차가 왜 아직 큰지 한 줄로 말해 준다. */
+.blend-dhr-progress {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  font-variant-numeric: tabular-nums;
+}
+.blend-dhr-progress.done { color: #86e0b4; }
 /* 레시피 선택 전 빈 카드가 무겁고 허전해 보이지 않게 안내 문구로 대체 */
 .blend-dhr-empty {
   display: none;
