@@ -90,3 +90,22 @@ th.cont-lot-col.cont-lot-rescaled {
    blend.css 의 .blend-add-badge 색을 그대로 쓴다(이식 UX 동일). */
 .cont-var .blend-add-badge { display: inline-flex; margin: 0.15rem 0 0; }
 .cont-var .blend-add-inline { display: block; width: 6rem; margin: 0.15rem 0 0; }
+
+/* 계량 진행 — 표 바로 아래, 저장 버튼 위. 다 채우면 색이 바뀌어 "이제 저장해도 된다"가
+   눈에 들어온다. */
+.cont-progress {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.cont-progress.done { color: var(--status-success); }
+.cont-progress[hidden] { display: none; }
+
+/* 저장을 눌렀는데 빈 칸이 있을 때 — 문구로 이름만 나열하면 40칸짜리 표에서 그 칸을
+   다시 찾아야 한다. 해당 칸을 직접 표시하고 첫 칸으로 스크롤한다. */
+.cont-actual.cont-missing {
+  border-color: var(--status-error);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-error) 25%, transparent);
+}

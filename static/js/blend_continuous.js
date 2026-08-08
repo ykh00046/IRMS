@@ -1436,6 +1436,8 @@
     for (let i = 0; i < state.materials.length; i++) {
       for (let j = 0; j < state.lotCount; j++) updateCellVar(i, j);
     }
+    // 재료가 0줄이면 위 루프가 안 돌아 진행 표시가 앞 레시피 값에 머문다 — 직접 부른다.
+    updateProgress();
     updateLotPreview();
     // 저울 전용 모드가 켜져 있으면 새로 렌더된 셀의 실제량 칸도 readonly 로 잠근다.
     applyScaleOnlyToCells();
@@ -1509,6 +1511,11 @@
           el.title = "수기 입력됨 — 저울 PRINT 로 다시 계량하면 해제됩니다";
         }
         updateCellVar(i, j);
+        // 값이 채워지면 '미입력' 표시는 즉시 거둔다. 마지막 빈 칸까지 채워지면 아래
+        // 경고 문구도 함께 거둔다 — 안 그러면 '계량 완료' 와 '미입력 5칸' 이 한 화면에
+        // 같이 떠서 어느 쪽이 맞는지 알 수 없다.
+        el.classList.remove("cont-missing");
+        clearMissingErrorIfResolved();
         scheduleDraftSave();  // 진행분 임시 저장(복구용)
       });
       el.addEventListener("change", () => warnIfVariance(i, j));
@@ -1525,6 +1532,69 @@
         focusNextFrom(i, j);
       });
     });
+  }
+
+  // 계량 진행 — 채운 칸 / 전체 칸. 로트 4개 × 재료 10종이면 40칸이라, 화면이 세어
+  // 주지 않으면 어디까지 했는지 눈으로 훑는 수밖에 없다(저장을 눌러야 빈 칸을 알려주는
+  // 것은 너무 늦다). PRINT·손입력·초안 복구 어느 경로로 값이 들어와도 같이 갱신되도록
+  // 셀 상태(state.cells)에서 직접 센다.
+  function updateProgress() {
+    const el = $("cont-progress");
+    if (!el) return;
+    const rows = (state.materials || []).length;
+    const lots = state.lotCount || 0;
+    if (!rows || !lots) { el.hidden = true; return; }
+    let filled = 0;
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < lots; j++) {
+        const cell = state.cells[i] && state.cells[i][j];
+        if (cell && cell.actual !== "" && cell.actual !== null && cell.actual !== undefined) filled += 1;
+      }
+    }
+    const total = rows * lots;
+    const done = filled === total;
+    el.hidden = false;
+    el.classList.toggle("done", done);
+    el.textContent = done
+      ? `계량 완료 — ${total}칸 모두 입력되었습니다.`
+      : `계량 ${filled} / ${total} 칸 · ${total - filled}칸 남음`;
+  }
+
+  // 저장에서 빈 칸이 걸렸을 때 그 칸을 표에서 짚어 준다 — 문구로 이름만 나열하면
+  // 40칸짜리 표에서 다시 찾아야 한다. 첫 빈 칸으로 스크롤하고 포커스를 준다.
+  // 이 경고를 띄운 게 '미입력' 검사인지 기억한다 — 오류 칸(#cont-error)은 편차 초과 등
+  // 다른 메시지와 공용이라, 빈 칸이 채워졌다고 아무 오류나 지우면 진짜 경고가 사라진다.
+  let missingErrorShown = false;
+
+  function clearMissingErrorIfResolved() {
+    if (!missingErrorShown) return;
+    if (document.querySelectorAll(".cont-actual.cont-missing").length) return;
+    const err = $("cont-error");
+    if (err) err.hidden = true;
+    missingErrorShown = false;
+  }
+
+  function markMissingCells() {
+    document.querySelectorAll(".cont-actual.cont-missing")
+      .forEach((el) => el.classList.remove("cont-missing"));
+    let first = null;
+    for (let i = 0; i < (state.materials || []).length; i++) {
+      for (let j = 0; j < state.lotCount; j++) {
+        const cell = state.cells[i] && state.cells[i][j];
+        if (cell && (cell.actual === "" || cell.actual === null || cell.actual === undefined)) {
+          const el = document.querySelector(`.cont-actual[data-i="${i}"][data-j="${j}"]`);
+          if (el) {
+            el.classList.add("cont-missing");
+            if (!first) first = el;
+          }
+        }
+      }
+    }
+    missingErrorShown = Boolean(first);
+    if (first) {
+      try { first.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_e) { /* 구형 무시 */ }
+      first.focus({ preventScroll: true });
+    }
   }
 
   function focusActual(i, j) {
@@ -1571,6 +1641,10 @@
   }
 
   function updateCellVar(i, j) {
+    // 진행도는 state.cells 만 보면 되므로 아래 early return 들보다 먼저 갱신한다.
+    // 이 함수는 손입력·PRINT·이전 로트 복사·초안 복구·증량 등 값이 바뀌는 모든 경로가
+    // 지나는 자리라, 여기 한 곳에 걸어두면 어느 경로로 채워도 숫자가 따라온다.
+    updateProgress();
     const span = document.querySelector(`.cont-var[data-i="${i}"][data-j="${j}"]`);
     if (!span) return;
     // 증량 후 추가 대기 셀은 음수 편차 대신 배지(renderAddBadges)가 넣을 양을 안내 —
@@ -2390,7 +2464,13 @@
       }
     }
     if (missing.length) {
-      return fail(err, `실제량 미입력: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? " 외" : ""}`);
+      markMissingCells();
+      return fail(
+        err,
+        `실제량 미입력 ${missing.length}칸: `
+        + `${missing.slice(0, 6).join(", ")}${missing.length > 6 ? " 외" : ""}`
+        + " — 빨간 테두리 칸을 채우세요.",
+      );
     }
 
     // 편차 초과 확인(클라이언트 사전 차단 — 서버도 재검사). 로트별 이론(theoryFor) 기준.

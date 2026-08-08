@@ -6,7 +6,7 @@
 
 {% block styles %}
     <link rel="stylesheet" href="/static/css/blend.css?v=20260805i" />
-    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260723k" />
+    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260808a" />
 {% endblock %}
 
 {% block content %}
@@ -107,6 +107,10 @@
                 </tbody>
               </table>
             </div>
+            {# 계량 진행 — 로트 4개 × 재료 10종이면 40칸이라, 어디까지 했는지 화면이
+               말해주지 않으면 눈으로 훑어 세는 수밖에 없었다. 정작 '작성 중 배합'
+               화면은 진행도를 보여주는데 계량하는 이 화면엔 없었다(2026-08-08). #}
+            <p class="cont-progress" id="cont-progress" hidden></p>
             <div class="blend-actions">
               <textarea class="input" id="cont-note" rows="1" placeholder="비고 (선택) · 전 로트 공통"></textarea>
               <div class="blend-sign-field">
@@ -258,5 +262,5 @@
     <script src="/static/js/blend_drafts.js?v=20260803d"></script>
     <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260804h"></script>
-    <script src="/static/js/blend_continuous.js?v=20260805e"></script>
+    <script src="/static/js/blend_continuous.js?v=20260808a"></script>
 {% endblock %}
