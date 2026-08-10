@@ -58,13 +58,57 @@ _FORBIDDEN = re.compile(
 )
 
 
+# 스냅샷이 쌓이는 자리. 파일명에 시각이 들어가므로(irms_20260810_130412.db) 새 사본이
+# 오면 이름이 바뀐다 — 그때마다 경로를 고쳐 넣는 건 사람이 할 일이 아니다.
+SNAPSHOT_DIRS = ("local-data", "backups")
+
+
+def _newest_snapshot(root: Path) -> Path | None:
+    """스냅샷 폴더에서 가장 최근 *.db — 수정시각 기준."""
+    candidates: list[Path] = []
+    for name in SNAPSHOT_DIRS:
+        folder = root / name
+        if folder.is_dir():
+            candidates.extend(f for f in folder.glob("*.db") if f.is_file())
+    if not candidates:
+        return None
+    return max(candidates, key=lambda f: f.stat().st_mtime)
+
+
 def resolve_db(explicit: str | None) -> Path:
+    """읽을 DB 를 정한다 — 우선순위대로 처음 찾은 것.
+
+    ① --db          직접 지정
+    ② IRMS_QUERY_DB 환경변수(파일 또는 폴더)
+    ③ local-data/ · backups/ 의 **가장 최근 스냅샷**
+    ④ IRMS_DATA_DIR/irms.db (없으면 data/irms.db)
+
+    ③ 이 있는 이유: 스냅샷 파일명에 시각이 박혀 있어 새 사본이 올 때마다 경로가 바뀐다.
+    자동으로 최신 것을 집으면 명령을 고쳐 쓸 일이 없다. ④ 는 개발용 DB 라 배합 기록이
+    비어 있을 수 있는데, 그 경우 호출부가 [DB] 경로와 함께 경고를 찍는다.
+    """
     if explicit:
         return Path(explicit)
+
+    env_db = os.environ.get("IRMS_QUERY_DB", "").strip()
+    if env_db:
+        path = Path(env_db)
+        if path.is_dir():                     # 폴더를 주면 그 안의 최신 *.db
+            files = [f for f in path.glob("*.db") if f.is_file()]
+            if files:
+                return max(files, key=lambda f: f.stat().st_mtime)
+        return path
+
+    here = Path(__file__).resolve().parent.parent   # tools/ 의 상위 = 저장소 루트
+    for root in (Path.cwd(), here):
+        newest = _newest_snapshot(root)
+        if newest is not None:
+            return newest
+
     data_dir = os.environ.get("IRMS_DATA_DIR")
     if data_dir:
         return Path(data_dir) / "irms.db"
-    return Path("data") / "irms.db"
+    return here / "data" / "irms.db"
 
 
 def connect(path: Path) -> sqlite3.Connection:

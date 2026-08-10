@@ -308,3 +308,55 @@ def test_empty_database_is_flagged_not_reported_as_zero(tmp_path):
 def test_populated_database_reports_records_present(tmp_path):
     body = _run(tmp_path, "summary")
     assert body["database_has_records"] is True
+
+
+# ── 경로를 매번 지정하지 않아도 되는가 ─────────────────────────────────────
+# 스냅샷 파일명에는 시각이 박혀 있어(irms_20260810_130412.db) 새 사본이 올 때마다
+# 경로가 바뀐다. 그때마다 명령을 고쳐 쓰게 두지 않는다(2026-08-10).
+
+def test_picks_the_newest_snapshot_without_being_told(tmp_path, monkeypatch):
+    import os
+    import time
+
+    module = _load()
+    root = tmp_path / "repo"
+    (root / "local-data").mkdir(parents=True)
+    old = root / "local-data" / "irms_20260101_000000.db"
+    new = root / "local-data" / "irms_20260810_130412.db"
+    old.write_bytes(b"")
+    new.write_bytes(b"")
+    past = time.time() - 86400
+    os.utime(old, (past, past))
+
+    monkeypatch.chdir(root)
+    monkeypatch.delenv("IRMS_QUERY_DB", raising=False)
+    monkeypatch.delenv("IRMS_DATA_DIR", raising=False)
+    assert module.resolve_db(None).name == new.name
+
+
+def test_explicit_db_always_wins(tmp_path, monkeypatch):
+    module = _load()
+    root = tmp_path / "repo"
+    (root / "local-data").mkdir(parents=True)
+    (root / "local-data" / "irms_snap.db").write_bytes(b"")
+    monkeypatch.chdir(root)
+    assert module.resolve_db("chosen.db") == Path("chosen.db")
+
+
+def test_env_var_can_point_at_a_folder(tmp_path, monkeypatch):
+    """백업 미러 폴더를 그대로 가리켜도 그 안의 최신 파일을 집는다."""
+    import os
+    import time
+
+    module = _load()
+    mirror = tmp_path / "mirror"
+    mirror.mkdir()
+    older = mirror / "irms_a.db"
+    newer = mirror / "irms_b.db"
+    older.write_bytes(b"")
+    newer.write_bytes(b"")
+    past = time.time() - 86400
+    os.utime(older, (past, past))
+
+    monkeypatch.setenv("IRMS_QUERY_DB", str(mirror))
+    assert module.resolve_db(None) == newer
