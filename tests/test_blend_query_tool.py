@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -152,6 +153,7 @@ def test_tool_imports_only_stdlib():
             imported.add(node.module.split(".")[0])
     allowed = {
         "__future__", "argparse", "json", "os", "re", "sqlite3", "sys", "pathlib",
+        "urllib",   # 실시간 조회(운영 서버 GET) — 표준 라이브러리만으로 붙인다
     }
     assert imported <= allowed, f"표준 라이브러리 밖 의존: {sorted(imported - allowed)}"
 
@@ -295,7 +297,7 @@ def test_empty_database_is_flagged_not_reported_as_zero(tmp_path):
         capture_output=True, text=True, encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stderr
-    assert "[DB]" in proc.stdout            # 어느 파일을 읽었는지
+    assert "[스냅샷]" in proc.stdout          # 어느 파일을 읽었는지
     assert "배합 기록이 없습니다" in proc.stdout
 
     body = json.loads(subprocess.run(
@@ -360,3 +362,181 @@ def test_env_var_can_point_at_a_folder(tmp_path, monkeypatch):
 
     monkeypatch.setenv("IRMS_QUERY_DB", str(mirror))
     assert module.resolve_db(None) == newer
+
+
+# ── 실시간 조회(운영 서버) ────────────────────────────────────────────────
+#
+# 실시간 경로는 네트워크가 있어야 도는 코드다. 그래서 응답 → 표 변환을 순수 함수로
+# 떼어 두고, 저장된 응답만으로 검증한다. 검증할 수 없는 경로가 기본값이 되는 게
+# 제일 위험하다.
+
+ANALYSIS_PAYLOAD = {
+    "range": {"start": "2026-07-01", "end": "2026-07-31", "days": 31},
+    "scale_since": "2026-07-01",
+    "bucket": "month",
+    "summary": {
+        "records": 144, "total_weight_g": 1323207.0, "product_count": 19,
+        "material_count": 56, "manual_records": 19, "canceled_records": 0,
+        "rescale_records": 1, "oversize_records": 0, "loss_comp_total_g": 0.0,
+        "scale_rate": 86.8, "scale_base_records": 144, "cancel_rate": 0.0,
+    },
+    "trend": [
+        {"bucket": "2026-06", "records": 185, "weight_g": 1837220.0, "manual_records": 0,
+         "canceled_records": 0, "scale_rate": None, "scale_base_records": 0, "partial": False},
+        {"bucket": "2026-07", "records": 144, "weight_g": 1323207.0, "manual_records": 19,
+         "canceled_records": 0, "scale_rate": 86.8, "scale_base_records": 144, "partial": True},
+    ],
+    "products": [{"product_name": "APB", "batch_count": 20, "total_amount": 337059.7,
+                  "share": 25.5, "last_work_date": "2026-07-30"}],
+    "materials": [{"material_name": "PB", "total_actual": 337059.7, "total_theory": 337000.0,
+                   "usage_count": 20, "share": 25.5, "loss_comp_g": 0.0}],
+    "workers": [{"worker": "강민수", "records": 36, "total_amount": 240000.0, "product_count": 4}],
+    "quality": {
+        "by_worker": [{"worker": "강민수", "records": 36, "manual_records": 9,
+                       "canceled_records": 0, "manual_rate": 25.0}],
+        "by_material": [],
+    },
+}
+
+
+class _Args:
+    """명령줄 인자 대역 — 순수 변환 함수에 넘길 최소 형태."""
+
+    def __init__(self, **kw):
+        self.from_date = self.to_date = self.product = self.worker = None
+        self.material = self.lot = None
+        self.limit = 200
+        self.command = "summary"
+        for key, value in kw.items():
+            setattr(self, key, value)
+
+
+def test_live_summary_reports_the_servers_own_numbers():
+    """도구가 제 SQL 로 다시 계산하지 않고 서버 값을 그대로 옮기는가."""
+    module = _load()
+    row = module.shape_summary(ANALYSIS_PAYLOAD, _Args())[0]
+    assert row["배합건수"] == 144
+    assert row["총생산량_kg"] == 1323.207
+    assert row["수동입력"] == 19
+    assert row["저울계량률_%"] == 86.8
+    assert row["계량률_표본"] == 144
+    assert row["계량률_기준일"] == "2026-07-01"
+    assert row["조회기간"] == "2026-07-01 ~ 2026-07-31"
+
+
+def test_live_and_snapshot_use_the_same_metric_names(tmp_path):
+    """같은 값을 두 경로가 다른 이름으로 부르면 두 답을 비교할 수 없다."""
+    module = _load()
+    live = module.shape_summary(ANALYSIS_PAYLOAD, _Args())[0]
+    snapshot = _run(tmp_path, "summary")["rows"][0]
+    shared = {"배합건수", "총생산량_kg", "제품종수", "수동입력", "취소",
+              "증량적용", "상한초과", "저울계량률_%", "계량률_표본", "계량률_기준일"}
+    assert shared <= set(live), f"실시간에 없는 이름: {sorted(shared - set(live))}"
+    assert shared <= set(snapshot), f"스냅샷에 없는 이름: {sorted(shared - set(snapshot))}"
+
+
+def test_live_summary_without_a_range_says_전체_not_none():
+    module = _load()
+    payload = {**ANALYSIS_PAYLOAD, "range": {"start": None, "end": None, "days": None}}
+    assert module.shape_summary(payload, _Args())[0]["조회기간"] == "전체"
+
+
+def test_live_records_omit_the_manual_column_instead_of_showing_a_false_zero():
+    """서버는 책임자에게만 수동 입력 표시를 준다(_mask_manual_entry).
+
+    자격 없이 받은 값은 전부 0 이므로, 그대로 '수동' 열에 실으면 '수동 입력 0건'
+    이라는 거짓말이 된다. 열 자체를 내지 않아야 한다.
+    """
+    module = _load()
+    payload = {"items": [{
+        "work_date": "2026-08-10", "product_lot": "APB26081001", "product_name": "APB",
+        "worker": "박종휘", "total_amount": 17561.2, "status": "completed",
+        "manual_entry": False, "manual_absence_reason": None, "reactor": None,
+    }]}
+    row = module.shape_records(payload, _Args())[0]
+    assert "수동" not in row
+    assert not any("수동" in key for key in row)
+    assert row["제품LOT"] == "APB26081001"
+
+
+def test_manual_and_sql_are_answered_by_the_snapshot_with_a_reason():
+    """서버로 못 답하는 명령은 조용히 빈 답을 주지 말고 이유를 밝히고 파일로 간다."""
+    module = _load()
+    for command in ("manual", "rescale", "sql", "schema"):
+        reason = module.live_blocked_reason(_Args(command=command))
+        assert reason, f"{command}: 이유 없이 막혔다"
+    assert module.live_blocked_reason(_Args(command="summary")) is None
+    # 자재별 월 소비를 주는 읽기 경로는 서버에 없다.
+    assert module.live_blocked_reason(_Args(command="monthly", material="PB"))
+    assert module.live_blocked_reason(_Args(command="monthly")) is None
+
+
+def test_live_viscosity_returns_the_most_recent_readings_first():
+    """서버는 오래된 순으로 준다 — 그대로 자르면 2024 년 값으로 '요즘 점도'를 답한다."""
+    module = _load()
+    payload = {
+        "product": {"code": "APB", "target": None, "lower_limit": None, "upper_limit": None},
+        "readings": [
+            {"measured_date": "2024-08-30", "lot_no": "APB24082802", "viscosity": 363.0,
+             "status": "normal", "side": None, "excluded": 0},
+            {"measured_date": "2026-07-30", "lot_no": "APB26040901", "viscosity": 400.2,
+             "status": "normal", "side": None, "excluded": 0},
+            {"measured_date": "2026-07-24", "lot_no": "APB26071502", "viscosity": 128.4,
+             "status": "anomaly", "side": "low", "excluded": 0},
+        ],
+    }
+    rows = module.shape_viscosity_readings(payload, _Args(limit=2))
+    assert [r["측정일"] for r in rows] == ["2026-07-30", "2026-07-24"]
+    assert rows[1]["판정"] == "이상(low)"
+
+
+def test_live_monthly_marks_the_unfinished_bucket():
+    """진행 중인 달을 끝난 달과 나란히 놓으면 '생산이 줄었다'로 읽힌다."""
+    module = _load()
+    rows = module.shape_monthly(ANALYSIS_PAYLOAD, _Args())
+    assert rows[0]["진행중"] == ""
+    assert rows[1]["진행중"] == "진행중"
+    # 저울 도입 전 구간은 0% 가 아니라 '말할 수 없음'이다.
+    assert rows[0]["저울계량률_%"] is None and rows[0]["계량률_표본"] == 0
+
+
+def test_db_flag_and_offline_never_touch_the_network(tmp_path):
+    """--db / --offline 을 준 사람은 그 파일을 보겠다는 뜻이다. 서버를 부르면 안 된다.
+
+    IRMS_API_URL 을 닿지 않는 주소로 두고 부른다 — 서버를 보러 갔다면 물러났다는
+    note 가 붙거나 느려질 텐데, 아예 시도하지 않아야 한다.
+    """
+    db = _make_db(tmp_path)
+    for extra in (["--db", str(db)], ["--offline", "--db", str(db)]):
+        proc = subprocess.run(
+            [sys.executable, str(TOOL), "summary", *extra, "--json"],
+            capture_output=True, text=True, encoding="utf-8",
+            env={**os.environ, "IRMS_API_URL": "http://127.0.0.1:1"},
+        )
+        assert proc.returncode == 0, proc.stderr
+        body = json.loads(proc.stdout)
+        assert body["source"] == "snapshot"
+        assert body["note"] is None, "서버를 보러 갔다가 물러난 흔적이 있다"
+
+
+def test_offline_env_var_forces_the_snapshot(tmp_path):
+    """자동화·CI 에서 실수로 운영 서버를 두드리지 않게 막는 스위치."""
+    db = _make_db(tmp_path)
+    proc = subprocess.run(
+        [sys.executable, str(TOOL), "summary", "--db", str(db), "--json"],
+        capture_output=True, text=True, encoding="utf-8",
+        env={**os.environ, "IRMS_QUERY_OFFLINE": "1"},
+    )
+    body = json.loads(proc.stdout)
+    assert body["source"] == "snapshot" and body["origin"].endswith("irms.db")
+
+
+def test_catalog_says_which_commands_answer_live():
+    """부르는 쪽이 사본을 준비해야 하는지 미리 알 수 있어야 한다."""
+    module = _load()
+    rows = module.q_catalog(None, None)
+    by_name = {r["command"]: r["조회원본"] for r in rows}
+    assert by_name["summary"] == "실시간"
+    assert by_name["sql"] == "스냅샷 파일"
+    assert by_name["catalog"] == "DB 불필요"
+    assert set(by_name) == set(module.COMMANDS)

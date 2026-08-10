@@ -114,6 +114,12 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 | smoke (운영) | `python tools/smoke_irms.py --mode production --session-secret '...'` |
 | 배합 조회·연구 (읽기 전용) | `python tools/blend_query.py catalog` · `... summary --from 2026-07-01 --json` |
 
+> 조회 도구는 **기본이 실시간** — 사내망 운영 서버(`IRMS_API_URL`, 기본 `http://192.168.11.194:9000`)의
+> 읽기 GET 을 그대로 부른다. 준비물 없음(경로·DB 복사·venv 불필요). 출력 첫 줄이
+> `[실시간]`인지 `[스냅샷]`인지 확인하고 인용한다. `sql`·`schema`·`manual`·`rescale` 은
+> 서버로 답할 수 없어 스냅샷 파일(`local-data/`)이 필요하다. `--offline`·`--db`·
+> `IRMS_QUERY_OFFLINE=1` 은 서버를 아예 부르지 않는다(테스트가 이걸 쓴다).
+
 ## Coding Conventions
 
 - **Python 3.11+** 권장
