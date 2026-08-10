@@ -112,6 +112,7 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 | 테스트 | `python -m pytest tests -v` |
 | smoke (개발) | `python tools/smoke_irms.py --mode development --seed-demo-data` |
 | smoke (운영) | `python tools/smoke_irms.py --mode production --session-secret '...'` |
+| 배합 조회·연구 (읽기 전용) | `python tools/blend_query.py catalog` · `... summary --from 2026-07-01 --json` |
 
 ## Coding Conventions
 
