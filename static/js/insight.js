@@ -247,16 +247,19 @@
       byName.set(w.worker || "", {
         worker: w.worker || "",
         records: w.records || 0,
-        manual_records: w.manual_records || 0,
-        manual_rate: w.manual_rate || 0,
+        // null 은 '책임자만 볼 수 있음'이다 — || 0 으로 접으면 '수동 입력 0건'이 된다.
+        manual_records: w.manual_records ?? null,
+        manual_rate: w.manual_rate ?? null,
         canceled_records: w.canceled_records || 0,
         total_amount: 0,
         product_count: 0,
       });
     });
+    const masked = state.quality.manual_visible === false;
     (state.workers || []).forEach((p) => {
       const row = byName.get(p.worker) || {
-        worker: p.worker, records: 0, manual_records: 0, manual_rate: 0,
+        worker: p.worker, records: 0,
+        manual_records: masked ? null : 0, manual_rate: masked ? null : 0,
         canceled_records: 0, total_amount: 0, product_count: 0,
       };
       row.total_amount = p.total_amount || 0;
@@ -270,6 +273,10 @@
 
   function renderQualityTables() {
     const workers = sortRows("insight-worker-table", mergedWorkers(), "records");
+    // 수동 입력을 누가 했는지는 책임자만 본다(기록 목록과 같은 기준). 담당자에게는
+    // 0 이 아니라 '—' 로 — 0 은 '수동 입력이 없었다'는 다른 사실이다.
+    const manualNote = $("insight-manual-locked");
+    if (manualNote) manualNote.hidden = state.quality.manual_visible !== false;
     $("insight-mistake-worker").innerHTML = workers.length
       ? workers.map((w) => `
         <tr>
@@ -277,8 +284,8 @@
           <td class="num">${num(w.records)}</td>
           <td class="num">${kg(w.total_amount)}</td>
           <td class="num">${num(w.product_count)}</td>
-          <td class="num">${num(w.manual_records)}</td>
-          <td class="num">${num(w.manual_rate, 1)}%</td>
+          <td class="num">${w.manual_records === null ? "—" : num(w.manual_records)}</td>
+          <td class="num">${w.manual_rate === null ? "—" : `${num(w.manual_rate, 1)}%`}</td>
           <td class="num">${num(w.canceled_records)}</td>
         </tr>`).join("")
       : emptyRow(7, "해당 기간 기록 없음");

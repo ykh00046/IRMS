@@ -114,6 +114,13 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 - **이상 통계**(`mistake_stats` L436): 편차 강제로 편차 무의미 → 대신 **수동 입력
   (저울 미사용, manual_entry=1)** + **취소(canceled)** 를 신호로 집계. 작업자별(기록
   단위)·자재별(상세 행 단위). 수동 입력 0인 자재는 표에서 제외(L505).
+  **작업자별 수동 입력은 책임자 전용**(`_mask_worker_manual_stats`, 2026-08-10) — 기록
+  목록에서 `_mask_manual_entry` 가 가리는 사실을 분석 화면이 이름과 함께 집계로 흘리고
+  있었다. 비책임자에게는 `manual_records`/`manual_rate` 가 **None**(0 이 아니라 '알 수
+  없음'), `quality.manual_visible=false`. 엑셀 리포트도 같은 기준으로 빈 칸 + 안내 줄.
+  기간 합계(`summary.manual_records`)와 추세의 저울 계량률은 사람을 지목하지 않으므로
+  공개 유지 — 그게 이 화면의 존재 이유다. 자재별(`by_material`)도 사람을 지목하지 않아
+  공개.
 - **자재 LOT 추적**(`trace_material_lot` L580): 리콜 대응 역추적. **부분 일치
   `LIKE %lot% ESCAPE`**, 취소 기록 포함(누락이 더 위험), `%_\` 이스케이프. LIMIT
   기본 500(1~2000). 서버가 `truncated`/`limit` 를 반환하며, 상한 도달 시 프론트가

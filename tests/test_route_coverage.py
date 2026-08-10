@@ -485,3 +485,69 @@ def test_import_preview_has_no_side_effect_on_materials():
         assert conn.execute("SELECT 1 FROM materials WHERE name = ?",
                             (name,)).fetchone() is not None
 
+
+
+def test_analysis_quality_hides_per_worker_manual_stats_from_non_managers():
+    """기록 목록에서 가리는 사실을 분석 화면이 이름과 함께 집계로 흘리고 있었다.
+
+    한쪽만 잠그면 통제가 반쪽이다 — 같은 선으로 맞춘다. 가릴 때는 0 이 아니라 None:
+    0 은 '수동 입력이 없었다'는 다른 사실이라 거짓말이 된다.
+    """
+    client = _client()
+    headers = _admin_login(client)
+    worker = "품질가림" + uuid.uuid4().hex[:6]
+    prod = "QM" + uuid.uuid4().hex[:5].upper()
+    client.post("/api/workers", json={"name": worker}, headers=headers)
+    client.post("/api/blend/session/login", json={"worker": worker}, headers=headers)
+    created = client.post("/api/blend/records", json={
+        "product_name": prod, "worker": worker, "work_date": "2026-07-09",
+        "total_amount": 100, "manual_entry": True,
+        "details": [{"material_name": "A", "ratio": 100, "theory_amount": 100,
+                     "actual_amount": 100, "material_lot": "LOT-A"}],
+    }, headers=headers)
+    assert created.status_code == 200, created.text
+
+    params = "?start_date=2026-07-01&end_date=2026-07-31"
+    mgr = client.get(f"/api/blend/analysis{params}").json()["quality"]
+    assert mgr["manual_visible"] is True
+    mine = next(w for w in mgr["by_worker"] if w["worker"] == worker)
+    assert mine["manual_records"] == 1 and mine["manual_rate"] == 100.0
+
+    anon = _client().get(f"/api/blend/analysis{params}").json()["quality"]
+    assert anon["manual_visible"] is False
+    for row in anon["by_worker"]:
+        assert row["manual_records"] is None, "수동 입력 건수가 그대로 새어 나간다"
+        assert row["manual_rate"] is None
+        # 실적 자체는 가리지 않는다 — 이 화면이 존재하는 이유다.
+        assert row["records"] is not None
+
+
+def test_analysis_export_masks_the_same_columns():
+    """화면만 잠그면 엑셀 내려받기로 그대로 새어 나간다."""
+    anon = _client()
+    res = anon.get("/api/blend/analysis/export?start_date=2026-07-01&end_date=2026-07-31")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml"
+    )
+    import io
+
+    from openpyxl import load_workbook
+
+    ws = load_workbook(io.BytesIO(res.content))["품질"]
+    rows = list(ws.iter_rows(values_only=True))
+    assert any(r[0] and "책임자만" in str(r[0]) for r in rows), "가려졌다는 안내가 없다"
+    header_at = next(i for i, r in enumerate(rows) if r[0] == "작업자")
+    manual_col = list(rows[header_at]).index("수동 입력")
+    for row in rows[header_at + 1:]:
+        if not row[0]:
+            break
+        assert row[manual_col] in (None, ""), f"수동 입력이 새어 나갔다: {row}"
+
+
+def test_analysis_aggregate_metrics_stay_open():
+    """전체 합계·저울 계량률은 사람을 지목하지 않는다 — 가리면 화면의 존재 이유가 사라진다."""
+    body = _client().get("/api/blend/analysis?start_date=2026-07-01&end_date=2026-07-31").json()
+    assert "manual_records" in body["summary"]
+    assert body["summary"]["manual_records"] is not None
+    assert all("scale_rate" in bucket for bucket in body["trend"])

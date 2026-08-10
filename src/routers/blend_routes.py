@@ -212,6 +212,30 @@ def build_router() -> APIRouter:
             d["manual_entry"] = False
         return record
 
+    def _mask_worker_manual_stats(request: Request, data: dict[str, Any]) -> dict[str, Any]:
+        """작업자별 수동 입력 통계도 책임자 전용 — 기록 목록과 같은 기준으로 가린다.
+
+        기록 단위에서는 '누가 손으로 넣었는지'를 _mask_manual_entry 가 가리는데, 분석
+        화면의 품질 탭은 같은 사실을 이름과 함께 집계로 보여 주고 있었다(로그인 없이도).
+        한쪽만 잠그면 통제가 반쪽이라 같은 선으로 맞춘다.
+
+        0 이 아니라 None 으로 비운다 — 0 은 '수동 입력이 없었다'는 뜻이라 거짓말이 되고,
+        None 은 '말할 수 없다'로 화면·엑셀·도구가 모두 '—' 로 낸다. 기간 전체 합계
+        (summary.manual_records)와 추세의 저울 계량률은 사람을 지목하지 않으므로 그대로
+        둔다 — 그건 이 화면이 존재하는 이유인 지표다.
+        """
+        quality = data.get("quality") or {}
+        visible = bool(
+            (user := get_current_user(request, required=False))
+            and has_access_level(user, "manager")
+        )
+        quality["manual_visible"] = visible
+        if not visible:
+            for row in quality.get("by_worker") or []:
+                row["manual_records"] = None
+                row["manual_rate"] = None
+        return data
+
     def _log_duplicate_save(request_id: str, record_ids: list[int], label: str | None) -> None:
         """중복 저장을 막고 첫 결과를 돌려줬음을 서버 로그에 남긴다.
 
@@ -335,27 +359,30 @@ def build_router() -> APIRouter:
 
     @router.get("/blend/analysis")
     def blend_analysis(
+        request: Request,
         start_date: str = "",
         end_date: str = "",
         bucket: str = "month",
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         """배합 분석 화면 한 판 — 지표(전기 대비)·기간 추세·제품·자재·품질을 한 번에."""
-        return blend_service.analysis(
+        return _mask_worker_manual_stats(request, blend_service.analysis(
             connection, start_date or None, end_date or None, bucket
-        )
+        ))
 
     @router.get("/blend/analysis/export")
     def blend_analysis_export(
+        request: Request,
         start_date: str = "",
         end_date: str = "",
         bucket: str = "month",
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
         """배합 분석 리포트 Excel — 화면에서 본 그대로 5시트(요약/추세/제품/자재/품질)."""
-        data = blend_service.analysis(
+        # 엑셀도 같은 기준으로 가린다 — 화면만 잠그면 내려받기로 그대로 새어 나간다.
+        data = _mask_worker_manual_stats(request, blend_service.analysis(
             connection, start_date or None, end_date or None, bucket
-        )
+        ))
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font
 
@@ -485,11 +512,16 @@ def build_router() -> APIRouter:
         ws = wb.create_sheet("품질")
         ws.append(["작업자별 실적·이상"])
         ws.cell(row=ws.max_row, column=1).font = head
+        manual_visible = data["quality"].get("manual_visible", True)
+        if not manual_visible:
+            ws.append(["수동 입력 열은 책임자만 볼 수 있습니다 — 담당자 계정으로 내려받아 비어 있습니다."])
         _sheet(
             ws,
             ["작업자", "완료", "생산량(kg)", "제품 종수", "수동 입력", "수동 비율(%)", "취소"],
             [16, 10, 14, 12, 12, 14, 10],
         )
+        # 가려진 값은 0 이 아니라 빈 칸 — 0 으로 채우면 '수동 입력이 없었다'로 읽힌다.
+        blank = "" if not manual_visible else 0
         # 생산 실적과 이상 통계는 대상이 조금 다르다(취소만 있는 사람 / 완료만 있는 사람)
         # — 화면과 같은 합집합 기준으로 쓴다.
         production = {w["worker"]: w for w in data["workers"]}
@@ -500,14 +532,16 @@ def build_router() -> APIRouter:
             p = production.get(name, {})
             ws.append([
                 name, w["records"], round(p.get("total_amount", 0) / 1000, 2),
-                p.get("product_count", 0), w["manual_records"],
-                w["manual_rate"], w["canceled_records"],
+                p.get("product_count", 0),
+                w["manual_records"] if w["manual_records"] is not None else "",
+                w["manual_rate"] if w["manual_rate"] is not None else "",
+                w["canceled_records"],
             ])
         for name, p in production.items():
             if name not in seen:
                 ws.append([
                     name, p["records"], round(p["total_amount"] / 1000, 2),
-                    p["product_count"], 0, 0.0, 0,
+                    p["product_count"], blank, blank, 0,
                 ])
         ws.append([])
         ws.append(["자재별 (수동 입력이 있었던 자재만)"])

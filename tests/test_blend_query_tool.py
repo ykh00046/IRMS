@@ -540,3 +540,25 @@ def test_catalog_says_which_commands_answer_live():
     assert by_name["sql"] == "스냅샷 파일"
     assert by_name["catalog"] == "DB 불필요"
     assert set(by_name) == set(module.COMMANDS)
+
+
+def test_live_workers_warn_when_manual_columns_are_masked():
+    """빈 칸을 '수동 입력 0건'으로 읽으면 거짓말이 된다 — 왜 비었는지 말해야 한다."""
+    module = _load()
+    module.WARNINGS.clear()
+    masked = {
+        "workers": [{"worker": "김철수", "records": 3, "total_amount": 3000.0,
+                     "product_count": 1}],
+        "quality": {
+            "manual_visible": False,
+            "by_worker": [{"worker": "김철수", "records": 3, "manual_records": None,
+                           "canceled_records": 0, "manual_rate": None}],
+        },
+    }
+    rows = module.shape_workers(masked, _Args())
+    assert rows[0]["수동입력"] is None and rows[0]["수동비율_퍼센트"] is None
+    assert any("책임자" in w for w in module.WARNINGS), "가려진 이유를 말하지 않는다"
+
+    module.WARNINGS.clear()
+    module.shape_workers(ANALYSIS_PAYLOAD, _Args())   # manual_visible 없음 = 책임자
+    assert not module.WARNINGS

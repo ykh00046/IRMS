@@ -241,7 +241,12 @@ def shape_monthly(payload: dict, _args) -> list[dict]:
 
 
 def shape_workers(payload: dict, _args) -> list[dict]:
-    quality = {q.get("worker"): q for q in (payload.get("quality") or {}).get("by_worker") or []}
+    quality_block = payload.get("quality") or {}
+    quality = {q.get("worker"): q for q in quality_block.get("by_worker") or []}
+    if quality_block.get("manual_visible") is False:
+        # 빈 칸을 '수동 입력 0건'으로 읽으면 거짓말이 된다.
+        WARNINGS.append("수동 입력 열은 책임자만 볼 수 있어 비어 있습니다"
+                        " — 0 건이라는 뜻이 아닙니다(목록은 --offline 의 manual).")
     rows = []
     for w in payload.get("workers") or []:
         q = quality.get(w.get("worker"), {})

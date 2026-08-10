@@ -178,6 +178,10 @@
             {# 예전엔 생산 실적은 대시보드에, 이상 통계는 여기에 따로 있어서 한 사람을
                보려면 두 화면을 오갔다(2026-08-08 통합). 한 표에서 같이 본다. #}
             <p class="panel-subtitle">생산 실적과 이상 신호를 한 표에서 봅니다.</p>
+            {# 누가 손으로 계량했는지는 기록 목록에서도 책임자만 본다 — 같은 기준. #}
+            <p class="panel-subtitle" id="insight-manual-locked" hidden>
+              수동 입력 열은 책임자만 볼 수 있습니다. 가려진 칸은 0 건이 아니라 “알 수 없음”입니다.
+            </p>
             <div class="table-wrap">
               <table class="blend-table insight-sortable" id="insight-worker-table">
                 <thead>
