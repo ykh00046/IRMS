@@ -83,6 +83,24 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def scale_since(conn) -> str | None:
+    """저울 도입일 설정 — 계량률이 뜻을 갖는 시작점.
+
+    앱(blend_service.analysis)이 쓰는 것과 같은 값을 같은 규칙으로 읽는다. 이걸 빼먹으면
+    도구가 화면과 다른 숫자를 말한다(실제로 그랬다: 화면 77.4% · 도구 98.7%, 2026-08-10).
+    설정이 없으면 None — 그때는 전 구간으로 계산한다(종전 동작).
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'scale_since'"
+        ).fetchone()
+    except sqlite3.OperationalError:      # app_settings 가 없는 옛 DB
+        return None
+    raw = (row["value"] if row else "") or ""
+    raw = raw.strip()
+    return raw if len(raw) == 10 and raw[4] == "-" and raw[7] == "-" else None
+
+
 def _range_clause(args, alias: str = "br") -> tuple[str, list]:
     parts, params = [], []
     if getattr(args, "from_date", None):
@@ -141,8 +159,23 @@ def q_summary(conn, args) -> list[dict]:
     ).fetchone()[0]
     result = dict(row)
     result["취소"] = canceled
-    done = result["배합건수"] or 0
-    result["저울계량률_%"] = round((done - (result["수동입력"] or 0)) / done * 100, 1) if done else 0.0
+
+    # 저울 계량률 — 도입일 이후 기록만. 그 전 배합에는 '수동 입력' 표시가 없어
+    # 저울로 잰 것과 구분되지 않으므로, 함께 세면 100% 에 가깝게 부풀려진다.
+    since = scale_since(conn)
+    swhere, sparams = _range_clause(args)
+    if since:
+        swhere += " AND br.work_date >= ?"
+        sparams = [*sparams, since]
+    srow = conn.execute(
+        f"SELECT COUNT(*) AS n, SUM(CASE WHEN COALESCE(br.manual_entry,0)=1 THEN 1 ELSE 0 END)"
+        f" AS m FROM blend_records br WHERE {DONE}{swhere}",
+        sparams,
+    ).fetchone()
+    n, m = int(srow["n"] or 0), int(srow["m"] or 0)
+    result["저울계량률_%"] = round((n - m) / n * 100, 1) if n else None
+    result["계량률_표본"] = n
+    result["계량률_기준일"] = since or "(미설정 — 전 구간)"
     return [result]
 
 

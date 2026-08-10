@@ -48,6 +48,9 @@ def _make_db(tmp_path) -> Path:
             id INTEGER PRIMARY KEY AUTOINCREMENT, blend_record_id INTEGER NOT NULL,
             material_name TEXT NOT NULL, material_lot TEXT, ratio REAL,
             theory_amount REAL, actual_amount REAL, sequence_order INTEGER DEFAULT 0,
+            -- 실제 스키마에 있는 열 — blend_service.mistake_stats 가 자재별 수동 입력을
+            -- 셀 때 쓴다(도구와 앱을 대조하는 테스트가 analysis 를 부르므로 필요).
+            manual_entry INTEGER NOT NULL DEFAULT 0,
             loss_comp_g REAL NOT NULL DEFAULT 0
         );
         CREATE TABLE viscosity_products (
@@ -206,3 +209,62 @@ def test_unknown_option_is_an_error_not_swallowed(tmp_path):
         capture_output=True, text=True, encoding="utf-8",
     )
     assert proc.returncode != 0
+
+
+# ── 도구와 화면이 같은 숫자를 말하는가 ────────────────────────────────────
+# 도구가 화면과 다른 답을 주면 둘 중 뭘 믿어야 할지 알 수 없다. 실제로 어긋난 적이
+# 있다(2026-08-10: 화면 77.4% · 도구 98.7% — 도구가 저울 도입일 설정을 몰랐다).
+
+def _with_scale_since(db: Path, day: str) -> None:
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        " key TEXT PRIMARY KEY, value TEXT, updated_by TEXT, updated_at TEXT)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('scale_since', ?)",
+        (day,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_scale_rate_honours_the_adoption_date(tmp_path):
+    db = _make_db(tmp_path)
+    _with_scale_since(db, "2026-07-02")   # 7/1 배합은 표본에서 빠진다
+    body = _run(tmp_path, "summary")
+    row = body["rows"][0]
+    assert row["계량률_기준일"] == "2026-07-02"
+    assert row["계량률_표본"] == 1        # 7/2 의 1건(수동)만
+    assert row["저울계량률_%"] == 0.0
+    # 건수·생산량은 좁히지 않는다 — 분모만 좁힌다.
+    assert row["배합건수"] == 2
+
+
+def test_scale_rate_says_when_no_basis_is_set(tmp_path):
+    """기준이 없으면 숫자를 그냥 내놓지 않고 '미설정'이라고 밝힌다."""
+    _make_db(tmp_path)
+    row = _run(tmp_path, "summary")["rows"][0]
+    assert "미설정" in row["계량률_기준일"]
+    assert row["계량률_표본"] == 2
+
+
+def test_tool_matches_the_analysis_service(tmp_path):
+    """같은 DB·같은 기준이면 도구와 blend_service.analysis 가 같은 값을 낸다."""
+    db = _make_db(tmp_path)
+    _with_scale_since(db, "2026-07-02")
+
+    import sqlite3 as _s
+    from src.services import blend_service as bs
+
+    conn = _s.connect(db)
+    conn.row_factory = _s.Row
+    try:
+        app = bs.analysis(conn, None, None)["summary"]
+    finally:
+        conn.close()
+
+    tool = _run(tmp_path, "summary")["rows"][0]
+    assert tool["저울계량률_%"] == app["scale_rate"]
+    assert tool["계량률_표본"] == app["scale_base_records"]
+    assert tool["배합건수"] == app["records"]
