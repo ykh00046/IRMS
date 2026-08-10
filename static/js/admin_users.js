@@ -119,6 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["attendance_viewed_by_admin", "근태 조회"],
       ["setting_scale_only_set", "저울 전용 입력 설정"],
       ["setting_viscosity_reminder_since_set", "점도 알림 정리 기준일 갱신"],
+      ["setting_scale_since_set", "저울 도입일 설정"],
       ["setting_blend_window_override_set", "배합 창 예외 코드 변경"],
       ["signature_config_updated", "서명 설정 변경"],
       ["signature_sample_added", "서명 이미지 등록"],
@@ -513,6 +514,34 @@ document.addEventListener("DOMContentLoaded", () => {
     codeInput.type = hidden ? "text" : "password";
     codeReveal.textContent = hidden ? "가리기" : "보기";
   });
+
+  // 저울 도입일 — 배합 분석의 '저울 계량률' 기준 시작점.
+  const scaleSinceInput = document.getElementById("scale-since-input");
+  const scaleSinceSave = document.getElementById("scale-since-save");
+  if (scaleSinceInput && scaleSinceSave) {
+    request("/settings/scale-since")
+      .then((d) => { scaleSinceInput.value = d.since || ""; })
+      .catch(() => { /* 없으면 빈 칸 — 전 구간 계산(종전 동작) */ });
+    scaleSinceSave.addEventListener("click", async () => {
+      IRMS.btnLoading(scaleSinceSave, true);
+      try {
+        const d = await request("/settings/scale-since", {
+          method: "PUT",
+          body: { since: scaleSinceInput.value || "" },
+        });
+        IRMS.notify(
+          d.since
+            ? `저울 도입일을 ${d.since} 로 저장했습니다. 배합 분석의 계량률이 이 날짜 이후로 계산됩니다.`
+            : "저울 도입일을 해제했습니다 — 전 구간으로 계산합니다.",
+          "success",
+        );
+      } catch (e) {
+        IRMS.notify(`저장 실패: ${e.message}`, "error");
+      } finally {
+        IRMS.btnLoading(scaleSinceSave, false);
+      }
+    });
+  }
 
   addWorkerForm?.addEventListener("submit", handleAddWorker);
   changePwForm?.addEventListener("submit", handleChangePassword);

@@ -85,3 +85,7 @@ docs/.pdca-snapshots/
 # 백업 검증(mode=ro)이 남기는 SQLite 부산물 — 백업 파일 자체는 정상
 backups/*.db-shm
 backups/*.db-wal
+
+# 운영 DB 사본을 두고 읽기만 하는 자리(개발 PC 전용). 앱이 쓰는 data/ 와 분리해서,
+# 실수로 라이브 DB 로 잡히거나 백업 정리 로직에 걸리는 일이 없게 한다. 절대 커밋 금지.
+local-data/

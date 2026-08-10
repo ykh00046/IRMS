@@ -68,7 +68,13 @@ def resolve_db(explicit: str | None) -> Path:
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    """읽기 전용으로 연다 — 이 도구가 운영 DB 를 건드릴 방법 자체를 없앤다."""
+    """읽기 전용으로 연다 — 이 도구가 운영 DB 를 건드릴 방법 자체를 없앤다.
+
+    ⚠ mode=ro 를 immutable=1 로 바꾸지 말 것. immutable 은 -shm/-wal 부산물을 안 만들어
+    깔끔해 보이지만, "이 파일은 아무도 안 바꾼다"를 SQLite 에 약속하는 옵션이다. 운영
+    PC 에서 서버가 돌아가는 중인 라이브 DB 를 가리키면(이 도구의 정상적인 사용법이다)
+    낡은 페이지를 오류 없이 읽어 조용히 틀린 답을 준다. 부산물 몇 개가 그 위험보다 싸다.
+    """
     if not path.exists():
         raise SystemExit(f"DB 를 찾을 수 없습니다: {path}")
     uri = f"file:{path.as_posix()}?mode=ro"

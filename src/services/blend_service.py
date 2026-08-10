@@ -680,9 +680,19 @@ def _analysis_window(
 
 
 def _analysis_core(
-    connection: sqlite3.Connection, start_date: str | None, end_date: str | None
+    connection: sqlite3.Connection,
+    start_date: str | None,
+    end_date: str | None,
+    scale_since: str | None = None,
 ) -> dict[str, Any]:
-    """한 기간의 핵심 수치 — 현재 기간과 직전 기간에 같은 함수를 두 번 쓴다."""
+    """한 기간의 핵심 수치 — 현재 기간과 직전 기간에 같은 함수를 두 번 쓴다.
+
+    scale_since(저울 도입일)가 있으면 저울 계량률은 그 날짜 이후 기록만으로 낸다.
+    manual_entry 표시는 저울이 붙은 뒤에야 기록되므로, 그 전 기록까지 분모에 넣으면
+    '전부 저울로 쟀다'가 되어 계량률이 100% 로 부풀고 도입 시점에 뚝 떨어지는 그래프가
+    된다(2026-08-10 운영 데이터에서 확인). 유효 표본이 없으면 None — 0% 도 100% 도
+    아닌 '해당 없음'이다.
+    """
     wsql, params = _analysis_window(start_date, end_date)
     row = connection.execute(
         f"""
@@ -733,6 +743,23 @@ def _analysis_core(
         or 0
     )
     attempted = records + canceled
+
+    # 저울 계량률 — 수동 입력의 반대편. 이 화면에서 '개선됐다'를 말할 수 있는 유일한
+    # 비율 지표다(편차는 허용치 내로 강제되므로 신호가 되지 못한다). 도입일 이후
+    # 기록만 센다 — 그 전은 표시가 없어 '저울로 쟀다'와 구분되지 않는다.
+    scale_start = max(x for x in (start_date, scale_since) if x) if (start_date or scale_since) else None
+    swhere, sparams = _analysis_window(scale_start, end_date)
+    scale_row = connection.execute(
+        f"""
+        SELECT COUNT(*) AS records,
+               SUM(CASE WHEN COALESCE(br.manual_entry, 0) = 1 THEN 1 ELSE 0 END) AS manual
+        FROM blend_records br WHERE {swhere}
+        """,
+        sparams,
+    ).fetchone()
+    scale_n = int(scale_row["records"] or 0)
+    scale_manual = int(scale_row["manual"] or 0)
+
     return {
         "records": records,
         "total_weight_g": round(float(row["total_weight"] or 0), 3),
@@ -743,9 +770,8 @@ def _analysis_core(
         "rescale_records": int(row["rescale_records"] or 0),
         "oversize_records": int(row["oversize_records"] or 0),
         "loss_comp_total_g": round(float(loss_comp or 0), 3),
-        # 저울 계량률 — 수동 입력의 반대편. 이 화면에서 '개선됐다'를 말할 수 있는 유일한
-        # 비율 지표다(편차는 허용치 내로 강제되므로 신호가 되지 못한다).
-        "scale_rate": round((records - manual) / records * 100, 1) if records else 0.0,
+        "scale_rate": round((scale_n - scale_manual) / scale_n * 100, 1) if scale_n else None,
+        "scale_base_records": scale_n,
         "cancel_rate": round(canceled / attempted * 100, 1) if attempted else 0.0,
     }
 
@@ -804,14 +830,18 @@ def analysis(
         "strftime('%Y-W%W', br.work_date)" if bucket == "week" else "substr(br.work_date, 1, 7)"
     )
 
-    summary = _analysis_core(connection, start_date, end_date)
+    # 저울 도입일 — 계량률이 뜻을 갖는 시작점. 설정이 없으면 종전대로 전 구간 계산.
+    from . import settings_service
+    scale_since = settings_service.get_scale_since(connection)
+
+    summary = _analysis_core(connection, start_date, end_date, scale_since)
     previous: dict[str, str] | None = None
     prev_core: dict[str, Any] | None = None
     if start_date and end_date:
         window = _previous_window(start_date, end_date)
         if window:
             previous = {"start": window[0], "end": window[1]}
-            prev_core = _analysis_core(connection, window[0], window[1])
+            prev_core = _analysis_core(connection, window[0], window[1], scale_since)
     for key in (
         "records", "total_weight_g", "product_count", "material_count",
         "scale_rate", "cancel_rate",
@@ -822,19 +852,26 @@ def analysis(
 
     wsql, params = _analysis_window(start_date, end_date)
 
+    # 계량률용 표본은 구간 안에서도 도입일 이후만 센다 — 도입일이 낀 달(7/1~7/9 는
+    # 표시 없음, 7/10 부터 표시 있음)을 통째로 세면 그 달만 부풀려진다.
+    since_expr = "1" if not scale_since else "CASE WHEN br.work_date >= ? THEN 1 ELSE 0 END"
+    since_params = [] if not scale_since else [scale_since, scale_since]
     trend_rows = connection.execute(
         f"""
         SELECT {bucket_expr} AS bucket,
                COUNT(*) AS records,
                COALESCE(SUM(br.total_amount), 0) AS weight_g,
                SUM(CASE WHEN COALESCE(br.manual_entry, 0) = 1 THEN 1 ELSE 0 END) AS manual_records,
+               SUM({since_expr}) AS scale_n,
+               SUM(CASE WHEN {'br.work_date >= ? AND ' if scale_since else ''}
+                             COALESCE(br.manual_entry, 0) = 1 THEN 1 ELSE 0 END) AS scale_manual,
                MIN(br.work_date) AS first_date
         FROM blend_records br
         WHERE {wsql}
         GROUP BY bucket
         ORDER BY bucket ASC
         """,
-        params,
+        [*since_params, *params] if scale_since else params,
     ).fetchall()
     # 취소는 완료가 아니라 같은 쿼리로 못 센다 — 버킷별로 따로 세서 합친다.
     cwhere = ["br.status = 'canceled'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
@@ -869,13 +906,18 @@ def analysis(
                 partial = True
             if eff_end and span_end > eff_end:
                 partial = True
+        # 도입일 이전 구간은 표본이 0 이라 계량률이 None 이 된다 — 0 도 100 도 아닌
+        # '해당 없음'. 숫자를 채우면 그래프가 도입 시점에 급락해 개선을 악화로 보여준다.
+        scale_n = int(r["scale_n"] or 0)
+        scale_manual = int(r["scale_manual"] or 0)
         trend.append({
             "bucket": r["bucket"],
             "records": recs,
             "weight_g": round(float(r["weight_g"] or 0), 3),
             "manual_records": manual,
             "canceled_records": canceled_by_bucket.get(r["bucket"], 0),
-            "scale_rate": round((recs - manual) / recs * 100, 1) if recs else 0.0,
+            "scale_rate": round((scale_n - scale_manual) / scale_n * 100, 1) if scale_n else None,
+            "scale_base_records": scale_n,
             "partial": partial,
         })
 
@@ -975,6 +1017,7 @@ def analysis(
 
     return {
         "range": {"start": start_date, "end": end_date, "days": days},
+        "scale_since": scale_since,
         "previous": previous,
         "bucket": bucket,
         "summary": summary,

@@ -5,7 +5,7 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260808b" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260810a" />
 {% endblock %}
 
 {% block content %}
@@ -166,6 +166,8 @@
               배합은 계량 편차를 허용치 안으로 강제하므로 편차 자체는 이상 신호가 되지 못합니다.
               저울 PRINT 대신 손으로 입력한 <b>수동 입력</b>과 <b>취소</b>를 이상 신호로 봅니다.
             </p>
+            {# 저울 도입 전 구간은 계량률을 그리지 않는다 — 그 근거를 화면이 말한다. #}
+            <p class="filter-summary muted small" id="insight-quality-basis" hidden></p>
             <div class="insight-chart-wrap">
               <canvas id="insight-quality-chart"></canvas>
             </div>
@@ -261,5 +263,5 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260808b"></script>
+    <script src="/static/js/insight.js?v=20260810a"></script>
 {% endblock %}

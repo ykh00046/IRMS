@@ -104,11 +104,16 @@ def test_scale_rate_and_cancel_rate() -> None:
     assert s["cancel_rate"] == 20.0
 
 
-def test_rates_are_zero_when_no_records() -> None:
-    """0으로 나누지 않는다 — 기록 없는 기간을 조회하는 일은 흔하다."""
+def test_rates_do_not_divide_by_zero_when_no_records() -> None:
+    """기록 없는 기간을 조회하는 일은 흔하다 — 0 으로 나누지 않는다.
+
+    취소율은 0%(취소가 없었던 게 맞다)지만 저울 계량률은 None 이다: 잰 게 없으면
+    '0% 로 쟀다'가 아니라 '말할 수 없다'가 맞고, 화면도 '—' 로 표시한다(2026-08-10).
+    """
     s = bs.analysis(_make_db(), "2026-03-01", "2026-03-31")["summary"]
     assert s["records"] == 0
-    assert s["scale_rate"] == 0.0
+    assert s["scale_rate"] is None
+    assert s["scale_base_records"] == 0
     assert s["cancel_rate"] == 0.0
 
 
@@ -298,3 +303,90 @@ def test_dashboard_and_analysis_count_the_same_records() -> None:
     ).fetchone()
     assert analysis["records"] == dash["cnt"] == 1
     assert analysis["total_weight_g"] == round(float(dash["w"]), 3) == 1000.0
+
+
+# ── 저울 도입일 (2026-08-10, 운영 데이터에서 드러난 문제) ───────────────────
+# manual_entry(저울 미사용) 표시는 저울이 붙은 뒤에야 기록된다. 그 전 기록은 전부
+# 손으로 넣었지만 표시가 없어 '저울로 쟀다'와 구분되지 않는다. 그 구간까지 세면
+# 계량률이 100% 로 부풀고(운영 실측 98.7%), 저울을 들여놓은 달에 오히려 급락하는
+# 그래프가 되어 개선을 악화로 보여준다.
+
+def _with_scale_since(conn, day):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings ("
+        " key TEXT PRIMARY KEY, value TEXT, updated_by TEXT, updated_at TEXT)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('scale_since', ?)",
+        (day,),
+    )
+    conn.commit()
+
+
+def test_scale_rate_ignores_records_before_the_scale_arrived():
+    conn = _make_db()
+    # 도입 전 4건: 전부 손으로 넣었지만 표시가 없다.
+    for _ in range(4):
+        _add(conn, date="2026-06-10")
+    # 도입 후 4건 중 1건이 수동 입력.
+    for _ in range(3):
+        _add(conn, date="2026-07-15")
+    _add(conn, date="2026-07-16", manual=1)
+
+    before = bs.analysis(conn, None, None)["summary"]
+    assert before["scale_rate"] == 87.5      # 8건 중 1건 → 부풀려진 값
+
+    _with_scale_since(conn, "2026-07-10")
+    after = bs.analysis(conn, None, None)
+    assert after["scale_since"] == "2026-07-10"
+    assert after["summary"]["scale_rate"] == 75.0    # 도입 후 4건 중 1건
+    assert after["summary"]["scale_base_records"] == 4
+
+
+def test_trend_leaves_pre_scale_buckets_without_a_rate():
+    """0 도 100 도 아닌 '해당 없음' — 숫자를 채우면 그래프가 급락한다."""
+    conn = _make_db()
+    _add(conn, date="2026-05-10")
+    _add(conn, date="2026-06-10")
+    _add(conn, date="2026-07-15", manual=1)
+    _add(conn, date="2026-07-16")
+    _with_scale_since(conn, "2026-07-10")
+
+    trend = {t["bucket"]: t for t in bs.analysis(conn, "2026-01-01", "2026-12-31")["trend"]}
+    assert trend["2026-05"]["scale_rate"] is None
+    assert trend["2026-06"]["scale_rate"] is None
+    assert trend["2026-07"]["scale_rate"] == 50.0
+
+
+def test_bucket_straddling_the_scale_date_counts_only_after_it():
+    """도입일이 낀 달을 통째로 세면 그 달만 부풀려진다(운영에서 7월 86.8 → 78.9)."""
+    conn = _make_db()
+    for _ in range(6):                       # 7/1~7/9: 표시 없음
+        _add(conn, date="2026-07-05")
+    _add(conn, date="2026-07-20", manual=1)  # 도입 후 2건 중 1건 수동
+    _add(conn, date="2026-07-21")
+    _with_scale_since(conn, "2026-07-10")
+
+    july = bs.analysis(conn, "2026-07-01", "2026-07-31")["trend"][0]
+    assert july["records"] == 8              # 생산량·건수는 그대로 전부 센다
+    assert july["scale_base_records"] == 2   # 계량률 표본만 도입 후
+    assert july["scale_rate"] == 50.0
+
+
+def test_without_the_setting_nothing_changes():
+    """저울을 처음부터 쓴 현장도 있다 — 설정이 없으면 종전 동작 그대로."""
+    conn = _make_db()
+    _add(conn, date="2026-07-15")
+    _add(conn, date="2026-07-16", manual=1)
+    summary = bs.analysis(conn, None, None)["summary"]
+    assert summary["scale_rate"] == 50.0
+    assert summary["scale_base_records"] == 2
+
+
+def test_scale_rate_is_none_when_no_record_falls_after_the_date():
+    conn = _make_db()
+    _add(conn, date="2026-06-10")
+    _with_scale_since(conn, "2026-07-10")
+    summary = bs.analysis(conn, None, None)["summary"]
+    assert summary["scale_rate"] is None      # 0.0 이 아니라 '해당 없음'
+    assert summary["scale_base_records"] == 0

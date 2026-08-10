@@ -25,6 +25,9 @@ ALLOWED_DIRS = {
     ".antigravitycli", ".bkit", ".claude", ".codegraph", ".git", ".github",
     ".gstack", ".playwright-mcp", ".pytest_cache", ".ruff_cache", ".tmp-tests",
     ".venv", "artifacts", "backups", "cloudflared", "data", "docs", "excel",
+    # local-data: 운영 DB 사본을 두고 읽기만 하는 개발 PC 전용 자리(gitignore).
+    # 앱이 쓰는 data/ 와 분리해 라이브 DB 로 잡히거나 백업 정리에 걸리지 않게 한다.
+    "local-data",
     "scale_agent", "scripts", "src", "static", "templates", "tests", "tools",
     "tray_client",
 }

@@ -105,8 +105,20 @@
         deltaChip(s.total_weight_g / 1000,
           s.total_weight_prev === null ? null : s.total_weight_prev / 1000,
           { goodWhen: "up", decimals: 1 })),
-      metricCard("저울 계량률", num(s.scale_rate, 1), "%",
-        deltaChip(s.scale_rate, s.scale_rate_prev, { goodWhen: "up", pointUnit: true })),
+      // 저울 도입 전 기록에는 '수동 입력' 표시가 없어 저울로 잰 것과 구분되지 않는다.
+      // 그 구간을 섞어 세면 계량률이 100% 로 부풀고(운영 데이터에서 98.7%), 저울을
+      // 들여놓은 달에 오히려 급락하는 그래프가 된다 — 개선을 악화로 보여준다.
+      // 표본이 없으면 숫자를 지어내지 않고 '해당 없음'으로 둔다.
+      s.scale_rate === null || s.scale_rate === undefined
+        ? metricCard("저울 계량률", "—", "",
+          `<span class="muted small">${state.scale_since
+            ? `저울 도입(${esc(state.scale_since)}) 이후 기록 없음`
+            : "저울 도입일이 설정되지 않았습니다"}</span>`)
+        : metricCard("저울 계량률", num(s.scale_rate, 1), "%",
+          deltaChip(s.scale_rate, s.scale_rate_prev, { goodWhen: "up", pointUnit: true })
+          + (state.scale_since
+            ? `<span class="muted small insight-metric-basis">도입 ${esc(state.scale_since)} 이후 ${num(s.scale_base_records)}건</span>`
+            : "")),
       metricCard("취소율", num(s.cancel_rate, 1), "%",
         deltaChip(s.cancel_rate, s.cancel_rate_prev, { goodWhen: "down", pointUnit: true })),
       metricCard("제품 종수", num(s.product_count), "종",
@@ -499,6 +511,16 @@
     kill("quality");
     const t = state.trend || [];
     if (!t.length) return;
+    const note = $("insight-quality-basis");
+    if (note) {
+      const withRate = t.filter((x) => x.scale_rate !== null && x.scale_rate !== undefined).length;
+      note.textContent = state.scale_since
+        ? `저울 계량률은 저울 도입(${state.scale_since}) 이후 구간만 표시합니다`
+          + ` — 그 전 기록에는 수동 입력 표시가 없어 저울로 잰 것과 구분되지 않습니다.`
+          + (withRate ? "" : " (이 기간에는 해당 구간이 없습니다)")
+        : "";
+      note.hidden = !state.scale_since;
+    }
     const text = css("--text-secondary", "#64748b");
     charts.quality = new Chart(canvas, {
       data: {
@@ -507,7 +529,10 @@
           {
             type: "line",
             label: "저울 계량률(%)",
-            data: t.map((x) => x.scale_rate),
+            // null 은 '해당 없음'이라 0 으로 그리면 안 된다 — spanGaps:false 로 끊는다.
+            data: t.map((x) => (x.scale_rate === null || x.scale_rate === undefined
+              ? null : x.scale_rate)),
+            spanGaps: false,
             borderColor: css("--status-success", "#1e9d6b"),
             backgroundColor: css("--status-success", "#1e9d6b"),
             borderWidth: 2,

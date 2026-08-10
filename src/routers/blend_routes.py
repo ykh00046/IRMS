@@ -388,6 +388,12 @@ def build_router() -> APIRouter:
             else "비교 기간: 없음 (시작·종료를 모두 지정하면 전기 대비를 계산합니다)"
         )
         ws["A4"] = f"생성 시각: {utc_now_text()} (UTC)"
+        if data.get("scale_since"):
+            ws["A5"] = (
+                f"저울 계량률 기준: 저울 도입 {data['scale_since']} 이후 "
+                f"{s.get('scale_base_records', 0)}건 — 그 전 기록에는 수동 입력 표시가 없어"
+                " 저울로 잰 것과 구분되지 않습니다."
+            )
         ws.append([])
         # 지표는 '값 / 전기 / 증감'을 나란히 둔다 — 리포트로 뽑았을 때 숫자 하나만
         # 남으면 읽는 사람이 많고 적음을 판단할 근거가 없다.
@@ -396,7 +402,7 @@ def build_router() -> APIRouter:
             ws.cell(row=ws.max_row, column=c).font = head
 
         def _delta(cur: Any, prv: Any, unit: str = "") -> str:
-            if prv is None:
+            if prv is None or not isinstance(cur, (int, float)):
                 return "-"
             diff = round(float(cur) - float(prv), 1)
             sign = "+" if diff > 0 else ""
@@ -409,7 +415,11 @@ def build_router() -> APIRouter:
              "kg"),
             ("제품 종수", s["product_count"], s["product_count_prev"], "종"),
             ("자재 종수", s["material_count"], s["material_count_prev"], "종"),
-            ("저울 계량률(%)", s["scale_rate"], s["scale_rate_prev"], "%p"),
+            # 저울 도입 전 기록에는 수동 입력 표시가 없어 계량률이 뜻을 갖지 못한다 —
+            # 표본이 없으면 숫자를 지어내지 않고 '해당 없음'으로 적는다.
+            ("저울 계량률(%)",
+             s["scale_rate"] if s["scale_rate"] is not None else "해당 없음",
+             s["scale_rate_prev"], "%p"),
             ("취소율(%)", s["cancel_rate"], s["cancel_rate_prev"], "%p"),
         ]
         for label, cur, prv, unit in rows:
@@ -439,7 +449,8 @@ def build_router() -> APIRouter:
         for t in data["trend"]:
             ws.append([
                 t["bucket"], t["records"], round(t["weight_g"] / 1000, 2),
-                t["manual_records"], t["canceled_records"], t["scale_rate"],
+                t["manual_records"], t["canceled_records"],
+                t["scale_rate"] if t["scale_rate"] is not None else "해당 없음",
                 # 양 끝 구간은 대개 잘려 있다 — 표시가 없으면 생산 급감으로 읽힌다.
                 "기간이 잘린 구간(다른 구간과 길이가 다름)" if t.get("partial") else "",
             ])

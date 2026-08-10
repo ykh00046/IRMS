@@ -26,6 +26,13 @@ BLEND_WINDOW_OVERRIDE_DEFAULT = "111111"
 # (현장 요청 2026-08-07). 행 부재 = 기준일 없음 = 종전 동작.
 VISCOSITY_REMINDER_SINCE_KEY = "viscosity_reminder_since"
 
+# 저울 도입일 — 이 날짜부터 manual_entry(저울 미사용) 표시가 의미를 갖는다.
+# 그 전 기록은 전부 손으로 넣었지만 구분할 표시가 없어서, 계량률을 계산하면 100% 로
+# 잡힌다. 실제 운영 데이터에서 확인된 문제다(2026-08-10): 도입 전 2,186건이 전부
+# '저울로 잼'으로 집계돼 전체 계량률이 98.7% 로 나왔고, 저울을 들여놓은 7월에 오히려
+# 뚝 떨어지는 그래프가 됐다 — 개선을 악화로 보여준 셈이다.
+SCALE_SINCE_KEY = "scale_since"
+
 
 def _table_exists(connection: sqlite3.Connection) -> bool:
     """app_settings 테이블 존재 여부. 구버전 DB 방어."""
@@ -120,6 +127,32 @@ def set_viscosity_reminder_since(
     set_setting(
         connection,
         VISCOSITY_REMINDER_SINCE_KEY,
+        (day or "").strip(),
+        updated_by=updated_by,
+    )
+
+
+def get_scale_since(connection: sqlite3.Connection) -> str | None:
+    """저울 도입일(YYYY-MM-DD). 없으면 None — 그때는 계량률을 전 구간에 계산한다.
+
+    None 이면 '기준 없음'이지 '전부 유효'가 아니다. 다만 저울을 처음부터 쓴 현장도
+    있을 수 있어, 값이 없을 때의 동작은 종전 그대로 둔다(설정하면 그때부터 잘린다).
+    """
+    raw = (get_setting(connection, SCALE_SINCE_KEY) or "").strip()
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        return raw
+    return None
+
+
+def set_scale_since(
+    connection: sqlite3.Connection,
+    day: str | None,
+    updated_by: str | None = None,
+) -> None:
+    """저울 도입일 저장(YYYY-MM-DD). 빈 값이면 기준 해제."""
+    set_setting(
+        connection,
+        SCALE_SINCE_KEY,
         (day or "").strip(),
         updated_by=updated_by,
     )
