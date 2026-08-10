@@ -466,11 +466,30 @@ def main(argv: list[str] | None = None) -> int:
     db_path = resolve_db(args.db)
     # catalog 는 DB 가 없어도 답한다 — 에이전트가 접속 전에 먼저 물어보는 명령이다.
     conn = None if args.command == "catalog" else connect(db_path)
+    conn_had_no_records = False
     try:
         rows = COMMANDS[args.command](conn, args)
+        if conn is not None:
+            try:
+                conn_had_no_records = conn.execute(
+                    "SELECT COUNT(*) FROM blend_records"
+                ).fetchone()[0] == 0
+            except sqlite3.OperationalError:   # 배합 테이블이 없는 DB 도 있을 수 있다
+                conn_had_no_records = True
     finally:
         if conn is not None:
             conn.close()
+
+    # 어느 DB 를 읽었는지 표 출력에도 밝힌다 — 이 PC 에는 배합 기록 0건짜리 개발용
+    # data/irms.db 가 있어서, --db 를 빼면 오류 없이 '0건'을 답한다. 그 0 이 어느
+    # 파일에서 나왔는지 보이지 않으면 빈 답을 진짜 답으로 읽는다(2026-08-10).
+    if not args.json and args.command != "catalog":
+        empty = conn_had_no_records if args.command != "schema" else False
+        print(f"[DB] {db_path}")
+        if empty:
+            print("  ⚠ 이 DB 에는 배합 기록이 없습니다 — 조회 대상을 잘못 가리켰을 수 있습니다"
+                  " (--db 로 스냅샷 경로를 지정하세요).")
+        print()
 
     if args.json:
         # 봉투에 조건을 실어 준다 — 결과만 보면 어떤 질문의 답인지 알 수 없다.
@@ -486,6 +505,7 @@ def main(argv: list[str] | None = None) -> int:
             "db": str(db_path),
             "filters": filters,
             "row_count": len(rows),
+            "database_has_records": not conn_had_no_records,
             "rows": rows,
         }, ensure_ascii=False, indent=2, default=str))
     else:

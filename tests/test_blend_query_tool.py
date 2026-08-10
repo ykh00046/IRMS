@@ -268,3 +268,43 @@ def test_tool_matches_the_analysis_service(tmp_path):
     assert tool["저울계량률_%"] == app["scale_rate"]
     assert tool["계량률_표본"] == app["scale_base_records"]
     assert tool["배합건수"] == app["records"]
+
+
+def test_empty_database_is_flagged_not_reported_as_zero(tmp_path):
+    """빈 DB 의 '0건'을 진짜 답으로 읽지 않게 한다.
+
+    개발 PC 에는 배합 기록 0건짜리 data/irms.db 가 있어, --db 를 빼면 오류 없이
+    0건이라고 답한다. 어느 DB 를 읽었는지와 기록 유무를 함께 밝힌다(2026-08-10).
+    """
+    empty = tmp_path / "irms.db"
+    conn = sqlite3.connect(empty)
+    conn.executescript(
+        "CREATE TABLE blend_records (id INTEGER PRIMARY KEY, product_lot TEXT,"
+        " product_name TEXT, worker TEXT, work_date TEXT, total_amount REAL,"
+        " status TEXT DEFAULT 'completed', manual_entry INTEGER DEFAULT 0,"
+        " rescale_count INTEGER DEFAULT 0, oversize_total INTEGER DEFAULT 0,"
+        " is_bulk_regenerated INTEGER DEFAULT 0);"
+        "CREATE TABLE blend_details (id INTEGER PRIMARY KEY, blend_record_id INTEGER,"
+        " material_name TEXT, actual_amount REAL, theory_amount REAL, loss_comp_g REAL DEFAULT 0);"
+    )
+    conn.commit()
+    conn.close()
+
+    proc = subprocess.run(
+        [sys.executable, str(TOOL), "summary", "--db", str(empty)],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "[DB]" in proc.stdout            # 어느 파일을 읽었는지
+    assert "배합 기록이 없습니다" in proc.stdout
+
+    body = json.loads(subprocess.run(
+        [sys.executable, str(TOOL), "summary", "--db", str(empty), "--json"],
+        capture_output=True, text=True, encoding="utf-8",
+    ).stdout)
+    assert body["database_has_records"] is False
+
+
+def test_populated_database_reports_records_present(tmp_path):
+    body = _run(tmp_path, "summary")
+    assert body["database_has_records"] is True
