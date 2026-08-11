@@ -14,6 +14,8 @@ ERP 품목코드 도입(item-code P1~P6) 이후 운영자가 코드를 확인·�
     GET  /item-codes/materials         자재 목록(코드 지정 화면용)
     PUT  /materials/{material_id}/code 자재 코드 지정/해제
     PUT  /recipes/{recipe_id}/product-code  반제품 코드 지정/해제(체인 전체)
+    GET/POST    /materials/{material_id}/aliases            자재 동의어 목록·등록
+    DELETE      /materials/{material_id}/aliases/{alias_id} 자재 동의어 해제
 
 recipe_manager_routes.py 의 권한·audit 패턴을 그대로 따른다.
 `from __future__ import annotations` 사용 금지(프로젝트 제약).
@@ -26,7 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
-from ..db import get_connection, utc_now_text, write_audit_log
+from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 
 # 품목코드 형식 — 자재·반제품 모두 영문 1~2자 접두 + 영숫자(사용자 확인 2026-07-21).
 #  · 자재(materials.code): 본래 영문 2자(AC0101) 였으나, 반제품(PB/B0020 등)이 자재로
@@ -310,6 +312,19 @@ def create_item_code_router() -> APIRouter:
                     params,
                 ).fetchall()
 
+            # 자재별 동의어 수 — 화면 배지용(A6). material_aliases 가 없는 구버전/테스트
+            # DB 는 빈 맵 폴백이라 목록 자체는 계속 뜬다.
+            try:
+                alias_counts = {
+                    int(r["material_id"]): int(r["n"])
+                    for r in connection.execute(
+                        "SELECT material_id, COUNT(*) AS n FROM material_aliases "
+                        "GROUP BY material_id"
+                    ).fetchall()
+                }
+            except sqlite3.OperationalError:
+                alias_counts = {}
+
         return {
             "items": [
                 {
@@ -320,6 +335,7 @@ def create_item_code_router() -> APIRouter:
                     "is_active": r["is_active"],
                     # 투입 로스 보정(자재 마스터 기본값, 3라운드) — 컬럼 없으면 0.
                     "loss_comp_g": float(r["loss_comp_g"]) if "loss_comp_g" in r.keys() and r["loss_comp_g"] is not None else 0.0,
+                    "alias_count": alias_counts.get(int(r["id"]), 0),
                 }
                 for r in rows
             ]
@@ -764,5 +780,172 @@ def create_item_code_router() -> APIRouter:
             connection.commit()
 
         return {"status": "ok", "deleted": material_row["name"]}
+
+    # ------------------------------------------------------------------
+    # A6. 자재 동의어(별칭) — 같은 물질이 기록에 다른 이름으로 남은 경우를 잇는다.
+    # ------------------------------------------------------------------
+    # 배경: 품목코드는 자재 1행이 배타 소유한다(A3 의 409/force 규칙). 그래서 같은
+    # 물질을 두 이름으로 등록해 두면 양쪽에 같은 코드를 줄 수 없다. 실제로 배합 기록의
+    # material_name 이 마스터명이 아닌 이름으로 남는 일이 있고(예: PMA 를 풀네임
+    # 'Propylene glycol monomethyl etheracetate' 로 기록), 그런 행은 자재 사용량 API 가
+    # 품목코드 없이 내보내 상위 재고 대시보드가 조용히 버린다.
+    # 해결: 자재를 합치거나 코드를 옮기지 않고, 그 이름을 자재의 '동의어'로 등록해
+    # 품목코드 해석(blend_service._alias_code_map)이 같은 코드로 잇게 한다. 기록의
+    # 텍스트는 그대로 두므로 과거 기록도 읽는 시점에 소급 반영된다.
+
+    _ALIAS_MAX_LEN = 120
+
+    def _validate_alias(raw: Any) -> str:
+        """요청 본문의 alias_name 을 정규화·검증. 실패 시 400.
+
+        저장은 사용자가 입력한 원문 그대로(대소문자·공백 보존) 한다 — 화면에 보이는
+        이름이 기록의 이름과 같아야 운영자가 대조할 수 있다. 매칭은 저장값이 아니라
+        normalize_token 으로 하므로 원문 보존이 해석을 방해하지 않는다.
+        """
+        text = str(raw or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="동의어를 입력하세요.")
+        if len(text) > _ALIAS_MAX_LEN:
+            raise HTTPException(
+                status_code=400, detail=f"동의어는 {_ALIAS_MAX_LEN}자 이내여야 합니다."
+            )
+        # 기호만 남는 입력(예: '---')은 normalize_token 이 빈 문자열이 되어 어떤 기록과도
+        # 매칭될 수 없다 — 등록해 봐야 무의미하므로 입력 단계에서 막는다.
+        if not normalize_token(text):
+            raise HTTPException(
+                status_code=400, detail="영문·숫자·한글이 포함된 이름이어야 합니다."
+            )
+        return text
+
+    @router.get("/materials/{material_id}/aliases")
+    def list_material_aliases(
+        material_id: int,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+            rows = connection.execute(
+                "SELECT id, alias_name FROM material_aliases "
+                "WHERE material_id = ? ORDER BY alias_name",
+                (material_id,),
+            ).fetchall()
+        return {
+            "material": {
+                "id": material_row["id"],
+                "name": material_row["name"],
+                "code": material_row["code"],
+            },
+            "items": [{"id": r["id"], "alias_name": r["alias_name"]} for r in rows],
+        }
+
+    @router.post("/materials/{material_id}/aliases")
+    def add_material_alias(
+        material_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        alias_name = _validate_alias(body.get("alias_name"))
+        key = normalize_token(alias_name)
+
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+
+            # 자기 이름과 같은 동의어는 무의미(이미 자재명으로 해석된다).
+            if normalize_token(material_row["name"] or "") == key:
+                raise HTTPException(
+                    status_code=400, detail="자재명과 같은 이름은 동의어가 될 수 없습니다."
+                )
+
+            # 다른 자재의 '이름'과 겹치면 거부. 그 이름은 이미 그 자재로 해석되므로
+            # (해석 2순위 materials.code) 동의어로 가로채면 실적이 엉뚱한 코드로 간다.
+            # 비교는 normalize_token 기준 — 해석기와 같은 정규화라야 실제 충돌을 잡는다.
+            for other in connection.execute(
+                "SELECT id, name FROM materials WHERE id != ?", (material_id,)
+            ).fetchall():
+                if normalize_token(other["name"] or "") == key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 자재 '{other['name']}' 의 이름입니다. 동의어로 쓸 수 없습니다.",
+                    )
+
+            # 이미 등록된 동의어인가 — 같은 자재면 중복, 다른 자재면 충돌.
+            for row in connection.execute(
+                "SELECT a.id, a.alias_name, a.material_id, m.name AS owner "
+                "FROM material_aliases a JOIN materials m ON m.id = a.material_id"
+            ).fetchall():
+                if normalize_token(row["alias_name"] or "") != key:
+                    continue
+                if int(row["material_id"]) == material_id:
+                    raise HTTPException(
+                        status_code=409, detail="이미 등록된 동의어입니다."
+                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"이미 자재 '{row['owner']}' 의 동의어입니다.",
+                )
+
+            try:
+                cursor = connection.execute(
+                    "INSERT INTO material_aliases (material_id, alias_name) VALUES (?, ?)",
+                    (material_id, alias_name),
+                )
+            except sqlite3.IntegrityError:  # alias_name UNIQUE — 위 검사와 경합한 동시 등록
+                raise HTTPException(status_code=409, detail="이미 등록된 동의어입니다.")
+            new_id = cursor.lastrowid
+
+            write_audit_log(
+                connection,
+                action="material_alias_added",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=material_row["name"],
+                details={"alias_name": alias_name, "code": material_row["code"]},
+            )
+            connection.commit()
+
+        return {"status": "ok", "id": new_id, "alias_name": alias_name}
+
+    @router.delete("/materials/{material_id}/aliases/{alias_id}")
+    def delete_material_alias(
+        material_id: int,
+        alias_id: int,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+            # material_id 를 조건에 함께 둔다 — 다른 자재의 동의어를 id 만으로 지우지 못하게.
+            alias_row = connection.execute(
+                "SELECT id, alias_name FROM material_aliases WHERE id = ? AND material_id = ?",
+                (alias_id, material_id),
+            ).fetchone()
+            if not alias_row:
+                raise HTTPException(status_code=404, detail="동의어를 찾을 수 없습니다.")
+
+            connection.execute("DELETE FROM material_aliases WHERE id = ?", (alias_id,))
+            write_audit_log(
+                connection,
+                action="material_alias_removed",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=material_row["name"],
+                details={"alias_name": alias_row["alias_name"], "code": material_row["code"]},
+            )
+            connection.commit()
+
+        return {"status": "ok", "deleted": alias_row["alias_name"]}
 
     return router

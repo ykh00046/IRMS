@@ -73,6 +73,38 @@ def _blend_details_has_loss_comp(connection: sqlite3.Connection) -> bool:
         return False
 
 
+def _has_materials_table(connection: sqlite3.Connection) -> bool:
+    """materials 테이블이 존재하고 code 컬럼까지 있는가. materials JOIN 집계의 폴백용.
+
+    material_usage_periods 의 LEFT JOIN materials m … m.code 집계는 materials 테이블이
+    없거나 code 컬럼이 없는 최소 스키마(일부 단위테스트)에서 깨지므로, 그런 DB 에서는
+    JOIN 을 빼고 기존 동작으로 폴백한다. _blend_details_has_loss_comp 과 같은 PRAGMA
+    방어 패턴 — materials.code 도입 이전 스키마까지 아우른다.
+    """
+    try:
+        exists = (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='materials'"
+            ).fetchone()
+            is not None
+        )
+        if not exists:
+            return False
+        cols = {row["name"] for row in connection.execute("PRAGMA table_info(materials)").fetchall()}
+        return "code" in cols
+    except sqlite3.OperationalError:
+        return False
+
+
+def _blend_details_has_material_id(connection: sqlite3.Connection) -> bool:
+    """blend_details 테이블에 material_id 컬럼이 있는가. 구버전/단위테스트 스키마 폴백용."""
+    try:
+        cols = {row["name"] for row in connection.execute("PRAGMA table_info(blend_details)").fetchall()}
+        return "material_id" in cols
+    except sqlite3.OperationalError:
+        return False
+
+
 # ── 비율/이론량 환산 ────────────────────────────────────────────
 def compute_ratios(weights: list[float]) -> list[float]:
     """절대중량 리스트 → 비율(%) 리스트. 합이 0이면 모두 0."""
@@ -323,6 +355,42 @@ def _material_code_map(connection: sqlite3.Connection) -> dict[str, str]:
     }
 
 
+def _alias_code_map(connection: sqlite3.Connection) -> dict[str, str]:
+    """normalize_token(별칭) → materials.code(ERP 품목코드) 매핑.
+
+    "Propylene glycol monomethyl etheracetate"(=PMA) 처럼 자재명은 마스터명이
+    아니라 별칭(alias_name)으로만 기록에 남는 경우를 잡는다. 자재명 키로
+    materials.code 를 찾는 1순위(_material_code_map)가 놓치는 동의어 경로.
+
+    키는 normalize_token(별칭) — 기록의 material_name 이 대소문자/공백만 달라도
+    매칭되도록 _material_code_map 과 같은 정규화를 쓴다. 값은 그 별칭이 가리키는
+    자재의 materials.code. code 가 NULL/빈 문자열인 자재는 제외(매칭 키가 될
+    값이 없으므로). sqlite3.OperationalError(구버전/테스트 DB)는 빈 dict 폴백
+    — _material_code_map 과 동일 방어 패턴.
+    """
+    try:
+        rows = connection.execute(
+            "SELECT a.alias_name AS alias, m.code AS code "
+            "FROM material_aliases a JOIN materials m ON m.id = a.material_id "
+            "WHERE m.code IS NOT NULL AND m.code <> ''"
+        ).fetchall()
+    except sqlite3.OperationalError:  # material_aliases/materials.code 없는 구버전/테스트 DB
+        return {}
+    mapping: dict[str, str] = {}
+    for r in rows:
+        alias = r["alias"] or ""
+        code = (r["code"] or "").strip()
+        if not alias or not code:
+            continue
+        key = normalize_token(alias)
+        if not key:
+            continue
+        # 같은 정규화 키에 여러 자재가 묶이면 임의 한 쪽이 남는다(운영에서는 희귀).
+        # 첫 값을 유지해 해석 결과가 안정되게 한다.
+        mapping.setdefault(key, code)
+    return mapping
+
+
 def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
     """자재명 → RM 별칭(레거시 ERP 코드) 매핑.
 
@@ -360,35 +428,84 @@ def _resolve_erp_code(
     code: str,
     alias_map: dict[str, str],
     material_code_map: dict[str, str] | None = None,
+    *,
+    fk_code: str = "",
+    alias_code_map: dict[str, str] | None = None,
 ) -> str:
-    """ERP 품목코드 결정. 우선순위(P4):
-    materials.code > RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명
-    > ERP 형태 저장 코드 > 별칭(비RM).
+    """ERP 품목코드 결정. 3단 경로 우선순위(2026-08-11 확장):
+    1) fk_code(blend_details.material_id → materials.code) — 가장 확실한 직결.
+    2) materials.code(자재명 키, _material_code_map).
+    3) alias_code_map(normalize_token(자재명) → 별칭이 가리키는 materials.code) —
+       PMA 같은 동의어가 마스터명이 아닌 별칭으로만 기록에 남은 경우.
+    그 다음은 기존 순서 그대로:
+    RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명 > ERP 형태 저장 코드 > 별칭(비RM).
 
     materials.code 가 도입되기 전 화면 '자재코드'는 materials.category(분류) 였고,
     이 인자 `code` 는 그 legacy 값을 받는다 — RM/ERP 형태인 경우에만 후보로 쓴다.
+
+    fk_code/alias_code_map 은 키워드 전용 인자로 기본값(빈값/None)을 둬, 기존
+    위치 인자 호출부가 새 인자 없이 불려도 동작이 깨지지 않게 한다.
     """
-    # 1) materials.code — 정식 ERP 품목코드(P4 최우선). 맵과 같은 정규화 키로 조회.
+    # 1) fk_code — blend_details.material_id FK 로 직결한 materials.code. 자재명이
+    #    마스터에 없는 이름(오타·별칭 기록)이어도 FK 가 살아 있으면 가장 먼저 믿는다.
+    if fk_code and fk_code.strip():
+        return fk_code.strip()
+    # 2) materials.code — 정식 ERP 품목코드(P4). 맵과 같은 정규화 키로 조회.
     if material_code_map is not None:
         mc = material_code_map.get(normalize_token(name or ""), "")
         if mc:
             return mc
-    # 2) RM 별칭
+    # 3) alias_code_map — 동의어 경로. material_name 이 material_aliases.alias_name
+    #    으로만 등록된 자재(예: PMA 긴 화학명)의 materials.code 를 잡는다.
+    if alias_code_map:
+        ac = alias_code_map.get(normalize_token(name or ""), "")
+        if ac:
+            return ac
+    # 4) RM 별칭
     alias = alias_map.get(name, "")
     if alias.upper().startswith("RM"):
         return alias
-    # 3) RM 형태의 저장 코드(category 등 legacy)
+    # 5) RM 형태의 저장 코드(category 등 legacy)
     if code.upper().startswith("RM"):
         return code
-    # 4) RM 형태의 자재명
+    # 6) RM 형태의 자재명
     if name.upper().startswith("RM"):
         return name
-    # 5) ERP 품목코드 형태의 저장 코드 — materials.code 미등록이어도 상세 화면에서
+    # 7) ERP 품목코드 형태의 저장 코드 — materials.code 미등록이어도 상세 화면에서
     #    정식 코드(AC0060 등)를 직접 입력한 자재는 그 코드로 매칭한다.
     if _ERP_CODE_RE.fullmatch((code or "").strip()):
         return (code or "").strip()
-    # 6) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
+    # 8) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
     return alias
+
+
+def _summarize_unmapped(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """erp_code 가 빈 항목을 집계해 표면화용 필드로 만든다.
+
+    상위 재고 대시보드는 erp_code 로 재고와 매칭하므로 코드 없는 행을 쓸 수 없다.
+    그 사실을 응답에 실어 소비자·운영자가 '얼마나 버려지는지' 알 수 있게 한다
+    (조용한 누락 금지 — truncated 플래그와 같은 취지).
+
+    반환 키:
+        unmapped_count     — 코드 없는 자재명 수(같은 이름이 여러 행이면 합산해 1건)
+        unmapped_weight    — 그 합계 실사용량(g)
+        unmapped_materials — [{material_name, total_actual}] 무게 내림차순(최대 50건)
+    """
+    totals: dict[str, float] = {}
+    for item in items:
+        if item.get("erp_code"):
+            continue
+        name = item.get("material_name") or ""
+        totals[name] = totals.get(name, 0.0) + float(item.get("total_actual") or 0.0)
+    ordered = sorted(totals.items(), key=lambda kv: -kv[1])
+    return {
+        "unmapped_count": len(ordered),
+        "unmapped_weight": round(sum(totals.values()), 3),
+        "unmapped_materials": [
+            {"material_name": name, "total_actual": round(weight, 3)}
+            for name, weight in ordered[:50]
+        ],
+    }
 
 
 def material_usage_periods(
@@ -414,6 +531,17 @@ def material_usage_periods(
     # 실컬럼으로 해석해 by_product=False 에서도 제품별로 쪼개진다 — 조건부 구성.
     product_select = "br.product_name AS product_name," if by_product else ""
     product_group = ", br.product_name" if by_product else ""
+    # materials 테이블이 있을 때만 LEFT JOIN + fk_code 집계를 붙인다. materials 가
+    # 없는 최소 스키마(일부 단위테스트)에서는 JOIN 이 깨지므로 기존 동작으로 폴백.
+    # fk_code 컬럼은 SELECT 에서 참조되므로 materials 가 없을 땐 NULL AS fk_code 로
+    # 채워 해석 사슬(_resolve_erp_code)이 자연스럽게 다음 우선순위로 넘어가게 한다.
+    has_materials = _has_materials_table(connection)
+    materials_join = "LEFT JOIN materials m ON m.id = bd.material_id" if has_materials else ""
+    fk_code_expr = (
+        "MAX(CASE WHEN m.code IS NOT NULL AND m.code != '' THEN m.code END) AS fk_code"
+        if has_materials
+        else "NULL AS fk_code"
+    )
     rows = connection.execute(
         f"""
         SELECT {period_expr} AS period,
@@ -422,9 +550,11 @@ def material_usage_periods(
                bd.material_name AS material_name,
                COALESCE(SUM(bd.actual_amount), 0) AS total_actual,
                COALESCE(SUM(bd.theory_amount), 0) AS total_theory,
-               COUNT(DISTINCT bd.blend_record_id) AS batch_count
+               COUNT(DISTINCT bd.blend_record_id) AS batch_count,
+               {fk_code_expr}
         FROM blend_details bd
         JOIN blend_records br ON br.id = bd.blend_record_id
+        {materials_join}
         WHERE br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0
           AND br.work_date >= ? AND br.work_date <= ?
         GROUP BY {period_expr}{product_group}, bd.material_code, bd.material_name
@@ -434,12 +564,14 @@ def material_usage_periods(
     ).fetchall()
     alias_map = _erp_code_map(connection)
     material_code_map = _material_code_map(connection)
+    alias_code_map = _alias_code_map(connection)
     items = [
         {
             "period": r["period"],
             **({"product_name": r["product_name"]} if by_product else {}),
             "erp_code": _resolve_erp_code(
-                r["material_name"], r["material_code"], alias_map, material_code_map
+                r["material_name"], r["material_code"], alias_map, material_code_map,
+                fk_code=r["fk_code"] or "", alias_code_map=alias_code_map,
             ),
             "material_code": r["material_code"],
             "material_name": r["material_name"],
@@ -468,6 +600,20 @@ def material_usage_periods(
             total_items, _MATERIAL_USAGE_MAX_ITEMS, start_date, end_date, group, by_product,
         )
         items = items[:_MATERIAL_USAGE_MAX_ITEMS]
+    # 품목코드가 붙지 않은 행을 표면화한다(조용한 누락 금지). 소비자(상위 재고 대시보드)는
+    # erp_code 로 매칭하므로 코드 없는 행을 버릴 수밖에 없는데, 지금까지는 얼마나 버려지는지
+    # 알 방법이 없었다 — 응답이 성공이고 items 도 왔으니 정상으로 보였다. 실제로 한 자재의
+    # 절반이 누락돼 과재고로 오판된 사례가 있었다(2026-08-11).
+    # 해소 방법은 품목코드 탭에서 그 이름을 자재의 '동의어'로 등록하는 것이다.
+    unmapped = _summarize_unmapped(items)
+    if unmapped["unmapped_count"]:
+        logger.warning(
+            "material_usage_periods unmapped: %d개 자재명이 품목코드 없이 나갑니다 "
+            "(%.1f g / 전체 %.1f g, start=%s end=%s) — %s",
+            unmapped["unmapped_count"], unmapped["unmapped_weight"], total_weight,
+            start_date, end_date,
+            ", ".join(m["material_name"] for m in unmapped["unmapped_materials"][:10]),
+        )
     return {
         "start_date": start_date,
         "end_date": end_date,
@@ -478,6 +624,7 @@ def material_usage_periods(
         "items": items,
         "truncated": truncated,
         "total_item_count": total_items,
+        **unmapped,
     }
 
 
@@ -1050,10 +1197,15 @@ def batch_details(
         params.append(product)
     wsql = " AND ".join(where)
     effective_limit = max(1, min(int(limit), _BATCH_DETAILS_MAX_ROWS))
+    # material_id 컬럼이 없는 구버전/최소 스키마(일부 단위테스트)에서는 SELECT 에서
+    # 빼고 NULL 로 채운다 — material_usage_details 의 fk_code 결합은 이 값이 None 일
+    # 때 자연스럽게 다음 우선순위(materials.code 맵/별칭)로 넘어간다.
+    has_material_id = _blend_details_has_material_id(connection)
+    material_id_expr = "bd.material_id" if has_material_id else "NULL AS material_id"
     rows = connection.execute(
         f"""
         SELECT br.id AS record_id, br.work_date, br.product_lot, br.product_name, br.worker,
-               bd.material_code, bd.material_name, bd.material_lot,
+               {material_id_expr}, bd.material_code, bd.material_name, bd.material_lot,
                bd.ratio, bd.theory_amount, bd.actual_amount
         FROM blend_details bd
         JOIN blend_records br ON br.id = bd.blend_record_id
@@ -1085,6 +1237,10 @@ def batch_details(
                 "product_lot": r["product_lot"],
                 "product_name": r["product_name"],
                 "worker": r["worker"],
+                # material_id(FK) — 상세 화면 소비자에는 필드 추가일 뿐(무해).
+                # 자재 사용량 상세(material_usage_details)가 materials.code 를 fk_code 로
+                # 결합하는 데 쓴다.
+                "material_id": int(r["material_id"]) if r["material_id"] is not None else None,
                 "material_code": r["material_code"],
                 "material_name": r["material_name"],
                 "material_lot": r["material_lot"],
@@ -1120,11 +1276,43 @@ def material_usage_details(
     result = batch_details(connection, start_date, end_date, None, limit=limit)
     alias_map = _erp_code_map(connection)
     material_code_map = _material_code_map(connection)
+    alias_code_map = _alias_code_map(connection)
+    # material_id → materials.code 맵 — 행마다 DB 를 치르지 않고 fk_code 를 뽑기 위해
+    # 한 번 만들어 쓴다. 구버전/테스트 DB(materials.code 없음)는 빈 맵 폴백.
+    try:
+        code_rows = connection.execute(
+            "SELECT id, code FROM materials WHERE code IS NOT NULL AND code <> ''"
+        ).fetchall()
+        id_to_code: dict[int, str] = {
+            int(r["id"]): (r["code"] or "").strip() for r in code_rows
+        }
+    except sqlite3.OperationalError:  # materials.code 컬럼이 없는 구버전/테스트 DB
+        id_to_code = {}
     for item in result["items"]:
+        mid = item.get("material_id")
+        fk_code = id_to_code.get(int(mid), "") if mid is not None else ""
         item["erp_code"] = _resolve_erp_code(
-            item["material_name"], item["material_code"] or "", alias_map, material_code_map
+            item["material_name"], item["material_code"] or "", alias_map, material_code_map,
+            fk_code=fk_code, alias_code_map=alias_code_map,
         )
     result["unit"] = "g"
+    # 집계 API 와 같은 표면화. 상세는 행 단위라 같은 자재명이 여러 행으로 오므로
+    # _summarize_unmapped 가 이름 기준으로 합산한다(actual_amount 를 total_actual 로 맞춰 전달).
+    unmapped = _summarize_unmapped(
+        [
+            {"erp_code": i["erp_code"], "material_name": i["material_name"],
+             "total_actual": i.get("actual_amount") or 0.0}
+            for i in result["items"]
+        ]
+    )
+    if unmapped["unmapped_count"]:
+        logger.warning(
+            "material_usage_details unmapped: %d개 자재명이 품목코드 없이 나갑니다 "
+            "(%.1f g, start=%s end=%s) — %s",
+            unmapped["unmapped_count"], unmapped["unmapped_weight"], start_date, end_date,
+            ", ".join(m["material_name"] for m in unmapped["unmapped_materials"][:10]),
+        )
+    result.update(unmapped)
     return result
 
 

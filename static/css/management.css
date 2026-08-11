@@ -880,6 +880,31 @@
 .losscomp-cell .mat-losscomp-input { width: 5rem; display: inline-block; }
 .losscomp-cell .mat-losscomp-save { margin-left: 0.3rem; }
 
+/* 품목코드 탭 — 자재 동의어(A6, 2026-08-11). 자재 행 아래 확장 행으로 펼친다.
+   같은 원재료가 기록에 다른 이름으로 남았을 때 그 이름을 자재에 잇는 편집 영역. */
+.alias-cell { white-space: nowrap; }
+.alias-editor { padding: 0.6rem 0.2rem; }
+.alias-editor .panel-subtitle { margin: 0 0 0.5rem; }
+/* 입력란은 읽기 좋은 폭에서 멈춘다 — filter-bar 가 flex 라 두면 표 전체 폭까지 늘어난다. */
+.alias-editor .alias-new-input { min-width: 18rem; max-width: 30rem; }
+/* .filter-bar 기본값은 space-between 이라 [추가]·[닫기] 가 표 양끝으로 흩어진다.
+   이 편집기는 '입력 → 추가' 한 줄 흐름이므로 왼쪽으로 모은다. */
+.alias-editor .filter-bar { justify-content: flex-start; gap: 0.5rem; }
+.alias-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.alias-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border, #d9dee5);
+  border-radius: var(--radius-sm, 4px);
+}
+
 /* ── 버전 비교 탭 재설계(2026-08-06) — 모달 없는 한 화면 ──
    좌: 버전 타임라인(고정폭 약 18rem) + 우: 비교표 가변. ≤900px 세로 스택. */
 .vc-layout {

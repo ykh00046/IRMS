@@ -60,7 +60,7 @@
         const items = data.items || [];
         if (!items.length) {
           dom.codesBody.innerHTML =
-            '<tr><td colspan="5"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
+            '<tr><td colspan="6"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
           return;
         }
         dom.codesBody.innerHTML = items
@@ -82,11 +82,20 @@
             const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
             const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
               + `<button class="btn btn-sm mat-losscomp-save" data-id="${m.id}" type="button">저장</button>`;
+            // 동의어(A6) — 개수를 배지처럼 버튼 라벨에 담아, 눌러야 목록이 열리게 한다.
+            // 표를 넓히지 않으려고 목록은 아래 확장 행에서 보여준다.
+            const aliasCount = Number(m.alias_count) || 0;
+            const aliasLabel = aliasCount ? `동의어 ${aliasCount}` : "동의어";
+            const aliasHtml =
+              `<button class="btn btn-sm alias-open-btn" data-id="${m.id}" type="button"`
+              + ` title="같은 원재료가 기록에 다른 이름으로 남았을 때 이 자재에 잇습니다">`
+              + `${aliasLabel}</button>`;
             return `
               <tr class="codes-row" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td>${IRMS.escapeHtml(m.name)}</td>
                 <td class="code-cell">${codeHtml}</td>
                 <td>${m.category ? IRMS.escapeHtml(m.category) : '<span class="muted">-</span>'}</td>
+                <td class="alias-cell">${aliasHtml}</td>
                 <td class="losscomp-cell">${lossCompHtml}</td>
                 <td class="action-cell">${actionHtml}</td>
               </tr>`;
@@ -310,6 +319,140 @@
           }
         });
       });
+      // 동의어 열기/닫기(A6) — 같은 행을 다시 누르면 닫는다(토글).
+      dom.codesBody.querySelectorAll(".alias-open-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const row = btn.closest(".codes-row");
+          if (row) toggleAliasEditor(row);
+        });
+      });
+    }
+
+    // ── 동의어(A6) ─────────────────────────────────────────────────────────
+    // 자재 행 바로 아래에 확장 행을 끼워 목록·추가·삭제를 처리한다. 모달을 쓰지 않는
+    // 이유는 이 패널의 다른 편집(코드·로스 보정)이 모두 인라인이라 흐름을 맞추기 위함.
+    // 한 번에 하나만 열린다 — 여러 행을 펼쳐 두면 어느 자재를 편집 중인지 흐려진다.
+
+    function closeAliasEditor() {
+      const open = dom.codesBody.querySelector(".alias-editor-row");
+      if (open) open.remove();
+    }
+
+    async function toggleAliasEditor(row) {
+      const id = row.getAttribute("data-id");
+      const next = row.nextElementSibling;
+      // 이미 이 행의 편집기가 열려 있으면 닫기만 한다(토글).
+      if (next && next.classList.contains("alias-editor-row") && next.getAttribute("data-id") === id) {
+        next.remove();
+        return;
+      }
+      closeAliasEditor();
+      const name = row.getAttribute("data-name") || "";
+      const tr = document.createElement("tr");
+      tr.className = "alias-editor-row";
+      tr.setAttribute("data-id", id);
+      tr.innerHTML =
+        `<td colspan="6"><div class="alias-editor">`
+        + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 동의어 — 배합 기록에 이 이름으로 남은 실적이 이 자재의 품목코드로 집계됩니다.</p>`
+        + `<div class="filter-bar">`
+        + `<input class="input alias-new-input" placeholder="기록에 남은 다른 이름" autocomplete="off" />`
+        + `<button class="btn accent alias-add-btn" type="button">추가</button>`
+        + `<button class="btn alias-close-btn" type="button">닫기</button>`
+        + `</div>`
+        + `<div class="alias-list"><span class="muted">불러오는 중…</span></div>`
+        + `</div></td>`;
+      row.parentNode.insertBefore(tr, row.nextSibling);
+
+      tr.querySelector(".alias-close-btn").addEventListener("click", closeAliasEditor);
+      const input = tr.querySelector(".alias-new-input");
+      const addBtn = tr.querySelector(".alias-add-btn");
+      addBtn.addEventListener("click", () => addAlias(id, input));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addAlias(id, input);
+        }
+      });
+      input.focus();
+      await loadAliases(id);
+    }
+
+    async function loadAliases(id) {
+      const box = dom.codesBody.querySelector(
+        `.alias-editor-row[data-id="${id}"] .alias-list`,
+      );
+      if (!box) return;
+      try {
+        const data = await IRMS._core.request(`/materials/${id}/aliases`);
+        const items = data.items || [];
+        if (!items.length) {
+          box.innerHTML = '<span class="muted">등록된 동의어가 없습니다.</span>';
+          return;
+        }
+        box.innerHTML = items
+          .map(
+            (a) =>
+              `<div class="alias-item"><span>${IRMS.escapeHtml(a.alias_name)}</span>`
+              + `<button class="btn btn-sm danger alias-del-btn" data-alias-id="${a.id}" type="button">해제</button></div>`,
+          )
+          .join("");
+        box.querySelectorAll(".alias-del-btn").forEach((b) => {
+          b.addEventListener("click", () =>
+            removeAlias(id, b.getAttribute("data-alias-id")),
+          );
+        });
+      } catch (err) {
+        box.innerHTML = `<span class="muted">목록 조회 실패: ${IRMS.escapeHtml(err.message)}</span>`;
+      }
+    }
+
+    async function addAlias(id, input) {
+      const value = String(input.value || "").trim();
+      if (!value) {
+        IRMS.notify("동의어를 입력하세요.", "error");
+        input.focus();
+        return;
+      }
+      try {
+        const resp = await fetch(`/api/materials/${id}/aliases`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({ alias_name: value }),
+        });
+        if (!resp.ok) throw new Error(await detailOf(resp));
+        input.value = "";
+        IRMS.notify("동의어를 등록했습니다.", "success");
+        await loadAliases(id);
+        await refreshKeepingAliasEditor(id);
+      } catch (err) {
+        IRMS.notify(`동의어 등록 실패: ${err.message}`, "error");
+      }
+    }
+
+    async function removeAlias(id, aliasId) {
+      try {
+        const resp = await fetch(`/api/materials/${id}/aliases/${aliasId}`, {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: csrfHeader(),
+        });
+        if (!resp.ok) throw new Error(await detailOf(resp));
+        IRMS.notify("동의어를 해제했습니다.", "success");
+        await loadAliases(id);
+        await refreshKeepingAliasEditor(id);
+      } catch (err) {
+        IRMS.notify(`동의어 해제 실패: ${err.message}`, "error");
+      }
+    }
+
+    // 목록을 새로 그리면 확장 행이 사라진다(배지 개수는 갱신돼야 한다) — 다시 펼쳐
+    // 편집 흐름이 끊기지 않게 한다.
+    async function refreshKeepingAliasEditor(id) {
+      await refresh();
+      const row = dom.codesBody.querySelector(`.codes-row[data-id="${id}"]`);
+      if (row) await toggleAliasEditor(row);
     }
 
     // 자재 마스터 투입 로스 보정 저장 — PUT /api/materials/{id}/loss-comp.
