@@ -239,13 +239,20 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def insight_page(request: Request) -> Response:
         return _app_page_response(request, templates, "insight.html")
 
-    @router.get("/material-lots", response_class=HTMLResponse)
-    def material_lots_page(request: Request) -> Response:
+    @router.get("/materials", response_class=HTMLResponse)
+    def materials_page(request: Request) -> Response:
+        # 자재 관리 — 품목코드(책임자 전용)와 자재 LOT 를 한 화면에 묶는다.
         # 로그인 없이 누구나 진입(사내 공용 단말 — 점도·배합 화면과 동일 정책).
-        # ERP 원재료 LOT 목록을 조회하고, 책임자는 수동 LOT 를 추가·삭제한다.
-        response = _app_page_response(request, templates, "material_lots.html")
+        # 품목코드 패널 마크업 자체가 can_manage 로 갈리므로 담당자는 LOT 만 본다.
+        response = _app_page_response(request, templates, "materials.html")
         refresh_csrf_cookie(response)
         return response
+
+    @router.get("/material-lots")
+    def material_lots_page(request: Request) -> Response:
+        # 자재 LOT 은 '자재 관리'(/materials) 의 한 탭으로 흡수됐다. 옛 경로는 북마크·
+        # 대시보드 링크가 가리키고 있어 남겨 두고 리다이렉트한다(구 /weighing→/blend 전례).
+        return RedirectResponse(url="/materials", status_code=307)
 
     @router.get("/dashboard", response_class=HTMLResponse)
     def dashboard_page(request: Request) -> Response:

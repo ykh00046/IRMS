@@ -1,14 +1,80 @@
 {% extends "_base_app.html" %}
 
-{% block title %}자재 LOT{% endblock %}
+{#
+  자재 관리 — 원재료(자재) 도메인을 한 화면에 모은다.
+
+  종전에는 품목코드가 '레시피 관리'(/management)의 한 탭이었고 자재 LOT 은 별도
+  메뉴(/material-lots)여서, 같은 자재를 다루는 화면이 두 곳으로 흩어져 있었다.
+  레시피 관리는 반제품 도메인이므로 자재 편집이 거기 있을 이유가 없다.
+  이 화면이 그 둘을 흡수하고, /material-lots 는 여기로 리다이렉트한다.
+
+  CSS 는 기존 두 파일을 그대로 쓴다 — 탭·표·품목코드 규칙이 management.css 에,
+  LOT 규칙이 material_lots.css 에 있다. 자재용으로 쪼개는 정리는 규칙을 잘못
+  가려내면 화면이 깨지므로 별도 작업으로 미룬다.
+#}
+
+{% block title %}자재 관리{% endblock %}
 {% block eyebrow %}운영 관리{% endblock %}
-{% block heading %}자재 LOT{% endblock %}
+{% block heading %}품목코드{% endblock %}
 
 {% block styles %}
+    <link rel="stylesheet" href="/static/css/management.css?v=20260811a" />
     <link rel="stylesheet" href="/static/css/material_lots.css?v=20260808b" />
 {% endblock %}
 
 {% block content %}
+        <nav class="mgmt-tabs">
+          <button class="mgmt-tab active" data-tab="codes" type="button">품목코드</button>
+          <button class="mgmt-tab" data-tab="lots" type="button">자재 LOT</button>
+        </nav>
+
+        <!-- ── 품목코드 ── -->
+        <div class="tab-panel active" id="tab-codes">
+          {% if not can_manage %}
+          <section class="panel">
+            <p class="panel-notice">품목코드 지정·수정은 <strong>책임자</strong>만 할 수 있습니다. 오른쪽 위 [책임자 로그인] 후 이용하세요. 자재 LOT 조회는 로그인 없이 볼 수 있습니다.</p>
+          </section>
+          {% else %}
+          <section class="panel">
+            <h3 class="panel-title">품목코드 지정</h3>
+            <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 위에서 바로 지정하거나, 아래 표의 행에서 입력할 수 있습니다.</p>
+            <p class="panel-notice">빠른 지정: 위 입력칸에 자재명을 넣고 코드를 지정하세요. 목록에 없는 <strong>새 자재명</strong>을 입력하면 그 자재를 새로 등록합니다(코드는 비워도 됩니다). 이미 다른 자재가 쓰는 코드를 지정하면 확인 후 <strong>이 자재로 옮길 수 있습니다</strong>.</p>
+            <p class="panel-notice"><strong>동의어</strong>는 같은 원재료가 배합 기록에 다른 이름으로 남았을 때 그 이름을 이 자재에 잇는 기능입니다(예: PMA ← Propylene glycol monomethyl etheracetate). 등록하면 그 이름으로 남은 <strong>과거 기록까지</strong> 이 자재의 품목코드로 집계되어 재고 시스템에 전달됩니다. 품목코드를 옮기거나 자재를 합치지 않습니다.</p>
+            <!-- 빠른 지정 (맨 위) — 자재명 고르고 코드 입력 후 [지정]. 표를 내리지 않아도 된다. -->
+            <div class="filter-bar codes-quick-assign">
+              <input id="codes-quick-name" class="input" placeholder="자재명 입력/선택" list="codes-mat-datalist" autocomplete="off" />
+              <datalist id="codes-mat-datalist"></datalist>
+              <input id="codes-quick-code" class="input" placeholder="코드 (원재료 AC0101 · 반제품 B0082)" autocomplete="off" />
+              <button id="codes-quick-assign-btn" class="btn accent" type="button">지정</button>
+            </div>
+            <div class="filter-bar">
+              <input id="codes-search" class="input" placeholder="자재명 또는 코드" />
+              <label class="filter-label checkbox-label">
+                <input type="checkbox" id="codes-uncoded" /> 코드 없음만
+              </label>
+              <button id="codes-refresh-btn" class="btn" type="button">새로고침</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>자재명</th>
+                    <th>품목코드</th>
+                    <th>분류</th>
+                    <th>동의어</th>
+                    <th>로스 보정(g)</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="codes-body"></tbody>
+              </table>
+            </div>
+          </section>
+          {% endif %}
+        </div>
+
+        <!-- ── 자재 LOT ── -->
+        <div class="tab-panel" id="tab-lots">
         <section class="dashboard-cards">
           <div class="metric-card">
             <div class="metric-label">기준 파일</div>
@@ -104,9 +170,12 @@
             <button class="btn btn-sm" id="mlot-page-next" type="button">다음</button>
           </div>
         </section>
+        </div>
 
 {% endblock %}
 
 {% block scripts %}
+    <script src="/static/js/management/item-codes.js?v=20260811b"></script>
     <script src="/static/js/material_lots.js?v=20260808b"></script>
+    <script src="/static/js/materials.js?v=20260811a"></script>
 {% endblock %}

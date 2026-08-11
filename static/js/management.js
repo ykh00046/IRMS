@@ -37,10 +37,6 @@ document.addEventListener("DOMContentLoaded", () => {
     vcTimeline: document.getElementById("vc-timeline"),
     vcCompare: document.getElementById("vc-compare"),
     vcBackBtn: document.getElementById("vc-back-btn"),
-    codesSearch: document.getElementById("codes-search"),
-    codesUncoded: document.getElementById("codes-uncoded"),
-    codesRefreshBtn: document.getElementById("codes-refresh-btn"),
-    codesBody: document.getElementById("codes-body"),
   };
 
   // ── Tab navigation ──
@@ -48,7 +44,6 @@ document.addEventListener("DOMContentLoaded", () => {
     history: { eyebrow: "운영 관리", heading: "레시피 현황" },
     import: { eyebrow: "레시피 관리", heading: "레시피 등록·수정" },
     lookup: { eyebrow: "레시피 관리", heading: "버전 비교" },
-    codes: { eyebrow: "운영 관리", heading: "품목코드" },
   };
   const canManage = dom.shell && dom.shell.dataset.canManage === "1";
 
@@ -66,10 +61,6 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.classList.add("active");
       document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
       syncTopbarTitle(btn.dataset.tab);
-      // 품목코드 탭 진입 시 최초 로드(지연 초기화 — 매번 화면에 들를 때마다 최신화).
-      if (btn.dataset.tab === "codes" && ctx.itemCodes) {
-        ctx.itemCodes.refresh();
-      }
       // 현황 탭 진입 시 목록 최신화 — 등록·수정 탭에서 새 레시피를 등록한 뒤 현황으로
       // 돌아오면 목록이 낡아 새 레시피가 안 보이던 문제(탭 전환은 재조회하지 않았음).
       if (btn.dataset.tab === "history" && ctx.recipeHistory) {
@@ -159,13 +150,6 @@ document.addEventListener("DOMContentLoaded", () => {
   ctx.versionCompare = versionCompare;
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
   ctx.recipeHistory = recipeHistory;
-
-  // 품목코드 패널(item-code-admin §B2) — 자재 코드 지정/해제. init 으로 필터 이벤트 연결.
-  if (canManage) {
-    const itemCodes = IRMS.management.createItemCodesPanel(ctx);
-    ctx.itemCodes = itemCodes;
-    itemCodes.init();
-  }
 
   async function loadMaterials() {
     if (!canManage) return;

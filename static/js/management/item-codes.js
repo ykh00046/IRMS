@@ -44,12 +44,13 @@
       };
     }
 
-    // 정리 모드(code-edit-relocate §4): 기본 해제. 해제 상태에서는 행의 삭제 버튼을
-    // 표시하지 않는다(지정/수정/해제만). 체크 시 기존 삭제 버튼(인라인 예/아니오 확인
-    // 포함)이 표시되고 동작은 기존 그대로.
+    // 정리 모드(code-edit-relocate §4)의 잔재. 자재 관리 화면(/materials)이 생기면서
+    // 삭제·이름수정은 이 화면의 정식 기능이 되어 체크박스 뒤에 숨길 이유가 없어졌다.
+    // 체크박스가 없는 화면(=자재 관리)에서는 항상 노출한다. 남아 있는 화면이 있으면
+    // 종전대로 체크했을 때만 보인다.
     function cleanupMode() {
       const cb = document.getElementById("codes-cleanup");
-      return !!(cb && cb.checked);
+      return cb ? !!cb.checked : true;
     }
 
     async function refresh() {
@@ -77,7 +78,11 @@
             const deleteBtn = cleanupMode()
               ? `<button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`
               : "";
-            const actionHtml = `${codeActions}${deleteBtn}`;
+            // 자재명 수정 — 옛 이름은 서버가 동의어로 남기므로 과거 기록의 품목코드가 끊기지 않는다.
+            const renameBtn = cleanupMode()
+              ? `<button class="btn btn-sm material-rename-btn" data-id="${m.id}">이름</button>`
+              : "";
+            const actionHtml = `${codeActions}${renameBtn}${deleteBtn}`;
             // 투입 로스 보정(자재 마스터 기본값, 3라운드) — 인라인 입력+저장. 값이 있으면 표시.
             const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
             const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
@@ -319,6 +324,13 @@
           }
         });
       });
+      dom.codesBody.querySelectorAll(".material-rename-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const row = btn.closest(".codes-row");
+          if (row) renameMaterial(row);
+        });
+      });
       // 동의어 열기/닫기(A6) — 같은 행을 다시 누르면 닫는다(토글).
       dom.codesBody.querySelectorAll(".alias-open-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
@@ -327,6 +339,44 @@
           if (row) toggleAliasEditor(row);
         });
       });
+    }
+
+    // ── 자재명 수정(A4b) ───────────────────────────────────────────────────
+    // 배합 기록의 자재명은 기록 시점 문자열로 박제돼 있어, 이름만 바꾸면 과거 기록이
+    // 품목코드를 잃는다. 서버가 옛 이름을 동의어로 남겨 그 끊김을 막는다 —
+    // 사용자에게도 그 사실을 미리 알린 뒤 진행한다(모르고 바꾸면 사고가 조용히 난다).
+    async function renameMaterial(row) {
+      const id = row.getAttribute("data-id");
+      const oldName = row.getAttribute("data-name") || "";
+      const input = window.prompt(
+        `'${oldName}' 의 새 이름을 입력하세요.\n`
+          + "옛 이름은 동의어로 남아 과거 배합 기록의 품목코드가 유지됩니다.",
+        oldName,
+      );
+      if (input === null) return; // 취소
+      const newName = String(input).trim();
+      if (!newName || newName === oldName) return;
+      try {
+        const resp = await fetch(`/api/materials/${id}/name`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (!resp.ok) throw new Error(await detailOf(resp));
+        const result = await resp.json();
+        IRMS.notify(
+          result.alias_kept
+            ? `이름을 바꿨습니다. 옛 이름 '${result.alias_kept}' 은 동의어로 남았습니다.`
+            : "이름을 바꿨습니다.",
+          "success",
+        );
+        await refresh();
+        await loadMaterialIndex();
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
+      } catch (err) {
+        IRMS.notify(`이름 수정 실패: ${err.message}`, "error");
+      }
     }
 
     // ── 동의어(A6) ─────────────────────────────────────────────────────────

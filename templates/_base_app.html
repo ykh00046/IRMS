@@ -53,8 +53,8 @@
             <a href="/viscosity" class="side-link{{ ' active' if request.url.path == '/viscosity' else '' }}">
               <span class="side-ico side-ico-viscosity" aria-hidden="true"></span><span>점도 관리</span>
             </a>
-            <a href="/material-lots" class="side-link{{ ' active' if request.url.path == '/material-lots' else '' }}">
-              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>자재 LOT</span>
+            <a href="/materials" class="side-link{{ ' active' if request.url.path in ['/materials', '/material-lots'] else '' }}">
+              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>자재 관리</span>
             </a>
             <a href="/management" class="side-link{{ ' active' if request.url.path == '/management' else '' }}">
               <span class="side-ico side-ico-recipes" aria-hidden="true"></span><span>레시피 관리</span>

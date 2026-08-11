@@ -712,6 +712,117 @@ def create_item_code_router() -> APIRouter:
     # 409 로 거부 — 비활성화로 대체하지 않고 명시적으로 운영자에게 맡긴다.
     # 참조 0 이면 blend_details.material_id 를 NULL 로(기록의 이름·수치 보존),
     # material_aliases 는 FK ON DELETE CASCADE 로 자동 제거, materials 행 삭제.
+    # ------------------------------------------------------------------
+    # A4b. PUT /materials/{material_id}/name — 자재명 변경(옛 이름은 동의어로 보존)
+    # ------------------------------------------------------------------
+    # blend_details.material_name 은 기록 시점의 문자열로 박제된다. 그래서 자재명을
+    # 그냥 바꾸면 과거 기록은 옛 이름으로 남고, 품목코드 해석이 그 이름을 못 찾아
+    # 자재 사용량이 코드 없이 나간다 — 2026-08-11 에 고친 미매핑 사고와 같은 구조다.
+    # 그래서 이름 변경은 항상 옛 이름을 동의어로 남긴다(keep_alias=false 로만 생략).
+    # recipe_items 는 material_id FK 라 이름 변경의 영향을 받지 않는다.
+    @router.put("/materials/{material_id}/name")
+    def rename_material(
+        material_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        new_name = str(body.get("name") or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="자재명을 입력하세요.")
+        if len(new_name) > _ALIAS_MAX_LEN:
+            raise HTTPException(
+                status_code=400, detail=f"자재명은 {_ALIAS_MAX_LEN}자 이내여야 합니다."
+            )
+        if not normalize_token(new_name):
+            raise HTTPException(
+                status_code=400, detail="영문·숫자·한글이 포함된 이름이어야 합니다."
+            )
+        # 기본은 보존. 옛 이름이 오타여서 남길 가치가 없을 때만 화면에서 끈다.
+        keep_alias = body.get("keep_alias", True) is not False
+
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+            old_name = material_row["name"] or ""
+            if old_name == new_name:
+                return {"status": "ok", "name": new_name, "alias_kept": None}
+
+            # 자재명 중복 — 대소문자 무시(POST /materials 와 같은 규칙).
+            dup = connection.execute(
+                "SELECT id FROM materials WHERE lower(name) = lower(?) AND id != ? LIMIT 1",
+                (new_name, material_id),
+            ).fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail="이미 등록된 자재명입니다.")
+
+            # 새 이름이 다른 자재의 동의어면 거부 — 그대로 두면 같은 이름이 두 자재를
+            # 가리켜 해석이 갈린다.
+            new_key = normalize_token(new_name)
+            for row in connection.execute(
+                "SELECT a.alias_name, a.material_id, m.name AS owner "
+                "FROM material_aliases a JOIN materials m ON m.id = a.material_id"
+            ).fetchall():
+                if normalize_token(row["alias_name"] or "") != new_key:
+                    continue
+                if int(row["material_id"]) != material_id:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 자재 '{row['owner']}' 의 동의어입니다.",
+                    )
+
+            connection.execute(
+                "UPDATE materials SET name = ? WHERE id = ?", (new_name, material_id)
+            )
+
+            # 옛 이름을 동의어로 남긴다 — 과거 기록이 계속 이 자재의 코드로 집계되도록.
+            # 이미 같은 정규화 키의 동의어가 있으면(재변경 등) 새로 넣지 않는다.
+            alias_kept = None
+            if keep_alias:
+                old_key = normalize_token(old_name)
+                existing = {
+                    normalize_token(r["alias_name"] or "")
+                    for r in connection.execute(
+                        "SELECT alias_name FROM material_aliases"
+                    ).fetchall()
+                }
+                # 새 이름과 같은 키(대소문자만 바꾼 개명)면 동의어가 무의미하다.
+                if old_key and old_key != new_key and old_key not in existing:
+                    try:
+                        connection.execute(
+                            "INSERT INTO material_aliases (material_id, alias_name) "
+                            "VALUES (?, ?)",
+                            (material_id, old_name),
+                        )
+                        alias_kept = old_name
+                    except sqlite3.IntegrityError:  # alias_name UNIQUE 경합
+                        alias_kept = None
+
+            # 코드를 쥐고 있으면 manual 마스터 행의 이름도 새 자재명으로 맞춘다
+            # (set_material_code 의 force 이동과 같은 취지 — 옛 이름 고착 방지).
+            if material_row["code"]:
+                _refresh_manual_master_name(connection, material_row["code"], new_name)
+
+            write_audit_log(
+                connection,
+                action="material_renamed",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=new_name,
+                details={
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "alias_kept": alias_kept,
+                    "code": material_row["code"],
+                },
+            )
+            connection.commit()
+
+        return {"status": "ok", "name": new_name, "alias_kept": alias_kept}
+
     @router.delete("/materials/{material_id}")
     def delete_material(
         material_id: int,

@@ -13,7 +13,6 @@
         <nav class="mgmt-tabs">
           <button class="mgmt-tab active" data-tab="history" type="button">레시피 현황</button>
           <button class="mgmt-tab" data-tab="import" type="button" {% if not can_manage %}hidden{% endif %}>레시피 등록·수정</button>
-          <button class="mgmt-tab" data-tab="codes" type="button" {% if not can_manage %}hidden{% endif %}>품목코드</button>
         </nav>
 
         <!-- ── 레시피 등록 ── -->
@@ -266,48 +265,6 @@
           </section>
         </div>
 
-        <!-- ── 품목코드 ── -->
-        <div class="tab-panel" id="tab-codes" {% if not can_manage %}hidden{% endif %}>
-          <section class="panel">
-            <h3 class="panel-title">품목코드 지정</h3>
-            <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 위에서 바로 지정하거나, 아래 표의 행에서 입력할 수 있습니다.</p>
-            <p class="panel-notice">빠른 지정: 위 입력칸에 자재명을 넣고 코드를 지정하세요. 목록에 없는 <strong>새 자재명</strong>을 입력하면 그 자재를 새로 등록합니다(코드는 비워도 됩니다). 이미 다른 자재가 쓰는 코드를 지정하면 확인 후 <strong>이 자재로 옮길 수 있습니다</strong>.</p>
-            <p class="panel-notice"><strong>동의어</strong>는 같은 원재료가 배합 기록에 다른 이름으로 남았을 때 그 이름을 이 자재에 잇는 기능입니다(예: PMA ← Propylene glycol monomethyl etheracetate). 등록하면 그 이름으로 남은 <strong>과거 기록까지</strong> 이 자재의 품목코드로 집계되어 재고 시스템에 전달됩니다. 품목코드를 옮기거나 자재를 합치지 않습니다.</p>
-            <!-- 빠른 지정 (맨 위) — 자재명 고르고 코드 입력 후 [지정]. 표를 내리지 않아도 된다. -->
-            <div class="filter-bar codes-quick-assign">
-              <input id="codes-quick-name" class="input" placeholder="자재명 입력/선택" list="codes-mat-datalist" autocomplete="off" />
-              <datalist id="codes-mat-datalist"></datalist>
-              <input id="codes-quick-code" class="input" placeholder="코드 (원재료 AC0101 · 반제품 B0082)" autocomplete="off" />
-              <button id="codes-quick-assign-btn" class="btn accent" type="button">지정</button>
-            </div>
-            <div class="filter-bar">
-              <input id="codes-search" class="input" placeholder="자재명 또는 코드" />
-              <label class="filter-label checkbox-label">
-                <input type="checkbox" id="codes-uncoded" /> 코드 없음만
-              </label>
-              <label class="filter-label checkbox-label">
-                <input type="checkbox" id="codes-cleanup" /> 정리 모드(삭제 표시)
-              </label>
-              <button id="codes-refresh-btn" class="btn" type="button">새로고침</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>자재명</th>
-                    <th>품목코드</th>
-                    <th>분류</th>
-                    <th>동의어</th>
-                    <th>로스 보정(g)</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="codes-body"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-
         <!-- 버전 이력·비교 모달은 '버전 비교' 탭(#tab-lookup)이 한 화면으로 대체(2026-08-06). -->
 
 {% endblock %}
@@ -322,6 +279,5 @@
     <script src="/static/js/management/recipe-history.js?v=20260807a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260807b"></script>
     <script src="/static/js/management/version-compare.js?v=20260807d"></script>
-    <script src="/static/js/management/item-codes.js?v=20260811a"></script>
-    <script src="/static/js/management.js?v=20260807c"></script>
+    <script src="/static/js/management.js?v=20260811a"></script>
 {% endblock %}
