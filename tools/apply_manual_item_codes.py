@@ -83,18 +83,18 @@ def run(db_arg: str | None, apply: bool) -> None:
             "SELECT id, code, is_active FROM materials WHERE name = ?", (name,)
         ).fetchone()
         if row is None:
-            print(f"  없음   : {name} (운영 DB 에 해당 이름 자재 없음 — 건너뜀)")
+            print(f"  없음   : {name} (운영 DB 에 해당 이름 자재 없음 - 건너뜀)")
             missing += 1
             continue
         if row["code"]:
-            print(f"  보유   : {name} = {row['code']} (이미 코드 있음 — 건너뜀)")
+            print(f"  보유   : {name} = {row['code']} (이미 코드 있음 - 건너뜀)")
             skipped_has_code += 1
             continue
         dup = conn.execute(
             "SELECT name FROM materials WHERE code = ? AND id != ?", (code, row["id"])
         ).fetchone()
         if dup:
-            print(f"  충돌   : {name} → {code} 는 이미 '{dup['name']}' 에 부여됨 — 수동 확인 필요")
+            print(f"  충돌   : {name} → {code} 는 이미 '{dup['name']}' 에 부여됨 - 수동 확인 필요")
             conflict += 1
             continue
         print(f"  부여   : {name} → {code}")
@@ -110,7 +110,7 @@ def run(db_arg: str | None, apply: bool) -> None:
             continue  # 이미 지워졌거나 없음
         r = conn.execute("SELECT id FROM materials WHERE name = ?", (right,)).fetchone()
         if r is None:
-            print(f"  삭제불가: {wrong} (정본 '{right}' 이 DB 에 없음 — 수동 확인)")
+            print(f"  삭제불가: {wrong} (정본 '{right}' 이 DB 에 없음 - 수동 확인)")
             continue
         refs = conn.execute(
             "SELECT COUNT(*) FROM recipe_items WHERE material_id = ?", (w["id"],)
@@ -137,7 +137,7 @@ def run(db_arg: str | None, apply: bool) -> None:
         ).fetchone()[0]
         if refs:
             # 레시피가 아직 참조 중 — 지우면 레시피가 깨지므로 비활성화로 대체하고 보고
-            print(f"  삭제보류: {name} — 레시피 항목 {refs}건이 참조 중, 비활성화로 대체(해당 레시피 정리 후 재실행)")
+            print(f"  삭제보류: {name} - 레시피 항목 {refs}건이 참조 중, 비활성화로 대체(해당 레시피 정리 후 재실행)")
             if apply and row["is_active"]:
                 conn.execute("UPDATE materials SET is_active = 0 WHERE id = ?", (row["id"],))
             continue
@@ -165,7 +165,7 @@ def run(db_arg: str | None, apply: bool) -> None:
         conn.commit()
     print(f"[요약] 코드 부여 {assigned} · 이미 보유 {skipped_has_code} · 없음 {missing} "
           f"· 충돌 {conflict} · 삭제 {deleted} · 비활성화 {deactivated}"
-          + ("" if apply else "  [DRY-RUN — 변경 없음]"))
+          + ("" if apply else "  [DRY-RUN - 변경 없음]"))
     conn.close()
 
 

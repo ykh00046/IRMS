@@ -164,7 +164,7 @@ def main() -> int:
         print(f"  {b_name}(체인 뿌리 id={b_root}).revision_of ← {a_name}(현재판 id={a_tip})")
 
     if not args.apply:
-        print("\n미리보기 — --apply 로 실제 연결")
+        print("\n미리보기 - --apply 로 실제 연결")
         conn.close()
         return 0
 
@@ -195,7 +195,7 @@ def main() -> int:
     tip_row = conn.execute(
         "SELECT product_name FROM recipes WHERE id = ?", (final_tip,)
     ).fetchone()
-    print(f"\n연결 완료 — 가족의 현재판: {tip_row['product_name']} (id={final_tip})")
+    print(f"\n연결 완료 - 가족의 현재판: {tip_row['product_name']} (id={final_tip})")
     conn.close()
     return 0
 

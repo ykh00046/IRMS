@@ -871,20 +871,20 @@ def main(argv: list[str] | None = None) -> int:
     if not args.json and args.command != "catalog":
         empty = conn_had_no_records if args.command != "schema" else False
         if use_live:
-            print(f"[실시간] {origin} — 운영 서버의 지금 값")
+            print(f"[실시간] {origin} - 운영 서버의 지금 값")
         else:
             print(f"[스냅샷] {db_path}")
             if note:
                 print(f"  · {note}")
         if empty:
-            print("  ⚠ 이 DB 에는 배합 기록이 없습니다 — 조회 대상을 잘못 가리켰을 수 있습니다"
+            print("  [주의] 이 DB 에는 배합 기록이 없습니다 - 조회 대상을 잘못 가리켰을 수 있습니다"
                   " (--db 로 스냅샷 경로를 지정하세요).")
         for warning in WARNINGS:
-            print(f"  ⚠ {warning}")
+            print(f"  [주의] {warning}")
         print()
 
     if args.json:
-        # 봉투에 조건을 실어 준다 — 결과만 보면 어떤 질문의 답인지 알 수 없다.
+        # 봉투에 조건을 실어 준다 - 결과만 보면 어떤 질문의 답인지 알 수 없다.
         filters = {
             k: v for k, v in {
                 "from": args.from_date, "to": args.to_date, "product": args.product,

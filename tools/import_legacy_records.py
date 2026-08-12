@@ -252,12 +252,14 @@ def main() -> int:
 
     print(f"\n요약: 대상 {len(files)} · 이미 있음(건너뜀) {skipped}"
           f" · 파싱 {parsed} · 삽입 {inserted if args.apply else 0}"
-          f"{' (미리보기 — --apply 로 실제 삽입)' if not args.apply else ''}")
+          f"{' (미리보기 - --apply 로 실제 삽입)' if not args.apply else ''}")
 
     # 자재를 못 이은 이름은 반드시 이름째로 보고한다. 종전엔 이 단계 자체가 없어
     # 이관이 조용히 성공한 것처럼 보였고, 그 결과가 재고 대시보드의 71kg 누락이었다.
     if unresolved:
-        print(f"\n⚠ 자재 마스터에서 못 찾은 자재명 {len(unresolved)}종 —"
+        # 콘솔 코드페이지가 949 인 운영 PC 에서 '⚠'·'—' 는 UnicodeEncodeError 로
+        # 도구를 죽인다. 출력 문자열은 CP949 로 인코딩 가능한 것만 쓴다.
+        print(f"\n[주의] 자재 마스터에서 못 찾은 자재명 {len(unresolved)}종 -"
               " 이 이름으로 들어간 실적은 품목코드 없이 집계됩니다.")
         for name, n in sorted(unresolved.items(), key=lambda kv: -kv[1]):
             print(f"   {name}  ({n}행)")

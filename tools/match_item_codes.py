@@ -305,7 +305,7 @@ def print_report(mat: dict, rec: dict) -> None:
     for it in rec["category_conflict"]:
         cats = "/".join(it["current_categories"])
         print(f"  {it['name']}  →  {it['code']}  기존={cats} vs hint={it['hint']}  "
-              f"(덮지 않음 — 보고만)")
+              f"(덮지 않음 - 보고만)")
 
     print(f"\n[레시피 모호: {len(rec['ambiguous'])}건]")
     for it in rec["ambiguous"]:
@@ -406,7 +406,7 @@ def run(db_arg: str | None, apply: bool) -> dict:
             print(f"자재 code 부여: {applied['materials_code_set']}건")
             if applied["materials_code_skipped_dup"]:
                 print(f"자재 코드 중복 skip: {applied['materials_code_skipped_dup']}건"
-                      f"  (UNIQUE 위반 — 운영 데이터 정리 대상)")
+                      f"  (UNIQUE 위반 - 운영 데이터 정리 대상)")
                 for cf in applied["code_conflicts"]:
                     print(f"    {cf['name']}  →  {cf['code']}")
             print(f"레시피 product_code 부여: {applied['recipes_code_set']}건"

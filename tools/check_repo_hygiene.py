@@ -59,7 +59,7 @@ def main() -> int:
     for v in violations:
         print(f"HYGIENE FAIL: {v}")
     if violations:
-        print(f"\n{len(violations)}건 — 산출물은 .tmp-tests/ 하위로, 자료는 docs/assets 또는 excel/legacy 로.")
+        print(f"\n{len(violations)}건 - 산출물은 .tmp-tests/ 하위로, 자료는 docs/assets 또는 excel/legacy 로.")
         return 1
     print("repo hygiene OK")
     return 0

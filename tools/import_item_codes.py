@@ -241,7 +241,7 @@ def main() -> int:
                       f"skipped(빈값)={r['skipped_empty']} 분류={r['category_breakdown']}")
                 totals["product"] += r["imported"]
         print(f"[총계] material={totals['material']} product={totals['product']}"
-              f"{' [DRY-RUN — 변경 없음]' if args.dry_run else ''}")
+              f"{' [DRY-RUN - 변경 없음]' if args.dry_run else ''}")
     finally:
         conn.close()
     return 0
