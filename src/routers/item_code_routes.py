@@ -283,10 +283,20 @@ def create_item_code_router() -> APIRouter:
         params: list[Any] = []
         if uncoded == "1":
             where_parts.append("code IS NULL")
+        # 검색은 자재명과 품목코드 양쪽을 본다 — 화면 안내가 '자재명 또는 코드' 인데
+        # 이름만 보고 있어서 코드로는 아무것도 안 나왔다(2026-08-12).
+        # 코드로 찾는 쪽이 오히려 잦다: ERP 에서 코드를 들고 와 그 자재를 찾는 흐름.
+        # 동의어도 함께 본다 — 기록에 남은 옛 이름으로 찾아도 그 자재가 나와야
+        # 동의어를 등록·확인하러 올 수 있다.
         name_query = (q or "").strip()
         if name_query:
-            where_parts.append("name LIKE ? ESCAPE '\\'")
-            params.append(f"%{_escape_like(name_query)}%")
+            like = f"%{_escape_like(name_query)}%"
+            where_parts.append(
+                "(name LIKE ? ESCAPE '\\' OR COALESCE(code, '') LIKE ? ESCAPE '\\'"
+                " OR id IN (SELECT material_id FROM material_aliases"
+                "           WHERE alias_name LIKE ? ESCAPE '\\'))"
+            )
+            params.extend([like, like, like])
 
         where_sql = " AND ".join(where_parts)
         with get_connection() as connection:

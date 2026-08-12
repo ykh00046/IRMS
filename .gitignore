@@ -89,3 +89,9 @@ backups/*.db-wal
 # 운영 DB 사본을 두고 읽기만 하는 자리(개발 PC 전용). 앱이 쓰는 data/ 와 분리해서,
 # 실수로 라이브 DB 로 잡히거나 백업 정리 로직에 걸리는 일이 없게 한다. 절대 커밋 금지.
 local-data/
+
+# 운영 PC(serve.py)가 서버를 띄우며 남기는 실행 기록. 저장소에 들어가면 git pull 때마다
+# 충돌하거나, 작업 트리가 지저분해 진짜 어긋남(2026-08-12 static/js 누락 사고)이 묻힌다.
+uvicorn_out.log
+uvicorn_err.log
+uvicorn_pid.txt

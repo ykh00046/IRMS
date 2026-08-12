@@ -4,6 +4,7 @@ import mimetypes
 import re
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -121,6 +122,42 @@ def _log_unhandled_exception(method: str, path: str, exc: BaseException) -> None
         pass
 
 
+_STATIC_REF_RE = re.compile(r'(?:src|href)="/static/([^"?]+)')
+
+
+def missing_static_assets(base_dir: Path) -> list[str]:
+    """템플릿이 참조하는 /static 파일 중 디스크에 없는 것.
+
+    배포는 저장소가 아니라 **디스크**에 파일이 놓여야 성립한다. 2026-08-12 에
+    운영 PC 의 git pull 이 static/js 세 파일을 쓰지 못했는데 HEAD 는 최신으로
+    올라가, 화면을 열어 보기 전까지 아무도 몰랐다(자재 관리 탭이 통째로 먹통).
+    저장소 기준 테스트로는 잡히지 않는 종류라, 기동할 때 실제 파일을 확인한다.
+    """
+    templates_dir = base_dir / "templates"
+    static_dir = base_dir / "static"
+    if not templates_dir.is_dir():
+        return []
+    referenced: set[str] = set()
+    for path in templates_dir.rglob("*.html"):
+        try:
+            referenced.update(_STATIC_REF_RE.findall(path.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    return sorted(rel for rel in referenced if not (static_dir / rel).is_file())
+
+
+def _warn_missing_static_assets(base_dir: Path) -> None:
+    """없는 정적 파일을 로그로 알린다. 기동을 막지는 않는다 — 한 파일 때문에
+    서버 전체가 안 뜨면 더 나쁘다. 화면이 이상할 때 로그가 답을 갖고 있으면 된다."""
+    missing = missing_static_assets(base_dir)
+    if not missing:
+        return
+    logging.getLogger("irms.startup").error(
+        "정적 파일 %d개가 없습니다 - 배포가 덜 내려왔을 수 있습니다(git status 확인): %s",
+        len(missing), ", ".join(missing),
+    )
+
+
 def create_app() -> FastAPI:
     init_db()
     # 취소 보존기한 경과분 정리 — 기동마다 1회(운영은 자동 업데이트로 자주 재시작).
@@ -206,6 +243,7 @@ def create_app() -> FastAPI:
     mimetypes.add_type("font/woff2", ".woff2")
     mimetypes.add_type("font/woff", ".woff")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+    _warn_missing_static_assets(BASE_DIR)
 
     app.include_router(build_pages_router(templates))
     app.include_router(build_api_router())

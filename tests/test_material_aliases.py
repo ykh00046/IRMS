@@ -294,6 +294,53 @@ def test_alias_requires_manager():
     assert res.status_code in (401, 403), res.text
 
 
+# ── 7b. 검색 — 자재명·품목코드·동의어 모두 ────────────────────────────────
+def test_material_search_finds_by_code_and_alias():
+    """검색창 안내가 '자재명 또는 코드' 인데 이름만 보고 있었다(2026-08-12 수정).
+
+    코드로 찾는 흐름이 오히려 잦고(ERP 에서 코드를 들고 와 자재를 찾는다), 기록에 남은
+    옛 이름으로 찾아야 동의어를 등록·확인하러 올 수 있어 동의어도 함께 본다.
+    """
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    code = f"AC{base[:4]}"
+    name = f"PMA{base}"
+    mid = _new_material(client, headers, name, code)
+    alias = f"Propylene {base}"
+    assert client.post(
+        f"/api/materials/{mid}/aliases", json={"alias_name": alias}, headers=headers
+    ).status_code == 200
+
+    def found(q):
+        res = client.get("/api/item-codes/materials", params={"q": q}, headers=headers)
+        assert res.status_code == 200, res.text
+        return [m["id"] for m in res.json()["items"]]
+
+    assert mid in found(name), "자재명으로 못 찾는다"
+    assert mid in found(code), "품목코드로 못 찾는다"
+    assert mid in found(code.lower()), "코드 대소문자 무시가 안 된다"
+    assert mid in found(alias), "동의어로 못 찾는다"
+    assert mid in found(base), "부분 일치가 안 된다"
+    assert mid not in found(f"없는검색어{base}")
+
+
+def test_material_search_combines_with_uncoded_filter():
+    """'코드 없음만' 체크와 검색어는 AND 로 결합된다(코드 있는 자재는 안 나온다)."""
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    coded = _new_material(client, headers, f"코드있음{base}", f"AC{base[:4]}")
+    plain = _new_material(client, headers, f"코드없음{base}")
+
+    res = client.get(
+        "/api/item-codes/materials", params={"q": base, "uncoded": "1"}, headers=headers
+    )
+    ids = [m["id"] for m in res.json()["items"]]
+    assert plain in ids
+    assert coded not in ids
+
+
 # ── 8. 없는 자재 → 404 ─────────────────────────────────────────────────────
 def test_alias_unknown_material_404():
     client = _client()
