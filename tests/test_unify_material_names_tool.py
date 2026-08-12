@@ -254,6 +254,72 @@ def test_second_run_finds_nothing(tmp_path):
     assert "바꿀 것이 없습니다" in res.stdout
 
 
+# ── 그때는 맞았던 저장코드는 남긴다 ──────────────────────────────────────
+def _add_row_with_old_code(db: Path, code: str) -> None:
+    """폐기된(그러나 당시엔 정확했던) 코드로 기록된 행 하나 추가."""
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO materials (name, code) VALUES ('PVP K90', 'AW0027')")
+    conn.execute(
+        "INSERT INTO blend_details "
+        "(blend_record_id, material_id, material_code, material_name, material_lot,"
+        " ratio, theory_amount, actual_amount, sequence_order, created_at) "
+        "VALUES (1, NULL, ?, 'PVP K90', 'LOT-OLD', 0.0, 0.0, 380.0, 4, '2025-06-26T10:00:00')",
+        (code,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_default_keep_list_protects_a_historically_correct_code(tmp_path):
+    """KEEP_STORED_CODES 의 코드는 정정하지 않는다 — 자재 연결만 채운다.
+
+    운영자가 --keep-code 를 빼먹어도 지켜져야 하므로 기본값에 들어 있다.
+    """
+    m = _load()
+    assert "AS0066" in m.KEEP_STORED_CODES, "기본 보존 목록이 비었다"
+
+    db = _make_db(tmp_path)
+    _add_row_with_old_code(db, "AS0066")
+
+    res = _run(db.parent, "--apply")
+    assert res.returncode == 0, res.stderr
+
+    row = _rows(db)["LOT-OLD"]
+    assert row["material_code"] == "AS0066", "그 당시 코드가 덮어써졌다"
+    assert row["material_name"] == "PVP K90"
+    assert row["material_id"] is not None, "자재 연결은 채워져야 한다"
+
+
+def test_keep_code_option_adds_to_the_default_list(tmp_path):
+    """--keep-code 로 추가 지정할 수 있다(대소문자 무시)."""
+    db = _make_db(tmp_path)
+    _add_row_with_old_code(db, "AX9999")
+
+    res = _run(db.parent, "--apply", "--keep-code", "ax9999")
+    assert res.returncode == 0, res.stderr
+    assert _rows(db)["LOT-OLD"]["material_code"] == "AX9999"
+
+
+def test_without_keep_the_same_code_would_be_corrected(tmp_path):
+    """대조군 — 보존 목록에 없는 폐기 코드는 마스터 코드로 정정된다."""
+    db = _make_db(tmp_path)
+    _add_row_with_old_code(db, "AX9999")
+
+    res = _run(db.parent, "--apply")
+    assert res.returncode == 0, res.stderr
+    assert _rows(db)["LOT-OLD"]["material_code"] == "AW0027"
+
+
+def test_preview_names_the_protected_rows(tmp_path):
+    """보존 대상은 변경 목록에서 빠지므로, 손대지 않는다는 사실을 따로 알린다."""
+    db = _make_db(tmp_path)
+    _add_row_with_old_code(db, "AS0066")
+
+    res = _run(db.parent)
+    assert "손대지 않는 저장코드" in res.stdout
+    assert "AS0066" in res.stdout
+
+
 # ── 매칭 규칙 ─────────────────────────────────────────────────────────────
 def test_norm_ignores_case_space_and_symbols():
     m = _load()

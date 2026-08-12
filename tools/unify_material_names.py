@@ -46,6 +46,22 @@ from pathlib import Path
 
 MARKER = "자재 표기 통일"
 
+# 그때는 맞았던 저장코드 — 정정 대상이 아니다.
+#
+# 기록에 남은 자재코드가 지금 마스터 코드와 다른 경우는 성격이 갈린다.
+#   · 남의 코드가 잘못 들어간 것(PB 에 DF-2 의 B109) → 정정한다.
+#   · 코드 형태도 아닌 임시값(TBAH 의 BXXX)          → 정정한다.
+#   · 그 당시 실제로 쓰던 코드(아래)                  → 남긴다. 틀린 값이 아니다.
+# 남기는 경우에도 자재명과 material_id 는 맞춘다 — 품목코드 해석은 자재명을 먼저
+# 보므로 재고 집계는 어느 쪽이든 현재 코드로 정확히 나간다.
+#
+# 여기 적어 두는 이유: --keep-code 로만 받으면 운영자가 실행할 때 빼먹는 순간
+# 되돌릴 수 없이 정정된다. 기본값으로 두고, 필요하면 --keep-code 로 더한다.
+KEEP_STORED_CODES = {
+    # PVP K90 의 옛 품목코드(2025-06-26 ~ 07-03, 7행). 지금은 폐기됐지만 당시엔 정확했다.
+    "AS0066",
+}
+
 
 def _norm(value: str | None) -> str:
     """자재명 매칭용 정규화 — 대문자화 후 영숫자·한글만. src/db/queries.normalize_token 과 동일 규칙.
@@ -55,11 +71,14 @@ def _norm(value: str | None) -> str:
     return "".join(ch for ch in (value or "").strip().upper() if ch.isalnum())
 
 
-def _plan(conn: sqlite3.Connection) -> list[dict]:
+def _plan(conn: sqlite3.Connection, keep_codes: set[str] | None = None) -> list[dict]:
     """바꿀 내역을 만든다. 실제 쓰기는 하지 않는다.
+
+    keep_codes 에 든 저장코드는 그대로 두고 자재명·material_id 만 맞춘다.
 
     반환 각 항목: 지금 값(old_*) 과 바꿀 값(new_*), 해당 행 수·무게.
     """
+    keep = {c.strip().upper() for c in (keep_codes or set()) if c.strip()}
     materials = {
         int(r["id"]): {"name": r["name"], "code": (r["code"] or "").strip()}
         for r in conn.execute("SELECT id, name, code FROM materials")
@@ -94,15 +113,19 @@ def _plan(conn: sqlite3.Connection) -> list[dict]:
         if target_id is None:
             continue  # 마스터에도 동의어에도 없는 이름 — 손대지 않는다.
         target = materials[target_id]
+        # 그때는 맞았던 코드는 그대로 둔다(이름·연결만 맞춘다).
+        keep_code = (r["code"] or "").strip().upper() in keep
+        new_code = r["code"] if keep_code else target["code"]
         same_name = (r["name"] or "") == target["name"]
-        same_code = (r["code"] or "") == target["code"]
+        same_code = (r["code"] or "") == new_code
         same_id = r["mid"] is not None and int(r["mid"]) == target_id
         if same_name and same_code and same_id:
             continue  # 이미 정리된 행
         plan.append({
             "old_name": r["name"], "old_code": r["code"], "old_mid": r["mid"],
-            "new_name": target["name"], "new_code": target["code"], "new_mid": target_id,
+            "new_name": target["name"], "new_code": new_code, "new_mid": target_id,
             "rows": int(r["n"]), "grams": float(r["g"] or 0),
+            "code_kept": keep_code,
         })
     return plan
 
@@ -130,7 +153,13 @@ def main() -> int:
     ap.add_argument("--data-dir", default=os.environ.get("IRMS_DATA_DIR", "data"))
     ap.add_argument("--apply", action="store_true", help="실제 반영(기본은 미리보기)")
     ap.add_argument("--actor", default="운영자", help="감사 로그에 남길 실행자 이름")
+    ap.add_argument(
+        "--keep-code", action="append", default=[], metavar="CODE",
+        help="이 저장코드는 정정하지 않고 그대로 둔다(그 당시 실제 코드). 여러 번 지정 가능",
+    )
     args = ap.parse_args()
+
+    keep_codes = set(KEEP_STORED_CODES) | {c.strip().upper() for c in args.keep_code}
 
     db_path = Path(args.data_dir) / "irms.db"
     if not db_path.exists():
@@ -139,7 +168,7 @@ def main() -> int:
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    plan = _plan(conn)
+    plan = _plan(conn, keep_codes)
 
     if not plan:
         print("바꿀 것이 없습니다 - 모든 자재 표기가 이미 마스터와 일치합니다.")
@@ -151,15 +180,39 @@ def main() -> int:
     print(head)
     print("-" * len(head))
     total_rows = total_g = 0
+    kept = 0
     for p in plan:
         old_code = p["old_code"] or "-"
         new_code = p["new_code"] or "-"
+        mark = "  (코드 유지)" if p.get("code_kept") else ""
         print(f"{p['old_name']:<42} {old_code:<8} → {p['new_name']:<24} {new_code:<8} "
-              f"{p['rows']:>5} {p['grams']:>12,.1f}")
+              f"{p['rows']:>5} {p['grams']:>12,.1f}{mark}")
         total_rows += p["rows"]
         total_g += p["grams"]
+        if p.get("code_kept"):
+            kept += p["rows"]
     print("-" * len(head))
     print(f"{'합계':<77} {total_rows:>5} {total_g:>12,.1f}")
+
+    if kept:
+        print(f"\n'코드 유지' {kept}행: 그 당시 실제로 쓰던 코드라 정정하지 않습니다."
+              " 자재명과 자재 연결만 맞춥니다.")
+
+    # 보존 대상 코드는 대부분 이미 정리돼 있어 위 표에서 아예 빠진다. 그러면 운영자가
+    # "정정된 건 아닐까" 확인할 방법이 없으므로, 손대지 않는다는 사실을 따로 말한다.
+    protected = conn.execute(
+        "SELECT COALESCE(material_code, '') AS code, material_name AS name, "
+        "       COUNT(*) AS n, ROUND(SUM(actual_amount), 1) AS g "
+        "FROM blend_details "
+        "WHERE UPPER(COALESCE(material_code, '')) IN "
+        f"     ({','.join('?' * len(keep_codes))}) "
+        "GROUP BY 1, 2 ORDER BY 2",
+        tuple(sorted(keep_codes)),
+    ).fetchall() if keep_codes else []
+    if protected:
+        print("\n손대지 않는 저장코드(그 당시 실제 코드):")
+        for r in protected:
+            print(f"   {r['name']} · {r['code']} · {r['n']}행 · {r['g']:,.1f} g")
 
     print("\n바뀌는 것: 자재명 · 자재 연결(material_id) · 기록 당시 자재코드 - 이 셋뿐입니다.")
     print("그대로인 것: 작업일 · 작업시간 · 수량(이론량/실제량/비율) · 자재 LOT · 제품 LOT"
