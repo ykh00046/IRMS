@@ -44,7 +44,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.db.queries import normalize_token  # noqa: E402  (sys.path 조정 뒤 import)
 from src.services import erp_lot_service  # noqa: E402  (sys.path 조정 뒤 import)
-from tools.import_item_codes import MATERIAL_CODE_PREFIXES  # noqa: E402
+# 원자재 코드 계열 상수(erp_lot_service.RAW_MATERIAL_CODE_PREFIXES)도 같은 모듈에서
+# 가져온다 — 마스터 임포트(import_item_codes)가 re-export 하지만, 감사 도구는 원 소스를
+# 직접 쓴다(단일 진실 원천).
 
 
 # ── 연결 ────────────────────────────────────────────────────────────────────
@@ -119,8 +121,28 @@ def section_b(conn: sqlite3.Connection) -> dict:
         {"id": int(r["id"]), "name": r["name"], "code": r["code"]}
         for r in rows
     ]
-    return {"key": "B", "title": title,
-            "status": "issues" if items else "ok", "items": items}
+    # 폐기(retired) 마스터 코드를 쥔 자재 — 코드는 마스터에 '있지만' 현행이 아니다.
+    # status 컬럼이 없는 구버전 DB 는 검사 생략(빈 목록).
+    try:
+        retired_rows = conn.execute(
+            """
+            SELECT m.id, m.name, m.code, ic.retired_at FROM materials m
+            JOIN item_code_master ic ON UPPER(ic.code) = UPPER(m.code)
+            WHERE m.code IS NOT NULL AND TRIM(m.code) != ''
+              AND COALESCE(ic.status, 'active') = 'retired'
+            ORDER BY m.name
+            """
+        ).fetchall()
+        retired_in_use = [
+            {"id": int(r["id"]), "name": r["name"], "code": r["code"],
+             "retired_at": r["retired_at"]}
+            for r in retired_rows
+        ]
+    except sqlite3.OperationalError:
+        retired_in_use = []
+    status = "issues" if (items or retired_in_use) else "ok"
+    return {"key": "B", "title": title, "status": status,
+            "items": items, "retired_in_use": retired_in_use}
 
 
 def section_c(conn: sqlite3.Connection) -> dict:
@@ -226,8 +248,8 @@ def section_f(conn: sqlite3.Connection, erp_file: str | None) -> dict:
 
     ERP 일일 재고 엑셀은 **원재료 전용**이다. 반제품 코드(B 계열 등)나 ERP 에
     등록되지 않은 소모성 품목의 관리용 코드는 이 파일에 없는 것이 정상이므로,
-    대조는 원자재 코드 계열(MATERIAL_CODE_PREFIXES = AS/AC/AH/AW — 마스터 임포트와
-    같은 기준)만 대상으로 한다. 제외된 코드는 개수로만 알린다.
+    대조는 원자재 코드 계열(erp_lot_service.RAW_MATERIAL_CODE_PREFIXES = AS/AC/AH/AW
+    — 마스터 임포트와 같은 기준)만 대상으로 한다. 제외된 코드는 개수로만 알린다.
 
     엑셀 파싱은 src/services/erp_lot_service.py 의 기존 파서(_parse_file)를
     그대로 가져와 쓴다 - 열 인덱스를 다시 하드코딩하지 않는다. _parse_file 은
@@ -258,7 +280,7 @@ def section_f(conn: sqlite3.Connection, erp_file: str | None) -> dict:
     skipped_non_raw = 0
     for r in mat_rows:
         code_key = (r["code"] or "").strip().upper()
-        if not code_key.startswith(MATERIAL_CODE_PREFIXES):
+        if not code_key.startswith(erp_lot_service.RAW_MATERIAL_CODE_PREFIXES):
             skipped_non_raw += 1   # 반제품/관리용 코드 - 원자재 재고 파일 대상 아님
             continue
         if code_key not in erp_codes_upper:
@@ -392,6 +414,24 @@ def _print_items(key: str, items: list) -> None:
             print(f"  {it['code']} | {it['name']} (id={it['id']})")
 
 
+def _print_b(sec: dict) -> None:
+    if sec["status"] == "skip":
+        print(f"  {sec.get('note', '검사 생략')}")
+        return
+    items = sec.get("items", [])
+    retired = sec.get("retired_in_use", [])
+    if not items and not retired:
+        print("  이상 없음")
+        return
+    for it in items:
+        print(f"  {it['code']} | {it['name']} (id={it['id']})")
+    if retired:
+        print("  폐기 코드 사용 중 (마스터에는 있으나 현행 아님):")
+        for it in retired:
+            when = f" (폐기 {it['retired_at']})" if it.get("retired_at") else ""
+            print(f"    {it['code']} | {it['name']} (id={it['id']}){when}")
+
+
 def _print_d(sec: dict) -> None:
     items = sec.get("items", [])
     shares = sec.get("shares", [])
@@ -443,6 +483,9 @@ def print_human(results: dict, db_label: str) -> None:
             if sec.get("skipped_non_raw"):
                 print(f"  참고: 반제품/관리용 코드 {sec['skipped_non_raw']}건은 "
                       f"원자재 재고 파일 대상이 아니라 대조에서 제외")
+        if key == "B":
+            _print_b(sec)
+            continue
         if key == "D":
             _print_d(sec)
             continue

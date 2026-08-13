@@ -248,6 +248,13 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_item_code_master_kind_name "
         "ON item_code_master(kind, name)"
     )
+    # 마스터 유효/폐기 상태 — 임포트가 upsert-only 라 ERP 에서 사라진 코드가 영구
+    # 잔존했고, 폐기 코드를 "현재 유효"와 구분할 수단이 없어 폐기 이력이 도구 소스에
+    # 하드코딩됐다(unify_material_names.KEEP_STORED_CODES 의 AS0066 사례). 임포트에
+    # --retire-missing 을 주면 이번 파일에 없는 코드가 retired 로 표시되고, 재등장하면
+    # upsert 가 active 로 되살린다. 화면 수동 입력(source='manual') 행은 폐기 대상 아님.
+    ensure_column(connection, "item_code_master", "status", "TEXT NOT NULL DEFAULT 'active'")
+    ensure_column(connection, "item_code_master", "retired_at", "TEXT")
 
     # 레시피 상태 단순화: (구) 계량 워크플로의 pending/in_progress 단계는 /blend 전환으로
     # 폐기됨(승인 단계 없음 → 영구 정체). 등록 즉시 사용(completed) 정책으로 통일하고

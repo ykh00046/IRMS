@@ -16,6 +16,9 @@ item-code P1 의 마스터 적재기. materials.code / recipes.product_code 부�
   python tools/import_item_codes.py --material code.xlsx
   python tools/import_item_codes.py --product code2.xlsx --product code3.xlsx --product code4.xlsx
   python tools/import_item_codes.py --material code.xlsx --product code2.xlsx --dry-run
+  python tools/import_item_codes.py --material code.xlsx --product code2.xlsx \
+      --product code3.xlsx --product code4.xlsx --retire-missing
+      # 이번 파일들에 없는 기존 코드를 폐기(retired) 표시 - manual 행 제외, 재등장 시 부활
   python tools/import_item_codes.py --material code.xlsx --db 경로/rehearsal.db
       # 비관례 파일명도 그 파일에 직접 스키마(item_code_master 포함) 적용 후 임포트
 """
@@ -29,6 +32,10 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.db.time_utils import utc_now_text  # noqa: E402  (sys.path 조정 후 import)
+# 원재료 코드 계열 상수 — 단일 진실 원천(src.services.erp_lot_service)에서 가져온다.
+# 마스터 임포트의 원자재 필터와 check_lot 의 LOT 검사 대상 판정이 같은 기준을 써야
+# 한쪽에서만 원자재로 분류되는 어긋남이 생기지 않는다.
+from src.services.erp_lot_service import RAW_MATERIAL_CODE_PREFIXES  # noqa: E402
 # DB 연결 + 스키마 마이그레이션(item_code_master 보장) 공용 헬퍼. tools/ 내 상호 import
 # 관례(Tests 도 from tools.match_item_codes 로 쓴다)에 따른다. 과거 이 스크립트는
 # init_db() 가 *관례 DB(irms.db)* 에만 스키마를 잡고 --db 비관례 파일명은 별도 연결(스키마
@@ -72,7 +79,11 @@ def _read_xlsx(path: str):
 
 def _upsert_master(conn: sqlite3.Connection, *, code: str, name: str, spec, unit,
                    kind: str, category_hint, source: str, imported_at: str) -> None:
-    """item_code_master upsert — 같은 code 면 갱신(imported_at 포함)."""
+    """item_code_master upsert — 같은 code 면 갱신(imported_at 포함).
+
+    재임포트에 등장한 코드는 status 를 active 로 되돌린다(부활) — 한 번 폐기됐던
+    코드가 ERP 에 다시 나타나면 현행 코드다. retired_at 도 함께 지운다.
+    """
     conn.execute(
         """
         INSERT INTO item_code_master
@@ -85,18 +96,54 @@ def _upsert_master(conn: sqlite3.Connection, *, code: str, name: str, spec, unit
             kind = excluded.kind,
             category_hint = excluded.category_hint,
             source = excluded.source,
-            imported_at = excluded.imported_at
+            imported_at = excluded.imported_at,
+            status = 'active',
+            retired_at = NULL
         """,
         (code, name, _norm_text(spec), _norm_text(unit), kind,
          _norm_text(category_hint), source, imported_at),
     )
 
 
+def retire_missing_codes(
+    conn: sqlite3.Connection, *, kind: str, imported_codes: set[str],
+    now: str, dry_run: bool = False,
+) -> list[str]:
+    """이번 임포트에 등장하지 않은 같은 kind 의 active 코드를 폐기(retired) 표시.
+
+    - 화면 수동 입력(source='manual') 행은 건드리지 않는다 — ERP 파일이 근거가 아니다.
+    - imported_codes 가 비어 있으면 아무것도 하지 않는다(빈 파일 사고 방어 —
+      전 코드 일괄 폐기를 막는다).
+    - 폐기는 삭제가 아니다: 코드·이력은 남고 status 만 바뀐다. 재등장하면
+      _upsert_master 가 active 로 되살린다.
+    반환: 폐기(예정) 코드 목록.
+    """
+    if not imported_codes:
+        return []
+    rows = conn.execute(
+        "SELECT code FROM item_code_master "
+        "WHERE kind = ? AND COALESCE(source, '') != 'manual' "
+        "  AND COALESCE(status, 'active') = 'active'",
+        (kind,),
+    ).fetchall()
+    to_retire = [r["code"] for r in rows if r["code"] not in imported_codes]
+    if to_retire and not dry_run:
+        conn.executemany(
+            "UPDATE item_code_master SET status = 'retired', retired_at = ? "
+            "WHERE code = ?",
+            [(now, c) for c in to_retire],
+        )
+        conn.commit()
+    return to_retire
+
+
 # 배합 원료 계열 코드 prefix. 운영 스냅샷 리허설(2026-07-16) 결과 실제 배합 자재 20종이
 # '소모품' 대분류에 있어(예: AIBN=AC0006, Dibutyltin dilaurate=AS0052) 대분류 필터로는
 # 누락된다 — 코드 prefix(AS/AC/AH/AW = 원자재 117 + 소모품 83 = 200행)가 정확한 기준.
 # AA(상품)·CB/CL/SP(포장재·소모품 잡류)는 배합과 무관 → 제외.
-MATERIAL_CODE_PREFIXES = ("AS", "AC", "AH", "AW")
+# 상수 자체는 src.services.erp_lot_service.RAW_MATERIAL_CODE_PREFIXES 가 단일 진실 원천.
+# 별칭은 이 파일 안의 기존 참조(import_material_master)와 테스트가 그대로 동작하도록.
+MATERIAL_CODE_PREFIXES = RAW_MATERIAL_CODE_PREFIXES
 
 
 def import_material_master(
@@ -111,6 +158,7 @@ def import_material_master(
     ws = _read_xlsx(path)
     now = utc_now_text()
     read = imported = skipped_non_material = skipped_empty = 0
+    codes: set[str] = set()   # 이번 파일에 등장한 코드(--retire-missing 대조용)
 
     for r in range(2, ws.max_row + 1):  # 1행은 헤더
         code_raw = ws.cell(r, 1).value
@@ -140,6 +188,7 @@ def import_material_master(
                 kind="material", category_hint=hint or None, source=source, imported_at=now,
             )
         imported += 1
+        codes.add(code)
 
     if not dry_run:
         conn.commit()
@@ -148,6 +197,7 @@ def import_material_master(
         "imported": imported,
         "skipped_non_material": skipped_non_material,
         "skipped_empty": skipped_empty,
+        "codes": codes,
     }
 
 
@@ -164,6 +214,7 @@ def import_product_master(
     now = utc_now_text()
     read = imported = skipped_empty = 0
     cats: Counter = Counter()
+    codes: set[str] = set()   # 이번 파일에 등장한 코드(--retire-missing 대조용)
 
     for r in range(2, ws.max_row + 1):  # 1행은 헤더
         code_raw = ws.cell(r, 1).value
@@ -191,6 +242,7 @@ def import_product_master(
                 source=source, imported_at=now,
             )
         imported += 1
+        codes.add(code)
 
     if not dry_run:
         conn.commit()
@@ -199,6 +251,7 @@ def import_product_master(
         "imported": imported,
         "skipped_empty": skipped_empty,
         "category_breakdown": dict(cats),
+        "codes": codes,
     }
 
 
@@ -212,6 +265,9 @@ def main() -> int:
                     help="대상 DB 경로(기본: IRMS_DATA_DIR 의 개발 DB)")
     ap.add_argument("--dry-run", action="store_true",
                     help="변경 없이 요약만 출력")
+    ap.add_argument("--retire-missing", action="store_true",
+                    help="이번 파일들에 없는 같은 종류의 기존 코드를 폐기(retired) 표시. "
+                         "manual 행은 제외. 재등장하면 자동 부활.")
     args = ap.parse_args()
 
     if not (args.material or args.product):
@@ -225,6 +281,7 @@ def main() -> int:
 
     try:
         totals: Counter = Counter()
+        seen_codes: dict[str, set] = {"material": set(), "product": set()}
         if args.material:
             for f in args.material:
                 r = import_material_master(conn, f, source="code", dry_run=args.dry_run)
@@ -232,6 +289,7 @@ def main() -> int:
                 print(f"[{tag}] {f}: read={r['read']} imported={r['imported']} "
                       f"skipped(비원자재)={r['skipped_non_material']} skipped(빈값)={r['skipped_empty']}")
                 totals["material"] += r["imported"]
+                seen_codes["material"] |= r["codes"]
         if args.product:
             for i, f in enumerate(args.product, start=2):
                 src = f"code{i}" if i - 2 < len(args.product) else f"code{i}"
@@ -240,6 +298,24 @@ def main() -> int:
                 print(f"[{tag}] {f}: read={r['read']} imported={r['imported']} "
                       f"skipped(빈값)={r['skipped_empty']} 분류={r['category_breakdown']}")
                 totals["product"] += r["imported"]
+                seen_codes["product"] |= r["codes"]
+        if args.retire_missing:
+            # 이번에 지정한 종류(kind)만 폐기 대조 — --material 만 줬으면 반제품은
+            # 건드리지 않는다(파일이 없는 종류를 일괄 폐기하는 사고 방지).
+            now = utc_now_text()
+            for kind, given in (("material", bool(args.material)),
+                                ("product", bool(args.product))):
+                if not given:
+                    continue
+                retired = retire_missing_codes(
+                    conn, kind=kind, imported_codes=seen_codes[kind],
+                    now=now, dry_run=args.dry_run,
+                )
+                tag = "폐기" if not args.dry_run else "폐기(예정)"
+                head = ", ".join(retired[:10])
+                more = f" 외 {len(retired) - 10}건" if len(retired) > 10 else ""
+                print(f"[{tag}] kind={kind}: {len(retired)}건"
+                      f"{' - ' + head + more if retired else ''}")
         print(f"[총계] material={totals['material']} product={totals['product']}"
               f"{' [DRY-RUN - 변경 없음]' if args.dry_run else ''}")
     finally:

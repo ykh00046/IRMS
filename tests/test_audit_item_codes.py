@@ -41,7 +41,9 @@ CREATE TABLE item_code_master (
     kind TEXT NOT NULL CHECK (kind IN ('material', 'product')),
     category_hint TEXT,
     source TEXT,
-    imported_at TEXT NOT NULL
+    imported_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    retired_at TEXT
 );
 CREATE TABLE recipes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +153,30 @@ def test_c_code_formatting(tmp_path):
 
 
 # ── [D] ─────────────────────────────────────────────────────────────────────
+
+def test_b_retired_code_in_use(tmp_path):
+    """[B] 폐기(retired) 마스터 코드를 쥔 자재는 별도 목록(retired_in_use)으로 뜬다.
+
+    마스터에 '있다'는 것과 '현행이다'는 다르다 - 임포트 --retire-missing 이후
+    폐기 코드를 계속 쥔 자재는 재지정 후보다."""
+    def seed(c):
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M1', 'AS0001', 1)")
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M2', 'AS0066', 1)")
+        c.execute("INSERT INTO item_code_master(code, name, kind, source, imported_at) "
+                  "VALUES ('AS0001', 'A', 'material', 'code', 't')")
+        c.execute("INSERT INTO item_code_master"
+                  "(code, name, kind, source, imported_at, status, retired_at) "
+                  "VALUES ('AS0066', 'PVP', 'material', 'code', 't', "
+                  "'retired', '2026-08-13T00:00:00Z')")
+
+    conn = _build_db(tmp_path / "b_r.db", seed)
+    res = audit_item_codes.section_b(conn)
+    conn.close()
+
+    assert res["items"] == []                      # 마스터에 없는 코드는 없다
+    assert [it["code"] for it in res["retired_in_use"]] == ["AS0066"]
+    assert res["status"] == "issues"
+
 
 def test_d_cross_duplicate(tmp_path):
     def seed(c):

@@ -196,5 +196,26 @@ ERP 품목 마스터가 바뀌면(신규 품목 추가 등) 같은 절차를 **�
 - `match_item_codes.py --apply`: 이미 코드가 부여된 자재/레시피는 **대상에서 제외**되므로,
   새로 추가된 것에만 코드가 들어간다(멱등). 두 번 돌려도 결과가 같다.
 
+**폐기 표시(`--retire-missing`, 2026-08-13 추가)**: 갱신 임포트에 이 플래그를 붙이면,
+이번 파일들에 등장하지 않은 같은 종류(kind)의 기존 코드가 `status='retired'` 로 표시된다.
+
+```bat
+python tools\import_item_codes.py --material data\master\code.xlsx ^
+    --product data\master\code2.xlsx --product data\master\code3.xlsx ^
+    --product data\master\code4.xlsx --retire-missing
+```
+
+- 폐기는 **삭제가 아니다** — 코드·이력은 남고 표시만 바뀐다. 다음 임포트에 다시
+  등장하면 자동으로 부활(active)한다.
+- 화면에서 수동 입력한 코드(`source='manual'` — ERP 미등록 소모품의 관리용 코드 등)는
+  ERP 파일이 근거가 아니므로 **폐기 대상에서 제외**된다.
+- `--material` 만 지정하면 원자재만, `--product` 만 지정하면 반제품만 대조한다
+  (파일을 안 준 종류를 일괄 폐기하는 사고 방지). `--dry-run` 과 함께 쓰면 폐기
+  예정 목록만 보여준다.
+- 폐기 코드는 화면 마스터 제안에 `[폐기]` 로 표시되고, 그 코드를 자재에 지정하면
+  경고가 뜬다(지정 자체는 허용 — 판단은 책임자 몫). 감사 도구 [B] 섹션이
+  "폐기 코드 사용 중" 자재를 별도로 보여준다.
+
 즉 절차: **§1 백업 확인 → §2 새 엑셀을 `data\master\` 에 덮어두기 → §3 dry-run → 실제
-임포트 → §4 매칭 보고서 → 검토 → apply → §5 검증**. 되돌리기(§6)는 백업이 있으면 언제든.
+임포트(`--retire-missing` 권장) → §4 매칭 보고서 → 검토 → apply → §5 검증**.
+되돌리기(§6)는 백업이 있으면 언제든.

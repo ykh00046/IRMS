@@ -880,6 +880,22 @@
 .losscomp-cell .mat-losscomp-input { width: 5rem; display: inline-block; }
 .losscomp-cell .mat-losscomp-save { margin-left: 0.3rem; }
 
+/* 품목코드 옆 계열 배지(원자재/반제품/관리용) — 코드만 봐서는 계열을 알 수 없어
+   운영자가 자재를 오해하던 것을 작은 회색 표기로 알려준다. 기존 토큰만 재사용. */
+.code-kind-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-300);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* 품목코드 탭 — 자재 동의어(A6, 2026-08-11). 자재 행 아래 확장 행으로 펼친다.
    같은 원재료가 기록에 다른 이름으로 남았을 때 그 이름을 자재에 잇는 편집 영역. */
 .alias-cell { white-space: nowrap; }

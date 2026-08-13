@@ -67,8 +67,15 @@
         dom.codesBody.innerHTML = items
           .map((m) => {
             const code = m.code || "";
+            // 코드 계열 배지 — 원자재/반제품/관리용. 코드 없는 자재는 배지 없음.
+            // 서버가 code_kind(raw/product/managed/None) 를 내려주므로 화면은 표기만 한다.
+            const KIND_LABEL = { raw: "원자재", product: "반제품", managed: "관리용" };
+            const kindLabel = code && m.code_kind ? KIND_LABEL[m.code_kind] : "";
+            const kindBadge = kindLabel
+              ? ` <span class="code-kind-badge">${IRMS.escapeHtml(kindLabel)}</span>`
+              : "";
             const codeHtml = code
-              ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>`
+              ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>${kindBadge}`
               : '<span class="muted">-</span>';
             const codeActions = code
               ? `<button class="btn btn-sm code-edit-btn" data-id="${m.id}">수정</button>
@@ -183,6 +190,9 @@
           }
           const moveNote = result.moved_from ? ` (기존 '${result.moved_from}'에서 해제)` : "";
           IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.${moveNote}`, "success");
+          if (result.master_status === "retired") {
+            IRMS.notify("폐기된 품목코드입니다 — ERP 현행 코드가 맞는지 확인하세요.", "warn");
+          }
           nameEl.value = "";
           codeEl.value = "";
           nameEl.focus();
@@ -553,6 +563,11 @@
       const current = cell.querySelector(".code-value");
       const currentValue = current ? current.textContent.trim() : "";
 
+      // 편집 취소 시 원래 표시(코드+배지)로 되돌리기 위해 원본을 보관한다 —
+      // 종전에는 취소가 무조건 '-' 를 그려서, 행 A 편집 중 행 B [수정]을 누르면
+      // 코드가 있는 행 A 가 미지정처럼 보였다(운영자가 중복 지정을 시도할 소지).
+      cell._prevHtml = cell.innerHTML;
+
       cell.innerHTML = `
         <div class="code-edit-wrap">
           <input class="input compact code-inline-input" value="${IRMS.escapeHtml(currentValue)}" placeholder="코드 입력 (예: AS0001)" />
@@ -609,10 +624,13 @@
           return;
         }
         suggestList.innerHTML = items
-          .map(
-            (it) =>
-              `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}</li>`,
-          )
+          .map((it) => {
+            // 폐기(retired) 코드도 목록에는 나온다 — 숨기면 "왜 안 나오지"가 되므로
+            // [폐기] 표기로 알리고 선택은 허용한다(경고는 지정 시점에 한 번 더).
+            const retired = it.status === "retired"
+              ? ' <span class="muted">[폐기]</span>' : "";
+            return `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}${retired}</li>`;
+          })
           .join("");
         suggestList.hidden = false;
         suggestList.querySelectorAll(".code-suggest-item").forEach((li) => {
@@ -635,8 +653,12 @@
         const cell = w.closest(".code-cell");
         const row = w.closest(".codes-row");
         if (row && cell) {
-          // 원래 코드 표시로 원복 — 전체 새로고침보다 행 단위로 복구
-          cell.innerHTML = '<span class="muted">-</span>';
+          // 원래 코드 표시로 원복 — 편집 시작 때 보관한 원본이 있으면 그대로,
+          // 없으면(방어) 미지정 표시.
+          cell.innerHTML = cell._prevHtml != null
+            ? cell._prevHtml
+            : '<span class="muted">-</span>';
+          delete cell._prevHtml;
         }
       });
     }
@@ -678,6 +700,9 @@
           saved ? `품목코드를 '${saved}'(으)로 지정했습니다.${moveNote}` : "품목코드를 해제했습니다.",
           "success",
         );
+        if (result.master_status === "retired") {
+          IRMS.notify("폐기된 품목코드입니다 — ERP 현행 코드가 맞는지 확인하세요.", "warn");
+        }
         await refresh();
         // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
         if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});

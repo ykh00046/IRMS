@@ -29,6 +29,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
+# 원자재 코드 계열 — ERP 일일 재고 엑셀은 원재료 전용이라 이 계열만 LOT 검사 대상.
+# code_kind 판정에서도 같은 기준으로 원자재(raw) 를 가린다.
+from ..services.erp_lot_service import RAW_MATERIAL_CODE_PREFIXES
 
 # 품목코드 형식 — 자재·반제품 모두 영문 1~2자 접두 + 영숫자(사용자 확인 2026-07-21).
 #  · 자재(materials.code): 본래 영문 2자(AC0101) 였으나, 반제품(PB/B0020 등)이 자재로
@@ -291,15 +294,18 @@ def create_item_code_router() -> APIRouter:
             params.append(kind)
 
         # item_code_master 테이블이 없는 DB(마이그 전)에서도 500 이 나면 안 된다.
+        # 폐기(retired) 코드도 검색에는 나온다 — 숨기면 "왜 안 나오지"가 되고,
+        # 보여주되 [폐기] 로 표시해야 운영자가 현행 코드를 고른다. 정렬은 유효 우선.
         try:
             with get_connection() as connection:
                 rows = connection.execute(
                     f"""
-                    SELECT code, name, spec, unit, kind, category_hint
+                    SELECT code, name, spec, unit, kind, category_hint,
+                           COALESCE(status, 'active') AS status
                     FROM item_code_master
                     WHERE (code LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')
                       {kind_clause}
-                    ORDER BY name
+                    ORDER BY (COALESCE(status, 'active') = 'retired'), name
                     LIMIT 30
                     """,
                     params,
@@ -316,6 +322,7 @@ def create_item_code_router() -> APIRouter:
                     "unit": r["unit"],
                     "kind": r["kind"],
                     "category_hint": r["category_hint"],
+                    "status": r["status"],
                 }
                 for r in rows
             ]
@@ -386,12 +393,40 @@ def create_item_code_router() -> APIRouter:
             except sqlite3.OperationalError:
                 alias_counts = {}
 
+            # code_kind 판별용 반제품 코드 집합 — 마스터의 kind='product' 코드를 한 번에
+            # 읽어 대소문자 무시 집합으로 만든다(자재 행마다 SELECT 하지 않는다).
+            # 원자재 계열(AS/AC/AH/AW)은 무조건 raw 이고, 나머지는 이 집합에 있으면
+            # product, 없으면 managed. 마스터 테이블이 없는 구버전/테스트 DB → None
+            # (판별 불가, 비원자재 코드는 managed 폴백 — 기존 방어 패턴과 동일).
+            try:
+                product_codes = {
+                    str(r["code"]).strip().upper()
+                    for r in connection.execute(
+                        "SELECT code FROM item_code_master WHERE kind = 'product'"
+                    ).fetchall()
+                }
+            except sqlite3.OperationalError:
+                product_codes = None
+
+        def _code_kind(code):
+            # 원자재(raw) / 반제품(product) / 관리용(managed) / 코드 없음(None).
+            if not code or not str(code).strip():
+                return None
+            upper = str(code).strip().upper()
+            if upper.startswith(RAW_MATERIAL_CODE_PREFIXES):
+                return "raw"
+            if product_codes is not None and upper in product_codes:
+                return "product"
+            return "managed"
+
         return {
             "items": [
                 {
                     "id": r["id"],
                     "name": r["name"],
                     "code": r["code"],
+                    # 코드 계열 — 화면이 자재가 원자재/반제품/관리용 중 어느 쪽인지 보여준다.
+                    "code_kind": _code_kind(r["code"]),
                     "category": r["category"],
                     "is_active": r["is_active"],
                     # 투입 로스 보정(자재 마스터 기본값, 3라운드) — 컬럼 없으면 0.
@@ -500,15 +535,20 @@ def create_item_code_router() -> APIRouter:
             if old_code and old_code != code:
                 _cleanup_orphan_master(connection, old_code)
 
-            # master_name 은 참고용 — 마스터 조회 실패는 무시하고 null.
+            # master_name/status 는 참고용 — 마스터 조회 실패는 무시하고 null.
+            # status='retired' 면 화면이 "폐기된 코드" 경고를 띄운다(지정 자체는 허용 —
+            # 과거 이력 정리 등 정당한 경우가 있고, 판단은 책임자 몫).
             master_name: str | None = None
+            master_status: str | None = None
             if code is not None:
                 try:
                     master_row = connection.execute(
-                        "SELECT name FROM item_code_master WHERE code = ?", (code,)
+                        "SELECT name, COALESCE(status, 'active') AS status "
+                        "FROM item_code_master WHERE code = ?", (code,)
                     ).fetchone()
                     if master_row:
                         master_name = master_row["name"]
+                        master_status = master_row["status"]
                 except sqlite3.OperationalError:
                     master_name = None
 
@@ -535,6 +575,7 @@ def create_item_code_router() -> APIRouter:
             "material_id": material_id,
             "code": code,
             "master_name": master_name,
+            "master_status": master_status,
             "moved_from": moved_from_name,
         }
 

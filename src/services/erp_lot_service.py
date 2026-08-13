@@ -28,6 +28,12 @@ _COL_NAME = 3         # 품목명
 _COL_LOT = 7          # Lot.No
 _COL_STOCK = 11       # 재고
 
+# ERP 일일 재고 엑셀은 원재료 전용 — 이 계열(AS/AC/AH/AW)만 LOT 검사 대상.
+# 반제품(B 계열)·ERP 미등록 소모품의 관리용 코드(BT000 등)는 이 파일에 없는 것이
+# 정상이므로 check_lot 는 이 prefix 가 아니면 검사를 스킵한다(not_erp_managed).
+# tools/import_item_codes.py 의 마스터 임포트 필터와 동일 기준 — 단일 진실 원천.
+RAW_MATERIAL_CODE_PREFIXES = ("AS", "AC", "AH", "AW")
+
 # 모듈 캐시: {(path, mtime): {"file_name", "file_date", "read_at", "lots"}}
 # lots 구조: {code(str): {"name": str, "lots": {lot(str): {"stock": float, "gubun": str}}}}
 _CACHE: dict[tuple[str, float], dict[str, Any]] = {}
@@ -201,6 +207,8 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
     """자재 코드/LOT 검증 → {valid, source, stock, file_name, file_ok, reason}.
 
     규칙:
+      - 원자재 계열(AS/AC/AH/AW) 이 아닌 코드(반제품/관리용) → valid=True
+        reason='not_erp_managed' (ERP 일일 재고 엑셀은 원재료 전용이라 검사 대상 아님)
       - 수동 LOT 테이블에 (code,lot) → valid=True source='manual' reason='manual'
       - 엑셀에 있고 재고>0 → valid=True source='erp' reason='ok'
       - 엑셀에 있는데 재고<=0 → valid=False source='erp' reason='depleted'(소진)
@@ -217,6 +225,20 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
     """
     norm_code = (code or "").strip()
     norm_lot = (lot or "").strip()
+
+    # ERP 일일 재고 엑셀은 원재료 전용. 원자재 계열(AS/AC/AH/AW)이 아닌 품목코드
+    # (반제품 B 계열, ERP 미등록 소모품의 관리용 코드 BT000 등)는 검사 대상이 아니라
+    # 파일을 열기도 전에 valid=True 로 스킵한다 — 아니면 "ERP에 없는 품목코드" 경고
+    # 소음을 낸다. valid 이므로 배합 화면은 경고를 띄우지 않는다(프런트 수정 불필요).
+    if norm_code and not norm_code.upper().startswith(RAW_MATERIAL_CODE_PREFIXES):
+        return {
+            "valid": True,
+            "source": None,
+            "stock": None,
+            "file_name": None,
+            "file_ok": True,
+            "reason": "not_erp_managed",
+        }
 
     # 파일이 아예 없거나 읽기 실패 — 엑셀 문제로 현장을 막지 않는다(fail-open).
     parsed = load_lots()
