@@ -347,6 +347,32 @@ def _build_signed_stamp(worker: str, sc: dict, out_path: str,
     return out_path if ok and os.path.exists(out_path) else None
 
 
+def build_signed_dhr_xlsx(record: dict[str, Any]) -> bytes:
+    """서명 합성 도장을 넣은 공식 양식 xlsx — 단건 [Excel]의 '서명 넣기' 지원.
+
+    PDF 경로(render_exact_form_image)와 같은 도장 합성 규칙을 쓴다. 종전에는 단건
+    Excel 이 서명 체크를 조용히 무시해, 서명본으로 오인될 미서명 파일이 나갔다
+    (2026-08-14 검토 4번). 합성 실패 시 무언의 미서명 대신 실패 표식(sign_failed)을
+    남긴다(POLISH-6 과 동일).
+    """
+    sc = signature_config.load()
+    worker = str(record.get("worker") or "").strip()
+    with tempfile.TemporaryDirectory() as tmp:
+        overrides = _worker_sign_override(record, worker, tmp)
+        stamp_path = _build_signed_stamp(
+            worker, sc, os.path.join(tmp, "stamp.png"), overrides
+        )
+        sign_failed = stamp_path is None
+        if sign_failed:
+            _log.warning(
+                "DHR 서명 합성 실패(Excel) — record id=%s, 미서명 표식으로 출력",
+                record.get("id"),
+            )
+        return dhr_excel.build_official_dhr_xlsx(
+            record, signature_image_path=stamp_path, sign_failed=sign_failed
+        )
+
+
 def render_exact_form_image(
     record: dict[str, Any], *, dpi: int = _RENDER_DPI, sign: bool = False
 ) -> Image.Image | None:

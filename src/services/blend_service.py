@@ -2736,12 +2736,20 @@ def list_blend_records(
     search: str | None = None,
     limit: int = 200,
     include_canceled: bool = False,
+    only_unacked: bool = False,
 ) -> list[dict[str, Any]]:
     # 기본은 취소분 제외(현장 목록). include_canceled=True 면 함께 조회한다 — 취소한 기록을
     # 다시 열어 '복원'하거나 취소 이력을 확인할 유일한 경로이고, 전체 Excel 백업에서도
     # 취소는 지워진 게 아니라 보존해야 할 증거라 포함이 맞다.
     clauses = [] if include_canceled else ["status != 'canceled'"]
     params: list[Any] = []
+    if only_unacked:
+        # '미확인만' — 종전에는 화면이 LIMIT 로 잘려 온 목록을 클라이언트에서 걸렀다.
+        # 미확인 건이 상한 밖(오래된 기록)에 있으면 영영 안 보이는 통제 사각(2026-08-14
+        # 검토 1번). 서버가 전체에서 거른다. 컬럼이 없는 구버전 DB 는 호출부가 방어.
+        clauses.append(
+            "(COALESCE(rescale_unacked, 0) = 1 OR COALESCE(manual_unacked, 0) = 1)"
+        )
     if start_date:
         clauses.append("work_date >= ?")
         params.append(start_date)
@@ -2770,12 +2778,23 @@ def list_blend_records(
     params.append(int(limit))
     # 제품 품목코드는 기록의 스냅샷 우선, 없으면(구 기록) 레시피 조인 폴백.
     code_expr = product_code_select_expr(connection)
+    # 증량/수기 미확인 배지 — 종전에는 화면이 /blend/rescales/summary(무조건 최신
+    # 1000건)를 따로 받아 행과 짝맞췄다. 1000건 밖 기록의 배지가 조용히 빠지고,
+    # 조회마다 이벤트 배열 전체가 오갔다(2026-08-14 검토 2번). 목록 행에 플래그를
+    # 직접 싣는다(사유·승인자 등 상세는 종전대로 별도 경로 — 개방 payload 정책 ⓑ).
+    badge_cols = (
+        ", COALESCE(rescale_count, 0) AS rescale_count"
+        ", COALESCE(rescale_unacked, 0) AS rescale_unacked"
+        ", COALESCE(manual_unacked, 0) AS manual_unacked"
+        if _table_has_column(connection, "blend_records", "rescale_count")
+        else ""
+    )
     rows = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
                manual_entry, is_bulk_regenerated,
-               {code_expr}
+               {code_expr}{badge_cols}
         FROM blend_records
         WHERE {where}
         ORDER BY work_date DESC, id DESC
@@ -2795,6 +2814,7 @@ def count_blend_records(
     product: str | None = None,
     search: str | None = None,
     include_canceled: bool = False,
+    only_unacked: bool = False,
 ) -> int:
     """list_blend_records 와 동일 필터의 전체 건수(표시 상한과 무관한 '전체 M').
 
@@ -2803,6 +2823,10 @@ def count_blend_records(
     """
     clauses = [] if include_canceled else ["status != 'canceled'"]
     params: list[Any] = []
+    if only_unacked:
+        clauses.append(
+            "(COALESCE(rescale_unacked, 0) = 1 OR COALESCE(manual_unacked, 0) = 1)"
+        )
     if start_date:
         clauses.append("work_date >= ?")
         params.append(start_date)
@@ -2859,6 +2883,11 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "manual_entry": bool(row["manual_entry"]) if "manual_entry" in keys else False,
         "is_bulk_regenerated": bool(row["is_bulk_regenerated"]) if "is_bulk_regenerated" in keys else False,
     }
+    # 증량 미확인 배지 플래그 — 목록 SELECT 가 실었을 때만(구버전 DB 폴백 없음).
+    # manual_unacked 는 아래 공통 루프가 싣는다(상세 응답과 같은 키).
+    if "rescale_count" in keys:
+        out["rescale_count"] = int(row["rescale_count"] or 0)
+        out["rescale_unacked"] = bool(row["rescale_unacked"])
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
               "worker_sign", "reviewed_sign", "approved_sign", "reactor",
               # 제품(반제품) 품목코드 — 저장 시점 스냅샷(없으면 레시피 조인 폴백).

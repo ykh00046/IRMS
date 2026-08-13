@@ -736,6 +736,23 @@ def build_router() -> APIRouter:
         ).fetchone()
         return {"exists": row is not None}
 
+    @router.get("/blend/records/product-names")
+    def blend_record_product_names(
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """기록 화면 제품 필터의 모집단 — 기록에 등장한 제품명 전부.
+
+        종전에는 화면이 product-usage(완료·비재생성 한정 통계)에서 이름만 뽑아 써서,
+        취소분·일괄재생성 기록만 있는 제품이 목록에는 보이는데 필터에는 없었다
+        (2026-08-14 검토 12번). 필터 모집단은 목록과 같은 테이블에서 나와야 한다.
+        """
+        rows = connection.execute(
+            "SELECT DISTINCT product_name FROM blend_records "
+            "WHERE product_name IS NOT NULL AND product_name != '' "
+            "ORDER BY product_name"
+        ).fetchall()
+        return {"items": [r["product_name"] for r in rows]}
+
     @router.get("/blend/records")
     def blend_records(
         request: Request,
@@ -746,11 +763,14 @@ def build_router() -> APIRouter:
         search: str | None = None,
         limit: int = Query(default=500, ge=1, le=1000),
         include_canceled: bool = Query(default=False),
+        unacked: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         # 최신 limit 건만 반환(기본 500). 날짜·작업자·검색 필터가 범위를 좁히는 도구다.
         # total_available(전체 M)로 상한 도달 여부를 표면화 — '표시 N / 전체 M' 안내용.
         # include_canceled: 취소된 기록까지 함께 조회(취소분을 다시 열어 복원하는 유일한 경로).
+        # unacked: 증량/수기 미확인 건만 — 서버 전체에서 거른다(클라이언트 필터는
+        # LIMIT 절단 뒤라 상한 밖 미확인 건이 영영 안 보였다, 2026-08-14 검토 1번).
         items = blend_service.list_blend_records(
             connection,
             start_date=start_date,
@@ -760,6 +780,7 @@ def build_router() -> APIRouter:
             search=search,
             limit=limit,
             include_canceled=include_canceled,
+            only_unacked=unacked,
         )
         for item in items:
             _mask_manual_entry(request, item)
@@ -771,6 +792,7 @@ def build_router() -> APIRouter:
             product=product,
             search=search,
             include_canceled=include_canceled,
+            only_unacked=unacked,
         )
         # 취소분을 숨기고 보는 게 기본인데, 몇 건이 숨겨졌는지 화면이 말할 방법이 없었다.
         # ('취소된 기록 포함'을 켜 보기 전에는 0건인지 12건인지 알 수 없다.)
@@ -1694,16 +1716,23 @@ def build_router() -> APIRouter:
     def blend_export(
         record_id: int,
         request: Request,
+        sign: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
+        """배합일지 Excel. sign=True 면 PDF 와 같은 규칙으로 서명 도장을 합성한다 —
+        종전에는 화면의 '서명 넣기' 체크가 단건 Excel 에서만 조용히 무시됐다."""
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
         _audit_dhr_export(
-            connection, request, fmt="xlsx", record_ids=[record_id],
+            connection, request, fmt="xlsx_signed" if sign else "xlsx",
+            record_ids=[record_id],
             target_id=str(record_id), target_label=record["product_lot"],
         )
-        xlsx_bytes = dhr_excel.build_official_dhr_xlsx(record)
+        if sign:
+            xlsx_bytes = dhr_pdf.build_signed_dhr_xlsx(record)
+        else:
+            xlsx_bytes = dhr_excel.build_official_dhr_xlsx(record)
         buf = io.BytesIO(xlsx_bytes)
         buf.seek(0)
         # 한글 product_lot 대응: ASCII 폴백 + RFC 5987 filename* (UTF-8)
