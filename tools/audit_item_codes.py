@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.db.queries import normalize_token  # noqa: E402  (sys.path 조정 뒤 import)
 from src.services import erp_lot_service  # noqa: E402  (sys.path 조정 뒤 import)
+from tools.import_item_codes import MATERIAL_CODE_PREFIXES  # noqa: E402
 
 
 # ── 연결 ────────────────────────────────────────────────────────────────────
@@ -221,14 +222,19 @@ def section_e(conn: sqlite3.Connection) -> dict:
 
 
 def section_f(conn: sqlite3.Connection, erp_file: str | None) -> dict:
-    """[F] materials.code 중 ERP 재고 엑셀에 등장하지 않는 코드.
+    """[F] 원자재 코드 중 ERP 재고 엑셀에 등장하지 않는 것.
+
+    ERP 일일 재고 엑셀은 **원재료 전용**이다. 반제품 코드(B 계열 등)나 ERP 에
+    등록되지 않은 소모성 품목의 관리용 코드는 이 파일에 없는 것이 정상이므로,
+    대조는 원자재 코드 계열(MATERIAL_CODE_PREFIXES = AS/AC/AH/AW — 마스터 임포트와
+    같은 기준)만 대상으로 한다. 제외된 코드는 개수로만 알린다.
 
     엑셀 파싱은 src/services/erp_lot_service.py 의 기존 파서(_parse_file)를
     그대로 가져와 쓴다 - 열 인덱스를 다시 하드코딩하지 않는다. _parse_file 은
     임의 경로 한 파일을 파싱하는 유일한 진입점이다(load_lots 는 고정 디렉터리의
     최신 파일만 본다). 미지정 / 없음 / 열기 실패면 검사를 생략한다.
     """
-    title = "[F] ERP 재고 엑셀에 없는 자재 코드"
+    title = "[F] ERP 재고 엑셀에 없는 원자재 코드"
     if not erp_file:
         return {"key": "F", "title": title, "status": "skip",
                 "note": "검사 생략 (ERP 파일 미지정)", "items": []}
@@ -249,14 +255,19 @@ def section_f(conn: sqlite3.Connection, erp_file: str | None) -> dict:
         "WHERE code IS NOT NULL AND TRIM(code) != '' ORDER BY name"
     ).fetchall()
     items = []
+    skipped_non_raw = 0
     for r in mat_rows:
         code_key = (r["code"] or "").strip().upper()
+        if not code_key.startswith(MATERIAL_CODE_PREFIXES):
+            skipped_non_raw += 1   # 반제품/관리용 코드 - 원자재 재고 파일 대상 아님
+            continue
         if code_key not in erp_codes_upper:
             items.append(
                 {"id": int(r["id"]), "name": r["name"], "code": r["code"]})
     return {
         "key": "F", "title": title,
         "status": "issues" if items else "ok", "items": items,
+        "skipped_non_raw": skipped_non_raw,
         "file_name": parsed["file_name"],
         "file_date": parsed["file_date"],
     }
@@ -429,6 +440,9 @@ def print_human(results: dict, db_label: str) -> None:
         if key == "F" and sec.get("file_name"):
             date_part = f" ({sec['file_date']})" if sec.get("file_date") else ""
             print(f"  ERP 파일: {sec['file_name']}{date_part}")
+            if sec.get("skipped_non_raw"):
+                print(f"  참고: 반제품/관리용 코드 {sec['skipped_non_raw']}건은 "
+                      f"원자재 재고 파일 대상이 아니라 대조에서 제외")
         if key == "D":
             _print_d(sec)
             continue

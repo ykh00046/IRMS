@@ -229,6 +229,29 @@ def test_f_erp_missing_codes(tmp_path):
     assert res["file_date"] == "2026-08-13"
 
 
+def test_f_non_raw_codes_excluded(tmp_path):
+    """반제품(B 계열)·관리용(BT 등) 코드는 원자재 재고 파일 대상이 아니다.
+
+    ERP 일일 재고 엑셀은 원재료 전용 - 반제품 코드와 ERP 미등록 소모품의 관리용
+    코드가 거기 없는 것은 정상이므로 [F] 대조에서 제외하고 개수로만 알린다.
+    """
+    def seed(c):
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('원료', 'AS0001', 1)")
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('PB', 'B0020', 1)")
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('메탄올', 'BT000', 1)")
+
+    conn = _build_db(tmp_path / "f_nr.db", seed)
+    xlsx = tmp_path / "ERP_2026-08-13.xlsx"
+    _make_erp_xlsx(xlsx, [("AS0001", "LOT1", 10)])
+
+    res = audit_item_codes.section_f(conn, str(xlsx))
+    conn.close()
+
+    assert res["status"] == "ok"           # 원자재 AS0001 은 파일에 있음
+    assert res["items"] == []              # B0020/BT000 은 오탐으로 뜨지 않는다
+    assert res["skipped_non_raw"] == 2
+
+
 def test_f_no_file_skips(tmp_path):
     def seed(c):
         c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M1', 'AS0001', 1)")
