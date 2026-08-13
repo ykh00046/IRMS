@@ -452,13 +452,27 @@ def summarize_periods(readings: list[dict[str, Any]], granularity: str) -> list[
         buckets.setdefault(key, []).append(r)
 
     result: list[dict[str, Any]] = []
-    prev_mean: float | None = None
+    prev_normal_mean: float | None = None
     for key in sorted(buckets):
         items = buckets[key]
         values = [x["viscosity"] for x in items]
         mean = round(statistics.fmean(values), 3)
         std = round(statistics.stdev(values), 3) if len(values) >= 2 else 0.0
-        delta = None if prev_mean is None else round(mean - prev_mean, 3)
+        # 전기 대비(mean_delta)는 **이상(anomaly) 측정을 뺀 평균** 기준 — 이상값이
+        # 낀 구간 평균으로 비교하면 그 다음 정상 구간이 "+270" 같은 무의미한 급변으로
+        # 표시된다(2026-08-13 검토: 7/24 이상 128.4 → 7/27 정상 398.4 가 ▲+270).
+        # 표시용 평균(mean)·범위는 실측 그대로 두고, 비교 기준만 정상 표본으로 좁힌다.
+        # 구간 전체가 이상이면 비교 기준을 갱신하지 않는다(다음 정상 구간은 마지막
+        # 정상 기준과 비교).
+        normal_values = [x["viscosity"] for x in items if x["status"] != "anomaly"]
+        normal_mean = (
+            round(statistics.fmean(normal_values), 3) if normal_values else None
+        )
+        delta = (
+            None
+            if normal_mean is None or prev_normal_mean is None
+            else round(normal_mean - prev_normal_mean, 3)
+        )
         result.append({
             "period": key,
             "count": len(values),
@@ -470,7 +484,8 @@ def summarize_periods(readings: list[dict[str, Any]], granularity: str) -> list[
             "warn_count": sum(1 for x in items if x["status"] == "warn"),
             "mean_delta": delta,
         })
-        prev_mean = mean
+        if normal_mean is not None:
+            prev_normal_mean = normal_mean
     return result
 
 
@@ -542,6 +557,34 @@ def classify_value(
     return verdict
 
 
+# 바인더(APB/CSPB 등)의 '사용한 PB' 연계가 참조하는 소스 반제품 코드.
+# _pb_viscosity_map · 배합 상세에서의 PB 행 감지가 같은 기준을 쓴다(단일 원천).
+SOURCE_PB_CODE = "PB"
+
+
+def detect_source_pb_lot(details: list[dict[str, Any]]) -> tuple[str | None, str]:
+    """배합 상세에서 '사용한 PB' 자재 LOT 을 찾는다. 반환: (lot, method).
+
+    method: 'matched'   — 자재명이 PB(소스 반제품 코드)와 일치하는 행에서 찾음
+            'first_row' — PB 행이 없어 첫 행 폴백(과거 동작 — 자재 구성이 다른
+                          레시피에서는 엉뚱한 자재일 수 있으므로 화면이 표시·수정
+                          기회를 준다)
+            'none'      — 상세가 없거나 LOT 이 비어 있음
+    종전에는 무조건 첫 행을 PB 로 가정해, 레시피에서 PB 가 첫 계량 자재가 아니면
+    엉뚱한 자재 LOT 이 '사용한 PB' 로 박혔다(2026-08-13 검토).
+    """
+    if not details:
+        return None, "none"
+    for d in details:
+        name = str(d.get("material_name") or "").strip().upper()
+        code = str(d.get("material_code") or "").strip().upper()
+        if name == SOURCE_PB_CODE or code == SOURCE_PB_CODE:
+            lot = str(d.get("material_lot") or "").strip()
+            return (lot or None), ("matched" if lot else "none")
+    lot = str(details[0].get("material_lot") or "").strip()
+    return (lot or None), ("first_row" if lot else "none")
+
+
 def _lot_digits(lot: Any) -> str:
     """LOT 에서 뒤쪽 8자리 숫자만 추출 — 연계 매칭 키.
 
@@ -560,7 +603,7 @@ def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
     같은 PB LOT 에 점도가 여러 번이면 가장 최근(measured_date, id) 것을 쓴다.
     PB 반제품이 없으면 빈 맵.
     """
-    pb = get_product_by_code(connection, "PB")
+    pb = get_product_by_code(connection, SOURCE_PB_CODE)
     if not pb:
         return {}
     rows = connection.execute(
@@ -602,7 +645,11 @@ def analyze_product(
     # 사용한 PB 연계 — 바인더(APB/CSPB 등)의 material_lot(사용한PB) 을 PB 반제품의
     # 점도(lot_no) 와 맞춰, "이 PB(48cp)로 만든 바인더는 80" 상관을 보여준다. 두 LOT
     # 은 같은 8자리 형식이라 직접 매칭. PB 자신을 볼 때나 매칭이 없으면 그냥 빈 값.
-    pb_map = _pb_viscosity_map(connection) if product.get("code") != "PB" else {}
+    pb_map = (
+        _pb_viscosity_map(connection)
+        if product.get("code") != SOURCE_PB_CODE
+        else {}
+    )
 
     readings: list[dict[str, Any]] = []
     valid_readings: list[dict[str, Any]] = []
@@ -656,7 +703,21 @@ def analyze_product(
     periods = summarize_periods(valid_readings, granularity)
     control["excluded_n"] = excluded_count
 
+    # PB 연계 요약 — 화면이 "왜 연계가 안 보이는지"를 말할 수 있게 한다.
+    # 종전에는 매칭 0건이면 패널이 조용히 숨겨져 실패가 무증상이었다(2026-08-13 검토).
+    with_lot = sum(1 for x in readings if (x.get("material_lot") or "").strip())
+    matched = sum(1 for x in readings if x.get("source_pb_viscosity") is not None)
+    pb_link = {
+        "source_code": SOURCE_PB_CODE,
+        "source_exists": bool(pb_map) or bool(
+            get_product_by_code(connection, SOURCE_PB_CODE)
+        ),
+        "readings_with_lot": with_lot,
+        "matched": matched,
+    }
+
     return {
+        "pb_link": pb_link,
         "product": product,
         "stats": control,
         "counts": counts,

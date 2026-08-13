@@ -322,6 +322,9 @@ class BlendViscosityBody(BaseModel):
     viscosity: float = Field(gt=0, le=100000)
     memo: str | None = Field(default=None, max_length=1000)
     product_id: int | None = Field(default=None, gt=0)
+    # 사용한 PB LOT 수동 보정 — 자동 감지(자재명 PB 행)가 틀렸을 때 화면이 고친 값.
+    # 생략하면 서버가 배합 상세에서 감지한다.
+    material_lot: str | None = Field(default=None, max_length=100)
 
 
 def _validate_signature(value: str | None) -> str | None:

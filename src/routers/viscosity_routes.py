@@ -118,6 +118,110 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
 
+    @op_router.get("/viscosity/products/{product_id}/blend-records")
+    def viscosity_blend_records(
+        product_id: int,
+        unregistered: str | None = None,
+        q: str | None = None,
+        limit: int = 20,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """등록 패널용 배합 기록 목록 — 한 번의 요청으로 등록 여부까지 함께.
+
+        종전에는 화면이 /blend/records 검색 후 20건을 낱개 상세 조회(총 22회)했고,
+        '미등록만' 필터는 잘라온 20건에만 적용돼 더 오래된 미등록 LOT 이 있어도
+        빈 목록이 나왔다(2026-08-13 검토 4·10번). 여기서는 서버가 점도 등록 여부를
+        LEFT JOIN 으로 함께 계산해 필터·집계까지 끝낸다.
+        """
+        product = _require_product(connection, product_id)
+        limit = max(1, min(int(limit or 20), 200))
+        names = {product["name"], product["code"]}
+        placeholders = ",".join("?" for _n in names)
+        params: list[Any] = list(names)
+        where = [
+            f"br.product_name IN ({placeholders})",
+            "br.status = 'completed'",
+            "COALESCE(br.is_bulk_regenerated, 0) = 0",
+        ]
+        query = (q or "").strip()
+        if query:
+            like = f"%{query}%"
+            where.append("(br.product_lot LIKE ? OR br.worker LIKE ?)")
+            params.extend([like, like])
+        # 등록 여부는 EXISTS 로 — 한 기록에 측정이 둘 이상 연결돼도 행이 불지 않는다.
+        registered_sql = (
+            "EXISTS (SELECT 1 FROM viscosity_readings vr "
+            "        WHERE vr.blend_record_id = br.id)"
+        )
+        base_sql = f"FROM blend_records br WHERE {' AND '.join(where)}"
+        total = connection.execute(
+            f"SELECT COUNT(*) {base_sql}", params
+        ).fetchone()[0]
+        unregistered_total = connection.execute(
+            f"SELECT COUNT(*) {base_sql} AND NOT {registered_sql}", params
+        ).fetchone()[0]
+        only_unregistered = unregistered == "1"
+        rows = connection.execute(
+            f"""
+            SELECT br.id, br.product_lot, br.work_date, br.worker,
+                   br.total_amount, br.reactor,
+                   {registered_sql} AS registered,
+                   (SELECT vr2.viscosity FROM viscosity_readings vr2
+                     WHERE vr2.blend_record_id = br.id
+                     ORDER BY vr2.id DESC LIMIT 1) AS reading_value
+            {base_sql}
+            {f"AND NOT {registered_sql}" if only_unregistered else ""}
+            ORDER BY br.work_date DESC, br.id DESC
+            LIMIT ?
+            """,
+            [*params, limit],
+        ).fetchall()
+        return {
+            "items": [
+                {
+                    "id": int(r["id"]),
+                    "product_lot": r["product_lot"],
+                    "work_date": r["work_date"],
+                    "worker": r["worker"],
+                    "total_amount": r["total_amount"],
+                    "reactor": r["reactor"],
+                    "registered": bool(r["registered"]),
+                    "viscosity": (
+                        float(r["reading_value"])
+                        if r["reading_value"] is not None
+                        else None
+                    ),
+                }
+                for r in rows
+            ],
+            "total": int(total),
+            "unregistered_total": int(unregistered_total),
+            "limit": limit,
+        }
+
+    @op_router.get("/viscosity/blend-records/{record_id}/used-pb")
+    def viscosity_used_pb_preview(
+        record_id: int,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """선택한 배합 기록의 '사용한 PB' 감지 미리보기 — 등록 전에 확인·수정 기회.
+
+        종전에는 서버가 상세 첫 행을 몰래 PB 로 저장했고 화면에 보이지 않았다
+        (2026-08-13 검토 2번). method 가 'first_row' 면 화면이 "자동 감지 실패 -
+        확인 필요" 를 표시한다. pb_viscosity 는 그 PB LOT 의 최신 점도(없으면 null).
+        """
+        from ..services import blend_service
+
+        record = blend_service.get_blend_record(connection, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        lot, method = viscosity_service.detect_source_pb_lot(
+            record.get("details") or []
+        )
+        pb_map = viscosity_service._pb_viscosity_map(connection)
+        pb_value = pb_map.get(viscosity_service._lot_digits(lot)) if lot else None
+        return {"lot": lot, "method": method, "pb_viscosity": pb_value}
+
     @op_router.post("/viscosity/readings")
     def viscosity_add_reading(
         body: ViscosityReadingBody,

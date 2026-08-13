@@ -1083,7 +1083,16 @@ def build_router() -> APIRouter:
             )
             if not product:
                 raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
-        first_lot = record["details"][0]["material_lot"] if record["details"] else None
+        # '사용한 PB' — 화면이 보정한 값(body.material_lot)이 있으면 그것을, 없으면
+        # 배합 상세에서 자재명이 PB 인 행을 찾아 감지한다(detect_source_pb_lot).
+        # 종전의 "무조건 첫 행" 가정은 PB 가 첫 계량 자재가 아닌 레시피에서 엉뚱한
+        # 자재 LOT 을 박았다(2026-08-13 검토).
+        if body.material_lot is not None and body.material_lot.strip():
+            source_pb_lot, pb_method = body.material_lot.strip(), "manual"
+        else:
+            source_pb_lot, pb_method = viscosity_service.detect_source_pb_lot(
+                record.get("details") or []
+            )
         try:
             viscosity_service.add_reading(
                 connection,
@@ -1093,7 +1102,7 @@ def build_router() -> APIRouter:
                 measured_date=record["work_date"],
                 memo=body.memo,
                 recipe_material=record["product_name"],
-                material_lot=first_lot,
+                material_lot=source_pb_lot,
                 created_by=actor,
                 created_at=now,
                 blend_record_id=record_id,
@@ -1111,10 +1120,17 @@ def build_router() -> APIRouter:
             target_type="blend_record",
             target_id=str(record_id),
             target_label=record["product_lot"],
-            details={"product_code": product["code"], "viscosity": body.viscosity},
+            details={
+                "product_code": product["code"],
+                "viscosity": body.viscosity,
+                "used_pb_lot": source_pb_lot,
+                "used_pb_method": pb_method,
+            },
         )
         connection.commit()
         record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
+        # 화면이 등록 직후 "사용한 PB: xxx (감지/수동)" 을 보여줄 수 있게 싣는다.
+        record["used_pb"] = {"lot": source_pb_lot, "method": pb_method}
         return _mask_manual_entry(request, record)
 
     # ── 증량(rescale) 책임자 현장 인증 — 세션 생성 없이 자격 증명만 확인 ──
