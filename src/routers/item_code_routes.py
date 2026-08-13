@@ -211,6 +211,57 @@ def _cleanup_orphan_master(connection: sqlite3.Connection, code: Any) -> None:
         pass
 
 
+def _product_code_holder(
+    connection: sqlite3.Connection, code: Any, same_name: Any = None
+) -> str | None:
+    """같은 코드를 이미 쥐고 있는 **다른 이름의** 반제품 이름 — 없으면 None.
+
+    자재 코드(materials.code)와 반제품 코드(recipes.product_code)는 같은 ERP 품목코드
+    공간을 쓴다. 한 코드를 서로 다른 품목이 자재·반제품으로 나눠 쥐면 품목코드 해석
+    (자재 사용량·상위 재고 연계)이 어느 쪽을 가리키는지 갈리므로 교차 중복을 막는다.
+
+    다만 **이름이 같으면 충돌이 아니다** — 1차 반제품("K-1")은 2차 BOM 에서 자재로도
+    쓰이며, 임포트가 그 자재 행에 1차 레시피의 품목코드를 일부러 승계한다
+    (import_parser.completed_recipe_codes). 같은 품목이 자재/반제품 두 얼굴을 갖는
+    이 정상 경로까지 막으면 코드 재지정이 영구히 409 가 된다.
+    비교는 대소문자 무시 — 도구/직접 SQL 로 소문자 코드가 들어간 과거 데이터도 잡는다.
+    이름 비교는 normalize_token(해석기와 같은 정규화) 기준.
+    """
+    if not code:
+        return None
+    same_key = normalize_token(str(same_name)) if same_name else None
+    for row in connection.execute(
+        "SELECT product_name FROM recipes WHERE upper(product_code) = upper(?)",
+        (code,),
+    ).fetchall():
+        holder = row["product_name"]
+        if same_key and normalize_token(holder or "") == same_key:
+            continue  # 같은 품목의 다른 얼굴 — 충돌 아님
+        return holder
+    return None
+
+
+def _material_code_holder(
+    connection: sqlite3.Connection, code: Any, same_name: Any = None
+) -> str | None:
+    """같은 코드를 이미 쥐고 있는 **다른 이름의** 자재 이름 — 없으면 None.
+
+    _product_code_holder 의 반대 방향(반제품 코드 지정 시 자재 쪽 점유 확인).
+    같은 이름(1차 반제품이 자재로도 등록된 중간체)은 충돌로 보지 않는다.
+    """
+    if not code:
+        return None
+    same_key = normalize_token(str(same_name)) if same_name else None
+    for row in connection.execute(
+        "SELECT name FROM materials WHERE upper(code) = upper(?)", (code,)
+    ).fetchall():
+        holder = row["name"]
+        if same_key and normalize_token(holder or "") == same_key:
+            continue
+        return holder
+    return None
+
+
 def create_item_code_router() -> APIRouter:
     router = APIRouter()
 
@@ -372,11 +423,29 @@ def create_item_code_router() -> APIRouter:
             if not material_row:
                 raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
 
+            # 교차 중복 차단: 같은 코드를 (이름이 다른) 반제품이 쥐고 있으면 거부.
+            # force 로도 우회할 수 없다 — 자재↔반제품 사이에는 '이동' 개념이 없다
+            # (반제품 코드는 개정 체인 전체가 공유하므로 한 자재로 옮길 대상이 아니다).
+            # 같은 이름의 반제품(1차 반제품이 자재로도 등록된 중간체)은 예외.
+            if code is not None:
+                product_holder = _product_code_holder(
+                    connection, code, material_row["name"]
+                )
+                if product_holder:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"반제품 품목코드로 사용 중인 코드입니다({product_holder})."
+                            " 자재와 반제품이 같은 코드를 쓸 수 없습니다."
+                        ),
+                    )
+
             # 동일 code 를 가진 다른 자재가 있으면 충돌. is_active 필터 없음(비활성도 이동 대상).
+            # 비교는 대소문자 무시 — 인덱스가 NOCASE 로 바뀌기 전에 들어간 소문자 코드도 잡는다.
             moved_from_name: str | None = None
             if code is not None:
                 other = connection.execute(
-                    "SELECT id, name FROM materials WHERE code = ? AND id != ? LIMIT 1",
+                    "SELECT id, name FROM materials WHERE upper(code) = upper(?) AND id != ? LIMIT 1",
                     (code, material_id),
                 ).fetchone()
                 if other:
@@ -388,7 +457,7 @@ def create_item_code_router() -> APIRouter:
                     # force=true — 같은 트랜잭션에서 기존 보유 자재의 코드를 NULL 로.
                     # audit(details) 에 이동 사실을 남긴다(아래 material_code_cleared · set).
                     connection.execute(
-                        "UPDATE materials SET code = NULL WHERE code = ? AND id != ?",
+                        "UPDATE materials SET code = NULL WHERE upper(code) = upper(?) AND id != ?",
                         (code, material_id),
                     )
                     write_audit_log(
@@ -400,6 +469,10 @@ def create_item_code_router() -> APIRouter:
                         target_label=other["name"],
                         details={
                             "code": code,
+                            # 해제된 자재가 쥐고 있던 이전 코드 — 감사 로그만 보고
+                            # '무엇이 풀렸는지' 알 수 있어야 한다(code 와 같은 값이지만
+                            # material_code_set 의 old_code 와 같은 이름으로 남긴다).
+                            "old_code": code,
                             "moved_to_material_id": material_id,
                             "moved_to_name": material_row["name"],
                         },
@@ -447,7 +520,13 @@ def create_item_code_router() -> APIRouter:
                 target_id=material_id,
                 target_label=material_row["name"],
                 # moved_from_name 은 이동이 일어난 경우에만(그 외 None).
-                details={"code": code, "moved_from_name": moved_from_name},
+                # old_code = 이 자재가 바뀌기 전에 쥐고 있던 코드(없었으면 null).
+                # 감사 로그만으로 되돌릴 값을 알 수 있어야 한다.
+                details={
+                    "code": code,
+                    "old_code": old_code,
+                    "moved_from_name": moved_from_name,
+                },
             )
             connection.commit()
 
@@ -544,6 +623,22 @@ def create_item_code_router() -> APIRouter:
             if not recipe_row:
                 raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
 
+            # 교차 중복 차단: 같은 코드를 (이름이 다른) 자재가 쥐고 있으면 거부.
+            # 자재 코드 지정(A3)의 반대 방향 — 한 코드는 자재 또는 반제품 한쪽만 쥔다.
+            # 같은 이름의 자재(이 반제품이 2차 BOM 에서 자재로 쓰이는 중간체)는 예외.
+            if product_code is not None:
+                material_holder = _material_code_holder(
+                    connection, product_code, recipe_row["product_name"]
+                )
+                if material_holder:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"자재 품목코드로 사용 중인 코드입니다({material_holder})."
+                            " 자재와 반제품이 같은 코드를 쓸 수 없습니다."
+                        ),
+                    )
+
             # 이 레시피가 속한 개정 체인 전체(_revision_chain_ids 와 동일 정의).
             chain_ids = _revision_chain_ids(connection, recipe_id)
             placeholders = ",".join("?" for _ in chain_ids)
@@ -590,7 +685,12 @@ def create_item_code_router() -> APIRouter:
                 target_type="recipe",
                 target_id=recipe_id,
                 target_label=recipe_row["product_name"],
-                details={"product_code": product_code, "updated": updated},
+                # old_code = 체인이 바뀌기 전에 쥐고 있던 반제품 코드(없었으면 null).
+                details={
+                    "product_code": product_code,
+                    "old_code": recipe_row["product_code"],
+                    "updated": updated,
+                },
             )
             connection.commit()
 
@@ -619,6 +719,12 @@ def create_item_code_router() -> APIRouter:
         name = str(body.get("name") or "").strip()
         if not name:
             raise HTTPException(status_code=400, detail="자재명을 입력하세요.")
+        # 기호만 남는 이름(예: '---')은 normalize_token 이 빈 문자열이라 어떤 기록과도
+        # 이어지지 않는다 — 이름 변경(PUT /name)과 같은 규칙으로 등록 단계에서 막는다.
+        if not normalize_token(name):
+            raise HTTPException(
+                status_code=400, detail="영문·숫자·한글이 포함된 이름이어야 합니다."
+            )
 
         code = _validate_code(body.get("code"))
         # force=true → 코드 충돌 시 기존 보유 자재에서 코드를 빼고(이동) 새 자재에 부여.
@@ -635,6 +741,45 @@ def create_item_code_router() -> APIRouter:
                     status_code=409, detail="이미 등록된 자재명입니다."
                 )
 
+            # 이름 충돌 재검사 — normalize_token 기준(공백·괄호 차이 무시).
+            # lower() 만으로는 'HEMA (Lotte)' 와 'HEMA(Lotte)' 를 같은 이름으로 보지
+            # 못해, 해석기(normalize_token)에서는 하나로 합쳐질 두 자재가 등록된다.
+            # 이름 변경(PUT /materials/{id}/name)에는 있던 검사가 등록에만 없었다.
+            new_key = normalize_token(name)
+            for other_row in connection.execute(
+                "SELECT id, name FROM materials"
+            ).fetchall():
+                if normalize_token(other_row["name"] or "") == new_key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 등록된 자재명입니다. (기존: {other_row['name']})",
+                    )
+
+            # 다른 자재의 동의어와 겹쳐도 거부 — 같은 이름이 두 자재를 가리키면
+            # 품목코드 해석이 갈린다(PUT /materials/{id}/name 과 동일 규칙).
+            for alias_row in connection.execute(
+                "SELECT a.alias_name, m.name AS owner "
+                "FROM material_aliases a JOIN materials m ON m.id = a.material_id"
+            ).fetchall():
+                if normalize_token(alias_row["alias_name"] or "") == new_key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 자재 '{alias_row['owner']}' 의 동의어입니다.",
+                    )
+
+            # 교차 중복 차단: 같은 코드를 (이름이 다른) 반제품이 쥐고 있으면 거부
+            # — A3 과 동일 규칙이며 force 로도 우회할 수 없다.
+            if code is not None:
+                product_holder = _product_code_holder(connection, code, name)
+                if product_holder:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"반제품 품목코드로 사용 중인 코드입니다({product_holder})."
+                            " 자재와 반제품이 같은 코드를 쓸 수 없습니다."
+                        ),
+                    )
+
             # code 중복 — 다른 자재가 이미 쓰고 있으면 409(자재명 포함). A3 과 동일 규칙.
             # is_active 필터 없음(비활성도 이동 대상). force=true 면 코드를 이동.
             # 기존 보유 자재의 code 를 NULL 로 비우는 UPDATE 는 INSERT 앞에 있어야 한다
@@ -646,7 +791,8 @@ def create_item_code_router() -> APIRouter:
             cleared_other_name: str | None = None
             if code is not None:
                 other = connection.execute(
-                    "SELECT id, name FROM materials WHERE code = ? LIMIT 1", (code,)
+                    "SELECT id, name FROM materials WHERE upper(code) = upper(?) LIMIT 1",
+                    (code,),
                 ).fetchone()
                 if other:
                     if not force:
@@ -655,7 +801,7 @@ def create_item_code_router() -> APIRouter:
                             detail=f"이미 다른 자재({other['name']})가 사용 중인 코드입니다.",
                         )
                     connection.execute(
-                        "UPDATE materials SET code = NULL WHERE code = ?",
+                        "UPDATE materials SET code = NULL WHERE upper(code) = upper(?)",
                         (code,),
                     )
                     cleared_other_id = other["id"]

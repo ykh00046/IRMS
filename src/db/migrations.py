@@ -1,7 +1,11 @@
+import logging
 import re
 import sqlite3
 
 from .time_utils import utc_now_text
+
+
+logger = logging.getLogger(__name__)
 
 
 _ALLOWED_TABLES = frozenset({
@@ -45,6 +49,71 @@ def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: 
     if column_name in columns:
         return
     connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+
+
+def ensure_materials_code_nocase_unique(connection: sqlite3.Connection) -> None:
+    """materials.code 유니크 인덱스를 대소문자 무시(NOCASE)로 맞춘다 — 멱등.
+
+    본래 인덱스는 기본 collation(BINARY) 이라 'ac0101' 과 'AC0101' 이 서로 다른 값으로
+    공존할 수 있었다. API 는 코드를 항상 대문자로 정규화하지만, 도구·직접 SQL·과거
+    임포트 경로로 들어온 소문자 코드가 남아 있으면 같은 품목이 두 자재로 갈린다.
+
+    단계(서버 기동마다 재실행돼도 안전):
+      1. 빈 문자열 코드는 '미부여'와 같은 뜻이므로 NULL 로 정리.
+      2. 대소문자·공백만 다른 충돌쌍이 **없는** 행만 upper(trim(code)) 로 정규화.
+         충돌쌍은 어느 쪽을 살릴지 사람이 정해야 하므로 건드리지 않고 경고만 남긴다.
+      3. 충돌쌍이 하나도 없을 때만 인덱스를 NOCASE 로 재생성한다(이미 NOCASE 면 스킵).
+         충돌쌍이 남아 있으면 기존 인덱스를 그대로 두고 경고만 — 여기서 인덱스를 만들면
+         CREATE 가 실패해 init_db 전체가 죽고 서버가 기동하지 못한다.
+    """
+    connection.execute(
+        "UPDATE materials SET code = NULL WHERE TRIM(COALESCE(code, '')) = ''"
+    )
+
+    conflict_keys = [
+        row["ukey"]
+        for row in connection.execute(
+            """
+            SELECT upper(trim(code)) AS ukey, COUNT(*) AS n
+            FROM materials
+            WHERE code IS NOT NULL
+            GROUP BY ukey
+            HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+    ]
+
+    if conflict_keys:
+        placeholders = ", ".join("?" for _ in conflict_keys)
+        connection.execute(
+            "UPDATE materials SET code = upper(trim(code)) "
+            "WHERE code IS NOT NULL AND code <> upper(trim(code)) "
+            f"AND upper(trim(code)) NOT IN ({placeholders})",
+            conflict_keys,
+        )
+        logger.warning(
+            "materials.code 에 대소문자만 다른 중복이 남아 있어 NOCASE 유니크 인덱스를 "
+            "적용하지 못했습니다: %s — 품목코드 관리 화면에서 한쪽을 정리하세요.",
+            ", ".join(conflict_keys),
+        )
+        return
+
+    connection.execute(
+        "UPDATE materials SET code = upper(trim(code)) "
+        "WHERE code IS NOT NULL AND code <> upper(trim(code))"
+    )
+
+    index_row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_materials_code'"
+    ).fetchone()
+    if index_row is not None:
+        if "NOCASE" in (index_row["sql"] or "").upper():
+            return  # 이미 적용됨 — 재실행 시 아무것도 하지 않는다.
+        connection.execute("DROP INDEX idx_materials_code")
+    connection.execute(
+        "CREATE UNIQUE INDEX idx_materials_code "
+        "ON materials(code COLLATE NOCASE) WHERE code IS NOT NULL"
+    )
 
 
 def has_migration(connection: sqlite3.Connection, name: str) -> bool:
@@ -155,6 +224,9 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_materials_code "
         "ON materials(code) WHERE code IS NOT NULL"
     )
+    # 위 인덱스는 기본 collation(BINARY) 이라 'ac0101'/'AC0101' 공존을 못 막는다.
+    # 코드를 대문자로 정규화하고 인덱스를 NOCASE 로 재생성(멱등).
+    ensure_materials_code_nocase_unique(connection)
     # 반제품 코드 — 개정 체인이 같은 코드를 공유하므로 UNIQUE 아님.
     ensure_column(connection, "recipes", "product_code", "TEXT")
     # ERP 품목 마스터(엑셀 임포트 스크립트 tools/import_item_codes.py 가 채움)

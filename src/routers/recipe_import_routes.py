@@ -23,7 +23,11 @@ from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
 from ..services.recipe_helpers import resolve_chain_tip
-from .item_code_routes import _PRODUCT_CODE_PATTERN, _revision_chain_ids
+from .item_code_routes import (
+    _PRODUCT_CODE_PATTERN,
+    _material_code_holder,
+    _revision_chain_ids,
+)
 from .models import ImportRequest, actor_name
 
 logger = logging.getLogger(__name__)
@@ -286,6 +290,27 @@ def build_router() -> APIRouter:
                         detail=(
                             f"이미 다른 반제품({conflict_row['product_name']})이"
                             " 사용 중인 코드입니다."
+                        ),
+                    )
+                # 교차 중복 차단: 같은 코드를 (이름이 다른) 자재가 쥐고 있으면 거부.
+                # PUT /recipes/{id}/product-code 와 동일 규칙 — 한 코드는 자재 또는
+                # 반제품 한쪽만 쥔다(양쪽이 쥐면 품목코드 해석이 갈린다).
+                # 같은 이름의 자재는 예외 — 1차 반제품은 2차 BOM 에서 자재로도 등록되며
+                # 그 자재 행이 1차 코드를 일부러 승계한다(import_parser).
+                explicit_owner_name = (
+                    parsed["parsed_rows"][0]["product_name"]
+                    if parsed["parsed_rows"]
+                    else None
+                )
+                material_holder = _material_code_holder(
+                    connection, explicit_product_code, explicit_owner_name
+                )
+                if material_holder:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"자재 품목코드로 사용 중인 코드입니다({material_holder})."
+                            " 자재와 반제품이 같은 코드를 쓸 수 없습니다."
                         ),
                     )
             # 정수는 '.0' 없이 저장(프리필 표시·비교 편의)
