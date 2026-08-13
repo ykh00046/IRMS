@@ -46,9 +46,12 @@
     }
 
     function activeFilters() {
+      const kindSel = document.getElementById("codes-kind");
       return {
         uncoded: dom.codesUncoded && dom.codesUncoded.checked ? "1" : undefined,
         include_inactive: includeInactive() ? "1" : undefined,
+        // 분류(코드 계열) 필터 — 값은 서버 파생(raw/product/managed/uncoded).
+        kind: kindSel && kindSel.value ? kindSel.value : undefined,
         q: dom.codesSearch ? dom.codesSearch.value.trim() : "",
       };
     }
@@ -71,21 +74,21 @@
         const items = data.items || [];
         if (!items.length) {
           dom.codesBody.innerHTML =
-            '<tr><td colspan="4"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
+            '<tr><td colspan="5"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
           return;
         }
         dom.codesBody.innerHTML = items
           .map((m) => {
             const code = m.code || "";
-            // 코드 계열 배지 — 원자재/반제품/관리용. 코드 없는 자재는 배지 없음.
-            // 서버가 code_kind(raw/product/managed/None) 를 내려주므로 화면은 표기만 한다.
+            // 분류(코드 계열) — 별도 열. 값은 코드가 결정하는 파생(원자재/반제품/관리용)
+            // 이라 코드를 지정·변경하면 자동으로 따라온다(따로 입력하지 않는다).
             const KIND_LABEL = { raw: "원자재", product: "반제품", managed: "관리용" };
             const kindLabel = code && m.code_kind ? KIND_LABEL[m.code_kind] : "";
-            const kindBadge = kindLabel
-              ? ` <span class="code-kind-badge">${IRMS.escapeHtml(kindLabel)}</span>`
-              : "";
+            const kindCell = kindLabel
+              ? `<span class="code-kind-badge">${IRMS.escapeHtml(kindLabel)}</span>`
+              : '<span class="muted">코드 없음</span>';
             const codeHtml = code
-              ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>${kindBadge}`
+              ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>`
               : '<span class="muted">-</span>';
             // [해제] 버튼은 없앴다 — 인라인 편집기에서 값을 비우고 저장하면 해제다.
             // 두 개의 빨간 버튼([해제]/[삭제])이 나란히 있어 현장에서 구분이 안 됐다.
@@ -96,8 +99,6 @@
             const inactive = Number(m.is_active) === 0;
             // 이름 정리(흡수) — 정리할 옛 동의어가 남은 자재에만 버튼을 보인다.
             // 전용 열이었지만 정리가 끝나면 전 행이 빈 버튼만 남아 자리를 차지했다.
-            // (분류 열도 함께 제거 — '기타/미분류'는 정보가 아니고, 계열은 코드 옆
-            //  배지(원자재/반제품/관리용)가 이미 말해 준다. 2026-08-13 사용자 결정)
             const aliasCount = Number(m.alias_count) || 0;
             const aliasBtn = aliasCount
               ? ` <button class="btn btn-sm alias-open-btn" data-id="${m.id}" type="button"`
@@ -123,6 +124,7 @@
               <tr class="codes-row${inactive ? " is-inactive" : ""}" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td class="name-cell">${IRMS.escapeHtml(m.name)}${inactiveTag}</td>
                 <td class="code-cell">${codeHtml}</td>
+                <td class="kind-cell">${kindCell}</td>
                 <td class="losscomp-cell">${lossCompHtml}</td>
                 <td class="action-cell">${actionHtml}</td>
               </tr>`;
@@ -309,6 +311,10 @@
       if (inactiveCb) {
         inactiveCb.addEventListener("change", refresh);
       }
+      const kindSel = document.getElementById("codes-kind");
+      if (kindSel) {
+        kindSel.addEventListener("change", refresh);
+      }
       if (dom.codesRefreshBtn) {
         dom.codesRefreshBtn.addEventListener("click", refresh);
       }
@@ -472,7 +478,7 @@
       tr.className = "alias-editor-row";
       tr.setAttribute("data-id", id);
       tr.innerHTML =
-        `<td colspan="4"><div class="alias-editor">`
+        `<td colspan="5"><div class="alias-editor">`
         + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 기록 이름 정리 — 다른 표기로 남은 과거 배합 기록을 이 자재의 이름으로 통합합니다(이름은 하나만 유지).</p>`
         + `<div class="filter-bar">`
         + `<input class="input alias-new-input" placeholder="기록에 남은 다른 표기 (예: MEHQ)" autocomplete="off" />`

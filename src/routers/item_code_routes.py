@@ -336,8 +336,16 @@ def create_item_code_router() -> APIRouter:
         uncoded: str | None = Query(default=None),
         q: str | None = Query(default=None),
         include_inactive: str | None = Query(default=None),
+        kind: str | None = Query(default=None),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
+        # kind — 분류(코드 계열) 필터. 분류는 입력값이 아니라 코드가 결정하는 파생값
+        # (원자재 prefix / 마스터 반제품 / 그 외 관리용)이라 조회 시점에 계산해 거른다.
+        if kind is not None and kind not in ("raw", "product", "managed", "uncoded"):
+            raise HTTPException(
+                status_code=400,
+                detail="kind 는 raw/product/managed/uncoded 중 하나여야 합니다.",
+            )
         # include_inactive=1 이면 사용 안 함(is_active=0) 자재도 함께 — 비활성이
         # 일방통행 함정이 되지 않도록 되살리기 경로를 화면에 준다.
         where_parts = [] if include_inactive == "1" else ["is_active = 1"]
@@ -422,23 +430,26 @@ def create_item_code_router() -> APIRouter:
                 return "product"
             return "managed"
 
-        return {
-            "items": [
-                {
-                    "id": r["id"],
-                    "name": r["name"],
-                    "code": r["code"],
-                    # 코드 계열 — 화면이 자재가 원자재/반제품/관리용 중 어느 쪽인지 보여준다.
-                    "code_kind": _code_kind(r["code"]),
-                    "category": r["category"],
-                    "is_active": r["is_active"],
-                    # 투입 로스 보정(자재 마스터 기본값, 3라운드) — 컬럼 없으면 0.
-                    "loss_comp_g": float(r["loss_comp_g"]) if "loss_comp_g" in r.keys() and r["loss_comp_g"] is not None else 0.0,
-                    "alias_count": alias_counts.get(int(r["id"]), 0),
-                }
-                for r in rows
-            ]
-        }
+        items = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "code": r["code"],
+                # 코드 계열 — 화면이 자재가 원자재/반제품/관리용 중 어느 쪽인지 보여준다.
+                "code_kind": _code_kind(r["code"]),
+                "category": r["category"],
+                "is_active": r["is_active"],
+                # 투입 로스 보정(자재 마스터 기본값, 3라운드) — 컬럼 없으면 0.
+                "loss_comp_g": float(r["loss_comp_g"]) if "loss_comp_g" in r.keys() and r["loss_comp_g"] is not None else 0.0,
+                "alias_count": alias_counts.get(int(r["id"]), 0),
+            }
+            for r in rows
+        ]
+        if kind == "uncoded":
+            items = [it for it in items if it["code_kind"] is None]
+        elif kind is not None:
+            items = [it for it in items if it["code_kind"] == kind]
+        return {"items": items}
 
     # ------------------------------------------------------------------
     # A3. PUT /materials/{material_id}/code — 자재 코드 지정/해제

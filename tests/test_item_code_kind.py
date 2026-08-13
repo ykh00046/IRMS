@@ -280,3 +280,38 @@ def test_code_kind_lowercase_raw_code_still_raw():
     finally:
         with get_connection() as conn:
             _cleanup(conn, ids)
+
+
+def test_kind_filter_returns_only_that_kind():
+    """분류 필터(kind=raw/product/managed/uncoded) — 파생 code_kind 로 거른다."""
+    client = _client()
+    headers = _login(client)
+    uid = _uid()
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        raw_id = _seed_material(conn, f"원자재F{uid}", code=f"AC{uid[:3]}1")
+        managed_id = _seed_material(conn, f"관리F{uid}", code=f"BT{uid[:3]}1")
+        uncoded_id = _seed_material(conn, f"무코드F{uid}")
+        ids = [raw_id, managed_id, uncoded_id]
+
+    try:
+        def fetch(kind):
+            res = client.get(
+                "/api/item-codes/materials",
+                params={"q": uid, "kind": kind}, headers=headers,
+            )
+            assert res.status_code == 200, res.text
+            return {it["id"] for it in res.json()["items"]}
+
+        assert fetch("raw") == {raw_id}
+        assert fetch("managed") == {managed_id}
+        assert fetch("uncoded") == {uncoded_id}
+        assert client.get(
+            "/api/item-codes/materials",
+            params={"kind": "nope"}, headers=headers,
+        ).status_code == 400
+    finally:
+        with get_connection() as conn:
+            _cleanup(conn, ids)
