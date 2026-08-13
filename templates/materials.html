@@ -62,11 +62,12 @@
             <div class="table-wrap">
               <table>
                 <thead>
+                  {# 분류 열 제거(2026-08-13) — '기타/미분류'는 정보가 아니고, 계열
+                     (원자재/반제품/관리용)은 코드 옆 배지가 말해 준다. 이름 정리도
+                     전용 열 대신 정리할 것이 남은 행의 작업 열에만 나타난다. #}
                   <tr>
                     <th>자재명</th>
                     <th>품목코드</th>
-                    <th>분류</th>
-                    <th>이름 정리</th>
                     <th>로스 보정(g)</th>
                     <th>작업</th>
                   </tr>
@@ -180,7 +181,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/management/item-codes.js?v=20260813e"></script>
+    <script src="/static/js/management/item-codes.js?v=20260813f"></script>
     <script src="/static/js/material_lots.js?v=20260808b"></script>
     <script src="/static/js/materials.js?v=20260812a"></script>
 {% endblock %}

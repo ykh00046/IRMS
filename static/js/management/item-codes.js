@@ -71,7 +71,7 @@
         const items = data.items || [];
         if (!items.length) {
           dom.codesBody.innerHTML =
-            '<tr><td colspan="6"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
+            '<tr><td colspan="4"><div class="empty-state">조건에 맞는 자재가 없습니다.</div></td></tr>';
           return;
         }
         dom.codesBody.innerHTML = items
@@ -94,12 +94,23 @@
               : `<button class="btn btn-sm accent code-edit-btn" data-id="${m.id}" type="button">지정</button>`;
             // 사용 안 함(is_active=0) 자재는 되살리기 하나만 — 숨긴 행에 편집을 권하지 않는다.
             const inactive = Number(m.is_active) === 0;
+            // 이름 정리(흡수) — 정리할 옛 동의어가 남은 자재에만 버튼을 보인다.
+            // 전용 열이었지만 정리가 끝나면 전 행이 빈 버튼만 남아 자리를 차지했다.
+            // (분류 열도 함께 제거 — '기타/미분류'는 정보가 아니고, 계열은 코드 옆
+            //  배지(원자재/반제품/관리용)가 이미 말해 준다. 2026-08-13 사용자 결정)
+            const aliasCount = Number(m.alias_count) || 0;
+            const aliasBtn = aliasCount
+              ? ` <button class="btn btn-sm alias-open-btn" data-id="${m.id}" type="button"`
+                + ` title="다른 표기로 남은 과거 기록을 이 자재의 이름으로 통합합니다">`
+                + `이름 정리 ${aliasCount}</button>`
+              : "";
             const actionHtml = inactive
               ? `<button class="btn btn-sm accent material-reactivate-btn" data-id="${m.id}" type="button"`
                 + ` title="이 자재를 목록에 다시 표시합니다">다시 사용</button>`
               : `${codeActions}`
                 + ` <button class="btn btn-sm material-rename-btn" data-id="${m.id}" type="button"`
                 + ` title="자재명 수정 - 과거 기록의 표기도 함께 바뀝니다">이름 수정</button>`
+                + aliasBtn
                 + ` <button class="btn btn-sm danger material-delete-btn" data-id="${m.id}" type="button">삭제</button>`;
             const inactiveTag = inactive
               ? ' <span class="muted">사용 안 함</span>'
@@ -108,20 +119,10 @@
             const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
             const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
               + `<button class="btn btn-sm mat-losscomp-save" data-id="${m.id}" type="button">저장</button>`;
-            // 동의어(A6) — 개수를 배지처럼 버튼 라벨에 담아, 눌러야 목록이 열리게 한다.
-            // 표를 넓히지 않으려고 목록은 아래 확장 행에서 보여준다.
-            const aliasCount = Number(m.alias_count) || 0;
-            const aliasLabel = aliasCount ? `이름 정리 ${aliasCount}` : "이름 정리";
-            const aliasHtml =
-              `<button class="btn btn-sm alias-open-btn" data-id="${m.id}" type="button"`
-              + ` title="같은 원재료가 기록에 다른 이름으로 남았을 때 이 자재에 잇습니다">`
-              + `${aliasLabel}</button>`;
             return `
               <tr class="codes-row${inactive ? " is-inactive" : ""}" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
                 <td class="name-cell">${IRMS.escapeHtml(m.name)}${inactiveTag}</td>
                 <td class="code-cell">${codeHtml}</td>
-                <td>${m.category ? IRMS.escapeHtml(m.category) : '<span class="muted">-</span>'}</td>
-                <td class="alias-cell">${aliasHtml}</td>
                 <td class="losscomp-cell">${lossCompHtml}</td>
                 <td class="action-cell">${actionHtml}</td>
               </tr>`;
@@ -471,7 +472,7 @@
       tr.className = "alias-editor-row";
       tr.setAttribute("data-id", id);
       tr.innerHTML =
-        `<td colspan="6"><div class="alias-editor">`
+        `<td colspan="4"><div class="alias-editor">`
         + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 기록 이름 정리 — 다른 표기로 남은 과거 배합 기록을 이 자재의 이름으로 통합합니다(이름은 하나만 유지).</p>`
         + `<div class="filter-bar">`
         + `<input class="input alias-new-input" placeholder="기록에 남은 다른 표기 (예: MEHQ)" autocomplete="off" />`
