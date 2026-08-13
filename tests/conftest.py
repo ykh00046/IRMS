@@ -36,3 +36,18 @@ def _restore_db_path_bindings():
     importlib.reload(cfg)
     dbconn.DATA_DIR = cfg.DATA_DIR
     dbconn.DATABASE_PATH = cfg.DATABASE_PATH
+
+
+@pytest.fixture(autouse=True)
+def _reset_attendance_parse_cache():
+    """근태 엑셀 파싱 캐시 초기화(테스트 격리).
+
+    캐시 도입(2026-08-14) 후, 파서 내부(_load_workbook 등)를 patch 해 가짜 행을
+    주입하는 테스트가 앞선 테스트의 실제 파싱 캐시에 우회당하는 상호작용이 생겼다.
+    각 테스트 시작 시 비워 '이 테스트가 처음 파싱한다'를 보장한다.
+    """
+    from src.services.attendance_excel import parser as _att_parser
+
+    _att_parser.reset_parse_cache()
+    yield
+    _att_parser.reset_parse_cache()

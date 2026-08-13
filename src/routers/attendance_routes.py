@@ -67,7 +67,18 @@ def _load_attendance_response(year_month: str, emp_id: str) -> dict[str, Any]:
             int(year_month[:4]), emp_id
         )
     except excel_service.MonthFileNotFound:
-        raise HTTPException(status_code=404, detail="MONTH_FILE_NOT_FOUND")
+        # 월초(ERP 야간 배치 전)엔 이번 달 파일이 아직 없다. 종전에는 문자열 하나만
+        # 돌려줘 화면이 available_months 를 얻지 못해 이전/다음이 전부 죽었다
+        # (지난달도 못 보는 막다른 골목, 2026-08-14 검토 3번). 이동 가능한 월 목록을
+        # detail 에 실어 화면이 최신 월로 안내·이동할 수 있게 한다.
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "MONTH_FILE_NOT_FOUND",
+                "requested_month": year_month,
+                "available_months": excel_service.available_months(),
+            },
+        )
     except excel_service.FileLocked:
         raise HTTPException(status_code=503, detail="FILE_LOCKED_RETRY")
     except excel_service.FileFormatInvalid:
@@ -87,7 +98,10 @@ def build_router() -> APIRouter:
     router = APIRouter(prefix="/attendance", tags=["attendance"])
 
     @router.post("/login")
-    @limiter.limit("5/minute")
+    # 15/min — IP 기준 제한이라 공용 현장 PC 한 대에서 여러 직원이 이어서 로그인하면
+    # 한 명의 오타 연타가 전원을 막았다(2026-08-14 검토 10번). 무차별 대입 방어는
+    # 계정 단위 잠금(5회 실패/15분 창/5분 잠금, attendance_auth)이 이미 담당한다.
+    @limiter.limit("15/minute")
     def login(
         body: LoginRequest, request: Request, response: Response
     ) -> dict[str, Any]:
@@ -148,6 +162,32 @@ def build_router() -> APIRouter:
             context.password_reset_required and bool(context.emp_id)
         )
         return payload
+
+    @router.get("/admin/anomalies")
+    def admin_anomalies(
+        request: Request, month: str | None = Query(default=None, max_length=7)
+    ) -> dict[str, Any]:
+        """이번 달 근태 이상 전체 목록(책임자 전용) — 트레이 팝업 8행의 웹 본판.
+
+        종전에는 이 데이터가 무인증 트레이 API에만 노출돼, 팝업을 닫으면 책임자가
+        같은 목록을 다시 볼 화면이 없었다(2026-08-14 검토 2번). details[].issues 에
+        판정 원문 사유가 그대로 실린다(팝업의 축약 표기와 달리 화면은 원문을 보여준다).
+        """
+        require_irms_manager(request)
+        year_month = _resolve_month(month)
+        try:
+            items = excel_service.detect_month_anomalies(year_month)
+        except excel_service.MonthFileNotFound:
+            items = []
+        except excel_service.FileLocked:
+            raise HTTPException(status_code=503, detail="FILE_LOCKED_RETRY")
+        return {
+            "month": year_month,
+            "items": items,
+            "total": len(items),
+            "detail_total": sum(len(i.get("details") or []) for i in items),
+            "available_months": excel_service.available_months(),
+        }
 
     @router.get("/admin/employees")
     def admin_employees(

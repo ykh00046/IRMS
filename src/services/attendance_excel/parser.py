@@ -319,7 +319,36 @@ def header_diagnostics(year_month: str) -> list[dict[str, Any]]:
     return out
 
 
+# (path 문자열) → (mtime, records) 파싱 캐시. 종전에는 요청마다 워크북을 다시
+# 열었는데(명시적 무캐시 설계), 화면 한 번에 최대 12개월 파일을 읽는 구조라 비용이
+# 컸다 — 책임자 진입 1회에 워크북 15개+(2026-08-14 검토 5번). ERP 야간 배치가 파일을
+# 덮어쓰면 mtime 이 바뀌어 자동 무효화된다(erp_lot_service 의 캐시와 같은 규칙).
+# 반환 records 는 공유 객체이므로 호출부는 읽기 전용으로만 다룬다(현재 전 호출부 확인).
+_PARSE_CACHE: dict[str, tuple[tuple[int, int], list[dict[str, Any]]]] = {}
+
+
+def reset_parse_cache() -> None:
+    """테스트용 — 파싱 캐시 초기화(파일을 같은 스탬프로 다시 쓰는 픽스처 대비)."""
+    _PARSE_CACHE.clear()
+
+
+def _cache_stamp(path: Path) -> tuple[int, int] | None:
+    """캐시 무효화 키 — ns 단위 mtime + 크기. 초 단위 mtime 만 보면 같은 초 안에
+    파일을 다시 쓰는 테스트 픽스처(또는 빠른 연속 배치)가 낡은 캐시를 받는다."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
 def _records_from_path(path: Path) -> list[dict[str, Any]]:
+    key = str(path)
+    stamp = _cache_stamp(path)
+    if stamp is not None:
+        cached = _PARSE_CACHE.get(key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
     wb = _load_workbook(path)
     try:
         ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
@@ -329,6 +358,8 @@ def _records_from_path(path: Path) -> list[dict[str, Any]]:
             rec = _row_to_record(raw, colmap)
             if rec:
                 records.append(rec)
+        if stamp is not None:
+            _PARSE_CACHE[key] = (stamp, records)
         return records
     finally:
         wb.close()
