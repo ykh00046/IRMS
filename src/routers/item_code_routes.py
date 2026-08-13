@@ -1179,6 +1179,116 @@ def create_item_code_router() -> APIRouter:
             )
         return text
 
+    # ------------------------------------------------------------------
+    # A6b. POST /materials/{material_id}/absorb-name — 기록 표기 흡수(일회성 통합)
+    # ------------------------------------------------------------------
+    # 코드 중심·이름 하나 원칙(2026-08-13 사용자 결정): 변형 표기를 동의어(영구 다리)로
+    # 유지하는 대신, 그 표기로 남은 과거 기록을 그 자리에서 정본 이름으로 고쳐 쓰고
+    # 끝낸다. 같은 표기가 이 자재의 동의어로 등록돼 있었다면 함께 삭제한다(역할 종료).
+    # 기록의 정체성(코드·수량·FK)은 그대로고 표기만 바뀐다 — 이름 수정(A4b)의 전파와
+    # 같은 원칙을, 정본이 아닌 변형 표기에 적용하는 것.
+    @router.post("/materials/{material_id}/absorb-name")
+    def absorb_recorded_name(
+        material_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        variant = _validate_alias(body.get("name"))
+
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+            canonical = material_row["name"] or ""
+            key = normalize_token(variant)
+
+            # 다른 자재의 이름/동의어와 겹치는 표기는 흡수 불가 — 소유가 갈린다.
+            for row in connection.execute(
+                "SELECT id, name FROM materials WHERE id != ?", (material_id,)
+            ).fetchall():
+                if normalize_token(row["name"] or "") == key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"'{row['name']}' 은 다른 자재의 이름입니다.",
+                    )
+            for row in connection.execute(
+                "SELECT a.alias_name, a.material_id, m.name AS owner "
+                "FROM material_aliases a JOIN materials m ON m.id = a.material_id "
+                "WHERE a.material_id != ?",
+                (material_id,),
+            ).fetchall():
+                if normalize_token(row["alias_name"] or "") == key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"이미 자재 '{row['owner']}' 의 동의어입니다.",
+                    )
+
+            # 그 표기로 남은 기록을 정본 이름으로 통일 + 끊긴 FK 연결.
+            # 대상: FK 가 없거나 이미 이 자재를 가리키는 행만 — 다른 자재에 연결된
+            # 행을 이름만 보고 빼앗지 않는다.
+            absorbed = 0
+            canonical_key = normalize_token(canonical)
+            for row in connection.execute(
+                "SELECT DISTINCT material_name FROM blend_details "
+                "WHERE material_name IS NOT NULL "
+                "  AND (material_id IS NULL OR material_id = ?)",
+                (material_id,),
+            ).fetchall():
+                rec_name = row["material_name"]
+                if rec_name == canonical:
+                    continue  # 이미 정본 표기 — 손댈 것 없음
+                if normalize_token(rec_name or "") != key:
+                    continue
+                absorbed += connection.execute(
+                    "UPDATE blend_details SET material_name = ?, material_id = ? "
+                    "WHERE material_name = ? AND (material_id IS NULL OR material_id = ?)",
+                    (canonical, material_id, rec_name, material_id),
+                ).rowcount or 0
+            # 표기가 정본과 같은 키라면(대소문자·공백 차이) 위 루프가 이미 처리했고,
+            # 정본 표기 그대로인데 FK 만 끊긴 행도 잇는다(같은 키일 때만).
+            if key == canonical_key:
+                absorbed += connection.execute(
+                    "UPDATE blend_details SET material_id = ? "
+                    "WHERE material_name = ? AND material_id IS NULL",
+                    (material_id, canonical),
+                ).rowcount or 0
+
+            # 이 자재의 같은 표기 동의어는 역할이 끝났다 — 함께 삭제.
+            alias_removed = 0
+            for row in connection.execute(
+                "SELECT id, alias_name FROM material_aliases WHERE material_id = ?",
+                (material_id,),
+            ).fetchall():
+                if normalize_token(row["alias_name"] or "") == key:
+                    connection.execute(
+                        "DELETE FROM material_aliases WHERE id = ?", (row["id"],)
+                    )
+                    alias_removed += 1
+
+            write_audit_log(
+                connection,
+                action="material_name_absorbed",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=canonical,
+                details={
+                    "name": variant,
+                    "absorbed_records": absorbed,
+                    "alias_removed": alias_removed,
+                },
+            )
+            connection.commit()
+
+        return {
+            "status": "ok",
+            "canonical": canonical,
+            "absorbed_records": absorbed,
+            "alias_removed": alias_removed,
+        }
+
     @router.get("/materials/{material_id}/aliases")
     def list_material_aliases(
         material_id: int,

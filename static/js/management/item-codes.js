@@ -111,7 +111,7 @@
             // 동의어(A6) — 개수를 배지처럼 버튼 라벨에 담아, 눌러야 목록이 열리게 한다.
             // 표를 넓히지 않으려고 목록은 아래 확장 행에서 보여준다.
             const aliasCount = Number(m.alias_count) || 0;
-            const aliasLabel = aliasCount ? `동의어 ${aliasCount}` : "동의어";
+            const aliasLabel = aliasCount ? `이름 정리 ${aliasCount}` : "이름 정리";
             const aliasHtml =
               `<button class="btn btn-sm alias-open-btn" data-id="${m.id}" type="button"`
               + ` title="같은 원재료가 기록에 다른 이름으로 남았을 때 이 자재에 잇습니다">`
@@ -446,10 +446,11 @@
       }
     }
 
-    // ── 동의어(A6) ─────────────────────────────────────────────────────────
-    // 자재 행 바로 아래에 확장 행을 끼워 목록·추가·삭제를 처리한다. 모달을 쓰지 않는
-    // 이유는 이 패널의 다른 편집(코드·로스 보정)이 모두 인라인이라 흐름을 맞추기 위함.
-    // 한 번에 하나만 열린다 — 여러 행을 펼쳐 두면 어느 자재를 편집 중인지 흐려진다.
+    // ── 기록 이름 정리(A6 — 2026-08-13 흡수 방식 전환) ─────────────────────
+    // 코드 중심·이름 하나 원칙: 변형 표기를 동의어(영구 다리)로 쌓는 대신, 그 표기로
+    // 남은 과거 기록을 그 자리에서 정본 이름으로 고쳐 쓰고 끝낸다(흡수). 남아 있는
+    // 옛 동의어도 [흡수 후 삭제] 로 같은 방식으로 정리한다.
+    // 자재 행 바로 아래에 확장 행을 끼우고, 한 번에 하나만 연다(기존 패턴 유지).
 
     function closeAliasEditor() {
       const open = dom.codesBody.querySelector(".alias-editor-row");
@@ -471,10 +472,10 @@
       tr.setAttribute("data-id", id);
       tr.innerHTML =
         `<td colspan="6"><div class="alias-editor">`
-        + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 동의어 — 배합 기록에 이 이름으로 남은 실적이 이 자재의 품목코드로 집계됩니다.</p>`
+        + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 기록 이름 정리 — 다른 표기로 남은 과거 배합 기록을 이 자재의 이름으로 통합합니다(이름은 하나만 유지).</p>`
         + `<div class="filter-bar">`
-        + `<input class="input alias-new-input" placeholder="기록에 남은 다른 이름" autocomplete="off" />`
-        + `<button class="btn accent alias-add-btn" type="button">추가</button>`
+        + `<input class="input alias-new-input" placeholder="기록에 남은 다른 표기 (예: MEHQ)" autocomplete="off" />`
+        + `<button class="btn accent alias-add-btn" type="button">기록 흡수</button>`
         + `<button class="btn alias-close-btn" type="button">닫기</button>`
         + `</div>`
         + `<div class="alias-list"><span class="muted">불러오는 중…</span></div>`
@@ -484,11 +485,11 @@
       tr.querySelector(".alias-close-btn").addEventListener("click", closeAliasEditor);
       const input = tr.querySelector(".alias-new-input");
       const addBtn = tr.querySelector(".alias-add-btn");
-      addBtn.addEventListener("click", () => addAlias(id, input));
+      addBtn.addEventListener("click", () => absorbName(id, input.value, input));
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          addAlias(id, input);
+          absorbName(id, input.value, input);
         }
       });
       input.focus();
@@ -504,19 +505,21 @@
         const data = await IRMS._core.request(`/materials/${id}/aliases`);
         const items = data.items || [];
         if (!items.length) {
-          box.innerHTML = '<span class="muted">등록된 동의어가 없습니다.</span>';
+          box.innerHTML = '<span class="muted">정리할 옛 동의어가 없습니다.</span>';
           return;
         }
+        // 남아 있는 옛 동의어 — [흡수 후 삭제] 로 그 표기의 기록을 통합하며 정리한다.
         box.innerHTML = items
           .map(
             (a) =>
               `<div class="alias-item"><span>${IRMS.escapeHtml(a.alias_name)}</span>`
-              + `<button class="btn btn-sm danger alias-del-btn" data-alias-id="${a.id}" type="button">해제</button></div>`,
+              + `<button class="btn btn-sm alias-del-btn" data-alias-name="${IRMS.escapeHtml(a.alias_name)}" type="button"`
+              + ` title="이 표기로 남은 기록을 정본 이름으로 통합하고 동의어를 지웁니다">흡수 후 삭제</button></div>`,
           )
           .join("");
         box.querySelectorAll(".alias-del-btn").forEach((b) => {
           b.addEventListener("click", () =>
-            removeAlias(id, b.getAttribute("data-alias-id")),
+            absorbName(id, b.getAttribute("data-alias-name"), null),
           );
         });
       } catch (err) {
@@ -524,43 +527,38 @@
       }
     }
 
-    async function addAlias(id, input) {
-      const value = String(input.value || "").trim();
+    // 기록 표기 흡수 — 그 표기로 남은 과거 기록을 이 자재의 정본 이름으로 통합.
+    // 같은 표기의 옛 동의어가 있으면 서버가 함께 지운다. input 이 있으면(직접 입력
+    // 경로) 성공 시 비운다.
+    async function absorbName(id, rawValue, input) {
+      const value = String(rawValue || "").trim();
       if (!value) {
-        IRMS.notify("동의어를 입력하세요.", "error");
-        input.focus();
+        IRMS.notify("기록에 남은 표기를 입력하세요.", "error");
+        if (input) input.focus();
         return;
       }
       try {
-        const resp = await fetch(`/api/materials/${id}/aliases`, {
+        const resp = await fetch(`/api/materials/${id}/absorb-name`, {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json", ...csrfHeader() },
-          body: JSON.stringify({ alias_name: value }),
+          body: JSON.stringify({ name: value }),
         });
         if (!resp.ok) throw new Error(await detailOf(resp));
-        input.value = "";
-        IRMS.notify("동의어를 등록했습니다.", "success");
+        const result = await resp.json();
+        const n = Number(result.absorbed_records) || 0;
+        const cleaned = Number(result.alias_removed) ? " 옛 동의어도 정리했습니다." : "";
+        IRMS.notify(
+          n
+            ? `'${value}' 표기 기록 ${n}건을 '${result.canonical}' 으로 통합했습니다.${cleaned}`
+            : `'${value}' 표기로 남은 기록이 없습니다.${cleaned}`,
+          n ? "success" : "warn",
+        );
+        if (input) input.value = "";
         await loadAliases(id);
         await refreshKeepingAliasEditor(id);
       } catch (err) {
-        IRMS.notify(`동의어 등록 실패: ${err.message}`, "error");
-      }
-    }
-
-    async function removeAlias(id, aliasId) {
-      try {
-        const resp = await fetch(`/api/materials/${id}/aliases/${aliasId}`, {
-          method: "DELETE",
-          credentials: "same-origin",
-          headers: csrfHeader(),
-        });
-        if (!resp.ok) throw new Error(await detailOf(resp));
-        IRMS.notify("동의어를 해제했습니다.", "success");
-        await loadAliases(id);
-        await refreshKeepingAliasEditor(id);
-      } catch (err) {
-        IRMS.notify(`동의어 해제 실패: ${err.message}`, "error");
+        IRMS.notify(`기록 흡수 실패: ${err.message}`, "error");
       }
     }
 

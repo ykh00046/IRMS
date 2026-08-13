@@ -188,6 +188,127 @@ def test_rename_to_own_alias_absorbs_it():
     assert alias not in [a["alias_name"] for a in items]
 
 
+# ── 2a-2. 기록 표기 흡수(absorb-name) ─────────────────────────────────────
+def _insert_legacy_detail(conn, *, name, work_date="2026-07-21"):
+    """FK 없이 표기 문자열만 남은 구 이관식 기록 한 행."""
+    conn.execute(
+        "INSERT INTO blend_records (product_lot, product_name, worker, work_date, "
+        "total_amount, status, created_at) "
+        "VALUES (?, '제품', 'w', ?, 100, 'completed', ?)",
+        (f"L{uuid.uuid4().hex[:8]}", work_date, work_date),
+    )
+    rec_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO blend_details (blend_record_id, material_id, material_code, "
+        "material_name, material_lot, ratio, theory_amount, actual_amount, "
+        "sequence_order, created_at) "
+        "VALUES (?, NULL, '', ?, 'ML1', 100, 100, 100, 1, ?)",
+        (rec_id, name, work_date),
+    )
+    return rec_id
+
+
+def test_absorb_name_rewrites_records_and_removes_alias():
+    """변형 표기 흡수 — 기록의 이름이 정본으로 바뀌고 FK 가 연결되며, 같은 표기의
+    옛 동의어는 함께 삭제된다(영구 다리 대신 일회성 통합 — 이름 하나 원칙)."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    canonical = f"MP{base}"
+    variant = f"MEHQ{base}"
+    mid = _new_material(client, headers, canonical, f"AC{base[:4]}")
+    # 옛 동의어 + 그 표기의 기록 2행.
+    assert client.post(
+        f"/api/materials/{mid}/aliases", json={"alias_name": variant}, headers=headers
+    ).status_code == 200
+    with get_connection() as conn:
+        r1 = _insert_legacy_detail(conn, name=variant)
+        r2 = _insert_legacy_detail(conn, name=variant)
+        conn.commit()
+
+    res = client.post(
+        f"/api/materials/{mid}/absorb-name", json={"name": variant}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload["absorbed_records"] == 2
+    assert payload["alias_removed"] == 1
+    assert payload["canonical"] == canonical
+
+    with get_connection() as conn:
+        for rid in (r1, r2):
+            row = conn.execute(
+                "SELECT material_name, material_id FROM blend_details "
+                "WHERE blend_record_id = ?", (rid,)
+            ).fetchone()
+            assert row["material_name"] == canonical
+            assert row["material_id"] == mid
+    aliases = client.get(f"/api/materials/{mid}/aliases", headers=headers).json()
+    assert variant not in [a["alias_name"] for a in aliases["items"]]
+
+
+def test_absorb_canonical_spelling_relinks_broken_fk():
+    """정본 표기 그대로인데 FK 만 끊긴 행도 흡수로 연결된다."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    canonical = f"PMA{base}"
+    mid = _new_material(client, headers, canonical, f"AC{base[:4]}")
+    with get_connection() as conn:
+        rid = _insert_legacy_detail(conn, name=canonical)
+        conn.commit()
+
+    res = client.post(
+        f"/api/materials/{mid}/absorb-name", json={"name": canonical}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["absorbed_records"] == 1
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT material_id FROM blend_details WHERE blend_record_id = ?", (rid,)
+        ).fetchone()
+    assert row["material_id"] == mid
+
+
+def test_absorb_rejects_name_owned_elsewhere():
+    """다른 자재의 이름/동의어와 겹치는 표기는 흡수 불가(소유가 갈린다) — 409."""
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base[:4]}")
+    b_name = f"BBB{base}"
+    b_id = _new_material(client, headers, b_name, f"AS{base[:4]}")
+    shared = f"별칭{base}"
+    assert client.post(
+        f"/api/materials/{b_id}/aliases", json={"alias_name": shared}, headers=headers
+    ).status_code == 200
+
+    assert client.post(
+        f"/api/materials/{a_id}/absorb-name", json={"name": b_name}, headers=headers
+    ).status_code == 409
+    assert client.post(
+        f"/api/materials/{a_id}/absorb-name", json={"name": shared}, headers=headers
+    ).status_code == 409
+
+
+def test_absorb_requires_manager_and_valid_input():
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    mid = _new_material(client, headers, f"자재A{base}", f"AC{base[:4]}")
+    assert client.post(
+        f"/api/materials/{mid}/absorb-name", json={"name": "  "}, headers=headers
+    ).status_code == 400
+    anon = _client()
+    assert anon.post(
+        f"/api/materials/{mid}/absorb-name", json={"name": "X"}
+    ).status_code in (401, 403)
+
+
 # ── 2b. 사용 안 함(비활성) ─────────────────────────────────────────────────
 def test_deactivate_hides_from_list_and_reactivate_restores():
     """삭제가 막히는 자재(과거 레시피 참조)의 출구 — 숨기되 데이터는 보존, 되살리기 가능."""
