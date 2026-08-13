@@ -86,9 +86,17 @@ def test_delete_confirms_once():
 
 
 def test_static_assets_are_cache_busted_together():
-    for ref in (
-        "css/viscosity.css?v=20260813a",
-        "js/viscosity_lib.js?v=20260813a",
-        "js/viscosity.js?v=20260813a",
-    ):
-        assert ref in TEMPLATE, f"{ref} 캐시버스팅이 어긋났다"
+    """세 파일이 **같은 버전**으로 함께 갱신되는지 — 특정 값이 아니라 일치가 계약이다.
+
+    값을 하드코딩하면 버전을 올릴 때마다 테스트가 따라 깨진다(2026-08-13 실제 사고:
+    ?v=b 갱신 후 이 테스트만 a 를 요구해 실패)."""
+    import re
+
+    versions = {
+        name: re.search(rf"{name}\?v=([0-9a-z]+)", TEMPLATE)
+        for name in ("viscosity\\.css", "viscosity_lib\\.js", "viscosity\\.js")
+    }
+    missing = [n for n, m in versions.items() if m is None]
+    assert not missing, f"캐시버스팅 누락: {missing}"
+    values = {m.group(1) for m in versions.values()}
+    assert len(values) == 1, f"세 파일의 ?v= 가 갈렸다: {values}"
