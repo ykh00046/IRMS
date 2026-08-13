@@ -8,13 +8,50 @@
  * 확인 대기 중인 증량·수기 입력, 최근 기록. 기간을 잡고 경향·자재 소비·품질 추세를
  * 보는 일은 배합 분석(/insight)이 맡는다. 반제품 TOP·작업자별 실적이 양쪽에 다 있고
  * 세는 기준마저 달랐던 것을 2026-08-08 에 정리했다.
+ *
+ * 현장 PC 에 상시 띄워 두고 3분마다 자동 갱신한다. 이 화면은 '늘 떠 있는' 화면이라
+ * 일부 섹션이 실패해도 나머지는 갱신하고( Promise.allSettled ), 실패한 섹션만 조용히
+ * '갱신 실툐' 로 표시한다 — 한 번 실패했다고 전체가 멈추면 옛 숫자를 현재로 읽는다.
  */
+
+// ── ERP 파일 경과: 주말 오탐 보정(순수 함수) ──────────────────────────────
+// 금요일에 올린 ERP 파일을 월요일에 보면 달력 경과는 3일이라 곧바로 경고 톤이 떴다.
+// 주말(토·일)은 작업이 없으므로, 파일 날짜 다음날~오늘 사이의 주말 일수를 빼서
+// '영업일 기준 경과' 로 판정한다. ISO(YYYY-MM-DD) 만 받는 순수 함수 — 테스트 가능.
+function _weekendDaysBetween(fileDateISO, todayISO) {
+  const start = new Date(fileDateISO + "T00:00:00");
+  const end = new Date(todayISO + "T00:00:00");
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+  let weekends = 0;
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() + 1); // 파일 당일은 0일 — 다음날부터 센다.
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow === 0 || dow === 6) weekends += 1;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return weekends;
+}
+
+// stale_days(순 달력 일수)에서 주말을 빼 영업일 기준 경과로. 파싱 불가면 null.
+function effectiveStaleDays(staleDays, fileDateISO, todayISO) {
+  if (staleDays === null || staleDays === undefined || Number.isNaN(Number(staleDays))) return null;
+  if (!fileDateISO || !todayISO) return Number(staleDays);
+  return Number(staleDays) - _weekendDaysBetween(fileDateISO, todayISO);
+}
+
+// 검증/콘솔에서 부를 수 있게 노출.
+window.IRMS = window.IRMS || {};
+window.IRMS.effectiveStaleDays = effectiveStaleDays;
+
 document.addEventListener("DOMContentLoaded", () => {
   const presetBtns = document.querySelectorAll(".preset-btn");
   const fromInput = document.getElementById("dash-from");
   const toInput = document.getElementById("dash-to");
 
   let trendChart = null;
+  // 섹션별 마지막 성공 값 — 한 섹션이 실패해도 그 카드는 마지막 값을 유지한다.
+  const cache = { summary: null, trend: null, recent: null, attention: null };
 
   const PREF_KEY = "irms_dashboard_range";
 
@@ -53,6 +90,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return { from: addDaysISO(-6), to: todayISO() };
   }
 
+  // 저장된 기간이 오늘/7일/30일 프리셋과 정확히 일치하면 그 프리셋을 가린다.
+  function matchPreset(range) {
+    for (const preset of ["today", "7d", "30d"]) {
+      const r = computeRangeFromPreset(preset);
+      if (r.from === range.from && r.to === range.to) return preset;
+    }
+    return null;
+  }
+
   function getCurrentRange() {
     const from = fromInput.value;
     const to = toInput.value;
@@ -81,28 +127,88 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function loadAll() {
+  // 섹션의 '갱신 실툐' 표시를 켜고 끈다. 실패해도 값 DOM 은 건드리지 않는다(마지막 값 유지).
+  function setSectionFail(id, failed) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !failed;
+  }
+
+  // '오늘 배합' 카드 링크는 /status?from=오늘&to=오늘 — 자정이 지나면 갱신.
+  function updateTodayLink() {
+    const link = document.getElementById("act-today");
+    if (link) link.href = `/status?from=${todayISO()}&to=${todayISO()}`;
+  }
+
+  // opts.silent 가 참이면 전면 로딩을 띄우지 않는다 — 자동 갱신은 조용히.
+  async function loadAll(opts) {
+    const silent = !!(opts && opts.silent);
     const range = getCurrentRange();
     const main = document.querySelector("main.page-grid") || document.body;
-    IRMS.showLoading(main);
+    if (!silent) IRMS.showLoading(main);
+    updateTodayLink();
     try {
       // 반제품 TOP·작업자별 실적은 배합 분석(/insight)으로 옮겼다(2026-08-08).
-      const [summary, trend, recent, attention] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchJSON(`/api/dashboard/summary?${qs(range)}`),
         fetchJSON(`/api/dashboard/trend?${qs(range)}`),
         fetchJSON("/api/dashboard/recent?limit=10"),
         fetchJSON("/api/dashboard/attention"),
       ]);
-      renderSummary(summary);
-      renderTrend(trend);
-      renderRecent(recent);
+      const [summaryR, trendR, recentR, attentionR] = results;
+      const ok = (r) => r.status === "fulfilled";
+
+      // summary — 기간 실적 3카드
+      if (ok(summaryR)) {
+        cache.summary = summaryR.value;
+        renderSummary(cache.summary);
+        setSectionFail("dash-period-fail", false);
+      } else {
+        setSectionFail("dash-period-fail", true); // 값 DOM 은 그대로(마지막 값 유지)
+      }
+
+      // trend — 일별 추이 차트
+      if (ok(trendR)) {
+        cache.trend = trendR.value;
+        renderTrend(cache.trend);
+        setSectionFail("dash-trend-fail", false);
+      } else {
+        setSectionFail("dash-trend-fail", true);
+      }
+
+      // recent — 최근 배합 기록 표
+      if (ok(recentR)) {
+        cache.recent = recentR.value;
+        renderRecent(cache.recent);
+        setSectionFail("dash-recent-fail", false);
+      } else {
+        setSectionFail("dash-recent-fail", true);
+      }
+
       // 점도 이상은 /summary 가, 나머지는 /attention 이 준다 — 한 렌더러가 합쳐 그린다.
-      renderAttention({ ...attention, viscosity_anomaly: summary.viscosity_anomaly });
-      stampUpdated();
-    } catch (error) {
-      IRMS.notify(`대시보드 불러오기 실패: ${error.message}`, "error");
+      // /summary 가 실패했으면 점도 이상 값은 알 수 없으므로 보존(덮어쓰지 않는다).
+      const anomalySource = ok(summaryR) ? summaryR.value : cache.summary;
+      if (ok(attentionR)) {
+        cache.attention = attentionR.value;
+        renderAttention({
+          ...cache.attention,
+          viscosity_anomaly: anomalySource ? anomalySource.viscosity_anomaly : undefined,
+        });
+        setSectionFail("dash-attention-fail", false);
+      } else {
+        setSectionFail("dash-attention-fail", true);
+      }
+
+      const anyFail = results.some((r) => r.status === "rejected");
+      stampUpdated(anyFail);
+      if (anyFail) {
+        const allFail = results.every((r) => r.status === "rejected");
+        IRMS.notify(
+          allFail ? "대시보드를 갱신하지 못했습니다." : "일부 대시보드 항목을 갱신하지 못했습니다.",
+          "warn",
+        );
+      }
     } finally {
-      IRMS.hideLoading(main);
+      if (!silent) IRMS.hideLoading(main);
     }
   }
 
@@ -131,15 +237,26 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderAttention(data) {
     const anomaly = data.viscosity_anomaly;
     const anomalyEl = document.getElementById("card-visc-anomaly");
-    if (anomalyEl) anomalyEl.textContent = fmtNumber(anomaly);
-    markAct("act-visc-anomaly", Number(anomaly) > 0);
+    // /summary 실패 시 viscosity_anomaly 가 undefined — 그러면 덮어쓰지 않고 마지막 값 유지.
+    if (anomaly !== undefined && anomalyEl) {
+      anomalyEl.textContent = fmtNumber(anomaly);
+      markAct("act-visc-anomaly", Number(anomaly) > 0);
+    }
 
     const due = data.viscosity_due_today || [];
     const dueEl = document.getElementById("card-visc-due");
     if (dueEl) dueEl.textContent = fmtNumber(due.length);
-    document.getElementById("card-visc-due-codes").textContent = due.length
-      ? due.join(", ")
-      : "알림 대상 모두 입력됨";
+    // 대상 코드는 3개까지 + '외 N건' — 길어지면 카드 높이가 들쭉날쭉해진다.
+    const codesEl = document.getElementById("card-visc-due-codes");
+    if (codesEl) {
+      if (!due.length) {
+        codesEl.textContent = "알림 대상 모두 입력됨";
+      } else {
+        const shown = due.slice(0, 3);
+        const extra = due.length - shown.length;
+        codesEl.textContent = extra > 0 ? `${shown.join(", ")} 외 ${extra}건` : shown.join(", ");
+      }
+    }
     markAct("act-visc-due", due.length > 0);
 
     // 자재 LOT 기준 파일 — 며칠 지났는지. 파일이 없으면 LOT 검증 자체가 못 돈다.
@@ -154,8 +271,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const days = file.stale_days;
       if (staleEl) staleEl.textContent = days === null || days === undefined ? "-" : `${days}일 전`;
       if (fileEl) fileEl.textContent = file.file_name || "-";
-      // 3일 넘게 지난 파일로 원료 LOT 을 판정하고 있으면 알린다.
-      markAct("act-lot-file", Number(days) >= 3);
+      // 3영업일 넘게 지난 파일로 원료 LOT 을 판정하고 있으면 알린다.
+      // (주말 보정 — 금요일 파일이 월요일에 달력 3일로 경고 뜨는 오탐 방지)
+      const effStale = effectiveStaleDays(days, file.file_date, todayISO());
+      markAct("act-lot-file", Number(effStale) >= 3);
     }
 
     const todayEl = document.getElementById("card-today-count");
@@ -168,12 +287,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function stampUpdated() {
+  // partialFail: 어떤 요청이든 실패가 섞이면 '일부 갱신 실툐' 경고 톤(stale) 으로.
+  function stampUpdated(partialFail) {
     const el = document.getElementById("dash-updated");
     if (!el) return;
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
-    el.textContent = `${p(d.getHours())}:${p(d.getMinutes())} 기준`;
+    const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (partialFail) {
+      el.textContent = `일부 갱신 실패 · ${hhmm} 기준`;
+      el.classList.add("stale");
+    } else {
+      el.textContent = `${hhmm} 기준`;
+      el.classList.remove("stale");
+    }
   }
 
   function renderTrend(data) {
@@ -256,6 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const valueEl = document.getElementById("card-rescale-unacked");
     const listEl = document.getElementById("rescale-alert-list");
     if (!valueEl || !listEl) return;
+    const card = document.getElementById("rescale-alert-card");
     try {
       // 증량 부재 + 수기 입력 부재를 한 카드에서 함께 보여준다(둘 다 '책임자 사후 확인'
       // 대상이라 목록을 나누면 놓치기 쉽다). 항목마다 kind 로 확인 endpoint 를 가른다.
@@ -271,7 +399,6 @@ document.addEventListener("DOMContentLoaded", () => {
       valueEl.textContent = fmtNumber(total);
       valueEl.style.color =
         total > 0 ? cssVar("--status-error", "#d8453f") : cssVar("--text-muted", "#94a3b8");
-      const card = document.getElementById("rescale-alert-card");
       if (card) card.classList.toggle("has-unacked", total > 0);
       if (!items.length) {
         listEl.innerHTML = '<li class="rescale-empty muted">미확인 항목이 없습니다.</li>';
@@ -303,9 +430,12 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .join("");
     } catch (error) {
-      listEl.innerHTML = `<li class="rescale-empty muted">불러오기 실패: ${IRMS.escapeHtml(
-        error.message || String(error),
-      )}</li>`;
+      // 세션 만료 등으로 불러오지 못하면 숫자·강조도 함께 리셋 — 빨간 '3건' 이 고정되어
+      // 실제론 로그인이 풀렸는데 확인할 게 남은 것처럼 보이는 모순을 막는다.
+      valueEl.textContent = "-";
+      valueEl.style.color = cssVar("--text-muted", "#94a3b8");
+      if (card) card.classList.remove("has-unacked");
+      listEl.innerHTML = '<li class="rescale-empty muted">불러오기 실패(로그인 확인)</li>';
     }
   }
 
@@ -314,24 +444,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // 사용자 결정). 카드는 알림판 역할만 하고, 확인 처리는 [기록 열기] → 기록 상세에서.
 
   function persistRange(range) {
-    try {
-      localStorage.setItem(PREF_KEY, JSON.stringify(range));
-    } catch {}
+    IRMS.savePreference(PREF_KEY, JSON.stringify(range));
   }
 
   function restoreRange() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "null");
-      if (saved && saved.from && saved.to) {
-        fromInput.value = saved.from;
-        toInput.value = saved.to;
-        setPresetActive(null);
-        return;
-      }
-    } catch {}
+    const saved = IRMS.loadPreference(PREF_KEY, null);
+    if (saved) {
+      try {
+        const range = JSON.parse(saved);
+        if (range && range.from && range.to) {
+          fromInput.value = range.from;
+          toInput.value = range.to;
+          setPresetActive(matchPreset(range));
+          return;
+        }
+      } catch {}
+    }
     const range = computeRangeFromPreset("7d");
     fromInput.value = range.from;
     toInput.value = range.to;
+    setPresetActive("7d");
   }
 
   presetBtns.forEach((button) => {
@@ -363,13 +495,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // 자동 갱신 — 이 화면은 현장 PC 에 띄워 둔다. 수동 새로고침만 있으면 아무도 누르지
   // 않은 채 몇 시간 전 숫자를 현재로 읽는다. 탭이 숨어 있을 때는 부르지 않고(백그라운드
   // 폴링 낭비), 다시 보이면 즉시 한 번 갱신한다. 선택은 이 PC 에 기억한다.
+  // 자동 갱신은 전면 로딩 없이 조용히 — 로딩은 [새로고침]/[적용]을 눌렀을 때만.
   const AUTO_MS = 180000;
   const AUTO_KEY = "irms_dashboard_auto";
   const autoChk = document.getElementById("dash-auto");
   let autoTimer = null;
 
   function refreshAll() {
-    loadAll();
+    loadAll({ silent: true });
     loadRescaleAlert();
   }
 
@@ -399,6 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   restoreRange();
+  updateTodayLink();
   loadAll();
   loadRescaleAlert();
 });

@@ -180,3 +180,20 @@
 }
 
 .dash-updated { white-space: nowrap; }
+
+/* 일부 갱신 실패 — 주황 계열 토큰(--accent-secondary)으로 경고 톤.
+   정상일 때는 .muted 색을 그대로 쓴다(두 클래스 선택자가 .muted 보다 우선).
+   섹션별 '갱신 실패' 표시(.dash-fail)는 muted 회색으로 — 강조 톤은 이 전체 표시 하나만. */
+.dash-updated.stale { color: var(--accent-secondary); font-weight: 600; }
+
+/* 섹션 '갱신 실패' — muted 로 표시(회색). hidden 속성 토글용 훅. */
+.dash-fail { font-weight: 600; }
+
+/* 기간 실적 카드는 클릭하면 기간 분석(/insight)으로 간다 — 조치 카드(.dash-act)와
+   같은 클릭 가능 모양(text-decoration/transition/hover)을 공용으로 쓴다. */
+.dash-metric-link {
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+.dash-metric-link:hover { border-color: var(--border-strong); transform: translateY(-1px); }

@@ -102,12 +102,15 @@ def test_dashboard_routes_respond_without_login():
     assert summary.status_code == 200
     body = summary.json()
     for key in (
-        "blend_count", "total_weight_g", "product_count", "worker_count",
-        "viscosity_anomaly", "viscosity_due_today",
+        "blend_count", "total_weight_g", "product_count", "viscosity_anomaly",
     ):
         assert key in body
     # 결재 대기(approval_pending)는 죽은 값이라 페이로드에서 제거됨(2026-07-23). 회귀 가드.
     assert "approval_pending" not in body
+    # worker_count·viscosity_due_today 은 /attention 쪽에서만 쓰이는 중복 값이라
+    # /summary 에서 제거됨(2026-08-14). 다시 붙지 않는지 확인한다.
+    assert "worker_count" not in body
+    assert "viscosity_due_today" not in body
 
     trend = client.get("/api/dashboard/trend?from=2026-07-01&to=2026-07-03")
     assert trend.status_code == 200
@@ -213,10 +216,13 @@ def test_dashboard_attention_is_independent_of_the_period_filter():
     assert res.status_code == 200
     body = res.json()
     for key in (
-        "today", "today_blend_count", "last_blend_at",
-        "viscosity_due_today", "unacked_count", "material_lot_file",
+        "today_blend_count", "last_blend_at",
+        "viscosity_due_today", "material_lot_file",
     ):
         assert key in body, key
+    # unacked_count(무로그인 노출 + 화면 미사용)와 today 는 2026-08-14 제거 — 회귀 가드.
+    assert "unacked_count" not in body
+    assert "today" not in body
     assert isinstance(body["viscosity_due_today"], list)
     assert isinstance(body["material_lot_file"], dict)
     for key in ("file_name", "file_date", "found", "stale_days"):

@@ -62,5 +62,13 @@
       itemCodes.init();
       itemCodes.refresh();
     }
+
+    // 탭 딥링크 — /materials?tab=lots(대시보드 '자재 LOT 기준 파일' 카드 등)가 지정한
+    // 탭을 연다. 위 탭 버튼의 click 핸들러를 그대로 태운다(다른 동작은 건드리지 않는다).
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab) {
+      const btn = Array.from(dom.tabBtns).find((b) => b.dataset.tab === requestedTab);
+      if (btn) btn.click();
+    }
   });
 })();
