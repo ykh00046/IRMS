@@ -13,9 +13,12 @@
  *   other: ctx.canManage
  *
  * 백엔드 연동:
- *   GET  /api/item-codes/materials        — 자재 목록(uncoded/q 필터)
+ *   GET  /api/item-codes/materials        — 자재 목록(uncoded/q/include_inactive 필터)
  *   GET  /api/item-codes/master           — 마스터 제안(q, kind=material)
- *   PUT  /api/materials/{id}/code         — 자재 코드 지정/해제
+ *   PUT  /api/materials/{id}/code         — 자재 코드 지정/해제(빈 값 = 해제)
+ *   PUT  /api/materials/{id}/name         — 자재명 수정(과거 기록 표기까지 전파)
+ *   PUT  /api/materials/{id}/active       — 사용 안 함(숨김) / 다시 사용
+ *   DELETE /api/materials/{id}            — 자재 삭제(레시피 참조 시 409 → 숨김 제안)
  *
  * PUT fetch 는 recipe-history.js 분류 PUT 과 동일하게 credentials:"same-origin" +
  * x-csrftoken 헤더 직접 부착(IRMS.request 사용 금지 — 관리 화면에 미로드 대비).
@@ -37,24 +40,31 @@
     // 맨 위 빠른 지정용 자재명→id 색인(datalist 원본). 필터와 무관하게 전체를 담는다.
     let matNameToId = {};
 
+    function includeInactive() {
+      const cb = document.getElementById("codes-include-inactive");
+      return !!(cb && cb.checked);
+    }
+
     function activeFilters() {
       return {
         uncoded: dom.codesUncoded && dom.codesUncoded.checked ? "1" : undefined,
+        include_inactive: includeInactive() ? "1" : undefined,
         q: dom.codesSearch ? dom.codesSearch.value.trim() : "",
       };
     }
 
-    // 정리 모드(code-edit-relocate §4)의 잔재. 자재 관리 화면(/materials)이 생기면서
-    // 삭제·이름수정은 이 화면의 정식 기능이 되어 체크박스 뒤에 숨길 이유가 없어졌다.
-    // 체크박스가 없는 화면(=자재 관리)에서는 항상 노출한다. 남아 있는 화면이 있으면
-    // 종전대로 체크했을 때만 보인다.
-    function cleanupMode() {
-      const cb = document.getElementById("codes-cleanup");
-      return cb ? !!cb.checked : true;
+    // 제안 목록이 표 밖으로 뜨도록 표 래퍼의 클리핑을 잠시 푼다 —
+    // .table-wrap 의 overflow-x:auto 는 세로도 함께 잘라낸다(CSS 규격).
+    function setSuggestClipping(open) {
+      if (!dom.codesBody) return;
+      const wrap = dom.codesBody.closest(".table-wrap");
+      if (wrap) wrap.classList.toggle("suggest-open", !!open);
     }
 
     async function refresh() {
       if (!dom.codesBody) return;
+      editingMaterialId = null;
+      setSuggestClipping(false);
       const filters = activeFilters();
       try {
         const data = await IRMS._core.request("/item-codes/materials", { query: filters });
@@ -77,19 +87,23 @@
             const codeHtml = code
               ? `<span class="code-value">${IRMS.escapeHtml(code)}</span>${kindBadge}`
               : '<span class="muted">-</span>';
+            // [해제] 버튼은 없앴다 — 인라인 편집기에서 값을 비우고 저장하면 해제다.
+            // 두 개의 빨간 버튼([해제]/[삭제])이 나란히 있어 현장에서 구분이 안 됐다.
             const codeActions = code
-              ? `<button class="btn btn-sm code-edit-btn" data-id="${m.id}">수정</button>
-                 <button class="btn btn-sm danger code-clear-btn" data-id="${m.id}">해제</button>`
-              : `<button class="btn btn-sm accent code-edit-btn" data-id="${m.id}">지정</button>`;
-            // 삭제 버튼은 정리 모드일 때만 표시(기본 해제).
-            const deleteBtn = cleanupMode()
-              ? `<button class="btn btn-sm danger material-delete-btn" data-id="${m.id}">삭제</button>`
+              ? `<button class="btn btn-sm code-edit-btn" data-id="${m.id}" type="button">수정</button>`
+              : `<button class="btn btn-sm accent code-edit-btn" data-id="${m.id}" type="button">지정</button>`;
+            // 사용 안 함(is_active=0) 자재는 되살리기 하나만 — 숨긴 행에 편집을 권하지 않는다.
+            const inactive = Number(m.is_active) === 0;
+            const actionHtml = inactive
+              ? `<button class="btn btn-sm accent material-reactivate-btn" data-id="${m.id}" type="button"`
+                + ` title="이 자재를 목록에 다시 표시합니다">다시 사용</button>`
+              : `${codeActions}`
+                + ` <button class="btn btn-sm material-rename-btn" data-id="${m.id}" type="button"`
+                + ` title="자재명 수정 - 과거 기록의 표기도 함께 바뀝니다">이름 수정</button>`
+                + ` <button class="btn btn-sm danger material-delete-btn" data-id="${m.id}" type="button">삭제</button>`;
+            const inactiveTag = inactive
+              ? ' <span class="muted">사용 안 함</span>'
               : "";
-            // 자재명 수정 — 옛 이름은 서버가 동의어로 남기므로 과거 기록의 품목코드가 끊기지 않는다.
-            const renameBtn = cleanupMode()
-              ? `<button class="btn btn-sm material-rename-btn" data-id="${m.id}">이름</button>`
-              : "";
-            const actionHtml = `${codeActions}${renameBtn}${deleteBtn}`;
             // 투입 로스 보정(자재 마스터 기본값, 3라운드) — 인라인 입력+저장. 값이 있으면 표시.
             const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
             const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
@@ -103,8 +117,8 @@
               + ` title="같은 원재료가 기록에 다른 이름으로 남았을 때 이 자재에 잇습니다">`
               + `${aliasLabel}</button>`;
             return `
-              <tr class="codes-row" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
-                <td>${IRMS.escapeHtml(m.name)}</td>
+              <tr class="codes-row${inactive ? " is-inactive" : ""}" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
+                <td class="name-cell">${IRMS.escapeHtml(m.name)}${inactiveTag}</td>
                 <td class="code-cell">${codeHtml}</td>
                 <td>${m.category ? IRMS.escapeHtml(m.category) : '<span class="muted">-</span>'}</td>
                 <td class="alias-cell">${aliasHtml}</td>
@@ -124,7 +138,12 @@
     async function loadMaterialIndex() {
       const dl = document.getElementById("codes-mat-datalist");
       try {
-        const data = await IRMS._core.request("/item-codes/materials", { query: {} });
+        // 색인은 '사용 안 함' 자재까지 담는다 — 숨긴 자재명을 빠른 지정에 적으면
+        // 신규 등록(POST)으로 빠져 "이미 등록된 자재명" 409 막다른 길이 됐다.
+        // 추천 목록(datalist)에는 쓰는 자재만 올린다.
+        const data = await IRMS._core.request("/item-codes/materials", {
+          query: { include_inactive: "1" },
+        });
         const items = data.items || [];
         matNameToId = {};
         items.forEach((m) => {
@@ -132,6 +151,7 @@
         });
         if (dl) {
           dl.innerHTML = items
+            .filter((m) => Number(m.is_active) !== 0)
             .map((m) => `<option value="${IRMS.escapeHtml(m.name)}"></option>`)
             .join("");
         }
@@ -284,9 +304,9 @@
       if (dom.codesUncoded) {
         dom.codesUncoded.addEventListener("change", refresh);
       }
-      const cleanupCb = document.getElementById("codes-cleanup");
-      if (cleanupCb) {
-        cleanupCb.addEventListener("change", refresh);
+      const inactiveCb = document.getElementById("codes-include-inactive");
+      if (inactiveCb) {
+        inactiveCb.addEventListener("change", refresh);
       }
       if (dom.codesRefreshBtn) {
         dom.codesRefreshBtn.addEventListener("click", refresh);
@@ -302,18 +322,18 @@
           startInlineEdit(row);
         });
       });
-      dom.codesBody.querySelectorAll(".code-clear-btn").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const row = btn.closest(".codes-row");
-          clearCode(row);
-        });
-      });
       dom.codesBody.querySelectorAll(".material-delete-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const row = btn.closest(".codes-row");
-          startInlineDeleteConfirm(row);
+          if (row) deleteMaterial(row);
+        });
+      });
+      dom.codesBody.querySelectorAll(".material-reactivate-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const row = btn.closest(".codes-row");
+          if (row) setActive(Number(row.dataset.id), 1);
         });
       });
       // 투입 로스 보정(자재 마스터, 3라운드) 저장 버튼 + Enter.
@@ -338,7 +358,7 @@
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const row = btn.closest(".codes-row");
-          if (row) renameMaterial(row);
+          if (row) startRenameEdit(row);
         });
       });
       // 동의어 열기/닫기(A6) — 같은 행을 다시 누르면 닫는다(토글).
@@ -352,20 +372,56 @@
     }
 
     // ── 자재명 수정(A4b) ───────────────────────────────────────────────────
-    // 배합 기록의 자재명은 기록 시점 문자열로 박제돼 있어, 이름만 바꾸면 과거 기록이
-    // 품목코드를 잃는다. 서버가 옛 이름을 동의어로 남겨 그 끊김을 막는다 —
-    // 사용자에게도 그 사실을 미리 알린 뒤 진행한다(모르고 바꾸면 사고가 조용히 난다).
-    async function renameMaterial(row) {
+    // 이름은 하나다 — 바꾸면 서버가 과거 배합 기록의 표기까지 같이 통일한다(동의어를
+    // 새로 만들지 않는다). 편집은 코드와 같은 인라인 편집기로 한다: window.prompt 는
+    // 화면 밖 팝업이라 어느 행을 고치는지 안 보이고, 자재명이 고정값처럼 느껴졌다.
+    function startRenameEdit(row) {
+      const cell = row.querySelector(".name-cell");
+      if (!cell || cell.querySelector(".name-inline-input")) return;
+      cancelAllInlineEdits();
+      const oldName = row.getAttribute("data-name") || "";
+      cell._prevHtml = cell.innerHTML;
+      cell.innerHTML = `
+        <div class="code-edit-wrap">
+          <input class="input compact name-inline-input" value="${IRMS.escapeHtml(oldName)}" placeholder="새 자재명" />
+          <button class="btn btn-sm success name-save-btn" type="button">저장</button>
+          <button class="btn btn-sm name-cancel-btn" type="button">취소</button>
+        </div>`;
+
+      const input = cell.querySelector(".name-inline-input");
+      input.focus();
+      input.select();
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          saveName(row, input.value);
+        } else if (ev.key === "Escape") {
+          ev.preventDefault();
+          cancelAllInlineEdits();
+        }
+      });
+      cell.querySelector(".name-save-btn").addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        saveName(row, input.value);
+      });
+      cell.querySelector(".name-cancel-btn").addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        cancelAllInlineEdits();
+      });
+    }
+
+    async function saveName(row, rawValue) {
       const id = row.getAttribute("data-id");
       const oldName = row.getAttribute("data-name") || "";
-      const input = window.prompt(
-        `'${oldName}' 의 새 이름을 입력하세요.\n`
-          + "옛 이름은 동의어로 남아 과거 배합 기록의 품목코드가 유지됩니다.",
-        oldName,
-      );
-      if (input === null) return; // 취소
-      const newName = String(input).trim();
-      if (!newName || newName === oldName) return;
+      const newName = String(rawValue || "").trim();
+      if (!newName) {
+        IRMS.notify("자재명을 입력하세요.", "error");
+        return;
+      }
+      if (newName === oldName) {
+        cancelAllInlineEdits();
+        return;
+      }
       try {
         const resp = await fetch(`/api/materials/${id}/name`, {
           method: "PUT",
@@ -375,9 +431,10 @@
         });
         if (!resp.ok) throw new Error(await detailOf(resp));
         const result = await resp.json();
+        const changed = Number(result.updated_records) || 0;
         IRMS.notify(
-          result.alias_kept
-            ? `이름을 바꿨습니다. 옛 이름 '${result.alias_kept}' 은 동의어로 남았습니다.`
+          changed > 0
+            ? `이름을 바꿨습니다 - 과거 기록 ${changed}건의 표기도 함께 바뀌었습니다.`
             : "이름을 바꿨습니다.",
           "success",
         );
@@ -570,7 +627,7 @@
 
       cell.innerHTML = `
         <div class="code-edit-wrap">
-          <input class="input compact code-inline-input" value="${IRMS.escapeHtml(currentValue)}" placeholder="코드 입력 (예: AS0001)" />
+          <input class="input compact code-inline-input" value="${IRMS.escapeHtml(currentValue)}" placeholder="코드 입력 - 비우고 저장하면 해제" />
           <button class="btn btn-sm success code-save-btn" type="button">저장</button>
           <button class="btn btn-sm code-cancel-btn" type="button">취소</button>
           <ul class="code-suggest-list" hidden></ul>
@@ -585,6 +642,7 @@
         const q = input.value.trim();
         if (q.length < 1) {
           suggestList.hidden = true;
+          setSuggestClipping(false);
           return;
         }
         debouncedSuggest(q, suggestList, input);
@@ -596,7 +654,6 @@
         } else if (ev.key === "Escape") {
           ev.preventDefault();
           cancelAllInlineEdits();
-          refresh();
         }
       });
 
@@ -607,7 +664,6 @@
       cell.querySelector(".code-cancel-btn").addEventListener("click", (ev) => {
         ev.stopPropagation();
         cancelAllInlineEdits();
-        refresh();
       });
     }
 
@@ -621,6 +677,7 @@
         if (!items.length) {
           suggestList.hidden = true;
           suggestList.innerHTML = "";
+          setSuggestClipping(false);
           return;
         }
         suggestList.innerHTML = items
@@ -633,33 +690,35 @@
           })
           .join("");
         suggestList.hidden = false;
+        setSuggestClipping(true);
         suggestList.querySelectorAll(".code-suggest-item").forEach((li) => {
           li.addEventListener("mousedown", (ev) => {
             ev.preventDefault(); // input blur 보존
             input.value = li.dataset.code;
             suggestList.hidden = true;
+            setSuggestClipping(false);
             input.focus();
           });
         });
       } catch (_err) {
         suggestList.hidden = true;
+        setSuggestClipping(false);
       }
     }
 
-    // 편집 취소 — 열려 있는 인라인 편집을 모두 닫는다.
+    // 편집 취소 — 열려 있는 인라인 편집(코드·자재명)을 모두 닫고 원래 셀로 되돌린다.
+    // 편집기는 코드 셀과 이름 셀 양쪽에 뜨므로 셀 종류를 가리지 않고 원본을 복원한다.
     function cancelAllInlineEdits() {
       editingMaterialId = null;
+      setSuggestClipping(false);
       dom.codesBody.querySelectorAll(".code-edit-wrap").forEach((w) => {
-        const cell = w.closest(".code-cell");
-        const row = w.closest(".codes-row");
-        if (row && cell) {
-          // 원래 코드 표시로 원복 — 편집 시작 때 보관한 원본이 있으면 그대로,
-          // 없으면(방어) 미지정 표시.
-          cell.innerHTML = cell._prevHtml != null
-            ? cell._prevHtml
-            : '<span class="muted">-</span>';
-          delete cell._prevHtml;
-        }
+        const cell = w.closest("td");
+        if (!cell) return;
+        // 편집 시작 때 보관한 원본이 있으면 그대로, 없으면(방어) 미지정 표시.
+        cell.innerHTML = cell._prevHtml != null
+          ? cell._prevHtml
+          : '<span class="muted">-</span>';
+        delete cell._prevHtml;
       });
     }
 
@@ -711,69 +770,20 @@
       }
     }
 
-    // 코드 해제 — code=null PUT.
-    async function clearCode(row) {
-      const id = Number(row.dataset.id);
-      if (!window.confirm("이 자재의 품목코드를 해제하시겠습니까?")) return;
-      try {
-        const resp = await fetch(`/api/materials/${id}/code`, {
-          method: "PUT",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            ...csrfHeader(),
-          },
-          body: JSON.stringify({ code: null }),
-        });
-        if (!resp.ok) {
-          const msg = await detailOf(resp);
-          IRMS.notify(`코드 해제 실패: ${msg}`, "error");
-          return;
-        }
-        IRMS.notify("품목코드를 해제했습니다.", "success");
-        await refresh();
-        // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
-        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
-      } catch (err) {
-        IRMS.notify(`코드 해제 실패: ${err.message}`, "error");
-      }
-    }
-
-    // ── 자재 삭제: 인라인 확인 ──
-    // window.confirm 금지(spec 제약). 행 안의 action-cell 을
-    // "정말 삭제 [예/아니오]" 두 버튼으로 교체 — 기존 인라인 편집 패턴 재사용.
-    // 편집 중인 행과 충돌하지 않게 stopPropagation 은 호출단에서 이미 처리.
-    function startInlineDeleteConfirm(row) {
-      const id = Number(row.dataset.id);
-      const name = row.dataset.name || "";
-      const cell = row.querySelector(".action-cell");
-      if (!cell) return;
-      // 이미 확인 중이면 토글(재클릭 시 취소).
-      if (cell.querySelector(".material-delete-confirm-wrap")) {
-        refresh();
-        return;
-      }
-      cell.innerHTML = `
-        <div class="material-delete-confirm-wrap">
-          <span class="muted">정말 삭제 ${IRMS.escapeHtml(name)}</span>
-          <button class="btn btn-sm danger material-delete-yes-btn" type="button" data-id="${id}">예</button>
-          <button class="btn btn-sm material-delete-no-btn" type="button">아니오</button>
-        </div>`;
-
-      cell.querySelector(".material-delete-yes-btn").addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        deleteMaterial(row);
-      });
-      cell.querySelector(".material-delete-no-btn").addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        refresh(); // 원래 행으로 복귀
-      });
-    }
-
-    // DELETE fetch — A5. 성공 시 success notify + 목록 새로고침.
-    // 409 는 detail(어떤 레시피가 쓰는지)을 그대로 error notify 로 노출.
+    // ── 자재 삭제 → 막히면 '사용 안 함' 으로 ──
+    // A5 DELETE 는 과거 레시피가 참조하는 자재를 409 로 막는다. 종전에는 거기서
+    // 끝이라 운영자에게 막다른 길이었다 — 409 면 곧바로 숨기기(사용 안 함)를 권한다.
+    // 데이터는 그대로 남고 '사용 안 함 포함' 목록에서 언제든 되살릴 수 있다.
     async function deleteMaterial(row) {
       const id = Number(row.dataset.id);
+      const name = row.dataset.name || "";
+      if (
+        !window.confirm(
+          `자재 '${name}' 를 삭제할까요? 배합 기록의 연결이 끊깁니다(기록 자체는 남음).`,
+        )
+      ) {
+        return;
+      }
       try {
         const resp = await fetch(`/api/materials/${id}`, {
           method: "DELETE",
@@ -782,19 +792,50 @@
         });
         if (!resp.ok) {
           const msg = await detailOf(resp);
+          if (resp.status === 409) {
+            const hide = window.confirm(
+              `삭제할 수 없습니다: ${msg}\n`
+                + "대신 '사용 안 함'으로 목록에서 숨길까요? 데이터는 보존되고 언제든 되살릴 수 있습니다.",
+            );
+            if (hide) await setActive(id, 0);
+            return;
+          }
           IRMS.notify(`자재 삭제 실패: ${msg}`, "error");
-          // 409 면 확인 UI 를 유지해 사용자가 메시지를 볼 수 있게 원래 행으로 복귀.
-          if (resp.status === 409) refresh();
           return;
         }
         const result = await resp.json();
         const deletedName = result.deleted || "";
         IRMS.notify(`자재 '${deletedName}' 을 삭제했습니다.`, "success");
         await refresh();
+        await loadMaterialIndex();
         // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
         if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
       } catch (err) {
         IRMS.notify(`자재 삭제 실패: ${err.message}`, "error");
+      }
+    }
+
+    // 사용 안 함(0) / 다시 사용(1) — A5c PUT. 삭제와 달리 어떤 데이터도 지우지 않는다.
+    async function setActive(id, active) {
+      try {
+        const resp = await fetch(`/api/materials/${id}/active`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", ...csrfHeader() },
+          body: JSON.stringify({ is_active: active }),
+        });
+        if (!resp.ok) throw new Error(await detailOf(resp));
+        IRMS.notify(
+          active
+            ? "다시 사용으로 되돌렸습니다."
+            : "'사용 안 함'으로 숨겼습니다. [사용 안 함 포함] 을 켜면 되살릴 수 있습니다.",
+          "success",
+        );
+        await refresh();
+        await loadMaterialIndex();
+        if (ctx.refreshMaterials) ctx.refreshMaterials().catch(() => {});
+      } catch (err) {
+        IRMS.notify(`상태 변경 실패: ${err.message}`, "error");
       }
     }
 

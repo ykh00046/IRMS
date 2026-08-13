@@ -896,6 +896,75 @@
   vertical-align: middle;
 }
 
+/* 품목코드 탭 — 인라인 편집기(코드·자재명)와 마스터 제안 목록(2026-08-13).
+   종전에는 이 규칙이 아예 없어서 스타일 없는 <ul> 이 표 안에 그대로 그려졌다 —
+   제안 목록이 행 높이를 밀어내며 아래 자재를 덮어 "겹쳐 보인다"는 현장 신고가 났다.
+   목록은 셀 기준 절대 위치로 표 위에 띄우고, 편집 줄은 한 줄 flex 로 고정한다. */
+.code-cell,
+.name-cell {
+  position: relative;
+}
+.code-edit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+}
+/* 입력칸은 좁게 — .input 기본 width:100% 를 그대로 두면 저장/취소가 다음 줄로 밀린다. */
+.code-edit-wrap .code-inline-input {
+  flex: 0 1 11rem;
+  width: 11rem;
+  min-width: 7rem;
+}
+.code-edit-wrap .name-inline-input {
+  flex: 0 1 14rem;
+  width: 14rem;
+  min-width: 8rem;
+}
+.code-edit-wrap .btn {
+  flex: 0 0 auto;
+}
+.code-suggest-list {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  min-width: 16rem;
+  max-width: 26rem;
+  max-height: 13rem;
+  overflow-y: auto;
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-default);
+}
+.code-suggest-list[hidden] {
+  display: none;
+}
+.code-suggest-item {
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.code-suggest-item:hover {
+  background: var(--bg-surface-300);
+}
+/* .table-wrap 은 overflow-x:auto 라 세로도 함께 잘라낸다(CSS 규격상 visible 이
+   auto 로 계산됨) — 편집 중에만 클리핑을 풀어 제안 목록이 표 밖으로 뜨게 한다. */
+.table-wrap.suggest-open {
+  overflow: visible;
+}
+
+/* 사용 안 함(is_active=0) 자재 — 지우지 않고 숨긴 행. 목록에서 흐리게 보인다. */
+.codes-row.is-inactive > td {
+  opacity: 0.55;
+}
+
 /* 품목코드 탭 — 자재 동의어(A6, 2026-08-11). 자재 행 아래 확장 행으로 펼친다.
    같은 원재료가 기록에 다른 이름으로 남았을 때 그 이름을 자재에 잇는 편집 영역. */
 .alias-cell { white-space: nowrap; }

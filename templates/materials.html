@@ -18,7 +18,7 @@
 {% block heading %}품목코드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/management.css?v=20260813b" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260813d" />
     <link rel="stylesheet" href="/static/css/material_lots.css?v=20260808b" />
 {% endblock %}
 
@@ -51,6 +51,11 @@
               <input id="codes-search" class="input" placeholder="자재명 또는 코드" />
               <label class="filter-label checkbox-label">
                 <input type="checkbox" id="codes-uncoded" /> 코드 없음만
+              </label>
+              {# 삭제가 막히는 자재('사용 안 함'으로 숨긴 것)를 다시 꺼내 보는 통로.
+                 이게 없으면 숨기기가 일방통행이 된다. #}
+              <label class="filter-label checkbox-label">
+                <input type="checkbox" id="codes-include-inactive" /> 사용 안 함 포함
               </label>
               <button id="codes-refresh-btn" class="btn" type="button">새로고침</button>
             </div>
@@ -175,7 +180,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/management/item-codes.js?v=20260813c"></script>
+    <script src="/static/js/management/item-codes.js?v=20260813d"></script>
     <script src="/static/js/material_lots.js?v=20260808b"></script>
     <script src="/static/js/materials.js?v=20260812a"></script>
 {% endblock %}
