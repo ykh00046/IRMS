@@ -71,14 +71,30 @@ def _make_product_and_blend(client, prod, work_date):
     assert rec.status_code == 200, rec.text
 
 
-def _due_codes(client):
+def _due_codes(client, target_date=None):
     """트레이가 부르는 알림 목록. 내부망 제한이 걸린 라우트라 사내 IP 로 접속한다."""
     from fastapi.testclient import TestClient
 
     internal = TestClient(client.app, client=("192.168.11.108", 50000))
-    res = internal.get("/api/public/viscosity-reminders/due")
+    params = {"target_date": target_date} if target_date else {}
+    res = internal.get("/api/public/viscosity-reminders/due", params=params)
     assert res.status_code == 200, res.text
     return {item["code"] for item in res.json()["items"]}
+
+
+def _set_since(client, value):
+    """정리 기준일을 임의 날짜로 직접 저장(테스트 전용 — 버튼은 오늘로만 찍는다)."""
+    from src.db import get_connection
+    from src.services.settings_service import VISCOSITY_REMINDER_SINCE_KEY
+
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+            "updated_at = excluded.updated_at",
+            (VISCOSITY_REMINDER_SINCE_KEY, value, "2026-08-13T00:00:00Z"),
+        )
+        conn.commit()
 
 
 def test_reminder_since_hides_past_blends_and_keeps_new_ones():
@@ -101,10 +117,39 @@ def test_reminder_since_hides_past_blends_and_keeps_new_ones():
     # 60일 전 배합분은 이제 알림에서 빠진다.
     assert old_prod not in _due_codes(client)
 
-    # 기준일 이후에 배합한 반제품은 다시 알린다.
+    # 기준일 이후에 배합한 반제품은 다시 알린다 — 단 **배합 당일은 아니고 다음날부터**
+    # (점도는 배합 다음날 측정, 현장 규칙 2026-08-13).
     new_prod = "VNEW" + uuid.uuid4().hex[:4].upper()
     _make_product_and_blend(client, new_prod, date.today().isoformat())
-    assert new_prod in _due_codes(client)
+    assert new_prod not in _due_codes(client)   # 당일은 조용
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    assert new_prod in _due_codes(client, target_date=tomorrow)  # 다음날부터 알림
+
+
+def test_same_day_blend_quiet_but_yesterdays_blend_reminds():
+    """배합 당일은 알리지 않고, 어제 배합분은 오늘 알린다(측정=배합 다음날 규칙).
+
+    13일에 PB 를 배합했으면 점도 측정은 14일 — 당일 알림은 아직 잴 수 없는 것을
+    독촉하는 소음이었다(현장 요청 2026-08-13).
+    """
+    client = _reload_app()
+    client.get("/api/blend/records")
+    client.post("/api/auth/management-login", json={"username": "admin", "password": "admin"})
+
+    today = date.today()
+    _set_since(client, (today - timedelta(days=3)).isoformat())
+
+    # 어제 배합 → 오늘 알림 대상.
+    prod_y = "VYDA" + uuid.uuid4().hex[:4].upper()
+    _make_product_and_blend(client, prod_y, (today - timedelta(days=1)).isoformat())
+    assert prod_y in _due_codes(client)
+
+    # 오늘 배합 → 오늘은 조용, 내일부터 알림.
+    prod_t = "VTDA" + uuid.uuid4().hex[:4].upper()
+    _make_product_and_blend(client, prod_t, today.isoformat())
+    assert prod_t not in _due_codes(client)
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    assert prod_t in _due_codes(client, target_date=tomorrow)
 
 
 def test_reminder_since_requires_manager_and_is_readable_openly():

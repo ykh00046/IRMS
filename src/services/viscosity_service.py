@@ -730,6 +730,12 @@ def daily_reading_reminders(
     배합한 반제품만** 알린다. 지나간 배합은 이제 와서 점도를 잴 수 없는데도 대상 품목이면
     매일 팝업이 떠서(현장 요청 2026-08-07), 책임자가 [지금까지 정리] 를 누른 시점 이전은
     덮는다. 기준일이 없으면 종전대로 전 대상 품목을 본다.
+
+    배합 **당일은 알리지 않는다** — 점도는 배합 다음날 측정하는 것이 현장 규칙이라
+    (예: 13일에 PB 를 배합하면 측정은 14일), 당일 알림은 아직 잴 수 없는 것을
+    독촉하는 소음이었다(현장 요청 2026-08-13). 그래서 기준일 필터의 배합 존재
+    조건을 '알림 기준일(target_date) 이전 배합'으로 좁힌다 — 오늘 배합분은 내일
+    조회부터 알림 대상이 된다.
     """
     normalized_codes: list[str] = []
     seen_codes: set[str] = set()
@@ -754,9 +760,11 @@ def daily_reading_reminders(
             "EXISTS (SELECT 1 FROM blend_records b"
             " WHERE b.status != 'canceled'"
             "   AND b.work_date >= ?"
+            "   AND b.work_date < ?"
             "   AND (b.product_name = p.name OR b.product_name = p.code))"
         )
         params.append(since)
+        params.append(target_date)  # 배합 당일 제외 — 측정은 다음날부터
     params.append(target_date)  # NOT EXISTS today.measured_date = ?
 
     rows = connection.execute(
