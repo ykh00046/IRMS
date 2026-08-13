@@ -492,6 +492,12 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "blend_records", "oversize_total", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "blend_records", "total_bypass_suspect", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "blend_records", "total_bypass_base", "REAL")
+    # 제품(반제품) 품목코드 스냅샷 — 저장 시점의 recipes.product_code 를 기록 자체에 박는다.
+    # 없던 시절에는 기록의 제품 코드가 recipe_id 조인으로만 얻어져, 나중에 레시피의
+    # 품목코드를 고치면 과거 기록의 코드 해석이 소급으로 바뀌었다(제조기록 DHR 관점에서
+    # 위험 — 자재 코드는 이미 blend_details.material_code 로 스냅샷돼 있었다).
+    # 레시피 개정에도 기록은 불변. NULL = 구 기록(스냅샷 이전) → 읽기 시 레시피 조인 폴백.
+    ensure_column(connection, "blend_records", "product_code", "TEXT")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_oversize_total "
         "ON blend_records(oversize_total) WHERE oversize_total = 1"

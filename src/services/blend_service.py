@@ -20,6 +20,7 @@ from typing import Any
 
 from ..db.queries import normalize_token
 from ..db.time_utils import local_today_text
+from .material_resolver import resolve_material
 from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,118 @@ def _blend_details_has_material_id(connection: sqlite3.Connection) -> bool:
         return "material_id" in cols
     except sqlite3.OperationalError:
         return False
+
+
+def _table_has_column(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    """임의 테이블의 컬럼 존재 여부(PRAGMA). 구버전/단위테스트 스키마 폴백용 공통 헬퍼."""
+    try:
+        cols = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+    except sqlite3.OperationalError:
+        return False
+
+
+def product_code_select_expr(connection: sqlite3.Connection) -> str:
+    """배합 기록 조회 SELECT 에 넣을 제품 품목코드 표현식(항상 product_code 로 별칭).
+
+    우선순위: 기록의 스냅샷(blend_records.product_code) > 레시피 조인 폴백
+    (recipes.product_code). 스냅샷은 저장 시점 값이라 레시피가 나중에 개정·수정돼도
+    바뀌지 않고, NULL 인 구 기록만 조인으로 해석한다(하위호환).
+
+    JOIN 대신 상관 서브쿼리를 쓰는 이유: blend_records 와 recipes 는 product_name·
+    position·status·created_at 등 같은 이름의 컬럼이 많아, 목록 쿼리처럼 컬럼을
+    한정하지 않은 WHERE 절과 JOIN 하면 ambiguous column 오류가 난다.
+    컬럼이 없는 구버전/단위테스트 스키마는 NULL 로 떨어뜨린다(기존 동작 불변).
+    """
+    has_snapshot = _table_has_column(connection, "blend_records", "product_code")
+    has_recipe_code = _table_has_column(connection, "recipes", "product_code")
+    join_expr = (
+        "(SELECT r.product_code FROM recipes r WHERE r.id = blend_records.recipe_id)"
+    )
+    if has_snapshot and has_recipe_code:
+        return f"COALESCE(blend_records.product_code, {join_expr}) AS product_code"
+    if has_snapshot:
+        return "blend_records.product_code AS product_code"
+    if has_recipe_code:
+        return f"{join_expr} AS product_code"
+    return "NULL AS product_code"
+
+
+def _recipe_product_code(connection: sqlite3.Connection, recipe_id: Any) -> str | None:
+    """저장 시점 스냅샷용 — 그 레시피의 반제품 품목코드(recipes.product_code).
+
+    recipe_id 가 없으면(수기 입력·옛 데이터 이관) None. 컬럼이 없는 구버전/단위테스트
+    스키마도 None 폴백(다른 방어 패턴과 동일). 빈 문자열은 미부여로 보고 None.
+    """
+    if recipe_id is None:
+        return None
+    try:
+        row = connection.execute(
+            "SELECT product_code FROM recipes WHERE id = ?", (int(recipe_id),)
+        ).fetchone()
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        return None
+    if not row:
+        return None
+    code = (row["product_code"] or "").strip()
+    return code or None
+
+
+def _material_code_of(connection: sqlite3.Connection, material_id: Any) -> str | None:
+    """materials.code 조회. 자재를 특정하지 못하면 None, 특정했으면 코드(미부여는 '').
+
+    반환값 '' 와 None 은 다르다 — '' 는 "이 자재는 서버가 아는 자재인데 품목코드가
+    없다"(정직한 빈 값), None 은 "자재를 특정하지 못했다"(클라이언트 값 보존 대상).
+    """
+    if material_id is None:
+        return None
+    try:
+        row = connection.execute(
+            "SELECT code FROM materials WHERE id = ?", (int(material_id),)
+        ).fetchone()
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        # materials 테이블/code 컬럼이 없는 구버전·단위테스트 스키마 → 특정 실패로 취급.
+        return None
+    if not row:
+        return None
+    return (row["code"] or "").strip()
+
+
+def resolve_stored_material_code(
+    connection: sqlite3.Connection,
+    detail: dict[str, Any],
+    *,
+    max_length: int = 100,
+) -> str | None:
+    """저장할 자재 코드(blend_details.material_code)를 서버가 확정한다.
+
+    클라이언트가 보낸 material_code 는 길이만 검증돼 그대로 저장돼 왔다 — 화면이
+    오래 열려 있었거나 값이 조작되면 구 코드·위조 코드가 규제 기록에 박힌다.
+    그 행의 자재를 특정할 수 있으면(material_id FK, 없으면 자재명·동의어 해석)
+    materials.code 를 서버가 덮어쓴다. 코드 미부여 자재는 ''(정직한 빈 값)로 저장해
+    옛 코드가 살아남지 않게 한다.
+
+    자재를 특정하지 못한 행(마스터에 없는 이름 등)만 클라이언트 값을 보존한다.
+    """
+    code = _material_code_of(connection, detail.get("material_id"))
+    if code is None:
+        # material_id 가 없거나 못 찾은 행 — 이름·동의어로 한 번 더 해석해 본다.
+        name = str(detail.get("material_name") or "").strip()
+        if name:
+            try:
+                resolved_id = resolve_material(connection, name)
+            except sqlite3.OperationalError:  # materials/material_aliases 없는 최소 스키마
+                resolved_id = None
+            if resolved_id is not None:
+                code = _material_code_of(connection, resolved_id)
+    if code is None:
+        # 자재 미특정 — 클라이언트 값 보존(길이 제한은 기존대로).
+        client = detail.get("material_code")
+        if client is None:
+            return None
+        text = str(client).strip()
+        return text[:max_length] if text else None
+    return code[:max_length]
 
 
 # ── 비율/이론량 환산 ────────────────────────────────────────────
@@ -2200,6 +2313,11 @@ def create_blend_record(
     reactor 지정 시 실적을 진행한 반응기(1~4)를 기록한다(반응기 진행 반제품).
     manual_entry=True 면 저울 연동 중 수동 입력으로 계량됐음을 기록한다(추적성).
     is_bulk_regenerated=True 면 일괄 재생성 경로로 만든 문서·계획용 기록임을 표식한다.
+
+    제품 품목코드(product_code)는 **저장 시점의 레시피 값을 스냅샷**한다 — 레시피가
+    나중에 개정·수정돼도 이 기록의 제품 코드는 바뀌지 않는다(자재 코드가
+    blend_details.material_code 로 스냅샷되는 것과 같은 원칙). 이어서 계량·일괄
+    재생성도 이 함수를 거치므로 같은 규칙이 적용된다.
     """
     # 감사 F-1: 채번+INSERT 원자화. 쓰기 락을 선획득(BEGIN IMMEDIATE)해 동시 요청의
     # 채번을 직렬화한다(WAL 에서 리더는 라이터를 막지 않으므로 명시 락이 필요).
@@ -2210,17 +2328,22 @@ def create_blend_record(
     # 발생하지 않지만(단일 라이터), 교차 프로세스 등 방어적 재시도를 둔다.
     last_error: sqlite3.IntegrityError | None = None
     cur = None
+    # 제품 품목코드 스냅샷 — 컬럼이 없는 구버전/단위테스트 스키마는 컬럼째 생략(폴백).
+    has_product_code = _table_has_column(connection, "blend_records", "product_code")
+    product_code = _recipe_product_code(connection, recipe_id) if has_product_code else None
+    code_col = ", product_code" if has_product_code else ""
+    code_val = ", ?" if has_product_code else ""
     for _attempt in range(3):
         product_lot = generate_product_lot(connection, product_name, work_date)
         try:
             cur = connection.execute(
-                """
+                f"""
                 INSERT INTO blend_records
                     (product_lot, recipe_id, product_name, ink_name, position, worker,
                      work_date, work_time, total_amount, scale, status, note,
                      worker_sign, reactor, manual_entry, is_bulk_regenerated,
-                     created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)
+                     created_by, created_at, updated_at{code_col})
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?{code_val})
                 """,
                 (
                     product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
@@ -2230,6 +2353,7 @@ def create_blend_record(
                     1 if manual_entry else 0,
                     1 if is_bulk_regenerated else 0,
                     created_by, created_at, created_at,
+                    *((product_code,) if has_product_code else ()),
                 ),
             )
             break
@@ -2243,6 +2367,8 @@ def create_blend_record(
 
     has_loss_comp = _blend_details_has_loss_comp(connection)
     for idx, d in enumerate(details):
+        # 자재 코드는 서버가 확정한다(클라이언트 값 불신) — resolve_stored_material_code.
+        stored_code = resolve_stored_material_code(connection, d)
         if has_loss_comp:
             connection.execute(
                 """
@@ -2255,7 +2381,7 @@ def create_blend_record(
                 (
                     record_id,
                     d.get("material_id"),
-                    (d.get("material_code") or None),
+                    stored_code,
                     str(d.get("material_name") or "").strip(),
                     (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
                     _opt_num(d.get("ratio")),
@@ -2280,7 +2406,7 @@ def create_blend_record(
                 (
                     record_id,
                     d.get("material_id"),
-                    (d.get("material_code") or None),
+                    stored_code,
                     str(d.get("material_name") or "").strip(),
                     (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
                     _opt_num(d.get("ratio")),
@@ -2314,6 +2440,11 @@ def update_blend_record(
 ) -> None:
     """배합 실적 전체 수정(책임자 전용). product_lot·상태·생성정보·서명은 보존하고,
     헤더와 상세(전량 교체)만 갱신한다. 상세는 create 와 동일 규칙으로 다시 채운다.
+
+    제품 품목코드 스냅샷(product_code)은 **건드리지 않는다** — 저장 시점의 값이
+    그대로 남아야 하고, 수정 화면은 레시피를 바꾸지 못한다(recipe_id 불변). 스냅샷이
+    NULL 인 구 기록도 여기서 채우지 않는다(그때의 코드를 알 수 없으므로 오늘의
+    레시피 값을 소급으로 박으면 그것 자체가 기록 변조다 — 읽기 시 조인 폴백으로 해석).
     """
     connection.execute(
         """
@@ -2334,6 +2465,8 @@ def update_blend_record(
     connection.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (record_id,))
     has_loss_comp = _blend_details_has_loss_comp(connection)
     for idx, d in enumerate(details):
+        # 자재 코드는 서버가 확정한다(클라이언트 값 불신) — resolve_stored_material_code.
+        stored_code = resolve_stored_material_code(connection, d)
         if has_loss_comp:
             connection.execute(
                 """
@@ -2346,7 +2479,7 @@ def update_blend_record(
                 (
                     record_id,
                     d.get("material_id"),
-                    (d.get("material_code") or None),
+                    stored_code,
                     str(d.get("material_name") or "").strip(),
                     (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
                     _opt_num(d.get("ratio")),
@@ -2371,7 +2504,7 @@ def update_blend_record(
                 (
                     record_id,
                     d.get("material_id"),
-                    (d.get("material_code") or None),
+                    stored_code,
                     str(d.get("material_name") or "").strip(),
                     (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
                     _opt_num(d.get("ratio")),
@@ -2409,6 +2542,12 @@ def create_bulk(
 
     각 항목은 레시피 비율로 이론량을 산출하고, actual_equals_theory 면 실제량=이론량으로
     채운다(일괄 계획·문서용). 자재 LOT 은 비움.
+
+    제품 품목코드 스냅샷: 이 경로는 **기존 기록을 되살리는 것이 아니라** 지정한 레시피로
+    새 문서를 만드는 경로다(입력이 recipe_id + (작업일, 총량) 목록뿐이고, 원본 기록을
+    참조하지 않는다). 따라서 지금 그 레시피의 product_code 를 스냅샷하는 것이 맞다 —
+    create_blend_record 가 recipe_id 로 재조회한다. 원본 기록의 코드를 물려받을 대상
+    자체가 없으므로 '보존' 이라는 선택지는 성립하지 않는다.
     """
     base = get_recipe_for_blend(connection, recipe_id)
     if not base:
@@ -2514,15 +2653,18 @@ def create_continuous(
 
 
 def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str, Any] | None:
+    # 제품 품목코드는 기록의 스냅샷 우선, 없으면(구 기록) 레시피 조인 폴백.
+    code_expr = product_code_select_expr(connection)
     row = connection.execute(
-        """
+        f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, reactor,
                manual_entry, is_bulk_regenerated,
                manual_absence_reason, manual_unacked,
                reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
-               created_by, created_at, updated_at
+               created_by, created_at, updated_at,
+               {code_expr}
         FROM blend_records WHERE id = ?
         """,
         (record_id,),
@@ -2626,11 +2768,14 @@ def list_blend_records(
         params.extend([like, like, like, like])
     where = " AND ".join(clauses) if clauses else "1=1"
     params.append(int(limit))
+    # 제품 품목코드는 기록의 스냅샷 우선, 없으면(구 기록) 레시피 조인 폴백.
+    code_expr = product_code_select_expr(connection)
     rows = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
-               manual_entry, is_bulk_regenerated
+               manual_entry, is_bulk_regenerated,
+               {code_expr}
         FROM blend_records
         WHERE {where}
         ORDER BY work_date DESC, id DESC
@@ -2716,6 +2861,9 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
     }
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
               "worker_sign", "reviewed_sign", "approved_sign", "reactor",
+              # 제품(반제품) 품목코드 — 저장 시점 스냅샷(없으면 레시피 조인 폴백).
+              # 필드 추가일 뿐 기존 필드명·의미는 그대로다(소비자 계약 불변).
+              "product_code",
               # 수기 입력(책임자 부재) 사유·미확인 플래그 — SELECT 에는 있었지만 여기서
               # 빠뜨려 상세 응답에 실리지 않았다(화면이 '사유: -' 로 표시되던 원인).
               "manual_absence_reason", "manual_unacked",
@@ -3078,7 +3226,8 @@ def apply_discard_events_to_record(
             continue
         cleaned.append({
             "material_name": name,
-            "material_code": str(ev.get("material_code") or "").strip()[:50],
+            # 배합 저장·배치 폐기와 동일 규칙 — 자재를 특정하면 서버의 materials.code.
+            "material_code": resolve_stored_material_code(connection, ev, max_length=50) or "",
             "amount_g": amount_f,
         })
     if not cleaned:
@@ -3110,10 +3259,13 @@ def create_batch_discard(
     제품 LOT 을 소비하지 않고, 기존 목록·집계·DHR·내보내기의 status 필터를 전혀
     건드리지 않는다(폐기는 항상 별도 스트림 — ERP 이관 시 이중 차감 방지).
     details 는 폐기 시점까지 계량돼 있던 자재 행들(무엇이 얼마나 버려졌는가).
+
+    자재 코드는 배합 저장과 동일하게 서버가 확정한다(클라이언트 값 불신) — 자재를
+    특정하면 materials.code, 특정 못한 행만 클라이언트 값 보존.
     """
     cleaned = [{
         "material_name": str(d.get("material_name") or "").strip()[:200],
-        "material_code": str(d.get("material_code") or "").strip()[:50],
+        "material_code": resolve_stored_material_code(connection, d, max_length=50) or "",
         "material_lot": str(d.get("material_lot") or "").strip()[:100],
         "actual_amount": round(float(d.get("actual_amount") or 0), 2),
     } for d in details if str(d.get("material_name") or "").strip()]
