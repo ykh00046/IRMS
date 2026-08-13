@@ -278,6 +278,30 @@ def test_f_non_raw_codes_excluded(tmp_path):
     assert res["skipped_non_raw"] == 2
 
 
+def test_main_auto_picks_latest_erp_file(tmp_path, monkeypatch, capsys):
+    """--erp-file 을 생략하면 서버 LOT 검증과 같은 폴더에서 최신 ERP 파일을 자동
+    선택한다 - 운영자가 파일명(날짜)을 몰라도 [F] 대조가 돈다."""
+    def seed(c):
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M1', 'AS0001', 1)")
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M2', 'AS0002', 1)")
+
+    db = tmp_path / "auto.db"
+    _build_db(db, seed).close()
+    erp_dir = tmp_path / "erp"
+    erp_dir.mkdir()
+    _make_erp_xlsx(erp_dir / "ERP_2026-08-12.xlsx", [("AS0001", "L1", 10)])
+    _make_erp_xlsx(erp_dir / "ERP_2026-08-13.xlsx", [("AS0001", "L1", 10)])
+    monkeypatch.setenv("IRMS_ERP_EXCEL_DIR", str(erp_dir))
+
+    rc = audit_item_codes.main(["--db", str(db), "--json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    payload = json.loads(out)                      # --json 은 JSON 한 덩어리
+    sec_f = payload["sections"]["F"]
+    assert sec_f["file_name"] == "ERP_2026-08-13.xlsx"   # 최신 파일 자동 선택
+    assert [it["code"] for it in sec_f["items"]] == ["AS0002"]
+
+
 def test_f_no_file_skips(tmp_path):
     def seed(c):
         c.execute("INSERT INTO materials(name, code, is_active) VALUES ('M1', 'AS0001', 1)")

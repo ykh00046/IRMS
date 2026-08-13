@@ -516,7 +516,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db", default="data/irms.db",
                     help="감사 대상 DB 경로(기본 data/irms.db)")
     ap.add_argument("--erp-file", default=None,
-                    help="ERP 재고 엑셀(ERP_*.xlsx) 경로")
+                    help="ERP 재고 엑셀(ERP_*.xlsx) 경로. 생략하면 서버 LOT 검증과 "
+                         "같은 폴더(기본 C:\\ErpExcel, IRMS_ERP_EXCEL_DIR)에서 "
+                         "가장 최근 파일을 자동 사용")
     ap.add_argument("--json", action="store_true",
                     help="사람용 보고 대신 JSON 으로 출력")
     args = ap.parse_args(argv)
@@ -527,9 +529,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"DB 없음: {args.db}", file=sys.stderr)
         return 0
 
+    # --erp-file 생략 시 서버 LOT 검증과 같은 규칙으로 최신 파일 자동 선택
+    # (C:\ErpExcel 의 ERP_YYYY-MM-DD.xlsx 중 파일명 날짜 최신). 파일명을 몰라도
+    # 대조가 돌게 한다 - 없으면 [F] 가 기존대로 검사 생략을 알린다.
+    erp_file = args.erp_file
+    if erp_file is None:
+        erp_file = erp_lot_service.latest_erp_file()
+        if erp_file and not args.json:   # --json 출력은 JSON 한 덩어리여야 한다
+            print(f"[정보] ERP 파일 자동 선택: {erp_file}")
+
     conn = _open_ro(args.db)
     try:
-        results = run_audit(conn, args.erp_file)
+        results = run_audit(conn, erp_file)
     finally:
         conn.close()
 
