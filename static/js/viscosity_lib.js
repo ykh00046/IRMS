@@ -12,7 +12,9 @@
  *   STATUS_LABEL, REASON_LABEL, TREND_LABEL, PERIOD_ALERT_LABEL,
  *   fmt, productLabel, linkedReadingsForRecord, latestViscosityLabel,
  *   appendTextCell, emptyRow, appendDeltaCell, option, controlSummary,
- *   controlBandHtml, periodChartDatasets
+ *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
+ *   readingOverlayDatasets, sourcePbLinkedReadings, sourcePbScatterDatasets,
+ *   pbLinkNotice
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -234,6 +236,12 @@
   // 읽는 일은 컨트롤러가 resolveCss 콜백으로 주입한다(라이브러리는 DOM 를
   // 직접 참조하지 않는다). 동일 periods/center/resolveCss 에 대해 동일한
   // datasets 을 반환한다.
+  //
+  // 기간 평균은 **선**이다(2026-08-13 재설계). 막대는 "0 에서 얼마나 큰가"를 말하는
+  // 그림이라, 370~400 사이를 오가는 점도에서는 막대 길이가 전부 비슷해 변동을 읽을
+  // 수 없었고 128.4 같은 이상값만 유독 짧은 막대 하나로 묻혔다. 선은 값 사이의
+  // 차이(기울기)를 말하므로 같은 데이터에서 추세가 그대로 드러난다. 구간의 판정
+  // (이상/경고)은 선 위 점 색으로 남긴다.
   function periodChartDatasets(periods, center, resolveCss, limits) {
     const labels = periods.map((period) => period.period);
     const data = periods.map((period) => period.mean);
@@ -242,11 +250,21 @@
       if (period.warn_count > 0) return resolveCss("--status-warning");
       return resolveCss("--brand-mid");
     });
+    const radii = periods.map((period) => (period.anomaly_count > 0 ? 6 : 3));
     const datasets = [{
-      type: "bar",
+      type: "line",
       label: "기간 평균",
       data,
-      backgroundColor: colors,
+      borderColor: resolveCss("--brand-mid"),
+      backgroundColor: resolveCss("--brand-mid"),
+      pointBackgroundColor: colors,
+      pointBorderColor: colors,
+      pointRadius: radii,
+      pointHoverRadius: 7,
+      borderWidth: 2,
+      tension: 0.15,
+      spanGaps: true,
+      fill: false,
       order: 2,
     }];
     if (center !== null && center !== undefined && labels.length) {
@@ -336,16 +354,33 @@
     const labelSet = new Set(periodLabels || []);
     const anomalyPts = [];
     const excludedPts = [];
+    const plainPts = [];
     (readings || []).forEach((r) => {
       const key = periodKeyForDate(r.measured_date, granularity);
       if (!key || !labelSet.has(key)) return;
       if (r.status === "excluded" || r.excluded) {
-        excludedPts.push({ x: key, y: r.viscosity });
+        excludedPts.push({ x: key, y: r.viscosity, lot: r.lot_no, date: r.measured_date });
       } else if (r.status === "anomaly") {
-        anomalyPts.push({ x: key, y: r.viscosity });
+        anomalyPts.push({ x: key, y: r.viscosity, lot: r.lot_no, date: r.measured_date });
+      } else {
+        // 정상·경고 개별 측정 — 기간 평균 선 뒤에 옅은 점으로 깔아, 평균 하나가
+        // 지워버린 '그 구간 안의 흩어짐'을 남긴다(2026-08-13 재설계).
+        plainPts.push({ x: key, y: r.viscosity, lot: r.lot_no, date: r.measured_date });
       }
     });
     const datasets = [];
+    if (plainPts.length) {
+      datasets.push({
+        type: "scatter",
+        label: "개별 측정",
+        data: plainPts,
+        backgroundColor: resolveCss("--text-tertiary"),
+        borderColor: resolveCss("--text-tertiary"),
+        radius: 2.5,
+        hoverRadius: 5,
+        order: 3,
+      });
+    }
     if (anomalyPts.length) {
       datasets.push({
         type: "scatter",
@@ -354,8 +389,8 @@
         backgroundColor: resolveCss("--status-error"),
         borderColor: resolveCss("--status-error"),
         pointStyle: "triangle",
-        radius: 5,
-        hoverRadius: 6,
+        radius: 8,
+        hoverRadius: 10,
         order: 0,
       });
     }
@@ -388,22 +423,123 @@
   // PB 35.0 이상 측정의 막대가 통째로 사라졌다). 그래서 실제 데이터 범위도 후보에
   // 넣어 축이 항상 데이터보다 아래위로 여유를 갖게 한다.
   function periodChartYBounds(stats, product, periods) {
-    const candidates = [];
-    const push = (v) => { if (v !== null && v !== undefined && Number.isFinite(Number(v))) candidates.push(Number(v)); };
-    push(stats && stats.center);
-    push(stats && stats.lcl);
-    push(stats && stats.ucl);
-    push(product && product.lower_limit);
-    push(product && product.upper_limit);
-    // 실제 값(구간 평균 + 전체 최소/최대) — 한계 밖으로 나간 값도 막대로 보이게.
-    (periods || []).forEach((period) => push(period && period.mean));
-    push(stats && stats.min);
-    push(stats && stats.max);
+    // ① 그림이 반드시 담아야 하는 값들 — 중심·규격·실제 측정(구간 평균, 전체 최소/최대).
+    const base = [];
+    const pushTo = (list, v) => {
+      if (v !== null && v !== undefined && Number.isFinite(Number(v))) list.push(Number(v));
+    };
+    pushTo(base, stats && stats.center);
+    pushTo(base, product && product.lower_limit);
+    pushTo(base, product && product.upper_limit);
+    (periods || []).forEach((period) => pushTo(base, period && period.mean));
+    pushTo(base, stats && stats.min);
+    pushTo(base, stats && stats.max);
+
+    const candidates = base.slice();
+    // ② 통계 관리한계(±kσ)는 축을 고정해 주는 좋은 기준이지만, 이상값 하나가 σ 를
+    //    부풀리면 한계가 데이터에서 멀찍이 떨어진다(측정 79~82 인데 lcl 31.7). 그 값을
+    //    축에 넣으면 정상 구간이 화면 위쪽에 납작하게 눌려 변동을 다시 못 읽는다
+    //    (막대를 선으로 바꾼 이유가 그것이다). 데이터·규격 범위에서 크게 벗어난
+    //    한계는 축 후보에서 뺀다 — 관리한계 자체는 관리 밴드 그림이 따로 말한다.
+    //
+    //    '멀다'의 기준은 규격 폭이다: 규격이 정해진 반제품이라면 그 폭이 이 반제품에서
+    //    의미 있는 눈금 간격이다. 규격 밴드를 그 폭의 절반만큼 넓힌 범위 안에 드는
+    //    한계만 축에 쓴다. 규격이 없으면 판단 기준이 없으므로 종전대로 한계를 쓴다
+    //    (그때는 한계가 유일한 고정점이다 — 눈금이 구간마다 흔들리지 않게 하는 원래 의도).
+    const limits = [];
+    pushTo(limits, stats && stats.lcl);
+    pushTo(limits, stats && stats.ucl);
+    if (limits.length) {
+      const specLo = product && product.lower_limit;
+      const specHi = product && product.upper_limit;
+      const hasSpec = specLo !== null && specLo !== undefined && specLo !== ""
+        && specHi !== null && specHi !== undefined && specHi !== ""
+        && Number(specHi) > Number(specLo);
+      if (!hasSpec) {
+        limits.forEach((v) => candidates.push(v));
+      } else {
+        const width = Number(specHi) - Number(specLo);
+        const lo = Number(specLo) - width * 0.5;
+        const hi = Number(specHi) + width * 0.5;
+        limits.forEach((v) => { if (v >= lo && v <= hi) candidates.push(v); });
+      }
+    }
     if (candidates.length < 2) return {};   // 기준이 없으면 기존대로 자동
     const min = Math.min(...candidates);
     const max = Math.max(...candidates);
     const pad = (max - min) * 0.15 || Math.abs(max) * 0.05 || 1;
     return { suggestedMin: min - pad, suggestedMax: max + pad };
+  }
+
+  // ── PB 연계 ────────────────────────────────────────────────────────────
+  // '사용한 PB' 점도가 매칭된 측정만, 최신순으로. 표와 산점도가 같은 목록을 쓰도록
+  // 한 곳에서 만든다(표는 20건씩 잘라 쓰고 그림은 전부 쓴다).
+  function sourcePbLinkedReadings(readings) {
+    return (readings || [])
+      .filter((r) => r && r.source_pb_viscosity != null && String(r.material_lot || "").trim())
+      .slice()
+      .sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
+  }
+
+  // PB 점도(x) ↔ 이 반제품 점도(y) 산점도 데이터셋. 표만으로는 "48cp PB 로 만들면
+  // 80" 같은 관계가 76행을 눈으로 훑어야 보였다 — 관계는 그림이 말하는 게 맞다.
+  // 이상 판정 측정은 붉은 삼각형으로 따로 뽑아 관계에서 벗어난 점이 드러나게 한다.
+  function sourcePbScatterDatasets(readings, resolveCss) {
+    const linked = sourcePbLinkedReadings(readings);
+    const plain = [];
+    const flagged = [];
+    linked.forEach((r) => {
+      const point = {
+        x: Number(r.source_pb_viscosity),
+        y: Number(r.viscosity),
+        lot: r.material_lot || "",
+        date: r.measured_date || "",
+        status: r.status || "",
+      };
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      if (r.status === "anomaly") flagged.push(point);
+      else plain.push(point);
+    });
+    const datasets = [];
+    if (plain.length) {
+      datasets.push({
+        type: "scatter",
+        label: "측정",
+        data: plain,
+        backgroundColor: resolveCss("--brand-mid"),
+        borderColor: resolveCss("--brand-mid"),
+        radius: 5,
+        hoverRadius: 7,
+      });
+    }
+    if (flagged.length) {
+      datasets.push({
+        type: "scatter",
+        label: "이상",
+        data: flagged,
+        backgroundColor: resolveCss("--status-error"),
+        borderColor: resolveCss("--status-error"),
+        pointStyle: "triangle",
+        radius: 8,
+        hoverRadius: 10,
+      });
+    }
+    return datasets;
+  }
+
+  // PB 연계 탭 안내문. 종전에는 매칭이 0 이면 패널을 통째로 숨겨서, 연계가 안 된
+  // 것인지 원래 없는 것인지 화면이 말해 주지 않았다(2026-08-13 검토 6번).
+  function pbLinkNotice(pbLink, linkedCount) {
+    const withLot = Number((pbLink && pbLink.readings_with_lot) || 0);
+    const matched = Number((pbLink && pbLink.matched) || 0);
+    if (withLot === 0) {
+      return "이 반제품은 PB 연계 기록이 없습니다. 배합에 사용한 PB LOT 이 기록되면 여기에 표시됩니다.";
+    }
+    if (matched === 0) {
+      return `사용한 PB LOT 이 ${withLot}건 기록됐지만, 그 PB 의 점도를 찾지 못했습니다`
+        + " (PB 반제품 측정 미등록이거나 LOT 표기가 다릅니다).";
+    }
+    return `${linkedCount}건 · 사용한 PB의 점도와 나란히`;
   }
 
   IRMS.viscLib = {
@@ -425,5 +561,8 @@
     periodChartYBounds,
     periodKeyForDate,
     readingOverlayDatasets,
+    sourcePbLinkedReadings,
+    sourcePbScatterDatasets,
+    pbLinkNotice,
   };
 })();

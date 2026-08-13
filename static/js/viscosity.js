@@ -14,8 +14,6 @@
     PERIOD_ALERT_LABEL,
     fmt,
     productLabel,
-    linkedReadingsForRecord,
-    latestViscosityLabel,
     appendTextCell,
     emptyRow,
     appendDeltaCell,
@@ -25,6 +23,9 @@
     periodChartDatasets,
     periodChartYBounds,
     readingOverlayDatasets,
+    sourcePbLinkedReadings,
+    sourcePbScatterDatasets,
+    pbLinkNotice,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -67,19 +68,55 @@
   // 기간별 표·차트에 한 번에 그릴 최대 구간 수. '일' 단위 + 연도=전체에서 버킷이
   // 무한정 늘어나(수백~수천 행) 표·차트가 무거워지는 것을 막는다. 전체는 Excel 내보내기로.
   const PERIOD_DISPLAY_CAP = 60;
+  // 기간 표는 상위 12행만 먼저 보여준다(차트는 60구간 그대로). 60행이 한 번에
+  // 펼쳐져 있으면 화면이 길어지기만 하고 정작 최근 구간을 보려고 스크롤하게 된다.
+  const PERIOD_TABLE_ROWS = 12;
+  // PB 연계 표도 같은 이유로 20행씩. 76행 전건 나열이 화면 절반을 먹었다.
+  const PB_TABLE_ROWS = 20;
+  // 배합 기록 목록 [더보기] 단계 — 서버 limit 을 올려 다시 받는다(최대 200).
+  const BLEND_LIMIT_STEPS = [20, 50, 100, 200];
 
   const state = {
     products: [],
     currentId: null,
     analysis: null,
     blendRecords: [],
+    blendTotal: 0,
+    blendUnregisteredTotal: 0,
+    blendLimit: BLEND_LIMIT_STEPS[0],
+    blendReturned: 0,
     selectedBlendId: null,
     selectedBlendDetail: null,
+    usedPb: null,          // {lot, method, pb_viscosity} — 선택 기록의 '사용한 PB'
     periodChart: null,
+    pbChart: null,
+    periodRows: PERIOD_TABLE_ROWS,
+    pbRows: PB_TABLE_ROWS,
+    tab: "register",
     granularity: "day",
     year: null,
     reactor: null,
   };
+
+  // ── 탭 ───────────────────────────────────────────────────────────────
+  // 표시 전환만 한다 — 데이터는 반제품 하나를 고를 때 이미 전부 받아 두었다.
+  // 규약은 레시피 관리·자재 관리와 동일(.mgmt-tab[data-tab] ↔ .tab-panel#tab-{name}).
+  function activateTab(name) {
+    state.tab = name;
+    document.querySelectorAll(".visc-tabs .mgmt-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === name);
+    });
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.classList.toggle("active", panel.id === `tab-${name}`);
+    });
+    // 숨어 있던 탭의 캔버스는 폭 0 으로 그려져 있다. resize() 만으로는 축과 점 위치가
+    // 어긋난 채 남는다(PB 산점도에서 점 아홉이 왼쪽 끝에 뭉쳐 그려졌다) — 보이는 순간
+    // 그 탭의 그림을 다시 그린다. 다시 그리는 재료는 이미 받아 둔 analysis 뿐이라
+    // 서버를 부르지 않는다.
+    if (!state.analysis) return;
+    if (name === "trend") renderPeriods();
+    if (name === "pb") renderSourcePb();
+  }
 
   function selectedProduct() {
     const sel = $("visc-product-select");
@@ -143,18 +180,33 @@
     // 그릴 데이터가 없으면 차트 자리에 안내를 되살린다(앞 반제품의 그림이 남지 않도록
     // 인스턴스도 함께 버린다 — 남겨두면 빈 상태인데 이전 추세가 그대로 보인다).
     if (state.periodChart) { state.periodChart.destroy(); state.periodChart = null; }
+    if (state.pbChart) { state.pbChart.destroy(); state.pbChart = null; }
     const emptyNote = $("visc-chart-empty");
     if (emptyNote) emptyNote.hidden = false;
+    const pbEmptyNote = $("visc-pb-chart-empty");
+    if (pbEmptyNote) pbEmptyNote.hidden = false;
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
     blendBody.appendChild(emptyRow(BLEND_COLS, "반제품을 선택하면 배합 기록이 표시됩니다."));
     $("visc-record-count").textContent = "0건";
     $("visc-blend-record").value = "";
     $("visc-selected-row").textContent = "반제품을 선택하세요.";
+    $("visc-blend-more").hidden = true;
+    clearUsedPb();
     setSubmitEnabled(false);
     const periodBody = $("visc-period-body");
     periodBody.innerHTML = "";
     periodBody.appendChild(emptyRow(9, "표시할 데이터가 없습니다."));
+    $("visc-period-more").hidden = true;
+    $("visc-anomaly-panel").hidden = true;
+    const pbBody = $("visc-source-pb-body");
+    if (pbBody) pbBody.innerHTML = "";
+    $("visc-pb-more").hidden = true;
+    const pbNote = $("visc-source-pb-note");
+    if (pbNote) pbNote.textContent = "";
+    const pbEmpty = $("visc-pb-empty");
+    if (pbEmpty) { pbEmpty.hidden = false; pbEmpty.textContent = "반제품을 선택하면 PB 연계 측정이 표시됩니다."; }
+    setAnomalyCardClickable(0);
   }
 
   function renderProductSelect() {
@@ -223,10 +275,13 @@
     renderCards();
     renderTrendBanner();
     renderPeriodAlerts();
+    state.periodRows = PERIOD_TABLE_ROWS;
+    state.pbRows = PB_TABLE_ROWS;
     renderPeriods();
+    renderAnomalies();
     renderSourcePb();
     renderCondition();
-    await loadBlendRecordsForProduct(state.analysis.product);
+    await loadBlendRecords({ reset: true });
   }
 
   function renderYearSelect() {
@@ -308,6 +363,7 @@
     $("visc-card-latest-date").textContent = last && last.measured_date ? last.measured_date : "-";
     $("visc-card-mean").textContent = stats.mean === null ? "-" : `${fmt(stats.center)} ± ${fmt(stats.std)}`;
     setCountCard("visc-card-anomaly", "visc-card-anomaly-on", analysis.counts.anomaly);
+    setAnomalyCardClickable(analysis.counts.anomaly);
     setCountCard("visc-card-warn", "visc-card-warn-on", analysis.counts.warn);
     setCountCard("visc-card-excluded", "visc-card-excluded-on", excludedN);
     // 관리 기준 요약 텍스트 아래에 관리 밴드 그림을 함께 넣는다. controlSummary 는
@@ -318,6 +374,65 @@
     $("visc-control-summary").innerHTML = bandHtml
       ? `<span class="visc-control-summary-text">${IRMS.escapeHtml(summaryText)}</span>${bandHtml}`
       : IRMS.escapeHtml(summaryText);
+  }
+
+  // '이상 N건' 카드 → 이상 목록. 0 건이면 갈 곳이 없으므로 눌리는 표시조차 하지
+  // 않는다(누를 수 있어 보이는데 아무 일도 안 일어나는 게 가장 나쁘다).
+  function setAnomalyCardClickable(count) {
+    const card = $("visc-anomaly-card");
+    const unit = $("visc-card-anomaly-unit");
+    if (!card) return;
+    const on = Number(count) > 0;
+    card.classList.toggle("is-clickable", on);
+    if (on) {
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("aria-label", `이상 ${count}건 — 목록 보기`);
+      if (unit) unit.textContent = "건 · 눌러서 목록";
+    } else {
+      card.removeAttribute("role");
+      card.removeAttribute("tabindex");
+      card.removeAttribute("aria-label");
+      if (unit) unit.textContent = "건";
+    }
+  }
+
+  function openAnomalyList() {
+    if (!state.analysis || !(state.analysis.counts && state.analysis.counts.anomaly > 0)) return;
+    activateTab("trend");
+    const panel = $("visc-anomaly-panel");
+    if (!panel || panel.hidden) return;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 어디를 봐야 하는지 잠깐 표시 — 탭이 바뀌면서 화면이 통째로 달라지기 때문.
+    panel.classList.add("is-flash");
+    setTimeout(() => panel.classList.remove("is-flash"), 1200);
+  }
+
+  // 이상 측정 목록 — 서버가 주는 analysis.anomalies(최신 먼저)를 그대로 쓴다.
+  function renderAnomalies() {
+    const panel = $("visc-anomaly-panel");
+    const body = $("visc-anomaly-body");
+    const note = $("visc-anomaly-note");
+    if (!panel || !body) return;
+    const anomalies = (state.analysis && state.analysis.anomalies) || [];
+    if (!anomalies.length) {
+      panel.hidden = true;
+      body.innerHTML = "";
+      return;
+    }
+    panel.hidden = false;
+    if (note) note.textContent = `${anomalies.length}건 · 최근 순`;
+    body.innerHTML = "";
+    anomalies.forEach((item) => {
+      const row = document.createElement("tr");
+      row.className = "row-anomaly";
+      appendTextCell(row, item.measured_date || "-");
+      appendTextCell(row, item.lot_no || "-");
+      appendTextCell(row, fmt(item.viscosity), "num");
+      const reasons = (item.reasons || []).map((r) => REASON_LABEL[r] || r).join(", ");
+      appendTextCell(row, reasons || "-");
+      body.appendChild(row);
+    });
   }
 
   function renderCondition() {
@@ -369,31 +484,87 @@
     const panel = $("visc-source-pb-panel");
     const body = $("visc-source-pb-body");
     const note = $("visc-source-pb-note");
+    const empty = $("visc-pb-empty");
+    const more = $("visc-pb-more");
     if (!panel || !body) return;
+    // 탭은 언제나 보인다 — 종전에는 매칭이 0 이면 패널을 통째로 숨겨서 '연계가 안 된
+    // 것'과 '원래 없는 것'을 구별할 수 없었다(현장 검토 6번).
+    panel.hidden = false;
     const readings = (state.analysis && state.analysis.readings) || [];
-    const linked = readings.filter((r) => r.source_pb_viscosity != null && (r.material_lot || "").trim());
+    const linked = sourcePbLinkedReadings(readings);
+    const pbLink = (state.analysis && state.analysis.pb_link) || null;
+    const notice = pbLinkNotice(pbLink, linked.length);
     if (!linked.length) {
-      panel.hidden = true;
       body.innerHTML = "";
+      body.appendChild(emptyRow(5, "표시할 PB 연계 측정이 없습니다."));
+      if (note) note.textContent = "";
+      if (empty) { empty.hidden = false; empty.textContent = notice; }
+      if (more) more.hidden = true;
+      renderPbChart([]);
       return;
     }
-    panel.hidden = false;
-    // 최신순
-    linked.sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
-    if (note) note.textContent = `${linked.length}건 · 사용한 PB의 점도와 나란히`;
-    body.innerHTML = linked
+    if (empty) empty.hidden = true;
+    if (note) note.textContent = notice;
+    const shown = linked.slice(0, state.pbRows);
+    body.innerHTML = shown
       .map((r) => {
         const st = STATUS_KO[r.status] || "";
-        const stCls = r.status ? ` visc-status ${r.status}` : "";
-        return "<tr>"
+        // 정상은 뱃지 없이 흐린 글자로 — 76개의 초록 '정상' 뱃지가 줄줄이 이어지면
+        // 정작 봐야 할 '이상' 이 그 사이에 묻힌다(현장 검토 6번).
+        const verdict = r.status === "normal" || !st
+          ? `<span class="muted">${IRMS.escapeHtml(st || "-")}</span>`
+          : `<span class="visc-status ${IRMS.escapeHtml(r.status)}">${IRMS.escapeHtml(st)}</span>`;
+        return `<tr${r.status === "anomaly" ? ' class="row-anomaly"' : ""}>`
           + `<td>${IRMS.escapeHtml(r.measured_date || "-")}</td>`
           + `<td>${IRMS.escapeHtml(r.material_lot)}</td>`
           + `<td class="num">${fmt(r.source_pb_viscosity)}</td>`
           + `<td class="num">${fmt(r.viscosity)}</td>`
-          + `<td>${st ? `<span class="${stCls.trim()}">${st}</span>` : "-"}</td>`
+          + `<td>${verdict}</td>`
           + "</tr>";
       })
       .join("");
+    if (more) {
+      more.hidden = linked.length <= shown.length;
+      more.textContent = `더보기 (${shown.length}/${linked.length}건)`;
+    }
+    renderPbChart(linked);
+  }
+
+  // PB 점도(x) ↔ 이 반제품 점도(y) 산점도. 표만으로는 관계가 안 보인다.
+  function renderPbChart(linked) {
+    const canvas = $("visc-pb-chart");
+    const emptyNote = $("visc-pb-chart-empty");
+    if (!canvas) return;
+    const datasets = sourcePbScatterDatasets(linked, getCssVar);
+    if (emptyNote) emptyNote.hidden = datasets.length > 0;
+    if (state.pbChart) { state.pbChart.destroy(); state.pbChart = null; }
+    if (!datasets.length) return;
+    state.pbChart = new Chart(canvas.getContext("2d"), {
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { boxWidth: 12, font: { size: 12 }, usePointStyle: true } },
+          tooltip: {
+            callbacks: {
+              label: (item) => {
+                const point = item.raw || {};
+                return `PB ${fmt(point.x)} → 점도 ${fmt(point.y)}`;
+              },
+              afterLabel: (item) => {
+                const point = item.raw || {};
+                return [`측정일 ${point.date || "-"}`, `사용한 PB LOT ${point.lot || "-"}`];
+              },
+            },
+          },
+        },
+        scales: {
+          x: { type: "linear", title: { display: true, text: "사용한 PB 점도" } },
+          y: { type: "linear", title: { display: true, text: "이 반제품 점도" } },
+        },
+      },
+    });
   }
 
   function renderPeriods() {
@@ -405,8 +576,10 @@
     // 뒤집어 보여준다. 전체 구간은 Excel 내보내기로.
     const truncated = allPeriods.length > PERIOD_DISPLAY_CAP;
     const recent = truncated ? allPeriods.slice(-PERIOD_DISPLAY_CAP) : allPeriods;
+    const more = $("visc-period-more");
     if (!allPeriods.length) {
       body.appendChild(emptyRow(9, "측정일이 있는 데이터가 없습니다."));
+      if (more) more.hidden = true;
     } else {
       if (truncated) {
         const note = document.createElement("tr");
@@ -418,9 +591,14 @@
         note.appendChild(cell);
         body.appendChild(note);
       }
-      recent
-        .slice()
-        .reverse() // 표는 최신 구간을 위로
+      // 표는 최신 구간을 위로, 처음에는 12행만. 나머지는 [더보기]로 펼친다.
+      const rows = recent.slice().reverse();
+      const shown = rows.slice(0, state.periodRows);
+      if (more) {
+        more.hidden = rows.length <= shown.length;
+        more.textContent = `더보기 (${shown.length}/${rows.length}구간)`;
+      }
+      shown
         .forEach((period) => {
           const row = document.createElement("tr");
           if (period.anomaly_count > 0) row.className = "row-anomaly";
@@ -469,10 +647,19 @@
           legend: { labels: { boxWidth: 12, font: { size: 12 }, usePointStyle: true } },
           tooltip: {
             callbacks: {
+              // 개별 측정 점 위에서는 그 측정이 무엇인지(LOT·측정일) 알려 준다.
+              afterLabel: (item) => {
+                const point = item.raw;
+                if (!point || typeof point !== "object" || !point.lot) return [];
+                return [`LOT ${point.lot}${point.date ? ` · ${point.date}` : ""}`];
+              },
               afterBody: (items) => {
-                // 막대(기간 평균) 위에서만 구간 요약을 보여준다. 오버레이 점(이상·제외)의
-                // dataIndex 는 자기 데이터셋 기준이라 periods 인덱스와 다르므로 제외한다.
-                const barItem = items.find((it) => it.dataset && it.dataset.type === "bar");
+                // 기간 평균 선 위에서만 구간 요약을 보여준다. 오버레이 점(개별 측정·
+                // 이상·제외)의 dataIndex 는 자기 데이터셋 기준이라 periods 인덱스와
+                // 다르므로 제외한다(라벨로 구분 — 선/점 모두 type 이 line·scatter 다).
+                const barItem = items.find(
+                  (it) => it.dataset && it.dataset.label === "기간 평균"
+                );
                 const period = barItem ? periods[barItem.dataIndex] : null;
                 if (!period) return [];
                 return [
@@ -498,106 +685,97 @@
     });
   }
 
-  async function loadBlendRecordsForProduct(product) {
-    state.blendRecords = [];
-    state.selectedBlendId = null;
-    state.selectedBlendDetail = null;
-    renderBlendRecords();
-    if (!product) return;
-
-    let found = await findBlendRecords(product);
-    // 반응기 필터 연동 — 분석(카드·추세)은 필터되는데 이 표만 전체를 보여줘
-    // "모든 반응기에서 동일하게 보인다"는 혼란이 있었다(2026-07-23).
-    if (state.reactor === "none") {
-      found = found.filter((r) => r.reactor == null);
-    } else if (state.reactor != null) {
-      found = found.filter((r) => Number(r.reactor) === state.reactor);
+  // 배합 기록 목록 — 서버가 한 번에 준다(GET /viscosity/products/{id}/blend-records).
+  //
+  // 종전에는 /blend/records 를 코드·이름으로 두 번 검색한 뒤 20건을 낱개 상세 조회해
+  // 반제품 하나 고를 때마다 HTTP 22회가 나갔고, '미등록만' 은 그렇게 잘라온 20건에만
+  // 걸려서 더 오래된 미등록 LOT 이 있어도 빈 목록이 떴다(현장 검토 4·10번).
+  // 검색(q)·미등록 필터·등록 여부 계산은 이제 전부 서버 몫이고 요청은 1회다.
+  async function loadBlendRecords(options) {
+    const opts = options || {};
+    const product = currentProduct();
+    if (opts.reset) state.blendLimit = BLEND_LIMIT_STEPS[0];
+    if (!product) {
+      state.blendRecords = [];
+      state.selectedBlendId = null;
+      state.selectedBlendDetail = null;
+      renderBlendRecords();
+      return;
     }
-    state.blendRecords = await hydrateBlendRecords(found.slice(0, 20));
-    state.selectedBlendId = state.blendRecords.length ? state.blendRecords[0].id : null;
-    state.selectedBlendDetail = selectedRecord();
+    const query = { limit: state.blendLimit };
+    const q = $("visc-blend-filter").value.trim();
+    if (q) query.q = q;
+    if ($("visc-open-only").checked) query.unregistered = "1";
+    // 반응기 필터도 서버로 — 클라이언트에서 거르면 받아온 limit 건 안에서만 걸러져
+    // 반응기별 옛 기록을 [더보기] 없이는 못 본다(분석 select 와 같은 규약: 1~4/none).
+    if (state.reactor === "none") query.reactor = "none";
+    else if (state.reactor != null) query.reactor = String(state.reactor);
+    let data;
+    try {
+      data = await request(`/viscosity/products/${product.id}/blend-records`, { query });
+    } catch (error) {
+      state.blendRecords = [];
+      renderBlendRecords();
+      notify(`배합 기록을 불러오지 못했습니다: ${error.message || error}`, "error");
+      return;
+    }
+    const items = data.items || [];
+    state.blendReturned = items.length;
+    state.blendTotal = data.total || 0;
+    state.blendUnregisteredTotal = data.unregistered_total || 0;
+    state.blendRecords = items;
+    const keep = items.some((r) => r.id === state.selectedBlendId);
+    if (!keep) state.selectedBlendId = items.length ? items[0].id : null;
     renderBlendRecords();
     if (state.selectedBlendId) {
       await selectBlendRecord(state.selectedBlendId, { focus: false });
+    } else {
+      clearUsedPb();
     }
-  }
-
-  async function findBlendRecords(product) {
-    const queries = Array.from(new Set([product.code, product.name].filter(Boolean)));
-    const byId = new Map();
-    for (const query of queries) {
-      const data = await request("/blend/records", { query: { search: query } });
-      (data.items || []).forEach((record) => byId.set(record.id, record));
-    }
-    const records = Array.from(byId.values());
-    const exact = records.filter((record) =>
-      record.product_name === product.code || record.product_name === product.name
-    );
-    return exact.length ? exact : records;
-  }
-
-  async function hydrateBlendRecords(records) {
-    return Promise.all(records.map(async (record) => {
-      try {
-        const detail = await request(`/blend/records/${record.id}`);
-        return Object.assign({}, record, {
-          details: detail.details || [],
-          viscosity: detail.viscosity || [],
-        });
-      } catch (_error) {
-        return Object.assign({}, record, { details: [], viscosity: [] });
-      }
-    }));
   }
 
   function renderBlendRecords() {
-    const records = visibleBlendRecords();
+    const records = state.blendRecords;
     if (records.length && !records.some((record) => record.id === state.selectedBlendId)) {
       state.selectedBlendId = records[0].id;
-      state.selectedBlendDetail = selectedRecord();
     } else if (!records.length) {
       state.selectedBlendId = null;
       state.selectedBlendDetail = null;
     }
+    state.selectedBlendDetail = selectedRecord();
     $("visc-blend-record").value = state.selectedBlendId ? String(state.selectedBlendId) : "";
     renderBlendTable(records);
     renderSelectedBlend();
   }
 
-  function visibleBlendRecords() {
-    const filter = $("visc-blend-filter").value.trim().toLowerCase();
-    const openOnly = $("visc-open-only").checked;
-    return state.blendRecords.filter((record) => {
-      if (openOnly && linkedReadingsForRecord(record).length) return false;
-      if (!filter) return true;
-      return [
-        record.product_lot,
-        record.work_date,
-        record.worker,
-        record.total_amount,
-        latestViscosityLabel(record),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(filter);
-    });
-  }
-
   function renderBlendTable(records) {
     const body = $("visc-blend-body");
     body.innerHTML = "";
-    $("visc-record-count").textContent = state.blendRecords.length
-      ? `${records.length} / ${state.blendRecords.length}건`
+    const openOnly = $("visc-open-only").checked;
+    const scope = openOnly ? state.blendUnregisteredTotal : state.blendTotal;
+    $("visc-record-count").textContent = scope
+      ? `${records.length} / ${scope}건${openOnly ? " (미등록)" : ""}`
       : "0건";
+    // [더보기] — 서버가 limit 만큼만 줬고 전체가 더 많으면 다음 단계로 올려 다시 받는다.
+    const more = $("visc-blend-more");
+    if (more) {
+      const step = nextBlendLimit();
+      more.hidden = !(step && state.blendReturned >= state.blendLimit && scope > state.blendReturned);
+      more.textContent = `더보기 (${step}건까지)`;
+    }
     if (!records.length) {
-      body.appendChild(emptyRow(BLEND_COLS, "이 반제품의 배합 기록이 없습니다."));
+      body.appendChild(emptyRow(
+        BLEND_COLS,
+        openOnly
+          ? "미등록 배합 기록이 없습니다. (모두 점도가 등록되었습니다)"
+          : "이 반제품의 배합 기록이 없습니다.",
+      ));
       return;
     }
     records.forEach((record) => {
       const row = document.createElement("tr");
       row.classList.toggle("is-selected", record.id === state.selectedBlendId);
-      const linkedFirst = linkedReadingsForRecord(record)[0];
-      const analysisReading = linkedFirst ? findReadingByLot(linkedFirst.lot_no) : null;
+      const analysisReading = record.registered ? findReadingByLot(record.product_lot) : null;
       if (analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)) {
         row.classList.add("row-excluded");
       }
@@ -605,7 +783,11 @@
       appendTextCell(row, record.product_lot);
       appendTextCell(row, record.work_date || "-");
       appendTextCell(row, record.worker || "-");
-      appendTextCell(row, record.total_amount == null ? "-" : `${fmt(record.total_amount)} g`, "num");
+      appendTextCell(
+        row,
+        record.total_amount == null ? "-" : `${fmt(record.total_amount)} g`,
+        "num visc-col-amount",
+      );
       appendViscosityCell(row, record);
       appendStatusCell(row, record);
       // 행 액션(통계 제외/해제·삭제)은 점도 값 칸이 아니라 별도 '관리' 열로 — 점도 칸은
@@ -615,19 +797,26 @@
     });
   }
 
+  function nextBlendLimit() {
+    return BLEND_LIMIT_STEPS.find((step) => step > state.blendLimit) || null;
+  }
+
   // 관리 열 — 책임자 전용 행 액션. 점도 값과 같은 판정(제외/정상)에 따라 버튼 구성을 바꾼다.
+  //
+  // 측정 id 는 목록 API 가 아니라 분석 표본(analysis.readings)에서 LOT 로 찾는다.
+  // 선택한 연도·반응기 밖의 측정은 표본에 없으므로 버튼을 내지 않는다(그 조건에서
+  // 통계 제외/삭제를 눌러도 화면 숫자가 안 바뀌어 무슨 일이 일어났는지 알 수 없다).
   function appendManageCell(row, record) {
     const cell = document.createElement("td");
     cell.className = "visc-manage-cell";
-    const linked = linkedReadingsForRecord(record);
-    if (!linked.length) {
+    const reading = record.registered ? findReadingByLot(record.product_lot) : null;
+    if (!reading) {
       cell.className = "visc-manage-cell muted";
       cell.textContent = "-";
       row.appendChild(cell);
       return;
     }
-    const reading = linked[0];
-    const analysisReading = findReadingByLot(reading.lot_no);
+    const analysisReading = reading;
     const isExcluded = Boolean(
       analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)
     );
@@ -669,14 +858,13 @@
   // 상태 열 — 행별 판정을 별도 열로 상시 표시(값 옆 배지는 수십 행에서 안 보임 — 사용자 요청).
   function appendStatusCell(row, record) {
     const cell = document.createElement("td");
-    const linked = linkedReadingsForRecord(record);
-    if (!linked.length) {
+    if (!record.registered) {
       cell.className = "muted";
-      cell.textContent = "-";
+      cell.textContent = "미등록";
       row.appendChild(cell);
       return;
     }
-    const reading = findReadingByLot(linked[0].lot_no);
+    const reading = findReadingByLot(record.product_lot);
     const status = reading ? reading.status : null;
     const badge = document.createElement("span");
     if (status === "excluded" || (reading && reading.excluded)) {
@@ -717,17 +905,14 @@
   }
 
   function appendViscosityCell(row, record) {
-    const linked = linkedReadingsForRecord(record);
-    if (!linked.length) {
+    if (!record.registered || record.viscosity == null) {
       const cell = document.createElement("td");
       cell.className = "num muted";
       cell.textContent = "미입력";
       row.appendChild(cell);
       return;
     }
-
-    const reading = linked[0];
-    const analysisReading = findReadingByLot(reading.lot_no);
+    const analysisReading = findReadingByLot(record.product_lot);
     const isExcluded = Boolean(
       analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)
     );
@@ -735,18 +920,12 @@
     cell.className = isExcluded ? "num visc-reading-cell is-excluded" : "num visc-reading-cell";
     const value = document.createElement("span");
     value.className = "visc-reading-value";
-    value.textContent = fmt(reading.viscosity);
+    value.textContent = fmt(record.viscosity);
     cell.appendChild(value);
-    if (reading.measured_date) {
-      const date = document.createElement("span");
-      date.className = "muted small";
-      date.textContent = ` ${reading.measured_date}`;
-      cell.appendChild(date);
-    }
-    if (reading.reactor) {
+    if (record.reactor) {
       const rx = document.createElement("span");
       rx.className = "muted small";
-      rx.textContent = ` · 반응기 ${reading.reactor}`;
+      rx.textContent = ` · 반응기 ${record.reactor}`;
       cell.appendChild(rx);
     }
     // 행 액션은 '관리' 열(appendManageCell)로 옮겼다 — 여기는 값만.
@@ -755,41 +934,94 @@
 
   function renderSelectedBlend() {
     const box = $("visc-selected-row");
-    const detail = state.selectedBlendDetail;
     const record = selectedRecord();
     if (!record) {
       box.textContent = "배합 기록 표에서 미등록 행을 선택하세요.";
       setSubmitEnabled(false);
       return;
     }
-    if (!detail) {
-      box.textContent = `${record.product_lot} 정보를 불러오는 중입니다.`;
-      setSubmitEnabled(false);
-      return;
-    }
-    const linked = linkedReadings();
-    box.textContent = linked.length
-      ? `${detail.product_lot} · 점도 ${fmt(linked[0].viscosity)} 등록`
-      : `${detail.product_lot} · ${detail.work_date || "-"} · ${detail.worker || "-"} 선택`;
-    setSubmitEnabled(linked.length === 0);
+    box.textContent = record.registered
+      ? `${record.product_lot} · 점도 ${fmt(record.viscosity)} 등록됨`
+      : `${record.product_lot} · ${record.work_date || "-"} · ${record.worker || "-"} 선택`;
+    setSubmitEnabled(!record.registered);
   }
 
   async function selectBlendRecord(recordId, options) {
     state.selectedBlendId = Number(recordId);
     $("visc-blend-record").value = String(recordId || "");
     renderBlendRecords();
-    try {
-      state.selectedBlendDetail = selectedRecord() || await request(`/blend/records/${recordId}`);
-      renderBlendRecords();
-      if (options && options.focus) $("visc-value").focus();
-    } catch (error) {
-      $("visc-selected-row").textContent = `배합 기록을 불러오지 못했습니다. ${error.message}`;
-      setSubmitEnabled(false);
+    if (options && options.focus) {
+      const record = selectedRecord();
+      if (record && !record.registered) $("visc-value").focus();
     }
+    await loadUsedPb(state.selectedBlendId);
   }
 
   function selectedRecord() {
     return state.blendRecords.find((record) => record.id === state.selectedBlendId) || null;
+  }
+
+  // ── 사용한 PB ────────────────────────────────────────────────────────
+  // 등록 전에 서버가 무엇을 PB 로 감지했는지 보여준다. matched 면 조용히 한 줄,
+  // first_row(자재명 PB 행을 못 찾아 첫 계량 자재로 추정)면 경고 톤 + 수정 입력.
+  // 종전에는 이 감지가 화면 밖에서 조용히 저장돼, 엉뚱한 자재 LOT 이 '사용한 PB'
+  // 로 박혀도 아무도 몰랐다(현장 검토 2번).
+  function clearUsedPb() {
+    state.usedPb = null;
+    const box = $("visc-usedpb");
+    if (box) box.hidden = true;
+    const fix = $("visc-usedpb-fix");
+    if (fix) fix.hidden = true;
+    const input = $("visc-usedpb-lot");
+    if (input) input.value = "";
+  }
+
+  async function loadUsedPb(recordId) {
+    clearUsedPb();
+    if (!recordId) return;
+    const record = selectedRecord();
+    if (record && record.registered) return;   // 이미 등록된 기록에는 물어볼 게 없다
+    let data;
+    try {
+      data = await request(`/viscosity/blend-records/${recordId}/used-pb`);
+    } catch (_error) {
+      return;                                   // 보조 정보 — 실패해도 등록은 막지 않는다
+    }
+    if (state.selectedBlendId !== Number(recordId)) return;  // 그새 다른 행을 골랐다
+    state.usedPb = data;
+    renderUsedPb();
+  }
+
+  function renderUsedPb() {
+    const box = $("visc-usedpb");
+    const text = $("visc-usedpb-text");
+    const fix = $("visc-usedpb-fix");
+    const input = $("visc-usedpb-lot");
+    if (!box || !text) return;
+    const info = state.usedPb;
+    if (!info) { clearUsedPb(); return; }
+    box.hidden = false;
+    const lot = info.lot || "";
+    if (info.method === "matched") {
+      box.className = "visc-usedpb";
+      const visc = info.pb_viscosity != null ? ` · 점도 ${fmt(info.pb_viscosity)}` : " · 점도 미등록";
+      text.textContent = `사용한 PB: ${lot}${visc}`;
+      if (fix) fix.hidden = true;
+      if (input) input.value = "";
+      return;
+    }
+    if (info.method === "first_row") {
+      box.className = "visc-usedpb is-uncertain";
+      text.textContent = lot
+        ? `PB 자재를 찾지 못해 첫 계량 자재(${lot})로 추정했습니다 — 확인하세요.`
+        : "사용한 PB를 찾지 못했습니다 — 아래에 직접 입력하세요.";
+      if (fix) fix.hidden = false;
+      if (input && !input.value) input.value = lot;
+      return;
+    }
+    box.className = "visc-usedpb is-uncertain";
+    text.textContent = "이 배합 기록에는 사용한 PB LOT 이 없습니다 — 필요하면 직접 입력하세요.";
+    if (fix) fix.hidden = false;
   }
 
   // 배합 실적 연계 측정(list_readings_for_blend)엔 판정(status)이 없다. 재조회한 분석
@@ -801,10 +1033,6 @@
       if (readings[i].lot_no === lotNo) return readings[i];
     }
     return null;
-  }
-
-  function linkedReadings() {
-    return (state.selectedBlendDetail && state.selectedBlendDetail.viscosity) || [];
   }
 
   function setSubmitEnabled(enabled) {
@@ -829,13 +1057,23 @@
     }
     const submittedRecord = selectedRecord();
     const lotNo = submittedRecord ? submittedRecord.product_lot : null;
+    const body = {
+      viscosity: value,
+      memo: $("visc-memo").value.trim() || null,
+      product_id: state.currentId,
+    };
+    // 화면이 고친 '사용한 PB' LOT — 자동 감지가 불확실할 때만 입력칸이 열린다.
+    // 값이 있으면 서버가 감지 대신 이 값을 쓴다(method=manual).
+    const fixInput = $("visc-usedpb-lot");
+    const fixed = fixInput && !$("visc-usedpb-fix").hidden ? fixInput.value.trim() : "";
+    if (fixed) body.material_lot = fixed;
     try {
       // 반응기는 배합 실적에서 지정하고 점도는 실적에서 물려받는다(여기서 입력하지 않음).
       // product_id: 현재 선택한 반제품으로 귀속(F13) — 없으면 서버가 레거시 경로(레코드
       // 제품명으로 자동 확보)를 쓴다. 화면 선택을 서버가 무시해 유령 반제품이 생기던 사고 방지.
-      await request(`/blend/records/${recordId}/viscosity`, {
+      const saved = await request(`/blend/records/${recordId}/viscosity`, {
         method: "POST",
-        body: { viscosity: value, memo: $("visc-memo").value.trim() || null, product_id: state.currentId },
+        body,
       });
       $("visc-value").value = "";
       $("visc-memo").value = "";
@@ -844,11 +1082,43 @@
       // 각 측정에 status 를 붙이므로 목록 배지·카드·알림이 항상 일치한다.
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });
-      const flagged = warnNewReading(value, lotNo);
-      if (!flagged) notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
+      // 판정은 제출 버튼 바로 위에 남긴다 — 정상이어도 무엇으로 판정됐는지 보이게.
+      showVerdict(value, lotNo, saved && saved.used_pb);
     } catch (error_) {
       showFormError(error_.message);
     }
+  }
+
+  // 등록 직후 판정(정상/경고/이상)을 폼 안에 표시한다. 종전에는 정상일 때 토스트
+  // 하나로 끝나 "그래서 이 값이 괜찮다는 건가"를 화면이 말해 주지 않았다.
+  function showVerdict(value, lotNo, usedPb) {
+    const reading = findReadingByLot(lotNo);
+    const status = reading ? reading.status : null;
+    const result = $("visc-form-result");
+    const pbTail = usedPb && usedPb.lot
+      ? ` · 사용한 PB ${usedPb.lot}${usedPb.method === "manual" ? "(직접 입력)" : ""}`
+      : "";
+    const reasons = reading
+      ? (reading.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ")
+      : "";
+    const tail = reasons ? ` · ${reasons}` : "";
+    result.hidden = false;
+    if (status === "anomaly") {
+      result.className = "visc-form-result anomaly";
+      result.textContent = `⚠ 이상 판정 — 관리 범위를 벗어났습니다. 책임자에게 알리세요.`
+        + ` (점도 ${fmt(value)}${tail})${pbTail}`;
+      notify(result.textContent, "error");
+      return;
+    }
+    if (status === "warn") {
+      result.className = "visc-form-result warn";
+      result.textContent = `⚠ 경고 구간 — 확인이 필요합니다. (점도 ${fmt(value)}${tail})${pbTail}`;
+      notify(result.textContent, "warn");
+      return;
+    }
+    result.className = "visc-form-result normal";
+    result.textContent = `정상 판정 — 등록했습니다. (점도 ${fmt(value)})${pbTail}`;
+    notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
   }
 
   function showFormError(message) {
@@ -857,40 +1127,14 @@
     error.hidden = false;
   }
 
-  // 방금 등록한 LOT 의 판정을 재조회한 분석에서 찾아, 이상/경고면 폼 결과 배너 + notify 로
-  // 뚜렷이 알린다. 정상이면 배너를 숨기고 false 를 반환(호출부가 성공 알림을 띄운다).
-  function warnNewReading(value, lotNo) {
-    const reading = findReadingByLot(lotNo);
-    const status = reading ? reading.status : null;
-    const result = $("visc-form-result");
-    if (!status || status === "normal") {
-      result.hidden = true;
-      return false;
-    }
-    const reasons = (reading.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ");
-    const tail = reasons ? ` · ${reasons}` : "";
-    if (status === "anomaly") {
-      result.textContent = `⚠ 점도 이상 판정: 관리 범위를 벗어났습니다 — 책임자에게 알리세요. (점도 ${fmt(value)}${tail})`;
-      result.className = "visc-form-result anomaly";
-      result.hidden = false;
-      notify(result.textContent, "error");
-    } else {
-      result.textContent = `⚠ 점도 경고 구간입니다 — 확인이 필요합니다. (점도 ${fmt(value)}${tail})`;
-      result.className = "visc-form-result warn";
-      result.hidden = false;
-      notify(result.textContent, "warn");
-    }
-    return true;
-  }
-
   async function deleteReading(readingId, lotNo) {
-    // 이 화면에서 유일하게 복원 불가한 동작인데 확인이 한 줄뿐이었다(2026-08-05 감사 R-6,
-    // 사용자 결정: 재확인 한 번 더). 통계에서만 빼려면 [통계 제외]가 맞는 길이다.
+    // 복원할 수 없는 동작이라 확인을 받는다. 확인창 두 번은 두 번째를 읽지 않고
+    // 누르게 만들 뿐이라 한 번으로 되돌린다(2026-08-13 검토) — 대신 그 한 번이
+    // 되돌릴 수 없다는 것과 [통계 제외]라는 대안을 분명히 말한다.
     if (!window.confirm(
       `측정 기록을 삭제할까요? (LOT ${lotNo})\n`
-      + "삭제는 복원할 수 없습니다. 통계에서만 빼려면 [통계 제외]를 사용하세요."
+      + "삭제는 되돌릴 수 없습니다. 통계에서만 빼려면 [통계 제외]를 사용하세요."
     )) return;
-    if (!window.confirm(`정말 삭제합니까? (LOT ${lotNo}) — 되돌릴 수 없습니다.`)) return;
     try {
       await request(`/viscosity/readings/${readingId}`, { method: "DELETE" });
       notify("측정 기록을 삭제했습니다.", "success");
@@ -1194,8 +1438,46 @@
         showEmptyState();
       }
     });
-    $("visc-blend-filter").addEventListener("input", renderBlendRecords);
-    $("visc-open-only").addEventListener("change", renderBlendRecords);
+    // 탭 — 표시 전환만(재요청 없음).
+    document.querySelectorAll(".visc-tabs .mgmt-tab").forEach((btn) => {
+      btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+    });
+    // '이상 N건' 카드 → 추세·분석 탭의 이상 목록.
+    const anomalyCard = $("visc-anomaly-card");
+    if (anomalyCard) {
+      anomalyCard.addEventListener("click", openAnomalyList);
+      anomalyCard.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openAnomalyList();
+        }
+      });
+    }
+    // 검색·미등록 필터는 서버가 건다(전체에서 거른다) — 입력은 300ms 디바운스.
+    let searchTimer = null;
+    $("visc-blend-filter").addEventListener("input", () => {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        loadBlendRecords({ reset: true }).catch(() => {});
+      }, 300);
+    });
+    $("visc-open-only").addEventListener("change", () => {
+      loadBlendRecords({ reset: true }).catch(() => {});
+    });
+    $("visc-blend-more").addEventListener("click", () => {
+      const step = nextBlendLimit();
+      if (!step) return;
+      state.blendLimit = step;
+      loadBlendRecords().catch(() => {});
+    });
+    $("visc-period-more").addEventListener("click", () => {
+      state.periodRows += PERIOD_TABLE_ROWS;
+      renderPeriods();
+    });
+    $("visc-pb-more").addEventListener("click", () => {
+      state.pbRows += PB_TABLE_ROWS;
+      renderSourcePb();
+    });
     $("visc-year").addEventListener("change", () => {
       const value = $("visc-year").value;
       state.year = value === "" ? null : Number(value);

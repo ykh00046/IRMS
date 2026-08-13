@@ -123,6 +123,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         product_id: int,
         unregistered: str | None = None,
         q: str | None = None,
+        reactor: str | None = None,
         limit: int = 20,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
@@ -148,6 +149,14 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             like = f"%{query}%"
             where.append("(br.product_lot LIKE ? OR br.worker LIKE ?)")
             params.extend([like, like])
+        # 반응기 필터 — 화면 select 와 동일 규약(_parse_reactor). 클라이언트에서
+        # 걸면 받아온 limit 건 안에서만 걸러져 반응기별 옛 기록을 놓친다.
+        reactor_value = _parse_reactor(reactor)
+        if reactor_value == "none":
+            where.append("br.reactor IS NULL")
+        elif reactor_value is not None:
+            where.append("br.reactor = ?")
+            params.append(reactor_value)
         # 등록 여부는 EXISTS 로 — 한 기록에 측정이 둘 이상 연결돼도 행이 불지 않는다.
         registered_sql = (
             "EXISTS (SELECT 1 FROM viscosity_readings vr "

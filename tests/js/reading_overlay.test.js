@@ -57,6 +57,27 @@ test("excluded readings go to 제외 dataset, anomalies to 이상 dataset", () =
   assert.equal(byLabel["제외"].data.length, 1);
 });
 
+// 2026-08-13 재설계: 기간 평균이 선이 되면서, 개별 측정도 옅은 점으로 함께 깔린다.
+// 평균 하나가 지워버린 '그 구간 안의 흩어짐'을 남기기 위해서다. 이상·제외는 그대로
+// 자기 데이터셋(크고 붉은 삼각형 / 회색 X)으로 간다.
+test("normal and warn readings become the muted 개별 측정 overlay", () => {
+  const readings = [
+    { measured_date: "2026-01-05", viscosity: 399, status: "normal", lot_no: "A1" },
+    { measured_date: "2026-01-06", viscosity: 404, status: "warn", lot_no: "A2" },
+    { measured_date: "2026-01-07", viscosity: 128, status: "anomaly", lot_no: "A3" },
+  ];
+  const byLabel = datasetByLabel(
+    readingOverlayDatasets(readings, "month", ["2026-01"], resolveCss)
+  );
+  assert.ok(byLabel["개별 측정"], "정상·경고 측정 데이터셋이 있어야 한다");
+  assert.deepEqual(points(byLabel["개별 측정"]), [["2026-01", 399], ["2026-01", 404]]);
+  // 이상 측정은 개별 측정에 섞이지 않고, 더 크게 그려진다.
+  assert.deepEqual(points(byLabel["이상 측정"]), [["2026-01", 128]]);
+  assert.ok(byLabel["이상 측정"].radius > byLabel["개별 측정"].radius);
+  // 점 하나하나가 어느 LOT 인지 툴팁으로 말할 수 있어야 한다.
+  assert.equal(byLabel["이상 측정"].data[0].lot, "A3");
+});
+
 test("reading whose period is outside provided labels is dropped", () => {
   const readings = [
     { measured_date: "2026-01-05", viscosity: 90, status: "anomaly" }, // 2026-01 라벨 있음

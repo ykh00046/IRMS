@@ -58,6 +58,81 @@ body {
   color: var(--status-warning);
 }
 
+/* ── 탭 ────────────────────────────────────────────────────────────────
+   레시피 관리·자재 관리·배합 분석과 같은 규약(.mgmt-tab + .tab-panel#tab-<name>).
+   page-grid 의 자식이므로 활성 패널은 display:contents 로 — 안의 panel 들이 그리드
+   간격을 그대로 물려받는다(insight.css 와 동일). */
+.visc-tabs {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-surface-100);
+  overflow-x: auto;
+}
+
+.visc-tabs .mgmt-tab {
+  padding: 0.5rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.visc-tabs .mgmt-tab:hover {
+  background: var(--bg-surface-200);
+  color: var(--text-primary);
+}
+
+.visc-tabs .mgmt-tab.active {
+  background: var(--accent-primary, var(--brand));
+  border-color: var(--accent-primary, var(--brand));
+  color: #fff;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: contents; }
+
+/* [더보기] 줄 — 표 아래 가운데. 표를 처음부터 다 펼치지 않는 화면들의 공통 자리. */
+.visc-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+
+.visc-more-row .btn[hidden] { display: none; }
+
+/* '이상 N건' 카드는 목록으로 가는 버튼이 된다 — 건수가 0 이면 JS 가 이 클래스를
+   떼어 평범한 카드로 되돌린다(누를 수 있어 보이는데 아무 일도 없으면 안 된다). */
+.visc-cards .metric-card.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.visc-cards .metric-card.is-clickable:hover,
+.visc-cards .metric-card.is-clickable:focus-visible {
+  border-color: var(--status-error);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-error) 25%, transparent);
+  outline: none;
+}
+
+/* 이상 목록으로 이동했을 때 잠깐 강조 — 탭이 통째로 바뀌므로 어디를 봐야 하는지 표시. */
+.visc-anomaly-panel.is-flash {
+  border-color: var(--status-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-error) 22%, transparent);
+}
+
 .visc-trend-banner {
   display: flex;
   align-items: center;
@@ -121,7 +196,8 @@ body {
 
 .visc-register-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
+  /* 입력 폼은 필요한 만큼만(280~340px), 남는 폭은 전부 배합 기록 표에 준다. */
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: var(--space-5);
   align-items: start;
 }
@@ -156,7 +232,30 @@ body {
 }
 
 .visc-blend-table-wrap {
-  max-height: 300px;
+  max-height: 340px;
+}
+
+/* 등록 표가 가로로 잘려 작업자·총량·점도 열이 아예 안 보였다(현장 검토 3번).
+   원인은 왼쪽 표 칸이 좁은데 열마다 여백이 넉넉해 표가 칸보다 넓어진 것.
+   ① 오른쪽 입력 폼 폭을 고정에 가깝게 묶어 표에 남는 폭을 다 주고,
+   ② 표 자체를 촘촘하게, ③ 그래도 좁으면 부차 열(총량)만 접는다.
+   LOT·점도·상태는 어떤 폭에서도 남는다. */
+.visc-blend-table {
+  font-size: 12.5px;
+}
+
+.visc-blend-table th,
+.visc-blend-table td {
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.visc-blend-table .visc-exclude-reason {
+  max-width: 110px;
+}
+
+@media (max-width: 1280px) {
+  .visc-blend-table .visc-col-amount { display: none; }
 }
 
 .visc-blend-table tbody tr {
@@ -286,6 +385,14 @@ body {
   display: none;
 }
 
+/* 정상 판정도 화면에 남긴다 — 토스트만으로는 "그래서 이 값이 괜찮은가"를
+   확인할 수 없었다. 경보색이 아니라 초록 계열의 조용한 확인 톤. */
+.visc-form-result.normal {
+  border: 1px solid color-mix(in srgb, var(--status-success) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-success) 10%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-success) 80%, var(--text-primary));
+}
+
 .visc-form-result.anomaly {
   border: 1px solid color-mix(in srgb, var(--status-error) 40%, var(--border-subtle));
   background: color-mix(in srgb, var(--status-error) 12%, var(--bg-base));
@@ -296,6 +403,47 @@ body {
   border: 1px solid color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
   background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
   color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+}
+
+/* ── 사용한 PB 블록(등록 폼 안) ──────────────────────────────────────
+   감지 결과를 등록 전에 보여주는 자리. matched 는 조용한 안내 톤, 감지가
+   불확실하면(first_row/none) 경고 톤 + LOT 직접 입력칸이 함께 열린다. */
+.visc-usedpb {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--brand-mid) 28%, var(--border-subtle));
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.visc-usedpb[hidden] { display: none; }
+
+.visc-usedpb.is-uncertain {
+  border-color: color-mix(in srgb, var(--status-warning) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
+  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+}
+
+.visc-usedpb-fix {
+  margin-top: var(--space-2);
+}
+
+.visc-usedpb-fix[hidden] { display: none; }
+
+.visc-usedpb-fix .input {
+  margin-bottom: 0;
+}
+
+/* PB 연계 산점도 — 관계를 읽는 그림이라 기간 추세보다 조금 높게. */
+.visc-pb-chart {
+  height: 280px;
+}
+
+.visc-pb-chart canvas {
+  max-height: 280px;
 }
 
 .visc-panel-head {
@@ -520,6 +668,16 @@ body {
   .visc-cond {
     text-align: left;
   }
+
+  /* 탭은 폭을 다 쓰되 넘치면 가로 스크롤(줄바꿈으로 흩어지지 않게). */
+  .visc-tabs {
+    width: 100%;
+  }
+
+  /* 표는 .table-wrap 의 가로 스크롤에 맡기고, 그림 높이는 유지한다 —
+     좁은 화면에서 차트를 눌러 놓으면 추세가 오히려 안 보인다. */
+  .visc-period-chart { height: 220px; }
+  .visc-pb-chart { height: 260px; }
 }
 
 /* 반제품 설정 모달: 품목 목록 (행 선택 → 아래 폼에서 수정) */

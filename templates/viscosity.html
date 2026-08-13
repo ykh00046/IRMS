@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260813a" />
 {% endblock %}
 
 {% block content %}
@@ -59,10 +59,12 @@
             <div class="metric-value" id="visc-card-mean">-</div>
             <div class="metric-unit">중심 기준</div>
           </div>
-          <div class="metric-card visc-card-anomaly">
+          {# 이상 카드는 건수가 1 이상일 때 눌러서 목록으로 갈 수 있다(JS 가 role/tabindex 를
+             그때만 붙인다 — 0 건이면 눌러도 갈 곳이 없으므로 아무 표시도 하지 않는다). #}
+          <div class="metric-card visc-card-anomaly" id="visc-anomaly-card">
             <div class="metric-label">이상</div>
             <div class="metric-value" id="visc-card-anomaly">-</div>
-            <div class="metric-unit">건</div>
+            <div class="metric-unit" id="visc-card-anomaly-unit">건</div>
           </div>
           <div class="metric-card visc-card-warn">
             <div class="metric-label">경고</div>
@@ -84,6 +86,17 @@
           <span id="visc-period-alert-text"></span>
         </section>
 
+        {# 탭 — 한 페이지 세로 8,857px(필터→카드→등록→차트→60행표→76행표)를 셋으로 나눈다
+           (2026-08-13 현장 검토 1번). 툴바·카드는 어느 탭에서나 같은 조회 조건을 말하므로
+           탭 밖 공통. 데이터는 이미 한 번에 받아 두므로 전환은 표시만 바꾼다(재요청 없음).
+           규약은 레시피 관리·자재 관리와 동일: .mgmt-tab[data-tab] ↔ .tab-panel#tab-{name}. #}
+        <nav class="mgmt-tabs visc-tabs" aria-label="점도 화면 탭">
+          <button class="mgmt-tab active" data-tab="register" type="button">측정 등록</button>
+          <button class="mgmt-tab" data-tab="trend" type="button">추세·분석</button>
+          <button class="mgmt-tab" data-tab="pb" type="button">PB 연계</button>
+        </nav>
+
+        <div class="tab-panel active" id="tab-register">
         <section class="panel visc-register-panel">
           <div class="visc-register-head">
             <div>
@@ -106,6 +119,9 @@
                 </div>
                 <span class="muted small" id="visc-record-count">-</span>
               </div>
+              {# 표가 좁은 칸 안에서 가로로 잘려 작업자·총량·점도 열이 아예 보이지
+                 않았다(현장 검토 3번). 열 폭은 CSS 가 정하고, 좁은 화면에서는
+                 부차 열(총량)만 접는다 — LOT·점도·상태는 어떤 폭에서도 남는다. #}
               <div class="table-wrap visc-blend-table-wrap">
                 <table class="visc-table visc-blend-table">
                   <thead>
@@ -113,7 +129,7 @@
                       <th>LOT</th>
                       <th>작업일</th>
                       <th>작업자</th>
-                      <th class="num">총량</th>
+                      <th class="num visc-col-amount">총량</th>
                       <th class="num">점도</th>
                       <th>상태</th>
                       {% if can_manage %}<th>관리</th>{% endif %}
@@ -121,6 +137,9 @@
                   </thead>
                   <tbody id="visc-blend-body"></tbody>
                 </table>
+              </div>
+              <div class="visc-more-row">
+                <button id="visc-blend-more" class="btn btn-sm" type="button" hidden>더보기</button>
               </div>
             </div>
 
@@ -130,6 +149,18 @@
                 <input class="input visc-value-input" id="visc-value" name="viscosity" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
               </div>
               <p class="visc-selected-row" id="visc-selected-row">배합 기록 표에서 미등록 행을 선택하세요.</p>
+
+              {# 사용한 PB — 종전에는 서버가 배합 상세의 '첫 계량 자재'를 몰래 PB 로
+                 저장했고 화면에는 아무것도 뜨지 않았다(현장 검토 2번). 이제 등록 전에
+                 무엇이 감지됐는지 보여주고, 자동 감지가 불확실하면(first_row) 경고 톤과
+                 수정 입력을 함께 낸다. 수정한 값은 저장 요청에 material_lot 으로 실린다. #}
+              <div class="visc-usedpb" id="visc-usedpb" hidden>
+                <div class="visc-usedpb-text" id="visc-usedpb-text">사용한 PB -</div>
+                <div class="visc-usedpb-fix" id="visc-usedpb-fix" hidden>
+                  <label class="filter-label" for="visc-usedpb-lot">사용한 PB LOT (직접 입력)</label>
+                  <input class="input" id="visc-usedpb-lot" autocomplete="off" placeholder="예: 26081201" />
+                </div>
+              </div>
 
               <div>
                 <label class="filter-label" for="visc-memo">메모</label>
@@ -143,7 +174,9 @@
             </form>
           </div>
         </section>
+        </div>
 
+        <div class="tab-panel" id="tab-trend">
         <section class="panel">
           <div class="visc-panel-head">
             <h3 class="panel-title">기간별 추세 및 분석</h3>
@@ -182,15 +215,51 @@
               <tbody id="visc-period-body"></tbody>
             </table>
           </div>
+          <div class="visc-more-row">
+            <button id="visc-period-more" class="btn btn-sm" type="button" hidden>더보기</button>
+          </div>
         </section>
 
-        <!-- 사용한 PB 연계 측정 목록 — 바인더(APB/CSPB 등)처럼 '사용한 PB'가 있는
-             반제품에서만 뜬다. 각 바인더 점도 옆에 그 원료 PB의 점도를 나란히 놓아
-             '48cp PB로 만든 CSPB는 80' 상관을 바로 읽게 한다(2026-07-29). -->
-        <section class="panel" id="visc-source-pb-panel" hidden>
+        {# 이상 측정 목록 — '이상 N건' 카드를 눌러도 어떤 측정인지 볼 수 없었다
+           (현장 검토 5번: 서버가 주는 anomalies 를 화면이 쓰지 않았다). 카드를 누르면
+           이 탭으로 오면서 이 표가 잠깐 강조된다. #}
+        <section class="panel visc-anomaly-panel" id="visc-anomaly-panel" hidden>
+          <div class="visc-panel-head">
+            <h3 class="panel-title">이상 측정 목록</h3>
+            <span class="muted small" id="visc-anomaly-note"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>LOT</th>
+                  <th class="num">점도</th>
+                  <th>사유</th>
+                </tr>
+              </thead>
+              <tbody id="visc-anomaly-body"></tbody>
+            </table>
+          </div>
+        </section>
+        </div>
+
+        <div class="tab-panel" id="tab-pb">
+        <!-- 사용한 PB 연계 — 바인더(APB/CSPB 등)처럼 '사용한 PB'가 있는 반제품에서
+             그 원료 PB의 점도와 나란히 본다. 관계는 표가 아니라 그림이 말한다:
+             위 산점도(x=PB 점도, y=이 반제품 점도)가 '48cp PB로 만들면 80' 을 한눈에
+             보여주고, 아래 표는 그 근거 행이다(최근 20건씩 + 더보기). -->
+        <section class="panel" id="visc-source-pb-panel">
           <div class="visc-panel-head">
             <h3 class="panel-title">사용한 PB 연계 측정</h3>
             <span class="muted small" id="visc-source-pb-note"></span>
+          </div>
+          <p class="panel-notice" id="visc-pb-empty" hidden></p>
+          <div class="chart-wrap visc-pb-chart">
+            <canvas id="visc-pb-chart"></canvas>
+            <p class="visc-chart-empty" id="visc-pb-chart-empty">
+              사용한 PB의 점도가 연결된 측정이 없습니다.
+            </p>
           </div>
           <div class="table-wrap">
             <table class="visc-table">
@@ -199,14 +268,18 @@
                   <th>측정일</th>
                   <th>사용한 PB</th>
                   <th class="num">PB 점도</th>
-                  <th class="num">바인더 점도</th>
+                  <th class="num">이 반제품 점도</th>
                   <th>판정</th>
                 </tr>
               </thead>
               <tbody id="visc-source-pb-body"></tbody>
             </table>
           </div>
+          <div class="visc-more-row">
+            <button id="visc-pb-more" class="btn btn-sm" type="button" hidden>더보기</button>
+          </div>
         </section>
+        </div>
 
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="visc-settings-title" tabindex="-1">
@@ -339,6 +412,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260808a"></script>
-    <script src="/static/js/viscosity.js?v=20260808a"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260813a"></script>
+    <script src="/static/js/viscosity.js?v=20260813a"></script>
 {% endblock %}

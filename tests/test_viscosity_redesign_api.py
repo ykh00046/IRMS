@@ -55,14 +55,14 @@ def _make_product(client, code):
     return next(p["id"] for p in listed if p["code"] == code)
 
 
-def _make_blend(client, prod, work_date, details):
+def _make_blend(client, prod, work_date, details, reactor=None):
     """details: [(자재명, LOT)] — 계량 순서 그대로."""
     worker = "점도재설계" + uuid.uuid4().hex[:4]
     client.post("/api/workers", json={"name": worker}, headers=_csrf(client))
     client.post(
         "/api/blend/session/login", json={"worker": worker}, headers=_csrf(client)
     )
-    res = client.post("/api/blend/records", json={
+    body = {
         "product_name": prod, "worker": worker, "work_date": work_date,
         "total_amount": 100, "scale": "M-65",
         "details": [
@@ -71,7 +71,10 @@ def _make_blend(client, prod, work_date, details):
              "actual_amount": 100 / len(details), "material_lot": lot}
             for name, lot in details
         ],
-    }, headers=_csrf(client))
+    }
+    if reactor is not None:
+        body["reactor"] = reactor
+    res = client.post("/api/blend/records", json=body, headers=_csrf(client))
     assert res.status_code == 200, res.text
     return res.json()["id"]
 
@@ -129,6 +132,30 @@ def test_blend_records_endpoint_reports_registration_and_filters_serverside():
         f"/api/viscosity/products/{pid}/blend-records", params={"q": lot[-4:]}
     )
     assert any(it["id"] == old_id for it in res.json()["items"])
+
+
+def test_blend_records_endpoint_filters_by_reactor_serverside():
+    """반응기 필터 — 클라이언트에서 거르면 limit 밖의 반응기별 옛 기록을 놓친다."""
+    client = _client()
+    _login_admin(client)
+    prod = "VRF" + uuid.uuid4().hex[:5].upper()
+    _seed_recipe(client, prod)
+    pid = _make_product(client, prod)
+    plain_id = _make_blend(client, prod, "2026-08-10", [("PB", "26080901"), ("MEK", "M4")])
+    r2_id = _make_blend(
+        client, prod, "2026-08-11", [("PB", "26081001"), ("MEK", "M5")], reactor=2
+    )
+
+    def ids(params):
+        res = client.get(
+            f"/api/viscosity/products/{pid}/blend-records", params=params
+        )
+        assert res.status_code == 200, res.text
+        return {it["id"] for it in res.json()["items"]}
+
+    assert ids({"reactor": "2"}) == {r2_id}
+    assert ids({"reactor": "none"}) == {plain_id}
+    assert ids({}) == {plain_id, r2_id}
 
 
 # ── 2·3. 사용한 PB 감지 — 첫 행 가정 제거 + 수동 보정 ──────────────────────

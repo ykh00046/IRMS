@@ -180,6 +180,21 @@ const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib
   assert.ok(Number.isFinite(bounds.suggestedMin) && Number.isFinite(bounds.suggestedMax));
 }
 
+// 이상값 하나가 σ 를 부풀려 관리한계가 데이터에서 멀어지면, 그 한계를 축에 넣는
+// 순간 정상 구간이 다시 납작해진다(2026-08-13: 측정 79~82 · 이상 128.4 인데 lcl 31.7).
+// 데이터·규격 범위에서 크게 벗어난 한계는 축 후보에서 뺀다.
+{
+  const bounds = periodChartYBounds(
+    { center: 80, lcl: 31.7, ucl: 128.3, min: 79.2, max: 128.4 },
+    { lower_limit: 70, upper_limit: 95 },
+    [{ mean: 79.5 }, { mean: 128.4 }, { mean: 80.4 }],
+  );
+  assert.ok(bounds.suggestedMin > 50,
+    `축 하한(${bounds.suggestedMin})이 데이터에서 동떨어진 관리하한 31.7 을 따라가면 안 된다`);
+  // 그래도 실제 값(이상 128.4)은 반드시 담는다.
+  assert.ok(bounds.suggestedMin < 70 && bounds.suggestedMax > 128.4);
+}
+
 // 규격 상·하한 선 — 이상 판정 근거가 그림에 있어야 한다.
 {
   // vm 컨텍스트가 다르면 배열 프로토타입도 달라 deepEqual 이 참조 비교로 실패한다 —
@@ -188,6 +203,13 @@ const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib
   const periods = [{ period: "2026-08-01", mean: 50, anomaly_count: 0, warn_count: 0 }];
   const withLimits = periodChartDatasets(periods, 50, css, { lower: 45, upper: 55 });
   const labels = withLimits.datasets.map((d) => d.label);
+  // 기간 평균은 **선**이다(2026-08-13 재설계). 막대는 0 기준 길이를 말하는 그림이라
+  // 370~400 을 오가는 점도에서는 전부 비슷한 높이로 보여 변동을 읽을 수 없었다.
+  const mean = withLimits.datasets.find((d) => d.label === "기간 평균");
+  assert.equal(mean.type, "line", "기간 평균은 선 그래프여야 한다");
+  assert.ok(mean.borderWidth > 0, "선이 보이도록 두께가 있어야 한다");
+  // 판정은 선 위 점 색으로 남는다(이상=빨강, 경고=주황, 그 외=브랜드색).
+  assert.ok(Array.isArray(mean.pointBackgroundColor), "점 색은 구간별로 다르다");
   assert.ok(labels.includes("규격 하한"), "규격 하한 선이 있어야 한다");
   assert.ok(labels.includes("규격 상한"), "규격 상한 선이 있어야 한다");
   const lower = withLimits.datasets.find((d) => d.label === "규격 하한");
@@ -201,6 +223,21 @@ const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib
     "규격을 정하지 않은 반제품에는 규격선을 그리지 않는다(Number(null)=0 함정)");
   // limits 인자 자체를 안 주는 옛 호출부도 안전하다.
   assert.equal(periodChartDatasets(periods, 50, css).datasets.length, 2);
+}
+
+// 이상이 있는 구간의 점은 더 크고 붉게 — 128.4 같은 값이 선 위에서 묻히지 않게.
+{
+  const css = (name) => name;
+  const periods = [
+    { period: "2026-08-01", mean: 399, anomaly_count: 0, warn_count: 0 },
+    { period: "2026-08-02", mean: 128.4, anomaly_count: 1, warn_count: 0 },
+    { period: "2026-08-03", mean: 398, anomaly_count: 0, warn_count: 1 },
+  ];
+  const mean = periodChartDatasets(periods, 390, css).datasets
+    .find((d) => d.label === "기간 평균");
+  assert.equal(mean.pointBackgroundColor[1], "--status-error", "이상 구간 점은 빨강");
+  assert.equal(mean.pointBackgroundColor[2], "--status-warning", "경고 구간 점은 주황");
+  assert.ok(mean.pointRadius[1] > mean.pointRadius[0], "이상 구간 점이 더 크다");
 }
 
 console.log("viscosity_chart_bounds.test.js OK");
