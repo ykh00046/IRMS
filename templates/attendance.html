@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260814a" />
   </head>
   <body
     class="att-page"
@@ -28,13 +28,6 @@
           <span class="att-badge att-badge-admin">책임자 + 본인 로그인</span>
         {% endif %}
 
-      {# 근태 엑셀 열 인식 경고 — 책임자에게만. ERP 가 열 순서를 바꾸면 값이 조용히
-         어긋나는데(2026-06 실제 발생), 그 경고가 서버 로그에만 남아 아무도 보지
-         않았다. 이상이 있을 때만 attendance.js 가 문구를 채우고 연다. #}
-      <section class="att-warning-banner" id="att-header-banner" hidden>
-        <span class="att-warning-icon" aria-hidden="true">⚠</span>
-        <span class="att-warning-text" id="att-header-banner-text"></span>
-      </section>
         <div class="att-header-group">
           {% if admin_mode %}
             <a href="/admin/users" class="btn compact">사용자 관리</a>
@@ -44,12 +37,25 @@
         </div>
         <span class="att-header-divider" aria-hidden="true"></span>
         <div class="att-header-group">
+          {# 책임자 전용 보기(본인 사번 세션 없음)에서는 바꿀 대상 자체가 없다 —
+             버튼이 있으면 누르고 나서야 '대상이 없다'는 토스트를 보게 된다(2026-08-14 검토 9번). #}
+          {% if emp_id %}
           <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
+          {% endif %}
           <button id="att-logout-btn" class="btn compact">로그아웃</button>
           <a href="/" class="btn compact">처음</a>
         </div>
       </div>
     </header>
+
+    {# 근태 엑셀 열 인식 경고 — 책임자에게만. ERP 가 열 순서를 바꾸면 값이 조용히
+       어긋나는데(2026-06 실제 발생), 그 경고가 서버 로그에만 남아 아무도 보지 않았다.
+       헤더 안 flex 항목으로 두면 버튼들 사이에 눌려 한 줄로 잘렸다 — 페이지 폭
+       배너로 꺼냈다(2026-08-14 검토 8번). 이상이 있을 때만 attendance.js 가 연다. #}
+    <section class="att-warning-banner att-page-banner" id="att-header-banner" hidden>
+      <span class="att-warning-icon" aria-hidden="true">⚠</span>
+      <span class="att-warning-text" id="att-header-banner-text"></span>
+    </section>
 
     <main class="att-shell">
       {% if password_reset_required %}
@@ -83,6 +89,18 @@
         </div>
         <div class="att-admin-picker" id="att-admin-picker" hidden>
           <div class="att-admin-field">
+            <label for="att-emp-filter" class="filter-label">직원 찾기</label>
+            {# 목록이 수백 명이라 스크롤로 찾기 어렵다 — 좁히기 입력만 얹고
+               select 자체(와 기존 배선)는 그대로 둔다(2026-08-14 검토 7번). #}
+            <input
+              id="att-emp-filter"
+              type="search"
+              class="input"
+              autocomplete="off"
+              placeholder="이름·사번·부서"
+            />
+          </div>
+          <div class="att-admin-field">
             <label for="att-emp-select" class="filter-label">직원 선택</label>
             <select id="att-emp-select" class="select"></select>
           </div>
@@ -105,17 +123,41 @@
         </div>
       </section>
 
+      {# 책임자 이상 목록 — 트레이 팝업을 닫으면 같은 내용을 다시 볼 화면이 없었다.
+         팝업은 '구분 0 / 내용 근태 이상' 처럼 축약돼 뜻을 알 수 없었으므로(2026-08-14
+         실제 사고) 여기서는 판정 원문 사유와 그 해설을 함께 보여준다. #}
+      {% if admin_mode %}
+      <section class="att-anomaly-panel" id="att-anomaly-panel" hidden>
+        <div class="att-anomaly-head">
+          <h3 id="att-anomaly-title">이번 달 이상 전체</h3>
+          <span class="att-anomaly-hint">행을 누르면 그 직원의 근태로 이동합니다</span>
+        </div>
+        <div class="att-anomaly-body" id="att-anomaly-body"></div>
+      </section>
+      {% endif %}
+
       <section class="att-month-nav">
         <button id="att-month-prev" class="btn compact">이전</button>
         <div class="att-month-label" id="att-month-label">-</div>
         <button id="att-month-next" class="btn compact">다음</button>
       </section>
 
+      {# 월초(ERP 야간 배치 전)엔 이번 달 파일이 아직 없다. 예전에는 '(파일 없음)' 한
+         마디만 남고 이전/다음이 전부 죽어 지난달도 못 보는 막다른 골목이었다
+         (2026-08-14 검토 4번). 있는 달로 건너갈 버튼을 함께 준다. #}
+      <section class="att-month-missing" id="att-month-missing" hidden>
+        <span class="att-warning-icon" aria-hidden="true">⚠</span>
+        <span class="att-warning-text" id="att-month-missing-text"></span>
+        <button id="att-month-missing-btn" type="button" class="btn compact accent" hidden></button>
+      </section>
+
       <section class="att-summary" id="att-summary">
         <div class="att-summary-card att-alert-card att-summary-card-wide">
           <div class="att-alert-combo">
             <section class="att-alert-combo-section">
-              <h3>이번 달 근태 이상</h3>
+              {# 이 카드는 ERP 가 이미 공제로 반영한 값의 합계다. 아래 '미처리 이상'
+                 카드(ERP 입력 대기)와 뜻이 정반대라 부제로 못 박는다(2026-08-14 검토 2번). #}
+              <h3>이번 달 근태 이상 <span class="att-h3-sub">ERP 반영분</span></h3>
               <ul class="att-kv">
                 <li><span>지각</span><strong id="att-late">0회 · 0.00h</strong></li>
                 <li><span>조퇴</span><strong id="att-early-leave">0회 · 0.00h</strong></li>
@@ -133,6 +175,24 @@
               <p class="att-card-note" id="att-year-late-scope">올해 누적</p>
             </section>
           </div>
+        </div>
+
+        {# 미처리 이상 = 아직 ERP 근태코드/공제로 정리되지 않은 행 수. 위 카드(반영분)와
+           숫자의 뜻이 다르다. 0 건이면 조용한 톤, 1건 이상이면 경고 톤으로 바뀐다. #}
+        <div
+          class="att-summary-card att-pending-card"
+          id="att-pending-card"
+          role="button"
+          tabindex="0"
+          aria-label="미처리 이상 건수 — 누르면 첫 이상 행으로 이동"
+        >
+          <h3>미처리 이상 <span class="att-h3-sub">ERP 입력 대기</span></h3>
+          <div class="att-big" id="att-pending-count">0</div>
+          <div class="att-big-unit">
+            <span>합계</span>
+            <strong>건</strong>
+          </div>
+          <p class="att-card-note" id="att-pending-note">이상 없음</p>
         </div>
 
         <div class="att-summary-card att-annual-card att-leave-card">
@@ -308,7 +368,7 @@
     <script src="/static/js/common/ui.js?v=20260726a"></script>
     <script src="/static/js/common/audio.js?v=20260707b"></script>
     <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance.js?v=20260808a"></script>
-    <script src="/static/js/attendance_session.js?v=20260624a"></script>
+    <script src="/static/js/attendance.js?v=20260814a"></script>
+    <script src="/static/js/attendance_session.js?v=20260814a"></script>
   </body>
 </html>

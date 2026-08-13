@@ -16,12 +16,67 @@
   const empDirectBtn = document.getElementById("att-emp-direct-btn");
   const changePwBtn = document.getElementById("att-change-pw-btn");
   const logoutBtn = document.getElementById("att-logout-btn");
+  const empFilterInput = document.getElementById("att-emp-filter");
+  const pendingCard = document.getElementById("att-pending-card");
+  const pendingCount = document.getElementById("att-pending-count");
+  const pendingNote = document.getElementById("att-pending-note");
+  const monthMissing = document.getElementById("att-month-missing");
+  const monthMissingText = document.getElementById("att-month-missing-text");
+  const monthMissingBtn = document.getElementById("att-month-missing-btn");
+  const anomalyPanel = document.getElementById("att-anomaly-panel");
+  const anomalyTitle = document.getElementById("att-anomaly-title");
+  const anomalyBody = document.getElementById("att-anomaly-body");
 
   const state = {
     month: currentMonthString(),
     availableMonths: [],
     selectedEmpId: adminMode && !ownEmpId ? "" : ownEmpId,
+    employees: [],
   };
+
+  // 판정 사유 해설 사전 — 사유 문자열의 출처는 서버의
+  // src/services/attendance_excel/anomaly.py (_append_issue 로 붙는 값 전수).
+  // 2026-08-14: 책임자가 트레이 알림의 "구분 0 / 내용 근태 이상 / 추가 내용 빈칸" 을
+  // 받고 무슨 뜻인지 알 수 없었던 사고 때문에, 화면은 원문 사유와 해설을 함께 적는다.
+  // 사전에 없는 사유(예: "근태코드 확인: XX")는 원문만 그대로 보여준다.
+  const ISSUE_EXPLANATIONS = {
+    "근태코드 누락(지각)":
+      "지각 공제시간은 입력돼 있는데 근태코드에 '지각'이 없습니다 — ERP 근태코드 입력 대기",
+    "근태코드 누락(조퇴)":
+      "조퇴 공제시간은 입력돼 있는데 근태코드에 '조퇴'가 없습니다 — ERP 근태코드 입력 대기",
+    "근태코드 누락(외출)":
+      "외출 공제시간은 입력돼 있는데 근태코드에 '외출'이 없습니다 — ERP 근태코드 입력 대기",
+    "공제시간 불일치":
+      "휴가 코드인데 지각/조퇴 공제시간이 함께 있습니다 — 이중 차감 의심",
+    "지각 미처리": "기준 출근보다 늦게 타각했는데 지각 공제가 아직 없습니다",
+    "조퇴 미처리": "기준 퇴근보다 일찍 타각했는데 조퇴 공제가 아직 없습니다",
+    "출근 누락": "출근 타각 기록이 없습니다",
+    "퇴근 누락": "퇴근 타각 기록이 없습니다",
+  };
+
+  function explainIssue(issue) {
+    const text = String(issue || "").trim();
+    if (!text) return "";
+    return ISSUE_EXPLANATIONS[text] || "";
+  }
+
+  function issueListHtml(issues) {
+    const labels = (Array.isArray(issues) ? issues : []).filter(Boolean);
+    if (!labels.length) return "";
+    return labels
+      .map((issue) => {
+        const explanation = explainIssue(issue);
+        return `<li class="att-issue-item">
+            <span class="att-issue-label">${escapeHtml(issue)}</span>
+            ${
+              explanation
+                ? `<span class="att-issue-why">${escapeHtml(explanation)}</span>`
+                : ""
+            }
+          </li>`;
+      })
+      .join("");
+  }
 
   function currentMonthString() {
     const now = new Date();
@@ -103,10 +158,18 @@
 
     const response = await fetch(url, { credentials: "same-origin" });
     if (!response.ok) {
+      // detail 은 문자열일 수도, 구조체({code, available_months, ...})일 수도 있다.
+      // 월 파일 없음(404)은 2026-08-14 부터 구조체로 온다 — 문자열만 다루던 예전
+      // 방식으로 읽으면 "[object Object]" 가 되어 안내가 통째로 무의미해진다.
       let detail = "";
+      let raw = null;
       try {
         const payload = await response.json();
-        detail = payload?.detail?.detail || payload?.detail || "";
+        raw = payload?.detail;
+        detail =
+          (raw && typeof raw === "object"
+            ? raw.detail || raw.code || ""
+            : raw) || "";
       } catch (_) {
         detail = response.statusText;
       }
@@ -121,7 +184,10 @@
       // 임시비번 변경은 소프트 유도(배너 + "나중에 변경")일 뿐 하드 게이트가
       // 아니다. 서버의 어떤 조회 엔드포인트도 403 PASSWORD_RESET_REQUIRED 를
       // 반환하지 않으므로(§4.2), 과거의 403 처리 분기는 도달 불가라 제거했다.
-      throw new Error(String(detail));
+      const error = new Error(String(detail));
+      error.detail = raw;
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();
@@ -313,7 +379,53 @@
         <td class="att-note-cell">${escapeHtml(row.note || "")}</td>
       `;
       tbody.appendChild(tr);
+
+      // 사유 서브라인 — 툴팁에만 있으면 터치 화면에서는 볼 방법이 없다(2026-08-14).
+      const issueRows = issueListHtml(row.issues);
+      if (issueRows) {
+        const detail = document.createElement("tr");
+        detail.className = "att-issue-detail-row";
+        detail.innerHTML = `
+          <td colspan="18">
+            <div class="att-issue-detail">
+              <span class="att-issue-detail-date att-num">${escapeHtml(
+                String(row.date || "").slice(5)
+              )}</span>
+              <ul class="att-issue-list">${issueRows}</ul>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(detail);
+      }
     });
+  }
+
+  // 미처리 이상 = 아직 ERP 근태코드/공제로 정리되지 않은 행. 위쪽 '이번 달 근태 이상'
+  // 카드(ERP 반영분)와 숫자의 뜻이 정반대라 카드도 라벨도 따로 둔다.
+  function renderPending(rows) {
+    if (!pendingCount || !pendingNote) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const issueRows = list.filter(
+      (row) => Array.isArray(row?.issues) && row.issues.filter(Boolean).length
+    );
+    const count = issueRows.length;
+    pendingCount.textContent = String(count);
+    pendingNote.textContent = count
+      ? "ERP 근태코드·공제 입력 대기 · 눌러서 첫 이상 행으로"
+      : "이상 없음";
+    pendingCard?.classList.toggle("is-alert", count > 0);
+    pendingNote.classList.toggle("warn", count > 0);
+  }
+
+  function scrollToFirstIssue() {
+    const target = document.querySelector("#att-rows-body tr.att-row-issue");
+    if (!target) {
+      window.IRMS?.notify?.("이 달에는 미처리 이상이 없습니다.", "info");
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("is-flash");
+    window.setTimeout(() => target.classList.remove("is-flash"), 1600);
   }
 
   function rowClassName(row) {
@@ -417,11 +529,26 @@
     return `<span class="${cls}">${escapeHtml(text)}</span>`;
   }
 
+  // available_months 는 최신 달이 앞(내림차순)이다.
+  // delta < 0 = '이전'(더 과거), delta > 0 = '다음'(더 미래).
+  function nearestMonth(delta) {
+    const list = state.availableMonths || [];
+    if (delta < 0) return list.find((month) => month < state.month);
+    return list.slice().reverse().find((month) => month > state.month);
+  }
+
   function updateMonthNav() {
     monthLabel.textContent = state.month;
     const list = state.availableMonths || [];
     const idx = list.indexOf(state.month);
-    monthPrev.disabled = idx === -1 || idx >= list.length - 1;
+    if (idx === -1) {
+      // 파일이 없는 달에 서 있어도 이동은 살아 있어야 한다 — 예전에는 여기서 두 버튼이
+      // 모두 죽어 지난달조차 볼 수 없었다(2026-08-14 검토 4번).
+      monthPrev.disabled = !nearestMonth(-1);
+      monthNext.disabled = !nearestMonth(1);
+      return;
+    }
+    monthPrev.disabled = idx >= list.length - 1;
     monthNext.disabled = idx <= 0;
   }
 
@@ -432,29 +559,58 @@
     if (!payload) return;
 
     state.availableMonths = payload.available_months || [];
-    const items = payload.items || [];
-
-    empSelect.innerHTML = "";
+    state.employees = payload.items || [];
 
     if (empDirectInput && !empDirectInput.value && state.selectedEmpId) {
       empDirectInput.value = state.selectedEmpId;
     }
 
-    if (!items.length) {
+    renderEmpOptions();
+    adminPicker.hidden = false;
+    updateMonthNav();
+  }
+
+  function employeeMatchesFilter(emp, keyword) {
+    if (!keyword) return true;
+    const haystack = [emp?.name, emp?.emp_id, emp?.department]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(keyword);
+  }
+
+  // select 자체와 change 배선은 그대로 두고 option 만 좁힌다(2026-08-14 검토 7번).
+  // 지금 조회 중인 직원은 걸러지더라도 목록에서 사라지지 않게 남겨야, 좁히기 도중
+  // select 값이 빈칸으로 바뀌어 '누구를 보고 있는지' 표시가 어긋나지 않는다.
+  function renderEmpOptions() {
+    if (!empSelect) return;
+    const keyword = String(empFilterInput?.value || "")
+      .trim()
+      .toLowerCase();
+    const all = state.employees || [];
+    const items = all.filter(
+      (emp) =>
+        employeeMatchesFilter(emp, keyword) ||
+        (state.selectedEmpId && emp.emp_id === state.selectedEmpId)
+    );
+
+    empSelect.innerHTML = "";
+
+    if (!all.length) {
       const option = document.createElement("option");
       option.value = "";
       option.textContent = "표시 가능한 직원이 없습니다";
       empSelect.appendChild(option);
       empSelect.disabled = true;
-      adminPicker.hidden = false;
-      updateMonthNav();
       return;
     }
 
     empSelect.disabled = false;
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = "-- 직원 선택 --";
+    placeholder.textContent = items.length
+      ? "-- 직원 선택 --"
+      : "-- 조건에 맞는 직원 없음 --";
     empSelect.appendChild(placeholder);
 
     items.forEach((emp) => {
@@ -466,9 +622,98 @@
       }
       empSelect.appendChild(option);
     });
+  }
 
-    adminPicker.hidden = false;
-    updateMonthNav();
+  // 책임자 이상 목록 — 신규 API(/admin/anomalies). 팝업이 사라진 뒤에도 같은 목록을
+  // 화면에서 다시 볼 수 있어야 한다(2026-08-14 검토 2번).
+  async function loadAnomalyPanel() {
+    if (!anomalyPanel || !anomalyBody) return;
+    try {
+      const payload = await apiGet("/api/attendance/admin/anomalies", {
+        month: state.month,
+      });
+      if (!payload) return;
+      renderAnomalyPanel(payload);
+    } catch (error) {
+      // 목록을 못 불러온 것이 근태 조회를 막지는 않는다 — 조용히 사실만 적는다.
+      anomalyBody.innerHTML = `<p class="att-anomaly-empty">이상 목록을 불러오지 못했습니다 (${escapeHtml(
+        String(error.message || error)
+      )}).</p>`;
+      if (anomalyTitle) anomalyTitle.textContent = "이번 달 이상 전체";
+      anomalyPanel.hidden = false;
+    }
+  }
+
+  function renderAnomalyPanel(payload) {
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const detailTotal = Number(payload?.detail_total || 0);
+    const month = payload?.month || state.month;
+
+    if (anomalyTitle) {
+      anomalyTitle.textContent = items.length
+        ? `${month} 이상 전체 (${items.length}명 · ${detailTotal}건)`
+        : `${month} 이상 전체`;
+    }
+
+    if (!items.length) {
+      anomalyBody.innerHTML =
+        '<p class="att-anomaly-empty">이상 없음 — 이번 달 미처리 이상이 없습니다.</p>';
+      anomalyPanel.hidden = false;
+      return;
+    }
+
+    anomalyBody.innerHTML = items
+      .map((item) => {
+        const details = Array.isArray(item.details) ? item.details : [];
+        const dates = Array.isArray(item.dates) ? item.dates : [];
+        const detailHtml = details.length
+          ? details
+              .map(
+                (detail) => `
+              <div class="att-anomaly-detail">
+                <span class="att-anomaly-date att-num">${escapeHtml(
+                  detail.display_date || detail.date || ""
+                )}</span>
+                <ul class="att-issue-list">${issueListHtml(detail.issues)}</ul>
+              </div>`
+              )
+              .join("")
+          : `<div class="att-anomaly-detail">
+               <ul class="att-issue-list">${issueListHtml(item.issues)}</ul>
+             </div>`;
+
+        return `
+          <div class="att-anomaly-row" role="button" tabindex="0" data-emp-id="${escapeHtml(
+            item.emp_id || ""
+          )}">
+            <div class="att-anomaly-who">
+              <strong>${escapeHtml(item.name || "-")}</strong>
+              <span class="att-num">${escapeHtml(item.emp_id || "")}</span>
+              <span>${escapeHtml(item.department || "")}</span>
+              <span class="att-anomaly-count">${dates.length || details.length}일</span>
+            </div>
+            <div class="att-anomaly-details">${detailHtml}</div>
+          </div>`;
+      })
+      .join("");
+
+    anomalyPanel.hidden = false;
+  }
+
+  function selectEmployeeFromPanel(empId) {
+    const value = String(empId || "").trim();
+    if (!value) return;
+    state.selectedEmpId = value;
+    if (empSelect) {
+      renderEmpOptions();
+      empSelect.value = value;
+    }
+    if (empDirectInput) empDirectInput.value = value;
+    loadView().then(() => {
+      document
+        .querySelector(".att-profile")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   async function loadView() {
@@ -477,10 +722,9 @@
 
       if (adminMode && !ownEmpId) {
         if (!state.selectedEmpId) {
-          renderProfile(null);
-          renderSummary({});
-          renderAnnualSummary({});
-          renderRows([]);
+          // 선택이 비면 전부 지운다 — 카드 하나라도 남으면 앞사람 숫자를 새 사번의
+          // 것으로 읽는다(clearView 주석 참고).
+          clearView();
           return;
         }
         payload = await apiGet("/api/attendance/admin/view", {
@@ -502,6 +746,7 @@
 
       if (!payload) { clearView(); return; }
 
+      hideMonthMissing();
       state.availableMonths = payload.available_months || state.availableMonths;
       if (adminMode && state.selectedEmpId && !payload.profile) {
         // 프로필이 없으면 나머지 수치도 이 사번의 것이 아니다 — 통째로 비운다.
@@ -517,15 +762,13 @@
       renderSummary(payload.summary);
       renderAnnualSummary(payload.annual_summary);
       renderRows(payload.rows);
+      renderPending(payload.rows);
       updateMonthNav();
     } catch (error) {
       const message = String(error.message || error);
       if (message.includes("MONTH_FILE_NOT_FOUND")) {
-        renderProfile(null);
-        renderSummary({});
-        renderAnnualSummary({});
-        renderRows([]);
-        monthLabel.textContent = `${state.month} (파일 없음)`;
+        clearView();
+        showMonthMissing(error.detail);
       } else if (message.includes("FILE_LOCKED_RETRY")) {
         clearView();
         window.IRMS?.notify?.(
@@ -547,17 +790,79 @@
     renderSummary({});
     renderAnnualSummary({});
     renderRows([]);
+    renderPending([]);
+  }
+
+  function hideMonthMissing() {
+    if (!monthMissing) return;
+    monthMissing.hidden = true;
+    if (monthMissingBtn) {
+      monthMissingBtn.hidden = true;
+      delete monthMissingBtn.dataset.month;
+    }
+    monthLabel.textContent = state.month;
+  }
+
+  // 월 파일 없음 안내 — detail 은 {code, requested_month, available_months} 구조체다.
+  // 구형(문자열 "MONTH_FILE_NOT_FOUND") 응답도 방어한다: 그때는 이미 알고 있는
+  // available_months 로 대체해 이동 버튼을 살린다.
+  function showMonthMissing(detail) {
+    const requested =
+      (detail && typeof detail === "object" && detail.requested_month) ||
+      state.month;
+    const months =
+      detail && typeof detail === "object" && Array.isArray(detail.available_months)
+        ? detail.available_months
+        : state.availableMonths || [];
+
+    if (months.length) {
+      state.availableMonths = months;
+    }
+    updateMonthNav();
+    monthLabel.textContent = `${requested} (파일 없음)`;
+
+    if (!monthMissing || !monthMissingText) return;
+
+    const fallback = (state.availableMonths || []).filter(
+      (month) => month !== requested
+    )[0];
+    monthMissingText.textContent = fallback
+      ? `${requested} 파일이 아직 없습니다 (ERP 배치 전).`
+      : `${requested} 파일이 아직 없습니다 (ERP 배치 전). 볼 수 있는 다른 달도 없습니다.`;
+
+    if (monthMissingBtn) {
+      if (fallback) {
+        monthMissingBtn.textContent = `${fallback} 보기`;
+        monthMissingBtn.dataset.month = fallback;
+        monthMissingBtn.hidden = false;
+      } else {
+        monthMissingBtn.hidden = true;
+        delete monthMissingBtn.dataset.month;
+      }
+    }
+    monthMissing.hidden = false;
   }
 
   function moveMonth(delta) {
     const list = state.availableMonths || [];
     const idx = list.indexOf(state.month);
-    if (idx === -1) return;
+    if (idx === -1) {
+      const target = nearestMonth(delta);
+      if (target) goToMonth(target);
+      return;
+    }
 
     const nextIdx = idx - delta;
     if (nextIdx < 0 || nextIdx >= list.length) return;
 
     state.month = list[nextIdx];
+    refreshView();
+  }
+
+  function goToMonth(month) {
+    const value = String(month || "").trim();
+    if (!value) return;
+    state.month = value;
     refreshView();
   }
 
@@ -595,21 +900,49 @@
     if (adminMode) {
       await loadEmployeesForAdmin();
       checkHeaderMapping();   // 조회를 기다리게 하지 않는다
+      loadAnomalyPanel();     // 이상 목록도 개인 조회를 막지 않는다
     }
     await loadView();
   }
 
   monthPrev?.addEventListener("click", () => moveMonth(-1));
   monthNext?.addEventListener("click", () => moveMonth(1));
+  monthMissingBtn?.addEventListener("click", () => {
+    goToMonth(monthMissingBtn.dataset.month || "");
+  });
 
-  changePwBtn?.addEventListener("click", () => {
-    if (!ownEmpId) {
-      window.IRMS?.notify?.(
-        "책임자 전용 보기에서는 본인 근태 비밀번호를 바꿀 대상이 없습니다.",
-        "info"
-      );
-      return;
+  empFilterInput?.addEventListener("input", renderEmpOptions);
+
+  pendingCard?.addEventListener("click", scrollToFirstIssue);
+  pendingCard?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      scrollToFirstIssue();
     }
+  });
+
+  function anomalyRowFrom(target) {
+    return target instanceof Element
+      ? target.closest(".att-anomaly-row")
+      : null;
+  }
+
+  anomalyBody?.addEventListener("click", (event) => {
+    const row = anomalyRowFrom(event.target);
+    if (row) selectEmployeeFromPanel(row.dataset.empId);
+  });
+  anomalyBody?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = anomalyRowFrom(event.target);
+    if (!row) return;
+    event.preventDefault();
+    selectEmployeeFromPanel(row.dataset.empId);
+  });
+
+  // 버튼 자체가 본인 사번 세션일 때만 렌더된다(템플릿 {% if emp_id %}) — 여기 가드는
+  // 혹시 남아 있는 DOM 을 위한 안전망일 뿐이다.
+  changePwBtn?.addEventListener("click", () => {
+    if (!ownEmpId) return;
     window.location.assign("/attendance/change-password");
   });
 
@@ -680,6 +1013,18 @@
       banner.hidden = true;
     }
 
+    // 저장소 일원화(2026-08-14 검토 9번) — 이 플래그의 정본은 sessionStorage 다.
+    // 예전 판이 localStorage 에 같은 키를 남겼고(비밀번호 변경 화면의 청소 코드도
+    // localStorage 를 지운다), 그 잔재가 남아 있으면 어느 쪽이 진짜인지 헷갈린다.
+    // 여기서 통째로 걷어내 sessionStorage 한 곳만 남긴다.
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("irms_att_reset_dismissed_"))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch (error) {
+      /* 접근이 막힌 브라우저면 지울 잔재도 없다 */
+    }
+
     dismissBtn?.addEventListener("click", () => {
       banner.hidden = true;
       if (!storageKey) return;
@@ -706,6 +1051,14 @@
     attendanceCodeCell,
     dateCell,
     renderAnnualSummary,
+    explainIssue,
+    issueListHtml,
+    renderPending,
+    renderAnomalyPanel,
+    showMonthMissing,
+    nearestMonth,
+    renderEmpOptions,
+    state,
   };
 
   (async function init() {

@@ -10,6 +10,12 @@
 // At T=0 the badge redirects to /attendance/login after issuing the logout.
 // Server-side 5 min idle remains as the safety net for cases where this
 // script never gets a chance to run (browser crash, OS kill, etc).
+//
+// 책임자(IRMS 관리자 세션)는 제외한다 — 책임자에게는 IRMS 쪽 유휴 정책이 따로 있고,
+// 여기 3분 타이머가 겹치면 이상 목록을 읽는 도중에 튕겨 나간다(2026-08-14 검토 5번).
+// 판별은 GET /api/attendance/session 의 admin_mode 로 하고, 서버 렌더가 이미 알려준
+// data-admin-mode 를 먼저 보아 배지가 잠깐 떴다 사라지는 깜빡임을 막는다.
+// 직원 세션 동작은 그대로다.
 
 (function () {
   "use strict";
@@ -143,9 +149,30 @@
     tickHandle = window.setInterval(() => tick(badge), TICK_MS);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", attach);
-  } else {
+  async function isAdminSession() {
+    // 서버 렌더 힌트가 책임자라고 말하면 그대로 믿는다(같은 서버 판정이다).
+    if (document.body?.dataset?.adminMode === "true") return true;
+    try {
+      const res = await fetch("/api/attendance/session", {
+        credentials: "same-origin",
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      return data?.admin_mode === true;
+    } catch (_err) {
+      // 물어보지 못하면 직원으로 본다 — 공용 PC 보호가 우선이다.
+      return false;
+    }
+  }
+
+  async function start() {
+    if (await isAdminSession()) return;   // 책임자에겐 타이머를 걸지 않는다
     attach();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
   }
 })();
