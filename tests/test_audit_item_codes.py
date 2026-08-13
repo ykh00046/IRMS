@@ -167,6 +167,30 @@ def test_d_cross_duplicate(tmp_path):
     assert [it["code_key"] for it in res["items"]] == ["AS0001"]
 
 
+def test_d_same_name_intermediate_share_is_not_an_issue(tmp_path):
+    """이름이 같은 자재-레시피 코드 공유(2단계 중간체)는 문제가 아니라 참고(shares).
+
+    1차 반제품이 2차 배합의 자재로도 등록되는 중간체는 같은 코드를 일부러
+    공유한다 - API 교차 중복 차단(_product_code_holder)과 같은 판정 규칙.
+    """
+    def seed(c):
+        # 같은 이름 'PB' - 정상 공유(개정 체인이라 레시피 여러 행).
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('PB', 'B0020', 1)")
+        c.execute("INSERT INTO recipes(product_name, product_code) VALUES ('PB', 'B0020')")
+        c.execute("INSERT INTO recipes(product_name, product_code) VALUES ('PB', 'B0020')")
+        # 다른 이름 - 진짜 충돌.
+        c.execute("INSERT INTO materials(name, code, is_active) VALUES ('MatX', 'AS0007', 1)")
+        c.execute("INSERT INTO recipes(product_name, product_code) VALUES ('ProdY', 'AS0007')")
+
+    conn = _build_db(tmp_path / "d2.db", seed)
+    res = audit_item_codes.section_d(conn)
+    conn.close()
+
+    assert [it["code_key"] for it in res["items"]] == ["AS0007"]   # 충돌만
+    assert [s["code_key"] for s in res["shares"]] == ["B0020"]     # 공유는 참고
+    assert res["status"] == "issues"  # 충돌이 있으므로 issues 이지만 B0020 은 아님
+
+
 # ── [E] ─────────────────────────────────────────────────────────────────────
 
 def test_e_manual_source(tmp_path):

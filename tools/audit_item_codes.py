@@ -42,6 +42,7 @@ from pathlib import Path
 # tools/ 스크립트 관례(unify_material_names.py, import_item_codes.py 참고).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.db.queries import normalize_token  # noqa: E402  (sys.path 조정 뒤 import)
 from src.services import erp_lot_service  # noqa: E402  (sys.path 조정 뒤 import)
 
 
@@ -153,11 +154,17 @@ def section_c(conn: sqlite3.Connection) -> dict:
 def section_d(conn: sqlite3.Connection) -> dict:
     """[D] materials.code 와 recipes.product_code 교차 중복(대소문자 무시).
 
-    자재 코드와 제품 코드가 같으면 품목코드 해석이 꼬인다(자재인지 제품인지).
+    서로 **다른 품목**이 자재 코드와 제품 코드로 같은 코드를 나눠 쥐면 품목코드
+    해석이 꼬인다(자재인지 제품인지). 다만 이름이 같으면 정상이다 - 1차 반제품이
+    2차 배합에서 자재로도 등록되는 중간체는 한 품목의 두 얼굴이라 같은 코드를
+    일부러 공유한다(임포트가 1차 코드를 자재 행에 승계). 이 정상 공유는 문제
+    목록이 아니라 참고(shares)로만 보고한다 - API 의 교차 중복 차단 규칙
+    (item_code_routes._product_code_holder)과 같은 판정이다.
     """
     title = "[D] 자재 코드와 레시피 제품코드 교차 중복(대소문자 무시)"
     if not _table_exists(conn, "recipes"):
-        return {"key": "D", "title": title, "status": "ok", "items": []}
+        return {"key": "D", "title": title, "status": "ok",
+                "items": [], "shares": []}
     materials = conn.execute(
         "SELECT id, name, code FROM materials "
         "WHERE code IS NOT NULL AND TRIM(code) != ''"
@@ -180,12 +187,21 @@ def section_d(conn: sqlite3.Connection) -> dict:
                 {"id": int(r["id"]), "name": r["product_name"],
                  "code": r["product_code"]})
     dup_keys = sorted(set(mat_by_key) & set(rec_by_key))
-    items = [
-        {"code_key": k, "materials": mat_by_key[k], "recipes": rec_by_key[k]}
-        for k in dup_keys
-    ]
+    items = []
+    shares = []
+    for k in dup_keys:
+        mat_names = {normalize_token(m["name"] or "") for m in mat_by_key[k]}
+        rec_names = {normalize_token(r["name"] or "") for r in rec_by_key[k]}
+        entry = {"code_key": k, "materials": mat_by_key[k],
+                 "recipes": rec_by_key[k]}
+        # 양쪽 이름이 전부 같은 품목이면 중간체의 정상 공유.
+        if mat_names and rec_names and mat_names == rec_names:
+            shares.append(entry)
+        else:
+            items.append(entry)
     return {"key": "D", "title": title,
-            "status": "issues" if items else "ok", "items": items}
+            "status": "issues" if items else "ok",
+            "items": items, "shares": shares}
 
 
 def section_e(conn: sqlite3.Connection) -> dict:
@@ -365,6 +381,21 @@ def _print_items(key: str, items: list) -> None:
             print(f"  {it['code']} | {it['name']} (id={it['id']})")
 
 
+def _print_d(sec: dict) -> None:
+    items = sec.get("items", [])
+    shares = sec.get("shares", [])
+    if not items:
+        print("  이상 없음")
+    else:
+        _print_items("D", items)
+    if shares:
+        names = ", ".join(
+            f"{s['code_key']}({s['materials'][0]['name']})" for s in shares
+        )
+        print(f"  참고: 같은 품목의 정상 공유 {len(shares)}건 "
+              f"(1차 반제품이 2차 자재로도 등록된 중간체) - {names}")
+
+
 def _print_g(sec: dict) -> None:
     g1 = sec.get("g1", [])
     g2 = sec.get("g2", [])
@@ -398,6 +429,9 @@ def print_human(results: dict, db_label: str) -> None:
         if key == "F" and sec.get("file_name"):
             date_part = f" ({sec['file_date']})" if sec.get("file_date") else ""
             print(f"  ERP 파일: {sec['file_name']}{date_part}")
+        if key == "D":
+            _print_d(sec)
+            continue
         if key == "G":
             _print_g(sec)
             continue
