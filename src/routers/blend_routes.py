@@ -798,6 +798,9 @@ def build_router() -> APIRouter:
         # ('취소된 기록 포함'을 켜 보기 전에는 0건인지 12건인지 알 수 없다.)
         canceled_hidden = 0
         if not include_canceled:
+            # only_unacked 를 함께 넘겨야 두 count 의 필터가 일치한다 — 빼먹으면
+            # '미확인만' 조회에서 (전체 취소분 - 미확인 건수)라는 엉뚱한 숫자가
+            # 나온다(2026-08-14 화면 재구축 중 발견).
             canceled_hidden = blend_service.count_blend_records(
                 connection,
                 start_date=start_date,
@@ -806,6 +809,7 @@ def build_router() -> APIRouter:
                 product=product,
                 search=search,
                 include_canceled=True,
+                only_unacked=unacked,
             ) - total_available
         return {
             "items": items,

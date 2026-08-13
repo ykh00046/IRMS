@@ -1,12 +1,18 @@
 /**
  * status.js — 배합 기록 · DHR 관리 (/status).
- * 배합 기록 목록(필터) + 클릭 시 제조이력서(DHR) 조회 + 인쇄/Excel.
+ * 배합 기록 목록(필터·정렬·페이지) + 행 클릭 시 배합 실적서(DHR) 상세 + 인쇄/Excel.
  * 결재·점도 등록 등 쓰기 작업은 배합 화면에서 수행한다(여기는 조회·출력 중심).
+ *
+ * 2026-08-14 재구축 — 진입 즉시 500행을 전부 그려 18,659px 짜리 한 페이지가 되던 화면을
+ * 50행/쪽으로 나눴다. 서버 조회는 종전대로 1회(최신 500건)이고 쪽 나누기는 이 화면에서만
+ * 한다. 선택은 화면에 그려진 체크박스가 아니라 id 집합(Set)이 소유하므로 쪽을 넘겨도,
+ * 정렬을 바꿔도, 조건을 다시 조회해도 살아남는다.
  */
 document.addEventListener("DOMContentLoaded", () => {
   const IRMS = window.IRMS || {};
   const request = IRMS._core && IRMS._core.request;
   const $ = (id) => document.getElementById(id);
+  const notify = (msg, kind) => { if (IRMS.notify) IRMS.notify(msg, kind); };
   // 기본 소수 2자리 — 저울(XP 0.01g) 해상도에 맞춤
   const fmt = (v, d = 2) =>
     v === null || v === undefined || v === ""
@@ -16,6 +22,18 @@ document.addEventListener("DOMContentLoaded", () => {
     String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
+
+  // ── 화면 상태 ────────────────────────────────────────────────────
+  const PAGE_SIZE = 50;          // 쪽 크기 고정 — 현장에서 고를 이유가 없다.
+  const MAX_PRINT = 200;         // 일괄 출력 상한(서버 변환이 직렬이라 그 이상은 무의미).
+  const MAX_BULK_CANCEL = 50;    // 한 번에 취소할 수 있는 상한 — 되돌릴 수 있어도 대량은 사고다.
+  const COLS = 7;                // 표 열 수(빈 상태 colspan)
+
+  let allRecords = [];           // 이번 조회로 받아 둔 목록(정렬 전 원본)
+  let listMeta = {};             // 서버 응답 메타(total_available·truncated·canceled_hidden)
+  const selected = new Set();    // 선택된 기록 id(Number) — 쪽·정렬·재조회를 넘어 유지된다.
+  let page = 1;
+  let recSort = { key: null, dir: "desc" };
   let detailId = null;
   let currentRecord = null;
 
@@ -30,6 +48,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // 재렌더(같은 모달을 다시 open)일 때는 원래 오프너를 보존해 복원 대상이 흔들리지 않게.
       if (overlay.hidden) opener = document.activeElement;
       overlay.hidden = false;
+      // body 클래스 — 뒤 페이지 스크롤 잠금 + 인쇄(@media print) 범위 판정에 쓴다.
+      if (opts.bodyClass) document.body.classList.add(opts.bodyClass);
       const target = focusEl
         || (opts.initialFocus && $(opts.initialFocus))
         || overlay.querySelector(".ss-modal");
@@ -41,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Esc 가 저장 안 한 변경을 무경고로 버리던 구멍의 마개(2026-08-05 감사 R-13).
       if (opts.beforeClose && !opts.beforeClose()) return;
       overlay.hidden = true;
+      if (opts.bodyClass) document.body.classList.remove(opts.bodyClass);
       if (opts.onClose) opts.onClose();
       if (opener && opener.focus) { try { opener.focus(); } catch (_e) { /* noop */ } }
       opener = null;
@@ -55,36 +76,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // 한 번에 전부 날아가던 경로(R-13). '취소' 버튼은 상세 보기로 돌아가는 명시 동작이라 예외.
   const detailModal = createModal("status-detail-modal", {
     initialFocus: "status-detail-close",
+    bodyClass: "dhr-open",
     beforeClose: () => !document.getElementById("e-rows")
       || window.confirm("수정 중입니다 — 저장하지 않은 변경이 사라집니다. 닫을까요?"),
   });
-  // 증량 요약 맵(record_id → {rescale_count, rescale_unacked, rescale_events}).
-  // 목록/상세 응답에 rescale 필드가 없어 자체 요약 엔드포인트로 병합 안전하게 채운다.
-  let rescaleMap = {};
-
-  async function loadRescaleMap() {
-    try {
-      const data = await request("/blend/rescales/summary");
-      const map = {};
-      (data.items || []).forEach((it) => { map[it.id] = it; });
-      rescaleMap = map;
-    } catch (_e) {
-      rescaleMap = {};
-    }
-  }
 
   // 목록 배지 — 증량이 있으면 표시, 미승인(책임자 부재 진행)은 빨간 배지.
-  function rescaleBadge(id) {
-    const info = rescaleMap[id];
-    if (!info) return "";
+  // 플래그는 목록 행이 직접 싣고 온다(2026-08-14). 종전에는 /blend/rescales/summary 를
+  // 따로 받아 짝맞췄는데, 그 응답이 무조건 최신 1000건이라 그 밖의 기록은 배지가
+  // 조용히 사라졌고 조회마다 이벤트 배열 전체가 오갔다.
+  function rescaleBadge(r) {
     let out = "";
-    if (info.rescale_count) {
-      out += info.rescale_unacked
+    if (r.rescale_count) {
+      out += r.rescale_unacked
         ? ' <span class="rescale-badge unacked" title="책임자 미승인 증량">미승인 증량</span>'
-        : ` <span class="rescale-badge" title="증량 승인됨">증량 ${info.rescale_count}회</span>`;
+        : ` <span class="rescale-badge" title="증량 승인됨">증량 ${r.rescale_count}회</span>`;
     }
     // 수기 입력을 책임자 부재로 진행한 기록 — 확인 전까지 배지 유지(증량과 동일 정책).
-    if (info.manual_unacked) {
+    if (r.manual_unacked) {
       out += ' <span class="rescale-badge unacked" title="책임자 미확인 수기 입력">미승인 수기 입력</span>';
     }
     return out;
@@ -97,14 +106,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 상세 모달 — 증량 이력(전 총량→후 총량, 승인자 또는 부재 사유).
-  // 이벤트 목록은 상세 API 가 내려주는 rec.rescale_events_json 에서 그린다 — rescaleMap
-  // 의 rescale_events 는 프라이버시 마스킹판이라 approver 가 빠져 정식 승인 건도
-  // '(책임자 부재)'로 허위 표시되었다(F8). rescaleMap 은 미확인 플래그·[확인 처리] 버튼
-  // 판정에만 계속 쓴다.
+  // 이벤트 목록은 상세 API 가 내려주는 rec.rescale_events_json 에서 그린다(마스킹 없는 정본).
   function rescaleBlock(rec) {
     if (!rec) return "";
     const id = rec.id;
-    const info = rescaleMap[id] || {};
     let events = [];
     if (rec.rescale_events_json) {
       try {
@@ -131,11 +136,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<li>${i + 1}. ${fmt(e.before_total)} g → ${fmt(e.after_total)} g <span class="muted small">(${who})</span>${driverLines}</li>`;
       })
       .join("");
-    const unackedTag = info.rescale_unacked
+    const unackedTag = rec.rescale_unacked
       ? ' <span class="rescale-badge unacked">미승인</span>'
       : "";
     // 확인 처리는 내용을 보는 이 자리에서 — 목록/대시보드에서 안 보고 누르게 하지 않는다.
-    const ackBtn = info.rescale_unacked && canManage()
+    const ackBtn = rec.rescale_unacked && canManage()
       ? ` <button class="btn btn-sm accent" id="detail-rescale-ack" data-id="${id}" type="button">확인 처리</button>`
       : "";
     return `<div class="blend-rescale-block"><b>증량 이력${unackedTag}</b>${ackBtn}<ul class="blend-rescale-list">${rows}</ul></div>`;
@@ -148,17 +153,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 수기 입력(책임자 부재) 블록 — 사유를 보여주고, 미확인이면 여기서 확인 처리.
   function manualBlock(rec) {
-    const info = rescaleMap[rec.id] || {};
     const reason = rec.manual_absence_reason;
-    if (!reason && !info.manual_unacked) return "";
-    const unackedTag = info.manual_unacked
+    if (!reason && !rec.manual_unacked) return "";
+    const unackedTag = rec.manual_unacked
       ? ' <span class="rescale-badge unacked">미확인</span>'
       : "";
-    const ackBtn = info.manual_unacked && canManage()
+    const ackBtn = rec.manual_unacked && canManage()
       ? ` <button class="btn btn-sm accent" id="detail-manual-ack" data-id="${rec.id}" type="button">확인 처리</button>`
       : "";
     return `<div class="blend-rescale-block"><b>수기 입력(책임자 부재)${unackedTag}</b>${ackBtn}`
-      + `<p class="muted small" style="margin:0.3rem 0 0;">사유: ${esc(reason || "-")}</p></div>`;
+      + `<p class="muted small blend-manual-reason">사유: ${esc(reason || "-")}</p></div>`;
   }
 
   // 계량 중 자재 폐기 블록 — '처음부터 다시' 재계량에서 실제로 버린 자재의 흔적.
@@ -212,15 +216,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // 제품 필터 모집단 — 목록과 같은 테이블(blend_records)에서 온다. 종전에는 완료·비재생성
+  // 한정 통계(product-usage)에서 이름만 뽑아 써서, 취소분·일괄재생성 기록만 있는 제품이
+  // 목록에는 보이는데 필터에는 없었다(2026-08-14 검토 12번).
   async function loadProducts() {
     try {
-      const data = await request("/blend/product-usage");
+      const data = await request("/blend/records/product-names");
       const sel = $("status-rec-product");
-      const names = (data.items || [])
-        .map((it) => it.product_name)
-        .filter((n) => n);
-      names.sort((a, b) => String(a).localeCompare(String(b), "ko"));
-      names.forEach((name) => {
+      (data.items || []).filter((n) => n).forEach((name) => {
         const o = document.createElement("option");
         o.value = name;
         o.textContent = name;
@@ -231,10 +234,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  async function loadRecords() {
+  const isUnackedOnly = () => Boolean($("status-rec-unacked") && $("status-rec-unacked").checked);
+
+  async function loadRecords(opts) {
+    const keepPage = Boolean(opts && opts.keepPage);
     const body = $("status-rec-body");
     // 조회 중 로딩 표시 — 초기 진입·재조회 모두 공용 .spinner 로.
-    body.innerHTML = '<tr><td colspan="7"><div class="table-loading"><span class="spinner"></span> 불러오는 중…</div></td></tr>';
+    body.innerHTML = `<tr><td colspan="${COLS}"><div class="table-loading"><span class="spinner"></span> 불러오는 중…</div></td></tr>`;
     const query = {
       start_date: $("status-rec-from").value || undefined,
       end_date: $("status-rec-to").value || undefined,
@@ -242,78 +248,147 @@ document.addEventListener("DOMContentLoaded", () => {
       product: $("status-rec-product").value || undefined,
       search: $("status-rec-search").value.trim() || undefined,
       include_canceled: ($("status-rec-canceled") && $("status-rec-canceled").checked) ? 1 : undefined,
+      // '미확인만' 은 서버가 전체 테이블에서 거른다 — 클라이언트 필터는 500건 절단 뒤라
+      // 상한 밖(오래된) 미확인 건이 영영 보이지 않았다(2026-08-14 검토 1번).
+      unacked: isUnackedOnly() ? 1 : undefined,
     };
     try {
-      const [data] = await Promise.all([
-        request("/blend/records", { query }),
-        loadRescaleMap(),
-      ]);
-      let items = data.items || [];
-      // '미확인만' — 요약 맵(rescaleMap)의 미확인 플래그로 로드된 목록을 거른다.
-      // 확인 처리 자체는 상세 모달 안에 있다(내용을 보고 누르는 자리).
-      if ($("status-rec-unacked") && $("status-rec-unacked").checked) {
-        items = items.filter((r) => {
-          const info = rescaleMap[r.id];
-          return info && (info.rescale_unacked || info.manual_unacked);
-        });
-      }
-      const note = $("status-rec-note");
-      if (note) {
-        // 서버가 최신 limit(기본 500)건만 반환 — 상한 도달 시 전체 M 과 함께 좁히기 안내.
-        if (data.truncated) {
-          note.textContent =
-            `최근 ${fmt(data.limit || items.length, 0)}건만 표시 (전체 ${fmt(data.total_available, 0)}건) — ` +
-            "날짜·작업자·검색으로 범위를 좁히거나 ‘전체 Excel’로 내려받으세요.";
-          note.hidden = false;
-        } else {
-          note.hidden = true;
-        }
-      }
-      if (!items.length) {
-        renderRecordSummary(data, 0);
-        const unackedOnly = $("status-rec-unacked") && $("status-rec-unacked").checked;
-        body.innerHTML = unackedOnly
-          ? '<tr><td colspan="7" class="muted">미확인 증량·수기 입력이 없습니다.</td></tr>'
-          : '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>';
-        return;
-      }
-      renderRecordSummary(data, items.length);
-      items = sortRecords(items);
-      markSortHeaders();
-      body.innerHTML = "";
-      const allChk = $("status-rec-all");
-      if (allChk) allChk.checked = false;
-      items.forEach((r) => {
-        const tr = document.createElement("tr");
-        tr.className = "blend-row";
-        // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
-        // 목록에 표시해도 책임자 로그인 시에만 보인다.
-        const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
-        // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
-        // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
-        const canceledTag = r.status === "canceled"
-          ? ' <span class="status-chip status-canceled" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
-        tr.innerHTML =
-          `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}" /></td>` +
-          `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${canceledTag}${rescaleBadge(r.id)}${bulkBadge(r)}</td>` +
-          `<td>${esc(r.product_name)}</td>` +
-          `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
-        tr.addEventListener("click", () => openDetail(r.id));
-        tr.querySelector(".rec-chk").addEventListener("click", (e) => e.stopPropagation());
-        body.appendChild(tr);
-      });
+      const data = await request("/blend/records", { query });
+      allRecords = data.items || [];
+      listMeta = data;
+      if (!keepPage) page = 1;
+      renderTruncNote(data);
+      renderRecordSummary(data, allRecords.length);
+      renderTable();
     } catch (e) {
-      body.innerHTML = `<tr><td colspan="7" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
+      allRecords = [];
+      listMeta = {};
+      body.innerHTML = `<tr><td colspan="${COLS}" class="muted">불러오기 실패: ${esc(e.message || e)}</td></tr>`;
       const note = $("status-rec-note");
       if (note) note.hidden = true;
+      updatePager(0, 0, 0);
+      updateSelectionUI();
     }
+  }
+
+  // 서버가 최신 limit(기본 500)건만 반환 — 상한 도달 시 전체 M 과 함께 좁히기 안내.
+  function renderTruncNote(data) {
+    const note = $("status-rec-note");
+    if (!note) return;
+    if (data.truncated) {
+      note.textContent =
+        `최근 ${fmt(data.limit || (data.items || []).length, 0)}건만 표시 (전체 ${fmt(data.total_available, 0)}건) — ` +
+        "날짜·작업자·검색으로 범위를 좁히거나 ‘전체 Excel’로 내려받으세요.";
+      note.hidden = false;
+    } else {
+      note.hidden = true;
+    }
+  }
+
+  // ── 표 그리기(정렬 → 쪽 자르기 → 렌더) ──────────────────────────
+  // 서버를 다시 부르지 않는다. 정렬·쪽 이동은 전부 이 함수 한 번으로 끝난다.
+  function renderTable() {
+    const body = $("status-rec-body");
+    const items = sortRecords(allRecords);
+    markSortHeaders();
+    if (!items.length) {
+      body.innerHTML = isUnackedOnly()
+        ? `<tr><td colspan="${COLS}" class="muted">미확인 증량·수기 입력이 없습니다.</td></tr>`
+        : `<tr><td colspan="${COLS}" class="muted">기록이 없습니다.</td></tr>`;
+      updatePager(0, 0, 0);
+      updateSelectionUI();
+      return;
+    }
+    const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const slice = items.slice(start, start + PAGE_SIZE);
+    body.innerHTML = "";
+    slice.forEach((r) => body.appendChild(recordRow(r)));
+    updatePager(items.length, start, slice.length);
+    updateSelectionUI();
+  }
+
+  function recordRow(r) {
+    const tr = document.createElement("tr");
+    tr.className = "blend-row";
+    // 키보드만으로도 상세에 닿아야 한다 — 행이 클릭 전용이면 마우스가 없는 경로가 막힌다.
+    tr.tabIndex = 0;
+    tr.dataset.id = String(r.id);
+    // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
+    // 목록에 표시해도 책임자 로그인 시에만 보인다.
+    const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
+    // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
+    // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
+    const canceledTag = r.status === "canceled"
+      ? ' <span class="status-chip status-canceled" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
+    const checked = selected.has(Number(r.id)) ? " checked" : "";
+    tr.innerHTML =
+      `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}"${checked} aria-label="${esc(r.product_lot)} 선택" /></td>` +
+      `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${canceledTag}${rescaleBadge(r)}${bulkBadge(r)}</td>` +
+      `<td>${esc(r.product_name)}</td>` +
+      `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
+    tr.addEventListener("click", () => openDetail(r.id));
+    tr.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); openDetail(r.id); }
+    });
+    const chk = tr.querySelector(".rec-chk");
+    chk.addEventListener("click", (e) => e.stopPropagation());
+    chk.addEventListener("change", (e) => {
+      if (e.target.checked) selected.add(Number(r.id));
+      else selected.delete(Number(r.id));
+      updateSelectionUI();
+    });
+    return tr;
+  }
+
+  function updatePager(total, start, count) {
+    const pager = $("status-pager");
+    if (!pager) return;
+    if (!total) { pager.hidden = true; return; }
+    pager.hidden = false;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const info = $("status-page-info");
+    if (info) {
+      info.textContent =
+        `${fmt(start + 1, 0)}–${fmt(start + count, 0)} / ${fmt(total, 0)}건 · ${page}/${pages}쪽`;
+    }
+    const prev = $("status-page-prev");
+    const next = $("status-page-next");
+    if (prev) prev.disabled = page <= 1;
+    if (next) next.disabled = page >= pages;
+  }
+
+  // 선택 상태 표시 — 화면 밖(다른 쪽)에 있는 선택까지 세어 말한다. 종전에는 선택이
+  // 체크박스에만 있어 쪽을 넘기거나 정렬만 바꿔도 조용히 사라졌다.
+  function updateSelectionUI() {
+    const el = $("status-sel-count");
+    if (el) el.textContent = selected.size ? `선택 ${fmt(selected.size, 0)}건` : "선택 없음";
+    const clear = $("status-sel-clear");
+    if (clear) clear.hidden = selected.size === 0;
+    const chks = [...document.querySelectorAll("#status-rec-body .rec-chk")];
+    const all = $("status-rec-all");
+    if (all) {
+      const every = chks.length > 0 && chks.every((c) => c.checked);
+      all.checked = every;
+      all.indeterminate = !every && chks.some((c) => c.checked);
+    }
+  }
+
+  // 선택 id — 표에 보이는 정렬 순서대로. 출력 상한(200건)이 "어떤 200건"인지가
+  // 이 순서다. 조건을 바꿔 지금 목록에 없는 선택은 뒤에 붙인다(선택은 유지되므로).
+  function selectedIdsInOrder() {
+    const ordered = sortRecords(allRecords)
+      .map((r) => Number(r.id))
+      .filter((id) => selected.has(id));
+    const known = new Set(ordered);
+    return ordered.concat([...selected].filter((id) => !known.has(id)));
   }
 
   // 목록 정렬 — 기본은 작업일 역순(서버 순서). 머리글을 누르면 그 열로 다시 정렬한다.
   // 서버가 최신 limit 건만 주므로 정렬 대상은 '지금 화면에 온 것'이고, 상한에 걸리면
   // 위 안내 줄이 그 사실을 말한다(정렬이 전체를 뒤진다고 오해하지 않도록).
-  let recSort = { key: null, dir: "desc" };
-
   function sortRecords(items) {
     if (!recSort.key) return items;
     const { key, dir } = recSort;
@@ -348,13 +423,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (product) parts.push(`제품 ${product}`);
     const search = $("status-rec-search").value.trim();
     if (search) parts.push(`검색 "${search}"`);
-    if ($("status-rec-unacked") && $("status-rec-unacked").checked) parts.push("미확인만");
-    let text = `${parts.join(" · ")} · ${fmt(shown, 0)}건`;
+    // '미확인만' 은 서버 필터라 shown·total 이 모두 미확인 기준이다 — 두 숫자가 같은
+    // 모집단을 가리키도록 표현도 맞춘다("미확인 N건 (조건 전체 M건)").
+    const unacked = isUnackedOnly();
+    let text = `${parts.join(" · ")} · ${unacked ? "미확인 " : ""}${fmt(shown, 0)}건`;
     const total = Number(data.total_available || 0);
     if (total > shown) text += ` (조건 전체 ${fmt(total, 0)}건)`;
     // 취소분은 기본으로 숨긴다 — 몇 건이 빠졌는지 말해 주지 않으면 없는 줄 안다.
+    // 단 '미확인만' 일 때는 적지 않는다: 서버가 이 수를 셀 때만 미확인 조건을 빼고 세어
+    // (전체 취소분 − 미확인 건수)가 나온다. 6건짜리 목록 옆에 "취소 124건 숨김" 이
+    // 붙어 뜻이 통하지 않는다. 서버 계산이 고쳐지면 이 예외도 함께 없앤다.
     const hidden = Number(data.canceled_hidden || 0);
-    if (hidden > 0) text += ` · 취소 ${fmt(hidden, 0)}건 숨김`;
+    if (hidden > 0 && !unacked) text += ` · 취소 ${fmt(hidden, 0)}건 숨김`;
     el.textContent = text;
   }
 
@@ -398,7 +478,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function openDetail(id) {
-    const rec = await request(`/blend/records/${id}`);
+    let rec;
+    try {
+      rec = await request(`/blend/records/${id}`);
+    } catch (e) {
+      // 종전에는 행을 눌러도 아무 일이 없었다 — 실패가 콘솔에만 남아 '먹통'으로 보였다.
+      notify(`기록을 불러오지 못했습니다: ${e.message || e}`, "error");
+      return;
+    }
     detailId = id;
     currentRecord = rec;
     setEditChromeHidden(false);
@@ -445,14 +532,28 @@ document.addEventListener("DOMContentLoaded", () => {
     const bulkLine = rec.is_bulk_regenerated
       ? '<p class="dhr-note bulk-regen-note">※ 일괄 재생성 기록 — 현장 계량이 아니라 문서·계획용으로 한 번에 생성한 기록입니다.</p>'
       : "";
+    // 머리에 있어야 할 값인데 화면에만 없던 것들(2026-08-14 검토 10번):
+    //  · 품목코드 — ERP 대조의 기준 키. 기록 스냅샷 우선(없으면 레시피 폴백)으로 서버가 준다.
+    //  · 세부 품명 — 같은 제품명 아래 갈래를 가르는 값(내부 컬럼명은 ink_name).
+    //  · 반응기 — 어느 호기에서 돌았는지. 이월·점도 추적의 단서.
+    // 인쇄물(DHR PDF/Excel)은 인허가 양식이라 손대지 않는다 — 이 상세 화면에만 붙인다.
+    const detailName = rec.ink_name
+      ? `<div><span class="dhr-k">세부 품명</span><b>${esc(rec.ink_name)}</b></div>`
+      : "";
+    const reactorCell = rec.reactor
+      ? `<div><span class="dhr-k">반응기</span><b>${esc(rec.reactor)}</b></div>`
+      : "";
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
         <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}</b></div>
+        <div><span class="dhr-k">품목코드</span><b>${esc(rec.product_code || "-")}</b></div>
+        ${detailName}
         <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}${manualBadge}</b></div>
         <div><span class="dhr-k">작업일시</span><b>${esc(rec.work_date)} ${esc(rec.work_time || "")}</b></div>
         <div><span class="dhr-k">총 배합량</span><b>${fmt(rec.total_amount)} g</b></div>
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
+        ${reactorCell}
       </div>
       ${bulkLine}
       ${cancelBlock(rec)}
@@ -472,12 +573,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // 상태에 따라 취소/복원/완전 삭제 버튼 노출을 가른다 — 정상 기록은 되돌릴 수 있는
     // '취소'만, 이미 취소된 기록에서만 '복원'과 (되돌릴 수 없는) '완전 삭제'가 보인다.
     const isCanceled = rec.status === "canceled";
-    const setHidden = (id, hidden) => { const el = $(id); if (el) el.hidden = hidden; };
+    const setHidden = (elId, hidden) => { const el = $(elId); if (el) el.hidden = hidden; };
     setHidden("status-cancel-rec", isCanceled);
     setHidden("status-restore", !isCanceled);
     setHidden("status-delete", !isCanceled);
-    // 미확인 증량/수기 입력 확인 처리 — 내용을 본 이 자리에서. 처리 후 요약 맵·목록·
-    // 모달을 새로 그려 배지가 그 자리에서 사라진다(대시보드·트레이는 다음 폴링에 반영).
+    // 미확인 증량/수기 입력 확인 처리 — 내용을 본 이 자리에서. 처리 후 목록·모달을 새로
+    // 그려 배지가 그 자리에서 사라진다(대시보드·트레이는 다음 폴링에 반영).
     const wireAck = (btnId, path, label) => {
       const btn = $(btnId);
       if (!btn) return;
@@ -485,12 +586,12 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.disabled = true;
         try {
           await request(`/blend/records/${rec.id}/${path}`, { method: "POST" });
-          IRMS.notify(`${label} 확인 처리했습니다.`, "success");
-          await loadRecords();      // 요약 맵 갱신 포함 — 목록 배지 제거
-          openDetail(rec.id);       // 모달 재렌더 — 미확인 태그·버튼 제거
+          notify(`${label} 확인 처리했습니다.`, "success");
+          await loadRecords({ keepPage: true });   // 목록 배지 제거(보던 쪽 유지)
+          await openDetail(rec.id);                // 모달 재렌더 — 미확인 태그·버튼 제거
         } catch (e) {
           btn.disabled = false;
-          IRMS.notify(`확인 처리 실패: ${e.message || e}`, "error");
+          notify(`확인 처리 실패: ${e.message || e}`, "error");
         }
       });
     };
@@ -623,9 +724,9 @@ document.addEventListener("DOMContentLoaded", () => {
     IRMS.btnLoading && IRMS.btnLoading(btn, true);
     try {
       await request(`/blend/records/${id}`, { method: "PUT", body });
-      IRMS.notify("배합 기록을 수정했습니다.", "success");
+      notify("배합 기록을 수정했습니다.", "success");
       await openDetail(id);
-      await loadRecords();
+      await loadRecords({ keepPage: true });
     } catch (e) {
       err.textContent = e.message || String(e);
       err.hidden = false;
@@ -640,9 +741,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  $("status-rec-apply").addEventListener("click", loadRecords);
+  // ── 조회·정렬·쪽 이동 ────────────────────────────────────────────
+  $("status-rec-apply").addEventListener("click", () => loadRecords());
   // 머리글 정렬 — 같은 열을 다시 누르면 방향만 뒤집는다. 서버를 다시 부르지 않고
-  // 이미 받아 둔 목록만 다시 그린다(조회 조건은 그대로).
+  // 이미 받아 둔 목록만 다시 그린다(종전에는 loadRecords 를 불러 API 를 두 번 치고
+  // 선택까지 날렸다). 보던 쪽도 그대로 둔다.
   document.querySelectorAll(".status-sortable th[data-sort]").forEach((th) => {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;
@@ -650,96 +753,165 @@ document.addEventListener("DOMContentLoaded", () => {
         key,
         dir: recSort.key === key && recSort.dir === "desc" ? "asc" : "desc",
       };
-      loadRecords();
+      renderTable();
     });
   });
-  // 미확인만 — 체크 즉시 다시 그린다(조회 버튼을 또 누르게 하지 않는다).
-  if ($("status-rec-unacked")) $("status-rec-unacked").addEventListener("change", loadRecords);
+  const gotoPage = (delta) => {
+    page += delta;
+    renderTable();
+    const wrap = document.querySelector("#status-rec-body");
+    const box = wrap && wrap.closest(".table-wrap");
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  if ($("status-page-prev")) $("status-page-prev").addEventListener("click", () => gotoPage(-1));
+  if ($("status-page-next")) $("status-page-next").addEventListener("click", () => gotoPage(1));
+
+  // '미확인만'·'취소 포함' 은 서버 조건이라 다시 조회한다(체크 즉시 — 조회 버튼을
+  // 또 누르게 하지 않는다). 선택 집합은 조회를 넘어 유지된다.
+  if ($("status-rec-unacked")) $("status-rec-unacked").addEventListener("change", () => loadRecords());
+  const canceledChk = $("status-rec-canceled");
+  if (canceledChk) canceledChk.addEventListener("change", () => loadRecords());
+
+  // 전체 선택 — 지금 보이는 쪽의 행에만 적용된다(다른 쪽의 선택은 건드리지 않는다).
   $("status-rec-all").addEventListener("change", (e) => {
-    document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = e.target.checked; });
+    document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => {
+      c.checked = e.target.checked;
+      if (e.target.checked) selected.add(Number(c.value));
+      else selected.delete(Number(c.value));
+    });
+    updateSelectionUI();
   });
+  if ($("status-sel-clear")) {
+    $("status-sel-clear").addEventListener("click", () => {
+      selected.clear();
+      document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = false; });
+      updateSelectionUI();
+    });
+  }
+
+  // ── 서명 체크 단일화 ─────────────────────────────────────────────
+  // 툴바(목록 출력용)와 모달(단건 출력용) 두 곳에 같은 뜻의 체크가 있었는데 서로 몰랐다.
+  // 툴바에서 켜고 상세를 열어 PDF 를 뽑으면 서명이 빠졌다 — 하나의 상태로 묶는다.
+  const signTop = $("status-sign");
+  const signDetail = $("status-detail-sign");
+  function setSign(on) {
+    if (signTop) signTop.checked = on;
+    if (signDetail) signDetail.checked = on;
+  }
+  const signOn = () => Boolean((signTop && signTop.checked) || (signDetail && signDetail.checked));
+  if (signTop) signTop.addEventListener("change", () => setSign(signTop.checked));
+  if (signDetail) signDetail.addEventListener("change", () => setSign(signDetail.checked));
+
+  // ── 출력 ─────────────────────────────────────────────────────────
   // 긴 출력 작업(일괄 PDF·ZIP·전체 Excel)은 새 탭 스트리밍이라 완료 신호가 없다.
   // 예전에는 누르면 빈 탭만 열리고 몇 분간 아무 일도 없어, 안 된 줄 알고 다시 눌러
   // 같은 변환을 큐에 하나 더 쌓았다(서버는 Excel 변환을 직렬로 처리한다).
   // 완료를 알 수 없으니 '무엇이 진행 중인지' 알리고 그동안 버튼을 잠근다.
   function startLongExport(btn, count, label) {
-    IRMS.notify(
-      `${label} ${count}건을 준비합니다 — 새 탭에서 다운로드됩니다. ` +
+    notify(
+      `${label} ${fmt(count, 0)}건을 준비합니다 — 새 탭에서 다운로드됩니다. ` +
       "건수가 많으면 몇 분 걸릴 수 있으니 기다려 주세요.",
       "warn",
     );
     if (!btn) return;
-    const orig = btn.textContent;
+    const orig = btn.innerHTML;
     btn.disabled = true;
     btn.textContent = "준비 중…";
     // 건당 여유를 두되 상한 90초 — 완료를 알 수 없으므로 재시도 자체를 막지는 않는다.
     const wait = Math.min(90000, 4000 + count * 700);
-    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, wait);
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = orig; }, wait);
   }
 
-  $("status-rec-dhr-batch").addEventListener("click", () => {
-    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
-    if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
-    if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
-    const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
-    startLongExport($("status-rec-dhr-batch"), Math.min(ids.length, 200), "배합일지");
-    window.open(`/api/blend/records/dhr-batch?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
-  });
-  $("status-rec-dhr-zip").addEventListener("click", () => {
-    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => c.value);
-    if (!ids.length) { IRMS.notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
-    if (ids.length > 200) IRMS.notify("한 번에 최대 200건까지 출력합니다.", "warn");
-    const sign = $("status-sign") && $("status-sign").checked ? "&sign=1" : "";
-    startLongExport($("status-rec-dhr-zip"), Math.min(ids.length, 200), "배합일지 ZIP");
-    window.open(`/api/blend/records/dhr-zip?ids=${ids.slice(0, 200).join(",")}${sign}`, "_blank");
-  });
+  // 취소된 기록은 배합일지 출력에서 서버가 제외한다 — 선택에 섞여 있으면 결과 부수가
+  // 조용히 줄어 "몇 장이 안 나왔다"로 나타났다. 출력 전에 몇 건이 빠지는지 말한다.
+  function confirmCanceledInSelection(ids) {
+    const byId = new Map(allRecords.map((r) => [Number(r.id), r]));
+    const n = ids.filter((id) => {
+      const r = byId.get(id);
+      return r && r.status === "canceled";
+    }).length;
+    if (!n) return true;
+    return window.confirm(`선택 중 취소된 ${n}건은 배합일지에서 제외됩니다. 계속할까요?`);
+  }
+
+  function wireBatchExport(btnId, path, label) {
+    const btn = $(btnId);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      const ids = selectedIdsInOrder();
+      if (!ids.length) { notify("기록을 선택하세요(전체 선택 가능).", "warn"); return; }
+      if (!confirmCanceledInSelection(ids)) return;
+      // 어떤 200건인지 말한다 — 종전 "최대 200건" 은 무작위 200건으로 읽혔다.
+      if (ids.length > MAX_PRINT) {
+        notify(`표 정렬 순서 기준 위에서 ${MAX_PRINT}건까지 출력합니다.`, "warn");
+      }
+      const sign = signOn() ? "&sign=1" : "";
+      const picked = ids.slice(0, MAX_PRINT);
+      startLongExport(btn, picked.length, label);
+      window.open(`/api/blend/records/${path}?ids=${picked.join(",")}${sign}`, "_blank");
+    });
+  }
+  wireBatchExport("status-rec-dhr-batch", "dhr-batch", "배합일지");
+  wireBatchExport("status-rec-dhr-zip", "dhr-zip", "배합일지 ZIP");
+
   // 책임자에게만 렌더되므로 null 가드 필수 — 없으면 비책임자 화면에서 예외가 나
   // 이후 리스너(조회·상세 열기 등)가 전부 등록되지 않는다.
   const bulkCancelBtn = $("status-rec-delete-selected");
   if (bulkCancelBtn) bulkCancelBtn.addEventListener("click", async () => {
-    const ids = [...document.querySelectorAll("#status-rec-body .rec-chk:checked")].map((c) => Number(c.value));
-    if (!ids.length) { IRMS.notify("취소할 기록을 선택하세요.", "warn"); return; }
-    const reason = window.prompt(
-      `선택한 배합 기록 ${ids.length}건을 취소합니다. 사유를 입력하세요.\n` +
-      "(기록은 지워지지 않고 목록·출력에서 빠집니다. 상세에서 복원할 수 있습니다.)"
-    );
+    const ids = selectedIdsInOrder();
+    if (!ids.length) { notify("취소할 기록을 선택하세요.", "warn"); return; }
+    // 상한 — 되돌릴 수 있는 동작이지만 한 번에 수백 건은 사고다(순차 처리라 수 분이 걸리고,
+    // 중간에 끊기면 어디까지 갔는지 사람이 세야 한다). 잘라서 진행하지 않고 멈춘다.
+    if (ids.length > MAX_BULK_CANCEL) {
+      notify(
+        `한 번에 최대 ${MAX_BULK_CANCEL}건까지 취소할 수 있습니다 — 지금 ${fmt(ids.length, 0)}건 선택. ` +
+        "선택을 나눠서 진행해 주세요.",
+        "error",
+      );
+      return;
+    }
+    if (!window.confirm(
+      `${ids.length}건을 취소합니다 — 각 기록에 사유가 남습니다.\n` +
+      "(기록은 지워지지 않고 목록·출력에서 빠지며, 상세에서 복원할 수 있습니다.)"
+    )) return;
+    const reason = window.prompt(`선택한 배합 기록 ${ids.length}건의 취소 사유를 입력하세요.`);
     if (reason === null) return;
-    if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
+    if (!reason.trim()) { notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
     // 순차 처리 중 실패해도 이미 처리된 건수를 반드시 알린다 — 예전에는 오류만 띄우고
     // 몇 건이 이미 지워졌는지 알려주지 않아 작업자가 상태를 알 수 없었다.
     let done = 0;
-    // 100건이면 수십 초가 걸린다 — 그동안 버튼이 계속 눌리면 같은 취소가 겹쳐 돈다.
     const origLabel = bulkCancelBtn.textContent;
     bulkCancelBtn.disabled = true;
     try {
       for (const id of ids) {
         bulkCancelBtn.textContent = `취소 중 ${done + 1}/${ids.length}`;
         await cancelRecord(id, reason.trim());
+        selected.delete(Number(id));   // 취소한 건은 선택에서 뺀다(다음 동작에 섞이지 않게)
         done += 1;
       }
-      IRMS.notify(`${done}건을 취소했습니다.`, "success");
+      notify(`${done}건을 취소했습니다.`, "success");
     } catch (e) {
-      IRMS.notify(`${done}건 취소 후 실패했습니다 (${ids.length - done}건 남음): ${e.message || e}`, "error");
+      notify(`${done}건 취소 후 실패했습니다 (${ids.length - done}건 남음): ${e.message || e}`, "error");
     } finally {
       bulkCancelBtn.disabled = false;
       bulkCancelBtn.textContent = origLabel;
     }
-    await loadRecords();
+    await loadRecords({ keepPage: true });
   });
+
   $("status-rec-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadRecords();
   });
-  // '취소 포함' 토글 — 켜면 취소된 기록까지 조회해 상세에서 복원할 수 있다.
-  const canceledChk = $("status-rec-canceled");
-  if (canceledChk) canceledChk.addEventListener("change", loadRecords);
   $("status-detail-close").addEventListener("click", () => detailModal.close());
   $("status-pdf").addEventListener("click", () => {
     if (!detailId) return;
-    const sign = $("status-detail-sign") && $("status-detail-sign").checked ? "?sign=1" : "";
-    window.open(`/api/blend/records/${detailId}/pdf${sign}`, "_blank");
+    window.open(`/api/blend/records/${detailId}/pdf${signOn() ? "?sign=1" : ""}`, "_blank");
   });
   $("status-excel").addEventListener("click", () => {
-    if (detailId) window.location.assign(`/api/blend/records/${detailId}/export`);
+    if (!detailId) return;
+    // 서명 체크를 단건 Excel 도 따른다 — 종전에는 이 경로에서만 조용히 무시돼
+    // 서명 없는 파일이 서명본으로 오해됐다(서버가 sign 을 지원한다, 2026-08-14).
+    window.open(`/api/blend/records/${detailId}/export${signOn() ? "?sign=1" : ""}`, "_blank");
   });
   // [취소] — 기본 경로. 기록은 남고 목록·출력·집계에서 빠지며 언제든 복원할 수 있다.
   const cancelBtn = $("status-cancel-rec");
@@ -754,15 +926,15 @@ document.addEventListener("DOMContentLoaded", () => {
       " 3일이 지나면 자동으로 완전히 삭제됩니다.)"
     );
     if (reason === null) return;              // 취소 버튼
-    if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
+    if (!reason.trim()) { notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
     try {
       await cancelRecord(detailId, reason.trim());
       detailModal.close();
       detailId = null;
-      IRMS.notify("배합 기록을 취소했습니다. 필요하면 상세에서 복원할 수 있습니다.", "success");
-      await loadRecords();
+      notify("배합 기록을 취소했습니다. 필요하면 상세에서 복원할 수 있습니다.", "success");
+      await loadRecords({ keepPage: true });
     } catch (e) {
-      IRMS.notify(`취소 실패: ${e.message || e}`, "error");
+      notify(`취소 실패: ${e.message || e}`, "error");
     }
   });
 
@@ -773,11 +945,11 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await restoreRecord(detailId);
       const id = detailId;
-      IRMS.notify("배합 기록을 복원했습니다.", "success");
-      await loadRecords();
+      notify("배합 기록을 복원했습니다.", "success");
+      await loadRecords({ keepPage: true });
       await openDetail(id);   // 버튼 상태를 새 상태로 다시 그린다
     } catch (e) {
-      IRMS.notify(`복원 실패: ${e.message || e}`, "error");
+      notify(`복원 실패: ${e.message || e}`, "error");
     }
   });
 
@@ -793,20 +965,25 @@ document.addEventListener("DOMContentLoaded", () => {
       `되돌릴 수 없는 완전 삭제입니다.\n진행하려면 제품 LOT 을 그대로 입력하세요:\n${lot}`
     );
     if (typed === null) return;
-    if (typed.trim() !== lot) { IRMS.notify("제품 LOT 이 일치하지 않아 중단했습니다.", "error"); return; }
+    if (typed.trim() !== lot) { notify("제품 LOT 이 일치하지 않아 중단했습니다.", "error"); return; }
     const reason = window.prompt("완전 삭제 사유를 입력하세요(감사 기록에 남습니다).");
     if (reason === null) return;
-    if (!reason.trim()) { IRMS.notify("사유를 입력해야 삭제할 수 있습니다.", "error"); return; }
+    if (!reason.trim()) { notify("사유를 입력해야 삭제할 수 있습니다.", "error"); return; }
     try {
       await hardDeleteRecord(detailId, reason.trim());
+      selected.delete(Number(detailId));
       detailModal.close();
       detailId = null;
-      IRMS.notify("배합 기록을 완전히 삭제했습니다.", "success");
-      await loadRecords();
+      notify("배합 기록을 완전히 삭제했습니다.", "success");
+      await loadRecords({ keepPage: true });
     } catch (e) {
-      IRMS.notify(`삭제 실패: ${e.message || e}`, "error");
+      notify(`삭제 실패: ${e.message || e}`, "error");
     }
   });
+
+  // 전체 Excel — 종전에는 location.assign 이라 서버가 변환하는 몇 분 동안 이 화면을
+  // 떠나 있었고, 실패하면 오류 페이지에 남아 조회 조건·선택이 전부 날아갔다.
+  // 새 탭으로 내보내고 진행 안내를 띄운다(일괄 출력과 같은 규칙).
   $("status-rec-export-all").addEventListener("click", () => {
     const q = new URLSearchParams();
     const map = {
@@ -824,13 +1001,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if ($("status-rec-canceled") && $("status-rec-canceled").checked) {
       q.set("include_canceled", "1");
     }
-    window.location.assign(`/api/blend/records/export-all?${q.toString()}`);
+    const count = Number(listMeta.total_available || allRecords.length || 0);
+    startLongExport($("status-rec-export-all"), count, "전체 Excel");
+    window.open(`/api/blend/records/export-all?${q.toString()}`, "_blank");
   });
 
-  // URL ?search= 지원 — 배합 분석의 자재 LOT 추적 등 다른 화면에서 특정 LOT/제품으로
-  // 바로 필터된 기록을 열 수 있다(딥링크). 값을 검색칸에 채우고 초기 조회에 반영.
-  const urlSearch = new URLSearchParams(window.location.search).get("search");
+  // ── 딥링크 ───────────────────────────────────────────────────────
+  // ?search= : 배합 분석의 자재 LOT 추적 등에서 특정 LOT/제품으로 바로 필터된 기록 열기.
+  // ?from=&to= : 대시보드 '오늘 배합' 카드처럼 기간을 지정해 들어오는 경로.
+  // ?unacked=1 : 미확인(증량·수기)만 — 트레이 재촉 알림에서 바로 그 목록으로.
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlSearch = urlParams.get("search");
   if (urlSearch) $("status-rec-search").value = urlSearch;
+  const urlFrom = urlParams.get("from");
+  if (urlFrom) $("status-rec-from").value = urlFrom;
+  const urlTo = urlParams.get("to");
+  if (urlTo) $("status-rec-to").value = urlTo;
+  const urlUnacked = String(urlParams.get("unacked") || "").toLowerCase();
+  if (["1", "true", "yes", "on"].includes(urlUnacked) && $("status-rec-unacked")) {
+    $("status-rec-unacked").checked = true;
+  }
 
   loadWorkers();
   loadProducts();

@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260814a" />
     <style>
       /* status(배합 기록) 전용 소량 스타일 — 페이지 자립 CSS 가 없어 여기 인라인.
          공용 토큰만 사용하고, 색·모양 하드코딩을 두지 않는다. */
@@ -37,6 +37,27 @@
         font-weight: 600;
         white-space: nowrap;
       }
+
+      /* 선택 건수 — 툴바 오른쪽 동작 묶음의 맨 앞. 버튼들과 세로 정렬을 맞춘다. */
+      .status-sel-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+      /* 쪽 이동 — 자재 LOT 화면(.mlot-pager)과 같은 모양·같은 자리. */
+      .status-pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.8rem;
+        margin-top: 0.7rem;
+      }
+      .status-pager[hidden] { display: none; }
+      .status-pager-info {
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* 행 키보드 포커스 — tabindex 로 Enter 상세 열기를 받으므로 어디에 있는지 보여야 한다. */
+      .blend-row:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 
       /* 초기·조회 로딩 — 공용 .spinner 를 표 안에 중앙 배치. */
       .table-loading {
@@ -79,6 +100,11 @@
               <button class="btn btn-sm accent" id="status-rec-apply" type="button">조회</button>
             </div>
             <div class="status-toolbar-actions">
+              <!-- 선택은 화면의 체크박스가 아니라 id 집합이 소유한다(2026-08-14) — 쪽을
+                   넘기거나 정렬을 바꿔도 남아 있으므로, 지금 몇 건이 잡혀 있는지 화면
+                   어딘가는 말해야 한다. 출력·취소 버튼이 쓰는 수가 바로 이 숫자다. -->
+              <span class="status-sel-count muted small" id="status-sel-count">선택 없음</span>
+              <button class="btn btn-sm" id="status-sel-clear" type="button" hidden>선택 해제</button>
               <!-- 취소된 기록은 기본으로 숨긴다. 켜면 함께 보이고, 상세에서 '복원'할 수 있다
                    (켜지 않으면 취소분에 도달할 방법이 없어 복원이 죽은 기능이 된다). -->
               <label class="visc-checkbox" title="취소 처리된 기록도 목록에 함께 표시합니다 — 취소분을 열어 '기록 복원'을 할 수 있는 유일한 경로. 취소 후 3일이 지나면 자동 삭제됩니다(스냅샷은 감사로그·백업에 남음)"><input id="status-rec-canceled" type="checkbox" /> 취소된 기록 포함</label>
@@ -109,7 +135,7 @@
             <table class="blend-table status-sortable">
               <thead>
                 <tr>
-                  <th class="chk-col"><input type="checkbox" id="status-rec-all" title="전체 선택" /></th>
+                  <th class="chk-col"><input type="checkbox" id="status-rec-all" title="이 쪽의 기록을 모두 선택" aria-label="이 쪽의 기록을 모두 선택" /></th>
                   <th data-sort="work_date">작업일</th>
                   <th data-sort="product_lot">제품 LOT</th>
                   <th data-sort="product_name">제품</th>
@@ -122,6 +148,14 @@
                 <tr><td colspan="7"><div class="table-loading"><span class="spinner"></span> 불러오는 중…</div></td></tr>
               </tbody>
             </table>
+          </div>
+          {# 쪽 나누기 — 조회는 종전대로 한 번(최신 500건)이고 표만 50행씩 보인다.
+             500행을 한 번에 그리면 페이지가 18,000px 를 넘어 열 이름도, 요약도,
+             방금 누른 버튼도 화면 밖으로 사라졌다(2026-08-14 실측). #}
+          <div class="status-pager" id="status-pager" hidden>
+            <button class="btn btn-sm" id="status-page-prev" type="button">이전</button>
+            <span class="status-pager-info" id="status-page-info">-</span>
+            <button class="btn btn-sm" id="status-page-next" type="button">다음</button>
           </div>
         </section>
 
@@ -156,5 +190,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260808a"></script>
+    <script src="/static/js/status.js?v=20260814a"></script>
 {% endblock %}
