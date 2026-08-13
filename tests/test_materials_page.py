@@ -309,6 +309,41 @@ def test_absorb_requires_manager_and_valid_input():
     ).status_code in (401, 403)
 
 
+# ── 2a-3. 삭제 차단 — 미지의 잔존 테이블 참조도 409 로 ─────────────────────
+def test_delete_blocked_by_unknown_referencing_table_returns_409():
+    """현재 코드가 모르는 테이블(운영 DB 의 옛 기능 잔존분)이 자재를 FK 로 물고
+    있으면 500 이 아니라 409 + 테이블명 안내 — 화면의 '사용 안 함' 제안으로
+    이어져야 한다(2026-08-13 운영 사고: BLUE 안료 삭제 500)."""
+    from src.db import get_connection
+
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    mid = _new_material(client, headers, f"잔존참조{base}", f"AC{base[:4]}")
+    table = f"legacy_ref_{base.lower()}"
+    with get_connection() as conn:
+        conn.execute(
+            f"CREATE TABLE {table} ("
+            "id INTEGER PRIMARY KEY, "
+            "material_id INTEGER NOT NULL REFERENCES materials(id))"
+        )
+        conn.execute(f"INSERT INTO {table} (material_id) VALUES (?)", (mid,))
+        conn.commit()
+    try:
+        res = client.delete(f"/api/materials/{mid}", headers=headers)
+        assert res.status_code == 409, res.text
+        assert table in res.json()["detail"]
+        # 자재는 그대로 남아 있어야 한다(부분 삭제 없음).
+        listing = client.get(
+            "/api/item-codes/materials", params={"q": f"잔존참조{base}"}, headers=headers
+        ).json()
+        assert listing["items"], "참조 차단 후에도 자재가 목록에 남아야 한다"
+    finally:
+        with get_connection() as conn:
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+            conn.commit()
+
+
 # ── 2b. 사용 안 함(비활성) ─────────────────────────────────────────────────
 def test_deactivate_hides_from_list_and_reactivate_restores():
     """삭제가 막히는 자재(과거 레시피 참조)의 출구 — 숨기되 데이터는 보존, 되살리기 가능."""

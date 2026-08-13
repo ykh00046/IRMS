@@ -1065,6 +1065,45 @@ def create_item_code_router() -> APIRouter:
                 )
                 raise HTTPException(status_code=409, detail=detail)
 
+            # 현재 코드가 모르는 참조까지 전수 확인 — 운영 DB 에는 제거된 옛 기능
+            # (재고·발주·LOT 유통기한 등)의 잔존 테이블이 남아 있을 수 있고, 그중 하나가
+            # 이 자재를 FK 로 물고 있으면 DELETE 가 IntegrityError 로 터져 500 이 됐다
+            # (2026-08-13 운영 사고: BLUE 안료 삭제 → 500). 어떤 테이블이든 PRAGMA 로
+            # 찾아 409 로 안내한다 — 409 는 화면의 '사용 안 함' 제안 흐름으로 이어진다.
+            handled = {"material_aliases", "blend_details", "recipe_items"}
+            blockers: list[str] = []
+            table_rows = connection.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            for t in table_rows:
+                table = t["name"]
+                if table in handled:
+                    continue
+                try:
+                    fks = connection.execute(
+                        f"PRAGMA foreign_key_list({table})"
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    continue
+                for fk in fks:
+                    if fk["table"] != "materials":
+                        continue
+                    count = connection.execute(
+                        f"SELECT COUNT(*) FROM {table} WHERE {fk['from']} = ?",
+                        (material_id,),
+                    ).fetchone()[0]
+                    if count:
+                        blockers.append(f"{table}({count}건)")
+            if blockers:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "다른 데이터가 이 자재를 참조하고 있어 삭제할 수 없습니다: "
+                        f"{', '.join(blockers)}"
+                    ),
+                )
+
             # blend_details 링크 NULL — 기록의 텍스트(material_name 등)는 보존.
             link_count = (
                 connection.execute(
@@ -1081,9 +1120,18 @@ def create_item_code_router() -> APIRouter:
             # material_aliases 는 FK ON DELETE CASCADE 로 자동 제거.
             # 삭제 시점의 code 를 audit details 에 남긴다(코드 지정 화면 추적용).
             deleted_code = material_row["code"]
-            connection.execute(
-                "DELETE FROM materials WHERE id = ?", (material_id,)
-            )
+            try:
+                connection.execute(
+                    "DELETE FROM materials WHERE id = ?", (material_id,)
+                )
+            except sqlite3.IntegrityError:
+                # 위 전수 확인이 못 잡은 참조(FK 미선언 트리거 등) 최후 방어 —
+                # 500 대신 409 로 '사용 안 함' 흐름에 태운다.
+                connection.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="다른 데이터가 이 자재를 참조하고 있어 삭제할 수 없습니다.",
+                )
 
             # 삭제로 코드 참조가 사라졌으면 manual 마스터 유령 행 정리(ERP 행은 보존).
             _cleanup_orphan_master(connection, deleted_code)
