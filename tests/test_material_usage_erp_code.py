@@ -216,6 +216,60 @@ def test_material_usage_details_uses_fk_and_alias_paths():
     assert by_name["Propylene glycol monomethyl etheracetate"]["erp_code"] == "PM0001"  # alias 경로
 
 
+# ── 외부 연동 계약: erp_code 는 코드 형태일 때만 나간다 ──────────────────────
+def test_erp_code_blank_when_resolution_yields_non_code():
+    """폴백 끝단이 코드 아닌 문자열을 내면 erp_code 는 빈 값 + unmapped 표면화.
+
+    'RM 형태 자재명' 폴백(6순위)은 공백 섞인 자재명("RM 용제 A")도 그대로 반환했다.
+    코드 아닌 값이 erp_code 로 나가면 상위 재고 대시보드가 조용히 오매칭하고,
+    빈 값과 달리 unmapped_* 에도 안 잡힌다 — 폴백(4-8순위)에만 적용되는 형태
+    가드가 빈 값으로 돌려 정비 신호(unmapped)로 흐르게 한다. materials.code
+    직결(1-3순위)은 운영자가 부여한 정본이라 형태와 무관하게 그대로 나간다."""
+    conn = _make_db()
+    brid = _insert_blend_record(conn, product="R제품", work_date="2026-07-01")
+    _insert_detail(
+        conn, blend_record_id=brid, material_name="RM 용제 A",
+        material_id=None, material_code="",
+    )
+
+    res = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert len(res["items"]) == 1
+    assert res["items"][0]["erp_code"] == ""          # 코드 형태 아님 → 빈 값
+    assert res["unmapped_count"] == 1                  # unmapped 로 표면화
+
+
+def test_erp_code_rm_shaped_name_still_passes():
+    """공백 없는 RM 계열 값("RM123")은 레거시 코드 형태로 보고 그대로 내보낸다."""
+    conn = _make_db()
+    brid = _insert_blend_record(conn, product="R제품", work_date="2026-07-01")
+    _insert_detail(
+        conn, blend_record_id=brid, material_name="RM123",
+        material_id=None, material_code="",
+    )
+
+    res = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert res["items"][0]["erp_code"] == "RM123"
+    assert res["unmapped_count"] == 0
+
+
+def test_material_usage_responses_carry_resolved_at():
+    """집계·상세 응답 모두 erp_code 해석 기준 시각(resolved_at)을 싣는다.
+
+    코드 지정·동의어 등록이 과거 기록에 소급 적용되므로(의도된 설계) 같은 기간을
+    다른 날 조회하면 값이 달라질 수 있다 — 소비자가 기준 시각을 알아야 한다."""
+    conn = _make_db()
+    brid = _insert_blend_record(conn, product="P제품", work_date="2026-07-01")
+    _insert_detail(
+        conn, blend_record_id=brid, material_name="PMA",
+        material_id=None, material_code="",
+    )
+
+    periods = bs.material_usage_periods(conn, start_date="2026-07-01", end_date="2026-07-31")
+    details = bs.material_usage_details(conn, start_date="2026-07-01", end_date="2026-07-31")
+    assert periods["resolved_at"]
+    assert details["resolved_at"]
+
+
 # ── _alias_code_map 단위 — OperationalError 빈 dict 폴백 ─────────────────────
 def test_alias_code_map_returns_empty_when_table_missing():
     """material_aliases 테이블이 없는 구버전/테스트 DB 는 빈 dict 폴백(방어 패턴)."""

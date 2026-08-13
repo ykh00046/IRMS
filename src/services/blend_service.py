@@ -422,6 +422,9 @@ def _erp_code_map(connection: sqlite3.Connection) -> dict[str, str]:
 # materials.code 미등록 자재의 저장 코드 fallback 판별용.
 _ERP_CODE_RE = re.compile(r"^[A-Za-z]{1,3}\d{3,}$")
 
+# RM 계열 레거시 코드 형태(구 시스템 관례: RM + 영숫자/구분자, 공백 없음).
+_RM_CODE_RE = re.compile(r"^RM[A-Za-z0-9._-]*$", re.IGNORECASE)
+
 
 def _resolve_erp_code(
     name: str,
@@ -437,8 +440,9 @@ def _resolve_erp_code(
     2) materials.code(자재명 키, _material_code_map).
     3) alias_code_map(normalize_token(자재명) → 별칭이 가리키는 materials.code) —
        PMA 같은 동의어가 마스터명이 아닌 별칭으로만 기록에 남은 경우.
-    그 다음은 기존 순서 그대로:
-    RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명 > ERP 형태 저장 코드 > 별칭(비RM).
+    그 다음은 기존 순서 그대로(단 2026-08-13부터 코드 '형태'일 때만 — 본문 주석 참조):
+    RM 별칭 > RM 형태 저장 코드 > RM 형태 자재명 > ERP 형태 저장 코드 > ERP 형태 별칭.
+    폴백까지 모두 실패하면 빈 값(unmapped 로 표면화).
 
     materials.code 가 도입되기 전 화면 '자재코드'는 materials.category(분류) 였고,
     이 인자 `code` 는 그 legacy 값을 받는다 — RM/ERP 형태인 경우에만 후보로 쓴다.
@@ -461,22 +465,31 @@ def _resolve_erp_code(
         ac = alias_code_map.get(normalize_token(name or ""), "")
         if ac:
             return ac
-    # 4) RM 별칭
+    # ── 여기부터는 비신뢰 폴백(레거시 문자열 추정) — 코드 '형태'일 때만 내보낸다.
+    # 폴백 끝단은 자재명·동의어 같은 임의 문자열을 코드로 착각할 수 있는데, 코드
+    # 아닌 값이 erp_code 로 나가면 상위 재고 대시보드가 조용히 오매칭하고 빈 값과
+    # 달리 unmapped 표면화에도 안 잡힌다. 형태 검사에서 떨어지면 빈 값으로 돌려
+    # unmapped(동의어/코드 정비 신호) 흐름에 태운다. 1-3순위(materials.code 직결)는
+    # 운영자가 화면에서 부여한 정본이므로 형태와 무관하게 그대로 신뢰한다.
+    # 4) RM 별칭(공백 없는 RM 계열만)
     alias = alias_map.get(name, "")
-    if alias.upper().startswith("RM"):
+    if _RM_CODE_RE.fullmatch(alias):
         return alias
     # 5) RM 형태의 저장 코드(category 등 legacy)
-    if code.upper().startswith("RM"):
-        return code
+    if _RM_CODE_RE.fullmatch((code or "").strip()):
+        return (code or "").strip()
     # 6) RM 형태의 자재명
-    if name.upper().startswith("RM"):
-        return name
+    if _RM_CODE_RE.fullmatch((name or "").strip()):
+        return (name or "").strip()
     # 7) ERP 품목코드 형태의 저장 코드 — materials.code 미등록이어도 상세 화면에서
     #    정식 코드(AC0060 등)를 직접 입력한 자재는 그 코드로 매칭한다.
     if _ERP_CODE_RE.fullmatch((code or "").strip()):
         return (code or "").strip()
-    # 8) 비RM 별칭이라도 있으면 제공(빈 행 skip 회피)
-    return alias
+    # 8) 비RM 별칭 — ERP 코드 형태일 때만(임의 문자열 오매칭 방지)
+    alias = (alias or "").strip()
+    if _ERP_CODE_RE.fullmatch(alias):
+        return alias
+    return ""
 
 
 def _summarize_unmapped(items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -621,6 +634,10 @@ def material_usage_periods(
         "unit": "g",
         "record_count": int(rec_count),
         "total_weight": total_weight,
+        # erp_code 는 조회 시점에 재해석된다(코드 지정·동의어 등록이 과거 기록에도
+        # 소급 적용 — 의도된 설계). 같은 기간을 다른 날 조회하면 자재별 배분이 달라질
+        # 수 있으므로, 소비자가 "언제 기준 해석인지"를 알 수 있게 시각을 싣는다.
+        "resolved_at": datetime.now().isoformat(timespec="seconds"),
         "items": items,
         "truncated": truncated,
         "total_item_count": total_items,
@@ -1313,6 +1330,8 @@ def material_usage_details(
             ", ".join(m["material_name"] for m in unmapped["unmapped_materials"][:10]),
         )
     result.update(unmapped)
+    # 집계 API 와 동일 — erp_code 해석 기준 시각(소급 재해석 대비).
+    result["resolved_at"] = datetime.now().isoformat(timespec="seconds")
     return result
 
 

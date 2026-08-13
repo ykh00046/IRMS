@@ -175,9 +175,29 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 **material-usage 상세**(`blend_service.material_usage_periods` L268):
 - 파라미터: `start_date`/`end_date`(YYYY-MM-DD, 기본 이달 1일~오늘), `group=total|day|month`,
   `by_product`(bool). 날짜 형식 `_DATE_RE` 검증(L23), start>end→400.
-- `erp_code`: RM 품목코드(재고 시스템 매칭 키, `_resolve_erp_code` L314) — **상위
+- `erp_code`: 품목코드(재고 시스템 매칭 키, `_resolve_erp_code`) — **상위
   시스템의 조인 키이므로 이 필드명/의미 변경은 상위 대시보드를 깨뜨림**.
 - 완료(`status='completed'`) 기록만 집계.
+
+**erp_code 계약 (2026-08-13 보강 — 상위 재고 대시보드 소비 규칙)**:
+- **형태 보증**: `materials.code` 직결(해석 1-3순위 — 운영자가 부여한 정본)은
+  그대로 실리고, 레거시 폴백(4-8순위)은 코드 형태(ERP 표준 `영문1-3+숫자3+`
+  예 AC0060, 또는 공백 없는 RM 계열)일 때만 값이 실린다. 폴백이 코드 아닌
+  문자열(자재명·동의어)을 내면 빈 값으로 바뀌고 `unmapped_*` 로 표면화된다.
+  소비자는 "빈 값 = 미매핑"만 처리하면 되고, 쓰레기 값 오매칭을 걱정할 필요가
+  없다.
+- **재합산 필수**: 집계 행은 기록 시점 텍스트(`material_code`,`material_name`)
+  기준 GROUP BY 라 같은 자재가 표기 차이로 여러 행에 나뉠 수 있다 — 같은
+  `erp_code` 를 가진 행을 **소비 측에서 합산**해야 자재별 총량이 맞는다.
+- **소급 재해석**: `erp_code` 는 조회 시점에 재해석된다. 코드 지정·이동·동의어
+  등록은 과거 기록의 해석에도 소급 적용된다(의도된 설계 — 정비할수록 과거 데이터가
+  좋아진다). 같은 기간을 다른 날 조회하면 배분이 달라질 수 있으므로 응답의
+  `resolved_at`(해석 기준 시각)을 함께 저장·비교할 것.
+- `material_code` 는 기록 시점 스냅샷(감사용), `erp_code` 는 현재 기준 해석 —
+  두 필드는 다를 수 있으며 매칭에는 항상 `erp_code` 를 쓴다.
+- `unmapped_count`/`unmapped_weight`/`unmapped_materials` 가 0이 아니면 그만큼이
+  재고 차감에서 빠진다는 뜻 — 운영자는 `/materials` 품목코드 탭에서 해당 이름을
+  동의어로 등록해 해소한다.
 
 **attendance-alerts**: 근태 이상은 월 엑셀 파일에서 계산(`attendance_excel`). 파일 없음
 →404, 잠김→503, 형식 오류→500. 데이터가 이미 근태 페이지에 보여 무로그인 정당화
