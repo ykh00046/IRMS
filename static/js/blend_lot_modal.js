@@ -205,11 +205,14 @@
       focusPrimary();
     }
 
-    // ERP 경고 제목 — 이유가 3가지인데 제목이 항상 같았다. 특히 '전산 반영 지연'
+    // ERP 경고 제목 — 이유가 4가지인데 제목이 항상 같았다. 특히 '전산 반영 지연'
     // (재고 마이너스)인 경우 "등록되지 않은"이라는 제목과 본문이 서로 모순됐다.
+    // 'code'(품목코드 자체가 파일에 없음)는 LOT 문제가 아니라 자재 마스터 문제라
+    // 제목부터 다르게 — 종전에는 "없는 LOT"으로 보여 코드 오류가 드러나지 않았다.
     function erpTitle(kind) {
       if (kind === "negative") return "ERP 재고가 마이너스인 LOT";
       if (kind === "zero") return "ERP 재고가 0인 LOT";
+      if (kind === "code") return "ERP 재고 파일에 없는 품목코드";
       return "ERP 원재료 목록에 없는 LOT";
     }
 

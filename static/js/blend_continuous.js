@@ -1207,10 +1207,17 @@
     const m = state.materials[i];
     if (!m || !(state.cells[i] && state.cells[i][j])) return;
     const code = (m.material_code || "").trim();
-    if (!code) return;  // 품목코드 없는 자재는 ERP 검사 불가
     const name = (m.material_name || "").trim();
     // 반제품(제안 대상)은 validateLotInput 이 다룬다 — 여기서 제외.
     if (state.lotSuggest && state.lotSuggest[name]) return;
+    if (!code) {
+      // 품목코드 없는 자재는 ERP 대조 자체가 불가능 — 경고는 아니지만 건너뛴다는
+      // 사실을 툴팁으로 남긴다(단건 화면과 동일).
+      if ((input.value || "").trim()) {
+        input.title = "품목코드 미지정 자재 — ERP 재고 대조를 건너뜁니다.";
+      }
+      return;
+    }
     const lot = ((state.cells[i][j] && state.cells[i][j].lot) || (input.value || "")).trim();
     if (!lot) { setErpLotWarn(input, false); return; }  // 빈 값이면 경고 해제
     let data;
@@ -1231,16 +1238,21 @@
     // 음수 재고는 소진과 다르다 — ERP 전표 지연/누락 신호(실물은 돌고 있을 확률이
     // 높다). 실제 값을 보여줘야 "재고 0"이라는 거짓 안내가 되지 않는다.
     const stock = Number(data.stock);
-    // 경고 이유 3가지(목록에 없음 / 재고 0 / 재고 마이너스) — 제목도 이유별로 달라야
-    // 한다(단건 화면과 동일). 특히 마이너스는 '전산 반영 지연'이라 "등록되지 않은" 제목과
-    // 본문이 모순됐다.
-    const reasonKind = data.source === "erp" ? (stock < 0 ? "negative" : "zero") : "missing";
+    // 경고 이유 4가지(품목코드 자체가 없음 / LOT 없음 / 재고 0 / 재고 마이너스) —
+    // 제목도 이유별로 달라야 한다(단건 화면과 동일). 코드 없음은 LOT 문제가 아니라
+    // 자재 마스터의 코드가 틀렸거나 폐기됐다는 신호다.
+    const reasonKind =
+      data.source === "erp"
+        ? (stock < 0 ? "negative" : "zero")
+        : (data.reason === "code_not_in_file" ? "code" : "missing");
     const reason =
       data.source === "erp"
         ? (stock < 0
             ? `ERP 재고가 마이너스인 LOT 입니다(재고 ${stock}). 전산 반영 지연일 수 있으니 실물을 확인하세요.`
             : "재고가 소진된 LOT 입니다(재고 0).")
-        : "ERP 원재료 목록에 없는 LOT 입니다.";
+        : (reasonKind === "code"
+            ? `품목코드 ${code} 가 ERP 재고 파일에 없습니다. 코드가 틀렸거나 폐기된 코드일 수 있습니다 — 책임자에게 품목코드 확인을 요청하세요.`
+            : "ERP 원재료 목록에 없는 LOT 입니다.");
     setErpLotWarn(input, true, reason);
     openContErpLotModal(name, code, lot, reason, reasonKind, input);
   }

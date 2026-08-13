@@ -188,7 +188,7 @@ def _manual_lot_exists(connection: sqlite3.Connection, code: str, lot: str) -> b
     try:
         row = connection.execute(
             "SELECT 1 FROM manual_material_lots "
-            "WHERE material_code = ? AND lot = ? LIMIT 1",
+            "WHERE material_code = ? COLLATE NOCASE AND lot = ? LIMIT 1",
             (code, lot),
         ).fetchone()
     except sqlite3.OperationalError:
@@ -198,15 +198,22 @@ def _manual_lot_exists(connection: sqlite3.Connection, code: str, lot: str) -> b
 
 
 def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, Any]:
-    """자재 코드/LOT 검증 → {valid, source, stock, file_name, file_ok}.
+    """자재 코드/LOT 검증 → {valid, source, stock, file_name, file_ok, reason}.
 
     규칙:
-      - 수동 LOT 테이블에 (code,lot) → valid=True source='manual'
-      - 엑셀에 있고 재고>0 → valid=True source='erp'
-      - 엑셀에 있는데 재고<=0 → valid=False source='erp'(소진)
-      - 엑셀에 없음 → valid=False source=None
-      - 파일 없음/읽기 실패 → valid=True file_ok=False (fail-open)
-    LOT 비교는 양끝 공백 strip 후 정확 일치.
+      - 수동 LOT 테이블에 (code,lot) → valid=True source='manual' reason='manual'
+      - 엑셀에 있고 재고>0 → valid=True source='erp' reason='ok'
+      - 엑셀에 있는데 재고<=0 → valid=False source='erp' reason='depleted'(소진)
+      - 품목코드 자체가 엑셀에 없음 → valid=False reason='code_not_in_file'
+      - 코드는 있는데 그 LOT 이 없음 → valid=False reason='lot_not_in_file'
+      - 파일 없음/읽기 실패 → valid=True file_ok=False reason='file_missing' (fail-open)
+    LOT 비교는 양끝 공백 strip 후 정확 일치. 품목코드 비교는 strip 후 대소문자 무시 —
+    화면·마스터 임포트는 대문자를 강제하지만 ERP 내보내기가 소문자를 낼 수 있고,
+    그 경우 전 자재가 조용히 미스매치되는 사고를 막는다.
+
+    reason 을 나누는 이유: 종전에는 '코드가 틀림'과 'LOT 이 없음'이 같은 응답이라,
+    materials.code 가 오타·폐기 코드여도 작업자에게 매번 "등록되지 않은 LOT"으로만
+    보였다 — 코드 불일치가 영원히 표면화되지 않는 구조였다.
     """
     norm_code = (code or "").strip()
     norm_lot = (lot or "").strip()
@@ -220,6 +227,7 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
             "stock": None,
             "file_name": None,
             "file_ok": False,
+            "reason": "file_missing",
         }
 
     # 수동 LOT 우선 — 즉석 책임자 인증으로 추가한 LOT 는 엑셀 재고와 무관.
@@ -230,9 +238,17 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
             "stock": None,
             "file_name": parsed["file_name"],
             "file_ok": True,
+            "reason": "manual",
         }
 
     entry = parsed["lots"].get(norm_code)
+    if entry is None and norm_code:
+        # 대소문자만 다른 코드 폴백 — 파일이 700행 수준이라 선형 탐색으로 충분.
+        upper = norm_code.upper()
+        for k, v in parsed["lots"].items():
+            if str(k).upper() == upper:
+                entry = v
+                break
     if entry is None:
         return {
             "valid": False,
@@ -240,6 +256,7 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
             "stock": None,
             "file_name": parsed["file_name"],
             "file_ok": True,
+            "reason": "code_not_in_file",
         }
     lot_entry = entry["lots"].get(norm_lot)
     if lot_entry is None:
@@ -249,6 +266,7 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
             "stock": None,
             "file_name": parsed["file_name"],
             "file_ok": True,
+            "reason": "lot_not_in_file",
         }
     stock = float(lot_entry.get("stock") or 0.0)
     if stock > 0:
@@ -258,6 +276,7 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
             "stock": stock,
             "file_name": parsed["file_name"],
             "file_ok": True,
+            "reason": "ok",
         }
     return {
         "valid": False,
@@ -265,6 +284,7 @@ def check_lot(connection: sqlite3.Connection, code: str, lot: str) -> dict[str, 
         "stock": stock,
         "file_name": parsed["file_name"],
         "file_ok": True,
+        "reason": "depleted",
     }
 
 

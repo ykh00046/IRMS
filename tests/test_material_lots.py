@@ -218,6 +218,54 @@ def test_check_lot_unknown_code_invalid(tmp_path):
     assert result["source"] is None
 
 
+def test_check_lot_reason_distinguishes_code_vs_lot(tmp_path):
+    """품목코드 자체가 파일에 없는 것과 LOT 만 없는 것을 reason 으로 구분한다.
+
+    종전에는 둘 다 같은 응답(valid=False, source=None)이라, 자재의 코드가 오타나
+    폐기 코드여도 화면에는 매번 "등록되지 않은 LOT"으로만 보였다 — 코드 불일치가
+    영원히 표면화되지 않는 구조였다."""
+    f = tmp_path / "ERP_2026-01-02.xlsx"
+    _write_erp_file(f, _seed_stock_rows())
+    from src.db import get_connection
+    import src.services.erp_lot_service as svc
+
+    svc.reset_cache()
+    with get_connection() as conn:
+        code_missing = svc.check_lot(conn, "AC9999", "LOT-A")
+        lot_missing = svc.check_lot(conn, "AC0001", "NOPE")
+        depleted = svc.check_lot(conn, "AC0001", "LOT-Z")
+        ok = svc.check_lot(conn, "AC0001", "LOT-A")
+    assert code_missing["reason"] == "code_not_in_file"
+    assert lot_missing["reason"] == "lot_not_in_file"
+    assert depleted["reason"] == "depleted"
+    assert ok["reason"] == "ok"
+
+
+def test_check_lot_no_file_reason_file_missing():
+    from src.db import get_connection
+    import src.services.erp_lot_service as svc
+
+    svc.reset_cache()
+    with get_connection() as conn:
+        result = svc.check_lot(conn, "AC0001", "LOT-A")
+    assert result["reason"] == "file_missing"
+
+
+def test_check_lot_code_case_insensitive(tmp_path):
+    """품목코드 비교는 대소문자 무시 — 화면·마스터는 대문자를 강제하지만 ERP
+    내보내기가 소문자 코드를 내면 전 자재가 조용히 미스매치되던 것을 막는다."""
+    f = tmp_path / "ERP_2026-01-02.xlsx"
+    _write_erp_file(f, _seed_stock_rows())
+    from src.db import get_connection
+    import src.services.erp_lot_service as svc
+
+    svc.reset_cache()
+    with get_connection() as conn:
+        result = svc.check_lot(conn, "ac0001", "LOT-A")
+    assert result["valid"] is True
+    assert result["source"] == "erp"
+
+
 def test_check_lot_strips_whitespace(tmp_path):
     """LOT 비교는 양끝 공백 strip 후 정확 일치."""
     f = tmp_path / "ERP_2026-01-02.xlsx"
