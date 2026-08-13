@@ -481,14 +481,80 @@
       .sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
   }
 
+  // hex(#rrggbb) → rgba — 오래된 점을 흐리게 그릴 때 쓴다. hex 가 아니면 원본 유지.
+  function withAlpha(color, alpha) {
+    const m = /^#([0-9a-f]{6})$/i.exec(String(color || "").trim());
+    if (!m) return color;
+    const num = parseInt(m[1], 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  // 최소제곱 직선 적합 + 상관계수. "관계는 그림이 말한다"의 다음 단계 — 점 76개만
+  // 뿌려서는 한눈에 안 들어온다는 현장 지적(2026-08-13)에 따라, 결론(추세선·요약
+  // 문장)을 그래프가 직접 말하게 한다. 이상 판정 점은 적합에서 뺀다(σ 통계와 동일
+  // 원칙 — 이상 하나가 기울기를 끌고 가면 안 된다).
+  function pbLinearFit(points) {
+    const pts = (points || []).filter(
+      (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y),
+    );
+    const n = pts.length;
+    if (n < 3) return null;
+    const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+    const my = pts.reduce((s, p) => s + p.y, 0) / n;
+    let sxx = 0;
+    let syy = 0;
+    let sxy = 0;
+    pts.forEach((p) => {
+      sxx += (p.x - mx) * (p.x - mx);
+      syy += (p.y - my) * (p.y - my);
+      sxy += (p.x - mx) * (p.y - my);
+    });
+    if (sxx === 0 || syy === 0) return null;   // x 나 y 가 전부 같은 값 — 직선 무의미
+    const slope = sxy / sxx;
+    return {
+      slope,
+      intercept: my - slope * mx,
+      r: sxy / Math.sqrt(sxx * syy),
+      n,
+      minX: Math.min.apply(null, pts.map((p) => p.x)),
+      maxX: Math.max.apply(null, pts.map((p) => p.x)),
+    };
+  }
+
+  // 산점도 위 한 줄 결론. 세기 구분은 통상 기준(|r| 0.2/0.4/0.7).
+  function pbScatterSummary(fit) {
+    if (!fit) return "표본이 적어 상관을 말하기 어렵습니다.";
+    const a = Math.abs(fit.r);
+    const rText = `r=${fit.r.toFixed(2)}, ${fit.n}건`;
+    if (a < 0.2) {
+      return `뚜렷한 상관 없음 (${rText}) — 이 반제품 점도는 사용한 PB 점도와 무관하게 움직입니다.`;
+    }
+    const strength = a >= 0.7 ? "상관 뚜렷" : a >= 0.4 ? "상관 중간" : "상관 약함";
+    const slope = fit.slope;
+    const slopeText = `사용한 PB 점도가 1 높으면 이 반제품은 약 ${slope >= 0 ? "+" : ""}${slope.toFixed(1)}`;
+    return `${strength} (${rText}) — ${slopeText}`;
+  }
+
   // PB 점도(x) ↔ 이 반제품 점도(y) 산점도 데이터셋. 표만으로는 "48cp PB 로 만들면
   // 80" 같은 관계가 76행을 눈으로 훑어야 보였다 — 관계는 그림이 말하는 게 맞다.
   // 이상 판정 측정은 붉은 삼각형으로 따로 뽑아 관계에서 벗어난 점이 드러나게 한다.
-  function sourcePbScatterDatasets(readings, resolveCss) {
-    const linked = sourcePbLinkedReadings(readings);
-    const plain = [];
+  //
+  // options(선택): { fit, limits: {lower, upper, center}, recent }
+  //   · fit    — pbLinearFit 결과(추세선). 호출부가 요약 문장과 같은 적합을 공유.
+  //   · limits — 규격 상·하한·중심(기간 차트와 동일 규약)을 가로 기준선으로.
+  //   · recent — 최근 몇 건을 진하게 그릴지(기본 10). 나머지는 흐리게 — 점이 다
+  //              같은 얼굴이라 최근 상태가 안 보인다는 지적의 답.
+  function sourcePbScatterDatasets(readings, resolveCss, options) {
+    const opts = options || {};
+    const recentN = Number.isFinite(opts.recent) ? opts.recent : 10;
+    const linked = sourcePbLinkedReadings(readings);   // 최신순
+    const recentPts = [];
+    const olderPts = [];
     const flagged = [];
-    linked.forEach((r) => {
+    linked.forEach((r, index) => {
       const point = {
         x: Number(r.source_pb_viscosity),
         y: Number(r.viscosity),
@@ -498,18 +564,79 @@
       };
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
       if (r.status === "anomaly") flagged.push(point);
-      else plain.push(point);
+      else if (index < recentN) recentPts.push(point);
+      else olderPts.push(point);
     });
+    const brand = resolveCss("--brand-mid");
     const datasets = [];
-    if (plain.length) {
+    const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+    const allX = recentPts.concat(olderPts, flagged).map((p) => p.x);
+    const xMin = allX.length ? Math.min.apply(null, allX) : null;
+    const xMax = allX.length ? Math.max.apply(null, allX) : null;
+    // 규격/중심 가로 기준선 — 점이 합격 띠 안인지가 즉시 보이게(기간 차트와 동일 규약).
+    if (opts.limits && xMin !== null && xMax !== xMin) {
+      const refLine = (label, value, color, dash) => ({
+        type: "line",
+        label,
+        data: [{ x: xMin, y: value }, { x: xMax, y: value }],
+        borderColor: color,
+        borderDash: dash,
+        borderWidth: 1,
+        pointRadius: 0,
+        order: 1,
+      });
+      const center = num(opts.limits.center);
+      const lower = num(opts.limits.lower);
+      const upper = num(opts.limits.upper);
+      if (center !== null && Number.isFinite(center)) {
+        datasets.push(refLine("중심", center, resolveCss("--status-success"), [4, 4]));
+      }
+      if (lower !== null && Number.isFinite(lower)) {
+        datasets.push(refLine("규격 하한", lower, resolveCss("--status-error"), [2, 3]));
+      }
+      if (upper !== null && Number.isFinite(upper)) {
+        datasets.push(refLine("규격 상한", upper, resolveCss("--status-error"), [2, 3]));
+      }
+    }
+    // 추세선 — 눈이 회귀선을 상상하지 않아도 되게 그림이 직접 긋는다.
+    const fit = opts.fit;
+    if (fit && Number.isFinite(fit.slope) && fit.maxX !== fit.minX) {
+      datasets.push({
+        type: "line",
+        label: "추세선",
+        data: [
+          { x: fit.minX, y: fit.intercept + fit.slope * fit.minX },
+          { x: fit.maxX, y: fit.intercept + fit.slope * fit.maxX },
+        ],
+        borderColor: withAlpha(brand, 0.8),
+        borderDash: [6, 4],
+        borderWidth: 2,
+        pointRadius: 0,
+        order: 1,
+      });
+    }
+    if (olderPts.length) {
       datasets.push({
         type: "scatter",
-        label: "측정",
-        data: plain,
-        backgroundColor: resolveCss("--brand-mid"),
-        borderColor: resolveCss("--brand-mid"),
+        label: "이전 측정",
+        data: olderPts,
+        backgroundColor: withAlpha(brand, 0.3),
+        borderColor: withAlpha(brand, 0.3),
+        radius: 4,
+        hoverRadius: 6,
+        order: 2,
+      });
+    }
+    if (recentPts.length) {
+      datasets.push({
+        type: "scatter",
+        label: `최근 ${recentPts.length}건`,
+        data: recentPts,
+        backgroundColor: brand,
+        borderColor: brand,
         radius: 5,
         hoverRadius: 7,
+        order: 2,
       });
     }
     if (flagged.length) {
@@ -522,6 +649,7 @@
         pointStyle: "triangle",
         radius: 8,
         hoverRadius: 10,
+        order: 2,
       });
     }
     return datasets;
@@ -564,5 +692,8 @@
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,
+    pbLinearFit,
+    pbScatterSummary,
+    withAlpha,
   };
 })();

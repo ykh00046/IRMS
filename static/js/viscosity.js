@@ -26,6 +26,8 @@
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,
+    pbLinearFit,
+    pbScatterSummary,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -531,11 +533,32 @@
   }
 
   // PB 점도(x) ↔ 이 반제품 점도(y) 산점도. 표만으로는 관계가 안 보인다.
+  // 점만 뿌려서는 여전히 한눈에 안 들어온다는 현장 지적(2026-08-13)에 따라
+  // 추세선 + 한 줄 결론 + 규격 기준선 + 최근/과거 명암을 함께 그린다.
   function renderPbChart(linked) {
     const canvas = $("visc-pb-chart");
     const emptyNote = $("visc-pb-chart-empty");
+    const summaryEl = $("visc-pb-summary");
     if (!canvas) return;
-    const datasets = sourcePbScatterDatasets(linked, getCssVar);
+    // 적합은 이상 판정 점을 뺀 표본으로 — 이상 하나가 기울기를 끌고 가면 안 된다.
+    const fitPoints = linked
+      .filter((r) => r.status !== "anomaly")
+      .map((r) => ({ x: Number(r.source_pb_viscosity), y: Number(r.viscosity) }));
+    const fit = pbLinearFit(fitPoints);
+    if (summaryEl) {
+      summaryEl.hidden = !linked.length;
+      summaryEl.textContent = linked.length ? pbScatterSummary(fit) : "";
+    }
+    const product = (state.analysis && state.analysis.product) || {};
+    const stats = (state.analysis && state.analysis.stats) || {};
+    const datasets = sourcePbScatterDatasets(linked, getCssVar, {
+      fit,
+      limits: {
+        lower: product.lower_limit,
+        upper: product.upper_limit,
+        center: stats.center,
+      },
+    });
     if (emptyNote) emptyNote.hidden = datasets.length > 0;
     if (state.pbChart) { state.pbChart.destroy(); state.pbChart = null; }
     if (!datasets.length) return;
@@ -547,6 +570,8 @@
         plugins: {
           legend: { labels: { boxWidth: 12, font: { size: 12 }, usePointStyle: true } },
           tooltip: {
+            // 기준선·추세선 위에서는 툴팁을 열지 않는다 — 점(측정)만 정보가 있다.
+            filter: (item) => item.dataset && item.dataset.type === "scatter",
             callbacks: {
               label: (item) => {
                 const point = item.raw || {};

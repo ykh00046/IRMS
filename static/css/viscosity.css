@@ -442,6 +442,14 @@ body {
   height: 280px;
 }
 
+/* 산점도 한 줄 결론 — 그림보다 먼저 읽히는 문장이라 본문보다 또렷하게. */
+.visc-pb-summary {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .visc-pb-chart canvas {
   max-height: 280px;
 }

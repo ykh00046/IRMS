@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260813a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260813b" />
 {% endblock %}
 
 {% block content %}
@@ -255,6 +255,9 @@
             <span class="muted small" id="visc-source-pb-note"></span>
           </div>
           <p class="panel-notice" id="visc-pb-empty" hidden></p>
+          {# 한 줄 결론 — 점만 뿌려서는 관계가 한눈에 안 들어온다(2026-08-13 현장 지적).
+             추세선·기준선과 함께, 상관 세기와 기울기를 문장으로 먼저 말한다. #}
+          <p class="visc-pb-summary" id="visc-pb-summary" hidden></p>
           <div class="chart-wrap visc-pb-chart">
             <canvas id="visc-pb-chart"></canvas>
             <p class="visc-chart-empty" id="visc-pb-chart-empty">
@@ -412,6 +415,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260813a"></script>
-    <script src="/static/js/viscosity.js?v=20260813a"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260813b"></script>
+    <script src="/static/js/viscosity.js?v=20260813b"></script>
 {% endblock %}
