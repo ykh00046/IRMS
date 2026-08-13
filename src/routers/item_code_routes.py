@@ -335,9 +335,12 @@ def create_item_code_router() -> APIRouter:
     def list_materials_for_codes(
         uncoded: str | None = Query(default=None),
         q: str | None = Query(default=None),
+        include_inactive: str | None = Query(default=None),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        where_parts = ["is_active = 1"]
+        # include_inactive=1 이면 사용 안 함(is_active=0) 자재도 함께 — 비활성이
+        # 일방통행 함정이 되지 않도록 되살리기 경로를 화면에 준다.
+        where_parts = [] if include_inactive == "1" else ["is_active = 1"]
         params: list[Any] = []
         if uncoded == "1":
             where_parts.append("code IS NULL")
@@ -356,7 +359,7 @@ def create_item_code_router() -> APIRouter:
             )
             params.extend([like, like, like])
 
-        where_sql = " AND ".join(where_parts)
+        where_sql = " AND ".join(where_parts) if where_parts else "1=1"
         with get_connection() as connection:
             # loss_comp_g 컬럼이 없는 구버전/테스트 DB 폴백(0) — try/except 2단 쿼리.
             try:
@@ -934,9 +937,6 @@ def create_item_code_router() -> APIRouter:
             raise HTTPException(
                 status_code=400, detail="영문·숫자·한글이 포함된 이름이어야 합니다."
             )
-        # 기본은 보존. 옛 이름이 오타여서 남길 가치가 없을 때만 화면에서 끈다.
-        keep_alias = body.get("keep_alias", True) is not False
-
         with get_connection() as connection:
             material_row = connection.execute(
                 "SELECT id, name, code FROM materials WHERE id = ?", (material_id,)
@@ -974,28 +974,40 @@ def create_item_code_router() -> APIRouter:
                 "UPDATE materials SET name = ? WHERE id = ?", (new_name, material_id)
             )
 
-            # 옛 이름을 동의어로 남긴다 — 과거 기록이 계속 이 자재의 코드로 집계되도록.
-            # 이미 같은 정규화 키의 동의어가 있으면(재변경 등) 새로 넣지 않는다.
-            alias_kept = None
-            if keep_alias:
-                old_key = normalize_token(old_name)
-                existing = {
-                    normalize_token(r["alias_name"] or "")
-                    for r in connection.execute(
-                        "SELECT alias_name FROM material_aliases"
-                    ).fetchall()
-                }
-                # 새 이름과 같은 키(대소문자만 바꾼 개명)면 동의어가 무의미하다.
-                if old_key and old_key != new_key and old_key not in existing:
-                    try:
-                        connection.execute(
-                            "INSERT INTO material_aliases (material_id, alias_name) "
-                            "VALUES (?, ?)",
-                            (material_id, old_name),
-                        )
-                        alias_kept = old_name
-                    except sqlite3.IntegrityError:  # alias_name UNIQUE 경합
-                        alias_kept = None
+            # 새 이름이 이 자재 **자신의** 동의어였다면 그 동의어는 지운다 —
+            # 정식 이름이 됐으니 별칭으로 남을 이유가 없다(이름은 하나 원칙).
+            for row in connection.execute(
+                "SELECT id, alias_name FROM material_aliases WHERE material_id = ?",
+                (material_id,),
+            ).fetchall():
+                if normalize_token(row["alias_name"] or "") == new_key:
+                    connection.execute(
+                        "DELETE FROM material_aliases WHERE id = ?", (row["id"],)
+                    )
+
+            # 과거 배합 기록의 자재명도 새 이름으로 통일한다(코드 중심·이름 하나 원칙,
+            # 2026-08-13 사용자 결정). 종전에는 옛 이름을 동의어로 남겨 읽기 시점에
+            # 잇는 방식이었지만, 이름이 계속 여러 개로 불어나는 구조라 폐기했다.
+            # 기록의 정체성(코드·FK·수량)은 그대로고 표기만 바뀐다 —
+            # tools/unify_material_names.py 가 일괄로 하던 것을 개명 시점에 그 자재만 한다.
+            updated_records = connection.execute(
+                "UPDATE blend_details SET material_name = ? WHERE material_id = ?",
+                (new_name, material_id),
+            ).rowcount or 0
+            # FK 없이 옛 이름 문자열로만 남은 행(구 이관 기록)도 이름·연결을 맞춘다.
+            old_key = normalize_token(old_name)
+            for row in connection.execute(
+                "SELECT DISTINCT material_name FROM blend_details "
+                "WHERE material_id IS NULL AND material_name IS NOT NULL"
+            ).fetchall():
+                rec_name = row["material_name"]
+                if normalize_token(rec_name or "") != old_key:
+                    continue
+                updated_records += connection.execute(
+                    "UPDATE blend_details SET material_name = ?, material_id = ? "
+                    "WHERE material_id IS NULL AND material_name = ?",
+                    (new_name, material_id, rec_name),
+                ).rowcount or 0
 
             # 코드를 쥐고 있으면 manual 마스터 행의 이름도 새 자재명으로 맞춘다
             # (set_material_code 의 force 이동과 같은 취지 — 옛 이름 고착 방지).
@@ -1012,13 +1024,13 @@ def create_item_code_router() -> APIRouter:
                 details={
                     "old_name": old_name,
                     "new_name": new_name,
-                    "alias_kept": alias_kept,
+                    "updated_records": updated_records,
                     "code": material_row["code"],
                 },
             )
             connection.commit()
 
-        return {"status": "ok", "name": new_name, "alias_kept": alias_kept}
+        return {"status": "ok", "name": new_name, "updated_records": updated_records}
 
     @router.delete("/materials/{material_id}")
     def delete_material(
@@ -1088,6 +1100,48 @@ def create_item_code_router() -> APIRouter:
             connection.commit()
 
         return {"status": "ok", "deleted": material_row["name"]}
+
+    # ------------------------------------------------------------------
+    # A5c. PUT /materials/{material_id}/active — 사용 안 함(숨김)/다시 사용
+    # ------------------------------------------------------------------
+    # 삭제는 레시피가 참조 중이면 막힌다(A5). 그때의 출구가 이것 — 목록·빠른 지정에서
+    # 숨기되 데이터(기록·레시피 연결)는 그대로 둔다. include_inactive=1 목록에서
+    # 되살릴 수 있다(일방통행 아님).
+    @router.put("/materials/{material_id}/active")
+    def set_material_active(
+        material_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        raw = body.get("is_active")
+        if raw not in (0, 1, True, False):
+            raise HTTPException(status_code=400, detail="is_active 는 0 또는 1 이어야 합니다.")
+        active = 1 if raw in (1, True) else 0
+
+        with get_connection() as connection:
+            material_row = connection.execute(
+                "SELECT id, name, is_active FROM materials WHERE id = ?", (material_id,)
+            ).fetchone()
+            if not material_row:
+                raise HTTPException(status_code=404, detail="자재를 찾을 수 없습니다.")
+            if int(material_row["is_active"] or 0) == active:
+                return {"status": "ok", "is_active": active}
+
+            connection.execute(
+                "UPDATE materials SET is_active = ? WHERE id = ?", (active, material_id)
+            )
+            write_audit_log(
+                connection,
+                action="material_deactivated" if active == 0 else "material_reactivated",
+                actor=current_user,
+                target_type="material",
+                target_id=material_id,
+                target_label=material_row["name"],
+                details={"is_active": active},
+            )
+            connection.commit()
+
+        return {"status": "ok", "is_active": active}
 
     # ------------------------------------------------------------------
     # A6. 자재 동의어(별칭) — 같은 물질이 기록에 다른 이름으로 남은 경우를 잇는다.

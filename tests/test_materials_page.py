@@ -1,18 +1,20 @@
-"""자재 관리 화면(/materials) 이관 + 자재명 수정(옛 이름 자동 동의어).
+"""자재 관리 화면(/materials) 이관 + 자재명 수정(과거 기록 이름 전파).
 
 배경: 품목코드는 '레시피 관리'(/management)의 한 탭이었고 자재 LOT 은 별도 메뉴여서
 같은 자재를 다루는 화면이 둘로 흩어져 있었다. 레시피 관리는 반제품 도메인이므로
 자재 편집이 거기 있을 이유가 없다. /materials 가 둘을 흡수하고 옛 경로는 리다이렉트한다.
 
-자재명 수정은 blend_details.material_name 이 기록 시점 문자열로 박제된다는 점 때문에
-그냥 두면 위험하다 — 이름을 바꾸는 순간 과거 기록이 품목코드를 잃는다(2026-08-11 에
-고친 미매핑 사고와 같은 구조). 그래서 옛 이름을 동의어로 자동 보존한다.
+자재명 수정(2026-08-13 개편 — 코드 중심·이름 하나 원칙): 종전에는 옛 이름을 동의어로
+남겨 읽기 시점에 잇는 방식이었지만, 이름이 계속 여러 개로 불어나는 구조라 폐기했다.
+지금은 이름을 바꾸면 과거 배합 기록(blend_details)의 자재명도 함께 새 이름으로 통일한다
+— 기록의 정체성(코드·FK·수량)은 그대로고 표기만 바뀐다.
 
 검증:
   1. /materials 가 뜨고 두 탭 마크업이 있다.
   2. /material-lots 는 /materials 로 리다이렉트한다.
   3. 레시피 관리에는 품목코드 탭이 더 이상 없다.
-  4. 이름을 바꾸면 옛 이름이 동의어로 남고, 그 이름으로 남은 기록이 계속 코드를 얻는다.
+  4. 이름을 바꾸면 과거 기록의 이름이 함께 바뀌고(FK 끊긴 행은 연결까지 복원),
+     동의어는 새로 생기지 않으며, 집계는 새 이름 + 같은 코드로 나온다.
   5. 중복 이름·다른 자재의 동의어와 충돌하면 409.
 """
 
@@ -106,8 +108,11 @@ def test_materials_page_is_open_to_non_manager_but_hides_code_panel():
 
 
 # ── 2. 자재명 수정 ─────────────────────────────────────────────────────────
-def test_rename_keeps_old_name_as_alias_and_preserves_item_code():
-    """이름을 바꿔도 옛 이름으로 남은 과거 기록이 같은 품목코드로 계속 집계된다."""
+def test_rename_propagates_to_past_records_and_keeps_code():
+    """이름을 바꾸면 과거 기록의 자재명도 함께 바뀌고, 집계는 새 이름 + 같은 코드.
+
+    FK 가 끊긴 구 이관 기록(material_id NULL)은 이름 전파와 함께 연결도 복원된다.
+    동의어는 생기지 않는다 — 코드 중심·이름 하나 원칙(2026-08-13 사용자 결정)."""
     from src.db import get_connection
     from src.services import blend_service
 
@@ -118,7 +123,7 @@ def test_rename_keeps_old_name_as_alias_and_preserves_item_code():
     old_name = f"PMA{base}"
     mid = _new_material(client, headers, old_name, code)
 
-    # 옛 이름으로 남은 완료 기록(FK 는 끊긴 상태 — 현장 기록에서 흔하다).
+    # 옛 이름으로 남은 완료 기록(FK 는 끊긴 상태 — 구 이관 기록에서 흔하다).
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO blend_records (product_lot, product_name, worker, work_date, "
@@ -141,36 +146,88 @@ def test_rename_keeps_old_name_as_alias_and_preserves_item_code():
         f"/api/materials/{mid}/name", json={"name": new_name}, headers=headers
     )
     assert res.status_code == 200, res.text
-    assert res.json()["alias_kept"] == old_name
+    assert res.json()["updated_records"] == 1
 
-    # 옛 이름이 동의어 목록에 있다.
-    aliases = client.get(f"/api/materials/{mid}/aliases", headers=headers).json()
-    assert old_name in [a["alias_name"] for a in aliases["items"]]
-
-    # 그리고 옛 이름으로 남은 기록이 여전히 품목코드를 얻는다 — 이게 이 기능의 요점.
     with get_connection() as conn:
+        row = conn.execute(
+            "SELECT material_name, material_id FROM blend_details "
+            "WHERE blend_record_id = ?", (rec_id,)
+        ).fetchone()
+        # 기록의 이름이 새 이름으로 바뀌고 끊겼던 FK 도 복원됐다.
+        assert row["material_name"] == new_name
+        assert row["material_id"] == mid
         usage = blend_service.material_usage_periods(
             conn, start_date="2026-07-20", end_date="2026-07-20"
         )
-    item = next(i for i in usage["items"] if i["material_name"] == old_name)
+    item = next(i for i in usage["items"] if i["material_name"] == new_name)
     assert item["erp_code"] == code
+    # 옛 이름 행은 더 이상 없다 — 이름은 하나.
+    assert not [i for i in usage["items"] if i["material_name"] == old_name]
+
+    # 동의어는 생기지 않는다.
+    aliases = client.get(f"/api/materials/{mid}/aliases", headers=headers).json()
+    assert old_name not in [a["alias_name"] for a in aliases["items"]]
 
 
-def test_rename_can_skip_alias_when_asked():
-    """오타 교정처럼 남길 가치가 없으면 keep_alias=false 로 생략한다."""
+def test_rename_to_own_alias_absorbs_it():
+    """자신의 동의어로 개명하면 그 동의어는 정식 이름이 되면서 목록에서 사라진다."""
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"오타{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"구명{base}", f"AC{base[:4]}")
+    alias = f"신명{base}"
+    assert client.post(
+        f"/api/materials/{mid}/aliases", json={"alias_name": alias}, headers=headers
+    ).status_code == 200
 
     res = client.put(
-        f"/api/materials/{mid}/name",
-        json={"name": f"정상{base}", "keep_alias": False},
-        headers=headers,
+        f"/api/materials/{mid}/name", json={"name": alias}, headers=headers
     )
     assert res.status_code == 200, res.text
-    assert res.json()["alias_kept"] is None
-    assert client.get(f"/api/materials/{mid}/aliases", headers=headers).json()["items"] == []
+    items = client.get(f"/api/materials/{mid}/aliases", headers=headers).json()["items"]
+    assert alias not in [a["alias_name"] for a in items]
+
+
+# ── 2b. 사용 안 함(비활성) ─────────────────────────────────────────────────
+def test_deactivate_hides_from_list_and_reactivate_restores():
+    """삭제가 막히는 자재(과거 레시피 참조)의 출구 — 숨기되 데이터는 보존, 되살리기 가능."""
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    name = f"블루안료{base}"
+    mid = _new_material(client, headers, name, f"AC{base[:4]}")
+
+    res = client.put(
+        f"/api/materials/{mid}/active", json={"is_active": 0}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+
+    def names(params=None):
+        data = client.get("/api/item-codes/materials", params=params or {}, headers=headers).json()
+        return [it["name"] for it in data["items"]]
+
+    assert name not in names()                                   # 기본 목록에서 숨김
+    assert name in names({"include_inactive": "1"})              # 포함 조회로는 보임
+
+    res = client.put(
+        f"/api/materials/{mid}/active", json={"is_active": 1}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    assert name in names()                                       # 되살리기
+
+
+def test_set_active_validates_and_requires_manager():
+    client = _client()
+    headers = _login(client)
+    base = _uid()
+    mid = _new_material(client, headers, f"자재{base}", f"AC{base[:4]}")
+    assert client.put(
+        f"/api/materials/{mid}/active", json={"is_active": "yes"}, headers=headers
+    ).status_code == 400
+    anon = _client()
+    assert anon.put(
+        f"/api/materials/{mid}/active", json={"is_active": 0}
+    ).status_code in (401, 403)
 
 
 def test_rename_rejects_duplicate_name():
