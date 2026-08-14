@@ -399,3 +399,182 @@ def test_reading_correction_grace_window_and_validation():
         headers=_csrf(client),
     )
     assert res.status_code == 200, res.text
+
+
+# ── 6. 측정 불가 기록(viscosity_skips, 2026-08-14) ────────────────────────
+# 시료 소진·출하 등으로 점도를 잴 수 없던 배합을 사유와 함께 종결한다.
+# 기록=현장 누구나(사유 필수+감사), 되돌리기=책임자만. 기록되면 알림·미등록
+# 집계에서 등록과 동일하게 빠진다.
+
+
+def _set_reminder_since(value):
+    """정리 기준일 저장. value=None 이면 삭제(다른 테스트 파일의 '기준일 없음'
+    전제를 오염시키지 않도록 테스트가 끝나면 반드시 지운다)."""
+    from src.db import get_connection
+    from src.services.settings_service import VISCOSITY_REMINDER_SINCE_KEY
+
+    with get_connection() as conn:
+        if value is None:
+            conn.execute(
+                "DELETE FROM app_settings WHERE key = ?",
+                (VISCOSITY_REMINDER_SINCE_KEY,),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at",
+                (VISCOSITY_REMINDER_SINCE_KEY, value, "2026-08-14T00:00:00Z"),
+            )
+        conn.commit()
+
+
+def _due_codes(client, target_date):
+    from fastapi.testclient import TestClient
+
+    internal = TestClient(client.app, client=("192.168.11.108", 50000))
+    res = internal.get(
+        "/api/public/viscosity-reminders/due", params={"target_date": target_date}
+    )
+    assert res.status_code == 200, res.text
+    return {item["code"] for item in res.json()["items"]}
+
+
+def test_skip_record_silences_reminder_and_unregistered_queue():
+    import json as _json
+    from datetime import date, timedelta
+
+    from src.db import get_connection
+
+    client = _client()
+    _login_admin(client)
+    prod = "VSK" + uuid.uuid4().hex[:5].upper()
+    _seed_recipe(client, prod)
+    pid = _make_product(client, prod)
+    # 매일 알림 대상으로 — 생성이 아니라 수정에서 켠다(라우트 규약).
+    upd = client.patch(
+        f"/api/viscosity/products/{pid}",
+        json={"name": prod, "remind_daily": True, "is_active": True},
+        headers=_csrf(client),
+    )
+    assert upd.status_code == 200, upd.text
+    today = date.today()
+    _set_reminder_since((today - timedelta(days=5)).isoformat())
+    try:
+        yesterday = (today - timedelta(days=1)).isoformat()
+        rid = _make_blend(client, prod, yesterday, [("PB", "26081310"), ("MEK", "M8")])
+
+        # 스킵 전: 미등록 1건 + 오늘 알림 대상.
+        data = client.get(f"/api/viscosity/products/{pid}/blend-records").json()
+        assert data["unregistered_total"] == 1
+        assert data["items"][0]["skipped"] is False
+        assert prod in _due_codes(client, today.isoformat())
+
+        # 사유 검증 — 빈/한 글자 사유는 거부.
+        anon = _client()
+        anon.get("/api/viscosity/products")  # csrf 쿠키
+        assert anon.post(
+            f"/api/viscosity/blend-records/{rid}/skip",
+            json={"reason": ""}, headers=_csrf(anon),
+        ).status_code == 400
+        assert anon.post(
+            f"/api/viscosity/blend-records/{rid}/skip",
+            json={"reason": "x"}, headers=_csrf(anon),
+        ).status_code == 400
+
+        # 기록은 비로그인 현장도 가능(사유 필수). 감사에 사유가 남는다.
+        res = anon.post(
+            f"/api/viscosity/blend-records/{rid}/skip",
+            json={"reason": "시료 없음 - 전량 출하"}, headers=_csrf(anon),
+        )
+        assert res.status_code == 200, res.text
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT details_json FROM audit_logs "
+                "WHERE action = 'viscosity_skip_recorded' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        assert _json.loads(row["details_json"])["reason"] == "시료 없음 - 전량 출하"
+
+        # 중복 기록은 409.
+        assert anon.post(
+            f"/api/viscosity/blend-records/{rid}/skip",
+            json={"reason": "다시 기록"}, headers=_csrf(anon),
+        ).status_code == 409
+
+        # 스킵 후: 미등록 집계·필터에서 빠지고 알림도 조용해진다.
+        data = client.get(f"/api/viscosity/products/{pid}/blend-records").json()
+        assert data["unregistered_total"] == 0
+        item = data["items"][0]
+        assert item["skipped"] is True
+        assert item["skip_reason"] == "시료 없음 - 전량 출하"
+        assert item["registered"] is False
+        filtered = client.get(
+            f"/api/viscosity/products/{pid}/blend-records", params={"unregistered": "1"}
+        ).json()["items"]
+        assert filtered == []
+        assert prod not in _due_codes(client, today.isoformat())
+
+        # 되돌리기는 책임자만 — 현장은 401/403, 책임자는 성공 후 알림 재개.
+        assert anon.delete(
+            f"/api/viscosity/blend-records/{rid}/skip", headers=_csrf(anon)
+        ).status_code in (401, 403)
+        res = client.delete(
+            f"/api/viscosity/blend-records/{rid}/skip", headers=_csrf(client)
+        )
+        assert res.status_code == 200, res.text
+        data = client.get(f"/api/viscosity/products/{pid}/blend-records").json()
+        assert data["items"][0]["skipped"] is False
+        assert data["unregistered_total"] == 1
+        assert prod in _due_codes(client, today.isoformat())
+        # 없는 스킵을 또 지우면 404.
+        assert client.delete(
+            f"/api/viscosity/blend-records/{rid}/skip", headers=_csrf(client)
+        ).status_code == 404
+    finally:
+        _set_reminder_since(None)  # 다른 테스트의 '기준일 없음' 전제 보호
+
+
+def test_skip_rejected_when_registered_and_cleared_by_registration():
+    from src.db import get_connection
+
+    client = _client()
+    _login_admin(client)
+    prod = "VSL" + uuid.uuid4().hex[:5].upper()
+    _seed_recipe(client, prod)
+    pid = _make_product(client, prod)
+
+    # 이미 점도가 등록된 기록은 측정 불가로 바꿀 수 없다.
+    rid_done = _make_blend(client, prod, "2026-08-12", [("PB", "26081210"), ("MEK", "M9")])
+    reg = client.post(
+        f"/api/blend/records/{rid_done}/viscosity",
+        json={"viscosity": 410.0, "product_id": pid},
+        headers=_csrf(client),
+    )
+    assert reg.status_code == 200, reg.text
+    assert client.post(
+        f"/api/viscosity/blend-records/{rid_done}/skip",
+        json={"reason": "뒤늦은 불가 시도"}, headers=_csrf(client),
+    ).status_code == 400
+
+    # 스킵된 기록에 실측이 들어오면 skip 은 자동 해제된다 — 값이 있는데
+    # '불가'가 남으면 집계·감사가 서로 다른 말을 한다.
+    rid = _make_blend(client, prod, "2026-08-13", [("PB", "26081311"), ("MEK", "M10")])
+    assert client.post(
+        f"/api/viscosity/blend-records/{rid}/skip",
+        json={"reason": "시료 없음(착오)"}, headers=_csrf(client),
+    ).status_code == 200
+    reg = client.post(
+        f"/api/blend/records/{rid}/viscosity",
+        json={"viscosity": 420.0, "product_id": pid},
+        headers=_csrf(client),
+    )
+    assert reg.status_code == 200, reg.text
+    with get_connection() as conn:
+        left = conn.execute(
+            "SELECT 1 FROM viscosity_skips WHERE blend_record_id = ?", (rid,)
+        ).fetchone()
+    assert left is None
+    data = client.get(f"/api/viscosity/products/{pid}/blend-records").json()
+    item = next(it for it in data["items"] if it["id"] == rid)
+    assert item["registered"] is True
+    assert item["skipped"] is False

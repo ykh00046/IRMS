@@ -313,6 +313,22 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_visc_readings_product_lot "
         "ON viscosity_readings(product_id, lot_no)"
     )
+    # 측정 불가 기록(2026-08-14) — 시료 소진·출하·장비 문제 등으로 점도를 잴 수 없던
+    # 배합을 사유와 함께 정식 결과로 남긴다. 기록되면 알림·미등록 집계에서 등록과
+    # 동일하게 취급된다(종전에는 영원히 '미등록'으로 남아 알림이 계속 왔다).
+    # 기록은 현장 누구나(사유 필수+감사), 되돌리기는 책임자만.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS viscosity_skips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blend_record_id INTEGER NOT NULL UNIQUE
+                REFERENCES blend_records(id) ON DELETE CASCADE,
+            reason TEXT NOT NULL,
+            created_by TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
     if not has_migration(connection, "seed_viscosity_products"):
         now = utc_now_text()
         for code, name in (("PB", "PB"), ("SBCT", "SBCT"), ("SCRA", "SCRA")):

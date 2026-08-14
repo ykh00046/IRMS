@@ -166,12 +166,19 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             "EXISTS (SELECT 1 FROM viscosity_readings vr "
             "        WHERE vr.blend_record_id = br.id)"
         )
+        # 측정 불가 기록(2026-08-14) — 미등록 집계·필터에서 등록과 동일하게 빠진다.
+        # 미등록 목록은 '해야 할 일' 대기열이고, 못 잰다고 기록한 배합은 대기열이 아니다.
+        skipped_sql = (
+            "EXISTS (SELECT 1 FROM viscosity_skips vs "
+            "        WHERE vs.blend_record_id = br.id)"
+        )
         base_sql = f"FROM blend_records br WHERE {' AND '.join(where)}"
         total = connection.execute(
             f"SELECT COUNT(*) {base_sql}", params
         ).fetchone()[0]
         unregistered_total = connection.execute(
-            f"SELECT COUNT(*) {base_sql} AND NOT {registered_sql}", params
+            f"SELECT COUNT(*) {base_sql} AND NOT {registered_sql} AND NOT {skipped_sql}",
+            params,
         ).fetchone()[0]
         only_unregistered = unregistered == "1"
         rows = connection.execute(
@@ -179,11 +186,14 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             SELECT br.id, br.product_lot, br.work_date, br.worker,
                    br.total_amount, br.reactor,
                    {registered_sql} AS registered,
+                   {skipped_sql} AS skipped,
+                   (SELECT vs2.reason FROM viscosity_skips vs2
+                     WHERE vs2.blend_record_id = br.id LIMIT 1) AS skip_reason,
                    (SELECT vr2.viscosity FROM viscosity_readings vr2
                      WHERE vr2.blend_record_id = br.id
                      ORDER BY vr2.id DESC LIMIT 1) AS reading_value
             {base_sql}
-            {f"AND NOT {registered_sql}" if only_unregistered else ""}
+            {f"AND NOT {registered_sql} AND NOT {skipped_sql}" if only_unregistered else ""}
             ORDER BY br.work_date DESC, br.id DESC
             LIMIT ?
             """,
@@ -199,6 +209,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                     "total_amount": r["total_amount"],
                     "reactor": r["reactor"],
                     "registered": bool(r["registered"]),
+                    "skipped": bool(r["skipped"]),
+                    "skip_reason": r["skip_reason"],
                     "viscosity": (
                         float(r["reading_value"])
                         if r["reading_value"] is not None
@@ -211,6 +223,97 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             "unregistered_total": int(unregistered_total),
             "limit": limit,
         }
+
+    @op_router.post("/viscosity/blend-records/{record_id}/skip")
+    def viscosity_skip_record(
+        record_id: int,
+        body: dict[str, Any],
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """측정 불가 기록(현장) — 시료 소진·출하·장비 문제 등으로 점도를 잴 수 없던
+        배합을 사유와 함께 정식 결과로 남긴다(2026-08-14 사용자 결정).
+
+        기록되면 알림·미등록 집계에서 등록과 동일하게 빠진다 — 종전에는 이런 배합이
+        영원히 '미등록'으로 남아 알림이 계속 왔고, 유일한 탈출구가 책임자의
+        [지금까지 정리](과거 전체 일괄)뿐이었다. 되돌리기는 책임자 전용(아래 DELETE).
+        """
+        current_user = get_current_user(request, required=False)
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 2:
+            raise HTTPException(status_code=400, detail="측정 불가 사유를 입력하세요.")
+        if len(reason) > 200:
+            raise HTTPException(status_code=400, detail="사유는 200자 이내로 입력하세요.")
+
+        record = connection.execute(
+            "SELECT id, product_lot, status FROM blend_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if not record:
+            raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        has_reading = connection.execute(
+            "SELECT 1 FROM viscosity_readings WHERE blend_record_id = ? LIMIT 1",
+            (record_id,),
+        ).fetchone()
+        if has_reading:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 점도가 등록된 기록입니다 — 측정 불가로 바꿀 수 없습니다.",
+            )
+        actor = actor_name(current_user) if current_user else "현장"
+        try:
+            connection.execute(
+                "INSERT INTO viscosity_skips "
+                "(blend_record_id, reason, created_by, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (record_id, reason, actor, utc_now_text()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409, detail="이미 측정 불가로 기록된 배합입니다."
+            )
+        write_audit_log(
+            connection,
+            action="viscosity_skip_recorded",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=str(record["product_lot"]),
+            details={"reason": reason},
+        )
+        connection.commit()
+        return {"status": "ok", "record_id": record_id, "reason": reason}
+
+    @mgr_router.delete("/viscosity/blend-records/{record_id}/skip")
+    def viscosity_unskip_record(
+        record_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """측정 불가 취소(책임자) — 잘못 눌린 불가 기록을 되돌려 알림을 재개한다."""
+        current_user = get_current_user(request, required=False)
+        row = connection.execute(
+            "SELECT vs.id, vs.reason, br.product_lot "
+            "FROM viscosity_skips vs JOIN blend_records br ON br.id = vs.blend_record_id "
+            "WHERE vs.blend_record_id = ?",
+            (record_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="측정 불가 기록이 없습니다.")
+        connection.execute(
+            "DELETE FROM viscosity_skips WHERE blend_record_id = ?", (record_id,)
+        )
+        write_audit_log(
+            connection,
+            action="viscosity_skip_removed",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=str(row["product_lot"]),
+            details={"reason": row["reason"]},
+        )
+        connection.commit()
+        return {"status": "ok", "record_id": record_id}
 
     @op_router.get("/viscosity/blend-records/{record_id}/used-pb")
     def viscosity_used_pb_preview(

@@ -815,12 +815,26 @@ def daily_reading_reminders(
     # 규약과 동일). 이름이 안 맞는 옛 품목은 조용해지는데, 그건 이 기능의 의도다.
     since = settings_service.get_viscosity_reminder_since(connection)
     if since:
+        # 측정 불가로 기록된 배합(viscosity_skips)은 배합 존재 조건에서 뺀다 —
+        # 시료가 없어 잴 수 없는 배합 하나가 남아 알림이 영원히 오던 문제(2026-08-14).
+        # 그 배합은 '등록된 것'과 동일하게 취급되고, 새 배합이 생기면 알림은 재개된다.
+        # (테이블이 없는 구버전/최소 스키마 DB 는 조건 없이 — 방어 패턴 공통.)
+        skips_clause = ""
+        has_skips = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='viscosity_skips'"
+        ).fetchone()
+        if has_skips:
+            skips_clause = (
+                "   AND NOT EXISTS (SELECT 1 FROM viscosity_skips s"
+                "                   WHERE s.blend_record_id = b.id)"
+            )
         where.append(
             "EXISTS (SELECT 1 FROM blend_records b"
             " WHERE b.status != 'canceled'"
             "   AND b.work_date >= ?"
             "   AND b.work_date < ?"
-            "   AND (b.product_name = p.name OR b.product_name = p.code))"
+            "   AND (b.product_name = p.name OR b.product_name = p.code)"
+            f"{skips_clause})"
         )
         params.append(since)
         params.append(target_date)  # 배합 당일 제외 — 측정은 다음날부터

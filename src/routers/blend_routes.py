@@ -1139,6 +1139,16 @@ def build_router() -> APIRouter:
                 status_code=409,
                 detail=f"이미 등록된 점도(LOT {record['product_lot']})가 있습니다.",
             )
+        # 측정 불가로 기록돼 있던 배합에 실측이 들어오면 skip 은 자동 해제한다 —
+        # 값이 있는데 '불가'가 남으면 집계·감사가 서로 다른 말을 한다.
+        skip_cleared = False
+        try:
+            cleared = connection.execute(
+                "DELETE FROM viscosity_skips WHERE blend_record_id = ?", (record_id,)
+            )
+            skip_cleared = cleared.rowcount > 0
+        except sqlite3.OperationalError:
+            pass  # 마이그레이션 전 DB(테이블 없음) — 해제할 것도 없다
         write_audit_log(
             connection,
             action="blend_viscosity_link",
@@ -1151,6 +1161,7 @@ def build_router() -> APIRouter:
                 "viscosity": body.viscosity,
                 "used_pb_lot": source_pb_lot,
                 "used_pb_method": pb_method,
+                **({"skip_cleared": True} if skip_cleared else {}),
             },
         )
         connection.commit()

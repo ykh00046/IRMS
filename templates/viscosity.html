@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260814e" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260814f" />
 {% endblock %}
 
 {% block content %}
@@ -171,6 +171,7 @@
               <p class="login-error" id="visc-form-error" hidden></p>
               <p class="visc-form-result" id="visc-form-result" hidden></p>
               <button class="btn accent visc-submit" id="visc-submit" type="submit">선택한 배합 기록에 점도 등록</button>
+              <button class="btn visc-skip" id="visc-skip-btn" type="button" hidden>측정 불가로 기록</button>
             </form>
           </div>
         </section>
@@ -415,6 +416,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260814e"></script>
-    <script src="/static/js/viscosity.js?v=20260814e"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260814f"></script>
+    <script src="/static/js/viscosity.js?v=20260814f"></script>
 {% endblock %}

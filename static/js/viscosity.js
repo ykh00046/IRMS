@@ -836,6 +836,20 @@
     cell.className = "visc-manage-cell";
     const reading = record.registered ? findReadingByLot(record.product_lot) : null;
     if (!reading) {
+      // 측정 불가 기록의 되돌리기(책임자) — 잘못 눌린 불가를 취소해 알림을 재개.
+      if (record.skipped) {
+        const undo = document.createElement("button");
+        undo.className = "visc-inc-btn";
+        undo.type = "button";
+        undo.textContent = "불가 취소";
+        undo.addEventListener("click", (event) => {
+          event.stopPropagation();
+          unskipRecord(record.id, record.product_lot);
+        });
+        cell.appendChild(undo);
+        row.appendChild(cell);
+        return;
+      }
       cell.className = "visc-manage-cell muted";
       cell.textContent = "-";
       row.appendChild(cell);
@@ -929,9 +943,62 @@
     }
   }
 
+  // 측정 불가 기록(현장 누구나) — 시료가 없어 못 잰 배합을 사유와 함께 종결.
+  // 등록·알림 대기 목록에서 빠지고, 되돌리기는 책임자만(불가 취소 버튼).
+  async function skipRecord(recordId, lotNo) {
+    const reason = window.prompt(
+      `LOT ${lotNo} 를 '측정 불가'로 기록합니다.\n`
+        + "이후 이 배합은 점도 알림·미등록 집계에서 빠집니다.\n"
+        + "사유를 입력하세요 (예: 시료 없음 / 출하 완료 / 장비 문제).",
+      "",
+    );
+    if (reason === null) return;
+    if (String(reason).trim().length < 2) {
+      notify("측정 불가 사유를 입력하세요.", "error");
+      return;
+    }
+    try {
+      await request(`/viscosity/blend-records/${recordId}/skip`, {
+        method: "POST",
+        body: { reason: String(reason).trim() },
+      });
+      notify(`${lotNo} 를 측정 불가로 기록했습니다.`, "success");
+      await loadProduct(state.currentId);
+    } catch (error) {
+      notify(`측정 불가 기록 실패: ${error.message || error}`, "error");
+    }
+  }
+
+  async function unskipRecord(recordId, lotNo) {
+    if (!window.confirm(`LOT ${lotNo} 의 '측정 불가' 기록을 취소할까요?\n취소하면 다시 미등록으로 돌아가 점도 알림 대상이 됩니다.`)) return;
+    try {
+      await request(`/viscosity/blend-records/${recordId}/skip`, { method: "DELETE" });
+      notify(`${lotNo} 의 측정 불가 기록을 취소했습니다.`, "success");
+      await loadProduct(state.currentId);
+    } catch (error) {
+      notify(`불가 취소 실패: ${error.message || error}`, "error");
+    }
+  }
+
   // 상태 열 — 행별 판정을 별도 열로 상시 표시(값 옆 배지는 수십 행에서 안 보임 — 사용자 요청).
   function appendStatusCell(row, record) {
     const cell = document.createElement("td");
+    // 측정 불가(2026-08-14) — '못 잰 것'은 미등록(대기)이 아니라 종결된 결과다.
+    if (!record.registered && record.skipped) {
+      const badge = document.createElement("span");
+      badge.className = "visc-status excluded";
+      badge.textContent = "측정 불가";
+      badge.title = record.skip_reason ? `사유: ${record.skip_reason}` : "";
+      cell.appendChild(badge);
+      if (record.skip_reason) {
+        const note = document.createElement("span");
+        note.className = "visc-exclude-reason muted small";
+        note.textContent = record.skip_reason;
+        cell.appendChild(note);
+      }
+      row.appendChild(cell);
+      return;
+    }
     if (!record.registered) {
       cell.className = "muted";
       cell.textContent = "미등록";
@@ -1009,15 +1076,30 @@
   function renderSelectedBlend() {
     const box = $("visc-selected-row");
     const record = selectedRecord();
+    const skipBtn = $("visc-skip-btn");
     if (!record) {
       box.textContent = "배합 기록 표에서 미등록 행을 선택하세요.";
       setSubmitEnabled(false);
+      if (skipBtn) skipBtn.hidden = true;
+      return;
+    }
+    if (!record.registered && record.skipped) {
+      box.textContent = `${record.product_lot} · 측정 불가 기록됨${record.skip_reason ? ` (${record.skip_reason})` : ""}`;
+      setSubmitEnabled(false);
+      if (skipBtn) skipBtn.hidden = true;
       return;
     }
     box.textContent = record.registered
       ? `${record.product_lot} · 점도 ${fmt(record.viscosity)} 등록됨`
       : `${record.product_lot} · ${record.work_date || "-"} · ${record.worker || "-"} 선택`;
     setSubmitEnabled(!record.registered);
+    // 측정 불가 버튼 — 미등록·미스킵 행을 골랐을 때만 보인다.
+    if (skipBtn) {
+      skipBtn.hidden = Boolean(record.registered);
+      skipBtn.onclick = record.registered
+        ? null
+        : () => skipRecord(record.id, record.product_lot);
+    }
   }
 
   async function selectBlendRecord(recordId, options) {
