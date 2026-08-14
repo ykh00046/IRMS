@@ -49,6 +49,10 @@
           />
         </div>
 
+        {# 자동 로그아웃(?reason=idle)으로 되돌아온 경우의 안내. 이유를 안 적으면
+           방금까지 보던 화면이 왜 로그인으로 돌아왔는지 알 수 없다(2026-08-14 검토 6번). #}
+        <p id="att-login-notice" class="login-note" hidden></p>
+
         <p id="att-login-error" class="login-error" hidden></p>
 
         <button id="att-login-submit" type="submit" class="btn accent login-submit">로그인</button>
@@ -70,6 +74,6 @@
     <script src="/static/js/common/ui.js?v=20260726a"></script>
     <script src="/static/js/common/audio.js?v=20260707b"></script>
     <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance_login.js?v=20260624a"></script>
+    <script src="/static/js/attendance_login.js?v=20260814a"></script>
   </body>
 </html>
