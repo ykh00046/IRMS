@@ -119,7 +119,10 @@
             {% if current_user and current_user.id %}
             <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
             {% else %}
-            <a href="/management/login" class="btn compact accent">책임자 로그인</a>
+            {# 로그인 후 보던 화면으로 돌아온다 — 종전에는 어디서 눌러도 레시피
+               관리로 떨어져, 점도/자재 화면에서 로그인하면 다시 찾아 들어가야
+               했다(현장 지적 2026-08-14). 쿼리까지 보존(예: /status 필터). #}
+            <a href="/management/login?next={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) | urlencode }}" class="btn compact accent">책임자 로그인</a>
             {% endif %}
           </div>
         </header>
