@@ -868,6 +868,18 @@
       });
       cell.appendChild(exc);
     }
+    // 값 정정 — 오입력을 삭제+재등록 없이 바로 고친다(2026-08-14 현장 요청).
+    // 원래 값·새 값·사유가 감사 로그에 남는다(서버 PUT). 삭제보다 앞에 둔다 —
+    // 오입력의 정답은 대부분 삭제가 아니라 정정이다.
+    const fix = document.createElement("button");
+    fix.className = "visc-fix-btn";
+    fix.type = "button";
+    fix.textContent = "값 수정";
+    fix.addEventListener("click", (event) => {
+      event.stopPropagation();
+      correctReading(reading.id, reading.lot_no, reading.viscosity);
+    });
+    cell.appendChild(fix);
     const del = document.createElement("button");
     del.className = "visc-del-btn";
     del.type = "button";
@@ -878,6 +890,43 @@
     });
     cell.appendChild(del);
     row.appendChild(cell);
+  }
+
+  // 측정값 정정(책임자) — 새 값과 사유를 받아 서버에 PUT. prompt 2회로 충분한
+  // 드문 관리 동작이라 모달을 새로 만들지 않는다(삭제 confirm 과 같은 급).
+  async function correctReading(readingId, lotNo, currentValue) {
+    const raw = window.prompt(
+      `LOT ${lotNo} 의 점도값을 정정합니다.\n현재 값: ${fmt(currentValue)}\n새 값을 입력하세요.`,
+      String(currentValue ?? ""),
+    );
+    if (raw === null) return;
+    const value = Number(String(raw).trim());
+    if (!Number.isFinite(value) || value <= 0) {
+      notify("점도값을 숫자로 입력하세요.", "error");
+      return;
+    }
+    if (value === Number(currentValue)) {
+      notify("값이 그대로입니다 — 변경하지 않았습니다.", "warn");
+      return;
+    }
+    const reason = window.prompt(
+      "정정 사유를 입력하세요 (감사 기록에 남습니다).", "입력 오타 정정",
+    );
+    if (reason === null) return;
+    if (String(reason).trim().length < 2) {
+      notify("정정 사유를 입력하세요.", "error");
+      return;
+    }
+    try {
+      await request(`/viscosity/readings/${readingId}`, {
+        method: "PUT",
+        body: { viscosity: value, reason: String(reason).trim() },
+      });
+      notify(`점도값을 ${fmt(currentValue)} → ${fmt(value)} 로 정정했습니다.`, "success");
+      await loadProduct(state.currentId);
+    } catch (error) {
+      notify(`정정 실패: ${error.message || error}`, "error");
+    }
   }
 
   // 상태 열 — 행별 판정을 별도 열로 상시 표시(값 옆 배지는 수십 행에서 안 보임 — 사용자 요청).

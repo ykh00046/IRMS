@@ -277,3 +277,87 @@ def test_analyze_response_carries_pb_link_summary():
     assert link["source_exists"] is True
     assert link["readings_with_lot"] >= 1
     assert link["matched"] >= 1
+
+
+# ── 6. 측정값 정정(책임자) — 오입력을 삭제+재등록 없이 고친다 ──────────────
+
+
+def test_reading_correction_updates_value_and_leaves_audit():
+    from src.db import get_connection
+
+    client = _client()
+    _login_admin(client)
+    prod = "VRG" + uuid.uuid4().hex[:5].upper()
+    _seed_recipe(client, prod)
+    pid = _make_product(client, prod)
+    rid = _make_blend(client, prod, "2026-08-13", [("PB", "26081301"), ("MEK", "M6")])
+    reg = client.post(
+        f"/api/blend/records/{rid}/viscosity",
+        json={"viscosity": 4000.0, "product_id": pid},   # 0 하나 더 친 오입력
+        headers=_csrf(client),
+    )
+    assert reg.status_code == 200, reg.text
+    detail = client.get(f"/api/viscosity/products/{pid}").json()
+    reading = next(r for r in detail["readings"] if r["viscosity"] == 4000.0)
+
+    res = client.put(
+        f"/api/viscosity/readings/{reading['id']}",
+        json={"viscosity": 400.0, "reason": "입력 오타 정정"},
+        headers=_csrf(client),
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"status": "ok", "old": 4000.0, "new": 400.0}
+
+    detail = client.get(f"/api/viscosity/products/{pid}").json()
+    values = [r["viscosity"] for r in detail["readings"]]
+    assert 400.0 in values and 4000.0 not in values
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action = 'viscosity_reading_corrected' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    import json as _json
+
+    logged = _json.loads(row["details_json"])
+    assert logged["old"] == 4000.0
+    assert logged["new"] == 400.0
+    assert logged["reason"] == "입력 오타 정정"
+
+
+def test_reading_correction_validates_and_requires_manager():
+    client = _client()
+    _login_admin(client)
+    prod = "VRH" + uuid.uuid4().hex[:5].upper()
+    _seed_recipe(client, prod)
+    pid = _make_product(client, prod)
+    rid = _make_blend(client, prod, "2026-08-13", [("PB", "26081302"), ("MEK", "M7")])
+    client.post(
+        f"/api/blend/records/{rid}/viscosity",
+        json={"viscosity": 390.0, "product_id": pid},
+        headers=_csrf(client),
+    )
+    detail = client.get(f"/api/viscosity/products/{pid}").json()
+    reading_id = detail["readings"][0]["id"]
+
+    assert client.put(
+        f"/api/viscosity/readings/{reading_id}",
+        json={"viscosity": "abc", "reason": "정정"},
+        headers=_csrf(client),
+    ).status_code == 400
+    assert client.put(
+        f"/api/viscosity/readings/{reading_id}",
+        json={"viscosity": 380.0, "reason": ""},
+        headers=_csrf(client),
+    ).status_code == 400
+
+    anon = _client()
+    anon.get("/api/viscosity/products")
+    res = anon.put(
+        f"/api/viscosity/readings/{reading_id}",
+        json={"viscosity": 380.0, "reason": "정정"},
+        headers=_csrf(anon),
+    )
+    assert res.status_code in (401, 403), res.text

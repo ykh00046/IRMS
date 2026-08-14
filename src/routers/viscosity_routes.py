@@ -402,6 +402,57 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         connection.commit()
         return viscosity_service.get_product(connection, product_id)
 
+    @mgr_router.put("/viscosity/readings/{reading_id}")
+    def viscosity_update_reading(
+        reading_id: int,
+        body: dict[str, Any],
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """측정값 정정(책임자 전용) — 오입력을 삭제+재등록 없이 바로 고친다.
+
+        현장에서 점도를 잘못 타이핑하는 일은 흔한데, 종전에는 삭제 후 배합 기록을
+        다시 찾아 재등록해야 했다(2026-08-14 현장 요청). 원래 값·새 값·사유가 감사
+        로그에 남는다 — 값이 소리 없이 바뀌는 경로를 만들지 않는 것이 조건.
+        """
+        current_user = get_current_user(request, required=False)
+        try:
+            new_value = float(body.get("viscosity"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="점도값을 숫자로 입력하세요.")
+        if not (0 < new_value <= 100000):
+            raise HTTPException(status_code=400, detail="점도값 범위가 올바르지 않습니다.")
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 2:
+            raise HTTPException(status_code=400, detail="정정 사유를 입력하세요.")
+
+        row = connection.execute(
+            "SELECT id, product_id, lot_no, viscosity FROM viscosity_readings "
+            "WHERE id = ?",
+            (reading_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+        old_value = float(row["viscosity"])
+        if old_value == new_value:
+            return {"status": "ok", "old": old_value, "new": new_value}
+
+        connection.execute(
+            "UPDATE viscosity_readings SET viscosity = ? WHERE id = ?",
+            (new_value, reading_id),
+        )
+        write_audit_log(
+            connection,
+            action="viscosity_reading_corrected",
+            actor=current_user,
+            target_type="viscosity_reading",
+            target_id=str(reading_id),
+            target_label=str(row["lot_no"]),
+            details={"old": old_value, "new": new_value, "reason": reason},
+        )
+        connection.commit()
+        return {"status": "ok", "old": old_value, "new": new_value}
+
     @mgr_router.delete("/viscosity/readings/{reading_id}")
     def viscosity_delete_reading(
         reading_id: int,

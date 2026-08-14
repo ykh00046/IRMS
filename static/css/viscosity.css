@@ -544,7 +544,8 @@ body {
 
 .visc-del-btn,
 .visc-exclude-btn,
-.visc-inc-btn {
+.visc-inc-btn,
+.visc-fix-btn {
   margin-left: 12px;
   border: 0;
   background: transparent;
@@ -561,6 +562,11 @@ body {
 
 .visc-del-btn {
   color: var(--status-error);
+}
+
+/* 값 정정 — 파괴적 동작(삭제)과 색으로 구분. */
+.visc-fix-btn {
+  color: var(--brand-mid);
 }
 
 .visc-exclude-btn {
