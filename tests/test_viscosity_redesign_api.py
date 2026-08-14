@@ -327,7 +327,11 @@ def test_reading_correction_updates_value_and_leaves_audit():
     assert logged["reason"] == "입력 오타 정정"
 
 
-def test_reading_correction_validates_and_requires_manager():
+def test_reading_correction_grace_window_and_validation():
+    """정정 권한 2단계(2026-08-14 '10분 유예'): 등록 후 10분 이내=현장 누구나,
+    이후=책임자만. 값·사유 검증은 공통."""
+    from src.db import get_connection
+
     client = _client()
     _login_admin(client)
     prod = "VRH" + uuid.uuid4().hex[:5].upper()
@@ -353,11 +357,43 @@ def test_reading_correction_validates_and_requires_manager():
         headers=_csrf(client),
     ).status_code == 400
 
+    # 등록 직후(유예창 안) — 비로그인 현장도 정정 가능. 감사에 grace_window 표기.
     anon = _client()
     anon.get("/api/viscosity/products")
     res = anon.put(
         f"/api/viscosity/readings/{reading_id}",
-        json={"viscosity": 380.0, "reason": "정정"},
+        json={"viscosity": 385.0, "reason": "등록 직후 오타 정정"},
         headers=_csrf(anon),
     )
-    assert res.status_code in (401, 403), res.text
+    assert res.status_code == 200, res.text
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action = 'viscosity_reading_corrected' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    import json as _json
+
+    assert _json.loads(row["details_json"])["grace_window"] is True
+
+    # 유예창이 지나면(등록 시각을 20분 전으로 되돌림) 현장은 403 + 책임자 안내.
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE viscosity_readings SET created_at = '2026-08-13T00:00:00Z' "
+            "WHERE id = ?", (reading_id,),
+        )
+        conn.commit()
+    res = anon.put(
+        f"/api/viscosity/readings/{reading_id}",
+        json={"viscosity": 380.0, "reason": "늦은 정정"},
+        headers=_csrf(anon),
+    )
+    assert res.status_code == 403, res.text
+    assert "책임자" in res.json()["detail"]
+
+    # 책임자는 유예창과 무관하게 정정 가능.
+    res = client.put(
+        f"/api/viscosity/readings/{reading_id}",
+        json={"viscosity": 380.0, "reason": "책임자 정정"},
+        headers=_csrf(client),
+    )
+    assert res.status_code == 200, res.text

@@ -1181,18 +1181,36 @@
       result.className = "visc-form-result anomaly";
       result.textContent = `⚠ 이상 판정 — 관리 범위를 벗어났습니다. 책임자에게 알리세요.`
         + ` (점도 ${fmt(value)}${tail})${pbTail}`;
+      attachQuickFix(result, reading, lotNo, value);
       notify(result.textContent, "error");
       return;
     }
     if (status === "warn") {
       result.className = "visc-form-result warn";
       result.textContent = `⚠ 경고 구간 — 확인이 필요합니다. (점도 ${fmt(value)}${tail})${pbTail}`;
+      attachQuickFix(result, reading, lotNo, value);
       notify(result.textContent, "warn");
       return;
     }
     result.className = "visc-form-result normal";
     result.textContent = `정상 판정 — 등록했습니다. (점도 ${fmt(value)})${pbTail}`;
+    attachQuickFix(result, reading, lotNo, value);
     notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
+  }
+
+  // 등록 직후 정정 버튼 — 오타는 등록 직후 발견되는 것이 대부분이라, 그 자리에서
+  // 바로 고칠 수 있게 한다. 서버가 유예창(등록 후 10분, 2026-08-14 사용자 결정)을
+  // 판정하므로 화면은 버튼만 내면 된다(10분이 지나면 서버가 책임자 안내 403).
+  function attachQuickFix(result, reading, lotNo, value) {
+    if (!reading || !reading.id) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm visc-quickfix-btn";
+    btn.textContent = "방금 값 정정";
+    btn.title = "등록 후 10분 안에는 현장에서 바로 정정할 수 있습니다 (사유 입력 · 기록에 남음)";
+    btn.addEventListener("click", () => correctReading(reading.id, lotNo, value));
+    result.appendChild(document.createTextNode(" "));
+    result.appendChild(btn);
   }
 
   function showFormError(message) {

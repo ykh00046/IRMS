@@ -26,7 +26,7 @@ Endpoints:
 
 import io
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -63,8 +63,12 @@ def _xlsx_safe(value: Any) -> Any:
         return "'" + value
     return value
 
-from ..auth import get_current_user
+from ..auth import get_current_user, has_access_level
 from ..db import get_db, local_today_text, utc_now_text, write_audit_log
+
+# 측정값 정정 유예창 — 등록 후 이 시간 안에는 현장에서 직접 정정할 수 있다
+# (2026-08-14 사용자 결정 '10분'). 이후는 책임자만.
+CORRECTION_GRACE = timedelta(minutes=10)
 from ..services import viscosity_service
 from .models import (
     ViscosityExcludeBody,
@@ -402,20 +406,24 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         connection.commit()
         return viscosity_service.get_product(connection, product_id)
 
-    @mgr_router.put("/viscosity/readings/{reading_id}")
+    @op_router.put("/viscosity/readings/{reading_id}")
     def viscosity_update_reading(
         reading_id: int,
         body: dict[str, Any],
         request: Request,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """측정값 정정(책임자 전용) — 오입력을 삭제+재등록 없이 바로 고친다.
+        """측정값 정정 — 오입력을 삭제+재등록 없이 바로 고친다.
 
-        현장에서 점도를 잘못 타이핑하는 일은 흔한데, 종전에는 삭제 후 배합 기록을
-        다시 찾아 재등록해야 했다(2026-08-14 현장 요청). 원래 값·새 값·사유가 감사
-        로그에 남는다 — 값이 소리 없이 바뀌는 경로를 만들지 않는 것이 조건.
+        권한 2단계(2026-08-14 사용자 결정 '10분 유예'):
+          · 등록 후 10분 이내 — 현장 누구나(오타는 등록 직후 발견되는 것이 대부분이라
+            그때마다 책임자를 부르는 비용이 통제 효과보다 크다)
+          · 그 이후 — 책임자만(시간이 지난 값 변경은 오타 정정이 아니라 기록 변경)
+        어느 경로든 원래 값·새 값·사유가 감사 로그에 남는다 — 값이 소리 없이
+        바뀌는 경로는 없다.
         """
         current_user = get_current_user(request, required=False)
+        is_manager = bool(current_user) and has_access_level(current_user, "manager")
         try:
             new_value = float(body.get("viscosity"))
         except (TypeError, ValueError):
@@ -427,12 +435,33 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             raise HTTPException(status_code=400, detail="정정 사유를 입력하세요.")
 
         row = connection.execute(
-            "SELECT id, product_id, lot_no, viscosity FROM viscosity_readings "
-            "WHERE id = ?",
+            "SELECT id, product_id, lot_no, viscosity, created_at "
+            "FROM viscosity_readings WHERE id = ?",
             (reading_id,),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+
+        within_grace = False
+        if not is_manager:
+            created_raw = str(row["created_at"] or "")
+            try:
+                created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                age = datetime.now(timezone.utc) - created
+                within_grace = timedelta(0) <= age <= CORRECTION_GRACE
+            except ValueError:
+                within_grace = False
+            if not within_grace:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "정정 유예 시간(등록 후 10분)이 지났습니다 — "
+                        "책임자 로그인 후 정정하세요."
+                    ),
+                )
+
         old_value = float(row["viscosity"])
         if old_value == new_value:
             return {"status": "ok", "old": old_value, "new": new_value}
@@ -448,7 +477,13 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             target_type="viscosity_reading",
             target_id=str(reading_id),
             target_label=str(row["lot_no"]),
-            details={"old": old_value, "new": new_value, "reason": reason},
+            details={
+                "old": old_value,
+                "new": new_value,
+                "reason": reason,
+                # 어느 경로였는지 — 유예창(현장) 정정인지 책임자 정정인지.
+                "grace_window": within_grace,
+            },
         )
         connection.commit()
         return {"status": "ok", "old": old_value, "new": new_value}

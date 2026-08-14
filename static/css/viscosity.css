@@ -569,6 +569,12 @@ body {
   color: var(--brand-mid);
 }
 
+/* 등록 직후 '방금 값 정정' — 판정 문장 끝에 붙는 작은 버튼(유예창 10분). */
+.visc-quickfix-btn {
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
 .visc-exclude-btn {
   color: var(--text-secondary);
 }
