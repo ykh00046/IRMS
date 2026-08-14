@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 APP_NAME = "IRMS-Notice"
@@ -48,6 +48,9 @@ class Config:
     viscosity_alerts_enabled: bool = True
     rescale_alerts_enabled: bool = True
     scale_enabled: bool = False
+    # 알림 시각(24시간, 근태·점도 공통 슬롯). 야간 근무 대응으로 21시·01시 포함이
+    # 기본(2026-08-14). 설정 창에서 바꿀 수 있고 재빌드가 필요 없다.
+    alert_hours: list = field(default_factory=lambda: [1, 9, 13, 16, 21])
 
     @classmethod
     def load(cls) -> "Config":
@@ -86,6 +89,22 @@ class Config:
         if cleaned.get("server_url") == _OLD_DEFAULT_SERVER_URL:
             cleaned["server_url"] = DEFAULT_SERVER_URL
             migrated_server = True
+
+        # 알림 시각 정규화 — 손으로 고친 설정 파일의 이상값(문자·범위 밖·중복)을
+        # 조용히 걸러 기본으로 되돌린다(스케줄 죽는 것 방지).
+        if "alert_hours" in cleaned:
+            hours: set[int] = set()
+            for h in cleaned.get("alert_hours") or []:
+                try:
+                    value = int(h)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= value <= 23:
+                    hours.add(value)
+            if hours:
+                cleaned["alert_hours"] = sorted(hours)
+            else:
+                cleaned.pop("alert_hours")
 
         config = cls(**cleaned)
         if migrated_server:

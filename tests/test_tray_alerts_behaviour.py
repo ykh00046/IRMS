@@ -32,6 +32,9 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(poller._interval, 60 * 60)
 
     def test_schedule_slot_keys_follow_9_13_16(self) -> None:
+        import tray_client.src.schedule as _sched
+        _sched.set_alert_hours((9, 13, 16))  # 이 테스트는 주간 3슬롯 구성 기준
+        self.addCleanup(_sched.set_alert_hours, _sched.SCHEDULED_ALERT_HOURS)
         poller = AttendanceAlertPoller(
             config=Config(),
             present_alert=lambda _payload: None,
@@ -81,6 +84,9 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(len(presented), 2)
 
     def test_stale_slot_on_startup_marks_recent_slot_as_processed(self) -> None:
+        import tray_client.src.schedule as _sched
+        _sched.set_alert_hours((9, 13, 16))  # 이 테스트는 주간 3슬롯 구성 기준
+        self.addCleanup(_sched.set_alert_hours, _sched.SCHEDULED_ALERT_HOURS)
         poller = AttendanceAlertPoller(
             config=Config(),
             present_alert=lambda _payload: None,
@@ -259,19 +265,48 @@ class ViscosityAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(len(presented), 2)
 
-    def test_viscosity_uses_9_13_16_slots(self) -> None:
+    def test_viscosity_uses_configured_slots(self) -> None:
         poller = ViscosityAlertPoller(
             config=Config(), present_alert=lambda _p: None, is_enabled_getter=lambda: True,
         )
-        # 근태와 동일한 슬롯 로직(schedule 모듈)을 쓰는지 확인
+        # 근태와 동일한 슬롯 로직(schedule 모듈)을 쓰는지 확인 — 주간 3슬롯 구성 기준.
         import tray_client.src.schedule as sched
-        self.assertIsNone(sched.current_slot_key(dt.datetime(2026, 7, 1, 8, 59)))
-        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 9, 0)), "2026-07-01T09")
-        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 14, 30)), "2026-07-01T13")
-        self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 16, 5)), "2026-07-01T16")
-        # 재시작 유예: 09:35(35분 경과)면 그 슬롯은 처리된 것으로 → 다시 안 뜸
-        self.assertEqual(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 35)), "2026-07-01T09")
-        self.assertIsNone(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 25)))
+        sched.set_alert_hours((9, 13, 16))
+        try:
+            self.assertIsNone(sched.current_slot_key(dt.datetime(2026, 7, 1, 8, 59)))
+            self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 9, 0)), "2026-07-01T09")
+            self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 14, 30)), "2026-07-01T13")
+            self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 16, 5)), "2026-07-01T16")
+            # 재시작 유예: 09:35(35분 경과)면 그 슬롯은 처리된 것으로 → 다시 안 뜸
+            self.assertEqual(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 35)), "2026-07-01T09")
+            self.assertIsNone(sched.stale_slot_key_on_startup(dt.datetime(2026, 7, 1, 9, 25)))
+        finally:
+            sched.set_alert_hours(sched.SCHEDULED_ALERT_HOURS)
+
+    def test_night_slots_default_and_config_normalization(self) -> None:
+        """야간 슬롯(21시·01시) 도입(2026-08-14) — 기본값·자정 경계·설정 정규화."""
+        import tray_client.src.schedule as sched
+
+        # 기본값에 야간 슬롯 포함, 오름차순.
+        self.assertEqual(sched.SCHEDULED_ALERT_HOURS, (1, 9, 13, 16, 21))
+        sched.set_alert_hours(sched.SCHEDULED_ALERT_HOURS)
+        try:
+            # 자정 경계: 00:30 은 아직 첫 슬롯(01시) 전 → 슬롯 없음. 01:10 → T01.
+            self.assertIsNone(sched.current_slot_key(dt.datetime(2026, 7, 2, 0, 30)))
+            self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 2, 1, 10)), "2026-07-02T01")
+            # 21시 슬롯. 그리고 22시의 다음 슬롯은 '내일 01시'.
+            self.assertEqual(sched.current_slot_key(dt.datetime(2026, 7, 1, 21, 5)), "2026-07-01T21")
+            secs = sched.seconds_until_next_slot(dt.datetime(2026, 7, 1, 22, 0))
+            self.assertEqual(secs, 3 * 3600)
+            # 정규화: 문자·범위 밖·중복은 걸러지고 정렬. 전부 무효면 기본으로.
+            self.assertEqual(sched.normalize_hours(["21", 1, 1, 99, "x"]), (1, 21))
+            self.assertEqual(sched.normalize_hours([]), sched.SCHEDULED_ALERT_HOURS)
+        finally:
+            sched.set_alert_hours(sched.SCHEDULED_ALERT_HOURS)
+
+    def test_config_carries_alert_hours_default(self) -> None:
+        cfg = Config()
+        self.assertEqual(list(cfg.alert_hours), [1, 9, 13, 16, 21])
 
 
 class TrayNavigationTests(unittest.TestCase):

@@ -39,6 +39,7 @@ else:
     _PYSTRAY_IMPORT_ERROR = None
 
 from . import autostart
+from . import schedule
 from .attendance_alerts import AttendanceAlertPoller, today_iso
 from .attendance_popup import (
     FEEDBACK_ALERTED,
@@ -120,6 +121,8 @@ class TrayApp:
     def __init__(self) -> None:
         self.logger = setup_logger()
         self.config = Config.load()
+        # 알림 시각을 설정에서 스케줄로 주입 — 야간 슬롯 포함(2026-08-14).
+        schedule.set_alert_hours(self.config.alert_hours)
         self._icon: pystray.Icon | None = None
         self._alert_mute_date: str | None = None
         self.alert_popup = AttendanceAlertPopupManager(
@@ -251,10 +254,14 @@ class TrayApp:
         server_url: str,
         autostart_enabled: bool,
         tray_api_token: str | None = None,
+        alert_hours: list | None = None,
         verify_server: bool = True,
     ) -> None:
         """설정 창의 '저장'에서 호출 — 값 반영·저장·저울 lifecycle·자동실행 일괄 적용."""
         self.config.attendance_alerts_enabled = bool(attendance_alerts)
+        if alert_hours is not None:
+            applied = schedule.set_alert_hours(alert_hours)
+            self.config.alert_hours = list(applied)
         self.config.viscosity_alerts_enabled = bool(viscosity_alerts)
         self.config.rescale_alerts_enabled = bool(rescale_alerts)
         cleaned_url = (server_url or "").strip()

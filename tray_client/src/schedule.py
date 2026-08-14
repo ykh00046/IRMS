@@ -1,15 +1,46 @@
 """알림 시간대(슬롯) 스케줄 — 근태·점도가 동일하게 쓰는 공용 로직.
 
-하루 정해진 시각(09/13/16시)에 슬롯당 1번만 알린다. 앱을 재시작해도 이미 30분 넘게
+하루 정해진 시각에 슬롯당 1번만 알린다. 앱을 재시작해도 이미 30분 넘게
 지난 슬롯은 다시 띄우지 않는다(켤 때마다 도로 뜨는 것 방지).
+
+시각 목록은 설정(config.alert_hours)에서 온다(2026-08-14 야간 슬롯 도입) —
+main 이 기동 시 set_alert_hours() 로 주입하고, 설정 저장 시에도 갱신한다.
+재빌드 없이 설정 창에서 시간대를 바꿀 수 있게 하기 위함이다.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
 
-# 알림 시각(24시간). 근태·점도 공통.
-SCHEDULED_ALERT_HOURS = (9, 13, 16)
+# 기본 알림 시각(24시간). 근태·점도 공통 — 주간 3회 + 야간 2회(21시·01시,
+# 2026-08-14 야간 근무 대응). 실제 사용 값은 set_alert_hours 로 주입된 설정이다.
+SCHEDULED_ALERT_HOURS = (1, 9, 13, 16, 21)
+
+_alert_hours: tuple[int, ...] = SCHEDULED_ALERT_HOURS
+
+
+def normalize_hours(hours) -> tuple[int, ...]:
+    """시각 목록 정규화 — 0~23 정수만, 중복 제거, 오름차순. 유효값이 없으면 기본."""
+    cleaned: set[int] = set()
+    for h in hours or ():
+        try:
+            value = int(h)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= value <= 23:
+            cleaned.add(value)
+    return tuple(sorted(cleaned)) or SCHEDULED_ALERT_HOURS
+
+
+def set_alert_hours(hours) -> tuple[int, ...]:
+    """설정에서 읽은 시각을 스케줄에 반영(기동 시·설정 저장 시). 반영값 반환."""
+    global _alert_hours
+    _alert_hours = normalize_hours(hours)
+    return _alert_hours
+
+
+def alert_hours() -> tuple[int, ...]:
+    return _alert_hours
 # 슬롯 시작 후 이 시간이 지나 앱이 켜지면 그 슬롯은 지난 것으로 보고 건너뛴다.
 SLOT_STALE_GRACE_MINUTES = 30
 
@@ -17,7 +48,7 @@ SLOT_STALE_GRACE_MINUTES = 30
 def current_slot_key(now: _dt.datetime) -> str | None:
     """현재 시각 기준 '지금 알려야 할' 가장 최근 슬롯 키(YYYY-MM-DDTHH). 없으면 None."""
     due_hour: int | None = None
-    for hour in SCHEDULED_ALERT_HOURS:
+    for hour in alert_hours():
         if now.hour >= hour:
             due_hour = hour
         else:
@@ -29,12 +60,12 @@ def current_slot_key(now: _dt.datetime) -> str | None:
 
 def seconds_until_next_slot(now: _dt.datetime) -> int:
     """다음 슬롯까지 남은 초(오늘 남은 슬롯이 없으면 내일 첫 슬롯까지)."""
-    for hour in SCHEDULED_ALERT_HOURS:
+    for hour in alert_hours():
         scheduled = _dt.datetime.combine(now.date(), _dt.time(hour=hour))
         if scheduled > now:
             return max(int((scheduled - now).total_seconds()), 1)
     tomorrow = now.date() + _dt.timedelta(days=1)
-    scheduled = _dt.datetime.combine(tomorrow, _dt.time(hour=SCHEDULED_ALERT_HOURS[0]))
+    scheduled = _dt.datetime.combine(tomorrow, _dt.time(hour=alert_hours()[0]))
     return max(int((scheduled - now).total_seconds()), 1)
 
 

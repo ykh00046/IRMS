@@ -81,6 +81,18 @@ class SettingsWindow:
         self._check(pad, "근태 알림 받기", self._att_var)
         self._check(pad, "점도 알림 받기", self._vis_var)
         self._check(pad, "증량 확인 알림 받기", self._rescale_var)
+        # 알림 시각 — 쉼표로 구분한 24시간제 시(時). 야간 근무 대응(2026-08-14).
+        # 잘못 입력하면 저장 시 유효값만 남긴다(전부 무효면 기존 값 유지).
+        self._hours_var = tk.StringVar(
+            value=", ".join(str(h) for h in (cfg.alert_hours or []))
+        )
+        tk.Label(
+            pad, text="알림 시각 (24시간제, 쉼표 구분 - 예: 1, 9, 13, 16, 21)",
+            bg=_BG, fg=_MUTED, font=(_FONT, 9), anchor="w",
+        ).pack(fill="x", anchor="w")
+        tk.Entry(pad, textvariable=self._hours_var, font=(_FONT, 10), width=36).pack(
+            fill="x", anchor="w", pady=(2, 8)
+        )
 
         # ── 저울 연동 ──
         self._section(pad, "저울 연동")
@@ -183,11 +195,28 @@ class SettingsWindow:
                 server_url=str(self._server_var.get()),
                 autostart_enabled=bool(self._autostart_var.get()),
                 tray_api_token=str(self._token_var.get()),
+                alert_hours=self._parse_hours(str(self._hours_var.get())),
             )
             self._refresh_status()
         except Exception as exc:  # noqa: BLE001
             logger.warning("settings save failed: %s", exc)
         self._close()
+
+    @staticmethod
+    def _parse_hours(raw: str) -> list | None:
+        """"1, 9, 13" 형태 입력 → 시각 리스트. 유효값이 하나도 없으면 None(기존 유지)."""
+        hours = []
+        for part in (raw or "").replace(";", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                value = int(part)
+            except ValueError:
+                continue
+            if 0 <= value <= 23:
+                hours.append(value)
+        return sorted(set(hours)) or None
 
     def _close(self) -> None:
         if self._win is not None:
