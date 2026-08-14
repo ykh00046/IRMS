@@ -565,24 +565,22 @@ SOURCE_PB_CODE = "PB"
 def detect_source_pb_lot(details: list[dict[str, Any]]) -> tuple[str | None, str]:
     """배합 상세에서 '사용한 PB' 자재 LOT 을 찾는다. 반환: (lot, method).
 
-    method: 'matched'   — 자재명이 PB(소스 반제품 코드)와 일치하는 행에서 찾음
-            'first_row' — PB 행이 없어 첫 행 폴백(과거 동작 — 자재 구성이 다른
-                          레시피에서는 엉뚱한 자재일 수 있으므로 화면이 표시·수정
-                          기회를 준다)
-            'none'      — 상세가 없거나 LOT 이 비어 있음
-    종전에는 무조건 첫 행을 PB 로 가정해, 레시피에서 PB 가 첫 계량 자재가 아니면
-    엉뚱한 자재 LOT 이 '사용한 PB' 로 박혔다(2026-08-13 검토).
+    method: 'matched' — 자재명/코드가 PB(소스 반제품 코드)와 일치하는 행에서 찾음
+            'none'    — 레시피에 PB 자재가 없음(= 이 배합은 PB 연계 대상이 아님)
+
+    PB 행이 없으면 **연계 없음이 정답**이다. 첫 계량 자재 폴백(2026-08-13 도입)은
+    PB 를 쓰지 않는 대부분의 품목 — 심지어 PB 자신 — 에까지 "첫 자재로 추정"
+    경고를 띄우는 소음이 됐다(2026-08-14 현장 지적). 자재명은 이름 하나 원칙으로
+    정본화돼 있어 PB 행은 이름 매칭으로 충분하다. 화면 보정(material_lot 수동
+    입력, method='manual')은 등록 API 에서 계속 지원한다.
     """
-    if not details:
-        return None, "none"
-    for d in details:
+    for d in details or []:
         name = str(d.get("material_name") or "").strip().upper()
         code = str(d.get("material_code") or "").strip().upper()
         if name == SOURCE_PB_CODE or code == SOURCE_PB_CODE:
             lot = str(d.get("material_lot") or "").strip()
             return (lot or None), ("matched" if lot else "none")
-    lot = str(details[0].get("material_lot") or "").strip()
-    return (lot or None), ("first_row" if lot else "none")
+    return None, "none"
 
 
 def _lot_digits(lot: Any) -> str:

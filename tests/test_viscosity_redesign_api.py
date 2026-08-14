@@ -189,18 +189,20 @@ def test_used_pb_detected_by_material_name_not_first_row():
     assert reading["material_lot"] == "26081201"
 
 
-def test_used_pb_manual_override_and_first_row_fallback():
+def test_used_pb_none_for_recipes_without_pb_and_manual_override():
     client = _client()
     _login_admin(client)
     prod = "VRC" + uuid.uuid4().hex[:5].upper()
-    # PB 행이 없는 레시피 — 폴백(first_row)이 화면에 표시될 신호를 준다.
+    # PB 행이 없는 레시피 — 연계 대상이 아니므로 감지 결과도 '없음'이어야 한다.
+    # (종전의 첫 계량 자재 폴백은 PB 미사용 품목 전체 — PB 자신까지 — 에 "추정"
+    # 경고를 띄우는 소음이었다, 2026-08-14 현장 지적.)
     _seed_recipe(client, prod, materials=("MEK", "TOL"))
     pid = _make_product(client, prod)
     rid = _make_blend(client, prod, "2026-08-12", [("MEK", "MK002"), ("TOL", "TL001")])
 
     preview = client.get(f"/api/viscosity/blend-records/{rid}/used-pb").json()
-    assert preview["method"] == "first_row"
-    assert preview["lot"] == "MK002"
+    assert preview["method"] == "none"
+    assert preview["lot"] is None
 
     # 화면이 보정한 값을 보내면 그대로 저장된다(method=manual).
     reg = client.post(

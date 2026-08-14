@@ -1036,8 +1036,9 @@
   }
 
   // ── 사용한 PB ────────────────────────────────────────────────────────
-  // 등록 전에 서버가 무엇을 PB 로 감지했는지 보여준다. matched 면 조용히 한 줄,
-  // first_row(자재명 PB 행을 못 찾아 첫 계량 자재로 추정)면 경고 톤 + 수정 입력.
+  // 등록 전에 서버가 무엇을 PB 로 감지했는지 보여준다 — 단 **레시피에 PB 자재가
+  // 있는 배합에만**. PB 를 안 쓰는 품목(대부분)과 PB 자신에게는 블록 자체가 뜨지
+  // 않는다(2026-08-14 현장 지적: 추정 경고가 전 품목에 떠 소음이었다).
   // 종전에는 이 감지가 화면 밖에서 조용히 저장돼, 엉뚱한 자재 LOT 이 '사용한 PB'
   // 로 박혀도 아무도 몰랐다(현장 검토 2번).
   function clearUsedPb() {
@@ -1073,29 +1074,16 @@
     const input = $("visc-usedpb-lot");
     if (!box || !text) return;
     const info = state.usedPb;
-    if (!info) { clearUsedPb(); return; }
+    // PB 자재가 없는 레시피(method !== 'matched')는 블록을 아예 내지 않는다 —
+    // 연계 대상이 아닌 품목에 추정·안내를 띄우는 것 자체가 소음이다.
+    if (!info || info.method !== "matched") { clearUsedPb(); return; }
     box.hidden = false;
     const lot = info.lot || "";
-    if (info.method === "matched") {
-      box.className = "visc-usedpb";
-      const visc = info.pb_viscosity != null ? ` · 점도 ${fmt(info.pb_viscosity)}` : " · 점도 미등록";
-      text.textContent = `사용한 PB: ${lot}${visc}`;
-      if (fix) fix.hidden = true;
-      if (input) input.value = "";
-      return;
-    }
-    if (info.method === "first_row") {
-      box.className = "visc-usedpb is-uncertain";
-      text.textContent = lot
-        ? `PB 자재를 찾지 못해 첫 계량 자재(${lot})로 추정했습니다 — 확인하세요.`
-        : "사용한 PB를 찾지 못했습니다 — 아래에 직접 입력하세요.";
-      if (fix) fix.hidden = false;
-      if (input && !input.value) input.value = lot;
-      return;
-    }
-    box.className = "visc-usedpb is-uncertain";
-    text.textContent = "이 배합 기록에는 사용한 PB LOT 이 없습니다 — 필요하면 직접 입력하세요.";
-    if (fix) fix.hidden = false;
+    box.className = "visc-usedpb";
+    const visc = info.pb_viscosity != null ? ` · 점도 ${fmt(info.pb_viscosity)}` : " · 점도 미등록";
+    text.textContent = `사용한 PB: ${lot}${visc}`;
+    if (fix) fix.hidden = true;
+    if (input) input.value = "";
   }
 
   // 배합 실적 연계 측정(list_readings_for_blend)엔 판정(status)이 없다. 재조회한 분석
