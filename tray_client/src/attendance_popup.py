@@ -132,38 +132,42 @@ def _privacy_safe_lines(items: list[dict[str, Any]], total: int) -> list[str]:
 # 공용 PC 팝업에는 개인의 지각·조퇴 사정을 적지 않는다(2026-08-19 사용자 결정) —
 # 이름과 함께 뜨는 창이라 지나가는 사람도 본다. 트레이는 "처리할 게 있다"는 신호만
 # 주고, 원문 사유·해설은 책임자 로그인이 필요한 근태 화면이 보여준다.
-_SENSITIVE_ISSUE_WORDS = ("지각", "조퇴", "외출")
+# 내용은 두 가지뿐: 타각이 빠진 것(출/퇴근 미타각)과 그 밖의 전부(근태 이상).
+# 출근/퇴근 어느 쪽인지도 여기서는 가르지 않는다(같은 결정 — 담당자가 근태 화면에서 본다).
+_MISSING_PUNCH_CONTENT = "출/퇴근 미타각"
 _GENERIC_CONTENT = "근태 이상"
+_MISSING_PUNCH_MARKERS = ("미타각", "출근 누락", "퇴근 누락")
 
 
 def _mask_issue(text: str) -> str:
-    """지각·조퇴·외출이 드러나는 사유 문구를 일반 제목으로 바꾼다."""
+    """제목·사유 문구를 두 종류로 접는다 — 타각 누락이면 '출/퇴근 미타각', 아니면 '근태 이상'."""
     cleaned = str(text or "").strip()
     if not cleaned:
         return ""
-    if any(word in cleaned for word in _SENSITIVE_ISSUE_WORDS):
-        return _GENERIC_CONTENT
-    return cleaned
+    if any(marker in cleaned for marker in _MISSING_PUNCH_MARKERS):
+        return _MISSING_PUNCH_CONTENT
+    return _GENERIC_CONTENT
 
 
 def _detail_content(detail: dict[str, Any]) -> str:
-    """상세 한 건의 '내용' 한 칸 — 유형 제목(content)만 쓴다.
+    """상세 한 건의 '내용' 한 칸 — '출/퇴근 미타각' 또는 '근태 이상' 둘 중 하나.
 
-    서버는 유형 제목과 판정 원문 사유(extra_content)를 따로 준다(anomaly._anomaly_detail).
-    종전 팝업은 '구분(번호) / 내용 / 추가 내용' 세 칸이었는데, 번호는 설명 없는 내부
-    분류값이고 추가 내용은 제목의 반복이거나 '지각 미처리' 같은 개인 사정이었다
-    (2026-08-19 사용자 지적). 그래서 제목 한 칸으로 줄이고 원문 사유는 싣지 않는다.
-    제목 자체에 지각·조퇴가 들어가면('근태코드 누락(반차/조퇴 예상)') 일반 제목으로
-    바꾸고, 뜻이 없는 '기타'도 같은 제목으로 통일한다.
+    서버는 유형 제목(content)과 판정 원문 사유(extra_content)를 따로 준다
+    (anomaly._anomaly_detail). 종전 팝업은 '구분(번호) / 내용 / 추가 내용' 세 칸이었는데,
+    번호는 설명 없는 내부 분류값이고 추가 내용은 제목의 반복이거나 '지각 미처리' 같은
+    개인 사정이었다(2026-08-19 사용자 지적). 그래서 한 칸으로 줄이고 원문 사유는 싣지
+    않으며, 제목도 타각 누락 여부만 남긴다.
     """
-    content = str(detail.get("content") or "").strip()
-    if not content or content == "기타":
-        return _GENERIC_CONTENT
-    return _mask_issue(content)
+    # 제목과 원문 사유를 합쳐 판정 — 제목이 없거나 다른 말로 된 항목도 사유에
+    # '출근 누락/퇴근 누락'이 있으면 타각 누락으로 본다.
+    combined = " ".join(
+        str(detail.get(key) or "").strip() for key in ("content", "extra_content")
+    ).strip()
+    return _mask_issue(combined) or _GENERIC_CONTENT
 
 
 def _issues_content(issues: list[Any]) -> str:
-    """상세가 없는 항목(구서버)의 원문 사유 목록 — 민감 사유는 가리고 중복은 접는다."""
+    """상세가 없는 항목(구서버)의 원문 사유 목록 — 같은 두 종류로 접고 중복은 뺀다."""
     seen: list[str] = []
     for issue in issues:
         masked = _mask_issue(str(issue))

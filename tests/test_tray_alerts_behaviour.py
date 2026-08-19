@@ -184,30 +184,30 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         # 사유(지각/조퇴 등 개인 사정)는 공용 PC 팝업에 싣지 않는다.
         self.assertNotIn("code", payload.table_rows[0])
         self.assertNotIn("extra_content", payload.table_rows[0])
-        self.assertEqual(payload.table_rows[0]["content"], "출퇴근 미처리")
+        self.assertEqual(payload.table_rows[0]["content"], "출/퇴근 미타각")
         self.assertIn("근태 화면", payload.summary)
 
     def test_detail_content_hides_personal_reasons(self) -> None:
         _detail_content = _detail_content_for_test
-        # 제목만, 원문 사유는 버린다
-        self.assertEqual(
-            _detail_content({"content": "출/퇴근 미타각", "extra_content": "출근 누락 / 퇴근 누락"}),
-            "출/퇴근 미타각",
-        )
-        self.assertEqual(
-            _detail_content({"content": "근태 이상", "extra_content": "지각 미처리"}), "근태 이상"
-        )
-        # 제목에 지각·조퇴가 들어가도 일반 제목으로
-        self.assertEqual(
-            _detail_content(
-                {"content": "근태코드 누락(반차/조퇴 예상)", "extra_content": "조퇴 미처리"}
-            ),
-            "근태 이상",
-        )
-        # 뜻 없는 '기타'도 일반 제목으로
-        self.assertEqual(_detail_content({"content": "기타", "extra_content": "지각 미처리"}), "근태 이상")
-        for word in ("지각", "조퇴", "외출"):
-            self.assertNotIn(word, _detail_content({"content": f"근태코드 누락({word})", "extra_content": ""}))
+        # 타각 누락은 출근/퇴근 구분 없이 한 제목으로
+        for title in ("출/퇴근 미타각", "출근 미타각", "퇴근 미타각"):
+            self.assertEqual(
+                _detail_content({"content": title, "extra_content": "출근 누락"}),
+                "출/퇴근 미타각",
+            )
+        # 그 밖의 전부는 '근태 이상' — 지각/조퇴/외출·기타·근태코드 누락 모두
+        for title in (
+            "근태 이상", "기타", "근태코드 누락(반차/조퇴 예상)",
+            "근태코드 누락(반반차/조퇴 예상)", "근태코드 누락(지각)", "근태코드 누락(외출)",
+        ):
+            self.assertEqual(
+                _detail_content({"content": title, "extra_content": "지각 미처리"}),
+                "근태 이상",
+                title,
+            )
+        # 제목이 없으면 사유로 판정(구서버)
+        self.assertEqual(_detail_content({"extra_content": "퇴근 누락"}), "출/퇴근 미타각")
+        self.assertEqual(_detail_content({"extra_content": "조퇴 미처리"}), "근태 이상")
 
     def test_live_popup_payload_uses_privacy_safe_copy_without_table(self) -> None:
         payload = build_live_popup_payload(

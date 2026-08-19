@@ -3,13 +3,13 @@
 ; Build with Inno Setup 6+ after PyInstaller:
 ;   iscc build\installer.iss
 ;
-; Output: Output\IRMS-Notice-Setup-3.2.3.exe
+; Output: Output\IRMS-Notice-Setup-3.2.4.exe
 ;
 ; MyAppVersion 은 tray_client/src/version.py 의 __version__ 과 반드시 같아야 한다
 ; (tests/test_tray_installer_script.py 가 동기화를 검사한다).
 
 #define MyAppName "IRMS 현장 도우미"
-#define MyAppVersion "3.2.3"
+#define MyAppVersion "3.2.4"
 #define MyAppPublisher "IRMS"
 #define MyAppExeName "IRMS-Notice.exe"
 
