@@ -24,8 +24,26 @@ SLOT_RETRY_SECONDS = 60
 
 
 def reminder_signature(items: list[dict[str, Any]]) -> str:
-    codes = [str(item.get("code") or "").strip().upper() for item in items]
-    return "|".join(sorted(code for code in codes if code))
+    """동일 슬롯 중복 억제용 서명 — 품목 코드에 미측정 LOT 까지 포함한다.
+
+    코드만 비교하면 같은 품목에 **새 미측정 LOT 이 생긴 경우**(신규 배합)에도
+    '같은 알림'으로 억제돼 버린다. 그래서 서버가 실어 준 pending_lots 의
+    product_lot 까지 'CODE:LOT' 쌍으로 넣는다(LOT 단위 알림, 2026-08-19).
+    pending_lots 가 없는 구서버 품목은 종전대로 코드만으로 서명한다.
+    """
+    parts: list[str] = []
+    for item in items:
+        code = str(item.get("code") or "").strip().upper()
+        if not code:
+            continue
+        lots = item.get("pending_lots")
+        if isinstance(lots, list) and lots:
+            for lot in lots:
+                lot_no = str((lot or {}).get("product_lot") or "").strip()
+                parts.append(f"{code}:{lot_no}" if lot_no else code)
+        else:
+            parts.append(code)
+    return "|".join(sorted(parts))
 
 
 class ViscosityAlertPoller:

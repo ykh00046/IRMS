@@ -34,7 +34,7 @@ def _csrf(client):
 
 def _seed_recipe(client, prod, materials=("PB", "MEK")):
     """반제품 레시피 — materials 순서대로 계량 행이 생긴다(PB 위치 제어용)."""
-    lines = [f"반제품명\t" + "\t".join(materials)]
+    lines = ["반제품명\t" + "\t".join(materials)]
     lines.append(prod + "\t" + "\t".join(["50"] * len(materials)))
     res = client.post(
         "/api/recipes/import",
@@ -461,10 +461,24 @@ def test_skip_record_silences_reminder_and_unregistered_queue():
     today = date.today()
     _set_reminder_since((today - timedelta(days=5)).isoformat())
     try:
+        # 이틀 전 LOT 은 이미 측정했다 — LOT 단위 알림(2026-08-19)의 핵심 대칭:
+        # 어제 LOT 을 스킵하면 pending 이 0이므로 알림이 꺼져야 한다. 종전 '오늘 측정
+        # 없음' 규칙에서는 측정된 옛 LOT 이 배합 존재 증거로 남아 알림을 살려뒀다(버그).
+        older_rid = _make_blend(
+            client, prod, (today - timedelta(days=2)).isoformat(),
+            [("PB", "26081309"), ("MEK", "M10")],
+        )
+        reg = client.post(
+            f"/api/blend/records/{older_rid}/viscosity",
+            json={"viscosity": 401.0, "product_id": pid},
+            headers=_csrf(client),
+        )
+        assert reg.status_code == 200, reg.text
+
         yesterday = (today - timedelta(days=1)).isoformat()
         rid = _make_blend(client, prod, yesterday, [("PB", "26081310"), ("MEK", "M8")])
 
-        # 스킵 전: 미등록 1건 + 오늘 알림 대상.
+        # 스킵 전: 미등록 1건(어제 LOT — 이틀 전 LOT 은 등록됨) + 오늘 알림 대상.
         data = client.get(f"/api/viscosity/products/{pid}/blend-records").json()
         assert data["unregistered_total"] == 1
         assert data["items"][0]["skipped"] is False
@@ -530,6 +544,103 @@ def test_skip_record_silences_reminder_and_unregistered_queue():
         assert client.delete(
             f"/api/viscosity/blend-records/{rid}/skip", headers=_csrf(client)
         ).status_code == 404
+    finally:
+        _set_reminder_since(None)  # 다른 테스트의 '기준일 없음' 전제 보호
+
+
+def test_reminder_is_lot_level_pending_not_reading_today():
+    """LOT 단위 알림(2026-08-19) — '오늘 측정 없음'이 아니라 '미등록 LOT 있음'이 기준.
+
+    - 전 LOT 을 이미 등록한 제품은 오늘 측정이 없어도 조용하다(종전엔 매일 알림).
+    - 오늘 배합한 LOT 은 오늘 독촉하지 않는다(측정은 배합 다음날 규칙).
+    - 어제 배합한 미등록 LOT 이 있으면 알림 — pending_lots 가 그 LOT 을 실는다.
+    """
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+
+    client = _client()
+    _login_admin(client)
+    today = date.today()
+    # 기준일을 넉넉히 과거로 고정 — 어떤 테스트가 설정을 남겼는지와 무관하게.
+    _set_reminder_since((today - timedelta(days=30)).isoformat())
+    try:
+        def _make_reminder_product(prod):
+            _seed_recipe(client, prod)
+            pid = _make_product(client, prod)
+            upd = client.patch(
+                f"/api/viscosity/products/{pid}",
+                json={"name": prod, "remind_daily": True, "is_active": True},
+                headers=_csrf(client),
+            )
+            assert upd.status_code == 200, upd.text
+            return pid
+
+        def _due_items(target_date):
+            internal = TestClient(client.app, client=("192.168.11.108", 50000))
+            res = internal.get(
+                "/api/public/viscosity-reminders/due",
+                params={"target_date": target_date},
+            )
+            assert res.status_code == 200, res.text
+            return {item["code"]: item for item in res.json()["items"]}
+
+        # 1) 전 LOT 등록 완료 — 오늘 측정이 없어도(reading 은 배합일 기준) 조용.
+        prod_m = "VML" + uuid.uuid4().hex[:5].upper()
+        pid_m = _make_reminder_product(prod_m)
+        for offset in (2, 1):
+            rid = _make_blend(
+                client, prod_m, (today - timedelta(days=offset)).isoformat(),
+                [("PB", f"2608180{offset}"), ("MEK", f"MLM{offset}")],
+            )
+            reg = client.post(
+                f"/api/blend/records/{rid}/viscosity",
+                json={"viscosity": 395.0, "product_id": pid_m},
+                headers=_csrf(client),
+            )
+            assert reg.status_code == 200, reg.text
+        assert prod_m not in _due_items(today.isoformat())
+
+        def _blend_lot(pid, record_id):
+            records = client.get(
+                f"/api/viscosity/products/{pid}/blend-records"
+            ).json()["items"]
+            return next(it["product_lot"] for it in records if it["id"] == record_id)
+
+        # 2) 오늘 배합(미등록) — 오늘은 조용, 내일부터 알림(pending 은 그 LOT).
+        prod_t = "VMT" + uuid.uuid4().hex[:5].upper()
+        _make_reminder_product(prod_t)
+        today_rid = _make_blend(
+            client, prod_t, today.isoformat(),
+            [("PB", "26081901"), ("MEK", "MLT1")],
+        )
+        assert prod_t not in _due_items(today.isoformat())
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        item_t = _due_items(tomorrow).get(prod_t)
+        assert item_t is not None
+        assert item_t["pending_count"] == 1
+        assert item_t["pending_lots"][0]["blend_record_id"] == today_rid
+        assert item_t["pending_lots"][0]["work_date"] == today.isoformat()
+
+        # 3) 어제 배합(미등록) — 오늘 알림, pending_lots 가 어제 LOT 을 실는다.
+        prod_y = "VMY" + uuid.uuid4().hex[:5].upper()
+        pid_y = _make_reminder_product(prod_y)
+        yesterday = (today - timedelta(days=1)).isoformat()
+        y_rid = _make_blend(
+            client, prod_y, yesterday, [("PB", "26081802"), ("MEK", "MLY1")],
+            reactor=1,
+        )
+        item_y = _due_items(today.isoformat()).get(prod_y)
+        assert item_y is not None
+        assert item_y["pending_count"] == 1
+        assert item_y["pending_lots"] == [
+            {
+                "blend_record_id": y_rid,
+                "product_lot": _blend_lot(pid_y, y_rid),
+                "work_date": yesterday,
+                "reactor": 1,
+            }
+        ]
     finally:
         _set_reminder_since(None)  # 다른 테스트의 '기준일 없음' 전제 보호
 

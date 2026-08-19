@@ -18,7 +18,7 @@ from tray_client.src.attendance_popup import (
 )
 from tray_client.src.config import Config
 from tray_client.src.rescale_alerts import RescaleAlertPoller
-from tray_client.src.viscosity_alerts import ViscosityAlertPoller
+from tray_client.src.viscosity_alerts import ViscosityAlertPoller, reminder_signature
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):
@@ -232,6 +232,7 @@ class ViscosityAlertPollerTests(unittest.TestCase):
         self.assertNotIn("codes", captured["params"])
 
     def test_viscosity_payload_points_to_viscosity_action(self) -> None:
+        """구서버 호환 — pending_lots 키가 없는 응답도 종전 문구로 팝업이 나온다."""
         payload = build_viscosity_popup_payload(
             {
                 "total": 1,
@@ -239,11 +240,158 @@ class ViscosityAlertPollerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(payload.title, "점도 입력 필요")
-        self.assertEqual(payload.badge_text, "1개")
+        self.assertEqual(payload.title, "점도 미측정 LOT")
+        self.assertEqual(payload.badge_text, "1건")   # 구서버는 품목당 1건 폴백
         self.assertEqual(payload.lines, ["PB 점도를 입력하세요."])
         self.assertEqual(payload.action_key, "viscosity")
         self.assertEqual(payload.confirm_text, "점도 등록")
+
+    def test_viscosity_popup_lists_pending_lots_and_badge_counts_lots(self) -> None:
+        """LOT 단위 알림(2026-08-19) — 줄에 미측정 LOT 번호, 뱃지에 LOT 총수."""
+        payload = build_viscosity_popup_payload(
+            {
+                "total": 4,
+                "items": [
+                    {
+                        "code": "PB",
+                        "name": "PB",
+                        "pending_count": 2,
+                        "pending_lots": [
+                            {"blend_record_id": 1, "product_lot": "26061801",
+                             "work_date": "2026-06-18", "reactor": 2},
+                            {"blend_record_id": 2, "product_lot": "26061901",
+                             "work_date": "2026-06-19", "reactor": None},
+                        ],
+                    },
+                    {
+                        "code": "SBCT",
+                        "name": "SBCT",
+                        "pending_count": 4,   # 서버는 pending_lots 를 10건까지만 실음
+                        "pending_lots": [
+                            {"blend_record_id": 3, "product_lot": "26061701",
+                             "work_date": "2026-06-17", "reactor": 1},
+                            {"blend_record_id": 4, "product_lot": "26061802",
+                             "work_date": "2026-06-18", "reactor": 1},
+                            {"blend_record_id": 5, "product_lot": "26061903",
+                             "work_date": "2026-06-19", "reactor": None},
+                        ],
+                    },
+                    {
+                        "code": "SCRA",
+                        "name": "SCRA",
+                        "pending_count": 1,
+                        "pending_lots": [
+                            {"blend_record_id": 6, "product_lot": "26061904",
+                             "work_date": "2026-06-19", "reactor": None},
+                        ],
+                    },
+                    {
+                        "code": "ZINC",
+                        "name": "ZINC",
+                        "pending_count": 1,
+                        "pending_lots": [
+                            {"blend_record_id": 7, "product_lot": "26061905",
+                             "work_date": "2026-06-19", "reactor": None},
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(payload.title, "점도 미측정 LOT")
+        self.assertEqual(
+            payload.summary,
+            "측정하지 않은 배합 LOT 이 있습니다. 측정 후 등록하거나 측정 불가로 기록하세요.",
+        )
+        # 뱃지는 품목 수(4)가 아니라 미측정 LOT 총수(2+4+1+1).
+        self.assertEqual(payload.badge_text, "8건")
+        self.assertEqual(
+            payload.lines,
+            [
+                "PB 미측정 2건: 26061801, 26061901",
+                "SBCT 미측정 4건: 26061701, 26061802, 26061903 외 1건",
+                "SCRA 미측정 1건: 26061904",
+                "+1개 품목 추가",   # 4번째 품목(ZINC)은 POPUP_MAX_NAMES 초과
+            ],
+        )
+
+    def test_viscosity_signature_changes_when_new_lot_appears(self) -> None:
+        """서명은 품목 코드 + 미측정 LOT — 새 LOT 이 생기면 다르고, 같은 LOT 이면 같다."""
+        lots_one = [
+            {
+                "code": "PB",
+                "pending_lots": [{"product_lot": "26061801"}],
+            }
+        ]
+        lots_two = [
+            {
+                "code": "PB",
+                "pending_lots": [{"product_lot": "26061801"}, {"product_lot": "26061902"}],
+            }
+        ]
+        lots_two_reversed = [
+            {
+                "code": "PB",
+                "pending_lots": [{"product_lot": "26061902"}, {"product_lot": "26061801"}],
+            }
+        ]
+
+        self.assertNotEqual(reminder_signature(lots_one), reminder_signature(lots_two))
+        self.assertEqual(reminder_signature(lots_two), reminder_signature(lots_two_reversed))
+        # 구서버(키 없음)는 코드만으로 서명 — LOT 있는 서명과는 다르다.
+        self.assertEqual(reminder_signature([{"code": "PB"}]), "PB")
+        self.assertNotEqual(
+            reminder_signature([{"code": "PB"}]), reminder_signature(lots_one)
+        )
+
+    def test_viscosity_new_lot_in_same_slot_is_not_suppressed(self) -> None:
+        """같은 품목·같은 슬롯이라도 새 미측정 LOT 이 생기면 다시 알린다."""
+        presented: list[PopupPayload] = []
+        poller = ViscosityAlertPoller(
+            config=Config(),
+            present_alert=presented.append,
+            is_enabled_getter=lambda: True,
+        )
+        one_lot_payload = {
+            "date": "2026-07-01",
+            "total": 1,
+            "items": [
+                {
+                    "code": "PB",
+                    "name": "PB",
+                    "pending_count": 1,
+                    "pending_lots": [
+                        {"blend_record_id": 1, "product_lot": "26061801",
+                         "work_date": "2026-06-18", "reactor": None},
+                    ],
+                }
+            ],
+        }
+        two_lots_payload = {
+            "date": "2026-07-01",
+            "total": 1,
+            "items": [
+                {
+                    "code": "PB",
+                    "name": "PB",
+                    "pending_count": 2,
+                    "pending_lots": [
+                        {"blend_record_id": 1, "product_lot": "26061801",
+                         "work_date": "2026-06-18", "reactor": None},
+                        {"blend_record_id": 9, "product_lot": "26061902",
+                         "work_date": "2026-06-19", "reactor": None},
+                    ],
+                }
+            ],
+        }
+
+        with patch.object(poller, "_poll_once", return_value=one_lot_payload):
+            poller._poll_and_notify(slot_key="2026-07-01T09")
+        with patch.object(poller, "_poll_once", return_value=two_lots_payload):
+            poller._poll_and_notify(slot_key="2026-07-01T09")   # 새 LOT → 재알림
+
+        self.assertEqual(len(presented), 2)
+        self.assertIn("26061902", presented[1].lines[0])
 
     def test_viscosity_duplicate_signature_is_suppressed_in_same_slot(self) -> None:
         presented: list[PopupPayload] = []
@@ -266,7 +414,7 @@ class ViscosityAlertPollerTests(unittest.TestCase):
         self.assertEqual(len(presented), 2)
 
     def test_viscosity_uses_configured_slots(self) -> None:
-        poller = ViscosityAlertPoller(
+        ViscosityAlertPoller(
             config=Config(), present_alert=lambda _p: None, is_enabled_getter=lambda: True,
         )
         # 근태와 동일한 슬롯 로직(schedule 모듈)을 쓰는지 확인 — 주간 3슬롯 구성 기준.

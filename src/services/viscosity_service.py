@@ -780,22 +780,43 @@ def daily_reading_reminders(
     target_date: str,
     codes: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """오늘(target_date) 측정이 밀린 '매일 알림 대상'(remind_daily=1) 반제품 목록.
+    """측정 안 된 배합 LOT(미등록 LOT)이 하나라도 남은 '매일 알림 대상'(remind_daily=1)
+    반제품 목록.
+
+    판정 단위는 제품이 아니라 **LOT** 이다(2026-08-19 재정의). 종전 '오늘(target_date)
+    측정이 없는 품목' 조건은 LOT 등록 상태와 무관했다 — 어제 LOT 을 이미 등록했는데도
+    오늘 등록이 없으면 알림이 다시 뜨고(독촉 소음), 반대로 못 잰 옛 LOT 이 하나 남아
+    있으면 그것만으로 매일 알림이 이어졌다. 이제 "해야 할 일"이 실제로 있는지, 즉
+    **pending LOT**(완료 배합 중 점도 등록도 측정 불가 기록도 없는 것)이 하나라도
+    있는지만 본다. '오늘 측정 여부' 조건은 완전히 없앴다.
+
+    pending LOT 조건은 /viscosity 등록 패널의 미등록 대기열(viscosity_blend_records,
+    src/routers/viscosity_routes.py)과 같다 — status='completed',
+    COALESCE(is_bulk_regenerated,0)=0, 반제품명이 점도 제품 name/code 와 일치,
+    viscosity_readings.blend_record_id 로 연결된 등록 없음, viscosity_skips 측정 불가
+    기록 없음. 여기에 알림용 시간 조건 두 가지만 얹는다.
+
+    - 배합 **당일은 알리지 않는다**(work_date < target_date) — 점도는 배합 다음날
+      측정하는 현장 규칙(예: 13일 배합 → 14일 측정, 2026-08-13 요청).
+    - 정리 기준일(app_settings.viscosity_reminder_since)이 있으면 그 이후 배합만
+      본다(2026-08-07). 지나간 배합은 이제 와서 잴 수 없으니 책임자가
+      [지금까지 정리] 를 누른 시점 이전은 덮는다.
 
     알림 대상 여부는 웹 점도 설정이 소유한다(remind_daily 플래그). codes 는 선택적
     추가 필터일 뿐이며, 비어 있으면 알림 대상 전체를 대상으로 한다(서버 주도).
 
-    정리 기준일(app_settings.viscosity_reminder_since)이 있으면, **그 날짜 이후에 실제로
-    배합한 반제품만** 알린다. 지나간 배합은 이제 와서 점도를 잴 수 없는데도 대상 품목이면
-    매일 팝업이 떠서(현장 요청 2026-08-07), 책임자가 [지금까지 정리] 를 누른 시점 이전은
-    덮는다. 기준일이 없으면 종전대로 전 대상 품목을 본다.
-
-    배합 **당일은 알리지 않는다** — 점도는 배합 다음날 측정하는 것이 현장 규칙이라
-    (예: 13일에 PB 를 배합하면 측정은 14일), 당일 알림은 아직 잴 수 없는 것을
-    독촉하는 소음이었다(현장 요청 2026-08-13). 그래서 기준일 필터의 배합 존재
-    조건을 '알림 기준일(target_date) 이전 배합'으로 좁힌다 — 오늘 배합분은 내일
-    조회부터 알림 대상이 된다.
+    각 항목은 pending_count(전체 pending LOT 수)와 pending_lots(오래된 순 최대
+    10건: blend_record_id/product_lot/work_date/reactor)를 함께 실는다 — 트레이
+    팝업이 무엇 때문에 알림이 떴는지 보여줄 수 있게. blend_records 테이블이 없는
+    최소 스키마에서는 pending 정의 자체가 불가능하므로 빈 목록을 반환한다(방어
+    패턴 — viscosity_skips 없는 구버전과 동일).
     """
+    has_blend_records = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='blend_records'"
+    ).fetchone()
+    if not has_blend_records:
+        return []
+
     normalized_codes: list[str] = []
     seen_codes: set[str] = set()
     for code in codes or []:
@@ -810,45 +831,53 @@ def daily_reading_reminders(
         placeholders = ",".join("?" for _code in normalized_codes)
         where.append(f"upper(p.code) IN ({placeholders})")
         params.extend(normalized_codes)
-    # 정리 기준일 이후 배합이 있는 품목만 — 반제품명(product_name)으로 대조한다.
-    # 점도 제품과 배합 레시피는 이름으로 이어져 있다(blend_add_viscosity 의 ensure_product
-    # 규약과 동일). 이름이 안 맞는 옛 품목은 조용해지는데, 그건 이 기능의 의도다.
+
+    # pending LOT 조건 — 미등록 대기열(viscosity_routes.viscosity_blend_records)과
+    # 같은 조건에 알림용 시간 조건(당일 제외·정리 기준일)을 얹은 것.
+    lot_where = [
+        "b.status = 'completed'",
+        "COALESCE(b.is_bulk_regenerated, 0) = 0",
+        "(b.product_name = p.name OR b.product_name = p.code)",
+        "b.work_date < ?",  # 배합 당일 제외 — 측정은 다음날부터
+        "NOT EXISTS (SELECT 1 FROM viscosity_readings vr"
+        "            WHERE vr.blend_record_id = b.id)",
+    ]
+    lot_params: list[Any] = [target_date]
     since = settings_service.get_viscosity_reminder_since(connection)
     if since:
-        # 측정 불가로 기록된 배합(viscosity_skips)은 배합 존재 조건에서 뺀다 —
-        # 시료가 없어 잴 수 없는 배합 하나가 남아 알림이 영원히 오던 문제(2026-08-14).
-        # 그 배합은 '등록된 것'과 동일하게 취급되고, 새 배합이 생기면 알림은 재개된다.
-        # (테이블이 없는 구버전/최소 스키마 DB 는 조건 없이 — 방어 패턴 공통.)
-        skips_clause = ""
-        has_skips = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='viscosity_skips'"
-        ).fetchone()
-        if has_skips:
-            skips_clause = (
-                "   AND NOT EXISTS (SELECT 1 FROM viscosity_skips s"
-                "                   WHERE s.blend_record_id = b.id)"
-            )
-        where.append(
-            "EXISTS (SELECT 1 FROM blend_records b"
-            " WHERE b.status != 'canceled'"
-            "   AND b.work_date >= ?"
-            "   AND b.work_date < ?"
-            "   AND (b.product_name = p.name OR b.product_name = p.code)"
-            f"{skips_clause})"
+        lot_where.append("b.work_date >= ?")  # 정리 기준일 이후 배합만
+        lot_params.append(since)
+    # 측정 불가로 기록된 배합(viscosity_skips)은 pending 에서 뺀다 — 시료가 없어
+    # 잴 수 없는 배합 하나가 남아 알림이 영원히 오던 문제(2026-08-14). 그 배합은
+    # '등록된 것'과 동일하게 취급되고, 새 배합이 생기면 알림은 재개된다.
+    # (테이블이 없는 구버전/최소 스키마 DB 는 조건 없이 — 방어 패턴 공통.)
+    has_skips = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='viscosity_skips'"
+    ).fetchone()
+    if has_skips:
+        lot_where.append(
+            "NOT EXISTS (SELECT 1 FROM viscosity_skips s"
+            "            WHERE s.blend_record_id = b.id)"
         )
-        params.append(since)
-        params.append(target_date)  # 배합 당일 제외 — 측정은 다음날부터
-    params.append(target_date)  # NOT EXISTS today.measured_date = ?
+    lot_condition = " AND ".join(lot_where)
 
+    # 한 번의 조인으로 제품별 pending LOT 을 모두 가져와 파이썬에서 묶는다.
+    # 정렬(p.code ASC, work_date ASC, id ASC)이 곧 항목 순서·LOT 순서(오래된 것부터
+    # 최대 10건)를 결정한다.
     rows = connection.execute(
         f"""
         SELECT
             p.id,
             p.code,
             p.name,
+            b.id AS blend_record_id,
+            b.product_lot,
+            b.work_date,
+            b.reactor,
             latest.viscosity AS latest_value,
             latest.measured_date AS latest_date
         FROM viscosity_products p
+        JOIN blend_records b ON {lot_condition}
         LEFT JOIN (
             SELECT r.product_id, r.viscosity, r.measured_date
             FROM viscosity_readings r
@@ -862,26 +891,36 @@ def daily_reading_reminders(
              AND pick.max_key = r.measured_date || ':' || printf('%012d', r.id)
         ) latest ON latest.product_id = p.id
         WHERE {" AND ".join(where)}
-          AND NOT EXISTS (
-              SELECT 1
-              FROM viscosity_readings today
-              WHERE today.product_id = p.id
-                AND today.measured_date = ?
-          )
-        ORDER BY p.code ASC
+        ORDER BY p.code ASC, b.work_date ASC, b.id ASC
         """,
-        params,
+        [*lot_params, *params],
     ).fetchall()
-    return [
-        {
-            "id": int(row["id"]),
-            "code": row["code"],
-            "name": row["name"],
-            "latest_value": _opt_float(row["latest_value"]),
-            "latest_date": row["latest_date"],
-        }
-        for row in rows
-    ]
+
+    items: list[dict[str, Any]] = []
+    items_by_id: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        item = items_by_id.get(row["id"])
+        if item is None:
+            item = {
+                "id": int(row["id"]),
+                "code": row["code"],
+                "name": row["name"],
+                "latest_value": _opt_float(row["latest_value"]),
+                "latest_date": row["latest_date"],
+                "pending_count": 0,
+                "pending_lots": [],
+            }
+            items_by_id[item["id"]] = item
+            items.append(item)
+        item["pending_count"] += 1
+        if len(item["pending_lots"]) < 10:
+            item["pending_lots"].append({
+                "blend_record_id": int(row["blend_record_id"]),
+                "product_lot": row["product_lot"],
+                "work_date": row["work_date"],
+                "reactor": int(row["reactor"]) if row["reactor"] is not None else None,
+            })
+    return items
 
 
 def add_reading(

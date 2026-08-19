@@ -224,19 +224,55 @@ def build_info_popup_payload(
     )
 
 
+def _viscosity_pending_count(item: dict[str, Any]) -> int:
+    """품목별 미측정 LOT 수 — 서버가 주는 pending_count(전체 개수) 우선, 없으면
+    노출된 pending_lots 길이, 둘 다 없는 구서버 품목은 1건으로 본다."""
+    raw = item.get("pending_count")
+    if isinstance(raw, int) and raw > 0:
+        return raw
+    lots = item.get("pending_lots")
+    if isinstance(lots, list) and lots:
+        return len(lots)
+    return 1
+
+
+def _viscosity_lot_line(item: dict[str, Any]) -> str:
+    """품목 한 줄 — 미측정 LOT 번호까지 보여 '무엇을' 재촉하는지 알게 한다.
+
+    서버는 pending_lots 를 최대 10건(오래된 순)만 실어 주므로 줄에는 앞 3건만
+    펴고 나머지는 ' 외 N건'으로 센다(pending_count 는 전체 수). pending_lots 키가
+    없는 구서버는 종전 문구('점도를 입력하세요')로 폴백한다.
+    """
+    code = str(item.get("code") or item.get("name") or "").strip()
+    lots = item.get("pending_lots")
+    if not isinstance(lots, list) or not lots:
+        return f"{code} 점도를 입력하세요."
+    count = _viscosity_pending_count(item)
+    shown = [str(lot.get("product_lot") or "").strip() for lot in lots[:3]]
+    lots_text = ", ".join(lot for lot in shown if lot)
+    remaining = count - len(shown)
+    if remaining > 0:
+        lots_text = f"{lots_text} 외 {remaining}건"
+    return f"{code} 미측정 {count}건: {lots_text}"
+
+
 def build_viscosity_popup_payload(payload: dict[str, Any]) -> PopupPayload:
+    """점도 미측정 LOT 알림 — 서버 응답(daily_reading_reminders)의 pending_lots 로
+    품목별 미측정 LOT 을 나열한다(LOT 단위 알림, 2026-08-19).
+
+    뱃지는 품목 수가 아니라 **미측정 LOT 총수**(pending_count 합) — '2품목 6LOT'처럼
+    실제 해야 할 일의 양을 보여준다. 구서버(pending_lots 없음)는 품목당 1건으로 센다.
+    """
     items = list(payload.get("items") or [])
-    lines = [
-        f"{str(item.get('code') or item.get('name') or '').strip()} 점도를 입력하세요."
-        for item in items[:POPUP_MAX_NAMES]
-    ]
+    lines = [_viscosity_lot_line(item) for item in items[:POPUP_MAX_NAMES]]
     remaining = max(0, len(items) - len(lines))
     if remaining > 0:
         lines.append(f"+{remaining}개 품목 추가")
+    total_lots = sum(_viscosity_pending_count(item) for item in items)
     return PopupPayload(
-        title="점도 입력 필요",
-        badge_text=f"{len(items)}개" if items else "확인",
-        summary="지정된 품목 중 오늘 점도 기록이 없는 품목이 있습니다.",
+        title="점도 미측정 LOT",
+        badge_text=f"{total_lots}건" if items else "확인",
+        summary="측정하지 않은 배합 LOT 이 있습니다. 측정 후 등록하거나 측정 불가로 기록하세요.",
         lines=lines,
         accent="viscosity",
         action_key="viscosity",
