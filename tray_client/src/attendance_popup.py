@@ -129,34 +129,47 @@ def _privacy_safe_lines(items: list[dict[str, Any]], total: int) -> list[str]:
     return lines
 
 
-# '미타각' 유형 제목이 이미 뜻하는 사유 — 내용 칸에서 반복하지 않는다.
-_MISSING_PUNCH_ISSUES = frozenset({"출근 누락", "퇴근 누락"})
+# 공용 PC 팝업에는 개인의 지각·조퇴 사정을 적지 않는다(2026-08-19 사용자 결정) —
+# 이름과 함께 뜨는 창이라 지나가는 사람도 본다. 트레이는 "처리할 게 있다"는 신호만
+# 주고, 원문 사유·해설은 책임자 로그인이 필요한 근태 화면이 보여준다.
+_SENSITIVE_ISSUE_WORDS = ("지각", "조퇴", "외출")
+_GENERIC_CONTENT = "근태 이상"
+
+
+def _mask_issue(text: str) -> str:
+    """지각·조퇴·외출이 드러나는 사유 문구를 일반 제목으로 바꾼다."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+    if any(word in cleaned for word in _SENSITIVE_ISSUE_WORDS):
+        return _GENERIC_CONTENT
+    return cleaned
 
 
 def _detail_content(detail: dict[str, Any]) -> str:
-    """상세 한 건의 '내용' 한 칸 — 유형 제목(content)에 원문 사유(extra_content)를 덧붙인다.
+    """상세 한 건의 '내용' 한 칸 — 유형 제목(content)만 쓴다.
 
-    서버는 유형 제목과 판정 원문 사유를 따로 준다(anomaly._anomaly_detail). 종전 팝업은
-    이를 '구분(번호) / 내용 / 추가 내용' 세 칸으로 펼쳤는데, 번호는 설명 없는 내부
-    분류값이고 내용·추가 내용은 대개 같은 말이었다(2026-08-19 사용자 지적). 그래서
-    한 칸으로 합치고, 원문 사유는 제목과 다르며 제목에 이미 들어 있지 않을 때만
-    ' - ' 뒤에 붙인다(예: '근태코드 누락(반차/조퇴 예상) - 조퇴 미처리').
+    서버는 유형 제목과 판정 원문 사유(extra_content)를 따로 준다(anomaly._anomaly_detail).
+    종전 팝업은 '구분(번호) / 내용 / 추가 내용' 세 칸이었는데, 번호는 설명 없는 내부
+    분류값이고 추가 내용은 제목의 반복이거나 '지각 미처리' 같은 개인 사정이었다
+    (2026-08-19 사용자 지적). 그래서 제목 한 칸으로 줄이고 원문 사유는 싣지 않는다.
+    제목 자체에 지각·조퇴가 들어가면('근태코드 누락(반차/조퇴 예상)') 일반 제목으로
+    바꾸고, 뜻이 없는 '기타'도 같은 제목으로 통일한다.
     """
     content = str(detail.get("content") or "").strip()
-    extra = str(detail.get("extra_content") or "").strip()
-    if not content:
-        return extra
-    # 사유를 낱개로 보고, 제목이 이미 말하는 것은 접는다 — '출/퇴근 미타각' 제목에
-    # '출근 누락 / 퇴근 누락' 사유는 같은 말의 반복이다.
-    parts = [part.strip() for part in extra.split(" / ") if part.strip()]
-    kept = [
-        part for part in parts
-        if part not in content
-        and not ("미타각" in content and part in _MISSING_PUNCH_ISSUES)
-    ]
-    if not kept:
-        return content
-    return f"{content} - {' / '.join(kept)}"
+    if not content or content == "기타":
+        return _GENERIC_CONTENT
+    return _mask_issue(content)
+
+
+def _issues_content(issues: list[Any]) -> str:
+    """상세가 없는 항목(구서버)의 원문 사유 목록 — 민감 사유는 가리고 중복은 접는다."""
+    seen: list[str] = []
+    for issue in issues:
+        masked = _mask_issue(str(issue))
+        if masked and masked not in seen:
+            seen.append(masked)
+    return " / ".join(seen)
 
 
 def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -170,7 +183,7 @@ def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
                     "name": _display_name(item),
                     "department": str(item.get("department") or ""),
                     "date": ", ".join(str(date) for date in item.get("dates") or []),
-                    "content": " / ".join(str(issue) for issue in item.get("issues") or []),
+                    "content": _issues_content(list(item.get("issues") or [])),
                 }
             )
             continue
@@ -201,7 +214,7 @@ def build_live_popup_payload(payload: dict[str, Any]) -> PopupPayload:
     return PopupPayload(
         title="근태 확인 필요",
         badge_text=f"{row_total}건" if row_total else "확인",
-        summary="이번 달 미처리 근태 특이사항을 확인해주세요.",
+        summary="이번 달 미처리 근태 특이사항을 확인해주세요. 상세 사유는 근태 화면에서 확인하세요.",
         lines=lines,
         table_rows=table_rows[:POPUP_MAX_ROWS],
         accent="live",

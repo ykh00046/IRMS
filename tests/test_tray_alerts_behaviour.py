@@ -175,51 +175,39 @@ class AttendanceAlertPollerTests(unittest.TestCase):
 
         self.assertEqual(payload.title, "근태 확인 필요")
         self.assertEqual(payload.badge_text, "9건")
-        self.assertEqual(payload.summary, "이번 달 미처리 근태 특이사항을 확인해주세요.")
+        self.assertTrue(payload.summary.startswith("이번 달 미처리 근태 특이사항을 확인해주세요."))
         self.assertEqual(len(payload.table_rows), 8)
         self.assertEqual(payload.lines, ["+1건 추가"])
         self.assertEqual(payload.table_rows[0]["emp_id"], "240910")
         self.assertEqual(payload.table_rows[0]["date"], "05-04")
-        # 구분 번호·추가 내용 칸은 사라지고(2026-08-19), 원문 사유는 내용에 합쳐진다.
+        # 구분 번호·추가 내용 칸은 사라지고(2026-08-19), 내용은 유형 제목만 — 원문
+        # 사유(지각/조퇴 등 개인 사정)는 공용 PC 팝업에 싣지 않는다.
         self.assertNotIn("code", payload.table_rows[0])
         self.assertNotIn("extra_content", payload.table_rows[0])
+        self.assertEqual(payload.table_rows[0]["content"], "출퇴근 미처리")
+        self.assertIn("근태 화면", payload.summary)
+
+    def test_detail_content_hides_personal_reasons(self) -> None:
+        _detail_content = _detail_content_for_test
+        # 제목만, 원문 사유는 버린다
         self.assertEqual(
-            payload.table_rows[0]["content"], "출퇴근 미처리 - 출근 누락 / 퇴근 누락"
-        )
-        # 실제 서버 제목('미타각')이면 누락 사유는 같은 말이라 접힌다.
-        self.assertEqual(
-            _detail_content_for_test(
-                {"content": "출/퇴근 미타각", "extra_content": "출근 누락 / 퇴근 누락"}
-            ),
+            _detail_content({"content": "출/퇴근 미타각", "extra_content": "출근 누락 / 퇴근 누락"}),
             "출/퇴근 미타각",
         )
-
-    def test_detail_content_merges_only_when_reason_adds_information(self) -> None:
-        _detail_content = _detail_content_for_test
-
-        # 같은 말이면 한 번만
         self.assertEqual(
-            _detail_content({"content": "출근 미타각", "extra_content": "출근 미타각"}),
-            "출근 미타각",
+            _detail_content({"content": "근태 이상", "extra_content": "지각 미처리"}), "근태 이상"
         )
-        # 서버가 숨긴 경우(빈 추가 내용)
-        self.assertEqual(
-            _detail_content({"content": "근태 이상", "extra_content": ""}), "근태 이상"
-        )
-        # 제목에 이미 포함된 사유는 반복하지 않는다
-        self.assertEqual(
-            _detail_content(
-                {"content": "근태코드 누락(조퇴 미처리)", "extra_content": "조퇴 미처리"}
-            ),
-            "근태코드 누락(조퇴 미처리)",
-        )
-        # 새 정보가 있을 때만 덧붙인다
+        # 제목에 지각·조퇴가 들어가도 일반 제목으로
         self.assertEqual(
             _detail_content(
                 {"content": "근태코드 누락(반차/조퇴 예상)", "extra_content": "조퇴 미처리"}
             ),
-            "근태코드 누락(반차/조퇴 예상) - 조퇴 미처리",
+            "근태 이상",
         )
+        # 뜻 없는 '기타'도 일반 제목으로
+        self.assertEqual(_detail_content({"content": "기타", "extra_content": "지각 미처리"}), "근태 이상")
+        for word in ("지각", "조퇴", "외출"):
+            self.assertNotIn(word, _detail_content({"content": f"근태코드 누락({word})", "extra_content": ""}))
 
     def test_live_popup_payload_uses_privacy_safe_copy_without_table(self) -> None:
         payload = build_live_popup_payload(
@@ -237,7 +225,9 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         )
 
         self.assertEqual(payload.table_rows[0]["emp_id"], "171013")
-        self.assertIn("지각 미처리", payload.table_rows[0]["content"])
+        # 구서버(상세 없음)의 원문 사유도 지각/조퇴는 가린다 — 두 사유가 같은 제목으로 접힘.
+        self.assertEqual(payload.table_rows[0]["content"], "근태 이상")
+        self.assertNotIn("지각", payload.table_rows[0]["content"])
 
 
 class ViscosityAlertPollerTests(unittest.TestCase):
