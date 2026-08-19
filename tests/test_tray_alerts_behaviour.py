@@ -19,6 +19,7 @@ from tray_client.src.attendance_popup import (
 from tray_client.src.config import Config
 from tray_client.src.rescale_alerts import RescaleAlertPoller
 from tray_client.src.viscosity_alerts import ViscosityAlertPoller, reminder_signature
+from tray_client.src.attendance_popup import _detail_content as _detail_content_for_test
 
 
 class AttendanceAlertPollerTests(unittest.TestCase):
@@ -179,7 +180,46 @@ class AttendanceAlertPollerTests(unittest.TestCase):
         self.assertEqual(payload.lines, ["+1건 추가"])
         self.assertEqual(payload.table_rows[0]["emp_id"], "240910")
         self.assertEqual(payload.table_rows[0]["date"], "05-04")
-        self.assertEqual(payload.table_rows[0]["code"], "1")
+        # 구분 번호·추가 내용 칸은 사라지고(2026-08-19), 원문 사유는 내용에 합쳐진다.
+        self.assertNotIn("code", payload.table_rows[0])
+        self.assertNotIn("extra_content", payload.table_rows[0])
+        self.assertEqual(
+            payload.table_rows[0]["content"], "출퇴근 미처리 - 출근 누락 / 퇴근 누락"
+        )
+        # 실제 서버 제목('미타각')이면 누락 사유는 같은 말이라 접힌다.
+        self.assertEqual(
+            _detail_content_for_test(
+                {"content": "출/퇴근 미타각", "extra_content": "출근 누락 / 퇴근 누락"}
+            ),
+            "출/퇴근 미타각",
+        )
+
+    def test_detail_content_merges_only_when_reason_adds_information(self) -> None:
+        _detail_content = _detail_content_for_test
+
+        # 같은 말이면 한 번만
+        self.assertEqual(
+            _detail_content({"content": "출근 미타각", "extra_content": "출근 미타각"}),
+            "출근 미타각",
+        )
+        # 서버가 숨긴 경우(빈 추가 내용)
+        self.assertEqual(
+            _detail_content({"content": "근태 이상", "extra_content": ""}), "근태 이상"
+        )
+        # 제목에 이미 포함된 사유는 반복하지 않는다
+        self.assertEqual(
+            _detail_content(
+                {"content": "근태코드 누락(조퇴 미처리)", "extra_content": "조퇴 미처리"}
+            ),
+            "근태코드 누락(조퇴 미처리)",
+        )
+        # 새 정보가 있을 때만 덧붙인다
+        self.assertEqual(
+            _detail_content(
+                {"content": "근태코드 누락(반차/조퇴 예상)", "extra_content": "조퇴 미처리"}
+            ),
+            "근태코드 누락(반차/조퇴 예상) - 조퇴 미처리",
+        )
 
     def test_live_popup_payload_uses_privacy_safe_copy_without_table(self) -> None:
         payload = build_live_popup_payload(

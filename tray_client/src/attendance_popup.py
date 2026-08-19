@@ -129,6 +129,36 @@ def _privacy_safe_lines(items: list[dict[str, Any]], total: int) -> list[str]:
     return lines
 
 
+# '미타각' 유형 제목이 이미 뜻하는 사유 — 내용 칸에서 반복하지 않는다.
+_MISSING_PUNCH_ISSUES = frozenset({"출근 누락", "퇴근 누락"})
+
+
+def _detail_content(detail: dict[str, Any]) -> str:
+    """상세 한 건의 '내용' 한 칸 — 유형 제목(content)에 원문 사유(extra_content)를 덧붙인다.
+
+    서버는 유형 제목과 판정 원문 사유를 따로 준다(anomaly._anomaly_detail). 종전 팝업은
+    이를 '구분(번호) / 내용 / 추가 내용' 세 칸으로 펼쳤는데, 번호는 설명 없는 내부
+    분류값이고 내용·추가 내용은 대개 같은 말이었다(2026-08-19 사용자 지적). 그래서
+    한 칸으로 합치고, 원문 사유는 제목과 다르며 제목에 이미 들어 있지 않을 때만
+    ' - ' 뒤에 붙인다(예: '근태코드 누락(반차/조퇴 예상) - 조퇴 미처리').
+    """
+    content = str(detail.get("content") or "").strip()
+    extra = str(detail.get("extra_content") or "").strip()
+    if not content:
+        return extra
+    # 사유를 낱개로 보고, 제목이 이미 말하는 것은 접는다 — '출/퇴근 미타각' 제목에
+    # '출근 누락 / 퇴근 누락' 사유는 같은 말의 반복이다.
+    parts = [part.strip() for part in extra.split(" / ") if part.strip()]
+    kept = [
+        part for part in parts
+        if part not in content
+        and not ("미타각" in content and part in _MISSING_PUNCH_ISSUES)
+    ]
+    if not kept:
+        return content
+    return f"{content} - {' / '.join(kept)}"
+
+
 def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for item in items:
@@ -140,10 +170,7 @@ def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
                     "name": _display_name(item),
                     "department": str(item.get("department") or ""),
                     "date": ", ".join(str(date) for date in item.get("dates") or []),
-                    "code": "",
                     "content": " / ".join(str(issue) for issue in item.get("issues") or []),
-                    "extra_content": "",
-                    "status": "",
                 }
             )
             continue
@@ -154,10 +181,7 @@ def _detail_rows(items: list[dict[str, Any]]) -> list[dict[str, str]]:
                     "name": _display_name(item),
                     "department": str(item.get("department") or ""),
                     "date": str(detail.get("display_date") or str(detail.get("date") or "")[-5:]),
-                    "code": str(detail.get("code") or ""),
-                    "content": str(detail.get("content") or ""),
-                    "extra_content": str(detail.get("extra_content") or ""),
-                    "status": str(detail.get("status") or ""),
+                    "content": _detail_content(detail),
                 }
             )
     return rows
@@ -567,20 +591,20 @@ class AttendanceAlertPopupManager:
 
     def _render_table(self, parent: Any, rows: list[dict[str, str]]) -> None:
         assert tk is not None
+        # 구분(번호)·추가 내용·처리 상황 열은 뺐다(2026-08-19) — 번호는 뜻을 알 수 없는
+        # 내부 분류값, 추가 내용은 내용과 중복, 처리 상황은 서버가 항상 빈칸으로 준다
+        # (미처리만 알리므로). 원문 사유는 _detail_content 가 내용 칸에 합친다.
         columns = [
             ("emp_id", "사번", 8, "center"),
             ("name", "성명", 8, "center"),
             ("department", "부서", 12, "w"),
             ("date", "일자", 7, "center"),
-            ("code", "구분", 5, "center"),
-            ("content", "내용", 24, "w"),
-            ("extra_content", "추가 내용", 30, "w"),
-            ("status", "처리 상황", 22, "w"),
+            ("content", "내용", 48, "w"),
         ]
         table = tk.Frame(parent, bg=TABLE_BORDER, highlightthickness=1, highlightbackground=TABLE_BORDER)
         table.pack(fill="x")
-        for index, (_key, label, width, anchor) in enumerate(columns):
-            table.grid_columnconfigure(index, weight=1 if index in (5, 6, 7) else 0)
+        for index, (key, label, width, anchor) in enumerate(columns):
+            table.grid_columnconfigure(index, weight=1 if key == "content" else 0)
             tk.Label(
                 table, text=label, bg=TABLE_HEADER_BG, fg=PANEL_TEXT,
                 font=("Malgun Gothic", 8, "bold"), width=width, padx=5, pady=5, anchor=anchor,
@@ -592,7 +616,7 @@ class AttendanceAlertPopupManager:
                     table, text=row_data.get(key, ""), bg=bg, fg=LINE_TEXT,
                     font=("Malgun Gothic", 8), width=width, padx=5, pady=5, anchor=anchor,
                     justify="left" if anchor == "w" else "center",
-                    wraplength=260 if key in ("extra_content", "status") else 180,
+                    wraplength=380 if key == "content" else 180,
                 ).grid(row=row_index, column=column_index, sticky="nsew", padx=(0, 1), pady=(0, 1))
 
     def _render_lines(self, parent: Any, lines: list[str]) -> None:
