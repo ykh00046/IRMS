@@ -73,6 +73,55 @@ class ColumnMapTests(unittest.TestCase):
         self.assertEqual(colmap, ex.DEFAULT_COLUMNS)
 
 
+class AugustLayoutTests(unittest.TestCase):
+    """2026-08 ERP 양식: 그룹행에서 평일/휴일근무시간 라벨이 사라졌다.
+
+    세부행에는 조출/정상/연장/야근이 두 번 나오는데 그룹행 라벨이 없어 8개
+    근무시간 열 전부가 기본 인덱스로 폴백됐다(운영 로그 실측, 2026-08-20).
+    앞 묶음=평일, 뒤 묶음=휴일 순서는 구 양식과 동일함을 화면-엑셀 숫자
+    대조로 확인했으므로, 라벨이 없으면 등장 순서로 구분한다."""
+
+    def _august_headers(self):
+        group = [None] * 31
+        group[0] = "일자"
+        group[3] = "사원"
+        group[12] = "근무정보"   # 이후 열 전체에 오른쪽 채움 — 평일/휴일 없음
+        group[30] = "비고"
+        sub = [
+            "근무일자", "요일", "구분", "사번", "근무지", "남여", "근무공장",
+            "성명", "근무직구분", "부서명", "근무조구분", "급여유형", "근무타임",
+            "근무", "근태코드", "출근", "퇴근", "익일", "총시간",
+            "조출", "정상", "연장", "야근",
+            "조출", "정상", "연장", "야근",
+            "지각시간", "조퇴시간", "외출시간", None,
+        ]
+        return tuple(group), tuple(sub)
+
+    def test_unlabeled_workhour_blocks_map_by_order(self) -> None:
+        group, sub = self._august_headers()
+        colmap, warnings, detected = ex._build_column_map(group, sub)
+        self.assertEqual(warnings, [])
+        self.assertEqual(colmap["weekday_early"], 19)
+        self.assertEqual(colmap["weekday_normal"], 20)
+        self.assertEqual(colmap["weekday_overtime"], 21)
+        self.assertEqual(colmap["weekday_night"], 22)
+        self.assertEqual(colmap["holiday_early"], 23)
+        self.assertEqual(colmap["holiday_normal"], 24)
+        self.assertEqual(colmap["holiday_overtime"], 25)
+        self.assertEqual(colmap["holiday_night"], 26)
+        self.assertEqual(colmap["note"], 30)
+        self.assertIn("holiday_night", detected)
+
+    def test_labeled_layout_still_wins_over_order(self) -> None:
+        # 구(2026-06) 양식처럼 그룹행 라벨이 있으면 라벨이 우선한다.
+        colmap, warnings, _detected = ex._build_column_map(
+            tuple(_JUNE_HEADER_GROUP), tuple(_JUNE_HEADER_SUB)
+        )
+        self.assertEqual(warnings, [])
+        self.assertEqual(colmap["weekday_normal"], 22)
+        self.assertEqual(colmap["holiday_normal"], 26)
+
+
 class ColumnMapWarningTests(unittest.TestCase):
     """GAP-1: 필수는 잡혔지만 선택 열이 헤더에서 안 잡혀 기본 인덱스로
     조용히 폴백되면 경고를 남기고, 데이터는 헤더로 계속 파싱한다."""

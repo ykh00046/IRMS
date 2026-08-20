@@ -129,10 +129,17 @@ def _build_column_map(
             continue
 
         if sub_name in _HEADER_WORKHOUR_SUFFIX:
-            prefix = "weekday" if "평일" in grp_name else "holiday" if "휴일" in grp_name else ""
-            if prefix:
-                key = f"{prefix}_{_HEADER_WORKHOUR_SUFFIX[sub_name]}"
-                detected.setdefault(key, idx)
+            suffix = _HEADER_WORKHOUR_SUFFIX[sub_name]
+            if "평일" in grp_name:
+                prefix = "weekday"
+            elif "휴일" in grp_name:
+                prefix = "holiday"
+            else:
+                # 2026-08 부터 ERP 가 그룹행의 평일/휴일 라벨을 없앴다. 두 묶음의
+                # 순서(평일 앞, 휴일 뒤)는 구 양식·고정 인덱스와 동일함을 실측으로
+                # 확인했으므로, 라벨이 없으면 등장 순서로 구분한다.
+                prefix = "weekday" if f"weekday_{suffix}" not in detected else "holiday"
+            detected.setdefault(f"{prefix}_{suffix}", idx)
             continue
 
         # 비고는 세부 행이 비어 있고 그룹 행에만 '비고'로 존재한다.
