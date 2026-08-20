@@ -145,9 +145,14 @@ def _build_column_map(
     warnings: list[str] = []
     missing_optional = sorted(_OPTIONAL_HEADER_FIELDS - detected.keys())
     if missing_optional:
+        # 실제 헤더 텍스트를 함께 남긴다 — 못 찾은 이유(ERP 가 이름을 뭐라고
+        # 바꿨는지)를 로그만 보고 알 수 있어야 스크린샷 왕복 없이 규칙을 고친다.
+        group_texts = " | ".join(dict.fromkeys(t for t in filled_group if t))
+        sub_texts = " | ".join(t for t in (_cell_str(c) for c in sub) if t)
         warnings.append(
             "선택 열을 헤더에서 찾지 못해 구 기본 인덱스로 폴백: "
             + ", ".join(missing_optional)
+            + f" (그룹행 헤더: {group_texts} / 세부행 헤더: {sub_texts})"
         )
     # 세 번째 값은 '헤더에서 실제로 잡힌' 키다 — 병합된 맵은 늘 전 필드를 갖고 있어
     # 무엇이 폴백됐는지 구분할 수 없다(진단이 늘 정상으로 보였다).
