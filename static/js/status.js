@@ -367,6 +367,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el) el.textContent = selected.size ? `선택 ${fmt(selected.size, 0)}건` : "선택 없음";
     const clear = $("status-sel-clear");
     if (clear) clear.hidden = selected.size === 0;
+    // 조회 결과 전체 선택 — 여러 쪽일 때만 보이고, 이미 다 잡혀 있으면 숨긴다.
+    // 한 쪽이면 머리글 체크와 같은 뜻이라 굳이 두 개를 두지 않는다.
+    const allBtn = $("status-sel-all-results");
+    if (allBtn) {
+      const total = allRecords.length;
+      const everyLoaded = total > 0 && allRecords.every((r) => selected.has(Number(r.id)));
+      allBtn.hidden = total <= PAGE_SIZE || everyLoaded;
+      allBtn.textContent = `조회 결과 전체 선택 (${fmt(total, 0)}건)`;
+    }
     const chks = [...document.querySelectorAll("#status-rec-body .rec-chk")];
     const all = $("status-rec-all");
     if (all) {
@@ -781,6 +790,21 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     updateSelectionUI();
   });
+  // 조회 결과 전체 선택 — 쪽을 넘기지 않고 이번 조회로 받아 둔 기록 전부를 잡는다.
+  // 출력 상한(200건)을 넘는 조회면 여기서 미리 말한다(출력 버튼도 다시 말한다).
+  if ($("status-sel-all-results")) {
+    $("status-sel-all-results").addEventListener("click", () => {
+      allRecords.forEach((r) => selected.add(Number(r.id)));
+      document.querySelectorAll("#status-rec-body .rec-chk").forEach((c) => { c.checked = true; });
+      updateSelectionUI();
+      const n = allRecords.length;
+      if (n > MAX_PRINT) {
+        notify(`조회된 ${fmt(n, 0)}건을 모두 선택했습니다 — 일괄 출력은 표 순서 위에서 ${MAX_PRINT}건까지만 됩니다. 기간을 나눠 출력하세요.`, "warn");
+      } else {
+        notify(`조회된 ${fmt(n, 0)}건을 모두 선택했습니다.`, "success");
+      }
+    });
+  }
   if ($("status-sel-clear")) {
     $("status-sel-clear").addEventListener("click", () => {
       selected.clear();

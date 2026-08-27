@@ -105,6 +105,11 @@
                    어딘가는 말해야 한다. 출력·취소 버튼이 쓰는 수가 바로 이 숫자다. -->
               <span class="status-sel-count muted small" id="status-sel-count">선택 없음</span>
               <button class="btn btn-sm" id="status-sel-clear" type="button" hidden>선택 해제</button>
+              <!-- 머리글 체크는 지금 보이는 쪽(50건)만 잡는다. 기간 조회가 여러 쪽이면
+                   쪽마다 선택→출력을 반복해야 했다(146건=3회). 이 버튼은 쪽에 상관없이
+                   조회된 기록 전부를 선택 집합에 넣는다 — 여러 쪽일 때만 나타난다. -->
+              <button class="btn btn-sm" id="status-sel-all-results" type="button" hidden
+                      title="쪽에 상관없이 지금 조회된 기록을 모두 선택합니다">조회 결과 전체 선택</button>
               <!-- 취소된 기록은 기본으로 숨긴다. 켜면 함께 보이고, 상세에서 '복원'할 수 있다
                    (켜지 않으면 취소분에 도달할 방법이 없어 복원이 죽은 기능이 된다). -->
               <label class="visc-checkbox" title="취소 처리된 기록도 목록에 함께 표시합니다 — 취소분을 열어 '기록 복원'을 할 수 있는 유일한 경로. 취소 후 3일이 지나면 자동 삭제됩니다(스냅샷은 감사로그·백업에 남음)"><input id="status-rec-canceled" type="checkbox" /> 취소된 기록 포함</label>
@@ -190,5 +195,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260814a"></script>
+    <script src="/static/js/status.js?v=20260827a"></script>
 {% endblock %}

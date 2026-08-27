@@ -35,6 +35,18 @@ def test_selection_lives_in_a_set_not_in_the_checkboxes():
     assert ".rec-chk:checked" not in CONTROLLER, "아직 화면 체크박스에서 선택을 긁고 있다"
 
 
+def test_all_query_results_can_be_selected_across_pages():
+    """머리글 체크는 보이는 쪽 50건만 잡는다 — 기간 조회 146건을 3번 끊어 출력하던 불편
+    (2026-08-27). 조회 결과 전체 선택은 쪽을 넘기지 않고 allRecords 전부를 선택 집합에 넣는다."""
+    assert 'id="status-sel-all-results"' in TEMPLATE, "조회 결과 전체 선택 버튼이 없다"
+    handler = CONTROLLER.split('$("status-sel-all-results").addEventListener("click"', 1)[1]
+    assert "allRecords.forEach((r) => selected.add(Number(r.id)))" in handler
+    # 200건 출력 상한을 넘는 조회는 선택 시점에 미리 말한다.
+    assert "n > MAX_PRINT" in handler
+    # 한 쪽이면 머리글 체크와 같은 뜻 — 여러 쪽일 때만 보인다.
+    assert "allBtn.hidden = total <= PAGE_SIZE || everyLoaded;" in CONTROLLER
+
+
 def test_sorting_redraws_without_calling_the_server():
     """정렬 머리글이 loadRecords 를 부르면 API 를 두 번 치고 선택이 날아간다."""
     start = CONTROLLER.index("const key = th.dataset.sort;")
