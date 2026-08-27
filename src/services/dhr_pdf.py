@@ -38,6 +38,9 @@ _SIGN_FAILED_MARK = "(서명 합성 실패)"
 _excel_lock = threading.Lock()
 _RENDER_DPI = 250  # Excel→이미지 렌더 해상도. 200→300(06-25) 뒤 250 으로 — 구 프로그램과 동일, 용량 절반(2026-08-27).
 _PDF_JPEG_QUALITY = 60  # PDF 안 JPEG 품질. Pillow 기본 75 → 60: 스캔 효과 이미지라 눈에 안 띄고 −39%(2026-08-27).
+# JPEG 허프만 표 최적화 — 무손실로 −21%. 이게 빠져 있으면 zip/7z 가 뒤늦게 그 여유를 줄이는데(zip 85%·7z 77%),
+# 켜고 나면 어느 압축이든 93% 언저리라 압축 형식 논쟁이 의미 없어진다(2026-08-27).
+_PDF_JPEG_OPTS = {"quality": _PDF_JPEG_QUALITY, "optimize": True}
 _A4_WIDTH_IN = 8.27  # A4 세로 폭 210mm
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
@@ -485,7 +488,7 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True, sign: bo
     buf = io.BytesIO()
     # 이미지 폭으로 해상도 산출 → A4 한 장에 정확히 맞춤(고해상도여도 페이지 크기 유지)
     resolution = round(img.width / _A4_WIDTH_IN, 1)
-    img.save(buf, format="PDF", resolution=resolution, quality=_PDF_JPEG_QUALITY)
+    img.save(buf, format="PDF", resolution=resolution, **_PDF_JPEG_OPTS)
     return buf.getvalue()
 
 
@@ -497,7 +500,7 @@ def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True, sig
     buf = io.BytesIO()
     resolution = round(images[0].width / _A4_WIDTH_IN, 1)
     images[0].save(buf, format="PDF", save_all=True, append_images=images[1:], resolution=resolution,
-                   quality=_PDF_JPEG_QUALITY)
+                   **_PDF_JPEG_OPTS)
     return buf.getvalue()
 
 
