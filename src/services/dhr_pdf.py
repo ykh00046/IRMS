@@ -36,7 +36,8 @@ except ImportError:
 _log = logging.getLogger(__name__)
 _SIGN_FAILED_MARK = "(서명 합성 실패)"
 _excel_lock = threading.Lock()
-_RENDER_DPI = 300  # Excel→이미지 렌더 해상도(인쇄 선명도). 200→300 으로 상향.
+_RENDER_DPI = 250  # Excel→이미지 렌더 해상도. 200→300(06-25) 뒤 250 으로 — 구 프로그램과 동일, 용량 절반(2026-08-27).
+_PDF_JPEG_QUALITY = 60  # PDF 안 JPEG 품질. Pillow 기본 75 → 60: 스캔 효과 이미지라 눈에 안 띄고 −39%(2026-08-27).
 _A4_WIDTH_IN = 8.27  # A4 세로 폭 210mm
 
 _RES = os.path.join(os.path.dirname(__file__), "..", "resources")
@@ -484,7 +485,7 @@ def build_scanned_dhr_pdf(record: dict[str, Any], *, scan: bool = True, sign: bo
     buf = io.BytesIO()
     # 이미지 폭으로 해상도 산출 → A4 한 장에 정확히 맞춤(고해상도여도 페이지 크기 유지)
     resolution = round(img.width / _A4_WIDTH_IN, 1)
-    img.save(buf, format="PDF", resolution=resolution)
+    img.save(buf, format="PDF", resolution=resolution, quality=_PDF_JPEG_QUALITY)
     return buf.getvalue()
 
 
@@ -495,7 +496,8 @@ def build_batch_dhr_pdf(records: list[dict[str, Any]], *, scan: bool = True, sig
         return b""
     buf = io.BytesIO()
     resolution = round(images[0].width / _A4_WIDTH_IN, 1)
-    images[0].save(buf, format="PDF", save_all=True, append_images=images[1:], resolution=resolution)
+    images[0].save(buf, format="PDF", save_all=True, append_images=images[1:], resolution=resolution,
+                   quality=_PDF_JPEG_QUALITY)
     return buf.getvalue()
 
 

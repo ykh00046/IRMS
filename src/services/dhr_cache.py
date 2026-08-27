@@ -18,7 +18,9 @@ _CACHE_DIR = config.DATA_DIR / "dhr_cache"
 # 낡은 캐시가 무효화된다. 기록 내용이 그대로면 마커가 같아, 취소 표식·일괄 재생성 표식·
 # 증량 요약 같은 렌더러 개선이 배포돼도 예전에 만들어 둔 PDF 가 계속 나가던 문제가 있었다.
 # ⚠ dhr_excel.py / dhr_pdf.py 의 출력물이 바뀌는 변경을 하면 이 상수를 반드시 올린다.
-RENDERER_VERSION = 4  # 4: 통제 표식(증량·수기 부재·일괄 재생성) 제거 — 취소 표식만 남김 (2026-08-27)
+# 4: 통제 표식(증량·수기 부재·일괄 재생성) 제거 — 취소 표식만 남김 (2026-08-27)
+# 5: 250dpi + JPEG 품질 60 — 용량 절감 (2026-08-27)
+RENDERER_VERSION = 5
 
 
 def _marker(record: dict[str, Any]) -> str:
