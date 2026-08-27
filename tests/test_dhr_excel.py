@@ -66,55 +66,62 @@ def test_official_dhr_form_handles_missing_optionals():
     assert ws["A6"].value == "제품A260625"
 
 
-def test_official_dhr_includes_rescale_summary():
-    """증량(rescale) 이력이 있으면 표 아래 비고에 요약 줄이 실린다(GAP-5)."""
+def _all_text(xb: bytes) -> str:
+    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
+    return "\n".join(
+        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
+    )
+
+
+def test_official_dhr_is_plain_even_with_rescale_history():
+    """배합일지는 외부 제출 문서 — 증량 승인/부재 이력은 문서에 싣지 않는다(2026-08-27 재지시).
+
+    2026-07 감사 수정(GAP-5)이 비고 줄로 넣었다가 첫 실제 출력에서 걸러졌다. 이력은
+    /status 상세(rescaleBlock)에서만 보인다.
+    """
     rec = _sample_record()
     rec["rescale_count"] = 2
+    rec["rescale_unacked"] = 1
     rec["rescale_events_json"] = json.dumps([
         {"before_total": 1000, "after_total": 1050, "approver": "홍길동"},
         {"before_total": 1050, "after_total": 1100, "absence_reason": "야간 단독"},
     ], ensure_ascii=False)
-    xb = dhr_excel.build_official_dhr_xlsx(rec)
-    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
-    joined = "\n".join(
-        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
-    )
-    assert "증량 2회" in joined
-    assert "1000→1050" in joined
-    assert "승인: 홍길동" in joined
-    assert "부재: 야간 단독" in joined
+    joined = _all_text(dhr_excel.build_official_dhr_xlsx(rec))
+    # '승인'·작업자명은 양식 결재칸·작업자 칸에 정당하게 있으므로 보지 않는다.
+    for banned in ("증량", "부재", "야간 단독", "1000→1050", "1050→1100"):
+        assert banned not in joined, f"배합일지에 통제 표식이 실렸다: {banned!r}"
 
 
-def test_official_dhr_no_rescale_summary_when_absent():
-    """증량 이력이 없으면 비고 요약 줄이 생기지 않는다(회귀 가드)."""
-    xb = dhr_excel.build_official_dhr_xlsx(_sample_record())
-    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
-    joined = "\n".join(
-        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
-    )
-    assert "증량" not in joined
+def test_official_dhr_is_plain_even_with_manual_absence():
+    """수기 입력을 책임자 부재로 진행한 사정도 문서에는 없다 — 조회 화면·트레이·감사로그 전용."""
+    rec = _sample_record()
+    rec["manual_entry"] = True
+    rec["manual_unacked"] = 1
+    rec["manual_absence_reason"] = "야간 근무 · 책임자 부재"
+    joined = _all_text(dhr_excel.build_official_dhr_xlsx(rec))
+    for banned in ("수기", "부재", "야간 근무", "수동"):
+        assert banned not in joined, f"배합일지에 통제 표식이 실렸다: {banned!r}"
 
 
-def test_official_dhr_marks_bulk_regenerated():
-    """일괄 재생성 기록이면 비고 영역에 '(일괄 재생성 기록)' 표식이 실린다."""
+def test_official_dhr_is_plain_even_when_bulk_regenerated():
+    """일괄 재생성 기록의 배합일지도 표식 없이 나간다 — 그 기록은 애초에 문서용으로 만든 것."""
     rec = _sample_record()
     rec["is_bulk_regenerated"] = True
-    xb = dhr_excel.build_official_dhr_xlsx(rec)
-    ws = openpyxl.load_workbook(io.BytesIO(xb)).active
-    joined = "\n".join(
-        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
-    )
-    assert "(일괄 재생성 기록)" in joined
+    joined = _all_text(dhr_excel.build_official_dhr_xlsx(rec))
+    assert "일괄 재생성" not in joined
 
 
-def test_official_dhr_no_bulk_marker_when_absent():
-    """일반 실적(플래그 없음)이면 일괄 재생성 표식이 생기지 않는다(회귀 가드)."""
+def test_official_dhr_has_no_note_row_for_normal_record():
+    """정상 기록은 표 아래에 아무 줄도 붙지 않는다 — 인쇄 영역이 표 끝에서 끝난다."""
     xb = dhr_excel.build_official_dhr_xlsx(_sample_record())
     ws = openpyxl.load_workbook(io.BytesIO(xb)).active
-    joined = "\n".join(
-        c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)
-    )
-    assert "일괄 재생성" not in joined
+    # openpyxl 은 시트명·$ 를 붙여 돌려준다("'시트'!$A$1:$G$7") — 끝만 본다.
+    assert ws.print_area.replace("$", "").endswith("A1:G7"), ws.print_area
+
+
+def test_rescale_summary_helper_is_gone():
+    """통제 표식을 문서에 실을 도우미가 남아 있으면 누군가 다시 부른다."""
+    assert not hasattr(dhr_excel, "rescale_summary_line")
 
 
 def test_official_dhr_marks_canceled_record():

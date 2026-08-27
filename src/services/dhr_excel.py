@@ -11,7 +11,6 @@ C:\\X\\Program-estimation v3 의 ExcelWriter 를 웹용으로 이식한 것.
 """
 
 import io
-import json
 import os
 from typing import Any
 
@@ -39,46 +38,6 @@ _THIN = Side(style="thin", color="000000")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-
-def _fmt_amt(value: Any) -> str:
-    """총량 표시용 숫자 포맷 — 정수는 소수점 제거, 그 외 2자리."""
-    if value is None or value == "":
-        return "?"
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    return str(int(f)) if f == int(f) else f"{f:.2f}"
-
-
-def rescale_summary_line(record: dict[str, Any]) -> str:
-    """증량(rescale) 이력을 공식 DHR 비고에 실을 한 줄 요약으로 반환(없으면 빈 문자열).
-
-    예) "증량 2회: 1000→1050 (승인: 홍길동); 1050→1100 (부재: 야간 단독)".
-    record 는 get_blend_record 가 실어 준 rescale_events_json(정규화 이벤트 JSON)을 쓴다.
-    """
-    raw = record.get("rescale_events_json")
-    if not raw or not record.get("rescale_count"):
-        return ""
-    try:
-        events = json.loads(raw)
-    except (ValueError, TypeError):
-        return ""
-    if not events:
-        return ""
-    parts: list[str] = []
-    for ev in events:
-        before = _fmt_amt(ev.get("before_total"))
-        after = _fmt_amt(ev.get("after_total"))
-        if ev.get("approver"):
-            who = f"승인: {ev['approver']}"
-        elif ev.get("absence_reason"):
-            who = f"부재: {ev['absence_reason']}"
-        else:
-            who = "승인 없음"
-        parts.append(f"{before}→{after} ({who})")
-    return f"증량 {len(events)}회: " + "; ".join(parts)
 
 
 def build_official_dhr_xlsx(
@@ -164,27 +123,15 @@ def build_official_dhr_xlsx(
         # 서명 합성 실패를 표면화 — 사용자가 서명본으로 오인해 배포하는 것을 막는다(POLISH-6).
         ws["G2"] = "(서명 합성 실패)"
 
-    # 비고 영역(표 아래 빈 공간)에 표식/이력을 한 줄로 남긴다(GAP-5). 공식 양식 레이아웃은
-    # 건드리지 않고 표 하단에 append 만 한다.
-    #  - 취소된 기록이면 "(취소된 기록)" 표식(단건 출력은 상태 무관 가능 — POLISH-7b).
-    #  - 일괄 재생성 기록이면 "(일괄 재생성 기록)" 표식(현장 계량 아님).
-    #  - 증량(rescale) 이력이 있으면 요약을 이어 붙인다.
-    note_parts: list[str] = []
+    # 배합일지는 외부 제출 문서다(2026-08-27 사용자 재지시). 수기 입력·책임자 부재·증량
+    # 승인/부재 이력·일괄 재생성 같은 **내부 통제 표식은 여기 싣지 않는다** — 그런 사정은
+    # 기록 조회 화면(/status 상세 배지·블록)·트레이 알림·감사로그에서만 보인다. 2026-07 감사
+    # 수정(GAP-5)에서 비고 줄로 넣었다가 첫 실제 출력에서 걸러졌다. 다시 넣지 말 것.
+    # 유일한 예외는 취소된 기록의 "(취소된 기록)" 표식 — 통제 이력이 아니라 무효 문서를
+    # 실수로 제출하지 않게 하는 표식이다(단건 출력은 상태 무관 가능 — POLISH-7b).
     if record.get("status") == "canceled":
-        note_parts.append("(취소된 기록)")
-    if record.get("is_bulk_regenerated"):
-        note_parts.append("(일괄 재생성 기록)")
-    summary = rescale_summary_line(record)
-    if summary:
-        note_parts.append(summary)
-    # 수기 입력을 책임자 부재로 진행한 기록 — 증량 일탈과 같은 성격이므로 문서에도 남긴다.
-    # (전용 컬럼에만 저장돼 화면·알림에만 보이고 문서에는 흔적이 없던 것을 보완.)
-    manual_absence = str(record.get("manual_absence_reason") or "").strip()
-    if manual_absence:
-        note_parts.append(f"(수기 입력 · 책임자 부재: {manual_absence})")
-    if note_parts:
         note_row = print_end_row + 2
-        cell = ws.cell(row=note_row, column=1, value="  ".join(note_parts))
+        cell = ws.cell(row=note_row, column=1, value="(취소된 기록)")
         cell.alignment = _LEFT
         try:
             ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=7)

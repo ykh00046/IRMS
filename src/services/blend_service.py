@@ -2699,7 +2699,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     record = _serialize_record(row)
     record["details"] = [_serialize_detail(d) for d in details]
     record["variance"] = _variance_summary(record["details"])
-    # 증량(rescale) 이력 — 공식 DHR·화면이 함께 쓰도록 기록 dict 에 실어 준다(GAP-5).
+    # 증량(rescale) 이력 — /status 상세·알림이 쓰도록 기록 dict 에 실어 준다(공식 DHR 에는 싣지 않음, 2026-08-27).
     # rescale_* 컬럼이 없는 구버전/단위테스트 스키마는 방어적으로 기본값 폴백(다른 컬럼과 동일 패턴).
     try:
         rr = connection.execute(

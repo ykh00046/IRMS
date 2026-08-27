@@ -136,11 +136,11 @@ DHR(원료배합일지) 산출물은 두 형식이다: **공식 양식 Excel** �
 - `signature_image_path` 인자를 주면 결재 도장 이미지를 G2(228×65)에 삽입 — 단, HTTP 라우트
   `blend_export`는 이 인자를 **주지 않는다** → Excel 다운로드는 항상 서명 없는 빈 결재칸.
 - `sign_failed=True` 인자를 주면(서명 요청인데 합성 실패, POLISH-6) G2 에 `(서명 합성 실패)` 표식을 남긴다.
-- ✅ **비고 영역(표 아래 end_row+2 병합 셀) append**(양식 레이아웃 불변): 취소 기록이면
-  `(취소된 기록)`(POLISH-7b) 표식을, 일괄 재생성 기록이면 `(일괄 재생성 기록)` 표식을, 증량(rescale)
-  이력이 있으면 `rescale_summary_line`(`증량 N회: 1000→1050 (승인: 홍길동); 1050→1100 (부재: 사유)`,
-  GAP-5) 요약을 이어 붙인다(여럿이면 한 줄에 함께). 표식 여부는 `record["status"]`(=='canceled')·
-  `record["is_bulk_regenerated"]`·rescale 컬럼으로 각각 결정.
+- **비고 영역(표 아래 end_row+2 병합 셀)**: 취소 기록이면 `(취소된 기록)`(POLISH-7b) 표식 **하나만**.
+  ⚠ 2026-08-27 사용자 재지시 — 배합일지는 **외부 제출 문서**라 증량 승인/부재 이력·수기 입력
+  책임자 부재 사유·일괄 재생성 표식 같은 **내부 통제 표식은 싣지 않는다**(2026-07 GAP-5 로 넣었던
+  `rescale_summary_line`·수기 부재 줄·일괄 재생성 표식은 제거, `dhr_cache.RENDERER_VERSION=4`).
+  그 사정은 /status 상세·트레이 알림·감사로그에서만 보인다.
 - 파일명: ASCII 폴백 `blend-{id}.xlsx` + RFC5987 `원료배합일지-{product_lot}.xlsx`.
 
 ### 3.2 스캔효과 PDF (`GET /blend/records/{id}/pdf` → `dhr_pdf.build_scanned_dhr_pdf`)
@@ -215,8 +215,8 @@ DHR(원료배합일지) 산출물은 두 형식이다: **공식 양식 Excel** �
   문서/계획 재생성 용도 → 드물게 씀. §7 예외 확인 참조.
   - ✅ **일괄 재생성 표식**: 이렇게 만든 기록은 `blend_records.is_bulk_regenerated=1`
     (마이그레이션 `ensure_column` DEFAULT 0)로 표시된다. 목록/상세 응답 직렬화가 이 플래그를
-    실어(`_serialize_record`), /status 목록엔 중립 배지 `일괄 재생성`, 상세·DHR 모달엔 안내 줄,
-    공식 DHR Excel 비고엔 `(일괄 재생성 기록)` 을 남겨 **현장 실측이 아님**을 문서 표면에 드러낸다.
+    실어(`_serialize_record`), /status 목록엔 중립 배지 `일괄 재생성`, 상세·DHR 모달엔 안내 줄.
+    공식 DHR 문서에는 표식을 남기지 않는다(외부 제출용 — 2026-08-27).
 - **DHR 전용 레시피(인허가 변경본)**: `GET /blend/recipes?dhr=1`(`blend_recipes`, `blend_routes.py:83`)이
   DHR 전용 레시피만 반환. 실제 배합비와 별개로 **인허가 문서에 실리는 변경본**을 일괄 배합일지 생성에 쓴다.
   일반 배합과 분리(점도 연계는 또 별개).
@@ -225,9 +225,10 @@ DHR(원료배합일지) 산출물은 두 형식이다: **공식 양식 Excel** �
 
 ## 5. 오늘 추가된 통제의 기록 표면 (증량·수기승인·미등록 LOT)
 
-세 기능은 웹 화면(/status)에 나타난다. 공식 DHR 문서 표면화는 부분 개선됨: **증량 이력은 이제 공식 DHR
-Excel 비고에 요약 줄로 실린다(§7 GAP-5 부분 해소)**. 수기 입력 승인·미등록 LOT 사유는 기록 비고(note)로
-문서에 노출된다. `manual_entry` 행별 표식의 PDF 표면화는 여전히 웹 화면 전용.
+세 기능은 웹 화면(/status)에만 나타난다. **공식 DHR 문서에는 의도적으로 표면화하지 않는다** —
+배합일지는 외부 제출 문서이므로 통제 이력(증량 승인/부재·수기 입력 승인/부재·미등록 LOT 사유·
+`manual_entry` 행별 표식)은 화면·트레이·감사로그가 담당한다(2026-08-27 사용자 재지시. 기록 비고
+`note` 도 양식 셀에 매핑되지 않으므로 `[수기 입력 …]` 마커는 문서에 실리지 않는다).
 
 ### 5.1 증량(rescale) 이력
 
@@ -236,7 +237,8 @@ Excel 비고에 요약 줄로 실린다(§7 GAP-5 부분 해소)**. 수기 입�
   최대 2건, 각 건은 책임자 승인 토큰(`approval_id`, 30분 TTL·1회용) 또는 부재 사유(`absence_reason`) 필요.
   부재 사유로 진행하면 `rescale_unacked=1`.
 - **기록 표면**: `get_blend_record` 는 이제 rescale 컬럼(`rescale_events_json`/`rescale_count`/`rescale_unacked`)을
-  **함께 SELECT 해 기록 dict 에 실어 준다(GAP-5 해소)** → 공식 DHR Excel 이 요약 줄을 렌더한다.
+  **함께 SELECT 해 기록 dict 에 실어 준다** → /status 상세 `rescaleBlock` 이 그린다(공식 DHR 에는
+  싣지 않는다 — 2026-08-27).
   목록 배지/상세 모달용 별도 요약 엔드포인트 `GET /blend/rescales/summary`(`blend_rescale_ack_routes.py`,
   무로그인)와 `status.js`(`rescaleMap`) 병합 경로는 그대로 유지(웹 화면 표면).
 - **사후 확인(수기 승인)**: 책임자가 `GET /blend/rescales/unacked`(목록) → `POST .../{id}/rescale-ack`
@@ -333,15 +335,17 @@ Excel 비고에 요약 줄로 실린다(§7 GAP-5 부분 해소)**. 수기 입�
 `_audit_dhr_export` 헬퍼를 붙여 `dhr_exported` 감사를 남긴다(actor=로그인 사용자/현장, details 에
 format·count·record_ids). 테스트: `test_dhr_exports_are_audited`(tests/test_blend.py).
 
-### GAP-5 — ✅ 부분 해소 — 증량 이력이 공식 DHR Excel 에 표시됨
-- `get_blend_record` 가 `rescale_events_json`/`rescale_count`/`rescale_unacked` 를 기록 dict 에 실어 준다.
-- `dhr_excel.build_official_dhr_xlsx` 가 `rescale_summary_line` 으로 표 아래 비고에 한 줄 요약을 append
-  (`증량 N회: before→after (승인:…/부재:…)`). 양식 레이아웃은 불변.
-- 수기 입력 승인 메모는 기록 비고(`note`)에 실려 있고, 비고가 인쇄되면 함께 노출된다(별도 조치 불요).
-- 테스트: `test_official_dhr_includes_rescale_summary`(openpyxl read-back).
-- ⚠ **남은 범위**: 스캔효과 PDF(`dhr_pdf`)의 `render_form_image` 폴백 표는 아직 증량 줄을 그리지 않는다
-  (정확 경로 PDF 는 Excel→PDF 변환이라 요약 줄이 자동 반영됨). `manual_entry` 행별 표식·미등록 LOT 사유의
-  PDF 표면화는 이번 범위 밖(비고 note 로는 노출됨).
+### GAP-5 — ⛔ 철회(2026-08-27) — 증량 이력은 공식 DHR 에 싣지 않는다
+- 2026-07-14 에 `rescale_summary_line` 으로 표 아래 비고에 요약 줄을 append 했고(a2f32c8 에서 수기 부재
+  줄까지 추가), 첫 실제 출력에서 사용자가 걸러냈다: **배합일지는 외부 제출 문서라 내부 통제 표식이
+  있으면 안 된다.** 이전에도 같은 지시가 있었다.
+- 제거: `rescale_summary_line`·수기 부재 줄·`(일괄 재생성 기록)` 표식. `dhr_cache.RENDERER_VERSION=4`
+  로 캐시된 옛 PDF 무효화. 남는 것은 `(취소된 기록)` 뿐(무효 문서 오제출 방지).
+- 표면화는 /status 배지·상세 블록·트레이 미확인 알림·감사로그가 담당. 기록 비고 `note` 는 양식 셀에
+  매핑되지 않으므로 `[수기 입력 …]` 마커도 문서에 나가지 않는다.
+- 테스트: `test_official_dhr_is_plain_even_with_rescale_history` / `..._manual_absence` /
+  `..._bulk_regenerated` / `test_rescale_summary_helper_is_gone`(`tests/test_dhr_excel.py`).
+- 이 GAP 류(“문서 표면에 드러내야 한다”)는 앞으로 DHR 에 적용하지 않는다.
 
 ### POLISH-6 — ✅ 해소 — 서명 합성 실패를 표면화
 `sign=True` 인데 합성이 실패하면 이제 **가시 표식 + 서버 로그**를 남긴다(무언의 미서명 출력 금지):
@@ -359,11 +363,11 @@ format·count·record_ids). 테스트: `test_dhr_exports_are_audited`(tests/test
   `test_hard_delete_purges_dhr_cache`(tmp 캐시 디렉터리, `tests/test_record_delete_service.py`).
 - **7b(취소 기록 무표식)**: `get_blend_record` 는 상태 무관 반환이라 soft 취소분도 `blend_pdf`/`blend_export`
   로 출력 가능한데(목록에선 숨김) 문서에 취소 표식이 없었다. 이제 `build_official_dhr_xlsx` 가
-  `record["status"] == "canceled"` 이면 기존 비고(GAP-5·일괄 재생성과 동일 append 기법)에
-  `(취소된 기록)` 을 실어 취소분임을 문서 표면에 드러낸다. 테스트:
+  `record["status"] == "canceled"` 이면 표 아래 비고 줄에 `(취소된 기록)` 을 실어 취소분임을 문서
+  표면에 드러낸다(2026-08-27 이후 DHR 에 남은 유일한 표식). 테스트:
   `test_official_dhr_marks_canceled_record` / `test_official_dhr_no_canceled_marker_when_completed`
-  (`tests/test_dhr_excel.py`). ⚠ 스캔효과 PDF 폴백 표는 GAP-5 와 동일하게 아직 이 표식을 그리지
-  않는다(정확 경로는 Excel→PDF 변환이라 자동 반영).
+  (`tests/test_dhr_excel.py`). ⚠ 스캔효과 PDF 폴백 표는 아직 이 표식을 그리지 않는다(정확 경로는
+  Excel→PDF 변환이라 자동 반영).
 
 ### 예외 확인 — bulk 재생성이 LOT 필수·편차·증량 통제를 전면 우회 (의도됨, 단 표식 부재)
 `create_bulk`(`blend_service.py:1203-1258`)는 **의도적으로** `material_lot=None`, `actual=theory` 로 만들고
