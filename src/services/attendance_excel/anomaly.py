@@ -174,14 +174,23 @@ def _infer_partial_leave_half(
 ) -> str:
     """반차/반반차의 오전/오후 구분을 출퇴근 기록으로 추론(주간).
 
-    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦다. 오후 사용이면
-    정시 출근하고 정규 퇴근(``base_out``)보다 일찍 나간다 — 휴가량을 덜
-    쓰고 늦게 나가도 '정규 퇴근 이전 퇴근'이면 오후 신호로 본다.
+    판정 순서:
+      1. 정규 퇴근(``base_out``)까지 채웠으면 → 오전 (오후 블록을 끝까지 근무)
+      2. 출근이 ``base_in + 휴가량`` 이후로 늦으면 → 오전
+      3. 정규 퇴근보다 일찍 나갔으면 → 오후 (휴가량을 덜 쓰고 늦게 나가도
+         '정규 퇴근 이전 퇴근'이면 오후 신호로 본다)
     """
     in_mins = files._hhmm_to_minutes(row.check_in)
     out_mins = files._hhmm_to_minutes(row.check_out)
     morning_in = base_in + shift_minutes
 
+    # 정규 퇴근까지 채웠으면 오후 블록을 끝까지 일한 것 = 오전 사용이다.
+    # 종전엔 오전 인정 조건이 '출근 >= morning_in'(주간 반차 14:00) 하나뿐이라,
+    # 오전 반차인데 기준보다 일찍 나온 사람이 오전으로도 오후로도 판정되지 않고
+    # baseline 이 전일 근무(09:00~18:00)로 남아 지각으로 오탐됐다
+    # (2026-08-26 반차 13:00~18:00 신고 — 반차인데 반차 기준을 안 쓰는 상태였다).
+    if out_mins is not None and out_mins >= base_out:
+        return "오전"
     if in_mins is not None and in_mins >= morning_in:
         return "오전"
     if out_mins is not None and out_mins < base_out:
@@ -197,14 +206,22 @@ def _infer_shift2_partial_half(
 ) -> str:
     """2교대 반차/반반차의 오전/오후 구분을 출퇴근 기록으로 추론.
 
-    오전 사용이면 출근이 ``base_in + 휴가량`` 이후로 늦다. 오후 사용이면
-    정시 출근하고 정규 퇴근(``base_out``)보다 일찍 나간다. 모델상 기대
-    퇴근(출근+(8h−휴가량))까지 채우지 않고 잔업을 일부 더 하고 나가면
-    그 시각보다 늦을 수 있으므로, '정규 퇴근 이전 퇴근'을 오후 신호로 본다.
+    판정 순서:
+      1. 정규 퇴근(``base_out`` = 출근+8h45m)까지 채웠으면 → 오전
+      2. 출근이 ``base_in + 휴가량`` 이후로 늦으면 → 오전
+      3. 정규 퇴근보다 일찍 나갔으면 → 오후. 모델상 기대 퇴근(출근+(8h−휴가량))
+         까지 채우지 않고 잔업을 일부 더 하고 나가면 그 시각보다 늦을 수 있으므로,
+         '정규 퇴근 이전 퇴근'을 오후 신호로 본다.
     """
     in_mins = files._hhmm_to_minutes(row.check_in)
     out_mins = files._hhmm_to_minutes(row.check_out)
     morning_in = base_in + off_minutes
+
+    # 정규 퇴근까지 채웠으면 오후 블록을 끝까지 일한 것 = 오전 사용이다.
+    # 주간과 같은 사각지대가 2교대에도 있었다: 오전 휴가인데 기준(출근+휴가량)보다
+    # 일찍 나오면 오전/오후 어느 쪽도 아니라 baseline 이 전일 근무로 남아 지각 오탐.
+    if out_mins is not None and out_mins >= base_out:
+        return "오전"
     if in_mins is not None and in_mins >= morning_in:
         return "오전"
     if out_mins is not None and out_mins < base_out:

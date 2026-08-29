@@ -14,11 +14,13 @@ def _row(
     date: str = "2026-04-24",
     check_in: str | None = "09:40",
     check_out: str | None = "17:20",
+    day_type: str = "\uD3C9\uC77C",
+    note: str = "",
 ) -> AttendanceRow:
     return AttendanceRow(
         date=date,
         weekday="\uAE08",
-        day_type="\uD3C9\uC77C",
+        day_type=day_type,
         check_in=check_in,
         check_out=check_out,
         next_day=False,
@@ -33,7 +35,7 @@ def _row(
         late_hours=0.0,
         early_leave_hours=0.0,
         outing_hours=0.0,
-        note="",
+        note=note,
         attendance_code=attendance_code,
     )
 
@@ -308,6 +310,103 @@ class AttendanceAnomalyResolutionTests(unittest.TestCase):
             patch.object(attendance_excel.files, "available_months", return_value=["2026-04", "2026-03"]),
         ):
             self.assertEqual(attendance_excel.alert_year_month(), "2026-04")
+
+
+class PartialLeaveHalfInferenceTests(unittest.TestCase):
+    """오전/오후 미표기 반차·반반차의 half 추론 회귀.
+
+    정규 퇴근까지 채웠으면 오후 블록을 끝까지 일한 것이므로 오전 사용으로 본다.
+    종전엔 오전 인정 조건이 '출근 >= 출근기준 + 휴가량'(주간 반차 14:00) 하나뿐이라
+    기준보다 일찍 나온 오전 반차가 오전/오후 어느 쪽으로도 판정되지 않았고,
+    baseline 이 전일 근무(09:00~18:00)로 남아 지각으로 오탐됐다.
+    """
+
+    REFERENCE = dt.datetime(2026, 8, 29, 9, 0)
+
+    def _issues(self, row: AttendanceRow, shift_time: str = "주간") -> list[str]:
+        return attendance_excel._unprocessed_row_issues(
+            row, shift_time, reference=self.REFERENCE
+        )
+
+    def test_day_half_leave_early_arrival_uses_half_leave_baseline(self) -> None:
+        """2026-08-26 신고 사례: 평일/주간/반차, 오전·오후 미표기, 13:00~18:00.
+
+        오전 반차 출근 기준(14:00)보다 1시간 일찍 나왔을 뿐 정규 퇴근(18:00)을
+        채웠으므로 오전 반차다. 기준보다 일찍 온 것은 정상이라 이상이 없어야 한다.
+        """
+        row = _row(
+            attendance_code="반차",
+            note="반차, 예비군훈련 13시~19시",
+            date="2026-08-26",
+            check_in="13:00",
+            check_out="18:00",
+        )
+        self.assertEqual(
+            attendance_excel._compute_row_anomaly_baseline(row, "주간"),
+            (14 * 60, 18 * 60),  # 09:00+5h ~ 18:00
+        )
+        self.assertEqual(self._issues(row), [])
+
+    def test_day_half_leave_late_arrival_still_flagged(self) -> None:
+        """오전 반차 기준(14:00)보다 늦은 15:00 출근은 여전히 '지각 미처리'."""
+        row = _row(
+            attendance_code="반차",
+            date="2026-08-26",
+            check_in="15:00",
+            check_out="19:00",
+        )
+        self.assertEqual(
+            attendance_excel._compute_row_anomaly_baseline(row, "주간"),
+            (14 * 60, 18 * 60),
+        )
+        self.assertIn("지각 미처리", self._issues(row))
+
+    def test_day_half_leave_afternoon_late_arrival_still_flagged(self) -> None:
+        """오후 반차(13:00 퇴근)에 09:20 출근은 여전히 '지각 미처리'."""
+        row = _row(
+            attendance_code="반차",
+            date="2026-08-26",
+            check_in="09:20",
+            check_out="13:00",
+        )
+        self.assertEqual(
+            attendance_excel._compute_row_anomaly_baseline(row, "주간"),
+            (9 * 60, 13 * 60),  # 09:00 ~ 18:00-5h
+        )
+        self.assertIn("지각 미처리", self._issues(row))
+
+    def test_short_lunch_day_half_leave_early_arrival_is_normal(self) -> None:
+        """평일2(점심 30분 단축, 정규 퇴근 17:30) 반차 13:00~17:30 → 이상 없음."""
+        row = _row(
+            attendance_code="반차",
+            day_type="평일2",
+            date="2026-08-26",
+            check_in="13:00",
+            check_out="17:30",
+        )
+        self.assertEqual(
+            attendance_excel._compute_row_anomaly_baseline(row, "주간"),
+            (14 * 60, 17 * 60 + 30),
+        )
+        self.assertEqual(self._issues(row), [])
+
+    def test_shift2_half_leave_full_regular_checkout_infers_morning(self) -> None:
+        """2교대(주간) 반차, 미표기, 정규 퇴근(15:45)까지 채우면 오전으로 추론.
+
+        오전 반차 출근 기준(07:00+4h=11:00)보다 일찍 나온 09:00 출근이라
+        종전 규칙으로는 오전/오후 어느 쪽도 아니었다(전일 근무 기준 잔류).
+        """
+        row = _row(
+            attendance_code="반차",
+            date="2026-08-26",
+            check_in="09:00",
+            check_out="15:45",
+        )
+        self.assertEqual(
+            attendance_excel._compute_row_anomaly_baseline(row, "2교대(주간)"),
+            (11 * 60, 15 * 60 + 45),
+        )
+        self.assertEqual(self._issues(row, "2교대(주간)"), [])
 
 
 if __name__ == "__main__":
