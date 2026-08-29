@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["user_password_reset", "로그인 계정 비번 초기화"],
       ["admin_deactivate_others", "admin 외 계정 일괄 비활성화"],
       ["attendance_password_reset", "근태 비번 초기화"],
+      ["attendance_password_set_after_reset", "근태 비번 설정(임시 비번 이후)"],
       ["attendance_lockout_cleared", "근태 잠금 해제"],
     ]],
     ["배합 기록", [
@@ -616,7 +617,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return response.json();
   }
 
-  // 근태 표의 시각 — 저장값은 UTC(...Z)다. 종전엔 T/Z 만 지우고 그대로 찍어, 같은 화면의
   // ── 임시 비밀번호 발급 결과 카드 ──────────────────────────────────────
   // 종전엔 window.prompt 로 보여줬다. 공용 PC 에서 브라우저가 prompt 를 막으면
   // 발급된 비밀번호가 통째로 사라졌고(다시 발급해야 한다), 복사도 어려웠으며,
@@ -683,6 +683,7 @@ document.addEventListener("DOMContentLoaded", () => {
   attIssueCopy?.addEventListener("click", copyIssuePassword);
   attIssueClose?.addEventListener("click", hideIssueResult);
 
+  // 근태 표의 시각 — 저장값은 UTC(...Z)다. 종전엔 T/Z 만 지우고 그대로 찍어, 같은 화면의
   // 감사 로그(현지 시각 변환)와 9시간 어긋났다. "잠금 해제 15:12"를 보고 이미 풀렸다고
   // 판단하는데 실제로는 자정인 식(2026-08-08 감사). 감사 로그와 같은 변환기를 쓴다.
   function formatAttDate(text) {
@@ -696,9 +697,9 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const data = await attendanceFetch("/api/attendance/admin/users");
       const items = data.items || [];
-      if (!items.length) {
       attKnownEmpIds.clear();
       items.forEach((item) => attKnownEmpIds.add(String(item.emp_id)));
+      if (!items.length) {
         attUsersBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b">등록된 근태 계정이 없습니다.</td></tr>';
         return;
       }

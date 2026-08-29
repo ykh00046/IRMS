@@ -8,6 +8,10 @@
   const errorEl = document.getElementById("att-change-error");
   const logoutBtn = document.getElementById("att-change-logout");
 
+  function isResetFlow() {
+    return form?.dataset?.resetFlow === "true";
+  }
+
   function setHint(message, tone) {
     if (!errorEl) return;
     if (!message) {
@@ -22,6 +26,8 @@
 
   function mapError(raw) {
     const text = String(raw || "");
+    if (text.includes("CURRENT_PASSWORD_REQUIRED"))
+      return "임시 비밀번호 상태가 아닙니다. 현재 비밀번호를 입력해야 합니다 — 화면을 새로고침하세요.";
     if (text.includes("CURRENT_PASSWORD_WRONG"))
       return "현재 비밀번호가 맞지 않습니다.";
     if (text.includes("PASSWORD_TOO_SHORT"))
@@ -67,7 +73,8 @@
 
   async function onSubmit(event) {
     event.preventDefault();
-    const current = currentInput.value || "";
+    // 임시 비밀번호 상태에서는 현재 비밀번호 칸 자체가 없다 — null 을 전제로 읽는다.
+    const current = currentInput ? currentInput.value || "" : "";
     const next = newInput.value || "";
     const confirm = confirmInput.value || "";
     if (next !== confirm) {
@@ -76,10 +83,10 @@
     }
     setHint("변경 중...", "muted");
     try {
-      await postJson("/api/attendance/change-password", {
-        current_password: current,
-        new_password: next,
-      });
+      const payload = isResetFlow()
+        ? { new_password: next }
+        : { current_password: current, new_password: next };
+      await postJson("/api/attendance/change-password", payload);
       // Clear any dismissed-banner flag so the new state (no banner) is clean.
       try {
         Object.keys(localStorage).forEach((key) => {
@@ -91,6 +98,7 @@
         /* ignore */
       }
       setHint("변경 완료. 이동 중...", "muted");
+      window.IRMS?.attendanceSession?.allowNavigation?.();
       window.location.assign("/attendance");
     } catch (error) {
       setHint(mapError(error.message), "error");
@@ -98,7 +106,6 @@
   }
 
   async function onLogout() {
-      window.IRMS?.attendanceSession?.allowNavigation?.();
     try {
       await postJson("/api/attendance/logout", {});
     } catch (_) {
@@ -112,8 +119,9 @@
   form?.addEventListener("submit", onSubmit);
   logoutBtn?.addEventListener("click", onLogout);
   laterBtn?.addEventListener("click", () => {
+    window.IRMS?.attendanceSession?.allowNavigation?.();
     window.location.assign("/attendance");
   });
-  currentInput?.focus();
+  // 첫 칸에 커서를 둔다 — 임시 비밀번호 상태면 현재 비밀번호 칸이 없으므로 새 비밀번호.
+  (currentInput || newInput)?.focus();
 })();
-    window.IRMS?.attendanceSession?.allowNavigation?.();

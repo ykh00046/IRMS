@@ -4,7 +4,8 @@ All attendance endpoints share a single router under ``/api/attendance``:
 
 - ``POST /login``            - Sa-beon + manager-issued password. Accounts are
                                provisioned through the admin reset endpoint.
-- ``POST /change-password``  - Current + new password.
+- ``POST /change-password``  - New password (+ current password, except when the
+                               session is still in the temporary-password state).
 - ``POST /logout``           - Clear the attendance session.
 - ``GET  /me?month=``        - Logged-in employee's own attendance.
 - ``GET  /admin/employees?month=`` - List employees for admin drop-down.
@@ -44,7 +45,9 @@ class LoginRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=200)
+    # 임시 비밀번호로 방금 로그인한 사람은 그것을 다시 타이핑하지 않는다(2026-08-28 B1).
+    # 그래서 현재 비밀번호는 선택 항목이다 — 일반 세션에서 비면 종전대로 거부된다.
+    current_password: str = Field(default="", max_length=200)
     new_password: str = Field(min_length=attendance_auth.MIN_PASSWORD_LENGTH, max_length=200)
 
 
@@ -134,10 +137,16 @@ def build_router() -> APIRouter:
             raise HTTPException(
                 status_code=401, detail="ATTENDANCE_LOGIN_REQUIRED"
             )
+        sess = request.session.get(attendance_auth.SESSION_KEY) or {}
+        reset_flow = bool(sess.get("password_reset_required"))
         try:
-            attendance_auth.change_password(
-                emp_id, body.current_password, body.new_password
-            )
+            if reset_flow and not body.current_password:
+                # 임시 비밀번호 상태 — 새 비밀번호만 받는다(DB 플래그로 재확인).
+                attendance_auth.set_password_after_reset(emp_id, body.new_password)
+            else:
+                attendance_auth.change_password(
+                    emp_id, body.current_password, body.new_password
+                )
         except AttendanceAuthError as exc:
             raise exc.to_http() from exc
         sess = request.session.get(attendance_auth.SESSION_KEY) or {}
@@ -263,6 +272,9 @@ def build_router() -> APIRouter:
         return {
             "status": "ok",
             "temporary_password": temporary_password,
+            # 화면 카드가 "홍길동 (사번 171013)" 로 누구 것인지 못 박게 한다 — 사번만
+            # 보이면 옆자리 사람에게 잘못 불러줘도 알 길이 없다.
+            "employee_label": target_label,
             "password_reset_required": True,
         }
 
@@ -272,9 +284,6 @@ def build_router() -> APIRouter:
     ) -> dict[str, Any]:
         """근태 엑셀의 열 인식 상태 — 책임자 전용.
 
-            # 화면 카드가 "홍길동 (사번 171013)" 로 누구 것인지 못 박게 한다 — 사번만
-            # 보이면 옆자리 사람에게 잘못 불러줘도 알 길이 없다.
-            "employee_label": target_label,
         ERP 가 열 순서를 바꾸면(2026-06 실제 발생) 고정 인덱스로 읽던 값이 조용히
         어긋난다. 헤더 자동 매핑이 그 대책이고 폴백 경고가 안전망인데, 그 경고가 서버
         로그에만 남아 아무도 보지 않았다(2026-08-08). 화면이 물어볼 수 있게 연다.

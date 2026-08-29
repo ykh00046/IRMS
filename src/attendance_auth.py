@@ -325,6 +325,40 @@ def change_password(emp_id: str, current_password: str, new_password: str) -> No
     _set_password(emp_id, new_password, reset_required=0)
 
 
+def set_password_after_reset(emp_id: str, new_password: str) -> None:
+    """임시 비밀번호 상태에서 곧장 새 비밀번호를 정한다(현재 비밀번호 재입력 없음).
+
+    방금 임시 비밀번호로 로그인한 직원에게 그 임시 비밀번호를 한 번 더 타이핑하게
+    하는 것은 순전한 걸림돌이었다(2026-08-28 결정 B1). 세션이 '초기화 필요' 상태일
+    때만 이 경로를 쓴다.
+
+    다만 세션 플래그만 믿지 않는다 — DB 기록이 이미 본인이 정한 비밀번호로 바뀐
+    계정이라면(플래그가 낡은 세션에 남아 있을 수 있다) 현재 비밀번호를 요구한다.
+    """
+    record = _fetch(emp_id)
+    if record is None:
+        raise AttendanceAuthError(
+            code="NOT_AUTHENTICATED", status_code=status.HTTP_401_UNAUTHORIZED
+        )
+    if not record.get("password_reset_required"):
+        raise AttendanceAuthError(
+            code="CURRENT_PASSWORD_REQUIRED",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    validate_password_strength(new_password, emp_id)
+    _set_password(emp_id, new_password, reset_required=0)
+    with get_connection() as connection:
+        write_audit_log(
+            connection,
+            action="attendance_password_set_after_reset",
+            target_type="attendance",
+            target_id=emp_id,
+            target_label=emp_id,
+            details={"employee_id": emp_id},
+        )
+        connection.commit()
+
+
 def clear_lockout(emp_id: str) -> None:
     """잠금만 푼다 — 비밀번호는 그대로.
 

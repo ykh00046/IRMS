@@ -147,3 +147,200 @@ def test_parser_cache_hits_and_invalidates(tmp_path):
         with patch.object(parser, "_iter_data_rows", return_value=[object()]):
             parser._records_from_path(f)
         assert calls["n"] == 2
+
+
+# ── 4. 임시 비밀번호 발급 응답 ──────────────────────────────────────────────
+# 발급 결과 카드가 "홍길동 (사번 171013)" 로 누구 것인지 못 박으려면 서버가 이름을
+# 함께 줘야 한다. 사번만 돌려주면 옆자리 사람에게 잘못 불러줘도 알 길이 없다
+# (2026-08-28 신입 첫 로그인 동선 정리).
+def test_reset_password_response_carries_employee_label():
+    from src.routers import attendance_routes
+    from src.services.attendance_excel.models import AttendanceProfile
+
+    client = _client()
+    _login_admin(client)
+
+    profile = AttendanceProfile(
+        emp_id="171013", name="홍길동", department="생산", factory="1공장",
+        shift_time="주간", shift_group="A", job_type="정규", gender="남",
+    )
+    with (
+        patch.object(
+            attendance_routes.attendance_auth, "reset_password_to_temporary",
+            return_value="K7WX4M2P",
+        ),
+        patch.object(
+            attendance_routes.excel_service, "employee_profile_from_any_month",
+            return_value=profile,
+        ),
+    ):
+        token = client.cookies.get("csrftoken")
+        res = client.post(
+            "/api/attendance/admin/reset-password",
+            json={"emp_id": "171013"},
+            headers={"x-csrftoken": token} if token else {},
+        )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["temporary_password"] == "K7WX4M2P"
+    assert body["employee_label"] == "홍길동 (사번 171013)"
+    assert body["password_reset_required"] is True
+
+
+# ── 4. 임시 비밀번호 상태의 비밀번호 변경(2026-08-28 결정 B1) ─────────────────
+# 방금 임시 비밀번호로 로그인한 직원에게 그 임시 비밀번호를 한 번 더 타이핑하게 하지
+# 않는다. 다만 '현재 비밀번호 없이 바꾸기'는 DB 가 실제로 초기화 상태일 때만 열린다 —
+# 낡은 세션 플래그로 남의 비밀번호를 갈아치우는 길이 되면 안 된다.
+
+
+def _csrf_headers(client):
+    token = client.cookies.get("csrftoken")
+    return {"x-csrftoken": token} if token else {}
+
+
+def _new_emp_id() -> str:
+    import uuid
+
+    return "T" + uuid.uuid4().hex[:7]
+
+
+def _login_employee(client, emp_id: str, password: str):
+    client.get("/attendance/login")  # csrf 쿠키 확보
+    res = client.post(
+        "/api/attendance/login",
+        json={"emp_id": emp_id, "password": password},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_reset_flow_changes_password_without_the_current_one():
+    from src import attendance_auth
+
+    client = _client()
+    emp = _new_emp_id()
+    attendance_auth._create(emp, "TempPw49", reset_required=1)
+
+    payload = _login_employee(client, emp, "TempPw49")
+    assert payload["password_reset_required"] is True
+
+    res = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "Strong-pw-9"},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 200, res.text
+
+    status_res = client.get("/api/attendance/session")
+    assert status_res.status_code == 200, status_res.text
+    assert status_res.json()["password_reset_required"] is False
+
+    client.post("/api/attendance/logout", headers=_csrf_headers(client))
+    relogin = client.post(
+        "/api/attendance/login",
+        json={"emp_id": emp, "password": "Strong-pw-9"},
+        headers=_csrf_headers(client),
+    )
+    assert relogin.status_code == 200, relogin.text
+    assert relogin.json()["password_reset_required"] is False
+
+
+def test_normal_session_still_requires_the_current_password():
+    """초기화 상태가 아닌 사람이 현재 비밀번호를 비우면 종전대로 거부된다."""
+    from src import attendance_auth
+
+    client = _client()
+    emp = _new_emp_id()
+    attendance_auth._create(emp, "Owner-pw-7", reset_required=0)
+    _login_employee(client, emp, "Owner-pw-7")
+
+    res = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "Another-pw-8"},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 400, res.text
+    assert "CURRENT_PASSWORD_WRONG" in res.text
+    # 비밀번호는 그대로여야 한다.
+    record = attendance_auth._fetch(emp)
+    from src.security import verify_password
+
+    assert verify_password("Owner-pw-7", record["password_hash"])
+
+
+def test_stale_reset_session_cannot_skip_the_current_password():
+    """세션엔 '초기화 필요'가 남아 있지만 DB 는 이미 본인 비밀번호 — 우회 금지."""
+    from src import attendance_auth
+
+    client = _client()
+    emp = _new_emp_id()
+    attendance_auth._create(emp, "TempPw50", reset_required=1)
+    _login_employee(client, emp, "TempPw50")
+
+    # 다른 경로로 이미 비밀번호가 확정된 상황을 재현한다(세션 플래그는 그대로).
+    attendance_auth._set_password(emp, "Owner-pw-6", reset_required=0)
+
+    res = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "Hijack-pw-5"},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 400, res.text
+    assert "CURRENT_PASSWORD_REQUIRED" in res.text
+    from src.security import verify_password
+
+    assert verify_password("Owner-pw-6", attendance_auth._fetch(emp)["password_hash"])
+
+
+def test_reset_flow_still_enforces_password_strength():
+    """현재 비밀번호를 묻지 않을 뿐, 새 비밀번호 규칙은 그대로다."""
+    from src import attendance_auth
+
+    client = _client()
+    emp = _new_emp_id()
+    attendance_auth._create(emp, "TempPw51", reset_required=1)
+    _login_employee(client, emp, "TempPw51")
+
+    res = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "12345678"},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 400, res.text
+    assert "PASSWORD_SEQUENTIAL_DIGITS" in res.text
+    # 8자 미만은 본문 모델(min_length)이 먼저 막는다 — 422.
+    short = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "short1"},
+        headers=_csrf_headers(client),
+    )
+    assert short.status_code == 422, short.text
+    # 아무것도 바뀌지 않았다.
+    assert attendance_auth._fetch(emp)["password_reset_required"] == 1
+
+
+def test_reset_flow_writes_an_audit_entry():
+    from src import attendance_auth
+    from src.db import get_connection
+
+    client = _client()
+    emp = _new_emp_id()
+    attendance_auth._create(emp, "TempPw52", reset_required=1)
+    _login_employee(client, emp, "TempPw52")
+
+    res = client.post(
+        "/api/attendance/change-password",
+        json={"new_password": "Fresh-pw-42"},
+        headers=_csrf_headers(client),
+    )
+    assert res.status_code == 200, res.text
+
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT action, target_id FROM audit_logs "
+            "WHERE action = 'attendance_password_set_after_reset' AND target_id = ? ",
+            (emp,),
+        ).fetchone()
+    assert row is not None, "초기화 경로 비밀번호 설정이 감사 로그에 남지 않았다"

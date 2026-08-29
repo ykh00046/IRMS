@@ -252,9 +252,137 @@ def test_edited_assets_got_a_fresh_version_this_round():
         ("css/attendance.css", "20260808a"),
         ("js/attendance_session.js", "20260814a"),
         ("js/attendance_login.js", "20260624a"),
+        ("js/attendance_change_password.js", "20260624a"),
+        ("js/attendance_change_password.js", "20260828a"),
     ):
         for template in TEMPLATES.rglob("*.html"):
             text = template.read_text(encoding="utf-8")
             assert f"/static/{path}?v={stale}" not in text, (
                 f"{template.name} 이 {path} 를 옛 버전({stale})으로 참조합니다"
             )
+
+
+# ── ⑧ 신입 첫 로그인 동선(2026-08-28) ───────────────────────────────────────
+# 배경: 신입이 처음 근태를 보려면 ① 책임자가 임시 비밀번호를 발급하고 ② 그것을
+# 전달받아 ③ 로그인한 뒤 ④ 새 비밀번호를 정해야 하는데, 화면 어디에도 그 순서가
+# 적혀 있지 않았다. 임시 비밀번호는 window.prompt 로 한 번 스쳐 지나갔고(차단되면
+# 통째로 소실), 로그인 후에는 배너만 뜰 뿐 변경 화면으로 데려가지 않았다.
+ADMIN_USERS_PAGE = (TEMPLATES / "admin_users.html").read_text(encoding="utf-8")
+ADMIN_USERS_JS = (STATIC / "js" / "admin_users.js").read_text(encoding="utf-8")
+ADMIN_USERS_CSS = (STATIC / "css" / "admin_users.css").read_text(encoding="utf-8")
+CHANGE_PW_PAGE = (TEMPLATES / "attendance_change_password.html").read_text(
+    encoding="utf-8"
+)
+ACCESS_CSS = (STATIC / "css" / "access.css").read_text(encoding="utf-8")
+
+
+def test_manager_panel_spells_out_the_issue_sequence():
+    assert "신입 계정 발급 · 비밀번호 초기화" in ADMIN_USERS_PAGE
+    assert "att-issue-steps" in ADMIN_USERS_PAGE
+    assert ".att-issue-steps" in ADMIN_USERS_CSS
+    for step in ("근태 엑셀", "임시 비밀번호 발급", "홈 › 근태 확인", "책임자 로그아웃"):
+        assert step in ADMIN_USERS_PAGE, f"발급 순서 안내에 '{step}' 이 없습니다"
+    assert "신입 사번 입력" in ADMIN_USERS_PAGE
+
+
+def test_issued_password_is_shown_in_a_card_not_a_prompt():
+    """prompt 가 차단되면 발급된 비밀번호가 통째로 사라진다 — 화면 안 카드로 옮겼다."""
+    assert 'id="att-issue-result"' in ADMIN_USERS_PAGE
+    # 카드는 hidden 속성으로만 여닫는다(display 토글은 CSS 와 싸운다).
+    assert 'id="att-issue-result" class="att-issue-result" hidden' in ADMIN_USERS_PAGE
+    assert "attIssueResult.hidden = false" in ADMIN_USERS_JS
+    assert "employee_label" in ADMIN_USERS_JS, "누구 것인지 못 박는 라벨을 안 쓴다"
+    assert "navigator.clipboard.writeText" in ADMIN_USERS_JS
+    assert "selectNodeContents" in ADMIN_USERS_JS, "복사 실패 시 선택 폴백이 없다"
+    assert "다시 볼 수 없습니다" in ADMIN_USERS_PAGE
+    # 전달 문구(책임자가 그대로 읽어 주는 한 줄).
+    assert "홈 › 근태 확인 → 사번 ${empId} + 임시 비밀번호 ${password}" in ADMIN_USERS_JS
+
+
+def test_first_issuance_does_not_nag_but_overwrite_does():
+    """최초 발급은 지울 것이 없다 — 확인창은 남의 비밀번호를 덮어쓸 때만."""
+    issue_handler = ADMIN_USERS_JS[ADMIN_USERS_JS.index("attIssueBtn?.addEventListener"):]
+    issue_handler = issue_handler[: issue_handler.index("attNewEmp?.addEventListener")]
+    assert "attKnownEmpIds.has(empId) && !window.confirm" in issue_handler
+    # 표의 행은 전부 기존 계정이므로 확인창을 유지한다.
+    assert "지금 쓰고 있는 비밀번호는 사라집니다" in ADMIN_USERS_JS
+    # prompt 로 비밀번호를 흘리던 경로는 카드가 없는 구 템플릿 폴백 하나만 남는다.
+    assert ADMIN_USERS_JS.count("window.prompt(") == 1
+
+
+def test_login_screen_guides_the_very_first_login():
+    assert 'class="login-help"' in LOGIN_PAGE
+    assert "처음 로그인하세요?" in LOGIN_PAGE
+    assert ".login-help" in ACCESS_CSS
+    assert "login-demo" not in LOGIN_PAGE, "옛 한 줄 안내가 남아 있다"
+    # 자격 실패는 계정 존재 여부를 흘리지 않는다 — 그래서 안내는 조건 없이 뜬다.
+    assert "처음 로그인이라면 책임자에게 임시 비밀번호 발급을 요청하세요." in LOGIN_JS
+    assert "if (isInvalidCredentials(detail)) showFirstLoginHint();" in LOGIN_JS
+
+
+def test_temporary_password_login_lands_on_the_change_screen():
+    assert "payload.password_reset_required" in LOGIN_JS
+    change_go = LOGIN_JS.index('window.location.assign("/attendance/change-password")')
+    guard = LOGIN_JS.index("if (payload && payload.password_reset_required)")
+    assert guard < change_go
+    # 서버가 그 값을 실제로 세션에서 읽어 템플릿에 넘긴다.
+    pages = (BASE_DIR / "src" / "routers" / "pages.py").read_text(encoding="utf-8")
+    change_page = pages[pages.index("def attendance_change_password_page"):]
+    change_page = change_page[: change_page.index("@router.get(\"/work.html\"")]
+    assert '"password_reset_required"' in change_page
+    # 화면은 2단계 중 2단계임을 알린다.
+    assert "{% if password_reset_required %}" in CHANGE_PW_PAGE
+    assert "1/2 임시 비밀번호로 로그인 완료 → 2/2 새 비밀번호를 정하세요" in CHANGE_PW_PAGE
+    assert "현재 비밀번호" in CHANGE_PW_PAGE, "스스로 바꾸러 온 사람의 문구가 사라졌다"
+    # 규칙은 틀리기 전에 보여준다.
+    assert "같은 숫자 반복(1111)·연속 숫자(1234) 불가" in CHANGE_PW_PAGE
+    # 빠져나갈 길은 그대로.
+    assert 'id="att-change-later"' in CHANGE_PW_PAGE
+    assert 'id="att-change-logout"' in CHANGE_PW_PAGE
+
+
+def test_admin_logout_ends_the_manager_session_too():
+    """공용 PC: 근태 세션만 지우면 /attendance/login 이 책임자 모드로 되돌린다.
+
+    그러면 다음 직원은 로그인 창을 아예 만나지 못한다(pages.py 의 리다이렉트).
+    """
+    handler = ATTENDANCE_JS[ATTENDANCE_JS.index('logoutBtn?.addEventListener'):]
+    handler = handler[: handler.index("empSelect?.addEventListener")]
+    assert 'apiPost("/api/attendance/logout"' in handler
+    assert 'apiPost("/api/auth/logout"' in handler
+    assert "if (adminMode)" in handler
+    # 책임자도 직원과 같은 곳(로그인 화면)으로 나간다 — 예전엔 "/" 로 갔다.
+    assert 'window.location.assign("/attendance/login")' in handler
+    assert 'adminMode ? "/"' not in ATTENDANCE_JS
+    assert 'title="책임자 세션도 함께 종료합니다"' in ATTENDANCE_PAGE
+
+
+# ── ⑨ 임시 비밀번호 상태면 그 비밀번호를 다시 묻지 않는다(2026-08-28 결정 B1) ──
+def test_reset_flow_does_not_ask_for_the_temporary_password_again():
+    """방금 임시 비밀번호로 로그인한 사람에게 그것을 한 번 더 타이핑시키지 않는다."""
+    # 현재 비밀번호 칸 전체가 조건부로 렌더된다(라벨만 바꾸는 것으로는 부족하다).
+    assert "{% if not password_reset_required %}" in CHANGE_PW_PAGE
+    field = CHANGE_PW_PAGE.index('id="att-current-password"')
+    guard = CHANGE_PW_PAGE.rindex("{% if not password_reset_required %}", 0, field)
+    endif = CHANGE_PW_PAGE.index("{% endif %}", field)
+    assert guard < field < endif
+    # 옛 이중 라벨(임시 비밀번호를 다시 묻던 문구)은 사라져야 한다.
+    assert "임시 비밀번호 (방금 로그인에 쓴 것)" not in CHANGE_PW_PAGE
+    # JS 가 상태를 읽을 표식.
+    assert 'data-reset-flow="{{ \'true\' if password_reset_required else \'false\' }}"' in CHANGE_PW_PAGE
+
+
+def test_reset_flow_javascript_omits_current_password_and_survives_a_missing_input():
+    assert 'form?.dataset?.resetFlow === "true"' in CHANGE_PW_JS
+    # 초기화 경로의 본문에는 current_password 자체가 없다.
+    assert "{ new_password: next }" in CHANGE_PW_JS
+    assert "{ current_password: current, new_password: next }" in CHANGE_PW_JS
+    # 칸이 없을 수 있으므로 값 읽기·포커스 모두 null 을 견뎌야 한다.
+    assert "currentInput ? currentInput.value" in CHANGE_PW_JS
+    assert "(currentInput || newInput)?.focus();" in CHANGE_PW_JS
+    assert "currentInput.value ||" not in CHANGE_PW_JS.replace(
+        "currentInput ? currentInput.value || \"\" : \"\"", ""
+    )
+    # 새 오류 코드 해설.
+    assert "CURRENT_PASSWORD_REQUIRED" in CHANGE_PW_JS
+    assert "임시 비밀번호 상태가 아닙니다" in CHANGE_PW_JS
