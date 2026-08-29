@@ -6,7 +6,7 @@
     <title>BRM · 근태 로그인</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260731a" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260828b" />
   </head>
   <body class="launch-body">
     <main class="login-stage">
@@ -57,7 +57,16 @@
 
         <button id="att-login-submit" type="submit" class="btn accent login-submit">로그인</button>
 
-        <p class="login-demo">최초 임시 비밀번호는 책임자에게 발급받으세요 · 로그인 후 변경 필요</p>
+        {# 신입의 첫 로그인 순서. 한 줄 안내로는 '임시 비밀번호를 어디서 받는지'와
+           '받은 다음 무엇을 하는지'가 전달되지 않았다 — 접었다 펴는 3단계로 적는다. #}
+        <details class="login-help">
+          <summary>처음 로그인하세요?</summary>
+          <ol>
+            <li>책임자에게 임시 비밀번호를 발급받으세요(사용자 관리 › 근태 계정).</li>
+            <li>사번과 임시 비밀번호로 로그인하세요.</li>
+            <li>바로 이어지는 화면에서 새 비밀번호(8자 이상, 사번·반복·연속 숫자 불가)를 정하면 끝.</li>
+          </ol>
+        </details>
 
         <a href="/" class="login-back">← 처음으로</a>
       </form>
@@ -74,6 +83,6 @@
     <script src="/static/js/common/ui.js?v=20260726a"></script>
     <script src="/static/js/common/audio.js?v=20260707b"></script>
     <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance_login.js?v=20260814a"></script>
+    <script src="/static/js/attendance_login.js?v=20260828b"></script>
   </body>
 </html>

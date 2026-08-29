@@ -954,7 +954,18 @@
     } catch (_) {
       // Ignore logout errors and continue redirect.
     }
-    window.location.assign(adminMode ? "/" : "/attendance/login");
+    if (adminMode) {
+      // 공용 PC: 근태 세션만 지우면 책임자의 IRMS 세션이 살아남고,
+      // /attendance/login 은 책임자 세션을 보면 곧장 책임자 모드로 되돌린다
+      // (pages.py attendance_login_page). 그래서 다음 직원은 로그인 창을 아예
+      // 만나지 못했다 — 책임자 세션까지 함께 끝낸다.
+      try {
+        await apiPost("/api/auth/logout", {});
+      } catch (_) {
+        // Ignore logout errors and continue redirect.
+      }
+    }
+    window.location.assign("/attendance/login");
   });
 
   empSelect?.addEventListener("change", () => {

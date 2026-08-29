@@ -28,6 +28,25 @@
     noticeEl.hidden = false;
   }
 
+  // 처음 로그인하는 신입은 '계정이 없다'는 말을 서버에서 들을 수 없다 —
+  // 로그인 응답은 계정 존재 여부를 절대 흘리지 않는 계약이기 때문이다(§4.1).
+  // 그래서 자격 실패는 예외 없이 전부 이 안내를 함께 띄운다. 실패 원인이 오타든
+  // 미발급이든, 신입에게 다음 행동(책임자에게 발급 요청)을 알려주는 유일한 자리다.
+  const FIRST_LOGIN_HINT =
+    "처음 로그인이라면 책임자에게 임시 비밀번호 발급을 요청하세요.";
+
+  function isInvalidCredentials(detail) {
+    const isObject = detail && typeof detail === "object";
+    const text = String((isObject ? detail.detail || detail.code : detail) || "");
+    return text.includes("INVALID_CREDENTIALS");
+  }
+
+  function showFirstLoginHint() {
+    if (!noticeEl) return;
+    noticeEl.textContent = FIRST_LOGIN_HINT;
+    noticeEl.hidden = false;
+  }
+
   function minutesUntil(isoText) {
     const when = Date.parse(String(isoText || ""));
     if (!isFinite(when)) return 0;
@@ -101,9 +120,17 @@
           detail = response.statusText;
         }
         setHint(mapError(detail), "error");
+        if (isInvalidCredentials(detail)) showFirstLoginHint();
         return;
       }
-      await response.json();
+      const payload = await response.json().catch(() => ({}));
+      // 임시 비밀번호로 들어온 첫 로그인은 곧장 비밀번호 설정 화면으로 보낸다 —
+      // 근태 화면의 배너에만 맡기면 신입은 임시 비밀번호를 그대로 쓰게 된다.
+      if (payload && payload.password_reset_required) {
+        setHint("로그인 성공. 새 비밀번호 설정으로 이동합니다...", "muted");
+        window.location.assign("/attendance/change-password");
+        return;
+      }
       setHint("로그인 성공. 이동 중...", "muted");
       window.location.assign("/attendance");
     } catch (error) {
@@ -116,5 +143,9 @@
   empInput?.focus();
 
   window.IRMS = window.IRMS || {};
-  window.IRMS.__attendanceLoginTest = { mapError, minutesUntil };
+  window.IRMS.__attendanceLoginTest = {
+    mapError,
+    minutesUntil,
+    isInvalidCredentials,
+  };
 })();

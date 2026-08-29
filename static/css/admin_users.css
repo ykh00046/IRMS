@@ -391,3 +391,66 @@
 .sig-sample-list { margin-top: 0.9rem; }
 .sheets-status { font-weight: 600; }
 .mt-actions { margin-top: 0.9rem; }
+
+/* ── 신입 근태 계정 발급 ────────────────────────────────────────────────
+   ① 순서 안내(엑셀 등재 → 발급 → 전달 → 로그아웃)와 ② 발급 결과 카드.
+   결과 카드는 window.prompt 를 대신한다 — 공용 PC 에서 prompt 가 차단되면
+   임시 비밀번호가 통째로 사라졌다. 여닫기는 hidden 속성만 쓴다. */
+.att-issue-steps {
+  margin: 0.2rem 0 0.9rem;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.att-issue-result {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--accent-primary, #f97316);
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(249, 115, 22, 0.06);
+}
+.att-issue-result[hidden] { display: none !important; }
+
+.att-issue-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.att-issue-who {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+}
+
+.att-issue-pw-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.att-issue-pw {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+
+.att-issue-script {
+  margin: 0.55rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.att-issue-warn {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}

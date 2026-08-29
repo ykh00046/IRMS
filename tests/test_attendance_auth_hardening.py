@@ -72,3 +72,25 @@ def test_manager_provisioning_uses_random_temporary_password() -> None:
 
     assert password == "random-temp-password"
     create.assert_called_once_with("171013", "random-temp-password", reset_required=1)
+
+
+# ── 임시 비밀번호는 사람이 읽어 전달한다(2026-08-28) ─────────────────────────
+# 종전 token_urlsafe(18) 은 24자에 대소문자와 -_ 가 섞여, 책임자가 불러 주고 직원이
+# 받아 적는 실제 전달 경로에서 오타가 났다. 8자 · 헷갈리는 글자 제외로 바꾼다.
+def test_temporary_password_is_short_and_unambiguous() -> None:
+    password = attendance_auth.generate_temporary_password()
+
+    assert len(password) == 8
+    assert set(password) <= set(attendance_auth.TEMP_PASSWORD_ALPHABET)
+    # 눈으로 구분이 안 되는 글자는 알파벳 자체에 없어야 한다.
+    for ambiguous in "0O1IL":
+        assert ambiguous not in attendance_auth.TEMP_PASSWORD_ALPHABET
+    # 구분자 없이 그대로 타이핑하는 값이다.
+    assert password.isalnum()
+
+
+def test_temporary_passwords_are_not_predictable() -> None:
+    assert (
+        attendance_auth.generate_temporary_password()
+        != attendance_auth.generate_temporary_password()
+    )

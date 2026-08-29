@@ -391,6 +391,43 @@
   color: var(--text-secondary);
 }
 
+/* 첫 로그인 3단계 안내 — 평소엔 접혀 있다가 필요한 사람만 편다.
+   타이포는 .login-note 계열(뮤트 톤)을 그대로 따른다. */
+.login-help {
+  font-size: 12px;
+  color: var(--text-secondary, #56627b);
+}
+
+.login-help > summary {
+  cursor: pointer;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.login-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.login-help > summary::before {
+  content: "＋ ";
+  color: var(--text-tertiary, #8b94a7);
+}
+
+.login-help[open] > summary::before {
+  content: "－ ";
+}
+
+.login-help ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
+}
+
 .login-actions-row {
   display: flex;
   gap: 8px;

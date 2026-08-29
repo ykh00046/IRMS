@@ -617,6 +617,72 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 근태 표의 시각 — 저장값은 UTC(...Z)다. 종전엔 T/Z 만 지우고 그대로 찍어, 같은 화면의
+  // ── 임시 비밀번호 발급 결과 카드 ──────────────────────────────────────
+  // 종전엔 window.prompt 로 보여줬다. 공용 PC 에서 브라우저가 prompt 를 막으면
+  // 발급된 비밀번호가 통째로 사라졌고(다시 발급해야 한다), 복사도 어려웠으며,
+  // 직원에게 무엇을 안내해야 하는지도 알 수 없었다. 화면 안 카드로 옮긴다.
+  const attIssueResult = document.getElementById("att-issue-result");
+  const attIssueWho = document.getElementById("att-issue-result-who");
+  const attIssuePw = document.getElementById("att-issue-result-pw");
+  const attIssueScript = document.getElementById("att-issue-result-script");
+  const attIssueCopy = document.getElementById("att-issue-result-copy");
+  const attIssueClose = document.getElementById("att-issue-result-close");
+
+  // 목록에 이미 있는 사번인가 — '최초 발급'과 '남의 비밀번호 덮어쓰기'를 가른다.
+  const attKnownEmpIds = new Set();
+
+  function hideIssueResult() {
+    if (!attIssueResult) return;
+    attIssueResult.hidden = true;
+    if (attIssuePw) attIssuePw.textContent = "";
+    if (attIssueWho) attIssueWho.textContent = "";
+    if (attIssueScript) attIssueScript.textContent = "";
+  }
+
+  function showIssueResult(empId, result) {
+    const password = String((result && result.temporary_password) || "");
+    const label = String((result && result.employee_label) || `사번 ${empId}`);
+    if (!attIssueResult || !attIssuePw) {
+      // 카드가 없는 화면(구 템플릿)에서도 비밀번호를 잃지 않게 최후 수단.
+      window.prompt(`${label} 임시 비밀번호`, password);
+      return;
+    }
+    if (attIssueWho) attIssueWho.textContent = label;
+    attIssuePw.textContent = password;
+    if (attIssueScript) {
+      attIssueScript.textContent =
+        `홈 › 근태 확인 → 사번 ${empId} + 임시 비밀번호 ${password} 로 로그인 → 새 비밀번호 설정`;
+    }
+    attIssueResult.hidden = false;
+    attIssueResult.scrollIntoView({ block: "nearest" });
+  }
+
+  async function copyIssuePassword() {
+    const password = String(attIssuePw?.textContent || "");
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      IRMS.notify("임시 비밀번호를 복사했습니다.", "success");
+      return;
+    } catch (_) {
+      /* 아래 폴백 */
+    }
+    // 클립보드 API 가 막힌 브라우저(비 HTTPS 등) — 최소한 선택은 해 준다.
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(attIssuePw);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      IRMS.notify("복사하지 못했습니다 — 선택된 글자를 Ctrl+C 로 복사하세요.", "error");
+    } catch (_) {
+      IRMS.notify("복사하지 못했습니다 — 화면의 비밀번호를 직접 옮겨 적으세요.", "error");
+    }
+  }
+
+  attIssueCopy?.addEventListener("click", copyIssuePassword);
+  attIssueClose?.addEventListener("click", hideIssueResult);
+
   // 감사 로그(현지 시각 변환)와 9시간 어긋났다. "잠금 해제 15:12"를 보고 이미 풀렸다고
   // 판단하는데 실제로는 자정인 식(2026-08-08 감사). 감사 로그와 같은 변환기를 쓴다.
   function formatAttDate(text) {
@@ -631,6 +697,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await attendanceFetch("/api/attendance/admin/users");
       const items = data.items || [];
       if (!items.length) {
+      attKnownEmpIds.clear();
+      items.forEach((item) => attKnownEmpIds.add(String(item.emp_id)));
         attUsersBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b">등록된 근태 계정이 없습니다.</td></tr>';
         return;
       }
@@ -659,14 +727,18 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", async (event) => {
           const empId = event.currentTarget.dataset.empId;
           if (!empId) return;
-          if (!window.confirm(`사번 ${empId}의 임시 비밀번호를 발급할까요?`)) return;
+          // 표의 행은 전부 '이미 계정이 있는' 사람이다 — 발급하면 그 사람이 쓰던
+          // 비밀번호가 사라진다. 되돌릴 수 없으니 확인을 남긴다.
+          if (!window.confirm(
+            `사번 ${empId}의 임시 비밀번호를 발급할까요?\n지금 쓰고 있는 비밀번호는 사라집니다.`,
+          )) return;
           try {
             event.currentTarget.disabled = true;
             const result = await attendanceFetch("/api/attendance/admin/reset-password", {
               method: "POST",
               body: { emp_id: empId },
             });
-            window.prompt(`사번 ${empId} 임시 비밀번호`, result.temporary_password || "");
+            showIssueResult(empId, result);
             IRMS.notify(`사번 ${empId} 임시 비밀번호를 발급했습니다.`, "success");
             loadAttendanceUsers();
           } catch (err) {
@@ -717,14 +789,19 @@ document.addEventListener("DOMContentLoaded", () => {
       attNewEmp?.focus();
       return;
     }
-    if (!window.confirm(`사번 ${empId}의 임시 비밀번호를 발급할까요? (계정이 없으면 새로 만듭니다)`)) return;
+    // 최초 발급(목록에 없는 사번)은 지울 것이 없으니 확인을 묻지 않는다 — 신입
+    // 등록 때마다 뜨는 확인창은 읽지 않고 누르는 습관만 만든다. 반대로 이미 계정이
+    // 있는 사번이면 그 사람의 비밀번호를 덮어쓰므로 반드시 확인한다.
+    if (attKnownEmpIds.has(empId) && !window.confirm(
+      `사번 ${empId}는 이미 근태 계정이 있습니다.\n임시 비밀번호를 발급하면 지금 쓰고 있는 비밀번호는 사라집니다. 계속할까요?`,
+    )) return;
     try {
       attIssueBtn.disabled = true;
       const result = await attendanceFetch("/api/attendance/admin/reset-password", {
         method: "POST",
         body: { emp_id: empId },
       });
-      window.prompt(`사번 ${empId} 임시 비밀번호`, result.temporary_password || "");
+      showIssueResult(empId, result);
       IRMS.notify(`사번 ${empId} 임시 비밀번호를 발급했습니다.`, "success");
       if (attNewEmp) attNewEmp.value = "";
       loadAttendanceUsers();

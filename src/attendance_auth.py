@@ -2,8 +2,9 @@
 
 This is a separate credential space from the main IRMS login:
 - Identity is the ERP employee number (사번), stored in ``attendance_users``.
-- Initial/reset credentials use a random temporary password and show a change
-  reminder; attendance lookup remains available after login.
+- Initial/reset credentials use a random 8-character temporary password drawn
+  from an unambiguous alphabet (no 0/O/1/I/L), so a manager can read it out and
+  the employee can type it verbatim; the first login then forces a change.
 - Brute force guard: 5 failures within a rolling 15-minute window lock the
   account for 5 minutes. A failure older than that window does not count -- the
   counter restarts, so occasional typos spread over days never accumulate into
@@ -35,7 +36,11 @@ LOCKOUT_SECONDS = 5 * 60
 # 없으면 며칠에 걸쳐 4번 오타한 사람이 오늘 1번 더 틀렸다고 잠긴다(감사 F-11).
 FAILED_WINDOW_SECONDS = 15 * 60
 MIN_PASSWORD_LENGTH = 8
-TEMP_PASSWORD_BYTES = 18
+# 임시 비밀번호는 책임자가 화면에서 읽어 직원에게 불러주고, 직원이 그대로 타이핑한다.
+# token_urlsafe(24자, 대소문자+-_ 혼합)는 옮겨 적다가 틀리기 딱 좋았다 — 눈으로
+# 구분되는 글자만 남긴 8자로 줄인다(0/O, 1/I/L 제외).
+TEMP_PASSWORD_LENGTH = 8
+TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 
 @dataclass
@@ -69,7 +74,10 @@ def _format_utc(when: _dt.datetime) -> str:
 
 
 def generate_temporary_password() -> str:
-    return secrets.token_urlsafe(TEMP_PASSWORD_BYTES)
+    """구분자 없는 8자 임시 비밀번호 — 사람이 읽어 전달하기 위한 형태."""
+    return "".join(
+        secrets.choice(TEMP_PASSWORD_ALPHABET) for _ in range(TEMP_PASSWORD_LENGTH)
+    )
 
 
 def _is_repeated_digits(password: str) -> bool:

@@ -308,9 +308,13 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         emp_id = current_attendance_emp_id(request)
         if not emp_id:
             return RedirectResponse(url="/attendance/login", status_code=303)
+        # 임시 비밀번호로 방금 로그인해 여기로 곧장 넘어온 경우와, 스스로 바꾸러 온
+        # 경우는 화면 문구가 달라야 한다(전자는 '2/2 단계'라 안내가 필요하다).
+        sess = request.session.get("att_user") or {}
         return _render(templates, request, "attendance_change_password.html", {
             "current_user": get_current_user(request, required=False),
             "emp_id": emp_id,
+            "password_reset_required": bool(sess.get("password_reset_required")),
         })
 
     @router.get("/work.html", response_class=HTMLResponse)

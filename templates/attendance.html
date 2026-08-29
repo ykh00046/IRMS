@@ -42,7 +42,9 @@
           {% if emp_id %}
           <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
           {% endif %}
-          <button id="att-logout-btn" class="btn compact">로그아웃</button>
+          {# 책임자 모드의 로그아웃은 근태 세션 + 책임자 IRMS 세션을 함께 끝낸다
+             (공용 PC 에서 다음 직원이 로그인 창을 만나게 하려면 둘 다 끊어야 한다). #}
+          <button id="att-logout-btn" class="btn compact"{% if admin_mode %} title="책임자 세션도 함께 종료합니다"{% endif %}>로그아웃</button>
           <a href="/" class="btn compact">처음</a>
         </div>
       </div>
