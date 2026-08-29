@@ -943,6 +943,8 @@
   // 혹시 남아 있는 DOM 을 위한 안전망일 뿐이다.
   changePwBtn?.addEventListener("click", () => {
     if (!ownEmpId) return;
+    // 세션 가드의 pagehide beacon 이 이 이동을 '탭 닫힘'으로 오인해 로그아웃하지 않게.
+    window.IRMS?.attendanceSession?.allowNavigation?.();
     window.location.assign("/attendance/change-password");
   });
 

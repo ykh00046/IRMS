@@ -29,6 +29,20 @@
   let deadline = Date.now() + VISIBLE_TIMEOUT_MS;
   let tickHandle = null;
   let firedLogout = false;
+  // 앱 안에서 화면을 옮기는 중(근태 ↔ 비밀번호 변경)이면 pagehide 가 떠도 로그아웃
+  // beacon 을 쏘지 않는다. 종전엔 화면 이동도 '탭 닫힘'으로 보고 세션을 지워,
+  // 임시 비밀번호로 로그인한 직원이 변경 화면에서 [변경하기]를 누르는 순간
+  // 401(세션 만료)을 받았다 — 아무리 빨리 해도 같았다(2026-08-28 신입 개통 사고).
+  let inAppNavigation = false;
+
+  function allowNavigation() {
+    inAppNavigation = true;
+    // 이동이 어떤 이유로든 무산되면 다시 탭 닫힘 보호로 돌아간다.
+    window.setTimeout(() => { inAppNavigation = false; }, 5000);
+  }
+
+  window.IRMS = window.IRMS || {};
+  window.IRMS.attendanceSession = { allowNavigation };
 
   function csrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
@@ -134,6 +148,7 @@
     // (A) Tab/window close → fire-and-forget logout via sendBeacon.
     function onBye() {
       if (firedLogout) return;
+      if (inAppNavigation) return;   // 의도한 화면 이동 — 세션을 살려 둔다
       firedLogout = true;
       try {
         const body = new Blob([], { type: "application/json" });
@@ -144,6 +159,27 @@
     }
     window.addEventListener("pagehide", onBye);
     window.addEventListener("beforeunload", onBye);
+
+    // 같은 출처 링크 클릭(배너의 <a href="/attendance/change-password"> 등)도 앱 안
+    // 이동이다 — JS 가 location.assign 하는 곳만 allowNavigation() 을 부르면
+    // 템플릿의 일반 링크가 빠진다. capture 단계라 preventDefault 된 클릭은 5초 뒤
+    // 자동으로 원래 보호로 돌아간다.
+    document.addEventListener(
+      "click",
+      (event) => {
+        const anchor = event.target?.closest?.("a[href]");
+        if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+        let url;
+        try {
+          url = new URL(anchor.getAttribute("href"), window.location.href);
+        } catch (_err) {
+          return;
+        }
+        if (url.origin !== window.location.origin) return;
+        allowNavigation();
+      },
+      true
+    );
 
     tick(badge);
     tickHandle = window.setInterval(() => tick(badge), TICK_MS);

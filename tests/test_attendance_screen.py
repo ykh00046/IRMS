@@ -125,6 +125,43 @@ def test_session_guard_skips_admin_mode():
     assert "navigator.sendBeacon" in SESSION_JS
 
 
+# ── ④-1 앱 안 화면 이동은 탭 닫힘이 아니다 ─────────────────────────────────
+CHANGE_PW_JS = (STATIC / "js" / "attendance_change_password.js").read_text(encoding="utf-8")
+
+
+def test_in_app_navigation_does_not_fire_the_logout_beacon():
+    """근태 → 비밀번호 변경 → 근태 로 옮길 때 pagehide beacon 이 세션을 지우면 안 된다.
+
+    종전엔 임시 비밀번호로 로그인한 직원이 변경 화면에서 [변경하기]를 누르는 순간
+    401(세션 만료)을 받았다 — 이동 자체가 로그아웃이었다(2026-08-28).
+    """
+    assert "window.IRMS.attendanceSession = { allowNavigation }" in SESSION_JS
+    assert "if (inAppNavigation) return;" in SESSION_JS
+    # beacon 가드는 firedLogout 검사 바로 뒤, beacon 발사 앞에 있어야 한다.
+    on_bye = SESSION_JS[SESSION_JS.index("function onBye()"):]
+    assert on_bye.index("if (inAppNavigation) return;") < on_bye.index("navigator.sendBeacon")
+    # 앱 안 이동 세 곳 모두 이동 직전에 가드를 푼다.
+    call = "window.IRMS?.attendanceSession?.allowNavigation?.();"
+    att_go = ATTENDANCE_JS.index('window.location.assign("/attendance/change-password")')
+    assert ATTENDANCE_JS.rfind(call, 0, att_go) > att_go - 200
+    assert CHANGE_PW_JS.count(call) == 2
+    for target in ('window.location.assign("/attendance")',):
+        idx = 0
+        while True:
+            idx = CHANGE_PW_JS.find(target, idx)
+            if idx < 0:
+                break
+            assert CHANGE_PW_JS.rfind(call, 0, idx) > idx - 200, "이동 직전에 allowNavigation 이 없다"
+            idx += len(target)
+    # 템플릿의 일반 링크(배너 <a href="/attendance/change-password">)도 앱 안 이동이다.
+    assert 'href="/attendance/change-password"' in ATTENDANCE_PAGE
+    assert 'closest?.("a[href]")' in SESSION_JS
+    assert "url.origin !== window.location.origin" in SESSION_JS
+    # 명시적 로그아웃 뒤의 이동은 가드를 풀지 않는다(세션은 이미 끝났다).
+    logout_go = CHANGE_PW_JS.index('window.location.assign("/attendance/login")')
+    assert CHANGE_PW_JS.rfind(call, 0, logout_go) < logout_go - 200
+
+
 # ── ⑤ 로그인 화면 안내 ──────────────────────────────────────────────────────
 def test_login_screen_explains_idle_logout_and_lockout():
     assert 'id="att-login-notice"' in LOGIN_PAGE
@@ -213,7 +250,7 @@ def test_edited_assets_got_a_fresh_version_this_round():
     for path, stale in (
         ("js/attendance.js", "20260808a"),
         ("css/attendance.css", "20260808a"),
-        ("js/attendance_session.js", "20260624a"),
+        ("js/attendance_session.js", "20260814a"),
         ("js/attendance_login.js", "20260624a"),
     ):
         for template in TEMPLATES.rglob("*.html"):

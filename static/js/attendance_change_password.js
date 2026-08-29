@@ -98,6 +98,7 @@
   }
 
   async function onLogout() {
+      window.IRMS?.attendanceSession?.allowNavigation?.();
     try {
       await postJson("/api/attendance/logout", {});
     } catch (_) {
@@ -115,3 +116,4 @@
   });
   currentInput?.focus();
 })();
+    window.IRMS?.attendanceSession?.allowNavigation?.();
