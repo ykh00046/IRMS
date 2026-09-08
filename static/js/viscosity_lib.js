@@ -201,14 +201,27 @@
         + `</span>`
       : "";
 
+    // 눈금은 **실제 기준선 값**만 적는다 — 트랙 양 끝(여유를 더한 계산값)을 적으면 315.9 처럼
+    // 어떤 측정도 아닌 숫자가 '최소 기록'으로 읽힌다(2026-09-08 현장 오해). 빨강 경계(사용
+    // 금지/σ 한계)를 우선, 없으면 경고선을 적는다. 라벨은 그 선 위치에 놓는다.
+    const ticks = [];
+    const tick = (v, label) => {
+      const p = pct(v);
+      if (p == null) return;
+      ticks.push(`<span class="visc-band-tick" style="left:${fmt(p, 2)}%" title="${label}">${fmt(v)}</span>`);
+    };
+    if (lowLine != null) tick(lowLine, lowLine === lower ? "사용 금지 하한" : "σ 관리 하한");
+    else if (lwl != null) tick(lwl, "경고 하한");
+    if (highLine != null) tick(highLine, highLine === upper ? "사용 금지 상한" : "σ 관리 상한");
+    else if (uwl != null) tick(uwl, "경고 상한");
+
     return `<div class="visc-band">`
       + `<div class="visc-band-track">`
       + segments.join("")
       + centerLine
       + `</div>`
       + `<div class="visc-band-scale">`
-      + `<span class="visc-band-lo">${fmt(tLo)}</span>`
-      + `<span class="visc-band-hi">${fmt(tHi)}</span>`
+      + ticks.join("")
       + `</div>`
       + marker
       + `</div>`;

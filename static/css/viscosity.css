@@ -771,13 +771,21 @@ body {
   border-left: 2px dashed color-mix(in srgb, var(--brand) 70%, var(--text-primary));
 }
 
+/* 눈금 = 실제 기준선 값만, 그 선 위치에(2026-09-08). 양 끝 계산값 라벨은 뺐다. */
 .visc-band-scale {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 14px;
   margin-top: 2px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
+}
+
+.visc-band-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 /* 최근 측정값 마커 — 트랙 위 아래꼭짓점 삼각형 + 값 라벨. left:% 는 JS 가 산술로 정한다. */
