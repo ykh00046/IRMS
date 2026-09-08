@@ -311,6 +311,17 @@ def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, A
             uwl = center + WARN_SIGMA * std
             lwl = center - WARN_SIGMA * std
 
+    # 고정 경고 문턱(warn_low/warn_high, 2026-09-08)을 경고 밴드에 합친다 — 관리 기준 그림·
+    # 문구가 "48 이하는 경고"를 같이 말해야 한다(σ 2σ 선이 48 아래에 있으면 그 사이가 초록으로
+    # 보여 판정과 어긋났다). 경고선은 안쪽 것이 이긴다: 하한은 큰 쪽, 상한은 작은 쪽.
+    # 관리 한계(lcl/ucl, 이상 기준)는 건드리지 않는다 — 경고와 이상은 다른 층위다.
+    warn_low = product.get("warn_low")
+    warn_high = product.get("warn_high")
+    if warn_low is not None:
+        lwl = warn_low if lwl is None else max(lwl, warn_low)
+    if warn_high is not None:
+        uwl = warn_high if uwl is None else min(uwl, warn_high)
+
     return {
         "n": n,
         # σ 판정 가능 여부 — False 면 관리한계가 없고 규격 판정만 적용된다(화면 안내용).

@@ -86,3 +86,18 @@ def test_update_body_rejects_inverted_warn_thresholds():
         assert "warn_low" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("warn_low >= warn_high 는 거부돼야 한다")
+
+
+def test_fixed_warn_threshold_folds_into_the_warn_band():
+    """관리 기준 그림·문구가 판정과 같은 말을 해야 한다: 2σ 경고선이 48 아래여도 경고 밴드
+    하한은 48 로 올라온다(안쪽 선이 이김). 관리 한계(lcl/ucl)는 그대로."""
+    values = [49.0, 48.2, 49.8, 49.3, 48.5, 49.9, 48.3, 49.6, 49.1, 48.7]   # σ≈0.6 → 2σ 하한 ≈ 47.8
+    base = _control_limits(dict(_PB, warn_low=None), values)
+    assert base["sigma_ready"] and base["lwl"] is not None and base["lwl"] < 48.0
+    folded = _control_limits(_PB, values)
+    assert folded["lwl"] == 48.0
+    assert folded["uwl"] == base["uwl"]
+    assert folded["lcl"] == base["lcl"] and folded["ucl"] == base["ucl"]
+    # 표본이 없어도 고정 경고선은 밴드에 남는다.
+    sparse = _control_limits(_PB, [49.0, 49.1])
+    assert sparse["lwl"] == 48.0 and sparse["uwl"] is None

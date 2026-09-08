@@ -121,7 +121,9 @@
     const product = analysis.product;
     const parts = [];
     if (stats.center !== null) parts.push(`중심 ${fmt(stats.center)}`);
+    // '관리'는 ±kσ 관리 한계(벗어나면 이상), '경고'는 그 안쪽 확인 구간 — 둘을 한 줄에 같이 둔다.
     if (stats.lcl !== null && stats.ucl !== null) parts.push(`관리 ${fmt(stats.lcl)}~${fmt(stats.ucl)}`);
+    if (stats.lwl != null && stats.uwl != null) parts.push(`정상 구간 ${fmt(stats.lwl)}~${fmt(stats.uwl)}`);
     if (product.lower_limit !== null || product.upper_limit !== null) {
       parts.push(`규격 ${product.lower_limit ?? "-"}~${product.upper_limit ?? "-"}`);
     }
@@ -180,17 +182,20 @@
     const lwlP = pct(stats.lwl);
     const uwlP = pct(stats.uwl);
     const hasControl = lclP != null && uclP != null && uclP > lclP;
-    const hasWarn = lwlP != null && uwlP != null && uwlP > lwlP
-      && hasControl && lwlP > lclP && uwlP < uclP;
+    // 경고선은 한쪽만 있어도 그린다(고정 경고 하한만 둔 PB 등, 2026-09-08). 없는 쪽은
+    // 관리 한계와 같다고 보아 그쪽 주황 구간이 0폭이 된다.
+    const lw = lwlP != null ? lwlP : lclP;
+    const uw = uwlP != null ? uwlP : uclP;
+    const hasWarn = hasControl && uw > lw && (lw > lclP || uw < uclP);
     if (hasControl) {
       // 관리 한계 바깥(규격 내) = 빨강(규격은 통과하지만 관리 밖). 규격이 곧 관리 한계면
       // 이 구간은 0폭이 되어 자연히 보이지 않는다.
       if (lclP > 0) segments.push(zone(0, lclP, "spec"));
       if (hasWarn) {
         // 경고 구간(관리~경고 사이) = 주황. 중앙(lwl~uwl) = 초록(목표).
-        segments.push(zone(lclP, lwlP, "warn"));
-        segments.push(zone(lwlP, uwlP, "target"));
-        segments.push(zone(uwlP, uclP, "warn"));
+        segments.push(zone(lclP, Math.max(lclP, lw), "warn"));
+        segments.push(zone(Math.max(lclP, lw), Math.min(uclP, uw), "target"));
+        segments.push(zone(Math.min(uclP, uw), uclP, "warn"));
       } else {
         // 경고 한계가 없으면 관리 밴드(lcl~ucl) 통째로 초록.
         segments.push(zone(lclP, uclP, "target"));
