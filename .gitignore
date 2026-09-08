@@ -61,6 +61,10 @@ cloudflared/*.json
 *.png
 *.jpg
 *.jpeg
+# 화면 자산(브랜드 마크·빈 상태 그림·로그인 배경)은 배포에 포함
+!static/img/
+!static/img/*.png
+!static/img/*.jpg
 .pytest-tmp/
 .pytest_tmp/
 .tmp-tests/

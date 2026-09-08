@@ -146,8 +146,11 @@
 .launch-body {
   min-height: 100vh;
   margin: 0;
+  /* 생성 배경(플라스크·육각 실루엣, 저대비 네이비) 위에 상단 광원만 남긴다.
+     그림이 안 실리면 아래 선형 그라데이션이 폴백. */
   background:
     radial-gradient(circle at 50% -10%, var(--accent-tertiary) 0%, transparent 55%),
+    url("/static/img/access-backdrop.jpg") center / cover no-repeat,
     linear-gradient(165deg, var(--accent-primary) 0%, var(--accent-primary-hover) 55%, var(--text-primary) 100%);
   color: var(--bg-surface-100);
   display: grid;

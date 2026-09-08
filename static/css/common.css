@@ -342,25 +342,12 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   width: 38px;
   height: 38px;
   border-radius: 11px;
-  background: linear-gradient(135deg, #2c5d9b, #1b4079);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.02em;
-  color: #fff;
+  background-color: var(--accent-primary);
+  background-image: url("/static/img/brand-mark-white.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 66% auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-
-.brand-logo::after {
-  content: "";
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 
 .brand-text {
@@ -1241,14 +1228,17 @@ tr:hover td.sticky-right {
   gap: 0.5rem;
 }
 
+/* 빈 상태 그림: 생성 일러스트(회색 선화, 투명 배경). 기본=빈 서류함,
+   .is-clear=확인할 것 없음(체크 클립보드), .is-search=조회 전·결과 없음(돋보기). */
 .empty-state::before {
   content: "";
-  width: 36px;
-  height: 24px;
-  border-radius: 8px;
-  border: 1px dashed var(--border-strong);
-  background: linear-gradient(180deg, var(--bg-surface-100), var(--bg-surface-200));
+  width: 72px;
+  height: 64px;
+  background: url("/static/img/empty-tray.png") center / contain no-repeat;
+  opacity: 0.9;
 }
+.empty-state.is-clear::before { background-image: url("/static/img/empty-clear.png"); }
+.empty-state.is-search::before { background-image: url("/static/img/empty-search.png"); }
 
 .muted {
   color: var(--text-secondary);

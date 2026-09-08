@@ -5,7 +5,7 @@
 {% block heading %}미해소 LOT 대사 · 총 배합량 이상{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend_lot_audit.css?v=20260908j" />
+    <link rel="stylesheet" href="/static/css/blend_lot_audit.css?v=20260909a" />
 {% endblock %}
 
 {% block content %}
@@ -61,7 +61,7 @@
               <tbody id="lau-unresolved-body"></tbody>
             </table>
           </div>
-          <p class="lau-empty" id="lau-unresolved-empty" hidden>미해소 건이 없습니다.</p>
+          <p class="empty-state is-clear lau-empty" id="lau-unresolved-empty" hidden>미해소 건이 없습니다.</p>
         </section>
 
         <section class="panel">
@@ -94,7 +94,7 @@
               <tbody id="lau-anomaly-body"></tbody>
             </table>
           </div>
-          <p class="lau-empty" id="lau-anomaly-empty" hidden>최근 조회 기간에 총량 이상 기록이 없습니다.</p>
+          <p class="empty-state is-clear lau-empty" id="lau-anomaly-empty" hidden>최근 조회 기간에 총량 이상 기록이 없습니다.</p>
         </section>
 
         <section class="panel">
@@ -125,10 +125,10 @@
               <tbody id="lau-discard-body"></tbody>
             </table>
           </div>
-          <p class="lau-empty" id="lau-discard-empty" hidden>최근 조회 기간에 배치 폐기 기록이 없습니다.</p>
+          <p class="empty-state is-clear lau-empty" id="lau-discard-empty" hidden>최근 조회 기간에 배치 폐기 기록이 없습니다.</p>
         </section>
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lot_audit.js?v=20260908j"></script>
+    <script src="/static/js/blend_lot_audit.js?v=20260909a"></script>
 {% endblock %}
