@@ -164,7 +164,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background:
-    linear-gradient(135deg, rgba(51, 65, 85, 0.12), transparent 55%),
+    linear-gradient(135deg, color-mix(in srgb, var(--text-primary) 12%, transparent), transparent 55%),
     linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.01));
 }
 
@@ -254,13 +254,13 @@
 .inline-chip.current {
   color: var(--status-info);
   background: var(--status-info-bg);
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: color-mix(in srgb, var(--accent-tertiary) 40%, transparent);
 }
 
 .inline-chip.inactive {
   color: var(--status-error);
   background: var(--status-error-bg);
-  border-color: rgba(239, 68, 68, 0.35);
+  border-color: color-mix(in srgb, var(--status-error) 35%, transparent);
 }
 
 .row-password {
@@ -412,7 +412,7 @@
   padding: 0.9rem 1rem;
   border: 1px solid var(--accent-primary);
   border-radius: var(--radius-sm, 6px);
-  background: rgba(249, 115, 22, 0.06);
+  background: color-mix(in srgb, var(--accent-secondary) 6%, transparent);
 }
 .att-issue-result[hidden] { display: none !important; }
 

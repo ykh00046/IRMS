@@ -18,8 +18,8 @@
 {% block heading %}품목코드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/management.css?v=20260908g" />
-    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260908g" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260908h" />
+    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260908h" />
 {% endblock %}
 
 {% block content %}
@@ -32,14 +32,14 @@
         <div class="tab-panel active" id="tab-codes">
           {% if not can_manage %}
           <section class="panel">
-            <p class="panel-notice">품목코드 지정·수정은 <strong>책임자</strong>만 할 수 있습니다. 오른쪽 위 [책임자 로그인] 후 이용하세요. 자재 LOT 조회는 로그인 없이 볼 수 있습니다.</p>
+            <p class="panel-notice">품목코드 지정·수정은 <strong>책임자</strong>만 할 수 있습니다. 자재 LOT 조회는 로그인 없이 됩니다.</p>
           </section>
           {% else %}
           <section class="panel">
             <h3 class="panel-title">품목코드 지정</h3>
-            <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 위에서 바로 지정하거나, 아래 표의 행에서 입력할 수 있습니다.</p>
-            <p class="panel-notice">빠른 지정: 위 입력칸에 자재명을 넣고 코드를 지정하세요. 목록에 없는 <strong>새 자재명</strong>을 입력하면 그 자재를 새로 등록합니다(코드는 비워도 됩니다). 이미 다른 자재가 쓰는 코드를 지정하면 확인 후 <strong>이 자재로 옮길 수 있습니다</strong>.</p>
-            <p class="panel-notice"><strong>이름은 하나만 유지합니다.</strong> 같은 원재료가 배합 기록에 다른 표기로 남았다면(예: MEHQ ← MP) [이름 정리]에서 그 표기를 입력해 <strong>기록 흡수</strong>하세요. 그 표기로 남은 과거 기록의 이름이 이 자재의 이름으로 바뀌고 품목코드로 집계됩니다. 자재명을 수정하면 과거 기록의 표기도 함께 바뀝니다.</p>
+            <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 위 입력칸 또는 아래 표의 행에서 입력합니다.</p>
+            <p class="panel-notice">목록에 없는 <strong>새 자재명</strong>을 넣으면 자재가 새로 등록됩니다. 다른 자재가 쓰는 코드는 확인 후 <strong>이 자재로 옮길 수 있습니다</strong>.</p>
+            <p class="panel-notice"><strong>이름은 하나만 유지합니다.</strong> 기록에 다른 표기로 남은 자재(예: MEHQ ← MP)는 [이름 정리]에서 <strong>기록 흡수</strong>하세요. 과거 기록의 표기가 이 자재의 이름으로 바뀝니다.</p>
             <!-- 빠른 지정 (맨 위) · 자재명 고르고 코드 입력 후 [지정]. 표를 내리지 않아도 된다. -->
             <div class="filter-bar codes-quick-assign">
               <input id="codes-quick-name" class="input" placeholder="자재명 입력/선택" list="codes-mat-datalist" autocomplete="off" />
@@ -190,7 +190,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/management/item-codes.js?v=20260908g"></script>
-    <script src="/static/js/material_lots.js?v=20260908g"></script>
-    <script src="/static/js/materials.js?v=20260908g"></script>
+    <script src="/static/js/management/item-codes.js?v=20260908h"></script>
+    <script src="/static/js/material_lots.js?v=20260908h"></script>
+    <script src="/static/js/materials.js?v=20260908h"></script>
 {% endblock %}

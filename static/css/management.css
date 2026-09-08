@@ -166,9 +166,9 @@
   text-transform: uppercase;
 }
 
-.meta-ok { background: var(--status-info-bg); color: var(--status-info); border: 1px solid rgba(59, 130, 246, 0.2); }
-.meta-warn { background: var(--status-warning-bg); color: var(--status-warning); border: 1px solid rgba(245, 158, 11, 0.2); }
-.meta-error { background: var(--status-error-bg); color: var(--status-error); border: 1px solid rgba(239, 68, 68, 0.2); }
+.meta-ok { background: var(--status-info-bg); color: var(--status-info); border: 1px solid color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
+.meta-warn { background: var(--status-warning-bg); color: var(--status-warning); border: 1px solid color-mix(in srgb, var(--status-warning) 20%, transparent); }
+.meta-error { background: var(--status-error-bg); color: var(--status-error); border: 1px solid color-mix(in srgb, var(--status-error) 20%, transparent); }
 
 .issue-panel {
   flex-grow: 1;
@@ -306,7 +306,7 @@
 }
 
 .lookup-result tbody tr.selected {
-  background: rgba(59, 130, 246, 0.1);
+  background: color-mix(in srgb, var(--accent-tertiary) 10%, transparent);
   outline: 1px solid var(--accent-primary);
   outline-offset: -1px;
 }
@@ -348,7 +348,7 @@
 }
 
 .history-row.selected {
-  background: rgba(59, 130, 246, 0.08);
+  background: color-mix(in srgb, var(--accent-tertiary) 8%, transparent);
 }
 
 /* 1차/2차 가족 묶음 — 헤더 밴드 + 멤버 행 왼쪽 강조 + 단계 핀 */
@@ -587,7 +587,7 @@
 }
 
 .spreadsheet-container .jexcel tbody tr td.highlight {
-  background-color: rgba(51, 65, 85, 0.15) !important;
+  background-color: color-mix(in srgb, var(--text-primary) 15%, transparent) !important;
   color: var(--text-primary);
 }
 
@@ -668,8 +668,8 @@
 .compare-table thead th { background: var(--bg-surface-200); position: sticky; top: 0; z-index: 2; }
 .compare-sticky { position: sticky; left: 0; background: var(--surface); z-index: 1; font-weight: 600; }
 .compare-table thead .compare-sticky { z-index: 3; background: var(--bg-surface-200); }
-.compare-table tr.compare-modified td { background: rgba(250, 204, 21, 0.15); }
-.compare-table tr.compare-partial td { background: rgba(59, 130, 246, 0.12); }
+.compare-table tr.compare-modified td { background: color-mix(in srgb, var(--status-warning) 15%, transparent); }
+.compare-table tr.compare-partial td { background: color-mix(in srgb, var(--accent-tertiary) 12%, transparent); }
 .compare-table tr.compare-modified .compare-sticky { background: var(--status-warning-bg); }
 .compare-table tr.compare-partial .compare-sticky { background: var(--status-info-bg); }
 
@@ -1036,15 +1036,15 @@
 .vc-compare-table thead .compare-sticky { z-index: 3; background: var(--bg-surface-200); }
 .vc-compare-table .vc-mat-cell { font-weight: 600; }
 /* 변경 강조 — 직전 버전 대비 값이 바뀐 셀. */
-.vc-compare-table td.vc-changed { background: rgba(250, 204, 21, 0.18); }
+.vc-compare-table td.vc-changed { background: color-mix(in srgb, var(--status-warning) 18%, transparent); }
 .vc-delta { font-size: var(--fs-2xs); font-weight: 700; margin-left: 0.2rem; }
 .vc-delta.up { color: var(--status-error); }
 .vc-delta.down { color: var(--brand); }
 /* 행 상태 색 — 추가/제거 구분. */
-.vc-compare-table tr.compare-partial { background: rgba(59, 130, 246, 0.06); }
-.vc-compare-table tr.compare-removed { background: rgba(100, 116, 139, 0.08); opacity: 0.7; }
+.vc-compare-table tr.compare-partial { background: color-mix(in srgb, var(--accent-tertiary) 6%, transparent); }
+.vc-compare-table tr.compare-removed { background: color-mix(in srgb, var(--text-secondary) 8%, transparent); opacity: 0.7; }
 .vc-compare-table tr.compare-modified .compare-sticky { background: var(--status-warning-bg); }
-.vc-compare-table tr.compare-partial .compare-sticky { background: rgba(59, 130, 246, 0.12); }
+.vc-compare-table tr.compare-partial .compare-sticky { background: color-mix(in srgb, var(--accent-tertiary) 12%, transparent); }
 .vc-compare-table tr.vc-total-row { font-weight: 800; background: var(--bg-surface-200); }
 .vc-compare-table tr.vc-total-row .compare-sticky { background: var(--bg-surface-200); }
 .vc-status-cell { font-size: var(--fs-2xs); font-weight: 700; color: var(--text-secondary); }
@@ -1053,8 +1053,8 @@
 .vc-legend { margin-top: 0.5rem; display: flex; gap: 1rem; flex-wrap: wrap; }
 .vc-legend-item { display: inline-flex; align-items: center; gap: 0.25rem; }
 .vc-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; }
-.vc-dot-modified { background: rgba(250, 204, 21, 0.5); }
-.vc-dot-partial { background: rgba(59, 130, 246, 0.3); }
+.vc-dot-modified { background: color-mix(in srgb, var(--status-warning) 50%, transparent); }
+.vc-dot-partial { background: color-mix(in srgb, var(--accent-tertiary) 30%, transparent); }
 
 @media (max-width: 900px) {
   .vc-layout { grid-template-columns: 1fr; }

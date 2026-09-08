@@ -5,7 +5,7 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260908g" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260908h" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
@@ -140,7 +140,7 @@
                 </tr>
               </thead>
               <tbody id="att-users-body">
-                <tr><td colspan="7" style="text-align:center;color:#64748b">로딩 중...</td></tr>
+                <tr><td colspan="7" class="muted" style="text-align:center">로딩 중...</td></tr>
               </tbody>
             </table>
           </div>
@@ -184,7 +184,7 @@
           <span class="kicker">배합일지</span>
           <h3 class="panel-title">서명 합성 설정</h3>
           <p class="panel-subtitle">
-            배합일지 PDF의 서명 자연스러움과 스캔 질감을 조정합니다. 저장 후 미리보기로 확인하세요.
+            배합일지 PDF의 서명·스캔 질감 설정입니다. 저장 후 미리보기로 확인하세요.
           </p>
           <div id="sig-config-grid" class="sig-config-grid"></div>
           <div class="button-row mt-actions">
@@ -198,7 +198,7 @@
           <span class="kicker">배합일지</span>
           <h3 class="panel-title">서명 샘플 관리</h3>
           <p class="panel-subtitle">
-            합성 서명에 쓰는 인별 샘플입니다. 담당은 작업자별, 검토·승인은 공용입니다.
+            서명 합성에 쓰는 샘플입니다. 담당은 작업자별, 검토·승인은 공용입니다.
           </p>
           <div class="sig-sample-form">
             <div class="form-group">
@@ -228,7 +228,7 @@
           <span class="kicker">내 계정</span>
           <h3 class="panel-title">내 비밀번호 변경</h3>
           <p class="panel-subtitle">
-            로그인한 책임자 본인의 비밀번호를 직접 변경합니다. 변경하려면 현재 비밀번호를 확인해야 합니다.
+            현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿉니다.
           </p>
           <form id="change-pw-form" class="create-user-grid">
             <div class="form-group">
@@ -305,7 +305,7 @@
           <span class="kicker">백업</span>
           <h3 class="panel-title">Google Sheets 백업 (선택)</h3>
           <p class="panel-subtitle">
-            배합 기록을 Google 스프레드시트에 누적 백업합니다. gspread 설치 + 서비스계정 인증 파일이 필요합니다.
+            배합 기록을 Google 스프레드시트에 누적 백업합니다(gspread·서비스계정 파일 필요).
           </p>
           <p id="sheets-status" class="panel-subtitle sheets-status"></p>
           <div class="admin-form-stack">
@@ -332,5 +332,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260908g"></script>
+    <script src="/static/js/admin_users.js?v=20260908h"></script>
 {% endblock %}

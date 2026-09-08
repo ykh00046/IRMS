@@ -113,13 +113,13 @@
 .delta-good {
   color: var(--status-success);
   background: var(--status-success-bg);
-  border-color: rgba(30, 157, 107, 0.3);
+  border-color: color-mix(in srgb, var(--status-success) 30%, transparent);
 }
 
 .delta-bad {
   color: var(--status-error);
   background: var(--status-error-bg);
-  border-color: rgba(216, 69, 63, 0.3);
+  border-color: color-mix(in srgb, var(--status-error) 30%, transparent);
 }
 
 .delta-neutral,

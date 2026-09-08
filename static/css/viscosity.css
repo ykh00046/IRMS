@@ -623,7 +623,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(16, 24, 39, 0.45);
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
 }
 
 .ss-modal-overlay[hidden] {
@@ -637,7 +637,7 @@ body {
   max-height: 85vh;
   border-radius: 8px;
   background: var(--bg-base);
-  box-shadow: var(--shadow-prominent, 0 18px 48px rgba(21, 35, 63, 0.22));
+  box-shadow: var(--shadow-prominent, 0 18px 48px color-mix(in srgb, var(--text-primary) 22%, transparent));
 }
 
 .ss-modal-header {
