@@ -239,15 +239,13 @@
 }
 
 /* History Filter Grid */
+/* 조건 칸 — 2026-09-08: 흰 패널 안에 회색 상자를 또 두던 이중 테두리를 걷어냈다.
+   기록·대시보드처럼 패널 자체가 조건 막대다. */
 .history-grid {
   display: grid;
   grid-template-columns: 1fr 2fr 1.5fr 1.5fr;
   gap: 1rem;
-  background: var(--bg-surface-200);
-  padding: 1.25rem;
-  border-radius: var(--radius-md);
   margin-bottom: 1rem;
-  border: 1px solid var(--border-subtle);
 }
 
 /* Lookup Tab */

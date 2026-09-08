@@ -2,16 +2,13 @@
    IRMS 자재 LOT 이력 (/lot-history)
    ========================================================================= */
 
-/* 조건 막대 — 배합 분석(insight-control-row)과 같은 모양. */
+/* 조건 막대 — 배합 분석(insight-control-row)과 같은 모양.
+   2026-09-08: 패널 안 회색 상자를 걷어내 이중 테두리를 없앴다. */
 .lh-control-row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 1rem;
-  background: var(--bg-surface-200);
-  padding: 1.1rem 1.25rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
 }
 
 .lh-family-group { min-width: 240px; }

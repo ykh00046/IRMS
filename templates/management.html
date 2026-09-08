@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260908i" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260908j" />
 {% endblock %}
 
 {% block content %}
@@ -193,8 +193,9 @@
 
         <!-- ── 등록 이력 ── -->
         <div class="tab-panel active" id="tab-history">
+          {# 제목은 탭 이름으로 이미 한 번 말했다. 패널 제목을 또 두면 같은 말이
+             세 번(페이지 제목·탭·패널) 나온다(2026-09-08). #}
           <section class="panel">
-            <h3 class="panel-title">레시피 현황</h3>
             <div class="history-grid">
               <div class="filter-group">
                 <label class="filter-label">상태</label>
@@ -218,7 +219,8 @@
               </div>
             </div>
             <div class="filter-bar">
-              <p id="management-history-summary" class="filter-summary">전체 레시피 현황을 표시 중입니다.</p>
+              {# 조건을 걸었을 때만 채운다. 아무것도 안 걸었으면 할 말이 없다. #}
+              <p id="management-history-summary" class="filter-summary" hidden></p>
               <div class="button-row">
                 <button id="history-export-btn" class="btn" type="button">전체 Excel</button>
                 <button id="management-history-reset" type="button" class="btn">필터 초기화</button>
@@ -273,11 +275,11 @@
     
     
     <!-- management modules: factories (order-free) → controller last -->
-    <script src="/static/js/management/bom-editor.js?v=20260908i"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260908i"></script>
-    <script src="/static/js/management/import-validate.js?v=20260908i"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260908i"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260908i"></script>
-    <script src="/static/js/management/version-compare.js?v=20260908i"></script>
-    <script src="/static/js/management.js?v=20260908i"></script>
+    <script src="/static/js/management/bom-editor.js?v=20260908j"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260908j"></script>
+    <script src="/static/js/management/import-validate.js?v=20260908j"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260908j"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260908j"></script>
+    <script src="/static/js/management/version-compare.js?v=20260908j"></script>
+    <script src="/static/js/management.js?v=20260908j"></script>
 {% endblock %}

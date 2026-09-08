@@ -37,19 +37,27 @@
         return;
       }
 
-      const parts = [`상태 ${dom.historyStatus.value || "전체"}`];
+      // 조건을 하나라도 걸었을 때만 요약을 띄운다. 아무 조건도 없을 때의
+      // "전체 기준으로 표시 중입니다" 는 화면에 이미 보이는 것을 되풀이할 뿐이다.
+      const STATUS_LABELS = { completed: "사용중", canceled: "취소" };
+      const parts = [];
+      const status = dom.historyStatus.value;
       const search = dom.historySearch.value.trim();
       const from = dom.historyFrom.value;
       const to = dom.historyTo.value;
 
+      if (status) {
+        parts.push(`상태 ${STATUS_LABELS[status] || status}`);
+      }
       if (search) {
         parts.push(`검색어 "${search}"`);
       }
       if (from || to) {
-        parts.push(`기간 ${from || "시작 미지정"} ~ ${to || "종료 미지정"}`);
+        parts.push(`기간 ${from || "처음"} ~ ${to || "오늘"}`);
       }
 
-      dom.historySummary.textContent = `${parts.join(" · ")} 기준으로 레시피 현황을 표시 중입니다.`;
+      dom.historySummary.textContent = parts.join(" · ");
+      dom.historySummary.hidden = parts.length === 0;
     }
 
     function restoreHistoryFilters() {

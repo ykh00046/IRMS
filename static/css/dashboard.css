@@ -40,7 +40,8 @@
 }
 
 /* 지표 카드/그리드/차트 공용 스타일은 common.css 로 이동. 여기엔 대시보드 전용만 유지. */
-.dashboard-operators-panel .table-wrap { max-height: 300px; overflow-y: auto; }
+/* 최근 기록 표는 안쪽 세로 스크롤을 두지 않는다 — max-height 가 마지막 줄을 반으로
+   잘라 '더 있는데 못 보는' 표가 됐다. 대신 7줄만 받아 온다(dashboard.js). */
 
 /* 최근 배합 기록 — 좁은 패널에 5열이 들어가도록 컴팩트 표 */
 .dash-recent th,
@@ -146,10 +147,11 @@
   gap: 0.3rem;
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.15s ease, transform 0.12s ease;
+  transition: border-color 0.15s ease;
 }
 
-.dash-act:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+/* 화면 표준: hover 리프트(translateY) 금지 — 테두리 색으로만 눌리는 곳임을 알린다. */
+.dash-act:hover { border-color: var(--border-strong); }
 
 .dash-act-label { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 500; }
 .dash-act-value { font-size: var(--fs-hero); font-weight: 700; letter-spacing: -0.03em; }
@@ -179,6 +181,13 @@
   cursor: pointer;
 }
 
+/* 자동 갱신 스위치와 '기준 시각'은 한 덩어리다 — 줄이 접혀도 떨어지지 않게 묶는다. */
+.dash-auto-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .dash-updated { white-space: nowrap; }
 
 /* 일부 갱신 실패 — 주황 계열 토큰(--accent-secondary)으로 경고 톤.
@@ -194,6 +203,6 @@
 .dash-metric-link {
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.15s ease, transform 0.12s ease;
+  transition: border-color 0.15s ease;
 }
-.dash-metric-link:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.dash-metric-link:hover { border-color: var(--border-strong); }

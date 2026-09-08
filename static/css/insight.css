@@ -3,16 +3,14 @@
    ========================================================================= */
 
 /* 기간 막대 — 네 탭이 같은 기간을 본다. 한 줄에 날짜·프리셋·단위·동작을 넣고,
-   좁아지면 wrap 시킨다(그리드로 칸을 고정하면 버튼 묶음 옆에 빈 칸이 생겼다). */
+   좁아지면 wrap 시킨다(그리드로 칸을 고정하면 버튼 묶음 옆에 빈 칸이 생겼다).
+   2026-09-08: 흰 카드 안에 회색 상자를 또 두던 이중 테두리를 걷어냈다. 기록·대시보드
+   화면처럼 패널 자체가 조건 막대다. */
 .insight-control-row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 1rem;
-  background: var(--bg-surface-200);
-  padding: 1.1rem 1.25rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
 }
 
 .insight-period-buttons { gap: 0.4rem; }

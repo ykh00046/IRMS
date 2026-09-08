@@ -17,7 +17,16 @@ body {
      (KPI 카드 위 40px/아래 58px 신고 2026-07-23). 그리드 간격 하나로 통일. */
   margin-bottom: 0;
 }
-.visc-cards { margin-bottom: 0; }
+/* 카드 6장은 3+3 으로 놓는다 — 공용 auto-fit 은 1280px 에서 5열이 되어 '통계 제외'
+   한 장만 둘째 줄에 홀로 남았다. 좁은 창(900px 이하)에서는 2+2+2. */
+.visc-cards {
+  margin-bottom: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .visc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .visc-toolbar-filters,
 .visc-toolbar-actions {
@@ -729,6 +738,41 @@ body {
 .visc-control-summary-text {
   display: block;
   margin-bottom: var(--space-2);
+}
+
+/* 관리 기준 라벨/값 2열 목록 · 한 문장으로 이어 붙이면 폼 폭에서 세 줄로 흘러
+   어느 숫자가 어느 기준인지 짚기 어려웠다(2026-09-08). 값은 자릿수를 맞춘다. */
+.visc-control-caption {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+}
+
+.visc-control-empty {
+  margin: 0;
+  font-size: var(--fs-2xs);
+}
+
+.visc-control-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--fs-2xs);
+}
+
+.visc-control-dl dt {
+  margin: 0;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--brand) 70%, transparent);
+  white-space: nowrap;
+}
+
+.visc-control-dl dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .visc-band {

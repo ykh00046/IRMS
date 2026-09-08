@@ -13,23 +13,27 @@
   가려내면 화면이 깨지므로 별도 작업으로 미룬다.
 #}
 
+{# 첫 탭 · 담당자에게 품목코드 탭은 잠금 안내 한 줄뿐이라 빈 화면으로 열렸다.
+   책임자가 아니면 자재 LOT 을 먼저 보여준다(품목코드 탭은 그대로 남는다). #}
+{% set default_tab = "codes" if can_manage else "lots" %}
+
 {% block title %}자재 관리{% endblock %}
 {% block eyebrow %}운영 관리{% endblock %}
-{% block heading %}품목코드{% endblock %}
+{% block heading %}{{ "품목코드" if can_manage else "자재 LOT" }}{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/management.css?v=20260908i" />
-    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260908i" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260908j" />
+    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260908j" />
 {% endblock %}
 
 {% block content %}
         <nav class="mgmt-tabs">
-          <button class="mgmt-tab active" data-tab="codes" type="button">품목코드</button>
-          <button class="mgmt-tab" data-tab="lots" type="button">자재 LOT</button>
+          <button class="mgmt-tab{% if default_tab == 'codes' %} active{% endif %}" data-tab="codes" type="button">품목코드</button>
+          <button class="mgmt-tab{% if default_tab == 'lots' %} active{% endif %}" data-tab="lots" type="button">자재 LOT</button>
         </nav>
 
         <!-- ── 품목코드 ── -->
-        <div class="tab-panel active" id="tab-codes">
+        <div class="tab-panel{% if default_tab == 'codes' %} active{% endif %}" id="tab-codes">
           {% if not can_manage %}
           <section class="panel">
             <p class="panel-notice">품목코드 지정·수정은 <strong>책임자</strong>만 할 수 있습니다. 자재 LOT 조회는 로그인 없이 됩니다.</p>
@@ -89,7 +93,7 @@
         </div>
 
         <!-- ── 자재 LOT ── -->
-        <div class="tab-panel" id="tab-lots">
+        <div class="tab-panel{% if default_tab == 'lots' %} active{% endif %}" id="tab-lots">
         <section class="dashboard-cards">
           <div class="metric-card">
             <div class="metric-label">기준 파일</div>
@@ -190,7 +194,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/management/item-codes.js?v=20260908i"></script>
-    <script src="/static/js/material_lots.js?v=20260908i"></script>
-    <script src="/static/js/materials.js?v=20260908i"></script>
+    <script src="/static/js/management/item-codes.js?v=20260908j"></script>
+    <script src="/static/js/material_lots.js?v=20260908j"></script>
+    <script src="/static/js/materials.js?v=20260908j"></script>
 {% endblock %}

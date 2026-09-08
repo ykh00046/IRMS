@@ -257,14 +257,27 @@
   border-color: color-mix(in srgb, var(--accent-tertiary) 40%, transparent);
 }
 
-.inline-chip.inactive {
-  color: var(--status-error);
-  background: var(--status-error-bg);
-  border-color: color-mix(in srgb, var(--status-error) 35%, transparent);
+/* 명단 칩 — 평상시 상태(담당자·활성)는 색으로 강조하지 않는다. 색은 예외에만 쓴다.
+   비활성은 공용 .status-canceled 를 그대로 쓰므로 여기서 다시 정의하지 않는다. */
+.status-chip.chip-neutral {
+  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
 }
 
 .row-password {
   min-width: 150px;
+}
+
+/* 이름 한 칸짜리 폼 — .stack-form 이 세로라 입력칸이 패널 폭 끝까지 늘어났다. */
+#add-worker-name {
+  max-width: 24rem;
+}
+
+/* 관리 칸의 버튼 묶음 — 넷까지 늘어날 수 있어 좁은 창에서는 접히게 둔다. */
+.user-table .password-stack .button-row {
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 
@@ -275,10 +288,6 @@
   min-width: 220px;
 }
 
-/* 지정 전에는 버튼 하나뿐이라 열 너비만큼 늘어나 과하게 보였다. */
-.password-stack > [data-action="grant-open"] {
-  align-self: flex-start;
-}
 
 .helper-text {
   font-size: var(--fs-2xs);

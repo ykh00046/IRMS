@@ -176,42 +176,51 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderWorkerRow(worker) {
     const isSelf = worker.id === currentUserId;
+    // 권한·상태는 '값'이므로 칩으로 읽히게 두고, 누르는 것은 전부 [관리] 한 칸에 모은다
+    // (2026-09-08: 종전엔 상태 열에 버튼만 있어 지금 상태를 읽을 수 없었다).
     const roleChip = worker.is_manager
       ? '<span class="status-chip status-completed">책임자</span>'
-      : '<span class="status-chip">담당자</span>';
-    const managerCell = worker.is_manager
+      : '<span class="status-chip chip-neutral">담당자</span>';
+    const stateChip = worker.is_active
+      ? '<span class="status-chip chip-neutral">활성</span>'
+      : '<span class="status-chip status-canceled">비활성</span>';
+    // 비밀번호 칸은 [책임자 지정]·[비밀번호 변경]을 눌렀을 때만 편다 — 종전엔 책임자
+    // 행마다 상시 노출돼(8명이면 8칸) 이 화면의 주 용도가 '비밀번호 설정'처럼 보였다.
+    const grantFields = worker.is_manager
       ? `
-        <div class="password-stack">
+        <div class="grant-fields" hidden>
           <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
             placeholder="새 비밀번호(8자 이상)" />
           <div class="button-row">
-            <button type="button" class="btn accent" data-action="reset-password">비밀번호 초기화</button>
-            ${isSelf ? '<span class="helper-text">본인 계정</span>'
-              : '<button type="button" class="btn danger" data-action="revoke">책임자 해제</button>'}
+            <button type="button" class="btn accent btn-sm" data-action="reset-password">저장</button>
+            <button type="button" class="btn btn-sm" data-action="grant-cancel">취소</button>
           </div>
         </div>`
-      // 담당자 행: 비밀번호 칸은 [책임자 지정]을 눌렀을 때만 편다 — 종전엔 모든 행에
-      // 상시 노출돼(8명이면 8칸) 이 화면의 주 용도가 '비밀번호 설정'처럼 보였다.
       : `
-        <div class="password-stack">
-          <button type="button" class="btn btn-sm" data-action="grant-open">책임자 지정</button>
-          <div class="grant-fields" hidden>
-            <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
-              placeholder="비밀번호 설정(8자 이상)" />
-            <div class="button-row">
-              <button type="button" class="btn accent" data-action="grant">지정</button>
-              <button type="button" class="btn" data-action="grant-cancel">취소</button>
-            </div>
+        <div class="grant-fields" hidden>
+          <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
+            placeholder="비밀번호 설정(8자 이상)" />
+          <div class="button-row">
+            <button type="button" class="btn accent btn-sm" data-action="grant">지정</button>
+            <button type="button" class="btn btn-sm" data-action="grant-cancel">취소</button>
           </div>
         </div>`;
     // 삭제는 '정리 모드'에서만 — 되돌릴 수 없는 버튼이 모든 행에 상시 떠 있으면
     // 실수 클릭 거리 안에 있다(레시피 관리 품목코드 탭과 같은 방식).
-    const statusCell = `
-      <div class="button-row">
-        ${worker.is_active
-          ? '<button type="button" class="btn btn-sm" data-action="deactivate">비활성화</button>'
-          : '<button type="button" class="btn btn-sm" data-action="activate">활성화</button>'}
-        <button type="button" class="btn btn-sm danger worker-delete-btn" data-action="delete" hidden>삭제</button>
+    const manageCell = `
+      <div class="password-stack">
+        <div class="button-row">
+          ${worker.is_manager
+            ? '<button type="button" class="btn btn-sm" data-action="grant-open">비밀번호 변경</button>'
+            : '<button type="button" class="btn btn-sm" data-action="grant-open">책임자 지정</button>'}
+          ${worker.is_manager && !isSelf
+            ? '<button type="button" class="btn btn-sm danger" data-action="revoke">책임자 해제</button>' : ""}
+          ${worker.is_active
+            ? '<button type="button" class="btn btn-sm" data-action="deactivate">비활성화</button>'
+            : '<button type="button" class="btn btn-sm" data-action="activate">활성화</button>'}
+          <button type="button" class="btn btn-sm danger worker-delete-btn" data-action="delete" hidden>삭제</button>
+        </div>
+        ${grantFields}
       </div>`;
     // 파트(약품/합성/잉크/용수) — 변경 즉시 저장. 빈 값 = 미지정(해제).
     // 작업자 로그인 화면의 파트 필터가 이 값으로 명단을 거른다.
@@ -227,13 +236,12 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="user-name">
             ${esc(worker.name)}
             ${isSelf ? '<span class="inline-chip current">본인</span>' : ""}
-            ${!worker.is_active ? '<span class="inline-chip inactive">비활성</span>' : ""}
           </span>
         </td>
         ${partCell}
         <td>${roleChip}</td>
-        <td>${managerCell}</td>
-        <td>${statusCell}</td>
+        <td>${stateChip}</td>
+        <td>${manageCell}</td>
       </tr>`;
   }
 

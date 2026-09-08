@@ -42,6 +42,11 @@
       document.title = `BRM · ${title.heading}`;
     }
 
+    // 첫 탭은 템플릿이 정한다(책임자=품목코드, 담당자=자재 LOT). 여기서 codes 를
+    // 가정하지 않고 지금 active 인 탭에 상단 제목을 맞춘다.
+    const initialTab = document.querySelector(".mgmt-tab.active");
+    if (initialTab && initialTab.dataset.tab) syncTopbarTitle(initialTab.dataset.tab);
+
     dom.tabBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         dom.tabBtns.forEach((b) => b.classList.remove("active"));

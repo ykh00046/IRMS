@@ -42,7 +42,7 @@
 }
 .drafts-empty-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
 
-/* 표 머리 — 제목 + 건수 요약(다른 목록 화면과 같은 규약). */
+/* 표 머리 — 제목·보관 규칙 + 건수 요약(다른 목록 화면과 같은 규약). */
 .drafts-table-head {
   display: flex;
   justify-content: space-between;
@@ -50,5 +50,10 @@
   gap: 1rem;
   flex-wrap: wrap;
   margin-bottom: 0.6rem;
+}
+
+/* 부제는 제목 바로 아래 한 줄 — 공용 여백(1.5rem)은 표를 너무 밀어낸다. */
+.drafts-table-head .panel-subtitle {
+  margin-bottom: 0;
 }
 .drafts-summary-warn { color: var(--status-warning); font-weight: 600; }

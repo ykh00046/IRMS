@@ -18,7 +18,7 @@
     emptyRow,
     appendDeltaCell,
     option,
-    controlSummary,
+    controlSummaryHtml,
     controlBandHtml,
     periodChartDatasets,
     periodChartYBounds,
@@ -368,14 +368,12 @@
     setAnomalyCardClickable(analysis.counts.anomaly);
     setCountCard("visc-card-warn", "visc-card-warn-on", analysis.counts.warn);
     setCountCard("visc-card-excluded", "visc-card-excluded-on", excludedN);
-    // 관리 기준 요약 텍스트 아래에 관리 밴드 그림을 함께 넣는다. controlSummary 는
-    // 값에서 만든 안전한 문자열이고, controlBandHtml 은 CSS 클래스만 쓰는 순수 빌더라
-    // innerHTML 로 합쳐 넣어도 안전하다. 밴드가 없으면(규격·관리한계 모두 없음) 텍스트만.
-    const summaryText = controlSummary(analysis);
+    // 관리 기준을 라벨/값 2열 목록으로 그리고 그 아래에 관리 밴드 그림을 붙인다.
+    // 두 빌더 모두 숫자 포맷과 고정 라벨·CSS 클래스만 쓰는 순수 함수라 innerHTML 로
+    // 합쳐도 안전하다. 밴드가 없으면(규격·관리한계 모두 없음) 목록만 남는다.
+    const summaryHtml = controlSummaryHtml(analysis);
     const bandHtml = controlBandHtml(analysis, last ? last.viscosity : null);
-    $("visc-control-summary").innerHTML = bandHtml
-      ? `<span class="visc-control-summary-text">${IRMS.escapeHtml(summaryText)}</span>${bandHtml}`
-      : IRMS.escapeHtml(summaryText);
+    $("visc-control-summary").innerHTML = summaryHtml + bandHtml;
   }
 
   // '이상 N건' 카드 → 이상 목록. 0 건이면 갈 곳이 없으므로 눌리는 표시조차 하지

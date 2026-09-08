@@ -1,0 +1,53 @@
+/* =========================================================================
+   IRMS LOT 대사 (/lot-audit)
+   -------------------------------------------------------------------------
+   2026-09-08: 템플릿 안 <style> 블록에서 분리(작성 중 배합과 같은 이유 — 인라인이면
+   브라우저가 캐시하지 못하고 ?v= 로 배포 시점을 통제할 수도 없다).
+   공용 클래스(.panel/.table-wrap/.status-chip/.metric-card)를 우선 재사용하고,
+   상태색은 공용 토큰만 쓴다(하드코딩 hex 금지).
+   ========================================================================= */
+
+.lau-empty { padding: var(--space-6); text-align: center; color: var(--text-tertiary); }
+.lau-loading {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--space-2); padding: var(--space-4); color: var(--text-tertiary);
+}
+.lau-num { font-variant-numeric: tabular-nums; }
+/* 경과 일수 · 오래됐는데 아직 1차 기록이 없으면 오타 가능성이 높다. */
+.lau-age-old { color: var(--status-error); font-weight: 700; }
+.lau-age-warn { color: var(--status-warning); font-weight: 600; }
+/* 작업자가 확인 창조차 못 본 건 · 성격이 다르므로 행 전체를 눈에 띄게 한다. */
+.lau-row-unack { background: color-mix(in srgb, var(--status-error) 8%, transparent); }
+.lau-chip-unack { background: var(--status-error-bg); color: var(--status-error); }
+.lau-chip-ack { background: var(--status-success-bg); color: var(--status-success); }
+.lau-chip-over { background: var(--status-warning-bg); color: var(--status-warning); }
+.lau-chip-bypass { background: var(--status-error-bg); color: var(--status-error); }
+.lau-reason { color: var(--text-tertiary); }
+
+/* 부제 바로 아래에 도움말이 붙으므로 공용 여백(1.5rem)을 좁힌다. */
+.panel-subtitle {
+  margin-bottom: var(--space-2);
+}
+
+/* 도움말 — 판정 근거처럼 '처음 한 번만' 필요한 설명은 접어 둔다. 화면에는 한 줄
+   부제만 남기고, 나머지는 눌러서 펼친다(2026-09-08 문구 정리). */
+.panel-help {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.panel-help > summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.panel-help > summary:hover { color: var(--text-primary); }
+
+.panel-help p {
+  margin: var(--space-2) 0 0;
+  line-height: 1.6;
+  max-width: 70ch;
+}

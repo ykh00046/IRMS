@@ -55,6 +55,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const PREF_KEY = "irms_dashboard_range";
 
+  // 최근 배합 기록 표에 보여 줄 줄 수. 표 안쪽 스크롤을 없앴으므로 이 값이 곧 높이다.
+  const RECENT_LIMIT = 7;
+
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
@@ -151,7 +154,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const results = await Promise.allSettled([
         fetchJSON(`/api/dashboard/summary?${qs(range)}`),
         fetchJSON(`/api/dashboard/trend?${qs(range)}`),
-        fetchJSON("/api/dashboard/recent?limit=10"),
+        // 7줄 — 표에 안쪽 스크롤이 없으므로 받아 온 만큼 그대로 다 보인다.
+        fetchJSON(`/api/dashboard/recent?limit=${RECENT_LIMIT}`),
         fetchJSON("/api/dashboard/attention"),
       ]);
       const [summaryR, trendR, recentR, attentionR] = results;
@@ -384,7 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderRecent(data) {
     const body = document.getElementById("recent-body");
-    const items = data.items || [];
+    const items = (data.items || []).slice(0, RECENT_LIMIT);
     if (!items.length) {
       body.innerHTML = '<tr><td colspan="5"><div class="empty-state">배합 기록 없음</div></td></tr>';
       return;

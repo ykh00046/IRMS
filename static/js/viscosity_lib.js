@@ -12,6 +12,7 @@
  *   STATUS_LABEL, REASON_LABEL, TREND_LABEL, PERIOD_ALERT_LABEL,
  *   fmt, productLabel, linkedReadingsForRecord, latestViscosityLabel,
  *   appendTextCell, emptyRow, appendDeltaCell, option, controlSummary,
+ *   controlSummaryRows, controlSummaryHtml,
  *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
  *   readingOverlayDatasets, sourcePbLinkedReadings, sourcePbScatterDatasets,
  *   pbLinkNotice
@@ -137,6 +138,51 @@
       parts.push(`σ 기준 축적 중 (측정 ${stats.n ?? 0}/${need}건)`);
     }
     return parts.length ? `관리 기준 · ${parts.join(" · ")}` : "관리 기준이 아직 없습니다.";
+  }
+
+  // 관리 기준을 라벨/값 짝으로 돌려준다(순수 데이터). 한 줄로 이어 붙인 문장은 폼 폭에서
+  // 세 줄로 흘러 어느 숫자가 어느 기준인지 눈으로 짚기 어려웠다(2026-09-08).
+  function controlSummaryRows(analysis) {
+    if (!analysis || !analysis.stats || !analysis.product) return [];
+    const stats = analysis.stats;
+    const product = analysis.product;
+    const rows = [];
+    if (stats.center !== null && stats.center !== undefined) {
+      rows.push({ label: "중심", value: fmt(stats.center) });
+    }
+    const banned = [];
+    if (product.lower_limit != null) banned.push(`${fmt(product.lower_limit)} 이하`);
+    if (product.upper_limit != null) banned.push(`${fmt(product.upper_limit)} 이상`);
+    if (banned.length) rows.push({ label: "사용 금지", value: banned.join(" · ") });
+    const warned = [];
+    if (product.warn_low != null) warned.push(`${fmt(product.warn_low)} 이하`);
+    if (product.warn_high != null) warned.push(`${fmt(product.warn_high)} 이상`);
+    if (warned.length) rows.push({ label: "경고", value: warned.join(" · ") });
+    if (stats.lwl != null && stats.uwl != null) {
+      rows.push({ label: "정상 구간", value: `${fmt(stats.lwl)}~${fmt(stats.uwl)}` });
+    }
+    if (stats.lcl !== null && stats.lcl !== undefined && stats.ucl !== null && stats.ucl !== undefined) {
+      rows.push({ label: "σ 관리 한계", value: `${fmt(stats.lcl)}~${fmt(stats.ucl)}` });
+    }
+    if (stats.sigma_ready === false) {
+      const need = stats.sigma_min_samples || 8;
+      rows.push({ label: "σ 기준", value: `축적 중 ${stats.n ?? 0}/${need}건` });
+    }
+    return rows;
+  }
+
+  // 위 짝을 라벨/값 2열 목록으로 그린다. 값은 숫자를 포맷한 문자열뿐이고 라벨은 고정
+  // 문구라 innerHTML 로 넣어도 안전하다(밴드 그림 빌더와 같은 성질).
+  function controlSummaryHtml(analysis) {
+    const rows = controlSummaryRows(analysis);
+    if (!rows.length) {
+      const empty = analysis ? "관리 기준이 아직 없습니다." : "관리 기준 -";
+      return `<p class="visc-control-empty">${empty}</p>`;
+    }
+    return `<p class="visc-control-caption">관리 기준</p>`
+      + `<dl class="visc-control-dl">`
+      + rows.map((row) => `<dt>${row.label}</dt><dd>${row.value}</dd>`).join("")
+      + `</dl>`;
   }
 
   // 관리 기준 한 줄 텍스트(controlSummary) 옆에 두는 '관리 밴드' 그림(순수 HTML 빌더).
@@ -687,6 +733,8 @@
     appendDeltaCell,
     option,
     controlSummary,
+    controlSummaryRows,
+    controlSummaryHtml,
     controlBandHtml,
     periodChartDatasets,
     periodChartYBounds,
