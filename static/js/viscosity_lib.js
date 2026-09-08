@@ -115,105 +115,85 @@
   }
 
   // 관리 기준 요약 문자열. analysis 를 인자로 받아 동일한 출력을 반환한다.
+  // 순서는 현장이 읽는 순서다(2026-09-08): 중심 → 사용 금지(관리 하한/상한, 벗어나면 이상)
+  // → 경고(고정 경고 문턱) → 정상 구간(경고 밴드 안쪽) → σ 관리 한계(통계). 예전에는 관리
+  // 하한/상한이 '규격 340~-' 로만 찍혀 사용 금지선이라는 뜻이 드러나지 않았다.
   function controlSummary(analysis) {
     if (!analysis) return "관리 기준 -";
     const stats = analysis.stats;
     const product = analysis.product;
     const parts = [];
     if (stats.center !== null) parts.push(`중심 ${fmt(stats.center)}`);
-    // '관리'는 ±kσ 관리 한계(벗어나면 이상), '경고'는 그 안쪽 확인 구간 — 둘을 한 줄에 같이 둔다.
-    if (stats.lcl !== null && stats.ucl !== null) parts.push(`관리 ${fmt(stats.lcl)}~${fmt(stats.ucl)}`);
+    if (product.lower_limit != null) parts.push(`사용 금지 ${fmt(product.lower_limit)} 이하`);
+    if (product.upper_limit != null) parts.push(`사용 금지 ${fmt(product.upper_limit)} 이상`);
+    if (product.warn_low != null) parts.push(`경고 ${fmt(product.warn_low)} 이하`);
+    if (product.warn_high != null) parts.push(`경고 ${fmt(product.warn_high)} 이상`);
     if (stats.lwl != null && stats.uwl != null) parts.push(`정상 구간 ${fmt(stats.lwl)}~${fmt(stats.uwl)}`);
-    if (product.lower_limit !== null || product.upper_limit !== null) {
-      parts.push(`규격 ${product.lower_limit ?? "-"}~${product.upper_limit ?? "-"}`);
-    }
-    // 고정 경고 문턱(PB 48 이하 → 경고 등) — 규격과 별개로 항상 적용되므로 같이 알린다.
-    if (product.warn_low != null) parts.push(`경고 하한 ${fmt(product.warn_low)} 이하`);
-    if (product.warn_high != null) parts.push(`경고 상한 ${fmt(product.warn_high)} 이상`);
+    if (stats.lcl !== null && stats.ucl !== null) parts.push(`σ 관리 한계 ${fmt(stats.lcl)}~${fmt(stats.ucl)}`);
     // 표본이 적어 통계 관리한계를 아직 쓰지 않는 상태를 분명히 알린다 — 예전에는
     // 관리한계가 없어도 이유가 화면에 없어서, 판정이 왜 느슨한지 알 수 없었다.
     if (stats.sigma_ready === false) {
       const need = stats.sigma_min_samples || 8;
-      parts.push(`기준 축적 중 (측정 ${stats.n ?? 0}/${need}건 · 규격 판정만 적용)`);
+      parts.push(`σ 기준 축적 중 (측정 ${stats.n ?? 0}/${need}건)`);
     }
     return parts.length ? `관리 기준 · ${parts.join(" · ")}` : "관리 기준이 아직 없습니다.";
   }
 
   // 관리 기준 한 줄 텍스트(controlSummary) 옆에 두는 '관리 밴드' 그림(순수 HTML 빌더).
-  // 가로 밴드 하나(~44px)로 구간 관계와 최근 측정값의 위치를 한눈에 보여준다:
-  //   · 규격 범위(product.lower_limit~upper_limit) 를 트랙 전체 폭으로
-  //   · 그 안의 관리 한계(stats.lcl~ucl) 구간을 색으로(초록 = 관리 내)
-  //   · 경고 한계(stats.uwl/lwl)가 있으면 관리~경고 사이를 주황으로
-  //   · 중심(stats.center)을 세로 파선으로
-  //   · lastValue(최근 측정값, null 가능)를 아래꼭짓점 삼각형 마커+값 라벨로
-  // 좌표는 트랙 [lo, hi] 기준 백분율(순수 산술). 규격이 있으면 규격 기준, 없으면 관리
-  // 한계 기준, 둘 다 없으면 빈 문자열(그릴 게 없다). 색은 인라인 hex 금지 — CSS 클래스로
-  // (.visc-band-*) 빼고 viscosity.css 가 입힌다. rescaleBarsHtml(P-4) 와 같은 규약.
+  // 가로 밴드 하나(~44px)로 구간 관계와 최근 측정값의 위치를 한눈에 보여준다.
+  //   · 트랙 = 알려진 기준선(관리 하한/상한·σ 관리 한계·경고선·중심) 전체 범위
+  //   · 초록(정상) 바탕 위에 경고 구간(주황)·이상 구간(빨강)을 바깥쪽부터 겹쳐 칠한다
+  //   · 이상 경계 = 관리 하한/상한(사용 금지)과 σ 관리 한계 중 안쪽 것
+  //   · 경고 경계 = stats.lwl/uwl(고정 경고 문턱이 이미 합쳐져 있다)
+  //   · 중심(stats.center)을 세로 파선으로, lastValue 를 삼각 마커+값 라벨로
+  // 한쪽 선만 있어도 그린다(APB17: 관리 하한 340·경고 350 만, 2026-09-08). 종전에는 규격이
+  // 양쪽 다 있거나 σ 한계가 있어야만 그려져 하한만 둔 반제품은 그림이 비었다.
+  // 색은 인라인 hex 금지 — CSS 클래스(.visc-band-*)로 빼고 viscosity.css 가 입힌다.
   function controlBandHtml(analysis, lastValue) {
     if (!analysis || !analysis.stats || !analysis.product) return "";
     const stats = analysis.stats;
     const product = analysis.product;
-    const lo = product.lower_limit;
-    const hi = product.upper_limit;
-    const hasSpec = lo != null && hi != null && Number(lo) < Number(hi);
-    // 트랙 범위 결정: 규격 우선, 없으면 관리 한계, 둘 다 없으면 그릴 게 없다.
-    let tLo, tHi;
-    if (hasSpec) {
-      tLo = Number(lo);
-      tHi = Number(hi);
-    } else if (stats.lcl != null && stats.ucl != null && Number(stats.lcl) < Number(stats.ucl)) {
-      tLo = Number(stats.lcl);
-      tHi = Number(stats.ucl);
-    } else {
-      return "";
-    }
+    const num = (v) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+    const lower = num(product.lower_limit);
+    const upper = num(product.upper_limit);
+    const lcl = num(stats.lcl);
+    const ucl = num(stats.ucl);
+    const lwl = num(stats.lwl);
+    const uwl = num(stats.uwl);
+    const center = num(stats.center);
+    // 이상 경계(안쪽 것) / 경고 경계.
+    const lowAnom = [lower, lcl].filter((v) => v != null).reduce((a, b) => Math.max(a, b), -Infinity);
+    const highAnom = [upper, ucl].filter((v) => v != null).reduce((a, b) => Math.min(a, b), Infinity);
+    const lowLine = Number.isFinite(lowAnom) ? lowAnom : null;
+    const highLine = Number.isFinite(highAnom) ? highAnom : null;
+    const known = [lower, upper, lcl, ucl, lwl, uwl, center].filter((v) => v != null);
+    if (!known.length) return "";
+    // 트랙 범위: 한계가 있는 쪽은 그 한계, 없는 쪽은 알려진 값 중 끝에 여유(범위의 15%)를 둔다.
+    let tLo = Math.min(...known);
+    let tHi = Math.max(...known);
+    if (tHi <= tLo) { tLo -= 1; tHi += 1; }
+    const pad = (tHi - tLo) * 0.15;
+    if (lowLine == null || lowLine > tLo) tLo -= pad;
+    if (highLine == null || highLine < tHi) tHi += pad;
     const span = tHi - tLo;
-    // 값 → 트랙 기준 백분율(0~100, 클램프).
-    const pct = (v) => {
-      if (v == null || !Number.isFinite(Number(v))) return null;
-      return Math.max(0, Math.min(100, ((Number(v) - tLo) / span) * 100));
-    };
+    const pct = (v) => (v == null ? null : Math.max(0, Math.min(100, ((v - tLo) / span) * 100)));
 
-    // 색 구간을 쌓는다. 관리 한계(lcl/ucl)·경고 한계(uwl/lwl) 모두 트랙 범위 안으로
-    // 클램프해 그린다(한계가 규격 밖이면 규격 끝까지가 그 색이다).
     const segments = [];
-    const lclP = pct(stats.lcl);
-    const uclP = pct(stats.ucl);
-    const lwlP = pct(stats.lwl);
-    const uwlP = pct(stats.uwl);
-    const hasControl = lclP != null && uclP != null && uclP > lclP;
-    // 경고선은 한쪽만 있어도 그린다(고정 경고 하한만 둔 PB 등, 2026-09-08). 없는 쪽은
-    // 관리 한계와 같다고 보아 그쪽 주황 구간이 0폭이 된다.
-    const lw = lwlP != null ? lwlP : lclP;
-    const uw = uwlP != null ? uwlP : uclP;
-    const hasWarn = hasControl && uw > lw && (lw > lclP || uw < uclP);
-    if (hasControl) {
-      // 관리 한계 바깥(규격 내) = 빨강(규격은 통과하지만 관리 밖). 규격이 곧 관리 한계면
-      // 이 구간은 0폭이 되어 자연히 보이지 않는다.
-      if (lclP > 0) segments.push(zone(0, lclP, "spec"));
-      if (hasWarn) {
-        // 경고 구간(관리~경고 사이) = 주황. 중앙(lwl~uwl) = 초록(목표).
-        segments.push(zone(lclP, Math.max(lclP, lw), "warn"));
-        segments.push(zone(Math.max(lclP, lw), Math.min(uclP, uw), "target"));
-        segments.push(zone(Math.min(uclP, uw), uclP, "warn"));
-      } else {
-        // 경고 한계가 없으면 관리 밴드(lcl~ucl) 통째로 초록.
-        segments.push(zone(lclP, uclP, "target"));
-      }
-      if (uclP < 100) segments.push(zone(uclP, 100, "spec"));
-    } else {
-      // 관리 한계가 없으면 트랙 전체를 중립(규격만 있는 상태)으로.
-      segments.push(zone(0, 100, "spec"));
-    }
+    const hasAnyLimit = lowLine != null || highLine != null || lwl != null || uwl != null;
+    segments.push(zone(0, 100, hasAnyLimit ? "target" : "spec"));
+    if (lwl != null) segments.push(zone(0, pct(lwl), "warn"));
+    if (uwl != null) segments.push(zone(pct(uwl), 100, "warn"));
+    if (lowLine != null) segments.push(zone(0, pct(lowLine), "spec"));
+    if (highLine != null) segments.push(zone(pct(highLine), 100, "spec"));
 
     // 중심 파선 — 값이 있을 때만.
-    const centerP = pct(stats.center);
+    const centerP = pct(center);
     const centerLine = centerP != null
       ? `<span class="visc-band-center" style="left:${fmt(centerP, 2)}%"></span>`
       : "";
 
     // 최근 측정값 마커(아래꼭짓점 삼각형) + 값 라벨. null 이면 그리지 않는다.
-    const valueP = pct(lastValue);
+    const valueP = pct(num(lastValue));
     const marker = valueP != null
       ? `<span class="visc-band-marker" style="left:${fmt(valueP, 2)}%">`
         + `<span class="visc-band-marker-tri"></span>`
