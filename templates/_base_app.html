@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BRM · {% block title %}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908h" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260908h" />
+    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908i" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260908i" />
     {% block styles %}{% endblock %}
   </head>
   <body>
@@ -26,38 +26,38 @@
                점도 관리는 QC 기록 관리라 운영 관리 그룹으로. -->
           <div class="nav-section">
             <a href="/dashboard" class="side-link{{ ' active' if request.url.path == '/dashboard' else '' }}">
-              <span class="side-ico side-ico-dashboard" aria-hidden="true"></span><span>대시보드</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg></span><span>대시보드</span>
             </a>
           </div>
 
           <div class="nav-section">
             <p class="nav-section-label">현장 작업</p>
             <a href="/blend" class="side-link{{ ' active' if request.url.path == '/blend' else '' }}">
-              <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>배합</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.8v6.6L4.3 18.9A2 2 0 0 0 6 22h12a2 2 0 0 0 1.7-3.1L14 9.4V2.8"/><path d="M8.4 2.8h7.2"/><path d="M6.9 15.2h10.2"/></svg></span><span>배합</span>
             </a>
             <a href="/blend/continuous" class="side-link{{ ' active' if request.url.path == '/blend/continuous' else '' }}">
-              <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>다중 계량</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.6 21 7l-9 4.4L3 7z"/><path d="m3 12 9 4.4L21 12"/><path d="m3 16.9 9 4.4 9-4.4"/></svg></span><span>다중 계량</span>
             </a>
             <!-- 끊긴 작업(임시저장)을 이어서 하는 유일한 입구. 진입 배너를 폐지했으므로
                  항상 노출한다. 목록이 비어 있어도 어디로 가야 하는지 보여야 한다. -->
             <a href="/blend/drafts" class="side-link{{ ' active' if request.url.path == '/blend/drafts' else '' }}">
-              <span class="side-ico side-ico-bulk" aria-hidden="true"></span><span>작성 중 배합</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.4 2.8H7a2 2 0 0 0-2 2v14.4a2 2 0 0 0 2 2h4"/><path d="M13.4 2.8v5h5"/><path d="M21 13.6a1.9 1.9 0 0 0-2.7 0L14 17.9v3h3l4-4.3a1.9 1.9 0 0 0 0-3z"/></svg></span><span>작성 중 배합</span>
             </a>
           </div>
 
           <div class="nav-section">
             <p class="nav-section-label">운영 관리</p>
             <a href="/status" class="side-link{{ ' active' if request.url.path == '/status' else '' }}">
-              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>배합 기록</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.2h11"/><path d="M4 11.4h11"/><path d="M4 16.6h6.5"/><path d="m14.2 18.4 2.1 2.1 4.2-4.7"/></svg></span><span>배합 기록</span>
             </a>
             <a href="/viscosity" class="side-link{{ ' active' if request.url.path == '/viscosity' else '' }}">
-              <span class="side-ico side-ico-viscosity" aria-hidden="true"></span><span>점도 관리</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.7c3.6 3.6 6 6.6 6 9.4a6 6 0 0 1-12 0c0-2.8 2.4-5.8 6-9.4z"/></svg></span><span>점도 관리</span>
             </a>
             <a href="/materials" class="side-link{{ ' active' if request.url.path in ['/materials', '/material-lots'] else '' }}">
-              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>자재 관리</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8.1v7.8a2 2 0 0 1-1 1.8l-7 3.9a2 2 0 0 1-2 0l-7-3.9a2 2 0 0 1-1-1.8V8.1a2 2 0 0 1 1-1.8l7-3.9a2 2 0 0 1 2 0l7 3.9a2 2 0 0 1 1 1.8z"/><path d="m3.3 7.1 8.7 5 8.7-5"/><path d="M12 21.9V12.1"/></svg></span><span>자재 관리</span>
             </a>
             <a href="/management" class="side-link{{ ' active' if request.url.path == '/management' else '' }}">
-              <span class="side-ico side-ico-recipes" aria-hidden="true"></span><span>레시피 관리</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7.1C10.4 5.4 8.3 4.6 6 4.6H3v13.1h3c2.3 0 4.4.8 6 2.5"/><path d="M12 7.1c1.6-1.7 3.7-2.5 6-2.5h3v13.1h-3c-2.3 0-4.4.8-6 2.5"/><path d="M12 7.1v13.1"/></svg></span><span>레시피 관리</span>
             </a>
             {% if can_manage or (current_user and current_user.access_level in ["manager", "admin"]) %}
             <!-- 미해소 LOT 대사 · 총 배합량 이상 · 책임자 전용 사후 점검(2026-08-04).
@@ -68,7 +68,7 @@
                  값(ACCESS_LEVEL_RANK 상 책임자와 동급)을 놓친다. 통제 화면이라
                  "책임자인데 입구가 안 보이는" 경우를 만들지 않는다. -->
             <a href="/lot-audit" class="side-link{{ ' active' if request.url.path == '/lot-audit' else '' }}">
-              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>LOT 대사</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.3"/><path d="m21 21-4.9-4.9"/><path d="m7.9 10.9 2 2 3.9-4.2"/></svg></span><span>LOT 대사</span>
             </a>
             {% endif %}
           </div>
@@ -76,10 +76,10 @@
           <div class="nav-section">
             <p class="nav-section-label">분석</p>
             <a href="/insight" class="side-link{{ ' active' if request.url.path == '/insight' else '' }}">
-              <span class="side-ico side-ico-insight" aria-hidden="true"></span><span>배합 분석</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 20.4h17.6"/><path d="M7.4 20.4v-6.6"/><path d="M12 20.4V6"/><path d="M16.6 20.4v-4.2"/></svg></span><span>배합 분석</span>
             </a>
             <a href="/lot-history" class="side-link{{ ' active' if request.url.path == '/lot-history' else '' }}">
-              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>LOT 이력</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12a8.8 8.8 0 1 0 2.9-6.5L3.2 8.2"/><path d="M3.2 3.4v4.8H8"/><path d="M12 7.6V12l3.4 2"/></svg></span><span>LOT 이력</span>
             </a>
           </div>
 
@@ -87,7 +87,7 @@
           <div class="nav-section">
             <p class="nav-section-label">시스템</p>
             <a href="/admin/users" class="side-link{{ ' active' if request.url.path == '/admin/users' else '' }}">
-              <span class="side-ico side-ico-users" aria-hidden="true"></span><span>사용자 관리</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.6 20.6v-1.5a4 4 0 0 0-4-4H6.2a4 4 0 0 0-4 4v1.5"/><circle cx="8.9" cy="7.1" r="3.6"/><path d="M21.8 20.6v-1.5a4 4 0 0 0-3-3.9"/><path d="M15.8 3.7a4 4 0 0 1 0 6.9"/></svg></span><span>사용자 관리</span>
             </a>
           </div>
           {% endif %}
@@ -140,16 +140,16 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> bootstrap) -->
-    <script src="/static/js/common/core.js?v=20260908h"></script>
-    <script src="/static/js/common/mappers.js?v=20260908h"></script>
-    <script src="/static/js/common/format.js?v=20260908h"></script>
-    <script src="/static/js/common/api-users.js?v=20260908h"></script>
-    <script src="/static/js/common/api-recipes.js?v=20260908h"></script>
-    <script src="/static/js/common/api-materials.js?v=20260908h"></script>
-    <script src="/static/js/common/ui.js?v=20260908h"></script>
-    <script src="/static/js/common/auto-refresh.js?v=20260908h"></script>
-    <script src="/static/js/common/audio.js?v=20260908h"></script>
-    <script src="/static/js/common.js?v=20260908h"></script>
+    <script src="/static/js/common/core.js?v=20260908i"></script>
+    <script src="/static/js/common/mappers.js?v=20260908i"></script>
+    <script src="/static/js/common/format.js?v=20260908i"></script>
+    <script src="/static/js/common/api-users.js?v=20260908i"></script>
+    <script src="/static/js/common/api-recipes.js?v=20260908i"></script>
+    <script src="/static/js/common/api-materials.js?v=20260908i"></script>
+    <script src="/static/js/common/ui.js?v=20260908i"></script>
+    <script src="/static/js/common/auto-refresh.js?v=20260908i"></script>
+    <script src="/static/js/common/audio.js?v=20260908i"></script>
+    <script src="/static/js/common.js?v=20260908i"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

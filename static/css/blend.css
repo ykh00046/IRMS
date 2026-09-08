@@ -67,7 +67,7 @@
 }
 .blend-dhr-metric { display: flex; flex-direction: column; gap: 4px; }
 .blend-dhr-metric-label { font-size: var(--fs-2xs); color: rgba(255, 255, 255, 0.55); }
-.blend-dhr-metric-value { font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 700; }
+.blend-dhr-metric-value { font-family: var(--font-sans); font-variant-numeric: tabular-nums; font-size: var(--fs-lg); font-weight: 700; }
 .blend-dhr-metric-value em {
   font-style: normal;
   font-size: var(--fs-2xs);
@@ -986,7 +986,7 @@ body.dhr-open { overflow: hidden; }
   font-size: var(--fs-xs); color: var(--text-secondary);
 }
 .add-weigh-portion-no { font-weight: 600; }
-.add-weigh-portion-amt { font-family: var(--font-mono); }
+.add-weigh-portion-amt { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
 /* 방금 담은 회차 — 어디까지 했는지 눈이 바로 찾게 */
 .add-weigh-portion.is-last { color: var(--text-primary); }
 .add-weigh-portion.is-last .add-weigh-portion-amt { font-weight: 700; }

@@ -194,7 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // 상시 노출돼(8명이면 8칸) 이 화면의 주 용도가 '비밀번호 설정'처럼 보였다.
       : `
         <div class="password-stack">
-          <button type="button" class="btn accent" data-action="grant-open">책임자 지정</button>
+          <button type="button" class="btn btn-sm" data-action="grant-open">책임자 지정</button>
           <div class="grant-fields" hidden>
             <input type="password" class="input row-password mono" data-field="new-password" maxlength="100"
               placeholder="비밀번호 설정(8자 이상)" />
@@ -209,9 +209,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const statusCell = `
       <div class="button-row">
         ${worker.is_active
-          ? '<button type="button" class="btn" data-action="deactivate">비활성화</button>'
-          : '<button type="button" class="btn" data-action="activate">활성화</button>'}
-        <button type="button" class="btn danger worker-delete-btn" data-action="delete" hidden>삭제</button>
+          ? '<button type="button" class="btn btn-sm" data-action="deactivate">비활성화</button>'
+          : '<button type="button" class="btn btn-sm" data-action="activate">활성화</button>'}
+        <button type="button" class="btn btn-sm danger worker-delete-btn" data-action="delete" hidden>삭제</button>
       </div>`;
     // 파트(약품/합성/잉크/용수) — 변경 즉시 저장. 빈 값 = 미지정(해제).
     // 작업자 로그인 화면의 파트 필터가 이 값으로 명단을 거른다.

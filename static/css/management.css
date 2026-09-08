@@ -320,7 +320,8 @@
 
 .lookup-result tbody td.value-cell {
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
 }
 
@@ -1060,3 +1061,8 @@
   .vc-layout { grid-template-columns: 1fr; }
   .vc-timeline { max-height: none; }
 }
+
+/* 레시피 현황 표: 열 11개에 선택 상자 2개라 기본 셀 여백(14px 16px)으로는 1280px 에서
+   가로로 넘친다. 표준 §4 의 표 셀 여백(--space-2 --space-3)으로 좁힌다. */
+.recipe-list-table th,
+.recipe-list-table td { padding: var(--space-2) var(--space-3); }

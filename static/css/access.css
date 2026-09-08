@@ -213,11 +213,10 @@
   box-shadow: 0 14px 40px color-mix(in srgb, var(--text-primary) 35%, transparent);
   text-decoration: none;
   color: var(--text-primary);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  transition: box-shadow 0.16s ease;
 }
 
 .launch-tile:hover {
-  transform: translateY(-3px);
   box-shadow: 0 20px 52px color-mix(in srgb, var(--text-primary) 45%, transparent);
 }
 
@@ -227,7 +226,6 @@
   border-radius: 11px;
   display: grid;
   place-items: center;
-  font-size: var(--fs-lg);
   margin-bottom: 8px;
   background: var(--brand-soft);
   color: var(--brand);

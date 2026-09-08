@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BRM · 통합 제조 · 근태 관리</title>
-    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908h" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260908h" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260908h" />
+    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908i" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260908i" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260908i" />
   </head>
   <body class="launch-body">
 
@@ -23,7 +23,7 @@
         <!-- 입장 조건 배지(2026-08-05) · 두 타일의 유일한 실질 차이(사번 로그인 필요 vs
              바로 입장)가 어디에도 없었다. 자물쇠 유무로 표시. -->
         <a href="/attendance" class="launch-tile">
-          <span class="launch-tile-ico launch-tile-ico-att" aria-hidden="true">◷</span>
+          <span class="launch-tile-ico launch-tile-ico-att" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.6 2.1"/></svg></span>
           <span class="launch-tile-title">근태 확인</span>
           <span class="launch-tile-desc">출퇴근 · 근무시간 · 지각 · 연차 등<br />월별 근태 현황을 조회합니다</span>
           <span class="launch-tile-access" aria-label="사번과 비밀번호로 로그인해야 합니다">
@@ -33,7 +33,7 @@
           <span class="launch-tile-go">바로가기 <span aria-hidden="true">→</span></span>
         </a>
         <a href="/dashboard" class="launch-tile launch-tile-accent">
-          <span class="launch-tile-ico launch-tile-ico-mfg" aria-hidden="true">◎</span>
+          <span class="launch-tile-ico launch-tile-ico-mfg" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.8v6.6L4.3 18.9A2 2 0 0 0 6 22h12a2 2 0 0 0 1.7-3.1L14 9.4V2.8"/><path d="M8.4 2.8h7.2"/><path d="M6.9 15.2h10.2"/></svg></span>
           <span class="launch-tile-title">반제품 제조 관리</span>
           <span class="launch-tile-desc">배합 · 점도 · 레시피 · DHR 등<br />반제품 제조 전반을 관리합니다</span>
           <span class="launch-tile-access is-open" aria-label="로그인 없이 바로 들어갑니다">
@@ -90,14 +90,14 @@
       })();
     </script>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->
-    <script src="/static/js/common/core.js?v=20260908h"></script>
-    <script src="/static/js/common/mappers.js?v=20260908h"></script>
-    <script src="/static/js/common/format.js?v=20260908h"></script>
-    <script src="/static/js/common/api-users.js?v=20260908h"></script>
-    <script src="/static/js/common/api-recipes.js?v=20260908h"></script>
-    <script src="/static/js/common/api-materials.js?v=20260908h"></script>
-    <script src="/static/js/common/ui.js?v=20260908h"></script>
-    <script src="/static/js/common/audio.js?v=20260908h"></script>
-    <script src="/static/js/common.js?v=20260908h"></script>
+    <script src="/static/js/common/core.js?v=20260908i"></script>
+    <script src="/static/js/common/mappers.js?v=20260908i"></script>
+    <script src="/static/js/common/format.js?v=20260908i"></script>
+    <script src="/static/js/common/api-users.js?v=20260908i"></script>
+    <script src="/static/js/common/api-recipes.js?v=20260908i"></script>
+    <script src="/static/js/common/api-materials.js?v=20260908i"></script>
+    <script src="/static/js/common/ui.js?v=20260908i"></script>
+    <script src="/static/js/common/audio.js?v=20260908i"></script>
+    <script src="/static/js/common.js?v=20260908i"></script>
   </body>
 </html>

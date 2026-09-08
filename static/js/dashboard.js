@@ -309,6 +309,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // 카드가 kg 로 말하는데 그래프 축만 g 면 같은 화면에서 단위가 갈린다.
     const weights = data.points.map((point) => (point.total_weight_g || 0) / 1000);
     if (trendChart) trendChart.destroy();
+    const countColor = cssVar("--brand", "#1b4079");
+    const weightColor = cssVar("--accent-secondary", "#f47c26");
     trendChart = new Chart(document.getElementById("chart-trend"), {
       type: "line",
       data: {
@@ -317,19 +319,28 @@ document.addEventListener("DOMContentLoaded", () => {
           {
             label: "배합 건수",
             data: counts,
-            borderColor: cssVar("--brand", "#1b4079"),
-            backgroundColor: "rgba(27, 64, 121, 0.15)",
+            borderColor: countColor,
+            backgroundColor: countColor,
             yAxisID: "y",
-            tension: 0.25,
+            // 건수는 0·1 을 오가는 정수라 곡선 보간이 음수로 튄다. monotone 으로 고정.
+            cubicInterpolationMode: "monotone",
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            fill: false,
           },
           {
             label: "총 배합량 (kg)",
             data: weights,
-            // 주의: 이 앱에서 --accent 는 네이비 별칭 — 오렌지는 --accent-secondary
-            borderColor: cssVar("--accent-secondary", "#f47c26"),
-            backgroundColor: "rgba(244, 124, 38, 0.15)",
+            // 주의: 이 앱에서 --accent 는 네이비 별칭 · 오렌지는 --accent-secondary
+            borderColor: weightColor,
+            backgroundColor: weightColor,
             yAxisID: "y1",
-            tension: 0.25,
+            cubicInterpolationMode: "monotone",
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            fill: false,
           },
         ],
       },
@@ -337,13 +348,34 @@ document.addEventListener("DOMContentLoaded", () => {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            labels: {
+              usePointStyle: true,
+              boxWidth: 8,
+              boxHeight: 8,
+              color: cssVar("--text-secondary", "#475569"),
+            },
+          },
+        },
         scales: {
-          y: { type: "linear", position: "left", beginAtZero: true },
+          x: {
+            grid: { display: false },
+            ticks: { color: cssVar("--text-tertiary", "#94a3b8") },
+          },
+          y: {
+            type: "linear",
+            position: "left",
+            beginAtZero: true,
+            grid: { color: cssVar("--border-subtle", "#e2e8f0") },
+            ticks: { precision: 0, color: cssVar("--text-tertiary", "#94a3b8") },
+          },
           y1: {
             type: "linear",
             position: "right",
             beginAtZero: true,
             grid: { drawOnChartArea: false },
+            ticks: { color: cssVar("--text-tertiary", "#94a3b8") },
           },
         },
       },

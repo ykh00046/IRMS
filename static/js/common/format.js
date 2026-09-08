@@ -40,13 +40,11 @@
     if (Number.isNaN(date.getTime())) {
       return "-";
     }
-    return date.toLocaleString("ko-KR", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    // 앱 전체가 yyyy-mm-dd 로 말한다. 여기만 "2026. 09. 08. 오후 12:10" 이면 표 한 칸이
+    // 두 배로 넓어지고 정렬도 어긋난다(레시피 현황 표 가로 넘침, 2026-09-08).
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+      + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
   function toDateOnly(value) {

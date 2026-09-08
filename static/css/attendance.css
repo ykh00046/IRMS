@@ -285,7 +285,8 @@
   font-size: var(--fs-display);
   line-height: 1;
   font-weight: 700;
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 
@@ -300,7 +301,8 @@
 }
 
 .att-big-unit strong {
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-md);
   color: var(--text-primary);
 }
@@ -403,7 +405,8 @@
 }
 
 .att-kv li strong {
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -434,7 +437,7 @@
 
 .att-work-grid strong {
   display: block;
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-family: var(--font-sans);
   font-size: var(--fs-lg);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -481,7 +484,7 @@
 
 /* Monospace numeric cells for easy column comparison. */
 .att-num {
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
 }
 

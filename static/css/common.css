@@ -457,41 +457,13 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.85;
 }
 
-.side-ico::before,
-.side-ico::after {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border-radius: 3px;
-  background: currentColor;
-  opacity: 0.86;
-}
-
-.side-ico-home::after { inset: 8px 5px 4px; }
-.side-ico-blend::before { border-radius: 50%; background: transparent; border: 2px solid currentColor; }
-.side-ico-blend::after { inset: 7px; border-radius: 50%; }
-.side-ico-viscosity::before { inset: 3px 7px; border-radius: 999px; }
-.side-ico-viscosity::after { inset: 9px 5px 4px; }
-.side-ico-status::before { inset: 4px 3px 11px; box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
-.side-ico-status::after { display: none; }
-/* '+' 십자 — 막대 2px 는 소수 DPI 배율(듀얼 모니터 100%↔125% 등)에서 장치 픽셀
-   반올림으로 사라져 보인다(현장 신고 2026-08-05). 4px 로 두껍게 유지. */
-.side-ico-bulk::before { inset: 3px 7px; border-radius: 2px; }
-.side-ico-bulk::after { inset: 7px 3px; border-radius: 2px; }
-.side-ico-dashboard::before { inset: 10px 4px 4px; }
-.side-ico-dashboard::after { inset: 4px 4px 11px; box-shadow: 0 5px 0 currentColor; }
-.side-ico-recipes::before { inset: 4px 3px 11px; box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
-.side-ico-recipes::after { inset: 3px 12px 3px 3px; opacity: 0.32; }
-.side-ico-insight::before { inset: 4px 9px 4px 4px; }
-.side-ico-insight::after { inset: 9px 4px 4px 9px; }
-.side-ico-users::before { inset: 4px 6px 9px; border-radius: 50%; }
-.side-ico-users::after { inset: 10px 4px 4px; border-radius: 999px 999px 3px 3px; }
+.side-link.active .side-ico { opacity: 1; }
 
 .side-badge {
   margin-left: auto;
@@ -1006,6 +978,77 @@ button:disabled {
 }
 
 /* =========================================================================
+   Form controls — 브라우저 기본 위젯을 표준 토큰에 맞춘다
+   ========================================================================= */
+
+/* select 화살표는 배경 SVG 로 그린다. data URI 안의 hex(#64748b·#94a3b8)는
+   CSS 변수를 쓸 수 없는 자리라서 표준 §2 의 유일한 예외로 남긴다. */
+select.input,
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 14px;
+  cursor: pointer;
+}
+
+:root[data-theme="dark"] select.input,
+:root[data-theme="dark"] .select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* 여러 줄 선택 상자는 화살표를 그리지 않는다. */
+select.input[multiple],
+.select[multiple] {
+  background-image: none;
+  padding-right: 1rem;
+  cursor: default;
+}
+
+/* 표 안 선택 상자가 글자를 잘라 먹지 않게 최소 너비를 준다. */
+.blend-table select.input,
+table select.input {
+  min-width: 5.5rem;
+  width: auto;
+  padding-right: 1.75rem;
+  background-position: right 0.5rem center;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent-primary);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 브라우저 기본 달력 아이콘 때문에 날짜 칸만 몇 px 높아진다 — 옆 선택 상자와 맞춘다. */
+input[type="date"].input {
+  line-height: 1.2;
+}
+
+input[type="date"].input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+/* =========================================================================
    Data Tables
    ========================================================================= */
 
@@ -1498,7 +1541,9 @@ tr:hover td.sticky-right {
 /* 총 배합량은 기간을 넓게 잡으면 천만 단위(12,345,678.9)까지 간다. 28px 로 두면 카드를
    넘어간다. 말줄임으로 자르지는 않는다 — 잘린 숫자는 틀린 숫자다. 넘치면 줄을 바꾼다. */
 .metric-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--text-primary);
