@@ -32,6 +32,8 @@
     sigma_low: "-kσ 미만",
     warn_high: "2σ 경고",
     warn_low: "2σ 경고",
+    warn_high_limit: "경고 상한 이상",
+    warn_low_limit: "경고 하한 이하",
   };
   const TREND_LABEL = {
     run_up: "연속 상승",
@@ -123,6 +125,9 @@
     if (product.lower_limit !== null || product.upper_limit !== null) {
       parts.push(`규격 ${product.lower_limit ?? "-"}~${product.upper_limit ?? "-"}`);
     }
+    // 고정 경고 문턱(PB 48 이하 → 경고 등) — 규격과 별개로 항상 적용되므로 같이 알린다.
+    if (product.warn_low != null) parts.push(`경고 하한 ${fmt(product.warn_low)} 이하`);
+    if (product.warn_high != null) parts.push(`경고 상한 ${fmt(product.warn_high)} 이상`);
     // 표본이 적어 통계 관리한계를 아직 쓰지 않는 상태를 분명히 알린다 — 예전에는
     // 관리한계가 없어도 이유가 화면에 없어서, 판정이 왜 느슨한지 알 수 없었다.
     if (stats.sigma_ready === false) {

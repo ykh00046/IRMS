@@ -86,6 +86,9 @@ class ViscosityProductCreateBody(BaseModel):
     target: float | None = Field(default=None, gt=0, le=100000)
     lower_limit: float | None = Field(default=None, ge=0, le=100000)
     upper_limit: float | None = Field(default=None, gt=0, le=100000)
+    # 경고 문턱(관리 한계 안쪽, 고정값): 값 <= warn_low 또는 >= warn_high 면 경고.
+    warn_low: float | None = Field(default=None, ge=0, le=100000)
+    warn_high: float | None = Field(default=None, gt=0, le=100000)
     sigma_k: float = Field(default=3, ge=1, le=6)
 
     @model_validator(mode="after")
@@ -96,6 +99,12 @@ class ViscosityProductCreateBody(BaseModel):
             and self.lower_limit >= self.upper_limit
         ):
             raise ValueError("lower_limit must be less than upper_limit")
+        if (
+            self.warn_low is not None
+            and self.warn_high is not None
+            and self.warn_low >= self.warn_high
+        ):
+            raise ValueError("warn_low must be less than warn_high")
         return self
 
 
@@ -104,6 +113,9 @@ class ViscosityProductUpdateBody(BaseModel):
     target: float | None = Field(default=None, gt=0, le=100000)
     lower_limit: float | None = Field(default=None, ge=0, le=100000)
     upper_limit: float | None = Field(default=None, gt=0, le=100000)
+    # 경고 문턱(관리 한계 안쪽, 고정값): 값 <= warn_low 또는 >= warn_high 면 경고.
+    warn_low: float | None = Field(default=None, ge=0, le=100000)
+    warn_high: float | None = Field(default=None, gt=0, le=100000)
     sigma_k: float = Field(default=3, ge=1, le=6)
     rpm: float | None = Field(default=None, ge=0, le=100000)
     temperature: float | None = Field(default=None, ge=-50, le=300)
@@ -119,6 +131,12 @@ class ViscosityProductUpdateBody(BaseModel):
             and self.lower_limit >= self.upper_limit
         ):
             raise ValueError("lower_limit must be less than upper_limit")
+        if (
+            self.warn_low is not None
+            and self.warn_high is not None
+            and self.warn_low >= self.warn_high
+        ):
+            raise ValueError("warn_low must be less than warn_high")
         return self
 
 

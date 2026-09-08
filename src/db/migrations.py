@@ -443,6 +443,18 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 지정 필수(use_reactor=1). 지정 시 점도를 반응기별로 추세·이상 분석할 수 있다.
     ensure_column(connection, "viscosity_products", "use_reactor", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(connection, "viscosity_readings", "reactor", "INTEGER")
+    # 경고 하한/상한(2026-09-08): 관리 한계(spec, 이상) 안쪽에 두는 **경고** 문턱.
+    # σ 경고 밴드는 표본이 있어야 생기고 표본 따라 움직이지만, 이건 공학 기준처럼 고정값
+    # — "PB 는 48 이하면 경고" 같은 현장 규칙을 표본과 무관하게 항상 띄운다.
+    # 값이 warn_low 이하 / warn_high 이상이면 경고(이상이 아니면).
+    ensure_column(connection, "viscosity_products", "warn_low", "REAL")
+    ensure_column(connection, "viscosity_products", "warn_high", "REAL")
+    if not has_migration(connection, "viscosity_pb_warn_low_48"):
+        # 사용자 결정(2026-09-08): PB 점도 48 이하 → 경고. 한 번만 심고 이후는 설정 화면이 소유.
+        connection.execute(
+            "UPDATE viscosity_products SET warn_low = 48 WHERE upper(code) = 'PB' AND warn_low IS NULL"
+        )
+        record_migration(connection, "viscosity_pb_warn_low_48")
     # spec-out(측정 제외, 2026-07-31): 단일 이상 측정 하나가 σ(이상을 잡아야 할 표준편차)를
     # 스스로 오염시키는 문제를 끊는다. 삭제하지 않고 '통계 제외' 로만 표시 — 기록에는 남고
     # 화면엔 배지+사유로 보이되, 평균/σ/관리한계/추세/기간 집계에서는 빠진다(책임자만 토글).

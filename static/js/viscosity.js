@@ -1497,6 +1497,8 @@
     $("visc-set-target").value = product ? (product.target ?? "") : "";
     $("visc-set-lower").value = product ? (product.lower_limit ?? "") : "";
     $("visc-set-upper").value = product ? (product.upper_limit ?? "") : "";
+    $("visc-set-warn-low").value = product ? (product.warn_low ?? "") : "";
+    $("visc-set-warn-high").value = product ? (product.warn_high ?? "") : "";
     $("visc-set-sigma").value = product ? product.sigma_k : 3;
     $("visc-set-rpm").value = product ? (product.rpm ?? "") : "";
     $("visc-set-temp").value = product ? (product.temperature ?? "") : "";
@@ -1523,6 +1525,8 @@
       target: numOrNull("visc-set-target"),
       lower_limit: numOrNull("visc-set-lower"),
       upper_limit: numOrNull("visc-set-upper"),
+      warn_low: numOrNull("visc-set-warn-low"),
+      warn_high: numOrNull("visc-set-warn-high"),
       sigma_k: Number($("visc-set-sigma").value),
       rpm: numOrNull("visc-set-rpm"),
       temperature: numOrNull("visc-set-temp"),

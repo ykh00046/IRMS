@@ -76,29 +76,36 @@ def parse_lot_date(lot_no: Any) -> str | None:
     return None
 
 
+_PRODUCT_COLUMNS = (
+    "id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, "
+    "remind_daily, use_reactor, is_active, created_at"
+)
+
+
+def _select_products(connection: sqlite3.Connection, tail: str, params: tuple) -> list[sqlite3.Row]:
+    """viscosity_products 조회 — warn_low/warn_high(2026-09-08) 컬럼이 없는 구버전/단위테스트
+    스키마 폴백(recipe_helpers.fetch_recipe_items 의 loss_comp_g 와 같은 2단 쿼리 패턴)."""
+    try:
+        return connection.execute(
+            f"SELECT {_PRODUCT_COLUMNS}, warn_low, warn_high FROM viscosity_products {tail}", params
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return connection.execute(
+            f"SELECT {_PRODUCT_COLUMNS} FROM viscosity_products {tail}", params
+        ).fetchall()
+
+
 def list_products(connection: sqlite3.Connection, *, active_only: bool = False) -> list[dict[str, Any]]:
     where = "WHERE is_active = 1" if active_only else ""
-    rows = connection.execute(
-        f"""
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
-        FROM viscosity_products
-        {where}
-        ORDER BY is_active DESC, code ASC
-        """
-    ).fetchall()
+    rows = _select_products(
+        connection, f"{where} ORDER BY is_active DESC, code ASC", ()
+    )
     return [_serialize_product(connection, row) for row in rows]
 
 
 def get_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any] | None:
-    row = connection.execute(
-        """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
-        FROM viscosity_products
-        WHERE id = ?
-        """,
-        (product_id,),
-    ).fetchone()
-    return _serialize_product(connection, row) if row else None
+    rows = _select_products(connection, "WHERE id = ?", (product_id,))
+    return _serialize_product(connection, rows[0]) if rows else None
 
 
 def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, Any] | None:
@@ -107,15 +114,8 @@ def get_product_by_code(connection: sqlite3.Connection, code: str) -> dict[str, 
     # 모두 같은 정규화를 쓰므로, product_name 이 대소문자/공백만 달라도 같은 논리적 제품으로
     # 귀결돼 중복 점도 제품이 생기지 않는다.
     normalized = str(code or "").strip().upper()
-    row = connection.execute(
-        """
-        SELECT id, code, name, target, lower_limit, upper_limit, sigma_k, rpm, temperature, remind_daily, use_reactor, is_active, created_at
-        FROM viscosity_products
-        WHERE upper(code) = ?
-        """,
-        (normalized,),
-    ).fetchone()
-    return _serialize_product(connection, row) if row else None
+    rows = _select_products(connection, "WHERE upper(code) = ?", (normalized,))
+    return _serialize_product(connection, rows[0]) if rows else None
 
 
 def ensure_product_by_code(
@@ -198,6 +198,9 @@ def _serialize_product(connection: sqlite3.Connection, row: sqlite3.Row) -> dict
         "target": _opt_float(row["target"]),
         "lower_limit": _opt_float(row["lower_limit"]),
         "upper_limit": _opt_float(row["upper_limit"]),
+        # 경고 문턱(고정값) — 관리 한계 안쪽의 '확인 필요' 구간. σ 경고와 달리 표본 무관.
+        "warn_low": _opt_float(row["warn_low"]) if "warn_low" in row.keys() else None,
+        "warn_high": _opt_float(row["warn_high"]) if "warn_high" in row.keys() else None,
         "sigma_k": float(row["sigma_k"]),
         "rpm": _opt_float(row["rpm"]),
         "temperature": _opt_float(row["temperature"]),
@@ -350,6 +353,15 @@ def _classify(value: float, product: dict[str, Any], control: dict[str, Any]) ->
 
     if reasons:
         return {"status": "anomaly", "side": side, "reasons": reasons}
+
+    # 고정 경고 문턱 — 제품 설정의 warn_low/warn_high. 표본·σ 와 무관하게 항상 적용
+    # (PB 48 이하 → 경고, 2026-09-08). 관리 한계(이상)를 이미 넘긴 값은 위에서 걸렸다.
+    warn_low = product.get("warn_low")
+    warn_high = product.get("warn_high")
+    if warn_high is not None and value >= warn_high:
+        return {"status": "warn", "side": "high", "reasons": ["warn_high_limit"]}
+    if warn_low is not None and value <= warn_low:
+        return {"status": "warn", "side": "low", "reasons": ["warn_low_limit"]}
 
     # 경고 구간 (2σ 초과 ~ kσ 이하)
     uwl, lwl = control["uwl"], control["lwl"]
@@ -617,6 +629,66 @@ def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
         if key:
             out[key] = float(r["viscosity"])
     return out
+
+
+def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: str) -> dict[str, Any]:
+    """반제품 LOT 하나의 점도 경고 — 배합 화면이 자재 LOT 을 넣을 때 그 행 아래에 띄운다.
+
+    사용자 요청(2026-09-08): PB 를 쓰는 품목의 배합에서 PB LOT 을 입력하면 그 PB 의 점도가
+    경고 하한(48) 이하인지 작업자가 바로 알아야 한다. 판정은 제품 설정의 고정 기준만 쓴다
+    (관리 한계 → 이상, 경고 문턱 → 경고). σ 는 표본 따라 움직여 현장 안내로는 부적합.
+
+    측정은 lot_no 정확 일치 우선, 없으면 숫자 8자리(_lot_digits) 일치. 통계 제외된 측정도
+    본다 — 제외는 통계용이고, 작업자에게는 "그 LOT 이 실제로 잰 값"이 중요하다.
+    """
+    name = str(product_name or "").strip()
+    lot = str(lot or "").strip()
+    none = {"found": False, "product": None, "viscosity": None, "level": None,
+            "reason": None, "threshold": None, "message": None}
+    if not name or not lot:
+        return none
+    product = get_product_by_code(connection, name)
+    if not product:
+        return none
+    row = connection.execute(
+        "SELECT viscosity, lot_no FROM viscosity_readings WHERE product_id = ? AND lot_no = ? "
+        "ORDER BY measured_date DESC, id DESC LIMIT 1",
+        (product["id"], lot),
+    ).fetchone()
+    if row is None:
+        digits = _lot_digits(lot)
+        if digits:
+            rows = connection.execute(
+                "SELECT viscosity, lot_no FROM viscosity_readings WHERE product_id = ? "
+                "ORDER BY measured_date DESC, id DESC",
+                (product["id"],),
+            ).fetchall()
+            row = next((r for r in rows if _lot_digits(r["lot_no"]) == digits), None)
+    if row is None:
+        return dict(none, product=product["code"])
+    value = float(row["viscosity"])
+    level = reason = None
+    threshold = None
+    if product["lower_limit"] is not None and value < product["lower_limit"]:
+        level, reason, threshold = "anomaly", "관리 하한 미만", product["lower_limit"]
+    elif product["upper_limit"] is not None and value > product["upper_limit"]:
+        level, reason, threshold = "anomaly", "관리 상한 초과", product["upper_limit"]
+    elif product["warn_low"] is not None and value <= product["warn_low"]:
+        level, reason, threshold = "warn", "경고 하한 이하", product["warn_low"]
+    elif product["warn_high"] is not None and value >= product["warn_high"]:
+        level, reason, threshold = "warn", "경고 상한 이상", product["warn_high"]
+    message = None
+    if level:
+        # 배합 화면 LOT 칸 아래 한 줄로 들어가야 하므로 짧게: "PB 점도 47.5 · 경고 하한 48 이하".
+        thr = f"{threshold:g}"
+        word = reason.replace("경고 하한 이하", f"경고 하한 {thr} 이하").replace(
+            "경고 상한 이상", f"경고 상한 {thr} 이상").replace(
+            "관리 하한 미만", f"관리 하한 {thr} 미만").replace("관리 상한 초과", f"관리 상한 {thr} 초과")
+        message = f"{product['code']} 점도 {value:g} · {word}"
+    return {
+        "found": True, "product": product["code"], "viscosity": value,
+        "level": level, "reason": reason, "threshold": threshold, "message": message,
+    }
 
 
 def analyze_product(

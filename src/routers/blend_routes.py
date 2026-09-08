@@ -736,6 +736,20 @@ def build_router() -> APIRouter:
         ).fetchone()
         return {"exists": row is not None}
 
+    @router.get("/blend/product-lot-viscosity")
+    def blend_product_lot_viscosity(
+        name: str = Query(default="", max_length=200),
+        lot: str = Query(default="", max_length=100),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """반제품 원료 LOT 의 점도 경고 — 배합 화면이 자재 LOT 입력 직후 행 아래에 띄운다.
+
+        PB 를 쓰는 품목에서 PB LOT 을 넣으면 그 PB 점도가 경고 하한(48) 이하인지 작업자가
+        바로 보게(2026-09-08). 차단·저장 개입 없음, 안내만. 점도 제품이 없거나 측정이 없으면
+        found=false. 상세는 viscosity_service.product_lot_alert.
+        """
+        return viscosity_service.product_lot_alert(connection, name, lot)
+
     @router.get("/blend/records/product-names")
     def blend_record_product_names(
         connection: sqlite3.Connection = Depends(get_db),

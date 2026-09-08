@@ -430,8 +430,9 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         cur = connection.execute(
             """
             INSERT INTO viscosity_products
-                (code, name, target, lower_limit, upper_limit, sigma_k, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                (code, name, target, lower_limit, upper_limit, warn_low, warn_high,
+                 sigma_k, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
             (
                 body.code.strip(),
@@ -439,6 +440,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 body.target,
                 body.lower_limit,
                 body.upper_limit,
+                body.warn_low,
+                body.warn_high,
                 body.sigma_k,
                 utc_now_text(),
             ),
@@ -472,6 +475,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             """
             UPDATE viscosity_products
             SET name = ?, target = ?, lower_limit = ?, upper_limit = ?,
+                warn_low = ?, warn_high = ?,
                 sigma_k = ?, rpm = ?, temperature = ?, remind_daily = ?,
                 is_active = ?
             WHERE id = ?
@@ -481,6 +485,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 body.target,
                 body.lower_limit,
                 body.upper_limit,
+                body.warn_low,
+                body.warn_high,
                 body.sigma_k,
                 body.rpm,
                 body.temperature,
@@ -500,6 +506,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 "target": body.target,
                 "lower_limit": body.lower_limit,
                 "upper_limit": body.upper_limit,
+                "warn_low": body.warn_low,
+                "warn_high": body.warn_high,
                 "sigma_k": body.sigma_k,
                 "remind_daily": body.remind_daily,
                 # use_reactor 는 이제 recipes 소유 — 여기서 받아도 기록하지 않는다(무시).

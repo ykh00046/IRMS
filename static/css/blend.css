@@ -999,3 +999,32 @@ body.dhr-open { overflow: hidden; }
   width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px;
   fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round;
 }
+
+/* 반제품 LOT 점도 경고(2026-09-08) — PB 를 쓰는 품목에서 PB LOT 을 넣었을 때 그 PB 의
+   점도가 경고 하한 이하면 LOT 칸 바로 아래 한 줄. 저장을 막지 않는 안내라 상태색 토큰만. */
+.lot-visc-note {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  font-weight: 600;
+  /* 표 자동 레이아웃에서 줄바꿈을 허용하면 열이 '(48)' 한 단어 폭까지 쪼그라들어 LOT 칸이
+     글자 두 개 폭이 됐다(검증 중 발견). 한 줄로 두고 넘치면 말줄임 — 전체 문구는 title. */
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.lot-visc-note[hidden] { display: none !important; }
+.lot-visc-note--warn {
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
+}
+.lot-visc-note--anomaly {
+  background: var(--status-error-bg);
+  color: var(--status-error);
+  border: 1px solid color-mix(in srgb, var(--status-error) 30%, transparent);
+}

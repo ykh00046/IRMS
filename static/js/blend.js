@@ -1377,7 +1377,14 @@
       // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 검증.
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #lot-invalid-modal 표시 후 값을 비운다.
       // 그 뒤 ERP 원재료 LOT 검사(제안 없는 자재만) — 경고는 저장을 막지 않는다.
-      el.addEventListener("change", () => { validateLotInput(el); checkErpLot(el); });
+      el.addEventListener("change", () => {
+        validateLotInput(el); checkErpLot(el);
+        refreshLotViscNote(el, state.items[Number(el.dataset.idx)]?.material_name, el.value);
+      });
+      // 초안 복구·재렌더로 이미 LOT 이 차 있는 행 — 점도 안내를 다시 붙인다.
+      if ((el.value || "").trim()) {
+        refreshLotViscNote(el, state.items[Number(el.dataset.idx)]?.material_name, el.value);
+      }
     });
     // 키보드 흐름(LOT 먼저): LOT Enter → 같은 행 실제량, 실제량 Enter → 다음 품목 LOT(마지막이면 저장)
     const focusField = (selector) => {
@@ -1475,6 +1482,8 @@
         input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
         hideLotSuggest(input);
         input.focus();
+        // 제안에서 고른 LOT 은 change 가 안 나므로 점도 안내를 직접 갱신한다.
+        refreshLotViscNote(input, name, lot);
       });
       box.appendChild(item);
     });
@@ -1633,6 +1642,49 @@
       input.classList.remove("erp-lot-warn");
       input.title = "";
     }
+  }
+
+  // ── 반제품 LOT 점도 경고(행 아래 안내) ────────────────────────────
+  // PB 를 쓰는 품목에서 PB LOT 을 넣으면 그 PB 의 점도가 경고 하한(48) 이하인지 작업자가
+  // 그 자리에서 알아야 한다(2026-09-08). GET /blend/product-lot-viscosity 는 점도 제품이
+  // 없는 일반 원료엔 found=false 를 바로 돌려주므로 자재 종류를 가리지 않고 물어본다.
+  // 저장을 막지 않는 안내이며, 실패는 조용히 무시한다(fail-open — 현장 입력을 막지 않는다).
+  const lotViscCache = {};
+  function setLotViscNote(input, data) {
+    if (!input) return;
+    let note = input._viscNote;
+    const on = !!(data && data.level && data.message);
+    if (!on) { if (note) note.hidden = true; return; }
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "lot-visc-note";
+      const anchor = input.closest(".cont-lot-wrap") || input.parentElement;
+      (anchor || document.body).appendChild(note);
+      input._viscNote = note;
+    }
+    note.className = `lot-visc-note lot-visc-note--${data.level}`;
+    note.textContent = `⚠ ${data.message}`;
+    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다 — 책임자에게 알리세요." : "경고 구간의 점도입니다 — 확인 후 진행하세요.";
+    note.hidden = false;
+  }
+  async function refreshLotViscNote(input, name, lot) {
+    if (!input) return;
+    name = (name || "").trim();
+    lot = (lot || "").trim();
+    if (!name || !lot) { setLotViscNote(input, null); return; }
+    const key = `${name}::${lot}`;
+    let data = lotViscCache[key];
+    if (data === undefined) {
+      try {
+        data = await request("/blend/product-lot-viscosity", { query: { name, lot } });
+      } catch (_e) {
+        data = null;
+      }
+      if (data) lotViscCache[key] = data;
+    }
+    // 그새 값이 바뀌었으면 옛 응답으로 덮어쓰지 않는다.
+    if ((input.value || "").trim() !== lot) return;
+    setLotViscNote(input, data);
   }
 
   async function checkErpLot(input) {
