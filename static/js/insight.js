@@ -7,7 +7,7 @@
  *   ② 시간축을 준다 — 개선/악화는 한 시점 스냅샷으로는 보이지 않는다.
  *
  * 서버 왕복은 GET /blend/analysis 한 번이다(지표·추세·제품·자재·품질을 한꺼번에).
- * LOT 추적만 별도 API 이고 기간 필터를 따르지 않는다(추적은 누락이 더 위험).
+ * 자재 LOT 역추적은 LOT 이력 화면(/lot-history)으로 옮겼다(2026-09-08).
  */
 (function () {
   const IRMS = window.IRMS || {};
@@ -636,51 +636,6 @@
     }
   }
 
-  // ── LOT 추적 ────────────────────────────────────────────────────────────
-  const STATUS_LABEL = { completed: "완료", canceled: "취소" };
-
-  async function traceMaterialLot() {
-    const lot = $("insight-trace-lot").value.trim();
-    const body = $("insight-trace-body");
-    const summary = $("insight-trace-summary");
-    const note = $("insight-trace-note");
-    if (!lot) {
-      body.innerHTML = emptyRow(8, "자재 LOT을 입력하고 추적하세요.");
-      summary.textContent = "";
-      note.hidden = true;
-      return;
-    }
-    try {
-      const d = await request("/blend/material-lot-trace", { query: { lot } });
-      const items = d.items || [];
-      summary.textContent = items.length ? `배합 ${num(d.record_count)}건 · 자재 행 ${num(d.total)}건` : "";
-      // 서버 상한 도달 — 조용히 자르지 않고 알린다.
-      if (d.truncated) {
-        note.textContent = `표시 상한 ${num(d.limit || d.total)}행에 도달 — 일부가 잘렸을 수 있습니다. LOT을 더 정확히 입력해 좁히세요.`;
-        note.hidden = false;
-      } else {
-        note.hidden = true;
-      }
-      body.innerHTML = items.length
-        ? items.map((it) => `
-          <tr>
-            <td>${esc(it.work_date)}</td>
-            <td><a class="insight-trace-lot-link" href="/status?search=${encodeURIComponent(it.product_lot)}">${esc(it.product_lot)}</a></td>
-            <td>${esc(it.product_name)}</td>
-            <td>${esc(it.material_name)}</td>
-            <td>${esc(it.material_lot)}</td>
-            <td class="num">${num(it.actual_amount, 2)}</td>
-            <td>${esc(it.worker)}</td>
-            <td>${esc(STATUS_LABEL[it.status] || it.status)}</td>
-          </tr>`).join("")
-        : emptyRow(8, `'${lot}' 이 투입된 배합 기록이 없습니다.`);
-    } catch (e) {
-      body.innerHTML = emptyRow(8, `추적 실패: ${e.message || e}`);
-      summary.textContent = "";
-      note.hidden = true;
-    }
-  }
-
   // ── 초기화 ──────────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     if (!request) {
@@ -689,7 +644,7 @@
     }
 
     const TAB_TITLES = {
-      overview: "개요", materials: "자재 소비", quality: "품질·이상", trace: "LOT 추적",
+      overview: "개요", materials: "자재 소비", quality: "품질·이상",
     };
     const tabBtns = document.querySelectorAll(".insight-tabs .mgmt-tab");
     tabBtns.forEach((btn) => {
@@ -748,11 +703,6 @@
     bindSort("insight-material-table", "total_actual", renderMaterialTable);
     bindSort("insight-worker-table", "records", renderQualityTables);
     bindSort("insight-mat-quality-table", "manual_rows", renderQualityTables);
-
-    $("insight-trace-btn").addEventListener("click", traceMaterialLot);
-    $("insight-trace-lot").addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.isComposing) traceMaterialLot();
-    });
 
     markRange("insight-range-90");
     $("insight-from").value = daysAgo(89);

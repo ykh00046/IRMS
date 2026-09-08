@@ -12,6 +12,7 @@ from . import (
     blend_routes,
     dashboard_routes,
     item_code_routes,
+    lot_history_routes,
     material_lot_routes,
     public_attendance_alert_routes,
     public_rescale_alert_routes,
@@ -75,6 +76,7 @@ def build_router() -> APIRouter:
     router.include_router(dashboard_router)
     router.include_router(item_code_router)       # 품목코드 관리(자재/반제품 코드 지정)
     router.include_router(material_lot_router)    # ERP 원재료 LOT 검증(배합 화면 무로그인)
+    router.include_router(lot_history_routes.build_router())  # 자재 LOT 이력(레시피·자재 축, 조회 전용)
     router.include_router(blend_rescale_ack_routes.build_router())   # 증량 사후 확인(책임자)
     router.include_router(blend_lot_audit_routes.build_router())     # 미해소 LOT 대사·총량 이상(책임자)
     router.include_router(public_rescale_alert_routes.build_router())  # 증량 트레이 알림(내부망 공개)

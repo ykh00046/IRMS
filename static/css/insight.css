@@ -174,26 +174,6 @@
 .variance-over { color: var(--status-warning); font-weight: 600; }
 .variance-under { color: var(--status-error); font-weight: 600; }
 
-/* ── LOT 추적 ────────────────────────────────────────────────────────── */
-.insight-trace-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin: 0.75rem 0 1rem;
-}
-
-.insight-trace-row .filter-group { min-width: 240px; }
-.insight-trace-row > span { margin-left: auto; }
-
-.insight-trace-lot-link {
-  color: var(--accent-primary);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.insight-trace-lot-link:hover { text-decoration: underline; }
-
 .panel-head-row {
   display: flex;
   justify-content: space-between;

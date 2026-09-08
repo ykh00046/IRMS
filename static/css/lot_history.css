@@ -1,0 +1,202 @@
+/* =========================================================================
+   IRMS 자재 LOT 이력 (/lot-history)
+   ========================================================================= */
+
+/* 조건 막대 — 배합 분석(insight-control-row)과 같은 모양. */
+.lh-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  background: var(--bg-surface-200);
+  padding: 1.1rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.lh-family-group { min-width: 240px; }
+.lh-material-group { min-width: 200px; }
+.lh-family-group .input,
+.lh-material-group .input { min-width: 100%; }
+.lh-period-buttons { gap: 0.4rem; }
+.lh-control-actions { margin-left: auto; gap: 0.4rem; align-items: flex-end; }
+.filter-summary { margin-top: 0.75rem; }
+
+/* 탭 — 레시피 관리·배합 분석과 같은 규약(.mgmt-tab + .tab-panel#tab-<name>). */
+.lh-tabs {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.25rem;
+  background: var(--bg-surface-100);
+  padding: 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.lh-tabs .mgmt-tab {
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.lh-tabs .mgmt-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-200);
+}
+
+.lh-tabs .mgmt-tab.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: contents; }
+
+.panel-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+/* ── 타임라인 ────────────────────────────────────────────────────────── */
+.lh-timeline { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+
+/* 공통 시간축 — 모든 행이 같은 눈금을 쓰므로 세로로 교체 시점을 맞춰 볼 수 있다. */
+.lh-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  padding: 0 0 0.25rem;
+  border-bottom: 1px dashed var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.lh-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 1rem;
+  align-items: start;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lh-row:last-child { border-bottom: none; }
+
+.lh-row-head { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.lh-row-name { font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.lh-row-sub { font-size: 0.75rem; color: var(--text-tertiary); }
+.lh-row-changes { font-size: 0.78rem; color: var(--text-secondary); }
+.lh-row-changes b { color: var(--accent-secondary); }
+
+.lh-row-body { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+
+.lh-bar {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg-surface-300);
+  overflow: hidden;
+}
+
+.lh-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 4px;
+  border-right: 2px solid var(--bg-surface-100);
+  box-sizing: border-box;
+  cursor: default;
+}
+
+/* 구간 색 — 인접 구간이 구분되기만 하면 되므로 5색 순환. 상태색 의미와 겹치지 않는
+   차분한 청·회 계열로, 오렌지(교체 강조)는 경계에만 쓴다. */
+.lh-seg.c0 { background: color-mix(in srgb, var(--accent-primary) 80%, white); }
+.lh-seg.c1 { background: color-mix(in srgb, var(--accent-tertiary) 55%, white); }
+.lh-seg.c2 { background: color-mix(in srgb, var(--accent-primary) 45%, white); }
+.lh-seg.c3 { background: color-mix(in srgb, var(--accent-tertiary) 80%, white); }
+.lh-seg.c4 { background: color-mix(in srgb, var(--accent-primary) 62%, white); }
+.lh-seg.blank {
+  background: repeating-linear-gradient(
+    135deg, var(--bg-surface-300) 0 5px, var(--border-strong) 5px 8px
+  );
+}
+
+/* 교체 경계 — 구간 시작에 오렌지 세로선. 첫 구간(교체 아님)에는 없다. */
+.lh-seg.change::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-secondary);
+}
+
+.lh-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+
+.lh-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-100);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.lh-chip .lot { font-weight: 600; }
+.lh-chip .span { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.lh-chip.blank { color: var(--text-tertiary); border-style: dashed; }
+.lh-chip-arrow { color: var(--accent-secondary); font-weight: 700; }
+
+.lh-lot-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.lh-lot-link:hover { text-decoration: underline; }
+
+.lh-family-cell { color: var(--text-secondary); }
+/* 레시피를 고른 조회에서는 레시피 열이 전부 같은 값이라 숨긴다(th·td 둘 다 2번째 열). */
+.lh-hide-family th:nth-child(2),
+.lh-hide-family td:nth-child(2) { display: none; }
+
+/* ── 역추적 ──────────────────────────────────────────────────────────── */
+.lh-trace-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+.lh-trace-row .filter-group { min-width: 240px; }
+.lh-trace-row > span { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .lh-row { grid-template-columns: 1fr; gap: 0.4rem; }
+  .lh-control-actions { margin-left: 0; }
+}
+
+@media print {
+  .lh-controls, .lh-tabs { display: none; }
+  .tab-panel { display: contents; }
+}

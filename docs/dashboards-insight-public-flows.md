@@ -98,7 +98,7 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 |-----------|------------|-----------|-------------|-----------|
 | 자재별 사용량 | `loadMaterials` (L77) | `GET /api/blend/material-usage` (`blend_routes` L112) | `material_usage` (L341) | 적용 |
 | 이상 통계(수동입력·취소) | `loadMistakes` (L237) | `GET /api/blend/mistake-stats` (L130) | `mistake_stats` (L436) | 적용 |
-| 자재 LOT 추적 | `traceMaterialLot` (L39) | `GET /api/blend/material-lot-trace` (L200) | `trace_material_lot` (L580) | **무시(전 기간)** |
+| 자재 LOT 추적(→ /lot-history) | `traceMaterialLot` (lot_history.js) | `GET /api/blend/material-lot-trace` (L200) | `trace_material_lot` (L580) | **무시(전 기간)** |
 | 제품별 배합 빈도 | `loadProducts` (L169) | `GET /api/blend/product-usage` (L121) | `product_usage` (L391) | 적용 |
 | 배치 상세 | `loadDetails` (L190) | `GET /api/blend/batch-details` (L139) | `batch_details` (L516) | 적용 + `product` |
 | 배치 상세 Excel | `exportDetails` (L225) | `GET /api/blend/batch-details/export` (L152) | `batch_details(limit=10000)` | 적용 |
@@ -124,8 +124,9 @@ docstring L1-14). 배합은 편차 0 강제 저장이라 편차 지표 없음.
 - **자재 LOT 추적**(`trace_material_lot` L580): 리콜 대응 역추적. **부분 일치
   `LIKE %lot% ESCAPE`**, 취소 기록 포함(누락이 더 위험), `%_\` 이스케이프. LIMIT
   기본 500(1~2000). 서버가 `truncated`/`limit` 를 반환하며, 상한 도달 시 프론트가
-  `#insight-trace-note` 안내를 띄운다(LOT 을 더 구체적으로 입력하도록 유도).
-  제품 LOT 클릭→`/status?search=` 딥링크(`insight.js` L62).
+  `#lh-trace-note` 안내를 띄운다(LOT 을 더 구체적으로 입력하도록 유도).
+  제품 LOT 클릭→`/status?search=` 딥링크. **2026-09-08 화면은 `/lot-history`(LOT 이력)
+  로 이동** — 순방향 이력(`lot_history_service`, 레시피 가족·자재 축 LOT 교체 시점)과 한 곳.
 - **제품별 빈도**(`product_usage` L391): 제품별 배치 수·총량·최근 작업일. Chart TOP10
   + 배치 상세 필터용 `<select>` 채움. 집계 결과(제품 종수 단위)라 표시 상한 불필요.
 - **배치 상세**(`batch_details` L516): 자재별 비율·이론·실제·편차 평면 목록. work_date

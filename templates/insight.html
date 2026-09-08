@@ -5,11 +5,11 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260810a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260908a" />
 {% endblock %}
 
 {% block content %}
-        {# 기간 막대 — 네 탭이 같은 기간을 본다(추적 탭만 전 기간). 여기서 고른 기간이
+        {# 기간 막대 — 세 탭이 같은 기간을 본다. 여기서 고른 기간이
            지표·추세·표·리포트 전부의 기준이 되므로 화면 맨 위에 고정으로 둔다. #}
         <section class="panel insight-controls">
           <div class="insight-control-row">
@@ -47,8 +47,8 @@
           <button class="mgmt-tab active" data-tab="overview" type="button">개요</button>
           <button class="mgmt-tab" data-tab="materials" type="button">자재 소비</button>
           <button class="mgmt-tab" data-tab="quality" type="button">품질·이상</button>
-          <button class="mgmt-tab" data-tab="trace" type="button">LOT 추적</button>
         </nav>
+        {# 자재 LOT 추적(역추적)은 LOT 이력 화면으로 옮겼다(2026-09-08) — 순방향 이력과 한 곳에. #}
 
         {# ── 개요 ───────────────────────────────────────────────────────── #}
         <div class="tab-panel active" id="tab-overview">
@@ -219,53 +219,9 @@
           </section>
         </div>
 
-        {# ── LOT 추적 ───────────────────────────────────────────────────── #}
-        <div class="tab-panel" id="tab-trace">
-          <section class="panel">
-            <div class="panel-head-row">
-              <div>
-                <span class="kicker">리콜 대응</span>
-                <h3 class="panel-title">자재 LOT 추적</h3>
-              </div>
-            </div>
-            {# 기간 필터와 무관하게 전 기간을 뒤진다 — 추적은 누락이 훨씬 위험하다. #}
-            <p class="panel-subtitle">
-              원재료 LOT 번호로 그 LOT이 투입된 모든 배합을 찾습니다. 부분 입력도 됩니다.
-              <b>위 기간 필터와 무관하게 전 기간</b>을 뒤집니다.
-            </p>
-            <div class="insight-trace-row">
-              <div class="filter-group">
-                <label class="filter-label" for="insight-trace-lot">자재 LOT</label>
-                <input id="insight-trace-lot" class="input" placeholder="예: RM-2601" />
-              </div>
-              <button id="insight-trace-btn" type="button" class="btn accent">추적</button>
-              <span id="insight-trace-summary" class="muted small"></span>
-            </div>
-            <p id="insight-trace-note" class="trunc-note" hidden></p>
-            <div class="table-wrap">
-              <table class="blend-table">
-                <thead>
-                  <tr>
-                    <th>작업일</th>
-                    <th>제품 LOT</th>
-                    <th>제품</th>
-                    <th>자재</th>
-                    <th>자재 LOT</th>
-                    <th class="num">실제량(g)</th>
-                    <th>작업자</th>
-                    <th>상태</th>
-                  </tr>
-                </thead>
-                <tbody id="insight-trace-body">
-                  <tr><td colspan="8" class="muted">자재 LOT을 입력하고 추적하세요.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
 {% endblock %}
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260810a"></script>
+    <script src="/static/js/insight.js?v=20260908a"></script>
 {% endblock %}

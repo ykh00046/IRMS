@@ -78,6 +78,9 @@
             <a href="/insight" class="side-link{{ ' active' if request.url.path == '/insight' else '' }}">
               <span class="side-ico side-ico-insight" aria-hidden="true"></span><span>배합 분석</span>
             </a>
+            <a href="/lot-history" class="side-link{{ ' active' if request.url.path == '/lot-history' else '' }}">
+              <span class="side-ico side-ico-status" aria-hidden="true"></span><span>LOT 이력</span>
+            </a>
           </div>
 
           {% if current_user and current_user.access_level == "manager" %}

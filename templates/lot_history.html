@@ -1,0 +1,157 @@
+{% extends "_base_app.html" %}
+
+{% block title %}LOT 이력{% endblock %}
+{% block eyebrow %}분석{% endblock %}
+{% block heading %}LOT 이력{% endblock %}
+
+{% block styles %}
+    <link rel="stylesheet" href="/static/css/lot_history.css?v=20260908a" />
+{% endblock %}
+
+{% block content %}
+        {# 조건 막대 — 타임라인·교체 이력 두 탭이 같은 조건을 본다(역추적만 별개).
+           레시피 또는 자재 중 하나만 골라도 된다: 자재만 고르면 여러 레시피에 걸친
+           교체가 교차로 보인다(LOT 교체는 사실 자재 단위 사건). #}
+        <section class="panel lh-controls">
+          <div class="lh-control-row">
+            <div class="filter-group lh-family-group">
+              <label class="filter-label" for="lh-family">레시피</label>
+              <select id="lh-family" class="input">
+                <option value="">(전체 — 자재로 조회)</option>
+              </select>
+            </div>
+            <div class="filter-group lh-material-group">
+              <label class="filter-label" for="lh-material">자재</label>
+              <select id="lh-material" class="input">
+                <option value="">(전체 자재)</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label" for="lh-from">시작일</label>
+              <input id="lh-from" type="date" class="input" />
+            </div>
+            <div class="filter-group">
+              <label class="filter-label" for="lh-to">종료일</label>
+              <input id="lh-to" type="date" class="input" />
+            </div>
+            <div class="button-row lh-period-buttons">
+              <button id="lh-range-all" type="button" class="btn compact active">전체</button>
+              <button id="lh-range-year" type="button" class="btn compact">올해</button>
+              <button id="lh-range-90" type="button" class="btn compact">최근 90일</button>
+            </div>
+            <div class="button-row lh-control-actions">
+              <button id="lh-query" type="button" class="btn accent">조회</button>
+              <button id="lh-export" type="button" class="btn">Excel</button>
+            </div>
+          </div>
+          <p id="lh-summary" class="filter-summary muted small">레시피나 자재를 골라 조회하세요.</p>
+        </section>
+
+        <nav class="mgmt-tabs lh-tabs">
+          <button class="mgmt-tab active" data-tab="timeline" type="button">타임라인</button>
+          <button class="mgmt-tab" data-tab="changes" type="button">교체 이력</button>
+          <button class="mgmt-tab" data-tab="trace" type="button">역추적</button>
+        </nav>
+
+        {# ── 타임라인 ───────────────────────────────────────────────────── #}
+        <div class="tab-panel active" id="tab-timeline">
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">언제 바뀌었나</span>
+                <h3 class="panel-title">자재별 LOT 구간</h3>
+              </div>
+            </div>
+            <p class="panel-subtitle">
+              자재 한 줄에 그 자재가 쓴 LOT 을 시간순으로 늘어놓습니다. 막대 길이는 사용 기간,
+              구간 사이 경계가 <b>LOT 이 바뀐 시점</b>입니다. 미입력은 빗금으로 표시하고 교체로 세지 않습니다.
+            </p>
+            <div id="lh-timeline" class="lh-timeline">
+              <p class="empty-state">조건을 고르고 [조회]를 누르세요.</p>
+            </div>
+          </section>
+        </div>
+
+        {# ── 교체 이력 ──────────────────────────────────────────────────── #}
+        <div class="tab-panel" id="tab-changes">
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">교체 사건</span>
+                <h3 class="panel-title">LOT 교체 목록</h3>
+              </div>
+              <span id="lh-changes-summary" class="muted small"></span>
+            </div>
+            <p class="panel-subtitle">
+              직전 배합과 다른 LOT 이 처음 쓰인 배합만 골라낸 목록입니다. 제품 LOT 을 누르면 그 배합 기록으로 갑니다.
+            </p>
+            <div class="table-wrap">
+              <table class="blend-table" id="lh-changes-table">
+                <thead>
+                  <tr>
+                    <th>교체일</th>
+                    <th>레시피</th>
+                    <th>제품 LOT</th>
+                    <th>자재</th>
+                    <th>이전 LOT</th>
+                    <th>새 LOT</th>
+                    <th>작업자</th>
+                  </tr>
+                </thead>
+                <tbody id="lh-changes-body">
+                  <tr><td colspan="7" class="muted">조건을 고르고 [조회]를 누르세요.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        {# ── 역추적 (배합 분석에서 이동) ────────────────────────────────── #}
+        <div class="tab-panel" id="tab-trace">
+          <section class="panel">
+            <div class="panel-head-row">
+              <div>
+                <span class="kicker">리콜 대응</span>
+                <h3 class="panel-title">자재 LOT 역추적</h3>
+              </div>
+            </div>
+            {# 위 조건 막대와 무관하게 전 기간을 뒤진다 — 추적은 누락이 훨씬 위험하다. #}
+            <p class="panel-subtitle">
+              원재료 LOT 번호로 그 LOT 이 투입된 모든 배합을 찾습니다. 부분 입력도 됩니다.
+              <b>위 조건과 무관하게 전 기간</b>을 뒤집니다.
+            </p>
+            <div class="lh-trace-row">
+              <div class="filter-group">
+                <label class="filter-label" for="lh-trace-lot">자재 LOT</label>
+                <input id="lh-trace-lot" class="input" placeholder="예: RM-2601" />
+              </div>
+              <button id="lh-trace-btn" type="button" class="btn accent">추적</button>
+              <span id="lh-trace-summary" class="muted small"></span>
+            </div>
+            <p id="lh-trace-note" class="trunc-note" hidden></p>
+            <div class="table-wrap">
+              <table class="blend-table">
+                <thead>
+                  <tr>
+                    <th>작업일</th>
+                    <th>제품 LOT</th>
+                    <th>제품</th>
+                    <th>자재</th>
+                    <th>자재 LOT</th>
+                    <th class="num">실제량(g)</th>
+                    <th>작업자</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody id="lh-trace-body">
+                  <tr><td colspan="8" class="muted">자재 LOT 을 입력하고 추적하세요.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/static/js/lot_history.js?v=20260908a"></script>
+{% endblock %}

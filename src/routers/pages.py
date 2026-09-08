@@ -239,6 +239,12 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
     def insight_page(request: Request) -> Response:
         return _app_page_response(request, templates, "insight.html")
 
+    @router.get("/lot-history", response_class=HTMLResponse)
+    def lot_history_page(request: Request) -> Response:
+        # 자재 LOT 이력 — 레시피·자재 축의 LOT 교체 시점(순방향) + 역추적을 한 화면에.
+        # 조회 전용이라 배합 분석과 같은 개방 정책.
+        return _app_page_response(request, templates, "lot_history.html")
+
     @router.get("/materials", response_class=HTMLResponse)
     def materials_page(request: Request) -> Response:
         # 자재 관리 — 품목코드(책임자 전용)와 자재 LOT 를 한 화면에 묶는다.
