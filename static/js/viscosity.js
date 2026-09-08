@@ -338,7 +338,7 @@
   // "0" 도 경보로 읽힌다 — 정상인 제품이 문제 있어 보이면 색이 신호 구실을 못 한다.
   function setCountCard(id, wrapperClass, count) {
     $(id).textContent = count == null ? "-" : count;
-    const card = $(id).closest(".metric-card");
+    const card = $(id).closest(".visc-summary-item");
     if (card) card.classList.toggle(wrapperClass, Number(count) > 0);
   }
 
@@ -383,15 +383,12 @@
     const unit = $("visc-card-anomaly-unit");
     if (!card) return;
     const on = Number(count) > 0;
+    card.disabled = !on;
     card.classList.toggle("is-clickable", on);
     if (on) {
-      card.setAttribute("role", "button");
-      card.setAttribute("tabindex", "0");
       card.setAttribute("aria-label", `이상 ${count}건 · 목록 보기`);
-      if (unit) unit.textContent = "건 · 눌러서 목록";
+      if (unit) unit.textContent = "건 · 목록";
     } else {
-      card.removeAttribute("role");
-      card.removeAttribute("tabindex");
       card.removeAttribute("aria-label");
       if (unit) unit.textContent = "건";
     }

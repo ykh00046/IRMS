@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260909a" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260909b" />
 {% endblock %}
 
 {% block content %}
@@ -43,39 +43,15 @@
           </div>
         </section>
 
-        <section class="dashboard-cards visc-cards">
-          <div class="metric-card">
-            <div class="metric-label">측정 건수</div>
-            <div class="metric-value" id="visc-card-count">-</div>
-            <div class="metric-unit">건</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">최근 점도</div>
-            <div class="metric-value" id="visc-card-latest">-</div>
-            <div class="metric-unit" id="visc-card-latest-date">-</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">평균 및 표준편차</div>
-            <div class="metric-value" id="visc-card-mean">-</div>
-            <div class="metric-unit">중심 기준</div>
-          </div>
-          {# 이상 카드는 건수가 1 이상일 때 눌러서 목록으로 갈 수 있다(JS가 role/tabindex를
-             그때만 붙인다. 0 건이면 눌러도 갈 곳이 없으므로 아무 표시도 하지 않는다). #}
-          <div class="metric-card visc-card-anomaly" id="visc-anomaly-card">
-            <div class="metric-label">이상</div>
-            <div class="metric-value" id="visc-card-anomaly">-</div>
-            <div class="metric-unit" id="visc-card-anomaly-unit">건</div>
-          </div>
-          <div class="metric-card visc-card-warn">
-            <div class="metric-label">경고</div>
-            <div class="metric-value" id="visc-card-warn">-</div>
-            <div class="metric-unit">건</div>
-          </div>
-          <div class="metric-card visc-card-excluded">
-            <div class="metric-label">통계 제외</div>
-            <div class="metric-value" id="visc-card-excluded">-</div>
-            <div class="metric-unit">건 · 통계 미반영</div>
-          </div>
+        {# 요약은 한 줄이면 된다. 카드 6장은 화면 한 단을 통째로 먹으면서 정보는 숫자 여섯 개뿐이었다.
+           '이상'만 건수가 1 이상일 때 버튼이 되어 이상 목록으로 간다(JS 가 disabled 를 푼다). #}
+        <section class="visc-summary" aria-label="점도 요약">
+          <span class="visc-summary-item"><span class="visc-summary-label">측정</span><b id="visc-card-count">-</b><span class="visc-summary-unit">건</span></span>
+          <span class="visc-summary-item"><span class="visc-summary-label">최근</span><b id="visc-card-latest">-</b><span class="visc-summary-unit" id="visc-card-latest-date">-</span></span>
+          <span class="visc-summary-item"><span class="visc-summary-label">평균</span><b id="visc-card-mean">-</b></span>
+          <button type="button" class="visc-summary-item visc-summary-anomaly" id="visc-anomaly-card" disabled><span class="visc-summary-label">이상</span><b id="visc-card-anomaly">-</b><span class="visc-summary-unit" id="visc-card-anomaly-unit">건</span></button>
+          <span class="visc-summary-item visc-summary-warn"><span class="visc-summary-label">경고</span><b id="visc-card-warn">-</b><span class="visc-summary-unit">건</span></span>
+          <span class="visc-summary-item visc-summary-excluded"><span class="visc-summary-label">제외</span><b id="visc-card-excluded">-</b><span class="visc-summary-unit">건</span></span>
         </section>
 
         <section id="visc-trend-banner" class="visc-trend-banner" hidden>
@@ -428,7 +404,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260909a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260909a"></script>
-    <script src="/static/js/viscosity.js?v=20260909a"></script>
+    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260909b"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260909b"></script>
+    <script src="/static/js/viscosity.js?v=20260909b"></script>
 {% endblock %}

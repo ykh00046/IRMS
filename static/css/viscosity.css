@@ -17,16 +17,46 @@ body {
      (KPI 카드 위 40px/아래 58px 신고 2026-07-23). 그리드 간격 하나로 통일. */
   margin-bottom: 0;
 }
-/* 카드 6장은 3+3 으로 놓는다 — 공용 auto-fit 은 1280px 에서 5열이 되어 '통계 제외'
-   한 장만 둘째 줄에 홀로 남았다. 좁은 창(900px 이하)에서는 2+2+2. */
-.visc-cards {
-  margin-bottom: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/* ── 요약 줄 ─────────────────────────────────────────────────────────
+   숫자 여섯 개를 한 줄에. 색은 건수가 1 이상일 때만(JS 가 -on 클래스를 붙인다). */
+.visc-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
-
-@media (max-width: 900px) {
-  .visc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.visc-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
 }
+.visc-summary-label { color: var(--text-tertiary); }
+.visc-summary-item b {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.visc-summary-unit { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.visc-summary-item.visc-card-anomaly-on b { color: var(--status-error); }
+.visc-summary-item.visc-card-warn-on b { color: var(--status-warning); }
+.visc-summary-anomaly.is-clickable { cursor: pointer; }
+.visc-summary-anomaly.is-clickable b { text-decoration: underline; text-underline-offset: 3px; }
+.visc-summary-anomaly:disabled { cursor: default; }
+.visc-summary-anomaly.is-clickable:hover b,
+.visc-summary-anomaly.is-clickable:focus-visible b { color: var(--accent-primary); }
+.visc-summary-anomaly:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; border-radius: var(--radius-sm); }
 
 .visc-toolbar-filters,
 .visc-toolbar-actions {
@@ -49,22 +79,6 @@ body {
 .visc-year-select {
   width: auto;
   min-width: 8rem;
-}
-
-/* 다른 카드는 숫자 하나지만 이 칸은 '5000.0 ± 12.0' 처럼 값 두 개가 들어가서
-   공용 28px 로는 두 줄로 깨진다. 이 카드만 줄인다. */
-.visc-cards #visc-card-mean {
-  font-size: var(--fs-lg);
-  white-space: nowrap;
-}
-
-/* 색은 건수가 1 이상일 때만 (JS 가 -on 클래스를 붙인다). 0 건은 기본색. */
-.visc-cards .metric-card.visc-card-anomaly-on .metric-value {
-  color: var(--status-error);
-}
-
-.visc-cards .metric-card.visc-card-warn-on .metric-value {
-  color: var(--status-warning);
 }
 
 /* ── 탭 ────────────────────────────────────────────────────────────────
@@ -121,20 +135,6 @@ body {
 }
 
 .visc-more-row .btn[hidden] { display: none; }
-
-/* '이상 N건' 카드는 목록으로 가는 버튼이 된다 — 건수가 0 이면 JS 가 이 클래스를
-   떼어 평범한 카드로 되돌린다(누를 수 있어 보이는데 아무 일도 없으면 안 된다). */
-.visc-cards .metric-card.is-clickable {
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.visc-cards .metric-card.is-clickable:hover,
-.visc-cards .metric-card.is-clickable:focus-visible {
-  border-color: var(--status-error);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-error) 25%, transparent);
-  outline: none;
-}
 
 /* 이상 목록으로 이동했을 때 잠깐 강조 — 탭이 통째로 바뀌므로 어디를 봐야 하는지 표시. */
 .visc-anomaly-panel.is-flash {
@@ -617,11 +617,6 @@ body {
 /* 제외된 배합 기록 행 — 전체 행을 살짝 눌러 통계 밖임을 드러낸다. */
 .visc-blend-table tbody tr.row-excluded td {
   background: color-mix(in srgb, var(--text-tertiary) 7%, var(--bg-base));
-  color: var(--text-secondary);
-}
-
-/* '통계 제외' 카드: 건수가 0 이 아닐 때만 색(회색 — 경보 아님). */
-.visc-cards .metric-card.visc-card-excluded-on .metric-value {
   color: var(--text-secondary);
 }
 
