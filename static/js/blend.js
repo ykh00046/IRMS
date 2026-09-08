@@ -1664,7 +1664,7 @@
     }
     note.className = `lot-visc-note lot-visc-note--${data.level}`;
     note.textContent = `⚠ ${data.message}`;
-    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다 — 책임자에게 알리세요." : "경고 구간의 점도입니다 — 확인 후 진행하세요.";
+    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다 — 이 LOT 은 사용 금지, 책임자에게 알리세요." : "경고 구간의 점도입니다 — 확인 후 진행하세요.";
     note.hidden = false;
   }
   async function refreshLotViscNote(input, name, lot) {

@@ -26,8 +26,8 @@
 
   const STATUS_LABEL = { normal: "정상", warn: "경고", anomaly: "이상" };
   const REASON_LABEL = {
-    spec_high: "상한 초과",
-    spec_low: "하한 미만",
+    spec_high: "관리 상한 이상",
+    spec_low: "관리 하한 이하",
     sigma_high: "+kσ 초과",
     sigma_low: "-kσ 미만",
     warn_high: "2σ 경고",

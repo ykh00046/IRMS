@@ -104,8 +104,9 @@
 ### 2.2 판정 규칙과 경계값
 
 `_classify`(`viscosity_service.py:272-299`) 순서:
-1. spec 위반(관리 상/하한): `value > upper_limit` → `spec_high`,
-   `value < lower_limit` → `spec_low` (둘 다 **엄격 부등호**, 경계값=한계값은 위반 아님).
+1. spec 위반(관리 상/하한): `value >= upper_limit` → `spec_high`,
+   `value <= lower_limit` → `spec_low` (2026-09-08 부터 **경계 포함** — 현장 규칙 "340 이하
+   사용 금지"와 같은 부등호. 그 안쪽 고정 경고 문턱 `warn_low/warn_high` 도 경계 포함).
 2. sigma 위반: `value > ucl` → `sigma_high`, `value < lcl` → `sigma_low` (엄격 부등호).
 3. 위 중 하나라도 있으면 `status = "anomaly"`.
 4. 없으면 경고 구간: `value > uwl`(2σ 초과) → `warn_high`, `value < lwl` → `warn_low`,

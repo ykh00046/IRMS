@@ -345,12 +345,15 @@ def _classify(value: float, product: dict[str, Any], control: dict[str, Any]) ->
     reasons: list[str] = []
     side = None  # 'high' / 'low'
 
+    # 관리 한계는 경계 포함(2026-09-08): 현장 규칙이 "340 이하는 사용 금지"처럼 '이하/이상'
+    # 으로 말해지므로 경고 문턱(warn_low/high)과 같은 부등호를 쓴다. 운영 DB 에는 그때까지
+    # 관리 한계를 둔 반제품이 없어 기존 판정이 바뀌는 곳은 없다.
     upper = product["upper_limit"]
     lower = product["lower_limit"]
-    if upper is not None and value > upper:
+    if upper is not None and value >= upper:
         reasons.append("spec_high")
         side = "high"
-    if lower is not None and value < lower:
+    if lower is not None and value <= lower:
         reasons.append("spec_low")
         side = "low"
 
@@ -680,10 +683,10 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
     value = float(row["viscosity"])
     level = reason = None
     threshold = None
-    if product["lower_limit"] is not None and value < product["lower_limit"]:
-        level, reason, threshold = "anomaly", "관리 하한 미만", product["lower_limit"]
-    elif product["upper_limit"] is not None and value > product["upper_limit"]:
-        level, reason, threshold = "anomaly", "관리 상한 초과", product["upper_limit"]
+    if product["lower_limit"] is not None and value <= product["lower_limit"]:
+        level, reason, threshold = "anomaly", "관리 하한 이하", product["lower_limit"]
+    elif product["upper_limit"] is not None and value >= product["upper_limit"]:
+        level, reason, threshold = "anomaly", "관리 상한 이상", product["upper_limit"]
     elif product["warn_low"] is not None and value <= product["warn_low"]:
         level, reason, threshold = "warn", "경고 하한 이하", product["warn_low"]
     elif product["warn_high"] is not None and value >= product["warn_high"]:
@@ -691,10 +694,12 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
     message = None
     if level:
         # 배합 화면 LOT 칸 아래 한 줄로 들어가야 하므로 짧게: "PB 점도 47.5 · 경고 하한 48 이하".
+        # 관리 한계 이탈은 현장 말로 '사용 금지'(APB17 340 이하, 2026-09-08)를 앞세운다.
         thr = f"{threshold:g}"
         word = reason.replace("경고 하한 이하", f"경고 하한 {thr} 이하").replace(
             "경고 상한 이상", f"경고 상한 {thr} 이상").replace(
-            "관리 하한 미만", f"관리 하한 {thr} 미만").replace("관리 상한 초과", f"관리 상한 {thr} 초과")
+            "관리 하한 이하", f"사용 금지 (관리 하한 {thr} 이하)").replace(
+            "관리 상한 이상", f"사용 금지 (관리 상한 {thr} 이상)")
         message = f"{product['code']} 점도 {value:g} · {word}"
     return {
         "found": True, "product": product["code"], "viscosity": value,

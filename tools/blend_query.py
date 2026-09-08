@@ -677,8 +677,8 @@ def q_viscosity(conn, args) -> list[dict]:
         SELECT vp.code AS 반제품, vr.measured_date AS 측정일, vr.lot_no AS LOT,
                vr.viscosity AS 점도, vp.target AS 목표,
                vp.lower_limit AS 하한, vp.upper_limit AS 상한,
-               CASE WHEN vp.lower_limit IS NOT NULL AND vr.viscosity < vp.lower_limit THEN '하한이탈'
-                    WHEN vp.upper_limit IS NOT NULL AND vr.viscosity > vp.upper_limit THEN '상한이탈'
+               CASE WHEN vp.lower_limit IS NOT NULL AND vr.viscosity <= vp.lower_limit THEN '하한이탈'
+                    WHEN vp.upper_limit IS NOT NULL AND vr.viscosity >= vp.upper_limit THEN '상한이탈'
                     ELSE '' END AS 판정,
                CASE WHEN COALESCE(vr.excluded,0)=1 THEN '통계제외' ELSE '' END AS 제외,
                br.product_lot AS 연계배합, br.worker AS 작업자

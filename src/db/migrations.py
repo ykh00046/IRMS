@@ -455,6 +455,18 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
             "UPDATE viscosity_products SET warn_low = 48 WHERE upper(code) = 'PB' AND warn_low IS NULL"
         )
         record_migration(connection, "viscosity_pb_warn_low_48")
+    if not has_migration(connection, "viscosity_apb17_limits_340_350"):
+        # 사용자 결정(2026-09-08): APB17 점도 340 이하 → 사용 금지(관리 하한 이탈=이상),
+        # 350 이하 → 경고. 비어 있을 때만 한 번 심고 이후는 설정 화면이 소유.
+        connection.execute(
+            "UPDATE viscosity_products SET lower_limit = 340 "
+            "WHERE upper(code) = 'APB17' AND lower_limit IS NULL"
+        )
+        connection.execute(
+            "UPDATE viscosity_products SET warn_low = 350 "
+            "WHERE upper(code) = 'APB17' AND warn_low IS NULL"
+        )
+        record_migration(connection, "viscosity_apb17_limits_340_350")
     # spec-out(측정 제외, 2026-07-31): 단일 이상 측정 하나가 σ(이상을 잡아야 할 표준편차)를
     # 스스로 오염시키는 문제를 끊는다. 삭제하지 않고 '통계 제외' 로만 표시 — 기록에는 남고
     # 화면엔 배지+사유로 보이되, 평균/σ/관리한계/추세/기간 집계에서는 빠진다(책임자만 토글).

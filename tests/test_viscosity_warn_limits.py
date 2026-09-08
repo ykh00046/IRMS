@@ -30,6 +30,8 @@ def test_spec_anomaly_still_wins_over_warn_threshold():
     verdict = _classify(46.0, product, control)
     assert verdict["status"] == "anomaly"
     assert "spec_low" in verdict["reasons"]
+    # 관리 한계도 경계 포함(APB17 "340 이하 사용 금지"와 같은 부등호).
+    assert _classify(47.0, product, control)["status"] == "anomaly"
     assert _classify(47.5, product, control)["status"] == "warn"
 
 
@@ -101,3 +103,41 @@ def test_fixed_warn_threshold_folds_into_the_warn_band():
     # 표본이 없어도 고정 경고선은 밴드에 남는다.
     sparse = _control_limits(_PB, [49.0, 49.1])
     assert sparse["lwl"] == 48.0 and sparse["uwl"] is None
+
+
+def test_apb17_prohibit_at_340_and_warn_at_350():
+    """APB17: 340 이하 사용 금지(관리 하한, 경계 포함), 350 이하 경고(사용자 결정 2026-09-08)."""
+    product = {"target": None, "upper_limit": None, "lower_limit": 340.0, "sigma_k": 3.0,
+               "warn_low": 350.0, "warn_high": None}
+    control = _control_limits(product, [355.0, 360.0])
+    assert _classify(340.0, product, control)["status"] == "anomaly"
+    assert _classify(345.0, product, control)["status"] == "warn"
+    assert _classify(350.0, product, control)["status"] == "warn"
+    assert _classify(350.1, product, control)["status"] == "normal"
+
+
+def test_migration_seeds_apb17_limits_when_product_exists():
+    """운영 DB 의 APB17(기준 없음)에 340/350 을 한 번 심는다 — 이미 값이 있으면 건드리지 않는다."""
+    _client()
+    from src.db import get_connection, utc_now_text
+    from src.db.migrations import apply_schema_migrations as run_migrations
+
+    with get_connection() as connection:
+        connection.execute("DELETE FROM viscosity_products WHERE upper(code) = 'APB17'")
+        connection.execute(
+            "INSERT INTO viscosity_products (code, name, sigma_k, is_active, created_at) "
+            "VALUES ('APB17', 'APB17', 3, 1, ?)", (utc_now_text(),))
+        connection.execute("DELETE FROM schema_migrations WHERE name = 'viscosity_apb17_limits_340_350'")
+        connection.commit()
+        run_migrations(connection)
+        row = connection.execute(
+            "SELECT lower_limit, warn_low FROM viscosity_products WHERE upper(code) = 'APB17'"
+        ).fetchone()
+        assert row["lower_limit"] == 340.0 and row["warn_low"] == 350.0
+        # 재실행해도 값이 바뀌지 않는다(멱등) — 설정 화면이 바꾼 값은 보존.
+        connection.execute("UPDATE viscosity_products SET warn_low = 352 WHERE upper(code) = 'APB17'")
+        connection.commit()
+        run_migrations(connection)
+        again = connection.execute(
+            "SELECT warn_low FROM viscosity_products WHERE upper(code) = 'APB17'").fetchone()
+        assert again["warn_low"] == 352.0

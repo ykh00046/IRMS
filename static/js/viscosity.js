@@ -1249,7 +1249,7 @@
     result.hidden = false;
     if (status === "anomaly") {
       result.className = "visc-form-result anomaly";
-      result.textContent = `⚠ 이상 판정 — 관리 범위를 벗어났습니다. 책임자에게 알리세요.`
+      result.textContent = `⚠ 이상 판정 — 관리 범위를 벗어났습니다. 이 LOT 은 사용 금지입니다. 책임자에게 알리세요.`
         + ` (점도 ${fmt(value)}${tail})${pbTail}`;
       attachQuickFix(result, reading, lotNo, value);
       notify(result.textContent, "error");
