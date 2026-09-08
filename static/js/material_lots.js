@@ -214,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
       staleCard.textContent = `${stale}일`;
       const warn = stale >= 2;
       staleCard.className = "metric-value " + (warn ? "mlot-stale-warn" : "mlot-stale-ok");
-      staleNote.textContent = warn ? "오래됨 — 갱신 필요" : "최근";
+      staleNote.textContent = warn ? "오래됨. 갱신 필요" : "최근";
     }
 
     let valid = 0;
@@ -243,7 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tablePanel.hidden = true;
         warnPanel.hidden = false;
         warnText.textContent =
-          "ERP 재고 파일을 찾을 수 없습니다. 자재 LOT 를 불러올 수 없습니다 — 파일이 올바른 위치에 있는지 확인하세요. 엑셀 문제로 현장 계량은 막지 않습니다(fail-open).";
+          "ERP 재고 파일을 찾을 수 없습니다. 자재 LOT를 불러올 수 없습니다. 파일이 올바른 위치에 있는지 확인하세요. 엑셀 문제로 현장 계량은 막지 않습니다(fail-open).";
         lastItems = [];
         return;
       }
@@ -273,7 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const lot = $("mlot-add-lot").value.trim();
     const note = $("mlot-add-note").value.trim();
     if (!code || !lot) {
-      errEl.textContent = "품목코드와 LOT 를 입력하세요.";
+      errEl.textContent = "품목코드와 LOT를 입력하세요.";
       errEl.hidden = false;
       return;
     }
@@ -285,7 +285,7 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         body: { material_code: code, lot, note: note || undefined },
       });
-      notify("수동 LOT 를 추가했습니다.", "success");
+      notify("수동 LOT를 추가했습니다.", "success");
       $("mlot-add-lot").value = "";
       $("mlot-add-note").value = "";
       await loadStatus();
@@ -303,10 +303,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const id = btn.dataset.id;
     const code = btn.dataset.code;
     const lot = btn.dataset.lot;
-    if (!confirm(`수동 LOT 를 삭제합니다:\n${code} / ${lot}`)) return;
+    if (!confirm(`수동 LOT를 삭제합니다:\n${code} / ${lot}`)) return;
     try {
       await request(`/material-lots/manual/${id}`, { method: "DELETE" });
-      notify("수동 LOT 를 삭제했습니다.", "success");
+      notify("수동 LOT를 삭제했습니다.", "success");
       await loadStatus();
     } catch (e) {
       notify(`삭제 실패: ${e.message}`, "error");

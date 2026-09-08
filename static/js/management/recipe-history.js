@@ -136,7 +136,7 @@
           }
           const cur = recipe.stage1RecipeId != null ? String(recipe.stage1RecipeId) : "";
           const label = cur ? IRMS.escapeHtml(recipe.stage1ProductName || cur) : "없음";
-          return `<td><select class="input recipe-stage1-select" data-recipe-id="${recipe.id}" data-cur="${cur}" title="이 레시피(2차)의 1차 레시피 — 개정 없이 바로 지정"><option value="${cur}">${label}</option></select></td>`;
+          return `<td><select class="input recipe-stage1-select" data-recipe-id="${recipe.id}" data-cur="${cur}" title="이 레시피(2차)의 1차 레시피 · 개정 없이 바로 지정"><option value="${cur}">${label}</option></select></td>`;
         };
 
         // 한 레시피 행 — stagePin('1차'/'2차') 이 있으면 가족 멤버로 표시.
@@ -207,7 +207,7 @@
             `<tr class="family-head-row"><td colspan="${COLSPAN}">`
             + sharedChip
             + `◆ ${IRMS.escapeHtml(one.productName)} · 2단 제조 가족`
-            + `<span class="muted"> — 2차 ${kids.length}종${kidNames ? `: ${IRMS.escapeHtml(kidNames)}` : ""}</span>`
+            + `<span class="muted"> · 2차 ${kids.length}종${kidNames ? `: ${IRMS.escapeHtml(kidNames)}` : ""}</span>`
             + staleNote
             + `</td></tr>`,
           );
@@ -478,7 +478,7 @@
                   if (!reason.trim()) { IRMS.notify("사유를 입력해야 취소할 수 있습니다.", "error"); return; }
                   try {
                     await IRMS.updateRecipeStatus(recipeId, "cancel", reason.trim());
-                    IRMS.notify("레시피를 취소했습니다 — 필요하면 '취소 해제'로 되돌릴 수 있습니다.", "success");
+                    IRMS.notify("레시피를 취소했습니다. 필요하면 '취소 해제'로 되돌릴 수 있습니다.", "success");
                     renderHistory();
                   } catch (err) {
                     IRMS.notify(`취소 실패: ${err.message}`, "error");
@@ -492,7 +492,7 @@
                   e.stopPropagation();
                   try {
                     await IRMS.updateRecipeStatus(recipeId, "restore");
-                    IRMS.notify("레시피 취소를 해제했습니다 — 배합 화면 목록에 다시 나타납니다.", "success");
+                    IRMS.notify("레시피 취소를 해제했습니다. 배합 화면 목록에 다시 나타납니다.", "success");
                     renderHistory();
                   } catch (err) {
                     IRMS.notify(`취소 해제 실패: ${err.message}`, "error");
@@ -511,7 +511,7 @@
                       scope,
                       "",
                       `그 ${linked}건을 레시피와 함께 영구 삭제합니다.`,
-                      "되돌릴 수 없습니다 — 정말 진행할까요?",
+                      "되돌릴 수 없습니다. 정말 진행할까요?",
                     ].join("\n")
                   : [
                       scope,
@@ -663,8 +663,8 @@
         + `<button class="btn btn-sm attr-losscomp-add" type="button">+ 보정 추가</button>`
         + `<button class="btn attr-losscomp-save" type="button">저장</button>`
         + `</div>`
-        + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 — 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
-        + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다 — 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 · 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
+        + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다. 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
         + (itemNames.length ? "" : '<p class="login-error attr-losscomp-error">BOM 자재가 없습니다.</p>')
         + `<input type="hidden" class="attr-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`
         + `</div>`;
@@ -775,7 +775,7 @@
         await resp.json();
         const cur = wrap.querySelector(".attr-tolerance-current");
         if (cur) cur.innerHTML = label;
-        IRMS.notify(toleranceG != null ? `허용 편차를 ±${toleranceG} g 으로 지정했습니다.` : "허용 편차를 기본값(±0.05 g)으로 되돌렸습니다.", "success");
+        IRMS.notify(toleranceG != null ? `허용 편차를 ±${toleranceG} g으로 지정했습니다.` : "허용 편차를 기본값(±0.05 g)으로 되돌렸습니다.", "success");
       } catch (error) {
         IRMS.notify(`허용 편차 저장 실패: ${error.message}`, "error");
       } finally {

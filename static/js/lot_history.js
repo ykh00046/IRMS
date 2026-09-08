@@ -125,7 +125,7 @@
       allMaterials = d.materials || [];
       fillSelect($("lh-family"), families.map((f) => ({
         key: f.key, label: `${f.label} (${num(f.record_count)}건)`,
-      })), "(전체 — 자재로 조회)", initial.family);
+      })), "(전체 · 자재로 조회)", initial.family);
       refreshMaterials(initial.material);
     }
 
@@ -275,7 +275,7 @@
       const summary = $("lh-trace-summary");
       const note = $("lh-trace-note");
       if (!lot) {
-        body.innerHTML = emptyRow(8, "자재 LOT 을 입력하고 추적하세요.");
+        body.innerHTML = emptyRow(8, "자재 LOT을 입력하고 추적하세요.");
         summary.textContent = "";
         note.hidden = true;
         return;
@@ -286,7 +286,7 @@
         summary.textContent = items.length ? `배합 ${num(d.record_count)}건 · 자재 행 ${num(d.total)}건` : "";
         // 서버 상한 도달 — 조용히 자르지 않고 알린다.
         if (d.truncated) {
-          note.textContent = `표시 상한 ${num(d.limit || d.total)}행에 도달 — 일부가 잘렸을 수 있습니다. LOT 을 더 정확히 입력해 좁히세요.`;
+          note.textContent = `표시 상한 ${num(d.limit || d.total)}행에 도달 · 일부가 잘렸을 수 있습니다. LOT을 더 정확히 입력해 좁히세요.`;
           note.hidden = false;
         } else {
           note.hidden = true;

@@ -24,7 +24,7 @@
   var POLL_MS = 3 * 60 * 1000;        // 폴링 주기 ~3분
   // 배합 임시저장 키 — 단건/이어서 두 가지 모두 진행 중으로 본다.
   var DRAFT_KEYS = ["irms.blend.draft", "irms.blend.cont.draft"];
-  var DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 초안 보존 지평(readDraft 24h 와 동일)
+  var DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 초안 보존 지평(readDraft 24h와 동일)
   var IDLE_MS = 30 * 1000;            // 무활동 30초면 안전한 새로고침 시점
 
   var baseline = null; // 최초 관측한 서버 버전(기준값)
@@ -126,17 +126,17 @@
     });
 
     var guard = window.setInterval(function () {
-      if (draftInProgress()) return;              // 배합 진행 중 — 대기
-      if (Date.now() - lastActivity < IDLE_MS) return; // 조작 중 — 대기
+      if (draftInProgress()) return;              // 배합 진행 중 · 대기
+      if (Date.now() - lastActivity < IDLE_MS) return; // 조작 중 · 대기
       window.clearInterval(guard);
       doReload();
     }, 5000);
   }
 
   function handleNewVersion() {
-    stopPolling(); // 새로고침 예약됨 — 루프 방지
+    stopPolling(); // 새로고침 예약됨. 루프 방지
     // 항상 배너를 먼저 띄우고, 안전한 시점(초안 없음 + 무활동)에만 새로고침한다.
-    showBanner("새 버전이 배포되었습니다 — 작업을 잠시 멈추면 자동으로 반영됩니다");
+    showBanner("새 버전이 배포되었습니다. 작업을 잠시 멈추면 자동으로 반영됩니다");
     scheduleSafeReload();
   }
 

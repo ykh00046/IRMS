@@ -515,7 +515,7 @@
       syy += (p.y - my) * (p.y - my);
       sxy += (p.x - mx) * (p.y - my);
     });
-    if (sxx === 0 || syy === 0) return null;   // x 나 y 가 전부 같은 값 — 직선 무의미
+    if (sxx === 0 || syy === 0) return null;   // x 나 y가 전부 같은 값 · 직선 무의미
     const slope = sxy / sxx;
     return {
       slope,
@@ -533,12 +533,12 @@
     const a = Math.abs(fit.r);
     const rText = `r=${fit.r.toFixed(2)}, ${fit.n}건`;
     if (a < 0.2) {
-      return `뚜렷한 상관 없음 (${rText}) — 이 반제품 점도는 사용한 PB 점도와 무관하게 움직입니다.`;
+      return `뚜렷한 상관 없음 (${rText}) · 이 반제품 점도는 사용한 PB 점도와 무관하게 움직입니다.`;
     }
     const strength = a >= 0.7 ? "상관 뚜렷" : a >= 0.4 ? "상관 중간" : "상관 약함";
     const slope = fit.slope;
     const slopeText = `사용한 PB 점도가 1 높으면 이 반제품은 약 ${slope >= 0 ? "+" : ""}${slope.toFixed(1)}`;
-    return `${strength} (${rText}) — ${slopeText}`;
+    return `${strength} (${rText}) · ${slopeText}`;
   }
 
   // PB 점도(x) ↔ 이 반제품 점도(y) 산점도 데이터셋. 표만으로는 "48cp PB 로 만들면
@@ -664,10 +664,10 @@
     const withLot = Number((pbLink && pbLink.readings_with_lot) || 0);
     const matched = Number((pbLink && pbLink.matched) || 0);
     if (withLot === 0) {
-      return "이 반제품은 PB 연계 기록이 없습니다. 배합에 사용한 PB LOT 이 기록되면 여기에 표시됩니다.";
+      return "이 반제품은 PB 연계 기록이 없습니다. 배합에 사용한 PB LOT이 기록되면 여기에 표시됩니다.";
     }
     if (matched === 0) {
-      return `사용한 PB LOT 이 ${withLot}건 기록됐지만, 그 PB 의 점도를 찾지 못했습니다`
+      return `사용한 PB LOT이 ${withLot}건 기록됐지만, 그 PB의 점도를 찾지 못했습니다`
         + " (PB 반제품 측정 미등록이거나 LOT 표기가 다릅니다).";
     }
     return `${linkedCount}건 · 사용한 PB의 점도와 나란히`;

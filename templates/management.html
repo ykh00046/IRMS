@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260811a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
@@ -41,7 +41,7 @@
                 <legend class="filter-label">레시피 속성 (선택)</legend>
                 <div class="imp-attrs-grid">
                   <div class="imp-attr-field">
-                    {# '기본' — 배합 화면의 [기본량 N 적용] 버튼이 채우는 그 값(용어 통일 2026-08-05).
+                    {# '기본' · 배합 화면의 [기본량 N 적용] 버튼이 채우는 그 값(용어 통일 2026-08-05).
                        '기준'은 기준 자재(anchor)가 쓰는 말이라 한 화면에서 두 뜻이 충돌했다. #}
                     <label class="filter-label" for="register-base-total">기본 배합량 (g)</label>
                     <input id="register-base-total" class="input base-total-input"
@@ -71,7 +71,7 @@
                       title="반제품 ERP 품목코드. 비우면 반제품명으로 자동 인식하고, 수정 등록 시 기존 코드를 그대로 이어받습니다(같은 코드 그대로 두면 됩니다)." />
                     <ul id="imp-product-code-suggest" class="code-suggest-list" hidden></ul>
                   </div>
-                  <!-- 강조 안내문(callout) 단독 사용 — imp-attr-desc(0.72rem)와 겹치면 글씨 축소가
+                  <!-- 강조 안내문(callout) 단독 사용 · imp-attr-desc(0.72rem)와 겹치면 글씨 축소가
                        강조를 덮어씀. grid 전체 폭(imp-attr-span)으로 빼, 품목코드 칸이 커져 옆 열
                        (허용 편차)이 벌어지는 현상을 막는다. -->
                   <div class="imp-attr-span">
@@ -81,7 +81,7 @@
                     <label class="filter-label visc-checkbox" for="imp-use-reactor">
                       <input id="imp-use-reactor" type="checkbox" /> 반응기 사용
                     </label>
-                    <p class="imp-attr-desc">반응기에서 진행하는 레시피. 배합 저장 시 반응기 번호를 요구합니다. (이월과 무관 — 이월은 '파생'이 결정)</p>
+                    <p class="imp-attr-desc">반응기에서 진행하는 레시피. 배합 저장 시 반응기 번호를 요구합니다. (이월과 무관 · 이월은 '파생'이 결정)</p>
                   </div>
                   <div class="imp-attr-field">
                     <label class="filter-label visc-checkbox" for="imp-is-derived">
@@ -94,14 +94,14 @@
                     <select id="imp-stage1" class="input"><option value="">없음</option></select>
                     <p class="imp-attr-desc">이 레시피(2차)의 1차 레시피를 고릅니다. 지정하면 현황에서 1차/2차가 한 가족으로 묶이고, 재료로 넣은 1차 반제품(예: SBCT-1)은 코드 없이도 정상 인식됩니다.</p>
                   </div>
-                  <!-- 기준 자재 3단 그림(중순위, 2026-08-05) — '실측이 목표를 만든다'는 역전이
+                  <!-- 기준 자재 3단 그림(중순위, 2026-08-05) · '실측이 목표를 만든다'는 역전이
                        글로는 안 읽힌다: 보통은 목표→계량인데 기준 자재는 계량→목표다. -->
                   <div class="imp-attr-span">
                     <details class="mg-flow">
                       <summary>기준 자재가 뭘 하는지 그림으로 보기</summary>
                       <div class="mg-flow-body">
                         <svg viewBox="0 0 680 128" class="mg-flow-svg" role="img"
-                             aria-label="기준 자재 3단 — 기준 자재를 먼저 실측하면, 그 실측값으로 총량이 도출되고, 나머지 자재의 목표가 다시 계산된다">
+                             aria-label="기준 자재 3단 · 기준 자재를 먼저 실측하면, 그 실측값으로 총량이 도출되고, 나머지 자재의 목표가 다시 계산된다">
                           <rect x="10" y="22" width="200" height="76" rx="10" class="mg-flow-box"/>
                           <text x="110" y="46" class="mg-flow-title">① 기준 자재 먼저 계량</text>
                           <text x="110" y="68" class="mg-flow-line">예: PB 실측 <tspan class="mg-flow-strong">1,020 g</tspan></text>
@@ -126,7 +126,7 @@
                       </div>
                     </details>
                   </div>
-                  <!-- 2단 제조 흐름도(P-3, 2026-08-05) — 파생/1차 레시피/반응기 세 설정은 서로
+                  <!-- 2단 제조 흐름도(P-3, 2026-08-05) · 파생/1차 레시피/반응기 세 설정은 서로
                        독립인데 글 설명만으로는 구분이 안 돼, 잘못 지정하면 2차 배합의 총량
                        자체가 틀린다. 그림이 세 개념을 분리해 보여준다. 기본 접힘. -->
                   <div class="imp-attr-span">
@@ -134,11 +134,11 @@
                       <summary>1차→2차(파생·이월)가 어떻게 도는지 그림으로 보기</summary>
                       <div class="mg-flow-body">
                         <svg viewBox="0 0 680 168" class="mg-flow-svg" role="img"
-                             aria-label="2단 제조 흐름 — 1차 레시피에서 계량한 총량이 파생 이월 화살표로 2차 레시피에 재계량 없이 투입되는 그림">
+                             aria-label="2단 제조 흐름 · 1차 레시피에서 계량한 총량이 파생 이월 화살표로 2차 레시피에 재계량 없이 투입되는 그림">
                           <!-- 1차 상자 -->
                           <rect x="14" y="26" width="248" height="92" rx="10" class="mg-flow-box"/>
                           <text x="138" y="50" class="mg-flow-title">1차 레시피 (예: SBCT-1)</text>
-                          <text x="138" y="74" class="mg-flow-line">자재 A · B · C 를 계량</text>
+                          <text x="138" y="74" class="mg-flow-line">자재 A · B · C를 계량</text>
                           <text x="138" y="96" class="mg-flow-line">총량 <tspan class="mg-flow-strong">3,924.38 g</tspan> 완성</text>
                           <!-- 파생 이월 화살표 -->
                           <line x1="262" y1="72" x2="404" y2="72" class="mg-flow-arrow"/>
@@ -148,8 +148,8 @@
                           <!-- 2차 상자 -->
                           <rect x="420" y="26" width="248" height="92" rx="10" class="mg-flow-box mg-flow-box2"/>
                           <text x="544" y="50" class="mg-flow-title">2차 레시피 (예: SBCT)</text>
-                          <text x="544" y="74" class="mg-flow-line">이월 <tspan class="mg-flow-strong">3,924.38 g</tspan> — 재계량 없음</text>
-                          <text x="544" y="96" class="mg-flow-line">+ 자재 D 만 계량</text>
+                          <text x="544" y="74" class="mg-flow-line">이월 <tspan class="mg-flow-strong">3,924.38 g</tspan> · 재계량 없음</text>
+                          <text x="544" y="96" class="mg-flow-line">+ 자재 D만 계량</text>
                           <!-- 가족 연결(1차 레시피 지정) -->
                           <path d="M 138 118 V 140 H 544 V 118" class="mg-flow-family"/>
                           <text x="341" y="156" class="mg-flow-family-label">'1차 레시피' 지정 = 두 레시피를 한 가족으로 (현황 묶음 · 1차 반제품 코드 없이 인식)</text>
@@ -247,7 +247,7 @@
           </section>
         </div>
 
-        <!-- 버전 비교(3단계 정리 2026-08-06) — 탭 버튼 없이 [버전 이력]으로만 진입.
+        <!-- 버전 비교(3단계 정리 2026-08-06) · 탭 버튼 없이 [버전 이력]으로만 진입.
              검색·칩·액션·속성편집기는 현황으로 이전/중복 제거됐다. 비교 전용 화면. -->
         <div class="tab-panel" id="tab-lookup">
           <section class="panel">
@@ -273,11 +273,11 @@
     
     
     <!-- management modules: factories (order-free) → controller last -->
-    <script src="/static/js/management/bom-editor.js?v=20260805a"></script>
-    <script src="/static/js/management/recipe-edit-loader.js?v=20260726a"></script>
-    <script src="/static/js/management/import-validate.js?v=20260726a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260807a"></script>
-    <script src="/static/js/management/recipe-lookup.js?v=20260807b"></script>
-    <script src="/static/js/management/version-compare.js?v=20260807d"></script>
-    <script src="/static/js/management.js?v=20260812a"></script>
+    <script src="/static/js/management/bom-editor.js?v=20260908f"></script>
+    <script src="/static/js/management/recipe-edit-loader.js?v=20260908f"></script>
+    <script src="/static/js/management/import-validate.js?v=20260908f"></script>
+    <script src="/static/js/management/recipe-history.js?v=20260908f"></script>
+    <script src="/static/js/management/recipe-lookup.js?v=20260908f"></script>
+    <script src="/static/js/management/version-compare.js?v=20260908f"></script>
+    <script src="/static/js/management.js?v=20260908f"></script>
 {% endblock %}

@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BRM · 근태 조회</title>
-    <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260814a" />
+    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260908f" />
   </head>
   <body
     class="att-page"
@@ -43,17 +43,17 @@
           <button id="att-change-pw-btn" class="btn compact">비밀번호 변경</button>
           {% endif %}
           {# 책임자 모드의 로그아웃은 근태 세션 + 책임자 IRMS 세션을 함께 끝낸다
-             (공용 PC 에서 다음 직원이 로그인 창을 만나게 하려면 둘 다 끊어야 한다). #}
+             (공용 PC에서 다음 직원이 로그인 창을 만나게 하려면 둘 다 끊어야 한다). #}
           <button id="att-logout-btn" class="btn compact"{% if admin_mode %} title="책임자 세션도 함께 종료합니다"{% endif %}>로그아웃</button>
           <a href="/" class="btn compact">처음</a>
         </div>
       </div>
     </header>
 
-    {# 근태 엑셀 열 인식 경고 — 책임자에게만. ERP 가 열 순서를 바꾸면 값이 조용히
+    {# 근태 엑셀 열 인식 경고 · 책임자에게만. ERP가 열 순서를 바꾸면 값이 조용히
        어긋나는데(2026-06 실제 발생), 그 경고가 서버 로그에만 남아 아무도 보지 않았다.
-       헤더 안 flex 항목으로 두면 버튼들 사이에 눌려 한 줄로 잘렸다 — 페이지 폭
-       배너로 꺼냈다(2026-08-14 검토 8번). 이상이 있을 때만 attendance.js 가 연다. #}
+       헤더 안 flex 항목으로 두면 버튼들 사이에 눌려 한 줄로 잘렸다. 페이지 폭
+       배너로 꺼냈다(2026-08-14 검토 8번). 이상이 있을 때만 attendance.js가 연다. #}
     <section class="att-warning-banner att-page-banner" id="att-header-banner" hidden>
       <span class="att-warning-icon" aria-hidden="true">⚠</span>
       <span class="att-warning-text" id="att-header-banner-text"></span>
@@ -61,8 +61,8 @@
 
     <main class="att-shell">
       {% if password_reset_required %}
-      {# 서버가 password_reset_required 로 이미 게이트하므로 기본 노출한다.
-         JS 가 실패해도 임시 비밀번호 경고는 반드시 보여야 한다 — JS 는 닫기(dismiss)만 담당. #}
+      {# 서버가 password_reset_required로 이미 게이트하므로 기본 노출한다.
+         JS가 실패해도 임시 비밀번호 경고는 반드시 보여야 한다. JS는 닫기(dismiss)만 담당. #}
       <section
         class="att-warning-banner"
         id="att-reset-banner"
@@ -92,7 +92,7 @@
         <div class="att-admin-picker" id="att-admin-picker" hidden>
           <div class="att-admin-field">
             <label for="att-emp-filter" class="filter-label">직원 찾기</label>
-            {# 목록이 수백 명이라 스크롤로 찾기 어렵다 — 좁히기 입력만 얹고
+            {# 목록이 수백 명이라 스크롤로 찾기 어렵다. 좁히기 입력만 얹고
                select 자체(와 기존 배선)는 그대로 둔다(2026-08-14 검토 7번). #}
             <input
               id="att-emp-filter"
@@ -125,7 +125,7 @@
         </div>
       </section>
 
-      {# 책임자 이상 목록 — 트레이 팝업을 닫으면 같은 내용을 다시 볼 화면이 없었다.
+      {# 책임자 이상 목록 · 트레이 팝업을 닫으면 같은 내용을 다시 볼 화면이 없었다.
          팝업은 '구분 0 / 내용 근태 이상' 처럼 축약돼 뜻을 알 수 없었으므로(2026-08-14
          실제 사고) 여기서는 판정 원문 사유와 그 해설을 함께 보여준다. #}
       {% if admin_mode %}
@@ -157,7 +157,7 @@
         <div class="att-summary-card att-alert-card att-summary-card-wide">
           <div class="att-alert-combo">
             <section class="att-alert-combo-section">
-              {# 이 카드는 ERP 가 이미 공제로 반영한 값의 합계다. 아래 '미처리 이상'
+              {# 이 카드는 ERP가 이미 공제로 반영한 값의 합계다. 아래 '미처리 이상'
                  카드(ERP 입력 대기)와 뜻이 정반대라 부제로 못 박는다(2026-08-14 검토 2번). #}
               <h3>이번 달 근태 이상 <span class="att-h3-sub">ERP 반영분</span></h3>
               <ul class="att-kv">
@@ -186,7 +186,7 @@
           id="att-pending-card"
           role="button"
           tabindex="0"
-          aria-label="미처리 이상 건수 — 누르면 첫 이상 행으로 이동"
+          aria-label="미처리 이상 건수 · 누르면 첫 이상 행으로 이동"
         >
           <h3>미처리 이상 <span class="att-h3-sub">ERP 입력 대기</span></h3>
           <div class="att-big" id="att-pending-count">0</div>
@@ -231,10 +231,10 @@
         </div>
       </section>
 
-      <!-- 근무 유형별 지각·조퇴 기준 그림(P-2, 2026-08-05) — 판정 규칙이 코드에만 있고
+      <!-- 근무 유형별 지각·조퇴 기준 그림(P-2, 2026-08-05) · 판정 규칙이 코드에만 있고
            화면에는 결과(지각/조퇴)만 떠서, 특히 반차의 오전/오후 비대칭(오전=출근 기준이
            뒤로, 오후=퇴근 기준이 앞으로)을 알 길이 없었다. 시각·이동량은
-           attendance_excel/anomaly.py 의 검증 예시와 일치해야 한다(주간 9-18,
+           attendance_excel/anomaly.py의 검증 예시와 일치해야 한다(주간 9-18,
            반차 5h·반반차 2h / 2교대 출근+8h45m, 반차 4h·반반차 2h·오후 휴식 미포함). -->
       <details class="att-rules">
         <summary>근무 유형별 지각·조퇴 기준 (그림으로 보기)</summary>
@@ -242,10 +242,10 @@
           <p class="att-rules-note">
             색칠된 구간이 <b>근무해야 하는 시간</b>입니다. 구간 <b>시작선보다 늦게 출근하면 지각</b>,
             <b>종료선보다 일찍 퇴근하면 조퇴</b>입니다. 빗금은 휴가로 비는 시간입니다.
-            (주간 09~18시 기준 — 반차는 점심 1시간이 겹쳐 기준이 5시간, 반반차는 2시간 이동합니다)
+            (주간 09~18시 기준 · 반차는 점심 1시간이 겹쳐 기준이 5시간, 반반차는 2시간 이동합니다)
           </p>
           <svg viewBox="0 0 680 244" class="att-rules-svg" role="img"
-               aria-label="근무 유형별 출퇴근 기준 시각표 — 기본 09~18시, 오전 반차 14시 출근, 오후 반차 13시 퇴근, 오전 반반차 11시 출근, 오후 반반차 16시 퇴근">
+               aria-label="근무 유형별 출퇴근 기준 시각표 · 기본 09~18시, 오전 반차 14시 출근, 오후 반차 13시 퇴근, 오전 반반차 11시 출근, 오후 반반차 16시 퇴근">
             <defs>
               <pattern id="att-tl-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
                 <rect width="7" height="7" class="att-tl-hatch-bg"/>
@@ -299,7 +299,7 @@
             <b>2교대</b>는 출근 + 8시간 45분(정규 8시간 + 휴식 45분)이 정규 퇴근입니다 —
             주간 07:00 → 15:45 · 야간 19:00 → 익일 03:45.<br/>
             2교대 반차·반반차: <b>오전</b>(늦게 출근) = 출근기준 + 4h/2h,
-            <b>오후</b>(일찍 퇴근) = 출근기준 + (8h − 4h/2h) — 오후에는 휴식 45분이 붙지 않아
+            <b>오후</b>(일찍 퇴근) = 출근기준 + (8h − 4h/2h) · 오후에는 휴식 45분이 붙지 않아
             주간과 계산이 다릅니다. 예: 2교대(주간) 반차 오전 출근 기준 11:00 · 오후 퇴근 기준 11:00.
           </p>
         </div>
@@ -307,7 +307,7 @@
 
       <section class="att-table-wrap">
         <h3>일자별 상세</h3>
-        <!-- 행 색 범례(2026-08-05) — 6가지 색 구분이 있는데 설명이 없어 뜻을 알 수 없었다.
+        <!-- 행 색 범례(2026-08-05) · 6가지 색 구분이 있는데 설명이 없어 뜻을 알 수 없었다.
              색상은 아래 tr 규칙(att-row-issue/att-day-*)의 강조 톤과 일치해야 한다. -->
         <div class="att-legend" role="note" aria-label="행 색상 안내">
           <span class="att-legend-item"><i class="att-legend-swatch is-issue"></i>이상(지각·조퇴·누락)</span>
@@ -361,16 +361,16 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> polling -> bootstrap) -->
-    <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/common/mappers.js?v=20260721a"></script>
-    <script src="/static/js/common/format.js?v=20260703a"></script>
-    <script src="/static/js/common/api-users.js?v=20260707b"></script>
-    <script src="/static/js/common/api-recipes.js?v=20260726a"></script>
-    <script src="/static/js/common/api-materials.js?v=20260707b"></script>
-    <script src="/static/js/common/ui.js?v=20260726a"></script>
-    <script src="/static/js/common/audio.js?v=20260707b"></script>
-    <script src="/static/js/common.js?v=20260703a"></script>
-    <script src="/static/js/attendance.js?v=20260828b"></script>
-    <script src="/static/js/attendance_session.js?v=20260828a"></script>
+    <script src="/static/js/common/core.js?v=20260908f"></script>
+    <script src="/static/js/common/mappers.js?v=20260908f"></script>
+    <script src="/static/js/common/format.js?v=20260908f"></script>
+    <script src="/static/js/common/api-users.js?v=20260908f"></script>
+    <script src="/static/js/common/api-recipes.js?v=20260908f"></script>
+    <script src="/static/js/common/api-materials.js?v=20260908f"></script>
+    <script src="/static/js/common/ui.js?v=20260908f"></script>
+    <script src="/static/js/common/audio.js?v=20260908f"></script>
+    <script src="/static/js/common.js?v=20260908f"></script>
+    <script src="/static/js/attendance.js?v=20260908f"></script>
+    <script src="/static/js/attendance_session.js?v=20260908f"></script>
   </body>
 </html>

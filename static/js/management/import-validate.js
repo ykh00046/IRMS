@@ -43,7 +43,7 @@
         productCodeSuggest.innerHTML = items
           .map(
             (it) =>
-              `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}</li>`,
+              `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} · ${IRMS.escapeHtml(it.name)}</li>`,
           )
           .join("");
         productCodeSuggest.hidden = false;
@@ -186,14 +186,14 @@
           // 오류 목록은 오른쪽 위라, 25줄짜리 시트를 넣고 스크롤해 내려가 검증을 누른
           // 작업자에게는 '아무 일도 안 일어난 화면'으로 보였다(등록 버튼만 계속 회색).
           IRMS.notify(
-            `검증 결과 오류 ${result.errors.length}건 — 오른쪽 '오류' 목록을 확인하세요.`,
+            `검증 결과 오류 ${result.errors.length}건 · 오른쪽 '오류' 목록을 확인하세요.`,
             "error",
           );
           if (dom.errorList && dom.errorList.scrollIntoView) {
             dom.errorList.scrollIntoView({ behavior: "smooth", block: "center" });
           }
         } else if (!result.rows.length) {
-          IRMS.notify("등록할 반제품을 찾지 못했습니다 — 표 내용을 확인하세요.", "warn");
+          IRMS.notify("등록할 반제품을 찾지 못했습니다. 표 내용을 확인하세요.", "warn");
         }
       } catch (error) {
         IRMS.notify(`검증 실패: ${error.message}`, "error");
@@ -282,7 +282,7 @@
         // 배지·자재명 datalist 에 즉시 반영한다 — 전체 새로고침 없이 품목코드가 바로 뜨도록.
         // (handleClear 가 initSpreadsheet(state.materials) 를 호출하므로 그 전에 최신화한다.)
         if (ctx.refreshMaterials) {
-          try { await ctx.refreshMaterials(); } catch (_e) { /* 조용히 무시 — 등록은 이미 성공 */ }
+          try { await ctx.refreshMaterials(); } catch (_e) { /* 조용히 무시 · 등록은 이미 성공 */ }
         }
 
         handleClear();

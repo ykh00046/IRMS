@@ -24,7 +24,7 @@ function _weekendDaysBetween(fileDateISO, todayISO) {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
   let weekends = 0;
   const cur = new Date(start);
-  cur.setDate(cur.getDate() + 1); // 파일 당일은 0일 — 다음날부터 센다.
+  cur.setDate(cur.getDate() + 1); // 파일 당일은 0일 · 다음날부터 센다.
   while (cur <= end) {
     const dow = cur.getDay();
     if (dow === 0 || dow === 6) weekends += 1;
@@ -163,7 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderSummary(cache.summary);
         setSectionFail("dash-period-fail", false);
       } else {
-        setSectionFail("dash-period-fail", true); // 값 DOM 은 그대로(마지막 값 유지)
+        setSectionFail("dash-period-fail", true); // 값 DOM은 그대로(마지막 값 유지)
       }
 
       // trend — 일별 추이 차트

@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260814a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
@@ -25,14 +25,14 @@
             </div>
             <button id="dash-refresh" class="btn" type="button">새로고침</button>
             {# 띄워 두는 화면이라 주기 갱신이 필요하다. 언제 것을 보고 있는지도 적는다.
-               자동 갱신은 전면 로딩 없이 조용히 — [새로고침]/[적용]을 눌렀을 때만 로딩이 뜬다. #}
+               자동 갱신은 전면 로딩 없이 조용히 · [새로고침]/[적용]을 눌렀을 때만 로딩이 뜬다. #}
             <label class="dash-auto"><input type="checkbox" id="dash-auto" checked /> 자동 갱신(3분)</label>
             <span class="dash-updated muted small" id="dash-updated"></span>
             <button id="dash-export" class="btn" type="button">Excel 내보내기</button>
           </div>
         </section>
 
-        {# 지금 조치가 필요한 것 — 기간 필터와 무관하다. 예전에는 '오늘 점도 미입력'이
+        {# 지금 조치가 필요한 것 · 기간 필터와 무관하다. 예전에는 '오늘 점도 미입력'이
            '배합 건수'와 한 줄에 나란히 있어, 기간을 30일로 바꿔도 안 변하는 값과
            바뀌는 값이 같은 기준으로 읽혔다(2026-08-08). 두 묶음으로 갈라 놓는다. #}
         <section class="dash-attention" id="dash-attention">
@@ -84,7 +84,7 @@
         </section>
         {% endif %}
 
-        {# 빠른 시작 — 현장 PC 의 홈이 이 화면이라, 실제로 할 일로 가는 입구가
+        {# 빠른 시작 · 현장 PC의 홈이 이 화면이라, 실제로 할 일로 가는 입구가
            사이드바 글자 링크뿐이었다. #}
         <section class="dash-quick" id="dash-quick">
           <a class="btn accent dash-quick-btn" href="/blend">배합 시작</a>
@@ -99,7 +99,7 @@
           <span class="dash-fail muted small" id="dash-period-fail" hidden>갱신 실패</span>
         </div>
         <section class="dashboard-cards">
-          {# 기간 실적 3카드는 클릭하면 기간 분석(/insight)으로 간다 — 조치 카드와 같은
+          {# 기간 실적 3카드는 클릭하면 기간 분석(/insight)으로 간다. 조치 카드와 같은
              클릭 가능 스타일(dash-metric-link)로 재사용. #}
           <a class="metric-card dash-metric-link" href="/insight">
             <div class="metric-label">배합 건수</div>
@@ -113,14 +113,14 @@
             <div class="metric-label">반제품 종류</div>
             <strong class="metric-value" id="card-products">-<span class="metric-unit">종</span></strong>
           </a>
-          <!-- '결재 대기' 카드 제거(2026-07-15): 결재는 현장 미사용 정책 — 죽은 지표가
+          <!-- '결재 대기' 카드 제거(2026-07-15): 결재는 현장 미사용 정책 · 죽은 지표가
                상시 주황 숫자로 떠서 혼란만 줬다. approval_pending 필드는 2026-07-23 제거됨 -->
         </section>
 
 
-        {# 반제품별 TOP 10 차트와 작업자별 실적 표는 뺐다(2026-08-08) — 배합 분석에
+        {# 반제품별 TOP 10 차트와 작업자별 실적 표는 뺐다(2026-08-08) · 배합 분석에
            같은 표가 더 나은 형태(비중·전기 대비·정렬)로 있었고, 세는 기준마저 서로
-           달랐다. 이 화면은 '지금 해야 할 일', 기간 분석은 /insight 가 맡는다. #}
+           달랐다. 이 화면은 '지금 해야 할 일', 기간 분석은 /insight가 맡는다. #}
         <section class="dashboard-grid">
           <div class="panel dashboard-chart-panel">
             <div class="panel-head-row">
@@ -156,6 +156,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/dashboard.js?v=20260814a"></script>
+    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260908f"></script>
+    <script src="/static/js/dashboard.js?v=20260908f"></script>
 {% endblock %}

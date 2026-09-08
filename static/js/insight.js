@@ -301,7 +301,7 @@
           <td class="num">${num(m.manual_rows)}</td>
           <td class="num">${num(m.manual_rate, 1)}%</td>
         </tr>`).join("")
-      : emptyRow(4, "수동 입력 없음 — 모두 저울로 계량됨");
+      : emptyRow(4, "수동 입력 없음. 모두 저울로 계량됨");
   }
 
   // ── 차트 ────────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@
     return (items) => {
       const row = trend[items[0] && items[0].dataIndex];
       return row && row.partial
-        ? "이 구간은 조회 기간에 일부만 걸쳐 있습니다 — 다른 구간과 길이가 다릅니다."
+        ? "이 구간은 조회 기간에 일부만 걸쳐 있습니다. 다른 구간과 길이가 다릅니다."
         : "";
     };
   }
@@ -523,7 +523,7 @@
       const withRate = t.filter((x) => x.scale_rate !== null && x.scale_rate !== undefined).length;
       note.textContent = state.scale_since
         ? `저울 계량률은 저울 도입(${state.scale_since}) 이후 구간만 표시합니다`
-          + ` — 그 전 기록에는 수동 입력 표시가 없어 저울로 잰 것과 구분되지 않습니다.`
+          + ` · 그 전 기록에는 수동 입력 표시가 없어 저울로 잰 것과 구분되지 않습니다.`
           + (withRate ? "" : " (이 기간에는 해당 구간이 없습니다)")
         : "";
       note.hidden = !state.scale_since;

@@ -5,22 +5,22 @@
 {% block heading %}다중 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260908a" />
-    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260808a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
         <div id="cont-mode">
-          <!-- 저울 전용 입력 모드 배너 — 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
-               blend_continuous.js 의 updateScaleOnlyBanner 가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
-          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 — 모드가 켜져 있을 때만 노출.
+          <!-- 저울 전용 입력 모드 배너 · 켜져 있고 저울이 연결되지 않았을 때 상시 노출.
+               blend_continuous.js의 updateScaleOnlyBanner가 hidden 토글(저울 감지 주기에 맞춰 자동 갱신). -->
+          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 · 모드가 켜져 있을 때만 노출.
                책임자 승인을 받으면 이 배합에 한해 실제량 손입력을 허용한다(레시피 변경·저장 시 재잠금).
-               blend_continuous.js updateManualEntryControl 이 텍스트·버튼 노출을 갱신. -->
+               blend_continuous.js updateManualEntryControl이 텍스트·버튼 노출을 갱신. -->
           <div class="scale-only-control" id="cont-scale-only-control" hidden>
-            <span id="cont-scale-only-control-text">저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.</span>
+            <span id="cont-scale-only-control-text">저울 전용 입력 모드 · 실제량은 저울 PRINT로만 입력됩니다.</span>
             <button type="button" class="btn btn-sm accent" id="cont-manual-entry-request-btn">수기 입력 승인 요청</button>
           </div>
-          <!-- 임시저장 복구 후 레시피 변경 고지 — 사라진 재료의 계량값·새로 추가된 재료·
+          <!-- 임시저장 복구 후 레시피 변경 고지 · 사라진 재료의 계량값·새로 추가된 재료·
                기준 배합량 변경을 값까지 적어 남긴다(토스트는 사라지므로 조용한 폐기 방지).
                끊긴 작업을 이어서 하는 입구는 "작성 중 배합"(/blend/drafts) 한 곳뿐이다. -->
           <div class="blend-draft-notice" id="cont-draft-notice" hidden>
@@ -47,7 +47,7 @@
               <div class="blend-field">
                 <div class="blend-label-row">
                   <label class="filter-label" for="cont-total">총 배합량 (g)</label>
-                  <!-- 레시피에 지정된 기본 배합량(최대 3개) — 클릭하면 총량에 채움(배합 화면과 동일) -->
+                  <!-- 레시피에 지정된 기본 배합량(최대 3개) · 클릭하면 총량에 채움(배합 화면과 동일) -->
                   <span class="blend-base-links" id="cont-base-links" hidden></span>
                 </div>
                 <input class="input" id="cont-total" type="number" step="0.1" min="0" />
@@ -94,7 +94,7 @@
             <p class="login-error" id="cont-anchor-warn" hidden></p>
           </section>
 
-          <!-- 증량 적용 요약(로트별) — 증량 후 저장·레시피 변경 전까지 자재별 추가분 표시.
+          <!-- 증량 적용 요약(로트별) · 증량 후 저장·레시피 변경 전까지 자재별 추가분 표시.
                작업자가 타이핑하는 동안에는 사라지지 않는다(얼마나 더 넣어야 할지 안내). -->
           <div id="cont-rescale-applied-summary" class="rescale-applied-summary" hidden></div>
 
@@ -107,7 +107,7 @@
                 </tbody>
               </table>
             </div>
-            {# 계량 진행 — 로트 4개 × 재료 10종이면 40칸이라, 어디까지 했는지 화면이
+            {# 계량 진행 · 로트 4개 × 재료 10종이면 40칸이라, 어디까지 했는지 화면이
                말해주지 않으면 눈으로 훑어 세는 수밖에 없었다. 정작 '작성 중 배합'
                화면은 진행도를 보여주는데 계량하는 이 화면엔 없었다(2026-08-08). #}
             <p class="cont-progress" id="cont-progress" hidden></p>
@@ -124,7 +124,7 @@
           </section>
         </div>
 
-        <!-- 초과 계량 증량 제안 모달(로트별 스코프) — 한 로트의 자재를 이론량 초과해 넣었을 때
+        <!-- 초과 계량 증량 제안 모달(로트별 스코프) · 한 로트의 자재를 이론량 초과해 넣었을 때
              그 로트만 배합량을 증량한다(다른 로트는 불변). 표시/숨김은 hidden 속성 토글로만. -->
         <div class="ss-modal-overlay" id="cont-rescale-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="cont-rescale-modal-title">
@@ -137,7 +137,7 @@
           </div>
         </div>
 
-        <!-- 폐기 권장 모달 — 증량 시 그 로트의 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다. -->
+        <!-- 폐기 권장 모달 · 증량 시 그 로트의 총 배합량이 25,000g을 초과하면 rescale-modal 대신 이것만 뜬다. -->
         <div class="ss-modal-overlay" id="cont-discard-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="cont-discard-modal-title">
             <div class="ss-modal-header"><h3 id="cont-discard-modal-title">폐기 권장</h3></div>
@@ -149,16 +149,16 @@
           </div>
         </div>
 
-        <!-- 미등록 LOT 검사 모달(공용 partial) — 반제품 미등록 LOT 차단 + ERP 원료 LOT 경고를
-             하나의 모달 요소가 모두 구동한다(blend_lot_modal.js 가 케이스별로 표시 전환).
-             cont- 접두어로 이 화면의 기존 element id 를 그대로 유지. hidden 토글 전용. -->
+        <!-- 미등록 LOT 검사 모달(공용 partial) · 반제품 미등록 LOT 차단 + ERP 원료 LOT 경고를
+             하나의 모달 요소가 모두 구동한다(blend_lot_modal.js가 케이스별로 표시 전환).
+             cont- 접두어로 이 화면의 기존 element id를 그대로 유지. hidden 토글 전용. -->
         {% set lot_modal_prefix = "cont-" %}{% include "_lot_check_modal.html" %}
 
-        <!-- 저울 상태 선택 모달(공용 partial) — 추가 계량(인라인 입력) 진입 전 그림 선택.
+        <!-- 저울 상태 선택 모달(공용 partial) · 추가 계량(인라인 입력) 진입 전 그림 선택.
              선택이 PRINT/입력값 해석(추가분 vs 누계)을 가른다. hidden 토글 전용. -->
         {% set scale_state_prefix = "cont-" %}{% include "_scale_state_modal.html" %}
 
-        <!-- 증량 책임자 승인 모달(로트별 스코프) — 배합 화면 #rescale-approve-modal 의 다중 계량
+        <!-- 증량 책임자 승인 모달(로트별 스코프) · 배합 화면 #rescale-approve-modal의 다중 계량
              버전. 로트 증량 [증량 적용]/[그래도 증량] 클릭 시 즉시 적용하지 않고 이 모달로 게이트한다.
              [승인]: /api/blend/manager-verify 검증 후 그 로트 증량 적용 + 승인 이벤트 기록.
              [부재로 진행]: 사유 남기고 '미승인 증량'으로 진행(그 로트만 rescale_unacked=1).
@@ -188,12 +188,12 @@
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="cont-rescale-absence-reason">사유</label>
-                  <input class="input" id="cont-rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                  <input class="input" id="cont-rescale-absence-reason" placeholder="예: 야간 근무 · 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="cont-rescale-absence-submit" type="button">부재로 진행</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 로트는 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
-              <!-- 세 번째 길 — 그냥 덜어내고 다시 재고 싶을 때. 예전에는 Esc 키뿐이라
+              <!-- 세 번째 길 · 그냥 덜어내고 다시 재고 싶을 때. 예전에는 Esc 키뿐이라
                    장갑 낀 손으로는 찾을 수 없었고, 필요 없는 '미승인 증량'이 기록에 남았다.
                    부재 처리 절차와 섞이지 않게 구분선 아래 별도 줄로 둔다(배합 화면과 동일). -->
               <hr class="rescale-approve-divider" />
@@ -202,7 +202,7 @@
           </div>
         </div>
 
-        <!-- 수기 입력 책임자 승인 모달 — 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
+        <!-- 수기 입력 책임자 승인 모달 · 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
              책임자 이름+비밀번호로 /api/blend/manager-verify(purpose=manual) 검증 후 이 배합에 한해
              손입력을 허용한다. 부재 경로 없음(승인만). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="cont-manual-approve-modal" hidden>
@@ -230,7 +230,7 @@
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="cont-manual-absence-reason">사유</label>
-                  <input class="input" id="cont-manual-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                  <input class="input" id="cont-manual-absence-reason" placeholder="예: 야간 근무 · 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="cont-manual-absence-submit" type="button">부재로 진행</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 로트의 손입력은 <strong>'미승인 수기 입력'</strong>으로 표시되고, 사유가 기록에 남아 책임자가 사후 확인합니다.</p>
@@ -242,12 +242,12 @@
           </div>
         </div>
 
-        <!-- 3회 증량 차단 모달 — 이미 2회 증량된 '그 로트'에서 3회째 증량 제안이 뜨려 하면
+        <!-- 3회 증량 차단 모달 · 이미 2회 증량된 '그 로트'에서 3회째 증량 제안이 뜨려 하면
              제안 대신 이 모달로 막는다(폐기 협의 유도). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="cont-rescale-block-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="cont-rescale-block-title">
             <div class="ss-modal-header"><h3 id="cont-rescale-block-title">증량 불가</h3></div>
-            <div class="ss-modal-body"><p>3회 증량은 불가합니다 — 이 로트는 책임자와 폐기 여부를 협의하세요.</p></div>
+            <div class="ss-modal-body"><p>3회 증량은 불가합니다. 이 로트는 책임자와 폐기 여부를 협의하세요.</p></div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn accent" id="cont-rescale-block-close" type="button" autofocus>확인</button>
             </div>
@@ -258,9 +258,9 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260805d"></script>
-    <script src="/static/js/blend_drafts.js?v=20260803d"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend_lot_modal.js?v=20260813a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260908b"></script>
+    <script src="/static/js/blend_lib.js?v=20260908f"></script>
+    <script src="/static/js/blend_drafts.js?v=20260908f"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260908f"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260908f"></script>
+    <script src="/static/js/blend_continuous.js?v=20260908f"></script>
 {% endblock %}

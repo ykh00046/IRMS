@@ -113,7 +113,7 @@
   // ── 슬롯 목록 읽기/쓰기 ─────────────────────────────────────────
   function isFresh(slot) {
     if (!slot || !slot.recipe_id) return false;
-    if (!slot.savedAt) return true;               // 시각이 없으면 만료 판정 불가 — 살린다
+    if (!slot.savedAt) return true;               // 시각이 없으면 만료 판정 불가 · 살린다
     const t = Date.parse(slot.savedAt);
     if (!Number.isFinite(t)) return true;
     return (Date.now() - t) <= TTL_MS;
@@ -397,7 +397,7 @@
       out.push(`허용 편차가 바뀌었습니다: ±${ta === null ? "기본" : ta}g → ±${tb === null ? "기본" : tb}g`);
     }
     if (String(before.anchor_material_id || "") !== String(now.anchor_material_id || "")) {
-      out.push("기준 자재(먼저 계량) 설정이 바뀌었습니다 — 총 배합량 산출 방식이 달라집니다.");
+      out.push("기준 자재(먼저 계량) 설정이 바뀌었습니다. 총 배합량 산출 방식이 달라집니다.");
     }
     return out;
   }
@@ -530,13 +530,13 @@
     }
     if (diff.dropped && diff.dropped.length) {
       const rows = diff.dropped
-        .map((d) => `<li>${esc(d.name)} — ${esc(d.text)} · 레시피에서 삭제됨</li>`).join("");
+        .map((d) => `<li>${esc(d.name)} · ${esc(d.text)} · 레시피에서 삭제됨</li>`).join("");
       blocks.push('<p class="blend-draft-notice-line">아래 재료는 현재 레시피에 없어 계량값을 옮기지 못했습니다:</p>'
         + `<ul class="blend-draft-notice-list">${rows}</ul>`);
     }
     if (diff.added && diff.added.length) {
       blocks.push('<p class="blend-draft-notice-line">레시피에 새 재료가 추가되었습니다: '
-        + esc(diff.added.join(", ")) + " — 아직 계량 전입니다.</p>");
+        + esc(diff.added.join(", ")) + " · 아직 계량 전입니다.</p>");
     }
     if (diff.baseNotes && diff.baseNotes.length) {
       blocks.push(diff.baseNotes

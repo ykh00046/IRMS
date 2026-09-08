@@ -27,7 +27,7 @@
   function mapError(raw) {
     const text = String(raw || "");
     if (text.includes("CURRENT_PASSWORD_REQUIRED"))
-      return "임시 비밀번호 상태가 아닙니다. 현재 비밀번호를 입력해야 합니다 — 화면을 새로고침하세요.";
+      return "임시 비밀번호 상태가 아닙니다. 현재 비밀번호를 입력해야 합니다. 화면을 새로고침하세요.";
     if (text.includes("CURRENT_PASSWORD_WRONG"))
       return "현재 비밀번호가 맞지 않습니다.";
     if (text.includes("PASSWORD_TOO_SHORT"))

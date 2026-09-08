@@ -5,22 +5,22 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260828b" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260908f" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
 
 {% block content %}
-        <!-- 본인 계정 식별용(자기 계정 삭제/권한변경 방지 등에 사용) — 화면엔 안 보임.
+        <!-- 본인 계정 식별용(자기 계정 삭제/권한변경 방지 등에 사용) · 화면엔 안 보임.
              ⚠️ 이 값은 **명단(workers)의 id** 여야 한다. 로그인 계정이 레거시 admin(users
-             테이블)이면 명단과 id 공간이 달라, 그대로 넘기면 workers 의 같은 번호를 쓰는
+             테이블)이면 명단과 id 공간이 달라, 그대로 넘기면 workers의 같은 번호를 쓰는
              엉뚱한 담당자에게 '본인' 배지가 붙고 자기 보호가 그 사람에게 걸린다
              (2026-08-08 화면 확인: admin 로그인인데 workers id=1 담당자가 '본인'). 이름
-             기반 책임자(is_worker_manager)일 때만 id 를 넘기고, 아니면 0(=일치 없음). -->
+             기반 책임자(is_worker_manager)일 때만 id를 넘기고, 아니면 0(=일치 없음). -->
         <input id="current-user-id" type="hidden"
                value="{{ current_user.id if current_user.is_worker_manager else 0 }}" />
 
-        <!-- 탭 — 한 화면에 성격이 다른 11개 블록이 6,800px 로 쌓여 있어(서명 관련만 41%)
+        <!-- 탭 · 한 화면에 성격이 다른 11개 블록이 6,800px로 쌓여 있어(서명 관련만 41%)
              사람 관리가 묻혔다(2026-08-08 검토). 레시피 관리와 같은 탭 방식으로 나눈다. -->
         <nav class="mgmt-tabs admin-tabs">
           <button class="mgmt-tab active" data-tab="people" type="button">담당자</button>
@@ -59,7 +59,7 @@
               <h3 class="panel-title">담당자 명단</h3>
             </div>
             <div class="button-row">
-              <!-- 삭제는 평소 숨긴다 — 명단에서 가장 자주 하는 일은 '보기'인데 행마다
+              <!-- 삭제는 평소 숨긴다. 명단에서 가장 자주 하는 일은 '보기'인데 행마다
                    삭제 버튼이 있으면 오조작 한 번에 사람이 사라진다(기록은 남지만). -->
               <label class="cleanup-toggle" for="workers-cleanup">
                 <input id="workers-cleanup" type="checkbox" />
@@ -100,17 +100,17 @@
           <ol class="att-issue-steps">
             <li>근태 엑셀(ERP 근태 파일)에 그 사번이 올라와 있어야 발급됩니다.</li>
             <li>아래에 사번을 입력하고 <strong>[임시 비밀번호 발급]</strong>.</li>
-            <li>화면에 뜬 임시 비밀번호를 직원에게 전달 — 직원은 홈 › 근태 확인에서 사번 + 임시 비밀번호로 로그인하면 바로 새 비밀번호를 정하는 화면이 뜹니다.</li>
+            <li>화면에 뜬 임시 비밀번호를 직원에게 전달 · 직원은 홈 › 근태 확인에서 사번 + 임시 비밀번호로 로그인하면 바로 새 비밀번호를 정하는 화면이 뜹니다.</li>
             <li>공용 PC라면 발급 후 책임자 로그아웃.</li>
           </ol>
-          <!-- 계정 미발급 직원 최초 발급 — 아래 목록은 이미 발급된 계정만 나열하므로,
+          <!-- 계정 미발급 직원 최초 발급 · 아래 목록은 이미 발급된 계정만 나열하므로,
                새 직원은 여기 사번을 직접 입력해 임시 비밀번호를 발급한다(근태 명단에 있어야 함). -->
           <div class="filter-bar">
             <input id="att-user-new-emp" class="input" inputmode="numeric" autocomplete="off"
               placeholder="신입 사번 입력 (예: 171013)" />
             <button id="att-user-issue-btn" type="button" class="btn accent">임시 비밀번호 발급</button>
           </div>
-          <!-- 발급 결과 카드 — window.prompt 를 대신한다. prompt 는 공용 PC 에서
+          <!-- 발급 결과 카드 · window.prompt를 대신한다. prompt는 공용 PC에서
                브라우저가 차단하면 임시 비밀번호가 통째로 사라졌고, 복사도 어려웠다.
                모달·카드는 hidden 속성으로만 여닫는다(display 토글 금지). -->
           <div id="att-issue-result" class="att-issue-result" hidden>
@@ -149,9 +149,9 @@
 
         <div class="tab-panel" id="tab-audit">
         <section class="panel">
-          <!-- panel-header-row 는 어느 CSS 에도 없는 이름이었다 — 새로고침 단추가
+          <!-- panel-header-row는 어느 CSS에도 없는 이름이었다. 새로고침 단추가
                제목 아래로 떨어져 있었다(2026-08-08). 이 화면의 다른 카드와 같은
-               .panel-head-row 로 맞춘다. -->
+               .panel-head-row로 맞춘다. -->
           <div class="panel-head-row">
             <div>
               <p class="panel-eyebrow">전 시스템</p>
@@ -250,14 +250,14 @@
           <div class="scale-only-row">
             <div class="scale-only-desc">
               현재 상태: <strong id="scale-only-status">불러오는 중…</strong>
-              <p class="scale-only-help muted small">켜면 배합·다중 계량에서 실제량 수기 입력이 차단되고 저울 PRINT 로만 입력됩니다.</p>
+              <p class="scale-only-help muted small">켜면 배합·다중 계량에서 실제량 수기 입력이 차단되고 저울 PRINT로만 입력됩니다.</p>
             </div>
             <button class="btn accent" id="scale-only-toggle" type="button" disabled>켜기</button>
           </div>
         </section>
-        {# 저울 도입일 — 배합 분석의 '저울 계량률'이 이 날짜부터만 계산된다.
+        {# 저울 도입일 · 배합 분석의 '저울 계량률'이 이 날짜부터만 계산된다.
            저울이 붙기 전 기록에는 수동 입력 표시가 없어, 그 구간까지 세면 계량률이
-           100% 로 부풀고 도입한 달에 오히려 급락하는 그래프가 된다(2026-08-10). #}
+           100%로 부풀고 도입한 달에 오히려 급락하는 그래프가 된다(2026-08-10). #}
         <section class="panel" id="scale-since-card">
           <span class="kicker">현장 설정</span>
           <h3 class="panel-title">저울 도입일</h3>
@@ -285,13 +285,13 @@
               <p class="scale-only-help muted small">
                 배합 창을 두 개 열면 두 번째 창이 막힙니다. 정말 오류로 잘못 막혔을 때만,
                 작업자에게 이 코드를 알려주세요(경고 아이콘을 5번 누르면 코드 입력칸이 나타납니다).
-                <!-- 초기값을 여기 적어 두면 입력칸을 가린 의미가 없다 — 아직 안 바꿨다면
+                <!-- 초기값을 여기 적어 두면 입력칸을 가린 의미가 없다. 아직 안 바꿨다면
                      [보기]로 확인하면 된다(2026-08-08). -->
                 아직 바꾼 적이 없다면 초기값 그대로이니, <strong>[보기]</strong>로 확인한 뒤
                 이 화면에서 바꿔 두세요.
               </p>
             </div>
-            <!-- 비상 코드는 가려 둔다 — 화면 공유·어깨너머로 그대로 읽히던 값이다
+            <!-- 비상 코드는 가려 둔다. 화면 공유·어깨너머로 그대로 읽히던 값이다
                  (2026-08-08 검토). [보기]로 필요할 때만 드러낸다. -->
             <div class="blend-window-code-edit">
               <input class="input" id="blend-window-code-input" type="password" autocomplete="off"
@@ -332,5 +332,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260828c"></script>
+    <script src="/static/js/admin_users.js?v=20260908f"></script>
 {% endblock %}

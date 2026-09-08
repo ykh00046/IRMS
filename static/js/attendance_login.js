@@ -11,7 +11,7 @@
   // 자동 로그아웃으로 되돌아온 경우의 안내(attendance_session.js 가 ?reason=idle 로
   // 되돌린다). 이유를 안 적으면 보던 화면이 왜 사라졌는지 알 수 없다.
   const REASON_NOTICES = {
-    idle: "자동 로그아웃되었습니다 — 다시 로그인해 주세요.",
+    idle: "자동 로그아웃되었습니다. 다시 로그인해 주세요.",
   };
 
   function showReasonNotice() {
@@ -85,7 +85,7 @@
     if (text.includes("INVALID_CREDENTIALS")) {
       const remaining = isObject ? Number(detail.remaining) : NaN;
       if (isFinite(remaining) && remaining > 0) {
-        return `사번 또는 비밀번호가 올바르지 않습니다 — 남은 시도 ${remaining}회.`;
+        return `사번 또는 비밀번호가 올바르지 않습니다. 남은 시도 ${remaining}회.`;
       }
       return "사번 또는 비밀번호가 올바르지 않습니다.";
     }

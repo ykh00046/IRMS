@@ -525,7 +525,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (scaleSinceInput && scaleSinceSave) {
     request("/settings/scale-since")
       .then((d) => { scaleSinceInput.value = d.since || ""; })
-      .catch(() => { /* 없으면 빈 칸 — 전 구간 계산(종전 동작) */ });
+      .catch(() => { /* 없으면 빈 칸 · 전 구간 계산(종전 동작) */ });
     scaleSinceSave.addEventListener("click", async () => {
       IRMS.btnLoading(scaleSinceSave, true);
       try {
@@ -536,7 +536,7 @@ document.addEventListener("DOMContentLoaded", () => {
         IRMS.notify(
           d.since
             ? `저울 도입일을 ${d.since} 로 저장했습니다. 배합 분석의 계량률이 이 날짜 이후로 계산됩니다.`
-            : "저울 도입일을 해제했습니다 — 전 구간으로 계산합니다.",
+            : "저울 도입일을 해제했습니다. 전 구간으로 계산합니다.",
           "success",
         );
       } catch (e) {
@@ -585,7 +585,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 엑셀을 한 파일도 못 읽은 상태 — 종전엔 이것도 '없는 사번'으로 안내해 사번을
     // 의심하며 헛수고하게 만들었다(2026-08-08 감사).
     ATTENDANCE_SOURCE_UNAVAILABLE:
-      "근태 자료(엑셀)를 읽을 수 없습니다 — 사번 문제가 아닙니다. "
+      "근태 자료(엑셀)를 읽을 수 없습니다. 사번 문제가 아닙니다. "
       + "누군가 파일을 열어두었는지(잠김) 확인한 뒤 다시 시도하세요.",
   };
   const attErrorMessage = (msg) => attErrorMap[msg] || msg;
@@ -674,9 +674,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-      IRMS.notify("복사하지 못했습니다 — 선택된 글자를 Ctrl+C 로 복사하세요.", "error");
+      IRMS.notify("복사하지 못했습니다. 선택된 글자를 Ctrl+C로 복사하세요.", "error");
     } catch (_) {
-      IRMS.notify("복사하지 못했습니다 — 화면의 비밀번호를 직접 옮겨 적으세요.", "error");
+      IRMS.notify("복사하지 못했습니다. 화면의 비밀번호를 직접 옮겨 적으세요.", "error");
     }
   }
 

@@ -148,7 +148,7 @@
     // (A) Tab/window close → fire-and-forget logout via sendBeacon.
     function onBye() {
       if (firedLogout) return;
-      if (inAppNavigation) return;   // 의도한 화면 이동 — 세션을 살려 둔다
+      if (inAppNavigation) return;   // 의도한 화면 이동 · 세션을 살려 둔다
       firedLogout = true;
       try {
         const body = new Blob([], { type: "application/json" });

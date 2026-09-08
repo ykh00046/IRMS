@@ -122,6 +122,9 @@ scripts/ tools/         # 유틸리티 · 부트스트랩/스모크
 
 ## Coding Conventions
 
+- **화면(템플릿·CSS·JS 문구)을 만들거나 고치기 전에 `docs/ui-standard.md` 를 먼저 읽는다.**
+  색·글자·간격은 토큰만, 문구는 조사 붙여쓰기·줄표 금지·한 문장 40자 규칙을 따른다.
+
 - **Python 3.11+** 권장
 - **snake_case**: 함수, 변수, 모듈
 - **PascalCase**: 클래스

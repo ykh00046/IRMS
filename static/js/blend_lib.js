@@ -125,7 +125,7 @@
     const actualAttr = o.disableActual ? " disabled" : "";
     // 투입 로스 보정 자재 — 이론량 옆 작은 배지(2라운드 2026-08-05).
     const compBadge = Number(it.loss_comp_g) > 0
-      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(it.loss_comp_g, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(it.loss_comp_g, 2)}g</span>`
+      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(it.loss_comp_g, 2)}g 포함. 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(it.loss_comp_g, 2)}g</span>`
       : "";
     return `<td>${idx + 1}</td>` +
       nameCell +
@@ -146,7 +146,7 @@
     const label = values.length === 1 ? "" : '<span class="blend-base-label">기본량</span>';
     return label + values.map((v) =>
       `<button class="blend-base-link" type="button" data-value="${v}" ` +
-      `title="총 배합량에 ${fmt(v)} g 을 채웁니다">` +
+      `title="총 배합량에 ${fmt(v)} g을 채웁니다">` +
       `${values.length === 1 ? `기본량 ${short(v)} 적용` : short(v)}</button>`
     ).join("");
   }
@@ -385,7 +385,7 @@
     }).join("");
     if (!parts) return "";
     return `<div class="rescale-bars">`
-      + `<p class="rescale-bars-caption">비율을 지키려면 모든 자재가 함께 늘어납니다 — `
+      + `<p class="rescale-bars-caption">비율을 지키려면 모든 자재가 함께 늘어납니다. `
       + `색칠된 만큼 담았고, <b>빈 부분</b>을 더 담습니다.</p>`
       + parts + `</div>`;
   }
@@ -469,7 +469,7 @@
   function varianceWarnMessage(it, v, toleranceG) {
     const tol = Number.isFinite(Number(toleranceG)) && Number(toleranceG) > 0
       ? Number(toleranceG) : TOLERANCE_G;
-    return `허용 편차 초과: ${it.material_name} — 이론 ${fmt(it.theory_amount)} / 실제 ${fmt(it.actual_amount)} `
+    return `허용 편차 초과: ${it.material_name} · 이론 ${fmt(it.theory_amount)} / 실제 ${fmt(it.actual_amount)} `
       + `(편차 ${v > 0 ? "+" : ""}${fmt(v, 2)}g > ±${tol}g). 다시 계량하세요.`;
   }
 
@@ -508,7 +508,7 @@
     if (!names || !names.length) return "";
     const shown = names.slice(0, 6);
     const suffix = names.length > 6 ? " …" : "";
-    return `자재 LOT 를 입력하세요: ${shown.join(", ")}${suffix} — 실제량을 넣은 자재는 LOT 도 반드시 입력하세요.`;
+    return `자재 LOT를 입력하세요: ${shown.join(", ")}${suffix} · 실제량을 넣은 자재는 LOT도 반드시 입력하세요.`;
   }
 
   // 증량 적용 요약 행(순수 HTML 문자열). plan 은 rescalePlan 반환값.
@@ -589,7 +589,7 @@
     const redirectTo = o.redirectTo || "/";
     const logoutPath = o.logoutPath || "/blend/session/logout";
     const warnMessage = o.warnMessage
-      || "약 1분간 활동이 없으면 자동 로그아웃됩니다 — 화면을 움직이면 유지됩니다.";
+      || "약 1분간 활동이 없으면 자동 로그아웃됩니다. 화면을 움직이면 유지됩니다.";
     const isActive = typeof o.isActive === "function" ? o.isActive : () => true;
     const saveDraft = typeof o.saveDraft === "function" ? o.saveDraft : () => {};
     const request = typeof o.request === "function" ? o.request : null;
@@ -612,12 +612,12 @@
 
     function tick() {
       if (expired) return;
-      if (!isActive()) return;  // 로그인 화면 등 세션 없음 — 자동 로그아웃하지 않음
+      if (!isActive()) return;  // 로그인 화면 등 세션 없음. 자동 로그아웃하지 않음
       const idle = Date.now() - lastActivity;
       if (idle >= idleMs) {
         expire();
       } else if (idle >= idleMs - warnBeforeMs && !warned) {
-        warned = true;  // 접근당 1회만 — 활동이 있으면 reset 에서 다시 false 로 풀린다
+        warned = true;  // 접근당 1회만 · 활동이 있으면 reset에서 다시 false로 풀린다
         try { notify(warnMessage, "warn"); } catch (_e) { /* 무시 */ }
       }
     }

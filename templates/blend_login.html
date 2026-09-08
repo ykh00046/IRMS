@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BRM · 반제품 작업자</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260727b" />
-    <link rel="stylesheet" href="/static/css/access.css?v=20260828b" />
+    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/access.css?v=20260908f" />
   </head>
   <body class="launch-body">
     <main class="login-stage">
@@ -23,7 +23,7 @@
 
         <div class="login-field worker-suggest-anchor">
           <label class="filter-label" for="blend-login-worker">작업자</label>
-          <!-- 파트 선택 — 레시피 분류처럼 드롭다운으로 파트를 먼저 고르고 이름을 고른다.
+          <!-- 파트 선택 · 레시피 분류처럼 드롭다운으로 파트를 먼저 고르고 이름을 고른다.
                '전체' 없음: 파트를 골라야 목록이 뜬다(이름 타이핑 검색은 전체에서 동작).
                파트 미지정 작업자는 '미지정'에서 보인다(도입기 하위호환). -->
           <div class="worker-part-filter">
@@ -59,7 +59,7 @@
         <a href="/" class="login-back">← 처음으로</a>
       </form>
 
-      <!-- 새 작업자 등록 — 파트 선택 모달. confirm() 대체(hidden 속성 방식).
+      <!-- 새 작업자 등록 · 파트 선택 모달. confirm() 대체(hidden 속성 방식).
            공통 단추/라벨 클래스만 사용. 파트 버튼 4개 + 취소. -->
       <div id="blend-part-dialog" class="part-dialog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="blend-part-dialog-title">
         <div class="part-dialog">
@@ -77,7 +77,7 @@
     </main>
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
-    <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/blend_login.js?v=20260731b"></script>
+    <script src="/static/js/common/core.js?v=20260908f"></script>
+    <script src="/static/js/blend_login.js?v=20260908f"></script>
   </body>
 </html>

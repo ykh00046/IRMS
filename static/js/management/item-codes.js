@@ -118,7 +118,7 @@
               : "";
             // 투입 로스 보정(자재 마스터 기본값, 3라운드) — 인라인 입력+저장. 값이 있으면 표시.
             const compVal = Number(m.loss_comp_g) > 0 ? String(m.loss_comp_g) : "";
-            const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) — 이 자재가 들어가는 모든 레시피에 자동 적용" />`
+            const lossCompHtml = `<input class="input mat-losscomp-input" data-id="${m.id}" type="number" step="0.1" min="0" max="100" value="${IRMS.escapeHtml(compVal)}" placeholder="0" title="투입 로스 보정(g) · 이 자재가 들어가는 모든 레시피에 자동 적용" />`
               + `<button class="btn btn-sm mat-losscomp-save" data-id="${m.id}" type="button">저장</button>`;
             return `
               <tr class="codes-row${inactive ? " is-inactive" : ""}" data-id="${m.id}" data-name="${IRMS.escapeHtml(m.name)}">
@@ -202,7 +202,7 @@
             if (resp.status === 409) {
               // 코드 충돌이면 confirmMoveOn409 가 force:true 재시도로 코드를 이동한다.
               const moved = await confirmMoveOn409(detail, `/api/materials/${id}/code`, "PUT", { code });
-              if (moved === null) return; // 취소 또는 자재명 중복 — 추가 notify 없음.
+              if (moved === null) return; // 취소 또는 자재명 중복 · 추가 notify 없음.
               result = moved;
             } else {
               IRMS.notify(`코드 저장 실패: ${detail}`, "error");
@@ -214,7 +214,7 @@
           const moveNote = result.moved_from ? ` (기존 '${result.moved_from}'에서 해제)` : "";
           IRMS.notify(`품목코드를 '${result.code || code}'(으)로 지정했습니다.${moveNote}`, "success");
           if (result.master_status === "retired") {
-            IRMS.notify("폐기된 품목코드입니다 — ERP 현행 코드가 맞는지 확인하세요.", "warn");
+            IRMS.notify("폐기된 품목코드입니다. ERP 현행 코드가 맞는지 확인하세요.", "warn");
           }
           nameEl.value = "";
           codeEl.value = "";
@@ -479,7 +479,7 @@
       tr.setAttribute("data-id", id);
       tr.innerHTML =
         `<td colspan="5"><div class="alias-editor">`
-        + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 기록 이름 정리 — 다른 표기로 남은 과거 배합 기록을 이 자재의 이름으로 통합합니다(이름은 하나만 유지).</p>`
+        + `<p class="panel-subtitle">${IRMS.escapeHtml(name)} 의 기록 이름 정리 · 다른 표기로 남은 과거 배합 기록을 이 자재의 이름으로 통합합니다(이름은 하나만 유지).</p>`
         + `<div class="filter-bar">`
         + `<input class="input alias-new-input" placeholder="기록에 남은 다른 표기 (예: MEHQ)" autocomplete="off" />`
         + `<button class="btn accent alias-add-btn" type="button">기록 흡수</button>`
@@ -604,7 +604,7 @@
           return;
         }
         IRMS.notify(
-          lossComp != null ? `로스 보정을 ${lossComp}g 으로 지정했습니다.` : "로스 보정을 해제했습니다(0).",
+          lossComp != null ? `로스 보정을 ${lossComp}g으로 지정했습니다.` : "로스 보정을 해제했습니다(0).",
           "success",
         );
         await refresh();
@@ -691,7 +691,7 @@
             // [폐기] 표기로 알리고 선택은 허용한다(경고는 지정 시점에 한 번 더).
             const retired = it.status === "retired"
               ? ' <span class="muted">[폐기]</span>' : "";
-            return `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} — ${IRMS.escapeHtml(it.name)}${retired}</li>`;
+            return `<li class="code-suggest-item" data-code="${IRMS.escapeHtml(it.code)}">${IRMS.escapeHtml(it.code)} · ${IRMS.escapeHtml(it.name)}${retired}</li>`;
           })
           .join("");
         suggestList.hidden = false;
@@ -748,7 +748,7 @@
           if (resp.status === 409) {
             // 코드 충돌이면 confirmMoveOn409 가 force:true 재시도로 코드를 이동한다.
             const moved = await confirmMoveOn409(detail, `/api/materials/${id}/code`, "PUT", { code });
-            if (moved === null) return; // 취소 또는 자재명 중복 — 추가 notify 없음.
+            if (moved === null) return; // 취소 또는 자재명 중복 · 추가 notify 없음.
             result = moved;
           } else {
             IRMS.notify(`코드 저장 실패: ${detail}`, "error");
@@ -765,7 +765,7 @@
           "success",
         );
         if (result.master_status === "retired") {
-          IRMS.notify("폐기된 품목코드입니다 — ERP 현행 코드가 맞는지 확인하세요.", "warn");
+          IRMS.notify("폐기된 품목코드입니다. ERP 현행 코드가 맞는지 확인하세요.", "warn");
         }
         await refresh();
         // BOM 편집기 자재 색인 갱신 — fire-and-forget(실패해도 패널 동작엔 영향 없음).
@@ -833,7 +833,7 @@
         IRMS.notify(
           active
             ? "다시 사용으로 되돌렸습니다."
-            : "'사용 안 함'으로 숨겼습니다. [사용 안 함 포함] 을 켜면 되살릴 수 있습니다.",
+            : "'사용 안 함'으로 숨겼습니다. [사용 안 함 포함]을 켜면 되살릴 수 있습니다.",
           "success",
         );
         await refresh();
@@ -871,7 +871,7 @@
       const ok = window.confirm(
         `${detail}\n이 자재로 코드를 옮길까요? (기존 자재에서는 해제됩니다)`,
       );
-      if (!ok) return null; // 취소 — 추가 notify 없음.
+      if (!ok) return null; // 취소 · 추가 notify 없음.
       const retryResp = await fetch(url, {
         method,
         credentials: "same-origin",

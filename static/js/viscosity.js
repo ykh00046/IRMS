@@ -89,7 +89,7 @@
     blendReturned: 0,
     selectedBlendId: null,
     selectedBlendDetail: null,
-    usedPb: null,          // {lot, method, pb_viscosity} — 선택 기록의 '사용한 PB'
+    usedPb: null,          // {lot, method, pb_viscosity} · 선택 기록의 '사용한 PB'
     periodChart: null,
     pbChart: null,
     periodRows: PERIOD_TABLE_ROWS,
@@ -262,7 +262,7 @@
       const sel = $("visc-product-select");
       if (sel) sel.value = "";
       $("visc-selected-row").textContent = "조회에 실패했습니다. 다시 선택해 주세요.";
-      IRMS.notify(`점도 조회 실패: ${error.message || error} — 다시 시도해 주세요.`, "error");
+      IRMS.notify(`점도 조회 실패: ${error.message || error} · 다시 시도해 주세요.`, "error");
     } finally {
       if (IRMS.hideLoading) IRMS.hideLoading(main);
     }
@@ -389,7 +389,7 @@
     if (on) {
       card.setAttribute("role", "button");
       card.setAttribute("tabindex", "0");
-      card.setAttribute("aria-label", `이상 ${count}건 — 목록 보기`);
+      card.setAttribute("aria-label", `이상 ${count}건 · 목록 보기`);
       if (unit) unit.textContent = "건 · 눌러서 목록";
     } else {
       card.removeAttribute("role");
@@ -612,7 +612,7 @@
         cell.colSpan = 9;
         cell.className = "muted visc-period-truncation";
         cell.textContent =
-          "최근 60개 구간만 표시 — 전체 구간은 [전체 Excel] 버튼을 이용하세요.";
+          "최근 60개 구간만 표시 · 전체 구간은 [전체 Excel] 버튼을 이용하세요.";
         note.appendChild(cell);
         body.appendChild(note);
       }
@@ -920,7 +920,7 @@
       return;
     }
     if (value === Number(currentValue)) {
-      notify("값이 그대로입니다 — 변경하지 않았습니다.", "warn");
+      notify("값이 그대로입니다. 변경하지 않았습니다.", "warn");
       return;
     }
     const reason = window.prompt(
@@ -1142,7 +1142,7 @@
     try {
       data = await request(`/viscosity/blend-records/${recordId}/used-pb`);
     } catch (_error) {
-      return;                                   // 보조 정보 — 실패해도 등록은 막지 않는다
+      return;                                   // 보조 정보 · 실패해도 등록은 막지 않는다
     }
     if (state.selectedBlendId !== Number(recordId)) return;  // 그새 다른 행을 골랐다
     state.usedPb = data;
@@ -1249,7 +1249,7 @@
     result.hidden = false;
     if (status === "anomaly") {
       result.className = "visc-form-result anomaly";
-      result.textContent = `⚠ 이상 판정 — 관리 범위를 벗어났습니다. 이 LOT 은 사용 금지입니다. 책임자에게 알리세요.`
+      result.textContent = `⚠ 이상 판정 · 관리 범위를 벗어났습니다. 이 LOT은 사용 금지입니다. 책임자에게 알리세요.`
         + ` (점도 ${fmt(value)}${tail})${pbTail}`;
       attachQuickFix(result, reading, lotNo, value);
       notify(result.textContent, "error");
@@ -1257,13 +1257,13 @@
     }
     if (status === "warn") {
       result.className = "visc-form-result warn";
-      result.textContent = `⚠ 경고 구간 — 확인이 필요합니다. (점도 ${fmt(value)}${tail})${pbTail}`;
+      result.textContent = `⚠ 경고 구간 · 확인이 필요합니다. (점도 ${fmt(value)}${tail})${pbTail}`;
       attachQuickFix(result, reading, lotNo, value);
       notify(result.textContent, "warn");
       return;
     }
     result.className = "visc-form-result normal";
-    result.textContent = `정상 판정 — 등록했습니다. (점도 ${fmt(value)})${pbTail}`;
+    result.textContent = `정상 판정 · 등록했습니다. (점도 ${fmt(value)})${pbTail}`;
     attachQuickFix(result, reading, lotNo, value);
     notify(`점도를 등록했습니다. (${fmt(value)})`, "success");
   }
@@ -1326,7 +1326,7 @@
     $("visc-exclude-reason").value = "";
     $("visc-exclude-error").hidden = true;
     if (excludeModal) {
-      excludeModal.open();  // 사유 textarea 로 포커스 이동(initialFocus)
+      excludeModal.open();  // 사유 textarea로 포커스 이동(initialFocus)
     } else {
       modal.hidden = false;
       $("visc-exclude-reason").focus();
@@ -1334,7 +1334,7 @@
   }
 
   function closeExcludeModal() {
-    if (excludeModal) { excludeModal.close(); return; }  // close() 가 excludeTargetId 초기화
+    if (excludeModal) { excludeModal.close(); return; }  // close()가 excludeTargetId 초기화
     const modal = $("visc-exclude-modal");
     if (modal) modal.hidden = true;
     excludeTargetId = null;
@@ -1436,7 +1436,7 @@
       const data = await request("/settings/viscosity-reminder-since", { method: "POST" });
       const el = $("visc-reminder-since-value");
       if (el) el.textContent = data.since;
-      notify(`정리했습니다 — ${data.since} 이후 배합분부터 알립니다.`, "success");
+      notify(`정리했습니다. ${data.since} 이후 배합분부터 알립니다.`, "success");
     } catch (error_) {
       notify(`정리 실패: ${error_.message}`, "error");
     } finally {

@@ -158,6 +158,9 @@ body {
 
 body {
   font-family: var(--font-sans);
+  /* 한국어 단어 중간에서 줄이 끊기지 않게. 긴 LOT·코드가 넘칠 때만 아무 데서나 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   background-color: var(--bg-page);
   color: var(--text-primary);
   line-height: 1.5;

@@ -180,14 +180,14 @@
           + `<p><strong>입력한 로트:</strong> ${esc(o.lot)}</p>`
           + `<p>이 반제품의 완료된 배합 기록에서 이 로트를 찾지 못했습니다. `
           + `1차 배합 기록이 아직 저장되지 않았거나, 로트 번호에 오타가 있을 수 있습니다.</p>`
-          + `<p class="muted small">그대로 진행해도 저장됩니다 — 진행한 사실은 기록에 남아 `
+          + `<p class="muted small">그대로 진행해도 저장됩니다. 진행한 사실은 기록에 남아 `
           + `나중에 1차 기록과 대조됩니다.</p>`;
       }
       renderSuggest(o.lots, o.onPick);
       const box = el("lot-override-box");
       const reason = el("lot-override-reason");
       if (reason) reason.value = "";
-      if (box) box.hidden = false;   // 사유는 선택 — 접어두지 않고 바로 쓸 수 있게 편다.
+      if (box) box.hidden = false;   // 사유는 선택 · 접어두지 않고 바로 쓸 수 있게 편다.
       const authBox = el("erp-lot-add-box");
       if (authBox) authBox.hidden = true;
       // footer 버튼 표시: 값 삭제·계속 보이기, 인증쪽 숨기기.
@@ -230,7 +230,7 @@
           + `<p><strong>품목코드:</strong> ${esc(o.code)}</p>`
           + `<p><strong>입력한 로트:</strong> ${esc(o.lot)}</p>`
           + `<p>${esc(o.reason)}</p>`
-          + `<p class="muted small">그대로 진행해도 저장됩니다 — 로트를 한 번 더 확인하세요.</p>`;
+          + `<p class="muted small">그대로 진행해도 저장됩니다. 로트를 한 번 더 확인하세요.</p>`;
       }
       const suggestBox = el("lot-invalid-suggest-box");
       if (suggestBox) suggestBox.hidden = true;   // ERP 원료는 후보 목록이 없다.
@@ -301,7 +301,7 @@
           if (err) { err.textContent = detail; err.hidden = false; }
           return;
         }
-        notify("수동 LOT 를 추가했습니다.", "success");
+        notify("수동 LOT를 추가했습니다.", "success");
         // 인증 성공 → 입력의 .erp-lot-warn 주황 테두리 해제(화면 콜백 또는 직접).
         if (typeof pendingVerified === "function") pendingVerified();
         close();
@@ -351,7 +351,7 @@
           if (onProceed) onProceed(name, lot, text, input);
           close();
           if (input) input.focus();
-          notify("확인하고 진행합니다 — 이 로트는 기록에 남아 나중에 대조됩니다.", "warn");
+          notify("확인하고 진행합니다. 이 로트는 기록에 남아 나중에 대조됩니다.", "warn");
           return;
         }
         const erpInput = m && m._erpInput;

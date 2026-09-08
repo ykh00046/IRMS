@@ -39,7 +39,7 @@
     // 편집기 상태(단일 레시피)
     const bom = { productName: "", rows: [], remark: "" };
     let materialNames = [];        // 자재명 자동완성 소스
-    let materialCodes = {};        // 자재명 → 품목코드(materials.code) — 행 옆 코드 배지용
+    let materialCodes = {};        // 자재명 → 품목코드(materials.code) · 행 옆 코드 배지용
     let materialCodesLower = {};   // 소문자 키 자재명 → 품목코드(대소문자 무시 매칭용)
 
     // 코드 배지 조회 — 입력된 자재명(공백 제거)으로 코드를 찾는다.
@@ -60,7 +60,7 @@
 
     // ── spreadsheet-editor 호환 인터페이스 ──────────────────────
     function getSpreadsheetFactory() {
-      return createBomEditorDom;  // 자체 렌더러 — 항상 사용 가능(vendor 의존 없음)
+      return createBomEditorDom;  // 자체 렌더러 · 항상 사용 가능(vendor 의존 없음)
     }
 
     function setRawInputMode(enabled) {
@@ -78,7 +78,7 @@
     }
 
     function getActiveWorksheet() {
-      return null;  // jspreadsheet 개념 없음 — 행/설명 추가는 addMaterialRow/addStepRow 사용
+      return null;  // jspreadsheet 개념 없음. 행/설명 추가는 addMaterialRow/addStepRow 사용
     }
 
     function initSpreadsheet(materials) {
@@ -174,7 +174,7 @@
         if (dom.rawInput) dom.rawInput.value = tsvText || "";
         setRawInputMode(true);
         IRMS.notify(
-          "여러 반제품이 든 표는 텍스트 모드로 열었습니다 — 한 레시피씩 편집하려면 한 줄만 붙여넣으세요.",
+          "여러 반제품이 든 표는 텍스트 모드로 열었습니다. 한 레시피씩 편집하려면 한 줄만 붙여넣으세요.",
           "warn",
         );
         return false;
@@ -256,7 +256,7 @@
     }
 
     // ── 렌더 ────────────────────────────────────────────────────
-    function createBomEditorDom() { /* 호환용 자리 — 실제 렌더는 render() */ }
+    function createBomEditorDom() { /* 호환용 자리 · 실제 렌더는 render() */ }
 
     function render() {
       const c = dom.spreadsheetContainer;

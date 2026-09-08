@@ -24,14 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }[c]));
 
   // ── 화면 상태 ────────────────────────────────────────────────────
-  const PAGE_SIZE = 50;          // 쪽 크기 고정 — 현장에서 고를 이유가 없다.
+  const PAGE_SIZE = 50;          // 쪽 크기 고정 · 현장에서 고를 이유가 없다.
   const MAX_PRINT = 200;         // 일괄 출력 상한(서버 변환이 직렬이라 그 이상은 무의미).
-  const MAX_BULK_CANCEL = 50;    // 한 번에 취소할 수 있는 상한 — 되돌릴 수 있어도 대량은 사고다.
+  const MAX_BULK_CANCEL = 50;    // 한 번에 취소할 수 있는 상한 · 되돌릴 수 있어도 대량은 사고다.
   const COLS = 7;                // 표 열 수(빈 상태 colspan)
 
   let allRecords = [];           // 이번 조회로 받아 둔 목록(정렬 전 원본)
   let listMeta = {};             // 서버 응답 메타(total_available·truncated·canceled_hidden)
-  const selected = new Set();    // 선택된 기록 id(Number) — 쪽·정렬·재조회를 넘어 유지된다.
+  const selected = new Set();    // 선택된 기록 id(Number) · 쪽·정렬·재조회를 넘어 유지된다.
   let page = 1;
   let recSort = { key: null, dir: "desc" };
   let detailId = null;
@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initialFocus: "status-detail-close",
     bodyClass: "dhr-open",
     beforeClose: () => !document.getElementById("e-rows")
-      || window.confirm("수정 중입니다 — 저장하지 않은 변경이 사라집니다. 닫을까요?"),
+      || window.confirm("수정 중입니다. 저장하지 않은 변경이 사라집니다. 닫을까요?"),
   });
 
   // 목록 배지 — 증량이 있으면 표시, 미승인(책임자 부재 진행)은 빨간 배지.
@@ -115,7 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const parsed = JSON.parse(rec.rescale_events_json);
         if (Array.isArray(parsed)) events = parsed;
-      } catch (_e) { events = []; }  // 손상된 JSON — 빈 배열로 폴백
+      } catch (_e) { events = []; }  // 손상된 JSON · 빈 배열로 폴백
     }
     if (!events.length) return "";
     const rows = events
@@ -130,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const driverLines = drivers.length
           ? `<ul class="blend-rescale-drivers muted small">${drivers.map((d) => {
               const name = d.material_name == null ? "-" : esc(d.material_name);
-              return `<li>${name}: 이론 ${fmt(d.theory_before)}g / 실제 ${fmt(d.actual)}g — ${fmt(d.over)}g 초과</li>`;
+              return `<li>${name}: 이론 ${fmt(d.theory_before)}g / 실제 ${fmt(d.actual)}g · ${fmt(d.over)}g 초과</li>`;
             }).join("")}</ul>`
           : "";
         return `<li>${i + 1}. ${fmt(e.before_total)} g → ${fmt(e.after_total)} g <span class="muted small">(${who})</span>${driverLines}</li>`;
@@ -172,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const parsed = JSON.parse(rec.discard_events_json || "[]");
       if (Array.isArray(parsed)) events = parsed;
-    } catch (_e) { /* 손상된 JSON — 표시 생략(저장 데이터는 서버가 정규화) */ }
+    } catch (_e) { /* 손상된 JSON · 표시 생략(저장 데이터는 서버가 정규화) */ }
     if (!events.length) return "";
     const rows = events
       .map((e) => `<li>${esc(e.material_name || "-")}: ${fmt(e.amount_g)} g 폐기</li>`)
@@ -277,7 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!note) return;
     if (data.truncated) {
       note.textContent =
-        `최근 ${fmt(data.limit || (data.items || []).length, 0)}건만 표시 (전체 ${fmt(data.total_available, 0)}건) — ` +
+        `최근 ${fmt(data.limit || (data.items || []).length, 0)}건만 표시 (전체 ${fmt(data.total_available, 0)}건) · ` +
         "날짜·작업자·검색으로 범위를 좁히거나 ‘전체 Excel’로 내려받으세요.";
       note.hidden = false;
     } else {
@@ -322,7 +322,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
     // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
     const canceledTag = r.status === "canceled"
-      ? ' <span class="status-chip status-canceled" title="취소된 기록 — 상세에서 복원할 수 있습니다">취소됨</span>' : "";
+      ? ' <span class="status-chip status-canceled" title="취소된 기록 · 상세에서 복원할 수 있습니다">취소됨</span>' : "";
     const checked = selected.has(Number(r.id)) ? " checked" : "";
     tr.innerHTML =
       `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}"${checked} aria-label="${esc(r.product_lot)} 선택" /></td>` +
@@ -473,7 +473,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? `<br />자동 삭제 예정: <b>${dt(info.purge_at)}</b> (취소 후 ${esc(String(info.retention_days))}일 보존, 그 전까지 [기록 복원] 가능)`
       : "";
     return `<div class="blend-cancel-block">
-      <b>취소된 기록</b> — 사유: ${info.reason ? esc(info.reason) : '<span class="muted">(기록 없음)</span>'}${who}${at}${purge}
+      <b>취소된 기록</b> · 사유: ${info.reason ? esc(info.reason) : '<span class="muted">(기록 없음)</span>'}${who}${at}${purge}
     </div>`;
   }
 
@@ -498,7 +498,7 @@ document.addEventListener("DOMContentLoaded", () => {
     detailId = id;
     currentRecord = rec;
     setEditChromeHidden(false);
-    $("status-detail-title").textContent = `배합 실적서 — ${rec.product_lot}`;
+    $("status-detail-title").textContent = `배합 실적서 · ${rec.product_lot}`;
     const v = rec.variance || {};
     // 공정 설명 줄(레시피 '설명' 열) — 기록 당시 위치에 전폭 안내 행으로 삽입
     const steps = rec.steps || [];
@@ -539,7 +539,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? ' <span class="status-chip manual-entry-chip">⚠ 수동 입력</span>'
       : "";
     const bulkLine = rec.is_bulk_regenerated
-      ? '<p class="dhr-note bulk-regen-note">※ 일괄 재생성 기록 — 현장 계량이 아니라 문서·계획용으로 한 번에 생성한 기록입니다.</p>'
+      ? '<p class="dhr-note bulk-regen-note">※ 일괄 재생성 기록 · 현장 계량이 아니라 문서·계획용으로 한 번에 생성한 기록입니다.</p>'
       : "";
     // 머리에 있어야 할 값인데 화면에만 없던 것들(2026-08-14 검토 10번):
     //  · 품목코드 — ERP 대조의 기준 키. 기록 스냅샷 우선(없으면 레시피 폴백)으로 서버가 준다.
@@ -597,7 +597,7 @@ document.addEventListener("DOMContentLoaded", () => {
           await request(`/blend/records/${rec.id}/${path}`, { method: "POST" });
           notify(`${label} 확인 처리했습니다.`, "success");
           await loadRecords({ keepPage: true });   // 목록 배지 제거(보던 쪽 유지)
-          await openDetail(rec.id);                // 모달 재렌더 — 미확인 태그·버튼 제거
+          await openDetail(rec.id);                // 모달 재렌더 · 미확인 태그·버튼 제거
         } catch (e) {
           btn.disabled = false;
           notify(`확인 처리 실패: ${e.message || e}`, "error");
@@ -625,10 +625,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // 강제하므로 수정 무의미). data-carried 로 저장 시 carried_over 를 되돌려보낸다.
     const carried = d.carried_over ? 1 : 0;
     const actualAttr = carried
-      ? ' readonly title="반응기 이월 — 1차 총량으로 자동 기록(수정 불가)"'
+      ? ' readonly title="반응기 이월 · 1차 총량으로 자동 기록(수정 불가)"'
       : "";
     const mark = carried
-      ? ' <span class="carried-badge" title="반응기 이월 행 — 1차 총량으로 자동 기록">이월</span>'
+      ? ' <span class="carried-badge" title="반응기 이월 행 · 1차 총량으로 자동 기록">이월</span>'
       : "";
     return `<tr class="edit-row" data-carried="${carried}">
       <td><input class="input e-name" value="${esc(d.material_name || "")}" placeholder="자재명" />${mark}</td>
@@ -642,7 +642,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderEditForm(rec) {
     setEditChromeHidden(true);
-    $("status-detail-title").textContent = `배합 실적서 수정 — ${rec.product_lot}`;
+    $("status-detail-title").textContent = `배합 실적서 수정 · ${rec.product_lot}`;
     const rows = (rec.details || []).map(editRow).join("");
     $("status-detail-body").innerHTML =
       `<div class="edit-head-grid">
@@ -799,7 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateSelectionUI();
       const n = allRecords.length;
       if (n > MAX_PRINT) {
-        notify(`조회된 ${fmt(n, 0)}건을 모두 선택했습니다 — 일괄 출력은 표 순서 위에서 ${MAX_PRINT}건까지만 됩니다. 기간을 나눠 출력하세요.`, "warn");
+        notify(`조회된 ${fmt(n, 0)}건을 모두 선택했습니다. 일괄 출력은 표 순서 위에서 ${MAX_PRINT}건까지만 됩니다. 기간을 나눠 출력하세요.`, "warn");
       } else {
         notify(`조회된 ${fmt(n, 0)}건을 모두 선택했습니다.`, "success");
       }
@@ -833,7 +833,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 완료를 알 수 없으니 '무엇이 진행 중인지' 알리고 그동안 버튼을 잠근다.
   function startLongExport(btn, count, label) {
     notify(
-      `${label} ${fmt(count, 0)}건을 준비합니다 — 새 탭에서 다운로드됩니다. ` +
+      `${label} ${fmt(count, 0)}건을 준비합니다. 새 탭에서 다운로드됩니다. ` +
       "건수가 많으면 몇 분 걸릴 수 있으니 기다려 주세요.",
       "warn",
     );
@@ -888,14 +888,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // 중간에 끊기면 어디까지 갔는지 사람이 세야 한다). 잘라서 진행하지 않고 멈춘다.
     if (ids.length > MAX_BULK_CANCEL) {
       notify(
-        `한 번에 최대 ${MAX_BULK_CANCEL}건까지 취소할 수 있습니다 — 지금 ${fmt(ids.length, 0)}건 선택. ` +
+        `한 번에 최대 ${MAX_BULK_CANCEL}건까지 취소할 수 있습니다. 지금 ${fmt(ids.length, 0)}건 선택. ` +
         "선택을 나눠서 진행해 주세요.",
         "error",
       );
       return;
     }
     if (!window.confirm(
-      `${ids.length}건을 취소합니다 — 각 기록에 사유가 남습니다.\n` +
+      `${ids.length}건을 취소합니다. 각 기록에 사유가 남습니다.\n` +
       "(기록은 지워지지 않고 목록·출력에서 빠지며, 상세에서 복원할 수 있습니다.)"
     )) return;
     const reason = window.prompt(`선택한 배합 기록 ${ids.length}건의 취소 사유를 입력하세요.`);
@@ -986,10 +986,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!detailId || !currentRecord) return;
     const lot = String(currentRecord.product_lot || "");
     const typed = window.prompt(
-      `되돌릴 수 없는 완전 삭제입니다.\n진행하려면 제품 LOT 을 그대로 입력하세요:\n${lot}`
+      `되돌릴 수 없는 완전 삭제입니다.\n진행하려면 제품 LOT을 그대로 입력하세요:\n${lot}`
     );
     if (typed === null) return;
-    if (typed.trim() !== lot) { notify("제품 LOT 이 일치하지 않아 중단했습니다.", "error"); return; }
+    if (typed.trim() !== lot) { notify("제품 LOT이 일치하지 않아 중단했습니다.", "error"); return; }
     const reason = window.prompt("완전 삭제 사유를 입력하세요(감사 기록에 남습니다).");
     if (reason === null) return;
     if (!reason.trim()) { notify("사유를 입력해야 삭제할 수 있습니다.", "error"); return; }

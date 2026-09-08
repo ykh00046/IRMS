@@ -1,25 +1,25 @@
 {# ── 저울 상태 선택 모달(공용 partial) ───────────────────────────
    나눠 담기·부족분 추가 계량에 들어가기 전에, 지금 저울이 어느 상태인지 그림으로
-   고르게 한다(2026-08-04 시안 확정 — 바탕화면 저울상태_선택_시안.svg 아트워크 이식).
+   고르게 한다(2026-08-04 시안 확정 · 바탕화면 저울상태_선택_시안.svg 아트워크 이식).
    이 선택이 이후 PRINT/입력값의 해석을 가른다:
 
      · 영점이 잡혀 있음(비커 올린 채 0.00) → 값 = 이번에 담은 추가분 → 합산
      · 무게가 남아 있음(예: 95.00)        → 값 = 지금까지 담은 누계 → 추가분 = 값 − 현재
 
    구분 없이 무조건 합산하면 영점을 안 잡은 저울의 PRINT(누계)가 이중 계산된다
-   (95 담긴 상태에서 5 더 붓고 PRINT → 100 이 오는데 95+100=195 로 기록되는 사고).
+   (95 담긴 상태에서 5 더 붓고 PRINT → 100이 오는데 95+100=195로 기록되는 사고).
 
-   포함 쪽에서 scale_state_prefix 를 넘긴다 — 배합 "", 다중 계량 "cont-"
-   (_lot_check_modal.html 과 같은 규약). hidden 토글 전용.
-   이 모달이 떠 있는 동안 저울 PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다
-   — 해석 방법이 정해지기 전의 값은 받지 않는 게 안전하다.
+   포함 쪽에서 scale_state_prefix를 넘긴다. 배합 "", 다중 계량 "cont-"
+   (_lot_check_modal.html과 같은 규약). hidden 토글 전용.
+   이 모달이 떠 있는 동안 저울 PRINT는 폴러 게이트(printBlockingModalVisible)가 버린다
+. 해석 방법이 정해지기 전의 값은 받지 않는 게 안전하다.
 
-   부족 흐름 통합용 요소(기본 hidden, JS 가 켠다):
-     {p}scale-state-shortage — "N g 부족" 안내줄(부족 감지로 열렸을 때만)
-     {p}scale-state-reweigh  — [처음부터 다시 계량] (부족 컨텍스트의 유일한 우회로)
-     {p}scale-state-cancel   — [취소] (⊞ 나눠 담기 등 자발적으로 열었을 때만)
-   SVG 는 카드마다 통째로 인라인(macro) — <defs>/<use> id 를 쓰면 카드 2개·두 화면에서
-   id 가 중복돼 깨진다. 도형 스타일은 blend.css 의 .sc-* 규칙이 입힌다.
+   부족 흐름 통합용 요소(기본 hidden, JS가 켠다):
+     {p}scale-state-shortage · "N g 부족" 안내줄(부족 감지로 열렸을 때만)
+     {p}scale-state-reweigh · [처음부터 다시 계량] (부족 컨텍스트의 유일한 우회로)
+     {p}scale-state-cancel · [취소] (⊞ 나눠 담기 등 자발적으로 열었을 때만)
+   SVG는 카드마다 통째로 인라인(macro) · <defs>/<use> id를 쓰면 카드 2개·두 화면에서
+   id가 중복돼 깨진다. 도형 스타일은 blend.css의 .sc-* 규칙이 입힌다.
 #}
 {% macro balance_svg(value) -%}
 <svg viewBox="0 0 184 176" aria-hidden="true" focusable="false">
@@ -55,26 +55,26 @@
     <div class="ss-modal-header"><h3 id="{{ p }}scale-state-title">저울이 지금 어떤 상태인가요?</h3></div>
     <div class="ss-modal-body">
       <p class="add-weigh-material" id="{{ p }}scale-state-material"></p>
-      {# 부족 컨텍스트 안내줄 — 부족 감지로 이 창이 열렸을 때만 JS 가 켠다. #}
+      {# 부족 컨텍스트 안내줄 · 부족 감지로 이 창이 열렸을 때만 JS가 켠다. #}
       <p class="scale-state-shortage" id="{{ p }}scale-state-shortage" hidden></p>
       <p class="scale-state-guide">비커를 올린 채, <b>저울 표시창과 같은 그림</b>을 눌러주세요.</p>
       <div class="scale-state-options">
-        {# 왼쪽 — 영점이 잡혀 있음: 0.00 표시. 값은 '이번에 담는 양'만 나온다. #}
+        {# 왼쪽 · 영점이 잡혀 있음: 0.00 표시. 값은 '이번에 담는 양'만 나온다. #}
         <button class="scale-state-btn" id="{{ p }}scale-state-tared" type="button" autofocus>
           {{ balance_svg("0.00") }}
           <span class="scale-state-label">영점이 잡혀 있음</span>
-          <span class="scale-state-sub">표시창이 <b>0.00</b> — 이번에 담는 양만 나옵니다</span>
+          <span class="scale-state-sub">표시창이 <b>0.00</b> · 이번에 담는 양만 나옵니다</span>
         </button>
-        {# 오른쪽 — 무게가 남아 있음: 담긴 만큼 표시. 값은 '지금까지 담은 전체'다. #}
+        {# 오른쪽 · 무게가 남아 있음: 담긴 만큼 표시. 값은 '지금까지 담은 전체'다. #}
         <button class="scale-state-btn" id="{{ p }}scale-state-loaded" type="button">
           {{ balance_svg("95.00") }}
           <span class="scale-state-label">무게가 남아 있음</span>
-          <span class="scale-state-sub">담은 무게가 <b>그대로</b> — 전체 무게가 나옵니다</span>
+          <span class="scale-state-sub">담은 무게가 <b>그대로</b> · 전체 무게가 나옵니다</span>
         </button>
       </div>
     </div>
     <div class="ss-modal-footer blend-actions">
-      {# 부족 컨텍스트 전용 — 이어서 담지 않고 처음부터: 값은 지우지 않고 칸 포커스+선택. #}
+      {# 부족 컨텍스트 전용 · 이어서 담지 않고 처음부터: 값은 지우지 않고 칸 포커스+선택. #}
       <button class="btn" id="{{ p }}scale-state-reweigh" type="button" hidden>처음부터 다시 계량</button>
       <button class="btn" id="{{ p }}scale-state-cancel" type="button">취소</button>
     </div>

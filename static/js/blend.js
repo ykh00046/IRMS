@@ -154,7 +154,7 @@
       const data = await res.json();
       state.scaleOnlyInput = Boolean(data && data.enabled);
     } catch (_e) {
-      state.scaleOnlyInput = false;  // 폴백 — 화면이 죽으면 안 됨
+      state.scaleOnlyInput = false;  // 폴백 · 화면이 죽으면 안 됨
     }
     applyScaleOnlyToRows();
     updateScaleOnlyBanner();
@@ -181,7 +181,7 @@
       return;
     }
     const lock = !state.manualApproved;
-    const titleText = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
+    const titleText = "저울 전용 모드 · 저울 PRINT로만 입력됩니다";
     document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
       el.readOnly = lock;
       if (lock) el.title = titleText; else el.removeAttribute("title");
@@ -210,7 +210,7 @@
     if (isWaterCategoryRecipe()) {
       const text = $("scale-only-control-text");
       const btn = $("manual-entry-request-btn");
-      if (text) text.textContent = "용수 분류 — 수기 입력이 허용됩니다(저울 전용 예외).";
+      if (text) text.textContent = "용수 분류 · 수기 입력이 허용됩니다(저울 전용 예외).";
       if (btn) btn.hidden = true;
       box.classList.add("is-approved");
       applyScaleOnlyToRows();
@@ -221,8 +221,8 @@
     if (state.manualApproved) {
       if (text) {
         text.textContent = state.manualApproved.absence_reason
-          ? `수기 입력 진행 — 책임자 부재(${state.manualApproved.absence_reason}) · 사후 확인 대상`
-          : `수기 입력 승인됨 — 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
+          ? `수기 입력 진행 · 책임자 부재(${state.manualApproved.absence_reason}) · 사후 확인 대상`
+          : `수기 입력 승인됨. 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
       }
       if (btn) btn.hidden = true;
       box.classList.add("is-approved");
@@ -230,8 +230,8 @@
       // 저울 미연결 상태를 이 한 줄이 흡수 — 별도 상단 배너는 중복이라 폐기(2026-07-23).
       if (text) {
         text.textContent = state.scaleReady
-          ? "저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다."
-          : "저울 전용 입력 모드 — 저울 연결 대기 중입니다. 연결되면 PRINT 로 입력됩니다.";
+          ? "저울 전용 입력 모드 · 실제량은 저울 PRINT로만 입력됩니다."
+          : "저울 전용 입력 모드 · 저울 연결 대기 중입니다. 연결되면 PRINT로 입력됩니다.";
       }
       if (btn) btn.hidden = false;
       box.classList.remove("is-approved");
@@ -326,7 +326,7 @@
       closeManualApproveModal();
       applyScaleOnlyToRows();      // 이 배합의 실제량 입력칸 잠금 해제
       updateManualEntryControl();  // 배너 텍스트를 승인 안내로 전환(버튼 숨김)
-      notify(`수기 입력 승인 완료 (${approver}) — 이 배합에 한해 손입력이 허용됩니다.`, "success");
+      notify(`수기 입력 승인 완료 (${approver}) · 이 배합에 한해 손입력이 허용됩니다.`, "success");
     } catch (_e) {
       showManualApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
     } finally {
@@ -350,7 +350,7 @@
     closeManualApproveModal();
     applyScaleOnlyToRows();
     updateManualEntryControl();
-    notify("책임자 부재로 수기 입력을 진행합니다 — 사유가 기록에 남아 사후 확인됩니다.", "warn");
+    notify("책임자 부재로 수기 입력을 진행합니다. 사유가 기록에 남아 사후 확인됩니다.", "warn");
   }
 
   // 저장 시 비고에 남길 수기 입력 승인/부재 표시(미등록 LOT 사유와 동일 방식으로 append).
@@ -387,8 +387,8 @@
         const res = resolveAddPortion(_awMode, Number(value), cur);
         if (!res.ok) {
           notify(res.reason === "not-above-current"
-            ? `PRINT 값(${value} g)이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`
-            : `PRINT 값(${value} g)을 적용할 수 없습니다 — 값을 확인하세요.`, "error big");
+            ? `PRINT 값(${value} g)이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다. 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`
+            : `PRINT 값(${value} g)을 적용할 수 없습니다. 값을 확인하세요.`, "error big");
           return;
         }
         applyAddAmount(idx, res.portion);
@@ -399,7 +399,7 @@
     }
     input.value = String(value);
     state.items[idx].actual_amount = input.value;
-    state.items[idx].manual = false;  // 저울 입력 — 손입력 표시 해제
+    state.items[idx].manual = false;  // 저울 입력 · 손입력 표시 해제
     input.classList.remove("manual-warn");
     input.removeAttribute("title");
     updateRowVar(idx);
@@ -561,7 +561,7 @@
     btn.dataset.idx = String(idx);
     btn.tabIndex = -1;
     btn.textContent = "⊞ 나눠 담기";
-    btn.title = "비커에 한 번에 안 들어갈 때 — 이 창에서 끝까지 나눠 담습니다";
+    btn.title = "비커에 한 번에 안 들어갈 때 · 이 창에서 끝까지 나눠 담습니다";
     btn.addEventListener("click", () => requestAddWeigh(idx, { split: true }));
     return btn;
   }
@@ -597,7 +597,7 @@
     if (printBlockingModalVisible()) {
       if (!_modalPrintWarned) {
         _modalPrintWarned = true;
-        notify("안내 창이 열려 있어 저울 PRINT 를 받지 않습니다 — 창의 버튼으로 먼저 마쳐주세요.", "warn");
+        notify("안내 창이 열려 있어 저울 PRINT를 받지 않습니다. 창의 버튼으로 먼저 마쳐주세요.", "warn");
       }
       // 모달이 열려 있는 동안에도 이벤트 커서는 전진시켜 stale PRINT 를 그 자리에서 버린다.
       // 종전에는 synced=false 로 두고 닫힌 뒤 첫 폴을 통째로 재동기화로 삼켰는데, 그 폴
@@ -637,7 +637,7 @@
         const src = ev.source ? `[${ev.source}] ` : "";
         notify(`${src}저울 입력: ${state.items[idx].material_name} = ${ev.value} g`, "success");
       }
-    } catch (_e) { /* 폴링 실패는 조용히 — detectScale 이 상태 회복 */ }
+    } catch (_e) { /* 폴링 실패는 조용히 · detectScale이 상태 회복 */ }
   }
 
   function lockedWorkerName() {
@@ -800,7 +800,7 @@
         body: { recipe_id, worker, scale: $("bulk-scale").value.trim() || null,
                 entries },
       });
-      notify(`${res.created}건 일괄 생성 완료 — 배합 기록으로 이동합니다.`, "success");
+      notify(`${res.created}건 일괄 생성 완료 · 배합 기록으로 이동합니다.`, "success");
       $("bulk-body").innerHTML = "";
       addBulkRow();
       setTimeout(() => window.location.assign("/status"), 800);
@@ -906,7 +906,7 @@
       });
       state.lotSuggest = (data && data.items) || {};
     } catch (_e) {
-      state.lotSuggest = {};  // 실패 — 제안 없이 기존 동작 유지
+      state.lotSuggest = {};  // 실패 · 제안 없이 기존 동작 유지
     }
   }
 
@@ -1003,9 +1003,9 @@
     if (!blendDrafts || typeof blendDrafts.listAll !== "function") return;
     let slots = [];
     try { slots = blendDrafts.listAll(localStorage).filter((s) => s.kind === kind); }
-    catch (_e) { return; }  // 저장소 접근 불가 등 — 조용히 무동작
+    catch (_e) { return; }  // 저장소 접근 불가 등 · 조용히 무동작
     if (!slots.length) return;
-    notify(`작성 중 배합 ${slots.length}건이 있습니다 — 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
+    notify(`작성 중 배합 ${slots.length}건이 있습니다. 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
     // 사이드바 링크에 개수 배지(이미 있으면 갱신).
     const link = document.querySelector('a[href="/blend/drafts"]');
     if (link) {
@@ -1049,19 +1049,19 @@
     // 레시피 목록이 아직이면 먼저 로드하고, 분류 필터를 전체로 되돌려 그 레시피 option 이
     // 반드시 존재하게 한다(분류로 걸러져 있으면 value 지정이 붙지 않는다).
     if (!state.recipes.length) {
-      try { await loadRecipes(); } catch (_e) { /* 아래 onRecipeChange 에서 다시 실패 처리 */ }
+      try { await loadRecipes(); } catch (_e) { /* 아래 onRecipeChange에서 다시 실패 처리 */ }
     }
     const catSel = $("blend-recipe-cat");
     if (catSel && catSel.value !== "") { catSel.value = ""; populateRecipeSelect(); }
     const recipeSel = $("blend-recipe");
     recipeSel.value = String(draft.recipe_id);
-    await onRecipeChange();  // 레시피 로드 + 렌더(빈 상태) — 이후 초안 값을 덮어씌운다.
+    await onRecipeChange();  // 레시피 로드 + 렌더(빈 상태) · 이후 초안 값을 덮어씌운다.
     // 레시피가 삭제·비활성화돼 option 이 없으면 value 지정이 붙지 않아 state.current 가
     // 비어 있다. 이 상태로 진행하면 아래 정합성 판정이 터지므로 여기서 멈춘다(초안은 보존 —
     // 레시피가 되살아나면 다시 이어서 할 수 있다).
     if (!state.current || !state.current.recipe) {
       state.draftSlotId = null;
-      notify("이 임시저장의 레시피를 찾을 수 없습니다 — 레시피가 삭제되었거나 비활성화되었습니다.", "error");
+      notify("이 임시저장의 레시피를 찾을 수 없습니다. 레시피가 삭제되었거나 비활성화되었습니다.", "error");
       return;
     }
     if (draft.date) $("blend-date").value = draft.date;
@@ -1118,7 +1118,7 @@
       $("blend-total").dispatchEvent(new Event("input"));
     }
     state.items.forEach((_, i) => updateRowVar(i));
-    updateTotals();   // updateTotalLock 포함 — 실측이 있으면 총 배합량 잠금 재적용
+    updateTotals();   // updateTotalLock 포함. 실측이 있으면 총 배합량 잠금 재적용
     updateLotPreview();
     updateInputGuide();
     // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
@@ -1130,10 +1130,10 @@
       const noticeHtml = blendDrafts.restoreNoticeHtml(diff);
       showDraftNotice(noticeHtml);
       if (diff.legacy) {
-        notify("레시피 변경 여부를 확인할 수 없는 오래된 임시저장입니다 — 재료별 값을 확인하세요.", "warn");
+        notify("레시피 변경 여부를 확인할 수 없는 오래된 임시저장입니다. 재료별 값을 확인하세요.", "warn");
       }
       if (diff.dropped && diff.dropped.length) {
-        notify(`레시피에서 삭제된 재료의 계량값 ${diff.dropped.length}건은 옮기지 못했습니다 — 화면 상단 안내를 확인하세요.`, "error");
+        notify(`레시피에서 삭제된 재료의 계량값 ${diff.dropped.length}건은 옮기지 못했습니다. 화면 상단 안내를 확인하세요.`, "error");
       }
     }
     if (state.rescaleEvents.length) {
@@ -1155,7 +1155,7 @@
       && !(state.addPending && state.addPending[i] != null)
       && varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).over);
     if (overIdx >= 0) {
-      notify("복구된 배합에 미해소 초과 계량이 있습니다 — 증량 승인 또는 다시 계량이 필요합니다.", "error");
+      notify("복구된 배합에 미해소 초과 계량이 있습니다. 증량 승인 또는 다시 계량이 필요합니다.", "error");
       warnIfVariance(overIdx);
     }
   }
@@ -1216,7 +1216,7 @@
   function setTheoryCellContent(cell, it) {
     const comp = Number(it && it.loss_comp_g);
     const badge = comp > 0
-      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(comp, 2)}g 포함 — 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(comp, 2)}g</span>`
+      ? ` <span class="blend-losscomp-badge" title="투입 로스 보정 ${fmt(comp, 2)}g 포함. 붓는 로스만큼 더 계량하는 공정 기준입니다">보정 +${fmt(comp, 2)}g</span>`
       : "";
     cell.innerHTML = fmt(it.theory_amount, dp()) + badge;
   }
@@ -1332,11 +1332,11 @@
         // (저울이 없을 때가 바로 승인이 필요한 상황이므로 정확히 그때만 누락됐다).
         if (state.scaleReady || state.scaleOnlyInput) {
           if (!state.items[i].manual && state.scaleReady) {
-            notify("저울 연결 중 — 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
+            notify("저울 연결 중 · 실제량은 저울 PRINT 키로 입력하세요. 수기 입력은 기록에 표시되며, 앞으로 제한될 예정입니다.", "warn big");
           }
           state.items[i].manual = true;
           el.classList.add("manual-warn");
-          el.title = "수기 입력됨 — 저울 PRINT 로 다시 계량하면 해제됩니다";
+          el.title = "수기 입력됨. 저울 PRINT로 다시 계량하면 해제됩니다";
         }
         updateRowVar(i);
         updateTotals();
@@ -1477,7 +1477,7 @@
       // blur 보다 먼저 실행되도록 mousedown + preventDefault(blend_login 과 동일 주의).
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
-        input.value = lot;  // LOT 만 채운다(총량은 표시 전용).
+        input.value = lot;  // LOT만 채운다(총량은 표시 전용).
         state.items[idx].material_lot = lot;
         input.dispatchEvent(new Event("input"));  // state 반영 경로 재사용
         hideLotSuggest(input);
@@ -1561,7 +1561,7 @@
     if (!lot) { setErpLotWarn(input, false); return; }
     // 이미 확인 창을 거친 조합 — 다시 띄우지 않되 잔존 표시는 유지한다.
     if (lotOverrideKey(name, lot) in state.lotOverrides) {
-      setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT — 확인하고 진행함");
+      setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT · 확인하고 진행함");
       return;
     }
     if (await checkLotRegistered(name, lot)) { setErpLotWarn(input, false); return; }  // 등록됨
@@ -1619,7 +1619,7 @@
         if (!input) return;
         input.value = picked;
         if (state.items[idx]) state.items[idx].material_lot = picked;
-        setErpLotWarn(input, false);        // 등록된 LOT 로 바뀌었으니 잔존 표시 해제
+        setErpLotWarn(input, false);        // 등록된 LOT로 바뀌었으니 잔존 표시 해제
         input.dispatchEvent(new Event("input"));   // state 반영 경로 재사용
         input.focus();
       },
@@ -1664,7 +1664,7 @@
     }
     note.className = `lot-visc-note lot-visc-note--${data.level}`;
     note.textContent = `⚠ ${data.message}`;
-    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다 — 이 LOT 은 사용 금지, 책임자에게 알리세요." : "경고 구간의 점도입니다 — 확인 후 진행하세요.";
+    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다. 이 LOT은 사용 금지, 책임자에게 알리세요." : "경고 구간의 점도입니다. 확인 후 진행하세요.";
     note.hidden = false;
   }
   async function refreshLotViscNote(input, name, lot) {
@@ -1700,7 +1700,7 @@
       // 품목코드 없는 자재는 ERP 대조 자체가 불가능 — 경고는 아니지만 건너뛴다는
       // 사실을 툴팁으로 남긴다(조용한 사각지대가 되지 않도록).
       if ((input.value || "").trim()) {
-        input.title = "품목코드 미지정 자재 — ERP 재고 대조를 건너뜁니다.";
+        input.title = "품목코드 미지정 자재 · ERP 재고 대조를 건너뜁니다.";
       }
       return;
     }
@@ -1741,7 +1741,7 @@
             ? `ERP 재고가 마이너스인 LOT 입니다(재고 ${stock}). 전산 반영 지연일 수 있으니 실물을 확인하세요.`
             : "재고가 소진된 LOT 입니다(재고 0).")
         : (reasonKind === "code"
-            ? `품목코드 ${code} 가 ERP 재고 파일에 없습니다. 코드가 틀렸거나 폐기된 코드일 수 있습니다 — 책임자에게 품목코드 확인을 요청하세요.`
+            ? `품목코드 ${code} 가 ERP 재고 파일에 없습니다. 코드가 틀렸거나 폐기된 코드일 수 있습니다. 책임자에게 품목코드 확인을 요청하세요.`
             : "ERP 원재료 목록에 없는 LOT 입니다.");
     setErpLotWarn(input, true, reason);
     openErpLotModal(name, code, lot, reason, reasonKind, input);
@@ -1808,7 +1808,7 @@
       const hint = document.createElement("span");
       hint.className = "carry-over-hint";
       hint.style.cssText = "font-size:0.72rem;color:#64748b;";
-      hint.textContent = "반응기 1차 제품 — 로트를 선택해 이월하세요";
+      hint.textContent = "반응기 1차 제품 · 로트를 선택해 이월하세요";
       // '1차 총량 N g' 안내 배지
       const badge = document.createElement("span");
       badge.className = "carry-over-badge muted";
@@ -2023,7 +2023,7 @@
     // 합산 입력 중(addModeIdx)의 반복 팝업은 아래 부족 분기의 가드가 막는다.
     const tol = state.toleranceG;
     const verdict = varianceVerdict(Number(it.actual_amount), it.theory_amount, tol);
-    const v = verdict.variance;  // raw 편차 — 판정은 verdict 로, 표시/부족량은 fmt/그대로
+    const v = verdict.variance;  // raw 편차 · 판정은 verdict로, 표시/부족량은 fmt/그대로
     if (!verdict.within) {
       // 나눠 담는 중인 행은 '아직 덜 넣었다'가 정상 상태다 — 계획된 분할을 매 회차
       // 오류로 알리면 8kg 씩 3번 담을 때 경고가 2번 뜬다(실측). 부족 방향일 때만
@@ -2077,7 +2077,7 @@
     if (first != null) {
       const input = document.querySelector(`.blend-actual[data-idx="${first}"]`);
       if (input) { input.focus(); if (input.select) input.select(); }
-      notify("초과 계량 값을 비웠습니다 — 다시 계량하세요.", "warn");
+      notify("초과 계량 값을 비웠습니다. 다시 계량하세요.", "warn");
     }
   }
 
@@ -2161,7 +2161,7 @@
   function openDiscardModal(plan) {
     const body = $("discard-modal-body");
     if (body) {
-      body.innerHTML = `<p>증량하면 총 배합량이 25,000 g 을 초과합니다 `
+      body.innerHTML = `<p>증량하면 총 배합량이 25,000 g을 초과합니다 `
         + `(예상 ${fmt(plan.newTotal, dp())} g). 폐기를 권장합니다.</p>`;
     }
     $("discard-modal").hidden = false;
@@ -2294,7 +2294,7 @@
           }
         } catch (_e2) {
           showApproveError("재승인 중 오류가 발생했습니다. 다시 시도하세요.");
-          return;  // _rescaleReauthPending 유지 — 재시도 가능
+          return;  // _rescaleReauthPending 유지 · 재시도 가능
         }
         approvedIdx.forEach((evIdx, k) => {
           state.rescaleEvents[evIdx].approval_id = freshIds[k];
@@ -2302,13 +2302,13 @@
         });
         _rescaleReauthPending = false;
         closeRescaleApproveModal();
-        notify(`책임자 재승인 완료 (${data.approver || name}) — 다시 저장합니다.`, "success");
+        notify(`책임자 재승인 완료 (${data.approver || name}) · 다시 저장합니다.`, "success");
         saveBlend();  // 갱신된 토큰으로 저장 재시도
         return;
       }
       closeRescaleApproveModal();
       finalizeRescale({ approval_id: data.approval_id, approver: data.approver || name });
-      notify(`책임자 승인 완료 (${data.approver || name}) — 증량을 적용합니다.`, "success");
+      notify(`책임자 승인 완료 (${data.approver || name}) · 증량을 적용합니다.`, "success");
     } catch (_e) {
       showApproveError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
     } finally {
@@ -2329,25 +2329,25 @@
     hideApproveError();
     closeRescaleApproveModal();
     finalizeRescale({ absence_reason: reason });
-    notify("미승인 증량으로 적용했습니다 — 책임자 확인 전까지 알림이 반복됩니다.", "warn");
+    notify("미승인 증량으로 적용했습니다. 책임자 확인 전까지 알림이 반복됩니다.", "warn");
   }
 
   // 복구된 초안 저장이 만료된 승인 토큰 때문에 400 났을 때 호출 — 책임자 재인증 모달을
   // 열어 만료 승인을 갱신하도록 안내한다. 승인 이벤트가 하나도 없으면(부재뿐) 대상 아님.
   function beginRescaleReauth() {
     if (!state.rescaleEvents.some((ev) => ev.approval_id != null)) {
-      notify("증량 승인 정보를 확인할 수 없습니다 — 새로 배합을 시작하세요.", "error");
+      notify("증량 승인 정보를 확인할 수 없습니다. 새로 배합을 시작하세요.", "error");
       return;
     }
     _rescaleReauthPending = true;
-    notify("증량 승인이 만료되었습니다 — 책임자 재인증 후 다시 저장합니다.", "warn");
+    notify("증량 승인이 만료되었습니다. 책임자 재인증 후 다시 저장합니다.", "warn");
     openRescaleApproveModal();
   }
 
   function openRescaleBlockModal() {
     const modal = $("rescale-block-modal");
     if (modal) { modal.hidden = false; return; }
-    notify("3회 증량은 불가합니다 — 이 배합은 책임자와 폐기 여부를 협의하세요.", "error big");
+    notify("3회 증량은 불가합니다. 이 배합은 책임자와 폐기 여부를 협의하세요.", "error big");
   }
   function closeRescaleBlockModal() {
     const modal = $("rescale-block-modal");
@@ -2380,7 +2380,7 @@
     // 계량된 행에 '추가로 넣을 양' 배지 표시(잔여 addNeeded).
     renderAddBadges();
     renderRescaleSummary(plan);
-    notify(`배합량을 ${fmt(plan.newTotal, dp())} g 으로 증량했습니다 — 추가분을 계량하세요.`, "warn");
+    notify(`배합량을 ${fmt(plan.newTotal, dp())} g으로 증량했습니다. 추가분을 계량하세요.`, "warn");
   }
 
   // 증량 적용 상시 표시줄 — 증량 N회 적용 사실과 직전 before→after·승인자/부재 사유를
@@ -2388,7 +2388,7 @@
   // plan 인자는 호출부 보존을 위해 유지하되, 실제 내용은 state.rescaleEvents(마지막 요소)에서
   // 읽는다 — finalizeRescale 이 채우는 실제 필드(before_total/after_total/approver/absence_reason).
   function renderRescaleSummary(plan) {
-    void plan;  // 호환 — 실제 소스는 state.rescaleEvents
+    void plan;  // 호환 · 실제 소스는 state.rescaleEvents
     const el = $("rescale-applied-summary");
     if (!el) return;  // 요소가 없으면 조용히 무동작
     const events = state.rescaleEvents || [];
@@ -2402,7 +2402,7 @@
         ? ` · 책임자 부재(${esc(String(last.absence_reason))})`
         : "";
     el.innerHTML =
-      `증량 ${events.length}회 적용 — `
+      `증량 ${events.length}회 적용 · `
       + `(${fmt(last.before_total)} → ${fmt(last.after_total)} g)`
       + approval;
     el.hidden = false;
@@ -2500,7 +2500,7 @@
       badge.textContent = r.newTheory != null
         ? `목표 ${fmt(r.newTheory, dp())} · 추가 +${fmt(r.addNeeded, dp())} g`
         : `추가 +${fmt(r.addNeeded, dp())} g`;
-      badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT 도 추가분으로 합산됩니다)";
+      badge.title = "클릭해서 추가분을 입력하세요 (저울 PRINT도 추가분으로 합산됩니다)";
       badge.addEventListener("click", () => requestAddWeigh(r.idx));
       td.appendChild(badge);
     });
@@ -2526,11 +2526,11 @@
     input.className = "input blend-add-inline";
     input.dataset.idx = String(idx);
     input.placeholder = "추가분 g";
-    input.title = "추가분 입력 후 Enter — 누계로 합산됩니다";
+    input.title = "추가분 입력 후 Enter · 누계로 합산됩니다";
     // 저울 전용 모드면 증량 추가분 인라인 입력도 잠금(저울 PRINT/addMode 합산으로만).
     if (state.scaleOnlyInput) {
       input.readOnly = true;
-      input.title = "저울 전용 모드 — 저울 PRINT 로만 입력됩니다";
+      input.title = "저울 전용 모드 · 저울 PRINT로만 입력됩니다";
     }
     input.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
@@ -2621,7 +2621,7 @@
   // 물리 상태는 이미 다를 수 있어 다시 물어야 안전). 선택 모달이 떠 있는 동안의
   // PRINT 는 폴러 게이트(printBlockingModalVisible)가 버린다.
   let _awMode = null;            // 추가 계량 모달의 값 해석 모드
-  let _scaleStatePending = null; // 선택 후 열 대상 {idx, options} — null 이면 '변경' 재선택
+  let _scaleStatePending = null; // 선택 후 열 대상 {idx, options} · null 이면 '변경' 재선택
   // 부족 감지로 이 모달이 열렸을 때의 대상 행 인덱스. null 이 아니면 부족 컨텍스트 —
   // [처음부터 다시 계량] 버튼이 보이고 Esc/바깥 클릭으로 닫히지 않는다(부족 창 통합).
   let _scaleStateShortageIdx = null;
@@ -2634,7 +2634,7 @@
   // 부족줄·다시 계량 버튼을 숨기고 [취소]를 보여준다.
   function openScaleStateModal(pending) {
     const modal = $("scale-state-modal");
-    if (!modal) {  // 옛 템플릿 폴백 — 선택 없이 현행(추가분 합산)으로 진행
+    if (!modal) {  // 옛 템플릿 폴백 · 선택 없이 현행(추가분 합산)으로 진행
       if (pending) openAddWeighModal(pending.idx, pending.options, "tared");
       return;
     }
@@ -2650,7 +2650,7 @@
     if (shortage) {
       if (shortageEl) {
         shortageEl.textContent =
-          `이론 ${fmt(shortage.theory, dp())} g / 실제 ${fmt(shortage.actual, dp())} g — ${fmt(shortage.missing, dp())} g 부족`;
+          `이론 ${fmt(shortage.theory, dp())} g / 실제 ${fmt(shortage.actual, dp())} g · ${fmt(shortage.missing, dp())} g 부족`;
         shortageEl.hidden = false;
       }
       if (reweighBtn) reweighBtn.hidden = false;
@@ -2662,7 +2662,7 @@
     }
     modal.hidden = false;
     const first = $("scale-state-tared");
-    if (first) first.focus();  // 오버레이 뒤 입력 방지 — 봉인 모달 공통 규약
+    if (first) first.focus();  // 오버레이 뒤 입력 방지 · 봉인 모달 공통 규약
   }
 
   function closeScaleStateModal() {
@@ -2692,7 +2692,7 @@
     // 총 배합량 미입력(이론량 없음) 상태에선 목표가 0이라 그림 선택→담기 창이 열리자마자
     // 자동 완료되는 무의미 흐름이 된다(F2). 목표가 있어야만 진입한다.
     if (!state.items[idx] || !(Number(state.items[idx].theory_amount) > 0)) {
-      notify('총 배합량을 먼저 입력하세요 — 목표가 있어야 나눠 담기·추가 계량을 시작할 수 있습니다.', 'warn');
+      notify('총 배합량을 먼저 입력하세요. 목표가 있어야 나눠 담기·추가 계량을 시작할 수 있습니다.', 'warn');
       const totalInput = document.getElementById('blend-total');
       if (totalInput) totalInput.focus();
       return;
@@ -2725,7 +2725,7 @@
 
   function openDiscardAsk(rows, text, onProceed) {
     const modal = $("discard-ask-modal");
-    if (!modal || !rows.length) { onProceed(); return; }  // 옛 템플릿 폴백 — 질문 없이 진행
+    if (!modal || !rows.length) { onProceed(); return; }  // 옛 템플릿 폴백 · 질문 없이 진행
     _discardAskCtx = { rows, onProceed };
     const matEl = $("discard-ask-material");
     if (matEl) {
@@ -2738,7 +2738,7 @@
     if (textEl) textEl.textContent = text;
     modal.hidden = false;
     const back = $("discard-ask-back");
-    if (back) back.focus();  // 오버레이 뒤 입력 방지 + 실수 Enter 가 파괴적 선택이 안 되게
+    if (back) back.focus();  // 오버레이 뒤 입력 방지 + 실수 Enter가 파괴적 선택이 안 되게
   }
 
   function closeDiscardAskModal() {
@@ -2785,7 +2785,7 @@
     if (err) err.hidden = true;
     modal.hidden = false;
     const back = $("batch-discard-back");
-    if (back) back.focus();  // 실수 Enter 가 파괴적 선택이 안 되게
+    if (back) back.focus();  // 실수 Enter가 파괴적 선택이 안 되게
   }
 
   function closeBatchDiscardModal() {
@@ -2799,7 +2799,7 @@
     const err = $("batch-discard-error");
     const reason = (reasonEl ? reasonEl.value : "").trim();
     if (!reason) {
-      if (err) { err.textContent = "폐기 사유를 입력하세요 — 책임자와 협의한 내용을 남깁니다."; err.hidden = false; }
+      if (err) { err.textContent = "폐기 사유를 입력하세요. 책임자와 협의한 내용을 남깁니다."; err.hidden = false; }
       if (reasonEl) reasonEl.focus();
       return;
     }
@@ -2831,7 +2831,7 @@
       clearDraft();  // 폐기된 배치의 초안이 되살아나면 안 된다
       const sel = $("blend-recipe");
       if (sel) { sel.value = ""; sel.dispatchEvent(new Event("change", { bubbles: true })); }
-      notify("배치 폐기를 기록했습니다 — 책임자 사후 점검(LOT 대사) 화면에서 볼 수 있습니다.", "warn big");
+      notify("배치 폐기를 기록했습니다. 책임자 사후 점검(LOT 대사) 화면에서 볼 수 있습니다.", "warn big");
     } catch (e) {
       if (err) { err.textContent = `기록 실패: ${e.message || e}`; err.hidden = false; }
     } finally {
@@ -2846,7 +2846,7 @@
     if (amount <= 0) { performResetWeigh(idx); return; }
     openDiscardAsk(
       [{ idx, amount }],
-      `지금까지 담은 ${fmt(amount, dp())} g — 실제로 버리는 경우에만 폐기로 기록됩니다.`,
+      `지금까지 담은 ${fmt(amount, dp())} g · 실제로 버리는 경우에만 폐기로 기록됩니다.`,
       () => performResetWeigh(idx),
     );
   }
@@ -2872,7 +2872,7 @@
     const total = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
     openDiscardAsk(
       rows,
-      `초과분 합계 ${fmt(total, dp())} g — 비커에서 덜어내 버리는 경우에만 폐기로 기록됩니다.`,
+      `초과분 합계 ${fmt(total, dp())} g · 비커에서 덜어내 버리는 경우에만 폐기로 기록됩니다.`,
       proceed,
     );
   }
@@ -2898,10 +2898,10 @@
     }
     const noteEl = $("add-weigh-note");
     if (noteEl) {
-      noteEl.hidden = scaleOnly;  // 저울 전용이면 위 안내가 이미 PRINT 를 말한다
+      noteEl.hidden = scaleOnly;  // 저울 전용이면 위 안내가 이미 PRINT를 말한다
       noteEl.textContent = _awMode === "loaded"
-        ? "저울이 있으면 PRINT 를 눌러도 됩니다 — 표시값에서 이미 담은 양을 빼고 기록합니다."
-        : "저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.";
+        ? "저울이 있으면 PRINT를 눌러도 됩니다. 표시값에서 이미 담은 양을 빼고 기록합니다."
+        : "저울이 있으면 PRINT를 눌러도 자동으로 담깁니다.";
     }
   }
 
@@ -2918,7 +2918,7 @@
     if (!$("add-weigh-modal")) { openAddInline(idx); return; }
     const it = state.items[idx];
     if (!it) return;
-    state.addModeIdx = idx;  // 저울 PRINT 가 이 행으로 라우팅되게(activeScaleRow 경유).
+    state.addModeIdx = idx;  // 저울 PRINT가 이 행으로 라우팅되게(activeScaleRow 경유).
     _addWeighIdx = idx;
     // 값 해석 모드 — requestAddWeigh(상태 선택)를 거쳐 들어온다. 미지정이면 현행과
     // 같은 '추가분 합산'(tared) — 폴백 경로에서도 동작이 조용히 바뀌지 않게.
@@ -2947,7 +2947,7 @@
     refreshAddWeighModal(idx);
     const input = $("add-weigh-input");
     if (input) { input.value = ""; if (!state.scaleOnlyInput) input.focus(); }
-    updateScaleTargetIndicator();  // 모달이 안내 역할 — 행 강조 제거, 해당 ⚖ 활성 표시
+    updateScaleTargetIndicator();  // 모달이 안내 역할 · 행 강조 제거, 해당 ⚖ 활성 표시
   }
 
   // 모달 숫자(남은 양/목표·현재) 갱신 + 자동 완료(목표 도달 시 자동 닫기).
@@ -3004,7 +3004,7 @@
     // 누계 모드에선 넣을 값이 '저울 표시값 전체'다 — 추가분을 적으면 이중 차감된다.
     const inputEl = $("add-weigh-input");
     if (inputEl) inputEl.placeholder = _awMode === "loaded"
-      ? `${list.length + 1}회차 — 저울 표시값(전체) g`
+      ? `${list.length + 1}회차 · 저울 표시값(전체) g`
       : `${list.length + 1}회차 담을 양 g`;
     // 자동 완료 — 목표에 '딱' 도달했을 때만. remaining 은 Math.max(0,…) 로 0 에서
     // 잘리므로 초과(음수 남음)도 0 으로 보여, 그것만 보면 넘겨 담아도 완료로 오인한다
@@ -3027,7 +3027,7 @@
     if (!res.ok) {
       // 누계 모드인데 표시값이 현재 담은 양 이하 — 비커 교체·상태 오선택·덜어냄 신호.
       if (res.reason === "not-above-current") {
-        notify(`입력값이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다 — 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`, "error");
+        notify(`입력값이 현재 담은 양(${fmt(cur, dp())} g)보다 크지 않습니다. 저울 상태 선택이 맞는지 [변경]으로 확인하세요.`, "error");
       }
       input.focus();
       return;
@@ -3043,7 +3043,7 @@
   function finishAddWeighModal(idx) {
     $("add-weigh-modal").hidden = true;
     _addWeighIdx = null;
-    _awMode = null;  // 해석 모드는 모달과 같은 수명 — 다음 진입 때 다시 고른다
+    _awMode = null;  // 해석 모드는 모달과 같은 수명 · 다음 진입 때 다시 고른다
     state.addModeIdx = null;
     const inline = document.querySelector(`.blend-add-inline[data-idx="${idx}"]`);
     if (inline) inline.remove();
@@ -3062,7 +3062,7 @@
   function closeAddWeighModal(idx, keepValue) {
     $("add-weigh-modal").hidden = true;
     _addWeighIdx = null;
-    _awMode = null;  // 해석 모드는 모달과 같은 수명 — 다음 진입 때 다시 고른다
+    _awMode = null;  // 해석 모드는 모달과 같은 수명 · 다음 진입 때 다시 고른다
     state.addModeIdx = null;
     if (!keepValue && idx != null) {
       const it = state.items[idx];
@@ -3098,7 +3098,7 @@
     const badIdx = [];
     state.items.forEach((it, i) => {
       if (i === state.anchorIndex || it.actual_amount === "") return;
-      if (state.addPending && state.addPending[i] != null) return;  // 증량 대기 — 배지가 안내
+      if (state.addPending && state.addPending[i] != null) return;  // 증량 대기 · 배지가 안내
       if (!varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).within) badIdx.push(i);
     });
     if (!badIdx.length) return;
@@ -3136,7 +3136,7 @@
     if (prog) {
       prog.textContent = !total
         ? ""
-        : (done ? `계량 완료 — ${total}개 자재` : `계량 ${filled} / ${total} 자재`);
+        : (done ? `계량 완료 · ${total}개 자재` : `계량 ${filled} / ${total} 자재`);
       prog.classList.toggle("done", done);
     }
     updateTotalLock();
@@ -3156,7 +3156,7 @@
     if (links) {
       links.querySelectorAll(".blend-base-link").forEach((b) => { b.disabled = anyActual; });
     }
-    if (hasAnchor()) return;  // 기준 자재 레시피는 applyAnchorMode 가 이미 읽기 전용 처리
+    if (hasAnchor()) return;  // 기준 자재 레시피는 applyAnchorMode가 이미 읽기 전용 처리
     if (anyActual) {
       totalInput.readOnly = true;
       totalInput.title = "계량 시작 후에는 총 배합량을 바꿀 수 없습니다 (변경은 승인된 증량으로만)";
@@ -3202,7 +3202,7 @@
     }
   }
 
-  let _saving = false;   // 중복 저장 방지 — 응답이 늦으면 작업자가 한 번 더 누른다.
+  let _saving = false;   // 중복 저장 방지 · 응답이 늦으면 작업자가 한 번 더 누른다.
   // 저장 멱등 키 — 저장이 성공할 때까지 유지한다. 네트워크가 끊겨 "저장 실패"가 뜬 뒤
   // 다시 저장하면 같은 id 가 실려 가고, 서버는 첫 저장이 이미 커밋됐으면 그 기록을
   // 그대로 돌려준다(같은 계량값이 두 LOT 이 되는 것을 막는다).
@@ -3213,7 +3213,7 @@
       if (window.crypto && typeof window.crypto.randomUUID === "function") {
         return window.crypto.randomUUID();
       }
-    } catch (e) { /* 구형 브라우저 — 아래 폴백 */ }
+    } catch (e) { /* 구형 브라우저 · 아래 폴백 */ }
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
 
@@ -3224,7 +3224,7 @@
     if (_saving) return;
     _saving = true;
     const saveBtn = $("blend-save");
-    if (saveBtn) saveBtn.disabled = true;   // 즉시 비활성화 — 재클릭 자체를 막는다
+    if (saveBtn) saveBtn.disabled = true;   // 즉시 비활성화 · 재클릭 자체를 막는다
     try {
       await saveBlendInner(saveBtn);
     } finally {
@@ -3243,7 +3243,7 @@
     // 실제량이 하나도 없으면 저장하지 않는다. 저장 성공 후 화면은 레시피·총량을 유지하므로,
     // 습관적으로 Enter/저장을 한 번 더 누르면 '전부 빈' 기록이 새 LOT 을 받아 저장됐다.
     if (state.items.every((it) => it.actual_amount === "" || it.actual_amount == null)) {
-      err.textContent = "계량한 실제량이 없습니다 — 자재를 계량한 뒤 저장하세요.";
+      err.textContent = "계량한 실제량이 없습니다. 자재를 계량한 뒤 저장하세요.";
       err.hidden = false;
       notify("계량값이 없어 저장하지 않았습니다.", "error");
       return;
@@ -3259,7 +3259,7 @@
       err.textContent = "실제량 미입력: " + unweighed.slice(0, 6).join(", ")
         + (unweighed.length > 6 ? " 외" : "") + ". 모든 자재를 계량한 뒤 저장하세요.";
       err.hidden = false;
-      notify("계량하지 않은 자재가 있습니다 — 저장할 수 없습니다.", "error");
+      notify("계량하지 않은 자재가 있습니다. 저장할 수 없습니다.", "error");
       const firstIdx = state.items.findIndex(
         (it) => it.actual_amount === "" || it.actual_amount == null);
       if (firstIdx >= 0) {
@@ -3283,7 +3283,7 @@
     if (bad.length) {
       err.textContent = varianceBlockMessage(badVarianceNames(bad), tol);
       err.hidden = false;
-      notify(`허용 편차 ±${fmt(tol, 2)}g 초과 — 저장할 수 없습니다.`, "error");
+      notify(`허용 편차 ±${fmt(tol, 2)}g 초과 · 저장할 수 없습니다.`, "error");
       return;
     }
     // 자재 LOT 필수 — 실제량을 넣은 행은 LOT 도 반드시 입력. 앞 단계 기록에 없는 LOT 를
@@ -3292,7 +3292,7 @@
     if (lotMissing.length) {
       const msg = missingLotBlockMessage(lotMissing);
       err.textContent = msg; err.hidden = false;
-      notify("자재 LOT 를 입력하세요: " + lotMissing.slice(0, 6).join(", ") + (lotMissing.length > 6 ? " …" : ""), "error");
+      notify("자재 LOT를 입력하세요: " + lotMissing.slice(0, 6).join(", ") + (lotMissing.length > 6 ? " …" : ""), "error");
       const firstMissingIdx = state.items.findIndex((it) =>
         (it.actual_amount !== "" && Number(it.actual_amount) > 0) &&
         String(it.material_lot || "").trim() === ""
@@ -3661,7 +3661,7 @@
       // 순간 대사할 신호가 통째로 사라진다. 값은 그대로 두고 주황 테두리만 남긴다.
       onProceed: (name, lot, reason, input) => {
         state.lotOverrides[lotOverrideKey(name, lot)] = reason || "";
-        if (input) setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT — 확인하고 진행함");
+        if (input) setErpLotWarn(input, true, "앞 단계 배합 기록에 없는 LOT · 확인하고 진행함");
       },
     });
     // 파생 이월 모달 — 적용/취소. Escape 도 취소(변경 없음).
@@ -3757,7 +3757,7 @@
         const label = count === 1
           ? `${state.items[rows[0].idx].material_name} ${fmt(rows[0].amount, dp())} g`
           : `${count}개 자재 합계 ${fmt(Math.round(total * 100) / 100, dp())} g`;
-        notify(`폐기 기록됨: ${label} — 저장 시 기록에 함께 남습니다.`, "warn");
+        notify(`폐기 기록됨: ${label} · 저장 시 기록에 함께 남습니다.`, "warn");
         scheduleDraftSave();  // 폐기 이력도 초안에 즉시(창 닫힘 대비)
       }
       onProceed();
@@ -3772,7 +3772,7 @@
     const awStateChange = $("add-weigh-state-change");
     if (awStateChange) awStateChange.addEventListener("click", () => openScaleStateModal(null));
     const awDismissGuard = () => {
-      notify("담는 중입니다 — [잠시 닫아두기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
+      notify("담는 중입니다. [잠시 닫아두기] 또는 [처음부터 다시]로 마쳐주세요.", "warn");
     };
     if (awModal) awModal.addEventListener("click", (e) => {
       if (e.target === awModal && _addWeighIdx != null) awDismissGuard();

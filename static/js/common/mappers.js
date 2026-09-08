@@ -53,7 +53,7 @@
       unit: row.unit,
       colorGroup: row.color_group,
       category: row.category,
-      code: row.code || null,  // ERP 품목코드 — BOM 편집기 코드 배지용
+      code: row.code || null,  // ERP 품목코드 · BOM 편집기 코드 배지용
       aliases: row.aliases || [],
     };
   }

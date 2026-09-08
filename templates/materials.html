@@ -1,15 +1,15 @@
 {% extends "_base_app.html" %}
 
 {#
-  자재 관리 — 원재료(자재) 도메인을 한 화면에 모은다.
+  자재 관리 · 원재료(자재) 도메인을 한 화면에 모은다.
 
-  종전에는 품목코드가 '레시피 관리'(/management)의 한 탭이었고 자재 LOT 은 별도
+  종전에는 품목코드가 '레시피 관리'(/management)의 한 탭이었고 자재 LOT은 별도
   메뉴(/material-lots)여서, 같은 자재를 다루는 화면이 두 곳으로 흩어져 있었다.
   레시피 관리는 반제품 도메인이므로 자재 편집이 거기 있을 이유가 없다.
-  이 화면이 그 둘을 흡수하고, /material-lots 는 여기로 리다이렉트한다.
+  이 화면이 그 둘을 흡수하고, /material-lots는 여기로 리다이렉트한다.
 
-  CSS 는 기존 두 파일을 그대로 쓴다 — 탭·표·품목코드 규칙이 management.css 에,
-  LOT 규칙이 material_lots.css 에 있다. 자재용으로 쪼개는 정리는 규칙을 잘못
+  CSS는 기존 두 파일을 그대로 쓴다. 탭·표·품목코드 규칙이 management.css에,
+  LOT 규칙이 material_lots.css에 있다. 자재용으로 쪼개는 정리는 규칙을 잘못
   가려내면 화면이 깨지므로 별도 작업으로 미룬다.
 #}
 
@@ -18,8 +18,8 @@
 {% block heading %}품목코드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/management.css?v=20260813d" />
-    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260808b" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/material_lots.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
@@ -39,8 +39,8 @@
             <h3 class="panel-title">품목코드 지정</h3>
             <p class="panel-subtitle">자재별 ERP 품목코드를 지정·해제합니다. 위에서 바로 지정하거나, 아래 표의 행에서 입력할 수 있습니다.</p>
             <p class="panel-notice">빠른 지정: 위 입력칸에 자재명을 넣고 코드를 지정하세요. 목록에 없는 <strong>새 자재명</strong>을 입력하면 그 자재를 새로 등록합니다(코드는 비워도 됩니다). 이미 다른 자재가 쓰는 코드를 지정하면 확인 후 <strong>이 자재로 옮길 수 있습니다</strong>.</p>
-            <p class="panel-notice"><strong>이름은 하나만 유지합니다.</strong> 같은 원재료가 배합 기록에 다른 표기로 남았다면(예: MEHQ ← MP) [이름 정리]에서 그 표기를 입력해 <strong>기록 흡수</strong>하세요 — 그 표기로 남은 과거 기록의 이름이 이 자재의 이름으로 바뀌고 품목코드로 집계됩니다. 자재명을 수정하면 과거 기록의 표기도 함께 바뀝니다.</p>
-            <!-- 빠른 지정 (맨 위) — 자재명 고르고 코드 입력 후 [지정]. 표를 내리지 않아도 된다. -->
+            <p class="panel-notice"><strong>이름은 하나만 유지합니다.</strong> 같은 원재료가 배합 기록에 다른 표기로 남았다면(예: MEHQ ← MP) [이름 정리]에서 그 표기를 입력해 <strong>기록 흡수</strong>하세요. 그 표기로 남은 과거 기록의 이름이 이 자재의 이름으로 바뀌고 품목코드로 집계됩니다. 자재명을 수정하면 과거 기록의 표기도 함께 바뀝니다.</p>
+            <!-- 빠른 지정 (맨 위) · 자재명 고르고 코드 입력 후 [지정]. 표를 내리지 않아도 된다. -->
             <div class="filter-bar codes-quick-assign">
               <input id="codes-quick-name" class="input" placeholder="자재명 입력/선택" list="codes-mat-datalist" autocomplete="off" />
               <datalist id="codes-mat-datalist"></datalist>
@@ -49,7 +49,7 @@
             </div>
             <div class="filter-bar">
               <input id="codes-search" class="input" placeholder="자재명 또는 코드" />
-              {# 분류(코드 계열) 필터 — 값은 코드가 결정하는 파생. 분류별 조회용. #}
+              {# 분류(코드 계열) 필터 · 값은 코드가 결정하는 파생. 분류별 조회용. #}
               <select id="codes-kind" class="input">
                 <option value="">분류 전체</option>
                 <option value="raw">원자재</option>
@@ -70,7 +70,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  {# 분류 = 코드 계열(원자재/반제품/관리용) — 코드가 결정하는 파생값.
+                  {# 분류 = 코드 계열(원자재/반제품/관리용) · 코드가 결정하는 파생값.
                      구 '기타/미분류'(materials.category)는 표시하지 않는다. 이름 정리는
                      전용 열 대신 정리할 것이 남은 행의 작업 열에만 나타난다. #}
                   <tr>
@@ -120,9 +120,9 @@
 
         {% if can_manage %}
         <section class="panel">
-          <!-- 표 위에 둔다 — 맨 아래에 있으면 목록이 길어질수록 추가하러 내려가야 한다(현장 QA 2026-07-29). -->
+          <!-- 표 위에 둔다. 맨 아래에 있으면 목록이 길어질수록 추가하러 내려가야 한다(현장 QA 2026-07-29). -->
           <h3 class="panel-title">수동 LOT 추가</h3>
-          <p class="muted small">ERP 엑셀에 없거나 소진된 LOT 를 책임자가 직접 유효로 등록합니다. 배합 화면에서 즉석 인증으로 추가할 수도 있습니다.</p>
+          <p class="muted small">ERP 엑셀에 없거나 소진된 LOT를 책임자가 직접 유효로 등록합니다. 배합 화면에서 즉석 인증으로 추가할 수도 있습니다.</p>
           <form id="mlot-add-form" class="mlot-add-form" autocomplete="off">
             <div>
               <label class="filter-label" for="mlot-add-code">품목코드</label>
@@ -161,7 +161,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                {# 머리글 정렬 — 700행을 품목코드 순서로만 훑어야 했다. 정렬은 필터된
+                {# 머리글 정렬 · 700행을 품목코드 순서로만 훑어야 했다. 정렬은 필터된
                    전체에 적용하고 그 뒤에 쪽을 자른다(현재 쪽만 섞이지 않게). #}
                 <tr>
                   <th data-sort="code">품목코드</th>
@@ -176,8 +176,8 @@
               <tbody id="mlot-body"></tbody>
             </table>
           </div>
-          <p class="mlot-empty" id="mlot-empty" hidden>조건에 맞는 LOT 가 없습니다.</p>
-          <!-- 페이지 — 운영 엑셀은 LOT 가 700행이 넘는다. 한 번에 다 그리면 무겁고
+          <p class="mlot-empty" id="mlot-empty" hidden>조건에 맞는 LOT가 없습니다.</p>
+          <!-- 페이지 · 운영 엑셀은 LOT가 700행이 넘는다. 한 번에 다 그리면 무겁고
                스크롤만 길어진다(현장 QA 2026-07-29). 검색하면 1페이지로 돌아간다. -->
           <div class="mlot-pager" id="mlot-pager" hidden>
             <button class="btn btn-sm" id="mlot-page-prev" type="button">이전</button>
@@ -190,7 +190,7 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/management/item-codes.js?v=20260813g"></script>
-    <script src="/static/js/material_lots.js?v=20260808b"></script>
-    <script src="/static/js/materials.js?v=20260814a"></script>
+    <script src="/static/js/management/item-codes.js?v=20260908f"></script>
+    <script src="/static/js/material_lots.js?v=20260908f"></script>
+    <script src="/static/js/materials.js?v=20260908f"></script>
 {% endblock %}

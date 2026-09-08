@@ -58,7 +58,7 @@
         try {
           const cres = await fetch(`/api/recipes/history/compare?ids=${ids}`, { credentials: "same-origin" });
           if (cres.ok) compareData = await cres.json();
-        } catch (_e) { /* 비교 행렬 조회 실패 — 타임라인만이라도 보여준다 */ }
+        } catch (_e) { /* 비교 행렬 조회 실패 · 타임라인만이라도 보여준다 */ }
         cache = { historyItems, compareData };
         layout.hidden = false;
         // 기본 선택 = 현재판 + 그 직전판(있으면). history 의 정렬 방향에 기대지 않는다 —
@@ -182,7 +182,7 @@
           return `<tr><td class="vc-mat-cell">${IRMS.escapeHtml(mat.material_name)}</td>`
             + `<td class="num">${num(w)} <span class="muted small">(${num(pct, 1)}%)</span></td></tr>`;
         }).join("");
-      return `<p class="vc-single-note">단일 버전 표시 — 비교하려면 왼쪽에서 버전을 하나 더 선택하세요.</p>`
+      return `<p class="vc-single-note">단일 버전 표시 · 비교하려면 왼쪽에서 버전을 하나 더 선택하세요.</p>`
         + `<div class="compare-scroll"><table class="compare-table vc-compare-table">`
         + `<thead><tr><th class="compare-sticky">${IRMS.escapeHtml(version.version_label)} 자재</th><th>배합량 (g · %)</th></tr></thead>`
         + `<tbody>${rows || '<tr><td colspan="2"><span class="muted">자재가 없습니다.</span></td></tr>'}</tbody>`

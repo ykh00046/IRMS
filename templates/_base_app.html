@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BRM · {% block title %}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/css/fonts.css?v=20260803a" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260805b" />
+    <link rel="stylesheet" href="/static/css/fonts.css?v=20260908f" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20260908f" />
     {% block styles %}{% endblock %}
   </head>
   <body>
@@ -22,7 +22,7 @@
         </a>
 
         <nav class="sidebar-nav" aria-label="주 메뉴">
-          <!-- 대시보드가 첫 화면이자 맨 위 — '/' 진입이 대시보드로 온다(개편 2026-07-29).
+          <!-- 대시보드가 첫 화면이자 맨 위 · '/' 진입이 대시보드로 온다(개편 2026-07-29).
                점도 관리는 QC 기록 관리라 운영 관리 그룹으로. -->
           <div class="nav-section">
             <a href="/dashboard" class="side-link{{ ' active' if request.url.path == '/dashboard' else '' }}">
@@ -39,7 +39,7 @@
               <span class="side-ico side-ico-blend" aria-hidden="true"></span><span>다중 계량</span>
             </a>
             <!-- 끊긴 작업(임시저장)을 이어서 하는 유일한 입구. 진입 배너를 폐지했으므로
-                 항상 노출한다 — 목록이 비어 있어도 어디로 가야 하는지 보여야 한다. -->
+                 항상 노출한다. 목록이 비어 있어도 어디로 가야 하는지 보여야 한다. -->
             <a href="/blend/drafts" class="side-link{{ ' active' if request.url.path == '/blend/drafts' else '' }}">
               <span class="side-ico side-ico-bulk" aria-hidden="true"></span><span>작성 중 배합</span>
             </a>
@@ -60,10 +60,10 @@
               <span class="side-ico side-ico-recipes" aria-hidden="true"></span><span>레시피 관리</span>
             </a>
             {% if can_manage or (current_user and current_user.access_level in ["manager", "admin"]) %}
-            <!-- 미해소 LOT 대사 · 총 배합량 이상 — 책임자 전용 사후 점검(2026-08-04).
+            <!-- 미해소 LOT 대사 · 총 배합량 이상 · 책임자 전용 사후 점검(2026-08-04).
                  개방 화면(/status·/dashboard)에 얹지 않고 별도 페이지로 둔 이유는
                  pages.lot_audit_page 주석 참조.
-                 조건이 둘인 이유: can_manage 는 배합 화면처럼 컨텍스트에 그 키를 넣지
+                 조건이 둘인 이유: can_manage는 배합 화면처럼 컨텍스트에 그 키를 넣지
                  않는 페이지에서 비어 있고, access_level 비교만 쓰면 레거시 'admin'
                  값(ACCESS_LEVEL_RANK 상 책임자와 동급)을 놓친다. 통제 화면이라
                  "책임자인데 입구가 안 보이는" 경우를 만들지 않는다. -->
@@ -122,7 +122,7 @@
             {% if current_user and current_user.id %}
             <button id="logout-btn" type="button" class="btn compact">로그아웃</button>
             {% else %}
-            {# 로그인 후 보던 화면으로 돌아온다 — 종전에는 어디서 눌러도 레시피
+            {# 로그인 후 보던 화면으로 돌아온다. 종전에는 어디서 눌러도 레시피
                관리로 떨어져, 점도/자재 화면에서 로그인하면 다시 찾아 들어가야
                했다(현장 지적 2026-08-14). 쿼리까지 보존(예: /status 필터). #}
             <a href="/management/login?next={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) | urlencode }}" class="btn compact accent">책임자 로그인</a>
@@ -140,16 +140,16 @@
 
     <div id="toast-root" class="toast-container" role="status" aria-live="polite"></div>
     <!-- IRMS common modules: load order matters (core -> mappers/format -> APIs -> ui/audio -> bootstrap) -->
-    <script src="/static/js/common/core.js?v=20260624a"></script>
-    <script src="/static/js/common/mappers.js?v=20260721a"></script>
-    <script src="/static/js/common/format.js?v=20260703a"></script>
-    <script src="/static/js/common/api-users.js?v=20260707b"></script>
-    <script src="/static/js/common/api-recipes.js?v=20260726a"></script>
-    <script src="/static/js/common/api-materials.js?v=20260707b"></script>
-    <script src="/static/js/common/ui.js?v=20260726a"></script>
-    <script src="/static/js/common/auto-refresh.js?v=20260731b"></script>
-    <script src="/static/js/common/audio.js?v=20260707b"></script>
-    <script src="/static/js/common.js?v=20260703a"></script>
+    <script src="/static/js/common/core.js?v=20260908f"></script>
+    <script src="/static/js/common/mappers.js?v=20260908f"></script>
+    <script src="/static/js/common/format.js?v=20260908f"></script>
+    <script src="/static/js/common/api-users.js?v=20260908f"></script>
+    <script src="/static/js/common/api-recipes.js?v=20260908f"></script>
+    <script src="/static/js/common/api-materials.js?v=20260908f"></script>
+    <script src="/static/js/common/ui.js?v=20260908f"></script>
+    <script src="/static/js/common/auto-refresh.js?v=20260908f"></script>
+    <script src="/static/js/common/audio.js?v=20260908f"></script>
+    <script src="/static/js/common.js?v=20260908f"></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

@@ -5,11 +5,11 @@
 {% block heading %}배합 분석{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/insight.css?v=20260908a" />
+    <link rel="stylesheet" href="/static/css/insight.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
-        {# 기간 막대 — 세 탭이 같은 기간을 본다. 여기서 고른 기간이
+        {# 기간 막대 · 세 탭이 같은 기간을 본다. 여기서 고른 기간이
            지표·추세·표·리포트 전부의 기준이 되므로 화면 맨 위에 고정으로 둔다. #}
         <section class="panel insight-controls">
           <div class="insight-control-row">
@@ -48,11 +48,11 @@
           <button class="mgmt-tab" data-tab="materials" type="button">자재 소비</button>
           <button class="mgmt-tab" data-tab="quality" type="button">품질·이상</button>
         </nav>
-        {# 자재 LOT 추적(역추적)은 LOT 이력 화면으로 옮겼다(2026-09-08) — 순방향 이력과 한 곳에. #}
+        {# 자재 LOT 추적(역추적)은 LOT 이력 화면으로 옮겼다(2026-09-08) · 순방향 이력과 한 곳에. #}
 
         {# ── 개요 ───────────────────────────────────────────────────────── #}
         <div class="tab-panel active" id="tab-overview">
-          {# 지표에는 반드시 직전 동기간 대비를 붙인다 — 숫자 하나만으로는 많고 적음을
+          {# 지표에는 반드시 직전 동기간 대비를 붙인다. 숫자 하나만으로는 많고 적음을
              판단할 근거가 없어서, 예전 화면의 '배합 102건'은 아무 말도 하지 않았다. #}
           <section class="insight-metric-grid" id="insight-metrics"></section>
 
@@ -123,7 +123,7 @@
               </div>
               <span class="muted small">머리글을 눌러 정렬할 수 있습니다.</span>
             </div>
-            {# 차이 열의 색 기준을 적어 둔다 — 예전엔 ±0.2g 에도 경고색이 붙어 모든 줄이
+            {# 차이 열의 색 기준을 적어 둔다. 예전엔 ±0.2g에도 경고색이 붙어 모든 줄이
                빨갛게 보였고, 그러면 정작 봐야 할 줄이 묻힌다. #}
             <p class="panel-subtitle">
               <b>차이</b>는 실제 사용량 − 이론량입니다. 계량은 허용 편차(기본 0.05g/행) 안으로
@@ -166,7 +166,7 @@
               배합은 계량 편차를 허용치 안으로 강제하므로 편차 자체는 이상 신호가 되지 못합니다.
               저울 PRINT 대신 손으로 입력한 <b>수동 입력</b>과 <b>취소</b>를 이상 신호로 봅니다.
             </p>
-            {# 저울 도입 전 구간은 계량률을 그리지 않는다 — 그 근거를 화면이 말한다. #}
+            {# 저울 도입 전 구간은 계량률을 그리지 않는다. 그 근거를 화면이 말한다. #}
             <p class="filter-summary muted small" id="insight-quality-basis" hidden></p>
             <div class="insight-chart-wrap">
               <canvas id="insight-quality-chart"></canvas>
@@ -178,7 +178,7 @@
             {# 예전엔 생산 실적은 대시보드에, 이상 통계는 여기에 따로 있어서 한 사람을
                보려면 두 화면을 오갔다(2026-08-08 통합). 한 표에서 같이 본다. #}
             <p class="panel-subtitle">생산 실적과 이상 신호를 한 표에서 봅니다.</p>
-            {# 누가 손으로 계량했는지는 기록 목록에서도 책임자만 본다 — 같은 기준. #}
+            {# 누가 손으로 계량했는지는 기록 목록에서도 책임자만 본다. 같은 기준. #}
             <p class="panel-subtitle" id="insight-manual-locked" hidden>
               수동 입력 열은 책임자만 볼 수 있습니다. 가려진 칸은 0 건이 아니라 “알 수 없음”입니다.
             </p>
@@ -222,6 +222,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260624a"></script>
-    <script src="/static/js/insight.js?v=20260908a"></script>
+    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260908f"></script>
+    <script src="/static/js/insight.js?v=20260908f"></script>
 {% endblock %}

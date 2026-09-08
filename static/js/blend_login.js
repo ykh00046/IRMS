@@ -13,9 +13,9 @@
   const partDialog = document.getElementById("blend-part-dialog");
   const partDialogMessage = document.getElementById("blend-part-dialog-message");
   const partDialogCancel = document.getElementById("blend-part-dialog-cancel");
-  let partDialogResolver = null;   // 선택/취소 를 Promise 로 전달
+  let partDialogResolver = null;   // 선택/취소 를 Promise로 전달
   let isPartDialogOpen = false;    // 폼 submit 가드(Enter 재제출 방지)
-  let workers = [];        // [{name, category}] — category 는 파트(약품/합성/잉크/용수 | null)
+  let workers = [];        // [{name, category}] · category는 파트(약품/합성/잉크/용수 | null)
 
   if (!form || !request) return;
 
@@ -102,7 +102,7 @@
     let focusBtn = null;
     buttons.forEach((b) => {
       const match = preselect && preselect !== "__none__" && b.dataset.part === preselect;
-      b.classList.toggle("accent", Boolean(match));  // 기존 .btn.accent 로 하이라이트
+      b.classList.toggle("accent", Boolean(match));  // 기존 .btn.accent로 하이라이트
       if (match) focusBtn = b;
     });
     const firstBtn = focusBtn || partDialog.querySelector("[data-part]");

@@ -33,7 +33,7 @@
     try {
       data = await request(`/blend/recipes/${key}`);
     } catch (_e) {
-      data = null;   // 레시피 조회 실패 — 변경 여부 미확인으로 표시(복구 자체는 가능)
+      data = null;   // 레시피 조회 실패 · 변경 여부 미확인으로 표시(복구 자체는 가능)
     }
     recipeCache.set(key, data);
     return data;
@@ -63,7 +63,7 @@
     const notes = [];
     if (diff.dropped.length) {
       notes.push("<li>레시피에서 삭제됨: "
-        + diff.dropped.map((d) => `${esc(d.name)} — ${esc(d.text)}`).join(" / ")
+        + diff.dropped.map((d) => `${esc(d.name)} · ${esc(d.text)}`).join(" / ")
         + "</li>");
     }
     if (diff.added.length) {

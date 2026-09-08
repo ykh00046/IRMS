@@ -5,20 +5,20 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260908a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260908f" />
 {% endblock %}
 
 {% block content %}
         <!-- ===== 배합 입력 ===== -->
         <div id="blend-entry-mode">
-          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 — 모드가 켜져 있을 때만 노출.
+          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 · 모드가 켜져 있을 때만 노출.
                책임자 승인을 받으면 이 배합에 한해 실제량 손입력을 허용한다(저장·초기화·레시피 변경 시 재잠금).
-               blend.js updateManualEntryControl 이 텍스트·버튼 노출을 갱신. -->
+               blend.js updateManualEntryControl이 텍스트·버튼 노출을 갱신. -->
           <div class="scale-only-control" id="scale-only-control" hidden>
-            <span id="scale-only-control-text">저울 전용 입력 모드 — 실제량은 저울 PRINT 로만 입력됩니다.</span>
+            <span id="scale-only-control-text">저울 전용 입력 모드 · 실제량은 저울 PRINT로만 입력됩니다.</span>
             <button type="button" class="btn btn-sm accent" id="manual-entry-request-btn">수기 입력 승인 요청</button>
           </div>
-          <!-- 임시저장 복구 후 레시피 변경 고지 — 사라진 재료의 계량값·새로 추가된 재료·
+          <!-- 임시저장 복구 후 레시피 변경 고지 · 사라진 재료의 계량값·새로 추가된 재료·
                기준 배합량 변경을 값까지 적어 남긴다(토스트는 사라지므로 조용한 폐기 방지).
                끊긴 작업을 이어서 하는 입구는 "작성 중 배합"(/blend/drafts) 한 곳뿐이다. -->
           <div class="blend-draft-notice" id="blend-draft-notice" hidden>
@@ -101,7 +101,7 @@
                   <span class="blend-dhr-metric-label">실제 합계</span>
                   <span class="blend-dhr-metric-value"><span id="blend-actual-total">-</span><em>g</em></span>
                 </div>
-                {# 순편차는 계량이 끝나야 뜻이 생긴다 — 도중에는 '아직 안 넣은 양'이라
+                {# 순편차는 계량이 끝나야 뜻이 생긴다. 도중에는 '아직 안 넣은 양'이라
                    늘 큰 음수다. 라벨을 상태에 따라 바꾸고(남은 양 / 순편차), 색도
                    완료 후에만 붙인다(blend.js updateTotals). #}
                 <div class="blend-dhr-metric blend-dhr-metric-var" id="blend-net-metric">
@@ -109,14 +109,14 @@
                   <span class="blend-dhr-metric-value"><span id="blend-net-var">-</span><em>g</em></span>
                 </div>
               </div>
-              {# 계량 진행 — 순편차가 왜 아직 큰지 한 줄로 설명해 준다. #}
+              {# 계량 진행 · 순편차가 왜 아직 큰지 한 줄로 설명해 준다. #}
               <p class="blend-dhr-progress" id="blend-progress"></p>
             </section>
           </div>
 
-          <!-- 증량 적용 상시 표시줄 — 증량 N회·직전 before→after·승인자/부재 사유 한 줄.
+          <!-- 증량 적용 상시 표시줄 · 증량 N회·직전 before→after·승인자/부재 사유 한 줄.
                총량 잠금만으로는 '지금 증량된 상태인지'가 안 보여 추가(다중 계량의
-               #cont-rescale-applied-summary 와 대응, F7). blend.js renderRescaleSummary 가 채운다. -->
+               #cont-rescale-applied-summary와 대응, F7). blend.js renderRescaleSummary가 채운다. -->
           <div id="rescale-applied-summary" class="rescale-applied-summary" hidden></div>
 
           <section class="panel">
@@ -190,7 +190,7 @@
         <!-- 기록 조회·상세(DHR)는 '배합 기록'(/status) 화면으로 일원화(2026-07-07 데드코드 정리) -->
         <datalist id="worker-names"></datalist>
 
-        <!-- 초과 계량 증량 제안 모달 — 자재를 이론량 초과해 넣었을 때 배합 전체량 증량 제안.
+        <!-- 초과 계량 증량 제안 모달 · 자재를 이론량 초과해 넣었을 때 배합 전체량 증량 제안.
              기존 빨간 토스트 위에 추가로 뜬다(−방향 부족 계량 시에는 열리지 않음).
              표시/숨김은 hidden 속성 토글로만(display 직접 지정 금지). -->
         <div class="ss-modal-overlay" id="rescale-modal" hidden>
@@ -204,37 +204,37 @@
           </div>
         </div>
 
-        <!-- 추가 계량 모달 — 부족분을 한눈에 보면서 합산 입력. 큰 남은 양 숫자 + 목표/현재.
-             저울 PRINT 도 addModeIdx 경로로 자동 합산(수동 입력칸은 저울 전용 모드에선 숨김).
-             hidden 토글 전용 — rescale/shortage 모달과 동일 패턴. -->
+        <!-- 추가 계량 모달 · 부족분을 한눈에 보면서 합산 입력. 큰 남은 양 숫자 + 목표/현재.
+             저울 PRINT도 addModeIdx 경로로 자동 합산(수동 입력칸은 저울 전용 모드에선 숨김).
+             hidden 토글 전용 · rescale/shortage 모달과 동일 패턴. -->
         <div class="ss-modal-overlay" id="add-weigh-modal" hidden>
           <div class="ss-modal ss-modal-mid add-weigh-modal" role="dialog" aria-modal="true" aria-labelledby="add-weigh-title">
             <div class="ss-modal-header"><h3 id="add-weigh-title">추가 계량</h3></div>
             <div class="ss-modal-body">
-              <!-- 자재명은 제목이 아니라 본문 첫 줄에 크게 — 긴 이름(PB 레시피 등)이 좁은
+              <!-- 자재명은 제목이 아니라 본문 첫 줄에 크게 · 긴 이름(PB 레시피 등)이 좁은
                    제목줄에 감겨 한눈에 안 읽히던 문제(2026-07-23). 자유 줄바꿈 허용. -->
               <div class="add-weigh-material" id="add-weigh-material"></div>
-              <!-- 저울 상태 칩 — 진입 때 고른 상태(영점/무게 남음)를 보여주고, 중간에
+              <!-- 저울 상태 칩 · 진입 때 고른 상태(영점/무게 남음)를 보여주고, 중간에
                    영점을 잡았으면 [변경]으로 전환한다. 값 해석이 여기에 달려 있다. -->
               <span class="scale-state-chip" id="add-weigh-state-chip" hidden>
                 저울 상태: <b id="add-weigh-state-label"></b>
                 <button type="button" id="add-weigh-state-change">변경</button>
               </span>
-              <!-- 처음 보는 작업자를 위한 한 줄 안내 — 이 창이 무엇을 하는 곳인지.
+              <!-- 처음 보는 작업자를 위한 한 줄 안내 · 이 창이 무엇을 하는 곳인지.
                    비커에 한 번에 안 들어가는 자재를 여러 번에 나눠 담는 자리다. -->
               <p class="add-weigh-guide">한 번에 담기는 만큼 담고 <b>담기</b>를 누르세요. 목표를 채우면 자동으로 끝납니다.</p>
-              <!-- 큰 숫자에 라벨을 붙인다 — 예전엔 '+24000 g' 만 커서 이게 담을 양인지
+              <!-- 큰 숫자에 라벨을 붙인다. 예전엔 '+24000 g' 만 커서 이게 담을 양인지
                    담은 양인지 처음 보면 몰랐다. '더 담아야 할 양'으로 명시. -->
-              <!-- 큰 숫자는 모드에 따라 다르다(2026-08-05 현장 지적 — 두 모드가 같아 보임):
+              <!-- 큰 숫자는 모드에 따라 다르다(2026-08-05 현장 지적 · 두 모드가 같아 보임):
                    영점 잡힘 = 더 담아야 할 양(저울 표시가 이 값이 되면 끝),
                    무게 남음 = 목표 전체(저울 표시가 이 값이 될 때까지 담기). 라벨·값을
-                   refreshAddWeighModal 이 모드별로 채운다. -->
+                   refreshAddWeighModal이 모드별로 채운다. -->
               <div class="add-weigh-remaining-block">
                 <span class="add-weigh-remaining-label" id="add-weigh-remaining-label">더 담아야 할 양</span>
                 <div class="add-weigh-remaining" id="add-weigh-remaining">0 g</div>
               </div>
               <p class="add-weigh-sub" id="add-weigh-sub">목표 - g · 현재 - g</p>
-              <!-- 담은 회차 — 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가
+              <!-- 담은 회차 · 이 창에서 한 자재를 처음부터 끝까지 담는다. 회차가
                    1개일 때부터 쌓아 보여줘야 '이어서 하는 중'으로 읽힌다. 비커를
                    여러 번 오가는 동안 몇 번 담았는지 세던 것을 잊기 쉽다.
                    아직 안 담았을 때도 빈 안내를 보여줘 창의 목적이 드러나게 한다. -->
@@ -247,12 +247,12 @@
                 <input class="input" id="add-weigh-input" type="number" step="any" min="0" placeholder="담을 양 g" aria-label="담을 양 (g)" autofocus />
                 <button class="btn accent" id="add-weigh-add-btn" type="button">담기</button>
               </div>
-              <p class="muted add-weigh-note" id="add-weigh-note">저울이 있으면 PRINT 를 눌러도 자동으로 담깁니다.</p>
+              <p class="muted add-weigh-note" id="add-weigh-note">저울이 있으면 PRINT를 눌러도 자동으로 담깁니다.</p>
             </div>
             <div class="ss-modal-footer blend-actions">
-              <!-- '잠시 닫아두기' — 목표 미달이면 '마무리'가 존재하지 않는다(편차 강제라
+              <!-- '잠시 닫아두기' · 목표 미달이면 '마무리'가 존재하지 않는다(편차 강제라
                    저장이 막힘). 이 버튼의 실제 용도는 자재를 가지러 가는 동안 창을 닫고
-                   다른 자재를 먼저 계량하는 '중단'이다 — 이름이 완료처럼 읽히면 채우는 걸
+                   다른 자재를 먼저 계량하는 '중단'이다. 이름이 완료처럼 읽히면 채우는 걸
                    잊는 함정이 된다(2026-08-05 이름 정직화). 값·회차는 유지된다. -->
               <button class="btn" id="add-weigh-done-btn" type="button">잠시 닫아두기 (나중에 이어서)</button>
               <button class="btn" id="add-weigh-reweigh-btn" type="button">처음부터 다시</button>
@@ -260,9 +260,9 @@
           </div>
         </div>
 
-        <!-- 폐기 권장 모달 — 증량 시 총 배합량이 25,000g 을 초과하면 rescale-modal 대신 이것만 뜬다.
+        <!-- 폐기 권장 모달 · 증량 시 총 배합량이 25,000g을 초과하면 rescale-modal 대신 이것만 뜬다.
              [배치 폐기 기록…]: 협의 결과 실제로 배치를 버리기로 했으면 여기서 기록을 남긴다
-             (2026-08-05 — 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍). -->
+             (2026-08-05 · 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍). -->
         <div class="ss-modal-overlay" id="discard-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="discard-modal-title">
             <div class="ss-modal-header"><h3 id="discard-modal-title">폐기 권장</h3></div>
@@ -275,7 +275,7 @@
           </div>
         </div>
 
-        <!-- 증량 승인 모달 — 증량 적용/그래도 증량 위에 뜬다. 책임자 승인 없이는 증량 불가.
+        <!-- 증량 승인 모달 · 증량 적용/그래도 증량 위에 뜬다. 책임자 승인 없이는 증량 불가.
              책임자 이름+비밀번호로 /api/blend/manager-verify 검증 후 적용. 책임자 부재 시
              사유를 남기고 '미승인 증량'으로 진행(책임자 확인 알림 반복). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="rescale-approve-modal" hidden>
@@ -303,12 +303,12 @@
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="rescale-absence-reason">사유</label>
-                  <input class="input" id="rescale-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                  <input class="input" id="rescale-absence-reason" placeholder="예: 야간 근무 · 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="rescale-absence-submit" type="button">부재로 진행</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 기록은 <strong>'미승인 증량'</strong>으로 표시되고, 책임자 확인 전까지 알림이 반복됩니다.</p>
               </div>
-              <!-- 세 번째 길 — 그냥 덜어내고 다시 재고 싶을 때. 부재 처리 절차와 섞이지 않게
+              <!-- 세 번째 길 · 그냥 덜어내고 다시 재고 싶을 때. 부재 처리 절차와 섞이지 않게
                    구분선 아래 별도 줄로 둔다(다중 계량 화면과 동일). -->
               <hr class="rescale-approve-divider" />
               <button class="btn" id="rescale-approve-reweigh" type="button">다시 계량 (초과값 비우고 재계량)</button>
@@ -316,7 +316,7 @@
           </div>
         </div>
 
-        <!-- 수기 입력 책임자 승인 모달 — 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
+        <!-- 수기 입력 책임자 승인 모달 · 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
              책임자 이름+비밀번호로 /api/blend/manager-verify(purpose=manual) 검증 후 이 배합에 한해
              손입력을 허용한다. 부재 경로 없음(승인만). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="manual-approve-modal" hidden>
@@ -344,7 +344,7 @@
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="manual-absence-reason">사유</label>
-                  <input class="input" id="manual-absence-reason" placeholder="예: 야간 근무 — 책임자 부재" autocomplete="off" />
+                  <input class="input" id="manual-absence-reason" placeholder="예: 야간 근무 · 책임자 부재" autocomplete="off" />
                 </div>
                 <button class="btn rescale-approve-btn" id="manual-absence-submit" type="button">부재로 진행</button>
                 <p class="rescale-absence-warn">승인 없이 진행하면 이 배합의 손입력은 <strong>'미승인 수기 입력'</strong>으로 표시되고, 사유가 기록에 남아 책임자가 사후 확인합니다.</p>
@@ -356,32 +356,32 @@
           </div>
         </div>
 
-        <!-- 3회 증량 차단 모달 — 이미 2회 증량된 배합에서 3회째 증량 제안이 뜨려 하면
+        <!-- 3회 증량 차단 모달 · 이미 2회 증량된 배합에서 3회째 증량 제안이 뜨려 하면
              제안 대신 이 모달로 막는다(폐기 협의 유도). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="rescale-block-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="rescale-block-title">
             <div class="ss-modal-header"><h3 id="rescale-block-title">증량 불가</h3></div>
-            <div class="ss-modal-body"><p>3회 증량은 불가합니다 — 이 배합은 책임자와 폐기 여부를 협의하세요.</p></div>
+            <div class="ss-modal-body"><p>3회 증량은 불가합니다. 이 배합은 책임자와 폐기 여부를 협의하세요.</p></div>
             <div class="ss-modal-footer blend-actions">
-              <!-- 협의 결과가 '폐기'면 여기서 바로 기록 — 무기록 이탈 방지(2026-08-05). -->
+              <!-- 협의 결과가 '폐기'면 여기서 바로 기록 · 무기록 이탈 방지(2026-08-05). -->
               <button class="btn warn" id="block-batch-btn" type="button">배치 폐기 기록…</button>
               <button class="btn accent" id="rescale-block-close" type="button" autofocus>확인</button>
             </div>
           </div>
         </div>
 
-        <!-- 미등록 LOT 검사 모달(공용 partial) — 반제품 미등록 LOT 차단 + ERP 원료 LOT 경고를
-             하나의 모달 요소가 모두 구동한다(blend_lot_modal.js 가 케이스별로 표시 전환).
+        <!-- 미등록 LOT 검사 모달(공용 partial) · 반제품 미등록 LOT 차단 + ERP 원료 LOT 경고를
+             하나의 모달 요소가 모두 구동한다(blend_lot_modal.js가 케이스별로 표시 전환).
              확인 버튼으로 닫으면 해당 LOT 칸을 비우고 다시 포커스. hidden 토글 전용. -->
         {% set lot_modal_prefix = "" %}{% include "_lot_check_modal.html" %}
 
-        <!-- 저울 상태 선택 모달(공용 partial) — 나눠 담기/추가 계량 진입 전 그림 선택.
+        <!-- 저울 상태 선택 모달(공용 partial) · 나눠 담기/추가 계량 진입 전 그림 선택.
              선택이 PRINT/입력값 해석(추가분 vs 누계)을 가른다. hidden 토글 전용. -->
         {% set scale_state_prefix = "" %}{% include "_scale_state_modal.html" %}
 
-        <!-- 배치 폐기 기록 모달 — 과중량 폐기 권장·3회 증량 차단 뒤 책임자와 협의해 배치
+        <!-- 배치 폐기 기록 모달 · 과중량 폐기 권장·3회 증량 차단 뒤 책임자와 협의해 배치
              전체를 버리기로 한 경우의 기록. 제품 LOT 없이 별도 기록(blend_batch_discards)으로
-             남는다 — 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍의 마개
+             남는다. 저장 없이 떠나면 실물 소모 최대의 폐기가 무기록이던 구멍의 마개
              (2026-08-05). 사유 필수. hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="batch-discard-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="batch-discard-title">
@@ -395,8 +395,8 @@
                 <ol class="add-weigh-portions" id="batch-discard-list"></ol>
               </div>
               <div class="blend-field">
-                <label class="filter-label" for="batch-discard-reason">폐기 사유 (필수 — 책임자와 협의한 내용)</label>
-                <textarea class="input" id="batch-discard-reason" rows="2" placeholder="예: 과중량 — 책임자 OOO 협의 후 폐기"></textarea>
+                <label class="filter-label" for="batch-discard-reason">폐기 사유 (필수 · 책임자와 협의한 내용)</label>
+                <textarea class="input" id="batch-discard-reason" rows="2" placeholder="예: 과중량 · 책임자 OOO 협의 후 폐기"></textarea>
               </div>
               <p class="login-error" id="batch-discard-error" hidden></p>
             </div>
@@ -407,17 +407,17 @@
           </div>
         </div>
 
-        <!-- 자재 폐기 질문 모달 — '처음부터 다시' 재계량 때 비커에 담긴 자재의 행방을 묻는다.
+        <!-- 자재 폐기 질문 모달 · '처음부터 다시' 재계량 때 비커에 담긴 자재의 행방을 묻는다.
              숫자 오타 정정(자재 그대로)과 실제 폐기(기록 남김)는 완전히 다른 사건인데 버튼
              하나로는 구분할 수 없다. 담긴 값이 있을 때만 뜬다. hidden 토글 전용.
-             (scale-state 모달보다 뒤에 두어 그 위에 겹쳐 뜬다 — DOM 순서 = 쌓임 순서.) -->
+             (scale-state 모달보다 뒤에 두어 그 위에 겹쳐 뜬다. DOM 순서 = 쌓임 순서.) -->
         <div class="ss-modal-overlay" id="discard-ask-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="discard-ask-title">
             <div class="ss-modal-header"><h3 id="discard-ask-title">비커에 담긴 자재는 어떻게 됩니까?</h3></div>
             <div class="ss-modal-body">
               <p class="add-weigh-material" id="discard-ask-material"></p>
               <p class="scale-state-guide" id="discard-ask-text"></p>
-              <!-- 두 선택지의 실물 차이를 그림으로(중순위 그림 2026-08-05) — 왼쪽: 자재는
+              <!-- 두 선택지의 실물 차이를 그림으로(중순위 그림 2026-08-05) · 왼쪽: 자재는
                    비커에 그대로(숫자만 정정), 오른쪽: 비커를 비워 폐기(기록으로 남음). -->
               <div class="discard-ask-pics" aria-hidden="true">
                 <div class="discard-ask-pic">
@@ -427,7 +427,7 @@
                     <ellipse class="da-rim" cx="60" cy="14" rx="22" ry="4.5"/>
                     <text class="da-num" x="60" y="86">123 → 수정</text>
                   </svg>
-                  <span class="discard-ask-pic-label">숫자만 정정 — 자재 그대로</span>
+                  <span class="discard-ask-pic-label">숫자만 정정 · 자재 그대로</span>
                 </div>
                 <div class="discard-ask-pic is-discard">
                   <svg viewBox="0 0 120 96" focusable="false">
@@ -442,20 +442,20 @@
                     <line class="da-bin-line" x1="88" y1="64" x2="86" y2="82"/>
                     <rect class="da-bin-lid" x="52" y="52" width="52" height="6" rx="3"/>
                   </svg>
-                  <span class="discard-ask-pic-label">자재를 버림 — 폐기로 기록</span>
+                  <span class="discard-ask-pic-label">자재를 버림 · 폐기로 기록</span>
                 </div>
               </div>
             </div>
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="discard-ask-back" type="button">돌아가기</button>
-              <!-- 실제 폐기 — 되돌릴 수 없는 실물 사건이므로 warn(주황). 기록으로 남는다. -->
-              <button class="btn warn" id="discard-ask-discard" type="button">자재를 버립니다 — 폐기로 기록</button>
-              <button class="btn accent" id="discard-ask-typo" type="button">숫자만 잘못 입력 — 자재는 그대로</button>
+              <!-- 실제 폐기 · 되돌릴 수 없는 실물 사건이므로 warn(주황). 기록으로 남는다. -->
+              <button class="btn warn" id="discard-ask-discard" type="button">자재를 버립니다. 폐기로 기록</button>
+              <button class="btn accent" id="discard-ask-typo" type="button">숫자만 잘못 입력 · 자재는 그대로</button>
             </div>
           </div>
         </div>
 
-        <!-- 파생 이월(carry-over) 확인 모달 — 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
+        <!-- 파생 이월(carry-over) 확인 모달 · 기준 자재 행의 1차 LOT 선택 시 '파생 이월' 버튼을
              누르면 표시. 적용하면 1차 배합 총량을 이 행의 실제량으로 기록(계량 생략). hidden 토글 전용. -->
         <div class="ss-modal-overlay" id="carry-over-modal" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="carry-over-modal-title">
@@ -470,11 +470,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260805d"></script>
-    <script src="/static/js/blend_drafts.js?v=20260803d"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260725a"></script>
-    <script src="/static/js/blend_lot_modal.js?v=20260813a"></script>
-    <script src="/static/js/blend.js?v=20260908b"></script>
+    <script src="/static/js/blend_lib.js?v=20260908f"></script>
+    <script src="/static/js/blend_drafts.js?v=20260908f"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260908f"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260908f"></script>
+    <script src="/static/js/blend.js?v=20260908f"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
