@@ -45,7 +45,7 @@ body {
 /* 다른 카드는 숫자 하나지만 이 칸은 '5000.0 ± 12.0' 처럼 값 두 개가 들어가서
    공용 28px 로는 두 줄로 깨진다. 이 카드만 줄인다. */
 .visc-cards #visc-card-mean {
-  font-size: 20px;
+  font-size: var(--fs-lg);
   white-space: nowrap;
 }
 
@@ -83,7 +83,7 @@ body {
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   line-height: 1.25;
   white-space: nowrap;
@@ -98,7 +98,7 @@ body {
 .visc-tabs .mgmt-tab.active {
   background: var(--accent-primary, var(--brand));
   border-color: var(--accent-primary, var(--brand));
-  color: #fff;
+  color: var(--bg-surface-100);
 }
 
 .tab-panel { display: none; }
@@ -142,7 +142,7 @@ body {
   border-radius: 8px;
   background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-base));
   color: color-mix(in srgb, var(--status-warning) 75%, var(--text-primary));
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 
@@ -179,7 +179,7 @@ body {
   border-radius: 8px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   line-height: 1.45;
 }
@@ -241,7 +241,7 @@ body {
    ② 표 자체를 촘촘하게, ③ 그래도 좁으면 부차 열(총량)만 접는다.
    LOT·점도·상태는 어떤 폭에서도 남는다. */
 .visc-blend-table {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
 }
 
 .visc-blend-table th,
@@ -275,7 +275,7 @@ body {
   min-height: 24px;
   padding: 0 var(--space-2);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -342,7 +342,7 @@ body {
 
 .visc-value-input {
   min-height: 52px;
-  font-size: 20px;
+  font-size: var(--fs-lg);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -359,7 +359,7 @@ body {
   border-radius: 8px;
   background: var(--bg-base);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 
@@ -377,7 +377,7 @@ body {
   margin: 0;
   padding: var(--space-3);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 
@@ -414,7 +414,7 @@ body {
   border-radius: 8px;
   background: var(--brand-soft);
   color: var(--brand);
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   line-height: 1.5;
 }
@@ -445,7 +445,7 @@ body {
 /* 산점도 한 줄 결론 — 그림보다 먼저 읽히는 문장이라 본문보다 또렷하게. */
 .visc-pb-summary {
   margin: 0 0 0.5rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -474,13 +474,13 @@ body {
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-2) 0;
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 
 .visc-cond-note {
   margin: var(--space-1) 0 0;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   line-height: 1.5;
 }
 
@@ -499,7 +499,7 @@ body {
   flex-wrap: wrap;
 }
 .visc-reminder-since p { margin: 0.25rem 0 0; }
-.visc-reminder-since .visc-reminder-since-value { margin-top: 0.4rem; font-size: 0.85rem; }
+.visc-reminder-since .visc-reminder-since-value { margin-top: 0.4rem; font-size: var(--fs-sm); }
 .visc-reminder-since .btn { flex: 0 0 auto; }
 
 .visc-gran-toggle {
@@ -550,7 +550,7 @@ body {
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -650,7 +650,7 @@ body {
 
 .ss-modal-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-md);
 }
 
 .ss-modal-body {
@@ -707,19 +707,19 @@ body {
 }
 
 #visc-prod-list tr.is-selected {
-  background: var(--brand-soft, #eaf1fb);
+  background: var(--brand-soft);
 }
 
 #visc-prod-list tr:hover {
-  background: var(--bg-surface-200, #f4f6fa);
+  background: var(--bg-surface-200);
 }
 
 /* 기간별 표: 최근 60개 구간만 표시할 때의 안내 행 (전체는 Excel 내보내기) */
 .visc-table td.visc-period-truncation {
   text-align: center;
-  font-size: 0.82rem;
+  font-size: var(--fs-xs);
   padding: 8px 6px;
-  background: var(--bg-surface-200, #f4f6fa);
+  background: var(--bg-surface-200);
 }
 
 /* ── 관리 밴드(controlBandHtml) — 관리 기준 요약 아래 가로 밴드 그림 ──
@@ -776,7 +776,7 @@ body {
   position: relative;
   height: 14px;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
 }
@@ -813,7 +813,7 @@ body {
   border-radius: 4px;
   background: color-mix(in srgb, var(--text-primary) 12%, var(--bg-base));
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -830,7 +830,7 @@ body {
   justify-content: center;
   margin: 0;
   color: var(--text-tertiary);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   text-align: center;
   pointer-events: none;
 }

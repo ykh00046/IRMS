@@ -84,6 +84,20 @@
   --glow-secondary: 0 0 20px rgba(244, 124, 38, 0.2);
 
   /* Spacing & Layout */
+  /* 범주 팔레트(로트 열 등 '서로 다르기만 하면 되는' 색). 상태색과 겹치지 않게 4색. */
+  --series-1: #2563eb;
+  --series-2: #16a34a;
+  --series-3: #d97706;
+  --series-4: #9333ea;
+  /* 글자 스케일(docs/ui-standard.md §3). 화면 CSS 는 font-size 에 이 토큰만 쓴다. */
+  --fs-display: 3rem;
+  --fs-hero: 2rem;
+  --fs-xl: 1.5rem;
+  --fs-lg: 1.125rem;
+  --fs-md: 0.9375rem;
+  --fs-sm: 0.875rem;
+  --fs-xs: 0.8125rem;
+  --fs-2xs: 0.75rem;
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -111,6 +125,10 @@
    대신 명시적 data-theme="dark" 에만 반영해 라이트 UI 를 깨지 않는다. 다크 모드가
    도입되면 이 맵이 그대로 근태 달력에 적용된다. */
 :root[data-theme="dark"] {
+  --series-1: #60a5fa;
+  --series-2: #4ade80;
+  --series-3: #fbbf24;
+  --series-4: #c084fc;
   --cal-weekday: #93c5fd;
   --cal-weekday-bg: #1e3a5f;
   --cal-saturday: #a5b4fc;
@@ -205,7 +223,7 @@ body {
 .btn.compact {
   padding: 0.45rem 0.8rem;
   border-radius: var(--radius-full);
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   white-space: nowrap;
 }
 
@@ -216,7 +234,7 @@ body {
    것이 이겨 세로 2px 이 됐다 — 현장 PC 에서 누르기엔 너무 얇아 앞의 값을 택한다. */
 .btn.btn-sm {
   padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   white-space: nowrap;
 }
 
@@ -327,7 +345,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   display: grid;
   place-items: center;
   font-weight: 800;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.02em;
   color: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -352,12 +370,12 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 
 .brand-name {
   font-weight: 800;
-  font-size: 17px;
+  font-size: var(--fs-lg);
   letter-spacing: -0.01em;
 }
 
 .brand-sub {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, 0.58);
 }
 
@@ -372,7 +390,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .nav-section-label {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.42);
@@ -388,7 +406,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   margin-bottom: 2px;
   border-radius: 9px;
   color: rgba(255, 255, 255, 0.78);
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   text-decoration: none;
   transition: background 0.15s ease, color 0.15s ease;
@@ -407,7 +425,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   border-radius: 9px;
   background: var(--accent, #e8842c);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-align: center;
   line-height: 16px;
@@ -479,7 +497,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   margin-left: auto;
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   min-width: 18px;
   height: 18px;
@@ -505,7 +523,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   display: grid;
   place-items: center;
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   flex-shrink: 0;
 }
 
@@ -516,7 +534,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .sidebar-user-name {
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -524,7 +542,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .sidebar-user-role {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, 0.55);
   white-space: nowrap;
   overflow: hidden;
@@ -569,7 +587,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .topbar-eyebrow {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -582,7 +600,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 
 .topbar-heading {
   /* 페이지 제목은 섹션 제목(.panel-title 20px)보다 커야 위계가 선다 — 19→24px */
-  font-size: 24px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -696,7 +714,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 
 .kicker {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-tertiary);
@@ -705,7 +723,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .panel-title {
-  font-size: 1.25rem;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 0.5rem 0;
@@ -724,7 +742,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 }
 
 .panel-subtitle {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin: 0 0 1.5rem 0;
   max-width: 60ch;
@@ -739,7 +757,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary, #475569);
   cursor: pointer;
   white-space: nowrap;
@@ -751,7 +769,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 .blend-filter-row .checkbox-inline { padding-bottom: 9px; }
 
 .panel-notice {
-  font-size: 1rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
   background: var(--accent-secondary-light);
@@ -765,7 +783,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 .mode-note {
   margin-top: -0.75rem;
   margin-bottom: 1rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   background: rgba(51, 65, 85, 0.08);
   border: 1px solid rgba(51, 65, 85, 0.32);
@@ -796,7 +814,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 .filter-summary {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .btn {
@@ -804,7 +822,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   align-items: center;
   justify-content: center;
   padding: 0.6rem 1.2rem;
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--text-secondary);
   background: var(--surface);
@@ -896,7 +914,7 @@ button:disabled {
 .login-error {
   color: var(--status-error, #d8453f);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   padding: 0.5rem 0.7rem;
   border-left: 3px solid var(--status-error, #d8453f);
   background: rgba(216, 69, 63, 0.08);
@@ -961,7 +979,7 @@ button:disabled {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   padding: 0.6rem 1rem;
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   font-family: inherit;
   transition: all 0.2s ease;
 }
@@ -984,7 +1002,7 @@ button:disabled {
   min-height: 120px;
   line-height: 1.5;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 /* =========================================================================
@@ -1036,7 +1054,7 @@ td {
 }
 
 th {
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   /* text-transform: uppercase 금지 — 머리글은 한글이라 대문자화로 얻는 것이 없고,
      괄호 안 단위만 바꿔버린다: '이론량(g)' → '이론량(G)'. g(그램)과 G(기가)는 다른
@@ -1051,7 +1069,7 @@ th {
 }
 
 td {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -1105,7 +1123,7 @@ tr:hover td.sticky-right {
   align-items: center;
   padding: 0.25rem 0.6rem;
   border-radius: var(--radius-full);
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -1145,7 +1163,7 @@ tr:hover td.sticky-right {
 }
 
 .filter-label {
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   /* uppercase 제거 — 위 th 와 같은 이유('총 배합량 (g)' → '(G)'). */
   color: var(--text-tertiary);
@@ -1165,7 +1183,7 @@ tr:hover td.sticky-right {
   padding: 3rem 1rem;
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1191,7 +1209,7 @@ tr:hover td.sticky-right {
   margin: 8px 0 0;
   padding: 8px 10px;
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   background: var(--bg-surface-200, #f4f6fa);
 }
@@ -1235,7 +1253,7 @@ tr:hover td.sticky-right {
   color: var(--text-primary);
   padding: 1rem 1.25rem;
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   box-shadow: var(--shadow-default);
   display: flex;
   align-items: center;
@@ -1251,14 +1269,14 @@ tr:hover td.sticky-right {
 .toast.error {
   border: 2px solid var(--status-error);
   border-left-width: 8px;
-  font-size: 1.3rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   padding: 1.5rem 1.7rem;
   box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.22), var(--shadow-default);
 }
 .toast.error::before {
   content: "⚠";
-  font-size: 2.1rem;
+  font-size: var(--fs-hero);
   line-height: 1;
   color: var(--status-error);
   flex: 0 0 auto;
@@ -1271,14 +1289,14 @@ tr:hover td.sticky-right {
 .toast.warn.big {
   border: 2px solid var(--status-warning);
   border-left-width: 8px;
-  font-size: 1.3rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   padding: 1.5rem 1.7rem;
   box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.25), var(--shadow-default);
 }
 .toast.warn.big::before {
   content: "⚠";
-  font-size: 2.1rem;
+  font-size: var(--fs-hero);
   line-height: 1;
   color: var(--status-warning);
   flex: 0 0 auto;
@@ -1383,16 +1401,16 @@ tr:hover td.sticky-right {
     padding: 0.85rem;
   }
   .panel-title {
-    font-size: 1rem;
+    font-size: var(--fs-md);
   }
   .panel-subtitle {
-    font-size: 0.8rem;
+    font-size: var(--fs-xs);
   }
   .mode-note {
-    font-size: 0.7rem;
+    font-size: var(--fs-2xs);
   }
   .kicker {
-    font-size: 0.65rem;
+    font-size: var(--fs-2xs);
   }
   .button-row {
     flex-wrap: wrap;
@@ -1401,20 +1419,20 @@ tr:hover td.sticky-right {
   /* 터치 화면 타깃 — 손가락 최소 44px 쪽으로. 데스크톱 비율은 유지, 여기서만 상향. */
   .btn {
     padding: 0.5rem 0.85rem;
-    font-size: 0.8rem;
+    font-size: var(--fs-xs);
     min-height: 44px;
   }
   .btn.compact {
     min-height: 44px;
   }
   .select, .input, .textarea {
-    font-size: 0.85rem;
+    font-size: var(--fs-sm);
   }
 
 
   /* Table compact */
   table {
-    font-size: 0.8rem;
+    font-size: var(--fs-xs);
   }
   th, td {
     padding: 0.4rem 0.5rem;
@@ -1429,7 +1447,7 @@ tr:hover td.sticky-right {
     width: 100%;
   }
   .filter-label {
-    font-size: 0.7rem;
+    font-size: var(--fs-2xs);
   }
 }
 
@@ -1476,18 +1494,18 @@ tr:hover td.sticky-right {
   flex-direction: column;
   gap: 4px;
 }
-.metric-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.metric-label { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 500; }
 /* 총 배합량은 기간을 넓게 잡으면 천만 단위(12,345,678.9)까지 간다. 28px 로 두면 카드를
    넘어간다. 말줄임으로 자르지는 않는다 — 잘린 숫자는 틀린 숫자다. 넘치면 줄을 바꾼다. */
 .metric-value {
   font-family: var(--font-mono);
-  font-size: 24px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
-.metric-unit { font-size: 12px; color: var(--text-tertiary); }
+.metric-unit { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 
 .dashboard-grid {
   display: grid;
@@ -1498,4 +1516,4 @@ tr:hover td.sticky-right {
 .dashboard-chart-panel { min-height: 340px; display: flex; flex-direction: column; }
 .chart-wrap { position: relative; flex: 1; min-height: 260px; margin-top: 8px; }
 .chart-wrap canvas { max-height: 300px; }
-.small { font-size: 12px; margin-top: 6px; }
+.small { font-size: var(--fs-2xs); margin-top: 6px; }

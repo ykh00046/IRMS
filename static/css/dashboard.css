@@ -8,7 +8,7 @@
 }
 .dashboard-presets { display: flex; gap: 6px; }
 .preset-btn { min-width: 60px; }
-.preset-btn.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+.preset-btn.active { background: var(--brand); color: var(--bg-surface-100); border-color: var(--brand); }
 .dashboard-custom-range {
   display: flex;
   gap: 6px;
@@ -46,7 +46,7 @@
 .dash-recent th,
 .dash-recent td {
   padding: 0.45rem 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
 }
 
 .dash-recent .dash-lot-reactor {
@@ -84,20 +84,20 @@
   justify-content: space-between;
   gap: 12px;
   padding: 7px 10px;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-surface-100);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 .rescale-item-info { min-width: 0; overflow-wrap: anywhere; }
 /* LOT 는 기록으로 가는 링크 — [확인]만 있으면 무엇을 승인하는지 안 보고 누르게 된다. */
-.rescale-item-link { color: var(--accent-primary, #2563eb); text-decoration: none; }
+.rescale-item-link { color: var(--accent-primary); text-decoration: none; }
 .rescale-item-link:hover { text-decoration: underline; }
-.rescale-empty { padding: 6px 2px; font-size: 0.85rem; }
+.rescale-empty { padding: 6px 2px; font-size: var(--fs-sm); }
 /* 미확인 종류 태그 — 증량(오렌지) / 수기 입력(슬레이트). 한 목록에 섞여 나오므로 구분. */
 .rescale-kind {
   display: inline-block; margin-right: 6px; padding: 1px 7px;
-  border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  border-radius: 999px; font-size: var(--fs-2xs); font-weight: 700;
   background: var(--status-warning-bg); color: var(--status-warning);
 }
 .rescale-kind.is-manual { background: var(--bg-surface-300); color: var(--text-secondary); }
@@ -124,12 +124,12 @@
 
 .dash-section-title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: var(--text-primary);
 }
 
-.dash-section-note { font-size: 0.78rem; color: var(--text-tertiary); }
+.dash-section-note { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 
 .dash-attention { margin-bottom: 18px; }
 
@@ -151,9 +151,9 @@
 
 .dash-act:hover { border-color: var(--border-strong); transform: translateY(-1px); }
 
-.dash-act-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-.dash-act-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.03em; }
-.dash-act-note { font-size: 12px; color: var(--text-tertiary); word-break: break-all; }
+.dash-act-label { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 500; }
+.dash-act-value { font-size: var(--fs-hero); font-weight: 700; letter-spacing: -0.03em; }
+.dash-act-note { font-size: var(--fs-2xs); color: var(--text-tertiary); word-break: break-all; }
 
 /* 손을 대야 하는 상태만 색이 붙는다 — 평상시엔 조용해야 눈에 띌 때 눈에 띈다. */
 .dash-act.needs-action { border-color: var(--status-warning); }
@@ -173,7 +173,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   white-space: nowrap;
   cursor: pointer;

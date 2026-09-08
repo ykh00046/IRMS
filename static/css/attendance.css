@@ -1,7 +1,7 @@
 /* Attendance view page styles. */
 
 .att-page {
-  background: #f5f7fb;
+  background: var(--bg-surface-200);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -12,14 +12,14 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.9rem 1.4rem;
-  background: #ffffff;
-  border-bottom: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border-bottom: 1px solid var(--border-strong);
   flex-wrap: wrap;
   gap: 0.6rem;
 }
 
 .att-header h1 {
-  font-size: 1.2rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   margin: 0;
   letter-spacing: -0.02em;
@@ -30,7 +30,7 @@
   width: 40px;
   height: 40px;
   border-radius: 11px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 
 .att-title-block {
@@ -40,12 +40,12 @@
 
 .att-eyebrow {
   margin: 0;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   /* 'ATTENDANCE' 는 라틴 아이브로우라 대문자 유지 (한국어 텍스트에는 쓰지 않음). */
   text-transform: uppercase;
-  color: var(--accent-secondary-hover, #df6a16);
+  color: var(--accent-secondary-hover);
 }
 
 .att-header-left,
@@ -71,7 +71,7 @@
   width: 1px;
   align-self: stretch;
   min-height: 1.6rem;
-  background: var(--border-strong, #d7dbe3);
+  background: var(--border-strong);
 }
 
 @media (max-width: 640px) {
@@ -84,16 +84,16 @@
 .att-badge {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   background: rgba(51, 65, 85, 0.12);
-  color: var(--text-secondary, #334155);
+  color: var(--text-secondary);
 }
 
 .att-badge-admin {
   background: rgba(34, 197, 94, 0.14);
-  color: #166534;
+  color: var(--cal-leave);
 }
 
 .att-shell {
@@ -110,10 +110,10 @@
   gap: 0.7rem;
   padding: 0.75rem 1rem;
   border-radius: 14px;
-  background: #fef3c7;
-  border: 1px solid #fbbf24;
-  color: #78350f;
-  font-size: 0.92rem;
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
+  color: var(--status-warning);
+  font-size: var(--fs-md);
   font-weight: 600;
   flex-wrap: wrap;
 }
@@ -134,14 +134,14 @@
 }
 
 .att-warning-banner .att-warning-icon {
-  font-size: 1.1rem;
+  font-size: var(--fs-lg);
 }
 
 .att-warning-close {
   background: transparent;
   border: none;
-  color: #78350f;
-  font-size: 1.3rem;
+  color: var(--status-warning);
+  font-size: var(--fs-lg);
   line-height: 1;
   cursor: pointer;
   padding: 0.1rem 0.45rem;
@@ -154,8 +154,8 @@
 }
 
 .att-profile {
-  background: #fff;
-  border: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-subtle);
   padding: 1rem 1.25rem;
@@ -167,14 +167,14 @@
 }
 
 .att-profile-name {
-  font-size: 1.3rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   margin-right: 0.6rem;
 }
 
 .att-profile-meta {
-  color: var(--text-secondary, #334155);
-  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 .att-admin-picker[hidden] {
@@ -205,8 +205,8 @@
   min-width: 220px;
   padding: 0.45rem 0.6rem;
   border-radius: 10px;
-  border: 1px solid var(--border-strong, #d7dbe3);
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-100);
   font-family: inherit;
 }
 
@@ -224,12 +224,12 @@
 .att-month-label {
   min-width: 9rem;
   text-align: center;
-  font-size: 1.25rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   padding: 0.3rem 0.7rem;
-  background: #ffffff;
-  border: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
 }
 
@@ -240,8 +240,8 @@
 }
 
 .att-summary-card {
-  background: #fff;
-  border: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 1rem 1.1rem;
   box-shadow: var(--shadow-subtle);
@@ -274,15 +274,15 @@
 }
 
 .att-summary-card h3 {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: var(--text-secondary, #334155);
+  color: var(--text-secondary);
   margin: 0 0 0.55rem;
 }
 
 .att-big {
-  font-size: 2.6rem;
+  font-size: var(--fs-display);
   line-height: 1;
   font-weight: 700;
   font-family: var(--font-mono, "JetBrains Mono", monospace);
@@ -290,8 +290,8 @@
 }
 
 .att-big-unit {
-  color: var(--text-secondary, #334155);
-  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
   margin-top: 0.3rem;
   display: flex;
   align-items: baseline;
@@ -301,12 +301,12 @@
 
 .att-big-unit strong {
   font-family: var(--font-mono, "JetBrains Mono", monospace);
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text-primary);
 }
 
 .att-big-alert {
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-big-leave {
@@ -314,22 +314,22 @@
 }
 
 .att-alert-card h3 {
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-alert-card .att-kv li strong {
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-card-note {
   margin: 0.65rem 0 0;
   color: var(--text-tertiary);
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
 }
 
 .att-card-note.warn {
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-card-note-strong {
@@ -340,7 +340,7 @@
 /* 카드 제목 옆 부제 — '반영분'과 '입력 대기'처럼 뜻이 정반대인 숫자를 구분한다. */
 .att-h3-sub {
   font-weight: 700;
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   letter-spacing: 0.02em;
   color: var(--text-tertiary);
   background: var(--line);
@@ -358,23 +358,23 @@
 
 .att-pending-card:hover,
 .att-pending-card:focus-visible {
-  border-color: #f59e0b;
+  border-color: var(--status-warning);
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
 }
 
 .att-pending-card.is-alert {
-  border-color: #f59e0b;
-  background: #fffbeb;
+  border-color: var(--status-warning);
+  background: var(--status-warning-bg);
 }
 
 .att-pending-card.is-alert h3,
 .att-pending-card.is-alert .att-big {
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-pending-card.is-alert .att-h3-sub {
-  background: #fde68a;
-  color: #78350f;
+  background: color-mix(in srgb, var(--status-warning) 35%, white);
+  color: var(--status-warning);
 }
 
 .att-kv {
@@ -389,17 +389,17 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 0.92rem;
+  font-size: var(--fs-md);
 }
 
 .att-kv li span {
-  color: var(--text-secondary, #334155);
+  color: var(--text-secondary);
 }
 
 .att-kv li em {
   font-style: normal;
-  font-size: 0.78rem;
-  color: #0d9488;
+  font-size: var(--fs-2xs);
+  color: var(--status-success);
 }
 
 .att-kv li strong {
@@ -427,7 +427,7 @@
 .att-work-grid span {
   display: block;
   color: var(--text-tertiary);
-  font-size: 0.76rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   margin-bottom: 0.18rem;
 }
@@ -435,7 +435,7 @@
 .att-work-grid strong {
   display: block;
   font-family: var(--font-mono, "JetBrains Mono", monospace);
-  font-size: 1.15rem;
+  font-size: var(--fs-lg);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -443,15 +443,15 @@
 }
 
 .att-table-wrap {
-  background: #fff;
-  border: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-subtle);
   padding: 1rem 1.1rem;
 }
 
 .att-table-wrap h3 {
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   font-weight: 700;
   margin: 0 0 0.7rem;
 }
@@ -464,7 +464,7 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   /* 그룹 헤더(1행)의 렌더 높이. 하위 헤더(2행) sticky 오프셋과 반드시 같아야
      두 sticky 행이 어긋나지 않는다 — 한 곳에서만 관리하도록 변수로 공유. */
   --att-group-header-h: 2.05rem;
@@ -473,7 +473,7 @@
 .att-table th,
 .att-table td {
   padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #eceef3;
+  border-bottom: 1px solid var(--border-subtle);
   text-align: center;
   white-space: nowrap;
   line-height: 1.3;
@@ -494,8 +494,8 @@
 .att-table thead tr:first-child th {
   background: var(--line);
   font-weight: 700;
-  color: var(--text-secondary, #334155);
-  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
   height: var(--att-group-header-h);
   position: sticky;
   top: 0;
@@ -505,10 +505,10 @@
 
 /* Sub-header row (정상/연장/야근/조출). */
 .att-table thead tr:nth-child(2) th {
-  background: #f1f4f9;
+  background: var(--bg-page);
   font-weight: 600;
-  color: var(--text-secondary, #334155);
-  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
   position: sticky;
   top: var(--att-group-header-h);
   z-index: 1;
@@ -516,14 +516,14 @@
 }
 
 .att-table th.att-group-weekday {
-  background: #dbeafe;
-  color: #0c4a6e;
+  background: var(--cal-weekday-bg);
+  color: var(--cal-weekday);
   letter-spacing: 0.04em;
 }
 
 .att-table th.att-group-holiday {
-  background: #fecaca;
-  color: #7f1d1d;
+  background: var(--cal-holiday-bg);
+  color: var(--cal-holiday);
   letter-spacing: 0.04em;
 }
 
@@ -557,15 +557,15 @@
 
 /* Saturday / Sunday / holiday row tints — these override the zebra stripes. */
 .att-table tr.att-day-saturday > td {
-  background: var(--cal-saturday-bg, #eff6ff) !important;
+  background: var(--cal-saturday-bg) !important;
 }
 
 .att-table tr.att-day-saturday > td.att-col-weekday {
-  background: #dbeafe !important;
+  background: var(--cal-weekday-bg) !important;
 }
 
 .att-table tr.att-day-saturday > td.att-col-holiday {
-  background: #bfdbfe !important;
+  background: color-mix(in srgb, var(--accent-tertiary) 22%, white) !important;
 }
 
 .att-table tr.att-day-saturday > td.att-date-cell,
@@ -575,29 +575,29 @@
 }
 
 .att-table tr.att-day-sunday > td {
-  background: var(--cal-sunday-bg, #fff1f2) !important;
+  background: var(--cal-sunday-bg) !important;
 }
 
 .att-table tr.att-day-sunday > td.att-col-weekday {
-  background: #ffe4e6 !important;
+  background: var(--status-error-bg) !important;
 }
 
 .att-table tr.att-day-sunday > td.att-col-holiday {
-  background: #fecdd3 !important;
+  background: var(--status-error-bg) !important;
 }
 
 .att-table tr.att-day-sunday > td.att-date-cell,
 .att-table tr.att-day-sunday > td.att-weekday-cell {
-  color: var(--cal-sunday, #b91c1c);
+  color: var(--cal-sunday);
   font-weight: 700;
 }
 
 .att-table tr.att-day-rest > td {
-  background: var(--cal-rest-bg, #f8fafc) !important;
+  background: var(--cal-rest-bg) !important;
 }
 
 .att-table tr.att-day-rest > td.att-col-weekday {
-  background: #eef2f7 !important;
+  background: var(--bg-surface-300) !important;
 }
 
 .att-table tr.att-day-rest > td.att-col-holiday {
@@ -611,49 +611,49 @@
 }
 
 .att-table tr.att-day-leave > td {
-  background: var(--cal-leave-bg, #f0fdf4) !important;
+  background: var(--cal-leave-bg) !important;
 }
 
 .att-table tr.att-day-leave > td.att-col-weekday {
-  background: #dcfce7 !important;
+  background: var(--status-success-bg) !important;
 }
 
 .att-table tr.att-day-leave > td.att-col-holiday {
-  background: #bbf7d0 !important;
+  background: color-mix(in srgb, var(--status-success) 45%, white) !important;
 }
 
 .att-table tr.att-day-leave > td.att-date-cell,
 .att-table tr.att-day-leave > td.att-weekday-cell,
 .att-table tr.att-day-leave > td.att-code-cell {
-  color: var(--cal-leave, #166534);
+  color: var(--cal-leave);
   font-weight: 700;
 }
 
 .att-table tr.att-day-holiday > td {
-  background: var(--cal-holiday-bg, #fff7ed) !important;
+  background: var(--cal-holiday-bg) !important;
 }
 
 .att-table tr.att-day-holiday > td.att-col-weekday {
-  background: #ffedd5 !important;
+  background: var(--status-warning-bg) !important;
 }
 
 .att-table tr.att-day-holiday > td.att-col-holiday {
-  background: #fed7aa !important;
+  background: color-mix(in srgb, var(--accent-secondary) 45%, white) !important;
 }
 
 .att-table tr.att-day-holiday > td.att-date-cell,
 .att-table tr.att-day-holiday > td.att-weekday-cell {
-  color: var(--cal-holiday, #9a3412);
+  color: var(--cal-holiday);
   font-weight: 700;
 }
 
 .att-table td.att-miss {
-  color: #dc2626;
+  color: var(--ink-red);
   font-weight: 700;
 }
 
 .att-table td.att-late {
-  color: #b45309;
+  color: var(--status-warning);
   font-weight: 700;
 }
 
@@ -664,8 +664,8 @@
 }
 
 .att-table td.att-note-cell {
-  color: var(--text-secondary, #334155);
-  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
   max-width: 180px;
   white-space: normal;
   text-align: left;
@@ -676,7 +676,7 @@
   display: inline-block;
   padding: 0.14rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.4;
@@ -689,13 +689,13 @@
 }
 
 .att-pill-saturday {
-  background: #bfdbfe;
-  color: var(--cal-saturday, #1e3a8a);
+  background: color-mix(in srgb, var(--accent-tertiary) 22%, white);
+  color: var(--cal-saturday);
 }
 
 .att-pill-sunday {
-  background: #fecaca;
-  color: var(--cal-sunday, #7f1d1d);
+  background: var(--cal-holiday-bg);
+  color: var(--cal-sunday);
 }
 
 .att-pill-rest {
@@ -704,8 +704,8 @@
 }
 
 .att-pill-holiday {
-  background: #fed7aa;
-  color: var(--cal-holiday, #7c2d12);
+  background: color-mix(in srgb, var(--accent-secondary) 45%, white);
+  color: var(--cal-holiday);
 }
 
 .att-daytype-cell {
@@ -727,12 +727,12 @@
   min-width: 2.5rem;
   padding: 0.12rem 0.38rem;
   border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.68rem;
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+  font-size: var(--fs-2xs);
   font-weight: 700;
   line-height: 1.2;
-  border: 1px solid #fbbf24;
+  border: 1px solid var(--status-warning);
 }
 
 .att-table tr.att-row-issue > td {
@@ -741,7 +741,7 @@
 }
 
 .att-table tr.att-row-issue > td.att-date-cell {
-  box-shadow: inset 4px 0 0 #f59e0b, inset 0 1px 0 rgba(245, 158, 11, 0.8), inset 0 -1px 0 rgba(245, 158, 11, 0.8);
+  box-shadow: inset 4px 0 0 var(--status-warning), inset 0 1px 0 rgba(245, 158, 11, 0.8), inset 0 -1px 0 rgba(245, 158, 11, 0.8);
 }
 
 .att-table tr.att-row-issue > td.att-daytype-cell,
@@ -754,7 +754,7 @@
    없고, 책임자는 '구분 0 / 근태 이상' 같은 축약만 보고 뜻을 알 수 없었다.
    판정 원문(굵게)과 해설(뮤트)을 행 바로 아래에 붙여 읽게 한다. */
 .att-table tr.att-issue-detail-row > td {
-  background: #fffbeb !important;
+  background: var(--status-warning-bg) !important;
   box-shadow: inset 0 -1px 0 rgba(245, 158, 11, 0.8);
   text-align: left;
   white-space: normal;
@@ -770,8 +770,8 @@
 
 .att-issue-detail-date {
   font-weight: 700;
-  color: #92400e;
-  font-size: 0.8rem;
+  color: var(--status-warning);
+  font-size: var(--fs-xs);
   padding-top: 0.08rem;
 }
 
@@ -794,18 +794,18 @@
 
 .att-issue-label {
   font-weight: 700;
-  font-size: 0.8rem;
-  color: #92400e;
-  background: #fef3c7;
-  border: 1px solid #fbbf24;
+  font-size: var(--fs-xs);
+  color: var(--status-warning);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
   border-radius: 999px;
   padding: 0.05rem 0.45rem;
   white-space: nowrap;
 }
 
 .att-issue-why {
-  font-size: 0.82rem;
-  color: var(--text-secondary, #334155);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -818,7 +818,7 @@
 @keyframes att-issue-flash {
   0%,
   40% {
-    background-color: #fde68a;
+    background-color: color-mix(in srgb, var(--status-warning) 35%, white);
   }
   100% {
     background-color: transparent;
@@ -827,8 +827,8 @@
 
 /* 책임자 이상 목록 패널(2026-08-14) — 트레이 팝업의 웹 본판. */
 .att-anomaly-panel {
-  background: #fff;
-  border: 1px solid #fbbf24;
+  background: var(--bg-surface-100);
+  border: 1px solid var(--status-warning);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-subtle);
   padding: 0.9rem 1.1rem 1rem;
@@ -845,13 +845,13 @@
 
 .att-anomaly-head h3 {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: var(--fs-md);
   font-weight: 700;
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-anomaly-hint {
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   color: var(--text-tertiary);
   font-weight: 600;
 }
@@ -865,8 +865,8 @@
 
 .att-anomaly-empty {
   margin: 0;
-  font-size: 0.86rem;
-  color: var(--text-secondary, #334155);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
 
 .att-anomaly-row {
@@ -874,14 +874,14 @@
   border-radius: 12px;
   padding: 0.55rem 0.7rem;
   cursor: pointer;
-  background: #fffdf7;
+  background: var(--bg-surface-200);
   transition: border-color 120ms ease, background 120ms ease;
 }
 
 .att-anomaly-row:hover,
 .att-anomaly-row:focus-visible {
-  border-color: #f59e0b;
-  background: #fffbeb;
+  border-color: var(--status-warning);
+  background: var(--status-warning-bg);
 }
 
 .att-anomaly-who {
@@ -889,19 +889,19 @@
   align-items: baseline;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-size: 0.85rem;
-  color: var(--text-secondary, #334155);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
 
 .att-anomaly-who strong {
-  font-size: 0.95rem;
+  font-size: var(--fs-md);
   color: var(--text-primary);
 }
 
 .att-anomaly-count {
   margin-left: auto;
   font-weight: 700;
-  color: #b45309;
+  color: var(--status-warning);
 }
 
 .att-anomaly-details {
@@ -921,8 +921,8 @@
 
 .att-anomaly-date {
   font-weight: 700;
-  font-size: 0.8rem;
-  color: #92400e;
+  font-size: var(--fs-xs);
+  color: var(--status-warning);
   min-width: 3rem;
 }
 
@@ -935,10 +935,10 @@
   flex-wrap: wrap;
   padding: 0.65rem 1rem;
   border-radius: 14px;
-  background: #fef3c7;
-  border: 1px solid #fbbf24;
-  color: #78350f;
-  font-size: 0.9rem;
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
+  color: var(--status-warning);
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
@@ -953,32 +953,32 @@
   max-width: 8rem;
   padding: 0.14rem 0.5rem;
   border-radius: 999px;
-  background: #ede9fe;
-  color: #5b21b6;
-  font-size: 0.72rem;
+  background: var(--brand-soft);
+  color: var(--accent-primary);
+  font-size: var(--fs-2xs);
   font-weight: 700;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
 .att-code-pill-leave {
-  background: #dcfce7;
-  color: var(--cal-leave, #166534);
+  background: var(--status-success-bg);
+  color: var(--cal-leave);
 }
 
 .att-code-pill-issue {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
 }
 
 .att-code-empty {
   color: var(--text-tertiary);
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
 }
 
 .att-empty-row td {
   text-align: center;
-  color: var(--text-secondary, #334155);
+  color: var(--text-secondary);
   padding: 1.3rem 0.5rem;
 }
 
@@ -991,18 +991,18 @@
 }
 
 .att-table-hint {
-  font-size: 0.8rem;
-  color: var(--text-secondary, #334155);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
   margin: 0.7rem 0 0;
 }
 
 @media (max-width: 640px) {
   .att-header h1 {
-    font-size: 1rem;
+    font-size: var(--fs-md);
   }
 
   .att-big {
-    font-size: 2rem;
+    font-size: var(--fs-hero);
   }
 
   .att-profile {
@@ -1048,11 +1048,11 @@
   padding: 6px 12px;
   border-radius: 999px;
   font-family: "JetBrains Mono", "IBM Plex Sans KR", monospace;
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-secondary);
-  background: #f1f5f9;
+  background: var(--cal-rest-bg);
   border: 1px solid var(--line-strong);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   cursor: pointer;
@@ -1063,14 +1063,14 @@
   background: var(--line);
 }
 #att-session-badge.is-warning {
-  color: #b45309;
-  background: #fef3c7;
-  border-color: #fbbf24;
+  color: var(--status-warning);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning);
 }
 #att-session-badge.is-critical {
-  color: #b91c1c;
-  background: #fee2e2;
-  border-color: #f87171;
+  color: var(--cal-sunday);
+  background: var(--cal-sunday-bg);
+  border-color: var(--status-error);
   animation: att-session-pulse 800ms ease-in-out infinite alternate;
 }
 @keyframes att-session-pulse {
@@ -1082,54 +1082,54 @@
    색칠 = 근무해야 하는 시간, 빗금 = 휴가. 굵은 세로선 = 지각/조퇴 판정 기준. */
 .att-rules {
   margin: 0 1.4rem 1.1rem;
-  background: #ffffff;
-  border: 1px solid var(--border-strong, #d7dbe3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
 }
 .att-rules > summary {
   cursor: pointer;
   padding: 0.7rem 1rem;
   font-weight: 700;
-  color: #1d3461;
+  color: var(--accent-primary-hover);
   list-style-position: inside;
 }
-.att-rules > summary:hover { color: #2563eb; }
+.att-rules > summary:hover { color: var(--ink-blue); }
 .att-rules-body { padding: 0 1rem 1rem; }
 .att-rules-note {
   margin: 0.2rem 0 0.7rem;
-  font-size: 0.86rem;
-  color: #56627b;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
   line-height: 1.55;
 }
-.att-rules-note b { color: #15233f; }
+.att-rules-note b { color: var(--text-primary); }
 .att-rules-shift2 {
   margin-top: 0.8rem;
   padding-top: 0.7rem;
-  border-top: 1px dashed var(--border-strong, #d7dbe3);
+  border-top: 1px dashed var(--border-strong);
 }
 .att-rules-svg { width: 100%; max-width: 720px; height: auto; display: block; }
-.att-rules-svg .att-tl-grid { stroke: #e3e8f0; stroke-width: 1; }
-.att-rules-svg .att-tl-hour { font-size: 11px; fill: #8a94a6; text-anchor: middle; }
-.att-rules-svg .att-tl-label { font-size: 12px; font-weight: 700; fill: #15233f; text-anchor: end; }
-.att-rules-svg .att-tl-work { fill: #bbf7d0; stroke: #16a34a; stroke-width: 1; rx: 3; }
-.att-rules-svg .att-tl-hatch-bg { fill: #f1f5f9; }
-.att-rules-svg .att-tl-hatch-line { stroke: #cbd5e1; stroke-width: 2; }
-.att-rules-svg .att-tl-mark { stroke: #b45309; stroke-width: 2.5; }
-.att-rules-svg .att-tl-basis { font-size: 11px; font-weight: 700; fill: #b45309; text-anchor: middle; }
+.att-rules-svg .att-tl-grid { stroke: var(--border-subtle); stroke-width: 1; }
+.att-rules-svg .att-tl-hour { font-size: var(--fs-2xs); fill: var(--text-tertiary); text-anchor: middle; }
+.att-rules-svg .att-tl-label { font-size: var(--fs-2xs); font-weight: 700; fill: var(--text-primary); text-anchor: end; }
+.att-rules-svg .att-tl-work { fill: color-mix(in srgb, var(--status-success) 45%, white); stroke: var(--status-success); stroke-width: 1; rx: 3; }
+.att-rules-svg .att-tl-hatch-bg { fill: var(--cal-rest-bg); }
+.att-rules-svg .att-tl-hatch-line { stroke: var(--border-strong); stroke-width: 2; }
+.att-rules-svg .att-tl-mark { stroke: var(--status-warning); stroke-width: 2.5; }
+.att-rules-svg .att-tl-basis { font-size: var(--fs-2xs); font-weight: 700; fill: var(--status-warning); text-anchor: middle; }
 
 /* 일자별 상세 행 색 범례(2026-08-05) — 스와치 색은 위 tr 강조 톤과 동일 계열. */
 .att-legend {
   display: flex; flex-wrap: wrap; gap: 0.35rem 1rem;
-  margin: 0.35rem 0 0.6rem; font-size: 0.78rem; color: #56627b;
+  margin: 0.35rem 0 0.6rem; font-size: var(--fs-2xs); color: var(--text-secondary);
 }
 .att-legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
 .att-legend-swatch {
   display: inline-block; width: 13px; height: 13px; border-radius: 3px;
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
-.att-legend-swatch.is-issue { background: #fecaca; }
-.att-legend-swatch.is-leave { background: #dcfce7; }
-.att-legend-swatch.is-rest { background: #eef2f7; }
-.att-legend-swatch.is-sat { background: #dbeafe; }
-.att-legend-swatch.is-sun { background: #ffe4e6; }
-.att-legend-swatch.is-hol { background: #ffedd5; }
+.att-legend-swatch.is-issue { background: var(--cal-holiday-bg); }
+.att-legend-swatch.is-leave { background: var(--status-success-bg); }
+.att-legend-swatch.is-rest { background: var(--bg-surface-300); }
+.att-legend-swatch.is-sat { background: var(--cal-weekday-bg); }
+.att-legend-swatch.is-sun { background: var(--status-error-bg); }
+.att-legend-swatch.is-hol { background: var(--status-warning-bg); }

@@ -18,13 +18,13 @@
   white-space: nowrap;
 }
 .drafts-ago { font-weight: 600; color: var(--text-primary); }
-.drafts-abs { font-size: 0.78rem; color: var(--text-tertiary); }
-.drafts-expiry { font-size: 0.75rem; color: var(--text-tertiary); }
+.drafts-abs { font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.drafts-expiry { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 /* 임박 — 다 채운 계량값이 조용히 사라지는 것을 막는 유일한 신호. */
 .drafts-expiry.soon { color: var(--status-warning); font-weight: 600; }
 
 .drafts-name-row { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
-.drafts-total { font-size: 0.78rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.drafts-total { font-size: var(--fs-2xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 .drafts-actions { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
 
@@ -33,7 +33,7 @@
 .drafts-badge-warn { background: var(--status-warning-bg); color: var(--status-warning); }
 .drafts-badge-error { background: var(--status-error-bg); color: var(--status-error); }
 .drafts-badge-info { background: var(--status-info-bg); color: var(--status-info); }
-.drafts-change-note { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--text-secondary); }
+.drafts-change-note { margin: 0.35rem 0 0; font-size: var(--fs-xs); color: var(--text-secondary); }
 .drafts-change-note ul { margin: 0.2rem 0 0; padding-left: 1.2em; }
 
 .drafts-loading {

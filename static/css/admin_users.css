@@ -26,7 +26,7 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
@@ -70,7 +70,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   color: var(--text-secondary);
   white-space: nowrap;
   cursor: pointer;
@@ -111,12 +111,12 @@
 /* 한글 라벨에는 uppercase/letter-spacing 을 걸지 않는다(자간이 벌어져 어색).
    .metric-label 과 동일한 표기로 맞춘다(insight.css 참고). */
 .summary-label {
-  font-size: 0.75rem;
+  font-size: var(--fs-2xs);
   color: var(--text-secondary);
 }
 
 .summary-value {
-  font-size: 2.2rem;
+  font-size: var(--fs-hero);
   font-weight: 700;
   letter-spacing: -0.04em;
 }
@@ -201,7 +201,7 @@
 
 .audit-table td {
   vertical-align: top;
-  font-size: 0.82rem;
+  font-size: var(--fs-xs);
 }
 
 .audit-c-time {
@@ -224,7 +224,7 @@
 }
 
 .audit-meta {
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   color: var(--text-secondary);
 }
 
@@ -244,7 +244,7 @@
   align-items: center;
   padding: 0.18rem 0.45rem;
   border-radius: var(--radius-full);
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -281,7 +281,7 @@
 }
 
 .helper-text {
-  font-size: 0.72rem;
+  font-size: var(--fs-2xs);
   color: var(--text-tertiary);
 }
 
@@ -380,7 +380,7 @@
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 .sig-preview {
   max-width: 100%;
@@ -402,7 +402,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-secondary);
 }
@@ -410,7 +410,7 @@
 .att-issue-result {
   margin-top: 0.9rem;
   padding: 0.9rem 1rem;
-  border: 1px solid var(--accent-primary, #f97316);
+  border: 1px solid var(--accent-primary);
   border-radius: var(--radius-sm, 6px);
   background: rgba(249, 115, 22, 0.06);
 }
@@ -437,7 +437,7 @@
 }
 
 .att-issue-pw {
-  font-size: 1.6rem;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: 0.12em;
   user-select: all;
@@ -445,12 +445,12 @@
 
 .att-issue-script {
   margin: 0.55rem 0 0;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
 .att-issue-warn {
   margin: 0.35rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
   color: var(--text-secondary);
 }

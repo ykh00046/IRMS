@@ -4,14 +4,14 @@
 /* 로트 수 조절 */
 .cont-lot-controls { display: flex; align-items: center; gap: 0.5rem; }
 .cont-lot-count {
-  min-width: 1.6rem; text-align: center; font-weight: 700; font-size: 1.05rem;
-  color: #111827;
+  min-width: 1.6rem; text-align: center; font-weight: 700; font-size: var(--fs-lg);
+  color: var(--text-primary);
 }
 
 /* 매트릭스 — 로트가 늘면 가로 스크롤(table-wrap 이 overflow-x 담당) */
 .cont-table { min-width: max-content; }
 .cont-table th.cont-lot-col { text-align: right; white-space: nowrap; }
-.cont-lot-preview { color: #6b7280; font-weight: 400; font-size: 0.72rem; }
+.cont-lot-preview { color: var(--text-secondary); font-weight: 400; font-size: var(--fs-2xs); }
 
 /* ── 가독성: 같은 원재료라도 로트별 실제량 칸이 나란히 → 로트마다 세로 색띠로 구분 ── */
 /* 로트 열 색 순환(cont-lc0~3): 셀 배경 옅은 톤 + 헤더 배지 진한 톤 */
@@ -23,20 +23,20 @@
 /* 로트 번호 배지(헤더) — 색으로 어느 로트인지 즉시 구분 */
 .cont-lot-chip {
   display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px;
-  font-weight: 700; font-size: 0.82rem; color: #fff;
+  font-weight: 700; font-size: var(--fs-xs); color: var(--bg-surface-100);
 }
-.cont-lc0 .cont-lot-chip { background: #2563eb; }
-.cont-lc1 .cont-lot-chip { background: #16a34a; }
-.cont-lc2 .cont-lot-chip { background: #d97706; }
-.cont-lc3 .cont-lot-chip { background: #9333ea; }
+.cont-lc0 .cont-lot-chip { background: var(--series-1); }
+.cont-lc1 .cont-lot-chip { background: var(--series-2); }
+.cont-lc2 .cont-lot-chip { background: var(--series-3); }
+.cont-lc3 .cont-lot-chip { background: var(--series-4); }
 
 /* 로트 열 사이 구분선, 첫 로트 열은 레시피 정보 블록과 굵게 분리 */
-.cont-table td.cont-cell, .cont-table th.cont-lot-col { border-left: 1px solid var(--border, #e5e7eb); }
-.cont-table .cont-first-lot { border-left: 3px solid var(--border-strong, #cbd5e1); }
+.cont-table td.cont-cell, .cont-table th.cont-lot-col { border-left: 1px solid var(--border); }
+.cont-table .cont-first-lot { border-left: 3px solid var(--border-strong); }
 
 /* 자재 행 줄무늬 + 자재명 강조 — 넓은 표에서 같은 원재료 행 추적 */
 .cont-table tbody tr.cont-mrow-alt > td:not(.cont-cell) { background: rgba(15, 23, 42, 0.035); }
-.cont-table td.cont-matname { font-weight: 700; color: #111827; }
+.cont-table td.cont-matname { font-weight: 700; color: var(--text-primary); }
 /* 현재 계량 중인 행 강조(포커스/호버) — 위아래 액센트 선을 행 전체에 그린다 */
 .cont-table tbody tr.cont-mrow:hover > td {
   box-shadow: inset 0 2px 0 var(--brand), inset 0 -2px 0 var(--brand);
@@ -45,14 +45,14 @@
 /* 실제량 셀: 입력 + 편차를 세로로 쌓아 폭을 아낀다 */
 .cont-cell { vertical-align: top; }
 .cont-cell .cont-actual { width: 6.5rem; font-weight: 600; text-align: right; }
-.cont-cell .cont-actual::placeholder { color: #9ca3af; font-weight: 400; }
-.cont-var { display: block; margin-top: 0.15rem; font-size: 0.78rem; text-align: right; color: #9ca3af; }
-.cont-var.var-up { color: #dc2626; font-weight: 600; }
+.cont-cell .cont-actual::placeholder { color: var(--text-tertiary); font-weight: 400; }
+.cont-var { display: block; margin-top: 0.15rem; font-size: var(--fs-2xs); text-align: right; color: var(--text-tertiary); }
+.cont-var.var-up { color: var(--ink-red); font-weight: 600; }
 .cont-var.var-down { color: var(--brand); font-weight: 600; }
 /* 편차 0(정확) — 옅은 초록 체크. 시선을 끌지 않으면서 '계량 완료·정확'만 확인 */
-.cont-var.cont-var-ok { color: #86b892; }
+.cont-var.cont-var-ok { color: color-mix(in srgb, var(--status-success) 45%, white); }
 
-.cont-table td.cont-theory { font-weight: 700; color: #111827; }
+.cont-table td.cont-theory { font-weight: 700; color: var(--text-primary); }
 
 /* ── 셀별 자재 LOT (실제량 위에 쌓임) ──────────────────────────
    자재 LOT 이 (자재 × 로트) 셀마다 개별이라 각 셀 안 실제량 칸 위에 놓인다. LOT 입력 +
@@ -62,28 +62,28 @@
 .cont-cell .cont-cell-lot {
   width: 6.5rem; flex: 1 1 auto; min-width: 0;
   padding-top: 0.2rem; padding-bottom: 0.2rem;
-  font-size: 0.82rem; text-align: left;
+  font-size: var(--fs-xs); text-align: left;
 }
-.cont-cell .cont-cell-lot::placeholder { color: #9ca3af; font-weight: 400; }
+.cont-cell .cont-cell-lot::placeholder { color: var(--text-tertiary); font-weight: 400; }
 /* ↩ 이전 로트 LOT 복사 — 작고 조용한 버튼(명시적 클릭만, 자동 이월 없음) */
 .cont-lot-copy {
   flex: 0 0 auto; width: 1.4rem; height: 1.4rem; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border, #e5e7eb); border-radius: 6px;
-  background: #fff; color: #6b7280; font-size: 0.85rem; line-height: 1; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-surface-100); color: var(--text-secondary); font-size: var(--fs-sm); line-height: 1; cursor: pointer;
 }
-.cont-lot-copy:hover { background: var(--brand-soft, #eaf1fb); color: var(--brand, #2563eb); border-color: var(--brand, #2563eb); }
+.cont-lot-copy:hover { background: var(--brand-soft); color: var(--brand); border-color: var(--brand); }
 
-.cont-hint { margin-top: 0.6rem; font-size: 0.85rem; }
+.cont-hint { margin-top: 0.6rem; font-size: var(--fs-sm); }
 
 /* ── 로트별 증량(rescale) 헤더 표기 ────────────────────────── */
 /* 증량된 로트는 헤더에 조정 총량 표시 + 주황 강조(배합 화면 discard/rescale 톤과 동일) */
-.cont-lot-total { color: #b45309; font-weight: 700; font-size: 0.78rem; }
+.cont-lot-total { color: var(--status-warning); font-weight: 700; font-size: var(--fs-2xs); }
 th.cont-lot-col.cont-lot-rescaled .cont-lot-chip {
-  background: #b45309 !important;       /* 색 순환 무시 — 증량 로트는 항상 주황 */
+  background: var(--status-warning) !important;       /* 색 순환 무시 — 증량 로트는 항상 주황 */
 }
 th.cont-lot-col.cont-lot-rescaled {
-  box-shadow: inset 0 -3px 0 #f59e0b;   /* 열 밑 바로 증량 상태 표시 */
+  box-shadow: inset 0 -3px 0 var(--status-warning);   /* 열 밑 바로 증량 상태 표시 */
 }
 
 /* 증량된 로트의 '추가 +X g' 배지는 .cont-var(블록) 안에 들어간다 — 줄바꿈 없이 바로 아래.
@@ -95,7 +95,7 @@ th.cont-lot-col.cont-lot-rescaled {
    눈에 들어온다. */
 .cont-progress {
   margin: 0.6rem 0 0;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;

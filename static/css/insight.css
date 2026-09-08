@@ -44,7 +44,7 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
@@ -104,7 +104,7 @@
   align-items: center;
   padding: 0.12rem 0.45rem;
   border-radius: var(--radius-full);
-  font-size: 0.72rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -218,15 +218,15 @@
 
   .filter-summary {
     display: block !important;
-    font-size: 11px;
-    color: #000;
+    font-size: var(--fs-2xs);
+    color: var(--text-primary);
     margin: 0 0 8px;
   }
 
   .panel {
     break-inside: avoid;
     box-shadow: none;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-strong);
   }
 
   .insight-metric-grid { grid-template-columns: repeat(3, 1fr); }

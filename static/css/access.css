@@ -77,7 +77,7 @@
 
 .selection-card strong,
 .access-card h2 {
-  font-size: 1.25rem;
+  font-size: var(--fs-lg);
 }
 
 .access-chip {
@@ -88,7 +88,7 @@
   border-radius: 999px;
   background: rgba(51, 65, 85, 0.14);
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
@@ -119,7 +119,7 @@
 .selection-meta {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-2xs);
 }
 
 .access-actions {
@@ -147,9 +147,9 @@
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 50% -10%, #2b569a 0%, transparent 55%),
-    linear-gradient(165deg, #1b4079 0%, #12305c 55%, #0e2547 100%);
-  color: #fff;
+    radial-gradient(circle at 50% -10%, var(--accent-tertiary) 0%, transparent 55%),
+    linear-gradient(165deg, var(--accent-primary) 0%, var(--accent-primary-hover) 55%, var(--text-primary) 100%);
+  color: var(--bg-surface-100);
   display: grid;
   place-items: center;
   padding: 2rem 1.5rem;
@@ -176,24 +176,24 @@
   width: 54px;
   height: 54px;
   border-radius: 15px;
-  font-size: 18px;
+  font-size: var(--fs-lg);
   margin-bottom: 8px;
 }
 
 .launch-title {
-  font-size: 30px;
+  font-size: var(--fs-hero);
   font-weight: 800;
   letter-spacing: -0.02em;
-  color: #fff;
+  color: var(--bg-surface-100);
 }
 
 .launch-sub {
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.72);
 }
 
 .launch-date {
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -208,7 +208,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 30px 28px 24px;
-  background: var(--surface, #fff);
+  background: var(--surface);
   border-radius: 16px;
   box-shadow: 0 14px 40px rgba(8, 20, 45, 0.35);
   text-decoration: none;
@@ -227,25 +227,25 @@
   border-radius: 11px;
   display: grid;
   place-items: center;
-  font-size: 19px;
+  font-size: var(--fs-lg);
   margin-bottom: 8px;
-  background: var(--brand-soft, #eaf1fb);
-  color: var(--brand, #1b4079);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .launch-tile-ico-mfg {
-  background: var(--accent-soft, #fef1e6);
-  color: var(--accent-secondary, #f47c26);
+  background: var(--accent-soft);
+  color: var(--accent-secondary);
 }
 
 .launch-tile-title {
-  font-size: 17px;
+  font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .launch-tile-desc {
-  font-size: 13px;
+  font-size: var(--fs-xs);
   line-height: 1.55;
   color: var(--text-secondary);
 }
@@ -255,13 +255,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 700;
-  color: var(--brand, #1b4079);
+  color: var(--brand);
 }
 
 .launch-tile-go-accent {
-  color: var(--accent-secondary-hover, #df6a16);
+  color: var(--accent-secondary-hover);
 }
 
 .launch-foot {
@@ -270,7 +270,7 @@
   justify-content: center;
   gap: 12px;
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   color: rgba(255, 255, 255, 0.55);
 }
 
@@ -284,12 +284,12 @@
   color: rgba(255, 255, 255, 0.92);
   text-decoration: none;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .launch-foot-link:hover {
-  color: #fff;
+  color: var(--bg-surface-100);
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.45);
 }
@@ -297,13 +297,13 @@
 .launch-logout {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.22);
-  color: #fff;
+  color: var(--bg-surface-100);
 }
 
 .launch-logout:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.35);
-  color: #fff;
+  color: var(--bg-surface-100);
 }
 
 @media (max-width: 560px) {
@@ -317,7 +317,7 @@
     gap: 4px;
   }
   .launch-stage { gap: 18px; }
-  .launch-clock { font-size: 1.7rem; }
+  .launch-clock { font-size: var(--fs-xl); }
 }
 
 /* 로그인 카드 (management_login) — 시안 네이비 게이트 */
@@ -330,7 +330,7 @@
 
 .login-card {
   width: min(400px, 100%);
-  background: var(--surface, #fff);
+  background: var(--surface);
   border-radius: 16px;
   padding: 32px 30px 26px;
   box-shadow: 0 20px 56px rgba(8, 20, 45, 0.4);
@@ -351,19 +351,19 @@
   width: 46px;
   height: 46px;
   border-radius: 13px;
-  font-size: 15px;
+  font-size: var(--fs-md);
   margin-bottom: 10px;
 }
 
 .login-title {
-  font-size: 20px;
+  font-size: var(--fs-lg);
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
 .login-subtitle {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   color: var(--text-tertiary);
 }
 
@@ -376,13 +376,13 @@
 .login-submit {
   width: 100%;
   height: 46px;
-  font-size: 15px;
+  font-size: var(--fs-md);
   margin-top: 4px;
 }
 
 .login-demo {
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   color: var(--text-tertiary);
 }
 
@@ -394,8 +394,8 @@
 /* 첫 로그인 3단계 안내 — 평소엔 접혀 있다가 필요한 사람만 편다.
    타이포는 .login-note 계열(뮤트 톤)을 그대로 따른다. */
 .login-help {
-  font-size: 12px;
-  color: var(--text-secondary, #56627b);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
 }
 
 .login-help > summary {
@@ -412,7 +412,7 @@
 
 .login-help > summary::before {
   content: "＋ ";
-  color: var(--text-tertiary, #8b94a7);
+  color: var(--text-tertiary);
 }
 
 .login-help[open] > summary::before {
@@ -436,24 +436,24 @@
 
 .login-back {
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
   text-decoration: none;
 }
 
 .login-back:hover {
-  color: var(--brand, #1b4079);
+  color: var(--brand);
 }
 
 /* 진행/안내 문구 — .login-error(common.css) 와 같은 레이아웃/여백이되 오류 빨강이
    아닌 뮤트 톤. blend_login.js 가 className="login-note" 로 설정한다. */
 .login-note {
-  color: var(--text-secondary, #56627b);
+  color: var(--text-secondary);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   padding: 0.5rem 0.7rem;
-  border-left: 3px solid var(--border-strong, #d6dce7);
+  border-left: 3px solid var(--border-strong);
   background: rgba(86, 98, 123, 0.08);
   border-radius: var(--radius-sm, 6px);
 }
@@ -494,9 +494,9 @@
   max-height: 216px;
   overflow-y: auto;
   margin-top: 4px;
-  border: 1px solid var(--border-strong, #d6dce7);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: #fff;
+  background: var(--bg-surface-100);
   box-shadow: 0 12px 28px rgba(21, 35, 63, 0.18);
 }
 
@@ -506,14 +506,14 @@
   padding: 9px 14px;
   border: 0;
   background: transparent;
-  color: var(--text-primary, #15233f);
-  font-size: 14px;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
 }
 
 .worker-suggest-item:hover {
-  background: var(--brand-soft, #eaf1fb);
+  background: var(--brand-soft);
 }
 
 /* 새 작업자 등록 — 파트 선택 모달(blend_login). hidden 속성 방식.
@@ -536,20 +536,20 @@
   max-width: 360px;
   padding: 22px 22px 18px;
   border-radius: 14px;
-  background: #fff;
+  background: var(--bg-surface-100);
   box-shadow: 0 18px 40px rgba(21, 35, 63, 0.22);
 }
 .part-dialog-title {
   margin: 0 0 6px;
-  font-size: 18px;
+  font-size: var(--fs-lg);
   font-weight: 700;
-  color: var(--text-primary, #15233f);
+  color: var(--text-primary);
 }
 .part-dialog-message {
   margin: 0 0 14px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.5;
-  color: var(--text-muted, #5a6478);
+  color: var(--text-muted);
   word-break: keep-all;
 }
 .part-dialog-buttons {
@@ -571,8 +571,8 @@
 .launch-tile-access {
   display: inline-flex; align-items: center; gap: 5px;
   margin-top: 8px; padding: 3px 10px; border-radius: 999px;
-  font-size: 0.74rem; font-weight: 700;
-  background: rgba(148, 163, 184, 0.16); color: #56627b;
+  font-size: var(--fs-2xs); font-weight: 700;
+  background: rgba(148, 163, 184, 0.16); color: var(--text-secondary);
 }
 .launch-tile-access svg {
   width: 12px; height: 12px;
@@ -582,14 +582,14 @@
    '안전'으로 읽힌다(2026-08-08). 자물쇠가 열린 아이콘과 대비만 유지하고 색은 중립. */
 .launch-tile-access.is-open {
   background: rgba(148, 163, 184, 0.16);
-  color: #56627b;
+  color: var(--text-secondary);
   border: 1px dashed rgba(86, 98, 123, 0.45);
 }
 
 /* 현장 PC 홈에 늘 떠 있는 화면이라 시계가 쓸모 있다(교대·출퇴근 시각 확인). */
 .launch-clock {
   margin: 2px 0 0;
-  font-size: 2rem;
+  font-size: var(--fs-hero);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.94);
