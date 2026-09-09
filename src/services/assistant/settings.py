@@ -21,7 +21,10 @@ GEMINI_KEY = "assistant_gemini_api_key"
 GROQ_KEY = "assistant_groq_api_key"
 
 DEFAULT_MODEL = "gemini-2.5-flash"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# Groq 예비 모델 사슬. llama-3.3-70b-versatile 은 2026-09 현재 계정에서 404(은퇴) 라
+# 계정 모델 목록에 실제로 있는 것으로 바꿨다. 앞이 막히면(404·429·5xx) 다음으로 넘어간다.
+GROQ_MODELS = ("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b")
+GROQ_MODEL = GROQ_MODELS[0]
 
 # 설정 화면에서 고를 수 있는 모델. 목록 밖 값도 저장은 되지만(운영 중 새 모델 대응)
 # 화면은 이 목록을 기본 선택지로 쓴다.

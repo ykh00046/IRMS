@@ -150,6 +150,7 @@ def build_system_prompt(today: date | None = None, context: dict[str, Any] | Non
 5. 한 문장은 40자 안으로 짧게 쓴다.
 6. 줄표(—)를 쓰지 않는다.
 7. 조사는 앞말에 붙여 쓴다(LOT을, 점도가).
+7-1. 존댓말로 답한다("~입니다", "~합니다"). 반말("~이다", "~한다")은 쓰지 않는다.
 8. 마지막 줄에 그 데이터를 더 볼 수 있는 화면을 [화면 지도]에서 골라
    **메뉴**(경로) 꼴로 한 줄 붙인다.
 9. 도구가 "안내"와 "화면"을 돌려주면 값을 지어내지 말고 그 화면으로 안내한다.
@@ -510,6 +511,10 @@ def _groq_client(api_key: str) -> Any:
     return Groq(api_key=api_key)
 
 
+def _is_model_missing(exc: Exception) -> bool:
+    return extract_http_status(exc) == 404 or "model_not_found" in str(exc)
+
+
 def _run_groq(
     query: str,
     history: list[tuple[str, str]],
@@ -518,8 +523,32 @@ def _run_groq(
     recorder: _ToolRecorder,
     emit: Callable[[str, dict[str, Any]], None],
 ) -> AnswerResult:
+    """Groq 모델 사슬. 은퇴한 모델(404)·한도(429)·서버 오류면 다음 모델로 넘어간다."""
+    last_exc: Exception | None = None
+    for model in assistant_settings.GROQ_MODELS:
+        try:
+            return _run_groq_model(query, history, system_prompt, cfg, recorder, emit, model)
+        except AssistantError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 분류 후 다음 모델
+            last_exc = exc
+            _logger.warning("[assistant] groq 실패 model=%s %s: %s", model, type(exc).__name__, exc)
+            if not (_is_model_missing(exc) or is_fallbackable(exc)):
+                raise
+    assert last_exc is not None
+    raise last_exc
+
+
+def _run_groq_model(
+    query: str,
+    history: list[tuple[str, str]],
+    system_prompt: str,
+    cfg: ProviderConfig,
+    recorder: _ToolRecorder,
+    emit: Callable[[str, dict[str, Any]], None],
+    model: str,
+) -> AnswerResult:
     client = _groq_client(cfg.groq_key)
-    model = assistant_settings.GROQ_MODEL
 
     catalog = "\n".join(
         f"- {name}({', '.join(params)}): {desc}"
