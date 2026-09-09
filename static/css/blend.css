@@ -242,12 +242,15 @@
 /* 공정 설명 줄(자재 사이 안내문 — 화면 전용, 공식 배합일지 미포함)
    작업자가 반드시 읽어야 하는 안내라 오렌지 강조 + 확대(사용자 요청 2026-07-21).
    배합·다중 계량 두 화면이 이 클래스를 공유한다. */
+/* 공정 설명 줄은 중립 정보다. 강조색(코럴)은 변경점 신호로 예약돼 있어 설명에 쓰면
+   경고처럼 읽힌다(사용자 지적 2026-09-09). 회색 띠 + 회색 선으로, 다음 계량 행(파란 선)과
+   경고 배지(앰버)와 구분된다. 굵기는 유지해 장갑 낀 거리에서도 읽힌다. */
 .blend-step-row td {
-  background: var(--accent-secondary-light, color-mix(in srgb, var(--accent-secondary) 12%, transparent));
-  color: var(--text-primary); font-size: var(--fs-lg); font-weight: 700;
-  /* 왼쪽 강조선은 row-next(계량 순서)와 같은 방식·두께·위치로 통일 — border 는 셀
+  background: var(--bg-surface-300);
+  color: var(--text-primary); font-size: var(--fs-md); font-weight: 600;
+  /* 왼쪽 선은 row-next(계량 순서)와 같은 방식·두께·위치로 통일 — border 는 셀
      내용을 밀어 파란 선(inset shadow)과 어긋나 보였다(현장 신고 2026-07-23). */
-  box-shadow: inset 4px 0 0 var(--accent-secondary); padding: 0.6rem 0.8rem;
+  box-shadow: inset 4px 0 0 var(--border-strong); padding: 0.6rem 0.8rem;
 }
 
 /* 작업자 교대 힌트(라벨 옆 작은 안내) */
@@ -403,11 +406,14 @@
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
   min-width: 0;
 }
-.blend-base-links { display: inline-flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+/* 기본량 링크는 라벨 줄 한 줄에 머문다. 값이 둘이면 13px 로도 꺾여 라벨 "(g)" 까지
+   밀어냈다(2026-09-09). 표준 최소 크기(12px)로 두고 줄바꿈을 막는다. */
+.blend-label-row .filter-label { white-space: nowrap; }
+.blend-base-links { display: inline-flex; gap: 0.35rem; align-items: baseline; white-space: nowrap; }
 .blend-base-label { font-size: var(--fs-2xs); color: var(--muted); }
 .blend-base-link {
   background: none; border: none; padding: 0; cursor: pointer;
-  font-size: var(--fs-sm); font-weight: 700; white-space: nowrap;
+  font-size: var(--fs-2xs); font-weight: 600; white-space: nowrap;
   color: var(--accent);
 }
 .blend-base-link:hover:not(:disabled) { text-decoration: underline; }
