@@ -24,11 +24,12 @@
   right: var(--space-6);
   bottom: var(--space-6);
   z-index: 900;
-  width: 52px;
-  height: 52px;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   border: 1px solid var(--accent-primary-hover);
   border-radius: var(--radius-full);
   background: var(--accent-primary);
@@ -36,6 +37,28 @@
   cursor: pointer;
   box-shadow: var(--shadow-default);
   transition: background 0.15s ease;
+}
+
+.asst-launcher-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 답변이 닫힌 사이에 끝났다는 표시. 미확인이라 경고색을 쓴다. */
+.asst-unread {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--status-warning);
+  border: 2px solid white;
+}
+
+.asst-unread[hidden] {
+  display: none;
 }
 
 .asst-launcher:hover {
@@ -76,12 +99,18 @@
 
 .asst-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-surface-200);
+}
+
+.asst-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .asst-head-title {
@@ -96,6 +125,13 @@
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+.asst-sub {
+  margin: 0;
+  font-size: var(--fs-2xs);
+  line-height: 1.3;
+  color: var(--text-tertiary);
 }
 
 .asst-badge {
@@ -120,8 +156,15 @@
   gap: var(--space-3);
 }
 
+/* 빈 화면도 대화처럼 보이게 인사 말풍선을 먼저 둔다. */
+.asst-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .asst-empty-label {
-  margin: 0 0 var(--space-2);
+  margin: 0;
   font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -201,11 +244,29 @@
   gap: var(--space-1);
 }
 
+/* 말풍선 아래 한 줄 — 바깥쪽(내 말은 오른쪽, 도우미 말은 왼쪽)에 시각을 둔다. */
+.asst-foot {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.asst-time {
+  white-space: nowrap;
+}
+
 .asst-meta {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+.asst-meta[hidden] {
+  display: none;
 }
 
 /* 토큰이 들어오는 동안 깜빡이는 커서. 애니메이션을 끄면 그냥 고정 막대. */
@@ -294,11 +355,23 @@
 /* ── 입력줄 ─────────────────────────────────────────────────── */
 .asst-composer {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-surface-200);
+}
+
+.asst-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.asst-composer-hint {
+  margin: 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
 }
 
 .asst-input {

@@ -8,7 +8,12 @@
  *        순서:   meta -> tool_call* -> token* -> done | error
  *   POST /api/assistant/reset   -> {session_id}
  *
- * 대화는 메모리에만 둔다(새로고침하면 사라짐). session_id 만 sessionStorage 에 남긴다.
+ * 대화는 탭 단위로 sessionStorage 에 남긴다 — 메뉴를 옮겨도 이어지게 하려는 것.
+ *   brm-assistant-session   : 서버 대화 세션 id
+ *   brm-assistant-messages  : 말풍선 배열(JSON, 최근 40개·약 200KB 상한)
+ *   brm-assistant-open      : 창이 열려 있었는지("1")
+ *   brm-assistant-unread    : 닫힌 사이에 답변이 끝났는지("1")
+ * 저장이 막힌 브라우저(사설 모드)에서도 동작하도록 읽기·쓰기는 모두 try/catch 로 감싼다.
  * 전역 노출은 window.IRMS.assistant = {open, close} 하나뿐.
  */
 (function () {
@@ -17,13 +22,17 @@
   const IRMS = (window.IRMS = window.IRMS || {});
 
   const SESSION_KEY = "brm-assistant-session";
+  const MESSAGES_KEY = "brm-assistant-messages";
+  const OPEN_KEY = "brm-assistant-open";
+  const UNREAD_KEY = "brm-assistant-unread";
+  const MAX_MESSAGES = 40;
+  const MAX_BYTES = 200 * 1024;
   const SUGGESTIONS = [
     "오늘 배합 몇 건이야?",
     "PB 점도 최근 상태 알려줘",
     "이번 달 자재 사용량 알려줘",
     "기록이 저장 안 된 것 같아요",
   ];
-  const EMPTY_HINT = "사용법도 물어볼 수 있습니다.";
 
   // 서버가 message 를 못 보냈을 때만 쓰는 대체 문구. 한 문장·40자 안(docs/ui-standard.md §6).
   const ERROR_TEXT = {
@@ -200,11 +209,130 @@
     if (typeof handlers[eventName] === "function") handlers[eventName](payload || {});
   }
 
+  // ── 탭 저장소 ───────────────────────────────────────────────────
+  // 사설 모드·용량 초과에서 예외를 던지므로 모든 접근을 감싼다.
+  function readStore(key) {
+    try {
+      return window.sessionStorage.getItem(key) || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function writeStore(key, value) {
+    try {
+      if (value) window.sessionStorage.setItem(key, value);
+      else window.sessionStorage.removeItem(key);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function byteLength(text) {
+    try {
+      return new TextEncoder().encode(text).length;
+    } catch (_error) {
+      return text.length * 3;
+    }
+  }
+
+  // 저장된 값은 같은 탭이 쓴 것이지만, 모양이 깨진 값이 화면을 망가뜨리지 않게 걸러 낸다.
+  function sanitizeRecord(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const role = raw.role === "user" || raw.role === "assistant" ? raw.role : "";
+    if (!role) return null;
+
+    const record = {
+      role,
+      text: typeof raw.text === "string" ? raw.text : "",
+      ts: typeof raw.ts === "number" && isFinite(raw.ts) ? raw.ts : Date.now(),
+    };
+
+    if (Array.isArray(raw.tools)) {
+      const tools = raw.tools
+        .filter((tool) => tool && typeof tool === "object")
+        .map((tool) => ({
+          name: String(tool.name || ""),
+          label: String(tool.label || tool.name || ""),
+          status: String(tool.status || "done"),
+        }));
+      if (tools.length) record.tools = tools;
+    }
+
+    if (raw.meta && typeof raw.meta === "object") {
+      const meta = {};
+      if (raw.meta.provider) meta.provider = String(raw.meta.provider);
+      if (raw.meta.model) meta.model = String(raw.meta.model);
+      if (typeof raw.meta.duration_ms === "number") meta.duration_ms = raw.meta.duration_ms;
+      if (raw.meta.stopped) meta.stopped = true;
+      record.meta = meta;
+    }
+
+    if (Array.isArray(raw.suggestions)) {
+      const items = raw.suggestions
+        .filter((text) => typeof text === "string" && text.trim())
+        .slice(0, 4);
+      if (items.length) record.suggestions = items;
+    }
+
+    if (raw.error && typeof raw.error === "object") {
+      record.error = {
+        code: String(raw.error.code || ""),
+        message: String(raw.error.message || ""),
+      };
+    }
+    return record;
+  }
+
+  function loadMessages() {
+    const raw = readStore(MESSAGES_KEY);
+    if (!raw) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_error) {
+      return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(sanitizeRecord)
+      .filter((record) => record !== null)
+      .slice(-MAX_MESSAGES);
+  }
+
+  // 최근 MAX_MESSAGES 개까지, 그리고 약 200KB 안으로 앞에서부터 덜어 낸다.
+  function saveMessages(list) {
+    let items = Array.isArray(list) ? list.slice(-MAX_MESSAGES) : [];
+    let json = "[]";
+    for (;;) {
+      try {
+        json = JSON.stringify(items);
+      } catch (_error) {
+        items = [];
+        json = "[]";
+        break;
+      }
+      if (items.length <= 1 || byteLength(json) <= MAX_BYTES) break;
+      items = items.slice(1);
+    }
+    writeStore(MESSAGES_KEY, items.length ? json : "");
+    return items;
+  }
+
+  function clockLabel(ts) {
+    const when = new Date(typeof ts === "number" && isFinite(ts) ? ts : Date.now());
+    const hh = String(when.getHours()).padStart(2, "0");
+    const mm = String(when.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
+
   function init() {
     const launcher = document.getElementById("asst-launcher");
     const panel = document.getElementById("asst-panel");
     if (!launcher || !panel) return;
 
+    const unreadDot = document.getElementById("asst-unread");
     const badge = document.getElementById("asst-badge");
     const resetBtn = document.getElementById("asst-reset");
     const closeBtn = document.getElementById("asst-close");
@@ -222,6 +350,8 @@
     let controller = null;
     let stickToBottom = true;
     let statusLoaded = false;
+    let messages = loadMessages();
+    let draft = null;        // 스트리밍 중인 답변 {record, node, answer}
 
     // ── 세션 ──
     function newSessionId() {
@@ -232,20 +362,27 @@
     }
 
     function readSessionId() {
-      try {
-        return window.sessionStorage.getItem(SESSION_KEY) || "";
-      } catch (_error) {
-        return "";
-      }
+      return readStore(SESSION_KEY);
     }
 
     function writeSessionId(value) {
-      try {
-        if (value) window.sessionStorage.setItem(SESSION_KEY, value);
-        else window.sessionStorage.removeItem(SESSION_KEY);
-      } catch (_error) {
-        /* 사설 모드 등에서 저장이 막히면 세션 없이 동작한다 */
-      }
+      writeStore(SESSION_KEY, value);
+    }
+
+    function persist() {
+      messages = saveMessages(messages);
+    }
+
+    function remember(record) {
+      messages.push(record);
+      persist();
+      return record;
+    }
+
+    // ── 미확인 표시 ──
+    function setUnread(on) {
+      unreadDot.hidden = !on;
+      writeStore(UNREAD_KEY, on ? "1" : "");
     }
 
     function ensureSessionId() {
@@ -307,19 +444,36 @@
     }
 
     // ── 말풍선 ──
-    function appendUser(text) {
+    // 말풍선 아래 한 줄: 시각(HH:MM)은 늘, 응답 시간·모델은 도우미 말풍선에만.
+    function buildFoot(ts) {
+      const foot = document.createElement("div");
+      foot.className = "asst-foot";
+      const time = document.createElement("span");
+      time.className = "asst-time";
+      time.textContent = clockLabel(ts);
+      const meta = document.createElement("span");
+      meta.className = "asst-meta";
+      meta.hidden = true;
+      foot.appendChild(time);
+      foot.appendChild(meta);
+      return { foot, time, meta };
+    }
+
+    function appendUser(text, ts) {
       const wrap = document.createElement("div");
       wrap.className = "asst-msg asst-msg-user";
       const bubble = document.createElement("div");
       bubble.className = "asst-bubble asst-bubble-user";
       bubble.textContent = text;
+      const parts = buildFoot(ts);
       wrap.appendChild(bubble);
+      wrap.appendChild(parts.foot);
       thread.appendChild(wrap);
       refreshEmptyState();
       scrollToEnd(true);
     }
 
-    function appendAssistant() {
+    function appendAssistant(ts) {
       const wrap = document.createElement("div");
       wrap.className = "asst-msg asst-msg-bot";
 
@@ -330,9 +484,7 @@
       const bubble = document.createElement("div");
       bubble.className = "asst-bubble asst-bubble-bot asst-md";
 
-      const meta = document.createElement("p");
-      meta.className = "asst-meta";
-      meta.hidden = true;
+      const parts = buildFoot(ts);
 
       const followups = document.createElement("div");
       followups.className = "asst-chip-row";
@@ -340,12 +492,29 @@
 
       wrap.appendChild(tools);
       wrap.appendChild(bubble);
-      wrap.appendChild(meta);
+      wrap.appendChild(parts.foot);
       wrap.appendChild(followups);
       thread.appendChild(wrap);
       refreshEmptyState();
       scrollToEnd(true);
-      return { wrap, tools, bubble, meta, followups };
+      return { wrap, tools, bubble, meta: parts.meta, time: parts.time, followups };
+    }
+
+    function metaLabel(meta) {
+      if (!meta || typeof meta !== "object") return "";
+      if (meta.stopped) return STOPPED_TEXT;
+      const bits = [];
+      if (typeof meta.duration_ms === "number" && isFinite(meta.duration_ms)) {
+        bits.push(`${(meta.duration_ms / 1000).toFixed(1)}초`);
+      }
+      if (meta.model) bits.push(String(meta.model));
+      return bits.join(" · ");
+    }
+
+    function paintMeta(node, meta) {
+      const text = metaLabel(meta);
+      node.meta.hidden = !text;
+      node.meta.textContent = text;
     }
 
     function renderTools(node, list) {
@@ -388,6 +557,34 @@
       });
     }
 
+    // ── 저장된 대화 복원 ──
+    // 처음 그릴 때와 같은 렌더러를 통과시킨다 — 저장된 것은 원본 마크다운뿐이다.
+    function restoreMessage(record) {
+      if (record.role === "user") {
+        appendUser(record.text, record.ts);
+        return;
+      }
+      const node = appendAssistant(record.ts);
+      renderTools(node.tools, record.tools);
+      if (record.error) {
+        node.bubble.classList.add("is-error");
+        node.bubble.textContent = record.error.message || FALLBACK_ERROR;
+      } else if (record.text) {
+        node.bubble.innerHTML = renderMarkdown(record.text);
+      } else {
+        node.bubble.innerHTML = `<p>${escapeHtml(STOPPED_TEXT)}</p>`;
+      }
+      const meta = record.meta || (record.text || record.error ? null : { stopped: true });
+      paintMeta(node, meta);
+      if (!record.error) renderFollowups(node.followups, record.suggestions);
+    }
+
+    function restoreThread() {
+      messages.forEach(restoreMessage);
+      refreshEmptyState();
+      scrollToEnd(true);
+    }
+
     // ── 질문 보내기 ──
     function buildContext() {
       const context = { path: window.location.pathname };
@@ -410,8 +607,11 @@
       const query = String(rawQuery || "").trim();
       if (!query || streaming || enabled === false) return;
 
-      appendUser(query);
-      const node = appendAssistant();
+      const askedAt = Date.now();
+      appendUser(query, askedAt);
+      remember({ role: "user", text: query, ts: askedAt });
+
+      const node = appendAssistant(Date.now());
       input.value = "";
       autoGrow();
 
@@ -421,6 +621,11 @@
       let toolList = [];
       let settled = false;
       let model = "";
+      let provider = "";
+
+      // 스트리밍이 끝나기 전에 화면을 떠나도 받은 만큼은 남기려고 먼저 자리를 만든다.
+      const record = remember({ role: "assistant", text: "", ts: startedAt });
+      draft = { record, answer: "" };
 
       controller = new AbortController();
       setStreaming(true);
@@ -436,6 +641,11 @@
         node.bubble.classList.add("is-error");
         node.bubble.textContent = text;
         node.meta.hidden = true;
+        record.text = "";
+        record.error = { code: "", message: text };
+        delete record.meta;
+        persist();
+        if (panel.hidden) setUnread(true);
         scrollToEnd(false);
       };
 
@@ -443,6 +653,7 @@
         meta: (data) => {
           if (data.session_id) writeSessionId(String(data.session_id));
           if (data.model) model = String(data.model);
+          if (data.provider) provider = String(data.provider);
         },
         tool_call: (data) => {
           const name = String(data.name || "");
@@ -455,18 +666,40 @@
         token: (data) => {
           if (typeof data.text !== "string") return;
           answer += data.text;
+          if (draft) draft.answer = answer;
           paint();
         },
         done: (data) => {
           settled = true;
           if (typeof data.answer === "string" && data.answer.trim()) answer = data.answer;
           if (Array.isArray(data.tools_used) && data.tools_used.length) toolList = data.tools_used;
+          if (data.model) model = String(data.model);
+          if (data.provider) provider = String(data.provider);
           renderTools(node.tools, toolList);
           node.bubble.innerHTML = renderMarkdown(answer);
-          const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-          node.meta.hidden = false;
-          node.meta.textContent = model ? `${seconds}초 · ${model}` : `${seconds}초`;
-          renderFollowups(node.followups, data.suggestions);
+          const elapsed = typeof data.duration_ms === "number"
+            ? data.duration_ms
+            : Date.now() - startedAt;
+          const suggestions = (Array.isArray(data.suggestions) ? data.suggestions : [])
+            .filter((text) => typeof text === "string" && text.trim())
+            .slice(0, 4);
+          paintMeta(node, { duration_ms: elapsed, model, provider });
+          renderFollowups(node.followups, suggestions);
+
+          record.text = answer;
+          record.ts = startedAt;
+          record.tools = toolList.map((tool) => ({
+            name: String(tool.name || ""),
+            label: String(tool.label || tool.name || ""),
+            status: String(tool.status || "done"),
+          }));
+          record.meta = { provider, model, duration_ms: elapsed };
+          if (suggestions.length) record.suggestions = suggestions;
+          delete record.error;
+          persist();
+
+          // 창이 닫혀 있는 사이에 답이 끝났으면 단추에 미확인 점을 켠다.
+          if (panel.hidden) setUnread(true);
           scrollToEnd(false);
         },
         error: (data) => {
@@ -525,14 +758,18 @@
         }
       } finally {
         controller = null;
+        draft = null;
         setStreaming(false);
         if (!settled) {
-          // done/error 없이 끊겼다(사용자 중지·서버 조기 종료). 받은 만큼은 남긴다.
+          // done/error 없이 끊겼다(사용자 중지·화면 이동·서버 조기 종료). 받은 만큼은 남긴다.
           node.bubble.innerHTML = answer
             ? renderMarkdown(answer)
             : `<p>${escapeHtml(STOPPED_TEXT)}</p>`;
           node.meta.hidden = false;
           node.meta.textContent = STOPPED_TEXT;
+          record.text = answer;
+          record.meta = { stopped: true };
+          persist();
         }
         scrollToEnd(false);
       }
@@ -543,6 +780,9 @@
       if (streaming) return;
       const sessionId = readSessionId();
       thread.innerHTML = "";
+      messages = [];
+      writeStore(MESSAGES_KEY, "");
+      setUnread(false);
       refreshEmptyState();
       writeSessionId("");
       if (!sessionId) return;
@@ -590,21 +830,27 @@
     }
 
     // ── 열고 닫기 ──
-    function open() {
+    // 열림 여부를 탭에 남겨, 메뉴를 옮겨도 대화가 그대로 보이게 한다.
+    function open(options) {
+      const quiet = !!(options && options.quiet);
       panel.hidden = false;
       launcher.hidden = true;
       launcher.setAttribute("aria-expanded", "true");
+      writeStore(OPEN_KEY, "1");
+      setUnread(false);
       loadStatus();
       scrollToEnd(true);
-      if (!input.disabled) input.focus();
+      if (!quiet && !input.disabled) input.focus();
     }
 
-    function close() {
-      stopStream();
+    // 닫아도 답변은 계속 받는다. 끝나면 단추에 미확인 점이 켜진다.
+    function close(options) {
+      const quiet = !!(options && options.quiet);
       panel.hidden = true;
       launcher.hidden = false;
       launcher.setAttribute("aria-expanded", "false");
-      launcher.focus();
+      writeStore(OPEN_KEY, "");
+      if (!quiet) launcher.focus();
     }
 
     function autoGrow() {
@@ -621,17 +867,6 @@
       btn.addEventListener("click", () => ask(text));
       suggestionBox.appendChild(btn);
     });
-
-    // 추천 질문 아래 한 줄 — 데이터 말고 사용법도 묻는다는 것을 알린다.
-    // 새 CSS 를 만들지 않으려고 빈 화면 라벨과 같은 클래스를 쓴다(--fs-2xs·3차 글자색).
-    if (!document.getElementById("asst-empty-hint")) {
-      const hint = document.createElement("p");
-      hint.id = "asst-empty-hint";
-      hint.className = "asst-empty-label";
-      hint.style.margin = "var(--space-2) 0 0";
-      hint.textContent = EMPTY_HINT;
-      emptyBox.appendChild(hint);
-    }
 
     launcher.addEventListener("click", open);
     closeBtn.addEventListener("click", close);
@@ -654,6 +889,27 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !panel.hidden) close();
     });
+
+    // 답변을 받는 중에 메뉴를 옮기면 요청을 끊고, 받은 만큼을 '중단됨'으로 남긴다.
+    let leaving = false;
+    function handleLeave() {
+      if (leaving) return;
+      leaving = true;
+      if (streaming && draft) {
+        draft.record.text = draft.answer || "";
+        draft.record.meta = { stopped: true };
+        persist();
+      }
+      stopStream();
+    }
+
+    window.addEventListener("pagehide", handleLeave);
+    window.addEventListener("beforeunload", handleLeave);
+
+    // 저장된 대화·열림 상태 복원. 화면을 옮겨도 대화창이 그대로 이어져야 한다.
+    restoreThread();
+    if (readStore(UNREAD_KEY) === "1") setUnread(true);
+    if (readStore(OPEN_KEY) === "1") open({ quiet: true });
 
     refreshEmptyState();
     IRMS.assistant = { open, close };
