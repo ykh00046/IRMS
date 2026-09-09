@@ -43,6 +43,17 @@ TUNNEL_REQUIRE_LOGIN = _env_flag("IRMS_TUNNEL_REQUIRE_LOGIN", True)
 # 실수 되돌리기는 하루 이틀 안에 일어난다는 현장 판단(2026-07-29). 0 = 무기한(비활성).
 CANCELED_RETENTION_DAYS = max(0, int(os.getenv("IRMS_CANCELED_RETENTION_DAYS", "3")))
 
+# === AI 도우미(assistant) ===
+# API 키는 app_settings(DB) 가 1순위, 아래 환경변수가 2순위다. DB 에 넣으면 화면에서
+# 바꿀 수 있고, 환경변수는 운영 PC 에 붙박이로 두는 용도다. 값은 절대 로그에 남기지 않는다.
+GEMINI_API_KEY = os.getenv("IRMS_GEMINI_API_KEY", "").strip()
+GROQ_API_KEY = os.getenv("IRMS_GROQ_API_KEY", "").strip()
+# 가짜 모델 모드 — 키 없이도 화면·테스트가 끝까지 돌아간다(실제 호출 없음).
+ASSISTANT_FAKE = _env_flag("IRMS_ASSISTANT_FAKE", False)
+# SSE 하트비트 간격(초) / 전체 응답 제한시간(초).
+ASSISTANT_HEARTBEAT_SEC = max(1.0, float(os.getenv("IRMS_ASSISTANT_HEARTBEAT_SEC", "15")))
+ASSISTANT_TIMEOUT_SEC = max(5.0, float(os.getenv("IRMS_ASSISTANT_TIMEOUT_SEC", "60")))
+
 if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     raise RuntimeError(
         "IRMS_SESSION_SECRET must be set when IRMS_REQUIRE_SESSION_SECRET is enabled."

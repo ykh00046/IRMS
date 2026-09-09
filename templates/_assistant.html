@@ -1,0 +1,41 @@
+{# BRM 도우미 — 모든 앱 화면(_base_app 상속)에 뜨는 떠 있는 질문 창.
+   진입/로그인 화면은 _base_app 을 상속하지 않으므로 여기 포함되지 않는다.
+   백엔드가 꺼져 있으면(/api/assistant/status enabled=false) 단추는 남고 안내만 뜬다. #}
+<div class="asst-root">
+  <button id="asst-launcher" class="asst-launcher" type="button"
+          aria-label="BRM 도우미 열기" aria-expanded="false" aria-controls="asst-panel">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M20.6 11.6a8 8 0 0 1-8.6 8 8.6 8.6 0 0 1-3.7-.9L3.4 20.6l1.9-4.8a8 8 0 0 1-.9-3.7 8 8 0 0 1 8-8.6 8 8 0 0 1 8.2 8.1z"/>
+    </svg>
+  </button>
+
+  <section id="asst-panel" class="asst-panel" role="dialog" aria-label="BRM 도우미" hidden>
+    <header class="asst-head">
+      <div class="asst-head-title">
+        <span class="asst-name">BRM 도우미</span>
+        <span id="asst-badge" class="status-chip status-pending asst-badge" hidden></span>
+      </div>
+      <div class="asst-head-actions">
+        <button id="asst-reset" class="btn btn-sm" type="button">초기화</button>
+        <button id="asst-close" class="btn btn-sm" type="button">닫기</button>
+      </div>
+    </header>
+
+    <div id="asst-body" class="asst-body" role="log" aria-live="polite" aria-relevant="additions text">
+      <div id="asst-empty" class="asst-empty">
+        <p class="asst-empty-label">바로 묻기</p>
+        <div id="asst-suggestions" class="asst-chip-row"></div>
+      </div>
+      <div id="asst-notice" class="asst-notice" hidden></div>
+      <div id="asst-thread" class="asst-thread"></div>
+    </div>
+
+    <form id="asst-composer" class="asst-composer" autocomplete="off">
+      <label class="asst-sr-only" for="asst-input">질문 입력</label>
+      <textarea id="asst-input" class="input asst-input" rows="1" maxlength="1000"
+                placeholder="질문 입력"></textarea>
+      <button id="asst-send" class="btn accent asst-send" type="submit">보내기</button>
+    </form>
+  </section>
+</div>

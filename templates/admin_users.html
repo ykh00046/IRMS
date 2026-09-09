@@ -5,7 +5,7 @@
 {% block heading %}사용자 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260909g" />
+    <link rel="stylesheet" href="/static/css/admin_users.css?v=20260909h" />
 {% endblock %}
 
 {% block main_class %}admin-users-grid{% endblock %}
@@ -299,6 +299,52 @@
             </div>
           </div>
         </section>
+        {# AI 도우미 — 전 화면에 뜨는 질문 창의 켬/끔·모델·키. 키는 이 화면에서만
+           다룬다(GET 은 마스킹된 값만 돌려주고, 빈 칸으로 저장하면 기존 키를 유지한다). #}
+        <section class="panel" id="ai-assistant-card">
+          <span class="kicker">AI</span>
+          <h3 class="panel-title">AI 도우미</h3>
+          <p class="panel-subtitle">키는 책임자만 보고 바꿀 수 있습니다.</p>
+          <div class="admin-form-stack">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="ai-enabled" /> 도우미 사용
+            </label>
+            <div class="form-group">
+              <label class="filter-label" for="ai-model">모델</label>
+              <select id="ai-model" class="input">
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="filter-label" for="ai-gemini-key">
+                Gemini 키 <span class="status-chip status-pending ai-key-source" id="ai-gemini-source">없음</span>
+              </label>
+              <div class="ai-key-row">
+                <input id="ai-gemini-key" class="input" type="password" autocomplete="off" placeholder="없음" />
+                <button class="btn btn-sm" id="ai-gemini-reveal" type="button">보기</button>
+                <button class="btn btn-sm" id="ai-gemini-clear" type="button">삭제</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="filter-label" for="ai-groq-key">
+                Groq 키 <span class="status-chip status-pending ai-key-source" id="ai-groq-source">없음</span>
+              </label>
+              <div class="ai-key-row">
+                <input id="ai-groq-key" class="input" type="password" autocomplete="off" placeholder="없음" />
+                <button class="btn btn-sm" id="ai-groq-reveal" type="button">보기</button>
+                <button class="btn btn-sm" id="ai-groq-clear" type="button">삭제</button>
+              </div>
+            </div>
+            <p class="helper-text">빈 칸으로 저장하면 기존 키를 그대로 둡니다.</p>
+          </div>
+          <div class="button-row mt-actions">
+            <button id="ai-save" class="btn accent" type="button">저장</button>
+            <button id="ai-check" class="btn" type="button">연결 확인</button>
+            <span id="ai-check-result" class="status-chip status-pending" hidden></span>
+          </div>
+        </section>
+
         <section class="panel">
           <span class="kicker">백업</span>
           <h3 class="panel-title">Google Sheets 백업 (선택)</h3>
@@ -330,5 +376,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/admin_users.js?v=20260909g"></script>
+    <script src="/static/js/admin_users.js?v=20260909h"></script>
 {% endblock %}

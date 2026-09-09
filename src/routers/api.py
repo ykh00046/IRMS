@@ -4,6 +4,7 @@ from ..auth import require_access_level
 from ..db import utc_now_text
 from . import (
     admin_routes,
+    assistant_routes,
     blend_lot_audit_routes,
     blend_rescale_ack_routes,
     attendance_routes,
@@ -81,4 +82,5 @@ def build_router() -> APIRouter:
     router.include_router(blend_lot_audit_routes.build_router())     # 미해소 LOT 대사·총량 이상(책임자)
     router.include_router(public_rescale_alert_routes.build_router())  # 증량 트레이 알림(내부망 공개)
     router.include_router(settings_router)        # 앱 설정(저울 전용 입력 모드 토글)
+    router.include_router(assistant_routes.build_router())  # AI 도우미(스트리밍 답변·설정)
     return router

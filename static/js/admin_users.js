@@ -125,6 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["setting_viscosity_reminder_since_set", "점도 알림 정리 기준일 갱신"],
       ["setting_scale_since_set", "저울 도입일 설정"],
       ["setting_blend_window_override_set", "배합 창 예외 코드 변경"],
+      ["setting_assistant_set", "AI 도우미 설정 변경"],
       ["signature_config_updated", "서명 설정 변경"],
       ["signature_sample_added", "서명 이미지 등록"],
       ["signature_sample_deleted", "서명 이미지 삭제"],
@@ -1121,6 +1122,137 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     loadCode();
+  })();
+
+  // ── AI 도우미 설정 ────────────────────────────────────────────
+  // 전 화면에 뜨는 질문 창의 켬/끔·모델·API 키. 키는 GET 으로 마스킹된 값만
+  // 내려오므로 화면은 그것을 placeholder 로만 보여준다. 빈 칸으로 저장하면
+  // 서버가 기존 키를 유지하고, [삭제]가 빈 문자열을 보내 지운다.
+  (function initAiAssistantSettings() {
+    const card = document.getElementById("ai-assistant-card");
+    if (!card) return;
+
+    const enabledEl = document.getElementById("ai-enabled");
+    const modelEl = document.getElementById("ai-model");
+    const saveBtn = document.getElementById("ai-save");
+    const checkBtn = document.getElementById("ai-check");
+    const checkResult = document.getElementById("ai-check-result");
+
+    const KEYS = [
+      { id: "gemini", field: "gemini_api_key", maskField: "gemini_key_masked", setField: "gemini_set", sourceField: "gemini_source", label: "Gemini" },
+      { id: "groq", field: "groq_api_key", maskField: "groq_key_masked", setField: "groq_set", sourceField: "groq_source", label: "Groq" },
+    ];
+
+    function sourceLabel(source, isSet) {
+      const text = String(source || "").toLowerCase();
+      if (text.indexOf("env") !== -1) return { label: "환경변수", tone: "status-in_progress" };
+      if (isSet || text === "db" || text === "settings" || text === "saved") {
+        return { label: "저장됨", tone: "status-completed" };
+      }
+      return { label: "없음", tone: "status-pending" };
+    }
+
+    function applySettings(data) {
+      if (enabledEl) enabledEl.checked = !!data.enabled;
+      if (modelEl && data.model) {
+        const has = Array.prototype.some.call(modelEl.options, (o) => o.value === data.model);
+        if (has) modelEl.value = data.model;
+      }
+      KEYS.forEach((key) => {
+        const input = document.getElementById(`ai-${key.id}-key`);
+        const chip = document.getElementById(`ai-${key.id}-source`);
+        const isSet = !!data[key.setField];
+        const masked = data[key.maskField] || "";
+        if (input) {
+          input.value = "";
+          input.placeholder = masked || (isSet ? "저장됨" : "없음");
+        }
+        if (chip) {
+          const info = sourceLabel(data[key.sourceField], isSet);
+          chip.className = `status-chip ${info.tone} ai-key-source`;
+          chip.textContent = info.label;
+        }
+      });
+    }
+
+    async function loadSettings() {
+      try {
+        applySettings(await request("/assistant/settings"));
+      } catch (_error) {
+        // 백엔드가 아직 없거나 권한이 없으면 기본값 그대로 둔다.
+      }
+    }
+
+    KEYS.forEach((key) => {
+      const input = document.getElementById(`ai-${key.id}-key`);
+      const reveal = document.getElementById(`ai-${key.id}-reveal`);
+      const clear = document.getElementById(`ai-${key.id}-clear`);
+      reveal?.addEventListener("click", () => {
+        if (!input) return;
+        const hidden = input.type === "password";
+        input.type = hidden ? "text" : "password";
+        reveal.textContent = hidden ? "가리기" : "보기";
+      });
+      clear?.addEventListener("click", async () => {
+        if (!window.confirm(`${key.label} 키를 지울까요?`)) return;
+        IRMS.btnLoading(clear, true);
+        try {
+          const body = {};
+          body[key.field] = "";
+          applySettings(await request("/assistant/settings", { method: "PUT", body }));
+          IRMS.notify(`${key.label} 키를 지웠습니다.`, "success");
+        } catch (error) {
+          IRMS.notify(`삭제 실패: ${error.message}`, "error");
+        } finally {
+          IRMS.btnLoading(clear, false);
+        }
+      });
+    });
+
+    saveBtn?.addEventListener("click", async () => {
+      const body = {
+        enabled: !!(enabledEl && enabledEl.checked),
+        model: modelEl ? modelEl.value : undefined,
+      };
+      KEYS.forEach((key) => {
+        const input = document.getElementById(`ai-${key.id}-key`);
+        const value = input ? input.value.trim() : "";
+        if (value) body[key.field] = value;
+      });
+      IRMS.btnLoading(saveBtn, true);
+      try {
+        applySettings(await request("/assistant/settings", { method: "PUT", body }));
+        IRMS.notify("AI 도우미 설정을 저장했습니다.", "success");
+      } catch (error) {
+        IRMS.notify(`저장 실패: ${error.message}`, "error");
+      } finally {
+        IRMS.btnLoading(saveBtn, false);
+      }
+    });
+
+    checkBtn?.addEventListener("click", async () => {
+      IRMS.btnLoading(checkBtn, true);
+      try {
+        const data = await request("/assistant/status");
+        const label = [data.provider, data.model].filter(Boolean).join(" · ");
+        if (checkResult) {
+          checkResult.hidden = false;
+          checkResult.className = data.enabled ? "status-chip status-completed" : "status-chip status-canceled";
+          checkResult.textContent = data.enabled ? (label || "연결됨") : "꺼짐";
+        }
+      } catch (error) {
+        if (checkResult) {
+          checkResult.hidden = false;
+          checkResult.className = "status-chip status-canceled";
+          checkResult.textContent = "꺼짐";
+        }
+        IRMS.notify(`연결 확인 실패: ${error.message}`, "error");
+      } finally {
+        IRMS.btnLoading(checkBtn, false);
+      }
+    });
+
+    loadSettings();
   })();
 
   refreshDashboard();
