@@ -5,19 +5,12 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260909f" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260909g" />
 {% endblock %}
 
 {% block content %}
         <!-- ===== 배합 입력 ===== -->
         <div id="blend-entry-mode">
-          <!-- 저울 전용 모드 수기 입력 승인 컨트롤 · 모드가 켜져 있을 때만 노출.
-               책임자 승인을 받으면 이 배합에 한해 실제량 손입력을 허용한다(저장·초기화·레시피 변경 시 재잠금).
-               blend.js updateManualEntryControl이 텍스트·버튼 노출을 갱신. -->
-          <div class="scale-only-control" id="scale-only-control" hidden>
-            <span id="scale-only-control-text">저울 전용 입력 모드 · 실제량은 저울 PRINT로만 입력됩니다.</span>
-            <button type="button" class="btn btn-sm accent" id="manual-entry-request-btn">수기 입력 승인 요청</button>
-          </div>
           <!-- 임시저장 복구 후 레시피 변경 고지 · 사라진 재료의 계량값·새로 추가된 재료·
                기준 배합량 변경을 값까지 적어 남긴다(토스트는 사라지므로 조용한 폐기 방지).
                끊긴 작업을 이어서 하는 입구는 "작성 중 배합"(/blend/drafts) 한 곳뿐이다. -->
@@ -72,7 +65,15 @@
                   </select>
                 </div>
               </div>
-              <button class="blend-extra-toggle" id="blend-extra-toggle" type="button" aria-expanded="false">▸ 작업시간 · 저울 변경</button>
+              <div class="blend-settings-foot">
+                <button class="blend-extra-toggle" id="blend-extra-toggle" type="button" aria-expanded="false">▸ 작업시간 · 저울 변경</button>
+                {# 저울 전용 모드 수기 입력 승인 · 모드가 켜져 있을 때만 노출. 승인은 이 배합에 한해 손입력을
+                   허용하고, 손입력한 값은 기록에 수기 표시로 남는다. JS updateManualEntryControl 이 문구·버튼 갱신. #}
+                <div class="scale-only-control" id="scale-only-control" hidden>
+                  <span class="scale-only-control-text" id="scale-only-control-text">저울 전용 모드. 승인 받으면 손입력할 수 있고 기록에 수기 표시가 남습니다.</span>
+                  <button type="button" class="btn btn-sm accent" id="manual-entry-request-btn">수기 입력 승인 요청</button>
+                </div>
+              </div>
               <div class="blend-form-grid" id="blend-extra" hidden>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-time">작업시간</label>
@@ -470,11 +471,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260909f"></script>
-    <script src="/static/js/blend_drafts.js?v=20260909f"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260909f"></script>
-    <script src="/static/js/blend_lot_modal.js?v=20260909f"></script>
-    <script src="/static/js/blend.js?v=20260909f"></script>
+    <script src="/static/js/blend_lib.js?v=20260909g"></script>
+    <script src="/static/js/blend_drafts.js?v=20260909g"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260909g"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260909g"></script>
+    <script src="/static/js/blend.js?v=20260909g"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

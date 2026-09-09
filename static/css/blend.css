@@ -441,19 +441,23 @@
 .rescale-applied-title { font-weight: 700; }
 .rescale-applied-item { white-space: nowrap; }
 
-/* 저울 전용 모드 수기 입력 승인 컨트롤 — 배너 아래 노출. 승인 후엔 강조 배경으로. */
+/* 저울 전용 모드 수기 입력 승인 — 배합 설정 패널 아랫줄 오른쪽(사용자 제안 2026-09-09).
+   종전엔 화면 맨 위 전폭 띠였다. 이 배합 한 건의 설정이라 설정 패널 안이 맞다.
+   왼쪽은 '작업시간 · 저울 변경' 토글, 오른쪽이 안내 문구 + 버튼. 좁으면 줄을 바꾼다. */
+.blend-settings-foot {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--space-3);
+  flex-wrap: wrap; margin-top: 0.4rem;
+}
+.blend-settings-foot .blend-extra-toggle { margin-top: 0; }
 .scale-only-control {
-  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
-  margin: 0 0 0.75rem; padding: 0.55rem 0.8rem;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--bg-surface-200); font-size: var(--fs-sm); color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3);
+  margin-left: auto; font-size: var(--fs-xs); color: var(--text-secondary);
 }
 .scale-only-control[hidden] { display: none; }
-.scale-only-control #scale-only-control-text { flex: 1 1 auto; line-height: 1.45; }
-.scale-only-control #manual-entry-request-btn { flex: 0 0 auto; }
-.scale-only-control.is-approved {
-  border-color: color-mix(in srgb, var(--status-success) 45%, white); background: var(--cal-leave-bg); color: var(--cal-leave);
-}
+.scale-only-control-text { max-width: 36ch; text-align: right; line-height: 1.4; }
+.scale-only-control #manual-entry-request-btn,
+.scale-only-control #cont-manual-entry-request-btn { flex: 0 0 auto; }
+.scale-only-control.is-approved { color: var(--status-success); font-weight: 600; }
 
 /* 증량 책임자 승인 모달 — 상단 승인(강조) + 하단 '책임자 부재 시'(muted 보조). */
 .rescale-approve-lead { margin: 0 0 0.9rem; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.5; }
