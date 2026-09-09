@@ -22,6 +22,7 @@ from typing import Any
 
 from ...db import get_connection
 from .. import blend_service, erp_lot_service, lot_history_service, viscosity_service
+from . import guide as guide_book
 
 _logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ TOOL_LABELS = {
     "get_material_usage": "자재 사용량",
     "get_recipe": "레시피",
     "get_attention": "지금 조치",
+    "get_usage_guide": "사용법 안내",
 }
 
 
@@ -418,6 +420,17 @@ def get_lot_changes(
 
     def _work(connection: sqlite3.Connection) -> dict:
         family_key = None
+        if not recipe_name and not material_name:
+            # 이력 조회는 레시피나 자재 하나를 골라야 한다(서비스 제약). 오류 대신
+            # 고를 수 있는 목록과 화면을 돌려줘 모델이 되묻거나 메뉴로 안내하게 한다.
+            families = lot_history_service.list_families(connection)
+            labels = [item.get("label") or "" for item in families.get("items") or []]
+            return {
+                "안내": "레시피나 자재를 정하면 LOT 교체 목록을 보여 드립니다.",
+                "레시피_목록": [x for x in labels if x][:12],
+                "화면": {"메뉴": "LOT 이력", "경로": "/lot-history",
+                         "설명": "레시피나 자재를 고르면 LOT 교체 시점과 역추적을 볼 수 있습니다."},
+            }
         if recipe_name:
             families = lot_history_service.list_families(connection)
             labels = [item.get("label") or "" for item in families.get("items") or []]
@@ -616,6 +629,42 @@ def get_attention() -> dict:
 
 
 # ============================================================
+# 9. 사용법 안내
+# ============================================================
+def get_usage_guide(question: str = "") -> dict:
+    """화면 사용법과 문제 해결 절차를 돌려준다.
+
+    "어디서 하나요", "안 돼요", "저장이 안 된 것 같아요", "무슨 뜻이야" 같은
+    물음에 쓴다. 손으로 쓴 안내 글 묶음에서 가장 가까운 세 개와 전체 화면 지도를
+    돌려준다. 맞는 안내가 없어도 실패가 아니라 빈 목록과 화면 지도를 준다.
+
+    Args:
+        question: 사용자가 물은 그대로의 문장.
+    """
+    text = (question or "").strip()
+
+    def _work(_connection) -> dict:
+        return {
+            "질문": text,
+            "entries": guide_book.search(text),
+            "screen_map": guide_book.screen_map(),
+        }
+
+    # DB 를 보지 않는 유일한 도구다. 캐시·알림 흐름은 같게 두려고 _guard 를 쓰되
+    # 연결은 열지 않는다(안내 글은 파일에 박혀 있다).
+    _notify("get_usage_guide", "running")
+    key = ("get_usage_guide", text.casefold())
+    cached = _cache_get(key)
+    if cached is not None:
+        _notify("get_usage_guide", "done")
+        return cached
+    result = _work(None)
+    _cache_set(key, result)
+    _notify("get_usage_guide", "done")
+    return result
+
+
+# ============================================================
 # 등록
 # ============================================================
 ASSISTANT_TOOLS = [
@@ -627,6 +676,7 @@ ASSISTANT_TOOLS = [
     get_material_usage,
     get_recipe,
     get_attention,
+    get_usage_guide,
 ]
 
 TOOL_REGISTRY = {fn.__name__: fn for fn in ASSISTANT_TOOLS}
@@ -641,6 +691,7 @@ _TOOL_PARAMS = {
     "get_material_usage": ("date_from", "date_to", "material"),
     "get_recipe": ("product",),
     "get_attention": (),
+    "get_usage_guide": ("question",),
 }
 
 

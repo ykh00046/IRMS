@@ -134,6 +134,28 @@ def test_stream_returns_sse_sequence(fake_client):
     assert joined == done["answer"]
 
 
+def test_stream_routes_howto_question_to_usage_guide(fake_client):
+    """사용법 말투는 데이터 조회가 아니라 안내 도구로 간다."""
+    res = fake_client.post(
+        "/api/assistant/stream",
+        json={"query": "배합 기록이 저장 안 된 것 같아요"},
+        headers=_csrf(fake_client),
+    )
+    assert res.status_code == 200
+    events = _parse_sse(res.text)
+
+    tool_names = [data["name"] for name, data in events if name == "tool_call"]
+    assert "get_usage_guide" in tool_names
+    labels = [data["label"] for name, data in events if name == "tool_call"]
+    assert "사용법 안내" in labels
+
+    done = events[-1][1]
+    assert done["answer"]
+    assert "작성 중 배합" in done["answer"]
+    assert "/blend/drafts" in done["answer"]
+    assert "—" not in done["answer"]
+
+
 def test_stream_context_and_session_are_echoed(fake_client):
     res = fake_client.post(
         "/api/assistant/stream",

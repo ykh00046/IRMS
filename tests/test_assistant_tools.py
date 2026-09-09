@@ -258,7 +258,7 @@ def test_call_tool_rejects_unknown_and_extra_params(seeded):
 def test_tool_registry_and_labels():
     from src.services.assistant import tools
 
-    assert len(tools.ASSISTANT_TOOLS) == 8
+    assert len(tools.ASSISTANT_TOOLS) == 9
     for name in tools.TOOL_NAMES:
         assert name in tools.TOOL_LABELS
     # Gemini SDK 가 런타임 힌트를 읽으므로 주석이 문자열로 남아 있으면 안 된다.

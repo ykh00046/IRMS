@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from ...db import get_connection
+from . import guide as assistant_guide
 from . import settings as assistant_settings
 from . import tools as assistant_tools
 
@@ -106,6 +107,16 @@ def build_system_prompt(today: date | None = None, context: dict[str, Any] | Non
     prompt = f"""너는 BRM(배합·레시피 관리)의 현장 도우미다.
 현장 사람이 묻는 배합·점도·자재·레시피 이야기에 답한다.
 
+[역할]
+너는 데이터 조회 담당이면서 프로그램 사용법 안내 담당이다.
+숫자·건수·목록을 묻는 데이터 질문은 조회 도구로 답한다.
+"어떻게 하나요", "어디서 하나요", "안 돼요", "저장이 안 된 것 같아요",
+"무슨 뜻이야" 같은 사용법 질문은 먼저 get_usage_guide 를 부른다.
+"~이 궁금해요", "~을 알고 싶어요"처럼 레시피·자재·LOT·날짜를 하나도 집지 않은
+막연한 물음도 사용법 질문으로 보고 get_usage_guide 로 어느 화면에서 보는지 안내한다.
+사용법 답은 그 도구가 준 entries 안의 말만 쓴다.
+메뉴 이름·단추 이름·경로를 지어내지 않는다.
+
 [기준 날짜]
 오늘은 {label}({ref.isoformat()})이다.
 "이번 주"는 {week_from}부터 {ref.isoformat()}까지다.
@@ -121,8 +132,12 @@ def build_system_prompt(today: date | None = None, context: dict[str, Any] | Non
 6. 자재를 얼마나 썼나 → get_material_usage
 7. 레시피 구성·비율·허용 편차 → get_recipe
 8. "지금 뭐 봐야 하나", 오늘 할 일 → get_attention
-9. 반드시 도구로 조회한 값만 말한다.
-10. LOT·수치·날짜를 지어내지 않는다. 도구가 error 를 주면 모른다고 말한다.
+9. 화면 사용법·문제 해결·용어 뜻 → get_usage_guide
+10. 반드시 도구로 조회한 값만 말한다.
+11. LOT·수치·날짜를 지어내지 않는다. 도구가 error 를 주면 모른다고 말한다.
+
+[화면 지도]
+{assistant_guide.screen_map_block()}
 
 [답변 형식]
 1. 결론을 먼저 한 줄로 말한다.
@@ -132,6 +147,19 @@ def build_system_prompt(today: date | None = None, context: dict[str, Any] | Non
 5. 한 문장은 40자 안으로 짧게 쓴다.
 6. 줄표(—)를 쓰지 않는다.
 7. 조사는 앞말에 붙여 쓴다(LOT을, 점도가).
+8. 마지막 줄에 그 데이터를 더 볼 수 있는 화면을 [화면 지도]에서 골라
+   **메뉴**(경로) 꼴로 한 줄 붙인다.
+9. 도구가 "안내"와 "화면"을 돌려주면 값을 지어내지 말고 그 화면으로 안내한다.
+
+[안내 답변 형식]
+1. 첫 줄은 지금 상황을 현장 말로 한 줄 적는다.
+2. 그다음 번호를 붙여 할 일을 적는다.
+3. 각 단계는 메뉴를 굵게, 경로를 괄호에 적는다.
+   예: 1. **작성 중 배합**(/blend/drafts) 화면을 엽니다.
+4. 마지막 줄에 누구에게 알릴지와 무엇이 표시로 남는지 한 줄 적는다.
+5. 책임자만 할 수 있는 일은 "책임자 전용"이라고 밝힌다.
+6. 데이터와 사용법이 섞인 물음이면 조회를 먼저 하고,
+   찾은 기록이 없을 때만 뒤에 안내 단계를 덧붙인다.
 
 [거절]
 BRM 데이터 밖의 질문은 한 문장으로 정중히 거절한다.
@@ -175,6 +203,7 @@ _SUGGESTION_BY_TOOL = {
     "get_material_usage": ["이번 달 배합 요약 보여줘", "이 자재 LOT 교체 이력은?"],
     "get_recipe": ["이 제품 최근 배합 기록은?", "이 제품 점도 상태는?"],
     "get_attention": ["오늘 배합 요약 보여줘", "점도 이상 목록 보여줘"],
+    "get_usage_guide": ["작성 중 배합은 어떻게 쓰나요?", "수기 입력 승인은 어떻게 받나요?"],
 }
 DEFAULT_SUGGESTIONS = ["오늘 배합 요약 보여줘", "지금 봐야 할 것 알려줘"]
 
@@ -576,6 +605,18 @@ def _groq_stream(client: Any, model: str, messages: list[dict[str, str]]) -> Any
 # ============================================================
 FAKE_TOKEN_DELAY_SEC = 0.01
 
+# 가짜 모델이 "사용법 물음"으로 보는 말투. 실제 모델은 프롬프트를 보고 고른다.
+_HOWTO_HINTS = (
+    "저장 안",
+    "어디서",
+    "어떻게",
+    "안 돼",
+    "안돼",
+    "안 됩니",
+    "무슨 뜻",
+    "사용법",
+)
+
 
 def _run_fake(
     query: str,
@@ -586,7 +627,11 @@ def _run_fake(
     today = date.today().isoformat()
     lowered = query or ""
 
-    if "점도" in lowered:
+    # 사용법 말투가 먼저다. "배합 기록이 저장 안 된 것 같아요" 처럼 데이터 낱말이
+    # 섞여 있어도 이 줄들이 있으면 안내로 본다.
+    if any(word in lowered for word in _HOWTO_HINTS):
+        name, params = "get_usage_guide", {"question": lowered}
+    elif "점도" in lowered:
         name, params = "get_viscosity_status", {"product": "PB"}
     elif "배합" in lowered or "오늘" in lowered:
         name, params = "get_blend_summary", {"date_from": today, "date_to": today}
@@ -615,6 +660,9 @@ def _fake_answer(name: str, result: dict[str, Any]) -> str:
     if result.get("error"):
         return f"{label}을 읽지 못했습니다. 잠시 뒤에 다시 물어보세요."
 
+    if name == "get_usage_guide":
+        return _fake_guide_answer(result)
+
     number = _first_number(result)
     if name == "get_viscosity_status":
         return (
@@ -631,6 +679,25 @@ def _fake_answer(name: str, result: dict[str, Any]) -> str:
         f"지금 볼 항목은 {number} 건입니다.\n"
         "대시보드에서 항목별로 확인하면 됩니다."
     )
+
+
+def _fake_guide_answer(result: dict[str, Any]) -> str:
+    """안내 항목 첫 개의 제목·경로·단계를 그대로 흘린다(화면·테스트용)."""
+    entries = result.get("entries") or []
+    if not entries:
+        return (
+            "맞는 안내를 찾지 못했습니다.\n"
+            "왼쪽 메뉴에서 화면을 고른 뒤 다시 물어보세요."
+        )
+    first = entries[0]
+    lines = [f"{first.get('title', '')}"]
+    lines.append(f"**{first.get('screen', '')}**({first.get('path', '')})")
+    for index, step in enumerate(first.get("steps") or [], start=1):
+        lines.append(f"{index}. {step}")
+    notes = str(first.get("notes") or "").strip()
+    if notes:
+        lines.append(notes)
+    return "\n".join(lines)
 
 
 def _first_number(payload: Any) -> str:

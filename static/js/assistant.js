@@ -21,8 +21,9 @@
     "오늘 배합 몇 건이야?",
     "PB 점도 최근 상태 알려줘",
     "이번 달 자재 사용량 알려줘",
-    "APB 레시피 알려줘",
+    "기록이 저장 안 된 것 같아요",
   ];
+  const EMPTY_HINT = "사용법도 물어볼 수 있습니다.";
 
   // 서버가 message 를 못 보냈을 때만 쓰는 대체 문구. 한 문장·40자 안(docs/ui-standard.md §6).
   const ERROR_TEXT = {
@@ -48,11 +49,39 @@
   }
 
   // ── 마크다운 경량 렌더러 ────────────────────────────────────────
-  // 라이브러리 없이 굵게·인라인 코드·글머리·번호·표만 지원한다. 항상 escape 를
-  // 먼저 하므로 모델이 뱉은 HTML 은 글자로만 보인다.
+  // 라이브러리 없이 굵게·인라인 코드·글머리·번호·표·같은 사이트 링크만 지원한다.
+  // 항상 escape 를 먼저 하므로 모델이 뱉은 HTML 은 글자로만 보인다.
+
+  // 같은 사이트 경로만 링크로 만든다. '/' 하나로 시작하고 글자·숫자·-._~/ 만 쓴다.
+  // 그래서 '//other.com', 'javascript:', 따옴표·꺾쇠가 섞인 값은 통과하지 못한다
+  // (escape 뒤라 따옴표는 &quot; 같은 꼴이 되는데, 이 목록에 &·; 가 없어 함께 걸린다).
+  const PATH_CHARS = "[A-Za-z0-9\\-._~/]*";
+  const SAFE_PATH_RE = new RegExp("^/" + PATH_CHARS + "$");
+  const MD_LINK_RE = new RegExp("\\[([^\\]\\n]+)\\]\\((/" + PATH_CHARS + ")\\)", "g");
+  const BARE_PATH_RE = new RegExp("\\((/" + PATH_CHARS + ")\\)", "g");
+
+  function isSafePath(path) {
+    return typeof path === "string"
+      && path.length > 1
+      && SAFE_PATH_RE.test(path)
+      && path.indexOf("//") === -1;
+  }
+
+  function linkTag(path, label) {
+    return `<a href="${path}">${label}</a>`;
+  }
+
   function inlineMarkdown(text) {
     return text
       .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      // [글자](/경로) — 같은 창에서 이동한다.
+      .replace(MD_LINK_RE, (whole, label, path) => (
+        isSafePath(path) ? linkTag(path, label) : whole
+      ))
+      // 모델이 **메뉴**(/경로) 꼴로 적은 맨 경로도 링크로 바꾼다.
+      .replace(BARE_PATH_RE, (whole, path) => (
+        isSafePath(path) ? `(${linkTag(path, path)})` : whole
+      ))
       .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   }
 
@@ -592,6 +621,17 @@
       btn.addEventListener("click", () => ask(text));
       suggestionBox.appendChild(btn);
     });
+
+    // 추천 질문 아래 한 줄 — 데이터 말고 사용법도 묻는다는 것을 알린다.
+    // 새 CSS 를 만들지 않으려고 빈 화면 라벨과 같은 클래스를 쓴다(--fs-2xs·3차 글자색).
+    if (!document.getElementById("asst-empty-hint")) {
+      const hint = document.createElement("p");
+      hint.id = "asst-empty-hint";
+      hint.className = "asst-empty-label";
+      hint.style.margin = "var(--space-2) 0 0";
+      hint.textContent = EMPTY_HINT;
+      emptyBox.appendChild(hint);
+    }
 
     launcher.addEventListener("click", open);
     closeBtn.addEventListener("click", close);
