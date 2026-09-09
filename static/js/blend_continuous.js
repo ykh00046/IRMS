@@ -195,19 +195,24 @@
     const btn = $("cont-manual-entry-request-btn");
     if (state.manualApproved) {
       if (text) {
-        text.textContent = state.manualApproved.absence_reason
-          ? `수기 입력 진행 · 책임자 부재(${state.manualApproved.absence_reason}) · 사후 확인 대상`
-          : `수기 입력 승인됨. 승인자 ${state.manualApproved.approver} (이 배합에 한함)`;
+        // 승인자·사유는 사용자 입력이라 이스케이프. 안내 본문은 고정 문자열.
+        const escText = IRMS.escapeHtml;
+        text.innerHTML = state.manualApproved.absence_reason
+          ? `<b>수기 입력 진행</b> 책임자 부재(${escText(state.manualApproved.absence_reason)}). `
+            + "손입력한 값은 미승인 수기로 표시되어 책임자가 사후 확인합니다."
+          : `<b>수기 입력 승인됨</b> 승인자 ${escText(state.manualApproved.approver)} · 이 배합에 한함. `
+            + "손입력한 값은 기록에 수기 표시로 남습니다.";
       }
       if (btn) btn.hidden = true;
       box.classList.add("is-approved");
     } else {
       // 저울 미연결 상태를 이 한 줄이 흡수 — 별도 상단 배너는 중복이라 폐기(2026-07-23).
       if (text) {
-        // 두 가지를 한 문장에: 승인 받으면 손입력이 된다 · 손입력은 기록에 수기 표시로 남는다.
-        text.textContent = state.scaleReady
-          ? "저울 전용 모드. 승인 받으면 손입력할 수 있고 기록에 수기 표시가 남습니다."
-          : "저울 연결 대기 중. 승인 받으면 손입력할 수 있고 기록에 수기 표시가 남습니다.";
+        // 왜 잠겨 있는지 → 어떻게 푸는지 → 책임자가 없으면 → 손입력의 결과, 네 가지를 다 적는다
+        // (사용자 지적 2026-09-09 "설명이 부족"). 고정 문자열이라 innerHTML 이 안전하다.
+        text.innerHTML = state.scaleReady
+          ? "<b>저울 전용 모드</b> 실제량은 저울 PRINT로만 들어옵니다. 저울을 못 쓰면 책임자 승인을 받아 이 배합만 손으로 입력할 수 있습니다. 책임자가 없으면 사유를 적고 진행하며, 손입력한 값은 기록에 수기 표시로 남아 사후 확인을 받습니다."
+          : "<b>저울 연결 대기 중</b> 연결되면 실제량이 PRINT로 들어옵니다. 지금 입력해야 하면 책임자 승인을 받아 이 배합만 손으로 입력할 수 있습니다. 책임자가 없으면 사유를 적고 진행하며, 손입력한 값은 기록에 수기 표시로 남아 사후 확인을 받습니다.";
       }
       if (btn) btn.hidden = false;
       box.classList.remove("is-approved");

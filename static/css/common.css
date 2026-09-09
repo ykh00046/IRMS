@@ -839,6 +839,8 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
 
 .btn.accent:hover:not(:disabled) {
   background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
+  color: white;   /* 공용 .btn:hover 가 글자를 네이비로 바꿔 네이비 배경과 겹쳤다(2026-09-09) */
   box-shadow: var(--glow-primary);
 }
 

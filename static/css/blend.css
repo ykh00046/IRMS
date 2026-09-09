@@ -449,12 +449,17 @@
   flex-wrap: wrap; margin-top: 0.4rem;
 }
 .blend-settings-foot .blend-extra-toggle { margin-top: 0; }
+/* 설명이 네 문장이라 토글 아래 한 단을 통째로 쓴다(왼쪽 글, 오른쪽 버튼). */
 .scale-only-control {
-  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3);
-  margin-left: auto; font-size: var(--fs-xs); color: var(--text-secondary);
+  flex: 1 1 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  margin-top: var(--space-1); padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface-300); border-radius: var(--radius-md);
+  font-size: var(--fs-xs); color: var(--text-secondary);
 }
 .scale-only-control[hidden] { display: none; }
-.scale-only-control-text { max-width: 36ch; text-align: right; line-height: 1.4; }
+.scale-only-control-text { flex: 1 1 auto; max-width: 64ch; line-height: 1.5; }
+.scale-only-control-text b { color: var(--text-primary); font-weight: 700; margin-right: var(--space-1); }
 .scale-only-control #manual-entry-request-btn,
 .scale-only-control #cont-manual-entry-request-btn { flex: 0 0 auto; }
 .scale-only-control.is-approved { color: var(--status-success); font-weight: 600; }
