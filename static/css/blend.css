@@ -21,6 +21,15 @@
 .blend-lot { font-family: "JetBrains Mono", monospace; font-size: var(--fs-md); }
 
 /* 배합 설정 + 제품·DHR 네이비 카드 (시안 레이아웃) */
+/* 배합 설정(+DHR 카드) 과 자재 표 패널은 형제 요소인데 감싸는 div 에 간격이 없어 붙어
+   보였다(0px, 사용자 지적 2026-09-09). 패널 사이 표준 간격을 준다. 다중 계량도 같은 규칙. */
+#blend-entry-mode,
+#cont-mode {
+  display: grid;
+  gap: var(--space-6);
+  align-content: start;
+}
+
 .blend-top-grid {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
