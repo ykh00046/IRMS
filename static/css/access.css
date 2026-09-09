@@ -235,7 +235,7 @@
 }
 
 .launch-tile-ico-mfg {
-  background: var(--accent-soft);
+  background: var(--accent-secondary-light);
   color: var(--accent-secondary);
 }
 
@@ -551,7 +551,7 @@
   margin: 0 0 14px;
   font-size: var(--fs-sm);
   line-height: 1.5;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   word-break: keep-all;
 }
 .part-dialog-buttons {

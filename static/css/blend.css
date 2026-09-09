@@ -39,7 +39,7 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-default);
 }
 .blend-dhr-head {
   font-size: var(--fs-2xs);
@@ -154,7 +154,7 @@
 }
 .ss-modal-overlay[hidden] { display: none !important; }
 .ss-modal {
-  background: var(--bg); border-radius: 10px;
+  background: var(--bg-surface-100); border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   width: min(520px, 92vw); max-height: 85vh; display: flex; flex-direction: column;
 }
@@ -583,7 +583,7 @@
   font: inherit;
 }
 .scale-state-btn:hover, .scale-state-btn:focus-visible {
-  border-color: var(--cal-accent); background: var(--bg-surface-100); outline: none;
+  border-color: var(--accent-primary); background: var(--bg-surface-100); outline: none;
   box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-secondary) 18%, transparent);
 }
 .scale-state-btn svg { width: min(224px, 60vw); height: auto; display: block; }
@@ -621,7 +621,7 @@
 .scale-state-chip b { color: var(--text-primary); font-weight: 700; }
 .scale-state-chip button {
   border: none; background: none; padding: 0; cursor: pointer;
-  color: var(--cal-accent); font-size: var(--fs-2xs); text-decoration: underline;
+  color: var(--accent-primary); font-size: var(--fs-2xs); text-decoration: underline;
 }
 .scale-state-chip[hidden] { display: none; }
 
@@ -763,7 +763,7 @@ body.dhr-open { overflow: hidden; }
 }
 /* 제안 항목의 1차 총량 접미 — 회색으로 LOT 뒤에 붙는다(클릭은 LOT 만 채움). */
 .lot-suggest-total {
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   font-size: var(--fs-xs);
 }
 
@@ -779,7 +779,7 @@ body.dhr-open { overflow: hidden; }
 .carry-over-wrap[hidden] { display: none !important; }
 .carry-over-badge {
   font-size: var(--fs-xs);
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 .btn.btn-sm.carry-over-btn {
@@ -809,7 +809,7 @@ body.dhr-open { overflow: hidden; }
 .carry-over-tag:hover { background: var(--accent-tertiary); }
 /* 이월 확인 모달의 주의 문구 — 붉게 강조. */
 .carry-over-caution {
-  color: var(--danger);
+  color: var(--status-error);
   font-weight: 600;
 }
 

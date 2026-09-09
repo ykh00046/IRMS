@@ -372,7 +372,7 @@
   border: 1px solid var(--brand);
   color: var(--brand);
 }
-.stage-pin.two { color: var(--text-muted); border-color: var(--border-strong); }
+.stage-pin.two { color: var(--text-tertiary); border-color: var(--border-strong); }
 
 /* 한 1차를 2차 여럿이 쓰는 가족 — 이 1차를 손대면 아래가 전부 영향받는다는 표시. */
 .family-shared-chip {
@@ -1013,7 +1013,7 @@
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--bg-surface);
+  background: var(--bg-surface-100);
   cursor: pointer;
   transition: border-color 0.15s;
 }
@@ -1031,7 +1031,7 @@
 .vc-compare-table { border-collapse: collapse; min-width: 100%; }
 .vc-compare-table th, .vc-compare-table td { padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; text-align: left; }
 .vc-compare-table thead th { background: var(--bg-surface-200); position: sticky; top: 0; z-index: 2; }
-.vc-compare-table .compare-sticky { position: sticky; left: 0; background: var(--bg-surface); z-index: 1; font-weight: 600; min-width: 8rem; }
+.vc-compare-table .compare-sticky { position: sticky; left: 0; background: var(--bg-surface-100); z-index: 1; font-weight: 600; min-width: 8rem; }
 .vc-compare-table thead .compare-sticky { z-index: 3; background: var(--bg-surface-200); }
 .vc-compare-table .vc-mat-cell { font-weight: 600; }
 /* 변경 강조 — 직전 버전 대비 값이 바뀐 셀. */

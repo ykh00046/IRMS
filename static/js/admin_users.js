@@ -973,7 +973,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ];
       statusEl.textContent = parts.join("  ·  ");
       statusEl.style.color = s.gspread_available && s.configured && s.enabled
-        ? "var(--success, #166534)" : "var(--text-secondary)";
+        ? "var(--status-success)" : "var(--text-secondary)";
     }
     async function load() {
       try {
