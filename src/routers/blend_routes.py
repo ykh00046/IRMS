@@ -1579,6 +1579,14 @@ def build_router() -> APIRouter:
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
+            # 총량이 그대로인 정정(LOT·작업자·비고 오타)은 **저장 당시 이론량을 지킨다**.
+            # 같은 개정본이라도 그 뒤에 자재 마스터의 투입 로스 보정이 붙으면(2026-08 도입)
+            # 재산출 이론량이 보정만큼 커져, 실제량과 딱 맞던 옛 기록이 "허용 편차 초과"로
+            # 막혔다(2026-09-09 현장 신고: 6월 APB 기록 LOT 정정 불가). 이론량은 그 기록의
+            # 공정 기준이지 오늘의 레시피 값이 아니다. 총량을 바꾼 정정만 새로 산출한다.
+            details = blend_service.keep_recorded_theory(
+                record, details, body.total_amount
+            )
         # 전 자재 계량 완료 — 정정 저장이 채워져 있던 실제량을 비우지 못하게 한다.
         # 단, 이미 실제량이 비어 있던 옛 기록(이 통제가 없던 시절 저장분)은 그대로 둔다 —
         # 그런 기록의 비고 오타 정정까지 막으면 되돌릴 방법이 없어진다. 그래서 '새로

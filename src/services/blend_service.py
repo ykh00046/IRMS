@@ -2058,6 +2058,48 @@ def apply_total_flags(
     }
 
 
+def keep_recorded_theory(
+    record: dict[str, Any],
+    details: list[dict[str, Any]],
+    new_total: float,
+) -> list[dict[str, Any]]:
+    """정정 저장에서 총량이 그대로면 저장 당시의 비율·이론량·로스 보정을 되살린다.
+
+    재산출(derive_details_from_recipe)은 레시피 검증용으로 그대로 돌리고, 결과 행에
+    기록에 있던 값을 같은 자재의 k번째 행끼리 짝지어 덮어쓴다. 총량이 바뀌었거나
+    기록에 이론량이 없으면 재산출 값을 그대로 둔다.
+    """
+    try:
+        if abs(float(new_total) - float(record.get("total_amount") or 0)) > 1e-6:
+            return details
+    except (TypeError, ValueError):
+        return details
+    stored = record.get("details") or []
+    if not stored:
+        return details
+    from collections import defaultdict
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for d in stored:
+        groups[str(d.get("material_name") or "").strip()].append(d)
+    consumed: dict[str, int] = defaultdict(int)
+    out: list[dict[str, Any]] = []
+    for d in details:
+        name = str(d.get("material_name") or "").strip()
+        idx = consumed[name]
+        consumed[name] += 1
+        row = dict(d)
+        if idx < len(groups.get(name, [])):
+            src = groups[name][idx]
+            if src.get("theory_amount") is not None:
+                row["theory_amount"] = src.get("theory_amount")
+                if src.get("ratio") is not None:
+                    row["ratio"] = src.get("ratio")
+                if "loss_comp_g" in src:
+                    row["loss_comp_g"] = src.get("loss_comp_g") or 0
+        out.append(row)
+    return out
+
+
 def derive_details_from_recipe(
     connection: sqlite3.Connection,
     recipe_id: int,
