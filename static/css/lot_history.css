@@ -163,7 +163,7 @@
 .lh-chip .lot { font-weight: 600; }
 .lh-chip .span { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .lh-chip.blank { color: var(--text-tertiary); border-style: dashed; }
-.lh-chip-arrow { color: var(--accent-secondary); font-weight: 700; }
+.lh-chip-arrow { color: var(--text-tertiary); font-weight: 700; }
 
 .lh-lot-link {
   color: var(--accent-primary);

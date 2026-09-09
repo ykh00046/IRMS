@@ -311,8 +311,8 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   }
   const PALETTE = [
-    "#1b4079", "#2c5d9b", "#3d7ab8", "#c98212", "#1e9d6b",
-    "#7b5ea7", "#d8453f", "#4a8fa8", "#8a7f3d", "#a3567c",
+    "#1b4079", "#2c5d9b", "#3d7ab8", "#c98212", "#1f8f63",
+    "#7b5ea7", "#c8433d", "#4a8fa8", "#8a7f3d", "#a3567c",
     "#5b6b7f", "#2f8f5b",
   ];
 
@@ -540,8 +540,8 @@
             data: t.map((x) => (x.scale_rate === null || x.scale_rate === undefined
               ? null : x.scale_rate)),
             spanGaps: false,
-            borderColor: css("--status-success", "#1e9d6b"),
-            backgroundColor: css("--status-success", "#1e9d6b"),
+            borderColor: css("--status-success", "#1f8f63"),
+            backgroundColor: css("--status-success", "#1f8f63"),
             borderWidth: 2,
             cubicInterpolationMode: "monotone",
             pointRadius: 3,

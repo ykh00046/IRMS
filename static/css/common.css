@@ -7,46 +7,46 @@
 
 :root {
   /* Surface & Background — 시안(IRMS.dc) 이식: 라이트 블루그레이 페이지 + 화이트 서피스 */
-  --bg-page: #f1f4f9;          /* 페이지 배경(body) */
+  --bg-page: #f4f3f0;          /* 따뜻한 중성 회색(H45). 파란 회색은 네이비와 같은 축이라 화면이 식었다(2026-09-09) */          /* 페이지 배경(body) */
   --bg-base: #ffffff;          /* 입력/필드 배경 */
   --bg-surface-100: #ffffff;   /* 헤더·패널·카드(화이트) */
-  --bg-surface-200: #fafbfd;
-  --bg-surface-300: #eef2f8;
+  --bg-surface-200: #faf9f7;
+  --bg-surface-300: #f0eeea;
   /* 디자인 시스템 별칭(시안 토큰명) */
   --brand: #1b4079;
   --brand-strong: #143160;
   --brand-mid: #2c5d9b;
   --brand-soft: #eaf1fb;
   --surface: #ffffff;
-  --line: #e7ebf2;
-  --line-strong: #d6dce7;
+  --line: #e7e4de;
+  --line-strong: #d9d4cc;
   /* 레거시 페이지 CSS 별칭 — 과거 var(--accent/--primary, #2563eb)가 파란색으로 폴백되던 것을 브랜드 네이비로 정렬 */
   --accent: #1b4079;
   --primary: #1b4079;
   /* 미정의로 회색 폴백되던 별칭(서명 패드·DHR 결재·점도·스프레드시트 보더/뮤트 텍스트) */
-  --border: #d6dce7;
-  --muted: #8c97ad;
+  --border: #d9d4cc;
+  --muted: #8d919b;
 
   /* Text Colors — 네이비 잉크 */
   --text-primary: #15233f;
-  --text-secondary: #56627b;
-  --text-tertiary: #8c97ad;
+  --text-secondary: #5a6070;
+  --text-tertiary: #8d919b;
 
   /* Accent — 브랜드 네이비 · 오렌지 */
   --accent-primary: #1b4079;
   --accent-primary-hover: #143160;
   --accent-primary-light: rgba(27, 64, 121, 0.10);
-  --accent-secondary: #f47c26;
-  --accent-secondary-hover: #df6a16;
-  --accent-secondary-light: rgba(244, 124, 38, 0.12);
+  --accent-secondary: #df6f49;   /* 코럴(H15 S70 L58). 주황(H25 S90)은 경고 앰버(H37)와 붙어 싸웠다 */
+  --accent-secondary-hover: #c85b38;
+  --accent-secondary-light: rgba(223, 111, 73, 0.12);
   --accent-tertiary: #2c5d9b;
   --accent-tertiary-light: rgba(44, 93, 155, 0.12);
 
-  --status-success: #1e9d6b;
+  --status-success: #1f8f63;
   --status-success-bg: #e6f6ee;
-  --status-warning: #c98212;
+  --status-warning: #b9781d;
   --status-warning-bg: #fbf1df;
-  --status-error: #d8453f;
+  --status-error: #c8433d;     /* 명도 55→51. 다른 상태색(34~42)과 한 톤으로 */
   --status-error-bg: #fbeae9;
   --status-info: #2c5d9b;
   --status-info-bg: rgba(44, 93, 155, 0.1);
@@ -75,20 +75,20 @@
   --ink-yellow: #d97706;
 
   /* Borders & Dividers — 시안 라인 */
-  --border-subtle: #e7ebf2;
-  --border-strong: #d6dce7;
+  --border-subtle: #e7e4de;
+  --border-strong: #d9d4cc;
   --shadow-subtle: 0 1px 2px rgba(21, 35, 63, 0.05);
   --shadow-default: 0 8px 24px rgba(21, 35, 63, 0.10);
   --shadow-prominent: 0 18px 48px rgba(21, 35, 63, 0.22);
   --glow-primary: 0 0 12px rgba(27, 64, 121, 0.15);
-  --glow-secondary: 0 0 20px rgba(244, 124, 38, 0.2);
+  --glow-secondary: 0 0 20px rgba(223, 111, 73, 0.2);
 
   /* Spacing & Layout */
   /* 범주 팔레트(로트 열 등 '서로 다르기만 하면 되는' 색). 상태색과 겹치지 않게 4색. */
-  --series-1: #2563eb;
-  --series-2: #16a34a;
-  --series-3: #d97706;
-  --series-4: #9333ea;
+  --series-1: #3568c9;
+  --series-2: #2f9a5f;
+  --series-3: #c98212;
+  --series-4: #8a5cc7;
   /* 글자 스케일(docs/ui-standard.md §3). 화면 CSS 는 font-size 에 이 토큰만 쓴다. */
   --fs-display: 3rem;
   --fs-hero: 2rem;
@@ -125,10 +125,10 @@
    대신 명시적 data-theme="dark" 에만 반영해 라이트 UI 를 깨지 않는다. 다크 모드가
    도입되면 이 맵이 그대로 근태 달력에 적용된다. */
 :root[data-theme="dark"] {
-  --series-1: #60a5fa;
-  --series-2: #4ade80;
-  --series-3: #fbbf24;
-  --series-4: #c084fc;
+  --series-1: #7fa5ec;
+  --series-2: #6fcf97;
+  --series-3: #e9b84b;
+  --series-4: #b48ce8;
   --cal-weekday: #93c5fd;
   --cal-weekday-bg: #1e3a5f;
   --cal-saturday: #a5b4fc;
@@ -555,7 +555,7 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--accent-secondary-hover, #df6a16);
+  color: var(--text-tertiary);   /* 위눈썹은 분류 표시지 변경점이 아니다. 강조색은 한 화면 한 군데 */
 }
 
 .topbar-eyebrow:empty {
@@ -736,8 +736,8 @@ th.sorted-desc::after { content: " ▼"; font-size: 0.7em; }
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
-  background: var(--accent-secondary-light);
-  border-left: 4px solid var(--accent-secondary);
+  background: var(--status-info-bg);
+  border-left: 4px solid var(--status-info);
   padding: 0.75rem 1rem;
   border-radius: 6px;
   margin: 0 0 1.5rem 0;
@@ -876,11 +876,11 @@ button:disabled {
    저장 실패 메시지가 본문 검은 글씨 한 줄로 조용히 끼어들었다 — 성공 토스트에 익숙한
    작업자는 저장된 줄 알고 자리를 뜬다(현장에서 가장 비싼 오해). 눈에 띄게 만든다. */
 .login-error {
-  color: var(--status-error, #d8453f);
+  color: var(--status-error, #c8433d);
   font-weight: 600;
   font-size: var(--fs-sm);
   padding: 0.5rem 0.7rem;
-  border-left: 3px solid var(--status-error, #d8453f);
+  border-left: 3px solid var(--status-error, #c8433d);
   background: color-mix(in srgb, var(--status-error) 8%, transparent);
   border-radius: var(--radius-sm, 6px);
 }

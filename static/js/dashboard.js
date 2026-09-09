@@ -314,7 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const weights = data.points.map((point) => (point.total_weight_g || 0) / 1000);
     if (trendChart) trendChart.destroy();
     const countColor = cssVar("--brand", "#1b4079");
-    const weightColor = cssVar("--accent-secondary", "#f47c26");
+    const weightColor = cssVar("--accent-secondary", "#df6f49");
     trendChart = new Chart(document.getElementById("chart-trend"), {
       type: "line",
       data: {
@@ -434,7 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const total = items.length;
       valueEl.textContent = fmtNumber(total);
       valueEl.style.color =
-        total > 0 ? cssVar("--status-error", "#d8453f") : cssVar("--text-muted", "#94a3b8");
+        total > 0 ? cssVar("--status-error", "#c8433d") : cssVar("--text-muted", "#94a3b8");
       if (card) card.classList.toggle("has-unacked", total > 0);
       if (!items.length) {
         listEl.innerHTML = '<li class="rescale-empty muted">미확인 항목이 없습니다.</li>';
