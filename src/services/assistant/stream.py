@@ -166,9 +166,16 @@ async def stream_answer(
             type(exc).__name__,
             exc,
         )
+        # detail 은 지원용(내부망 전용 앱). 위젯은 message 만 보여 주고, 서버 로그를 못 보는
+        # 자리에서 curl 로 원인을 읽을 수 있게 예외 종류와 앞부분만 싣는다(키·본문은 없음).
+        detail = f"{type(exc).__name__}: {str(exc)[:240]}"
         yield format_sse(
             "error",
-            {"code": code, "message": ERR_MESSAGES.get(code, ERR_MESSAGES[ERR_LLM_ERROR])},
+            {
+                "code": code,
+                "message": ERR_MESSAGES.get(code, ERR_MESSAGES[ERR_LLM_ERROR]),
+                "detail": detail,
+            },
         )
         return
 
