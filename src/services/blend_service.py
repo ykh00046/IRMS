@@ -1737,6 +1737,19 @@ def enforce_carry_over(
         d["manual_entry"] = False
 
 
+_LOT_QUOTES = "'’‘\""
+
+
+def normalize_material_lot(value) -> str | None:
+    """자재 LOT 정규화 — 앞뒤 공백과 따옴표를 뗀다. 비면 None.
+
+    엑셀에서 앞자리 0 을 지키려고 붙는 작은따옴표("'0029227498")가 그대로 저장돼
+    LOT 이력에서 같은 LOT 이 둘로 갈라진 사고(2026-09-09, 6건). 저장 경로 전부가 이 함수를 지난다.
+    """
+    text = str(value or "").strip().strip(_LOT_QUOTES).strip()
+    return text or None
+
+
 def missing_lot_names(details: list[dict[str, Any]]) -> list[str]:
     """material_lot 가 비어 있는 행의 자재명 목록을 반환(LOT 입력 누락 검증).
 
@@ -2383,7 +2396,7 @@ def create_blend_record(
                     d.get("material_id"),
                     stored_code,
                     str(d.get("material_name") or "").strip(),
-                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    normalize_material_lot(d.get("material_lot")),
                     _opt_num(d.get("ratio")),
                     _opt_num(d.get("theory_amount")),
                     _opt_num(d.get("actual_amount")),
@@ -2408,7 +2421,7 @@ def create_blend_record(
                     d.get("material_id"),
                     stored_code,
                     str(d.get("material_name") or "").strip(),
-                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    normalize_material_lot(d.get("material_lot")),
                     _opt_num(d.get("ratio")),
                     _opt_num(d.get("theory_amount")),
                     _opt_num(d.get("actual_amount")),
@@ -2481,7 +2494,7 @@ def update_blend_record(
                     d.get("material_id"),
                     stored_code,
                     str(d.get("material_name") or "").strip(),
-                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    normalize_material_lot(d.get("material_lot")),
                     _opt_num(d.get("ratio")),
                     _opt_num(d.get("theory_amount")),
                     _opt_num(d.get("actual_amount")),
@@ -2506,7 +2519,7 @@ def update_blend_record(
                     d.get("material_id"),
                     stored_code,
                     str(d.get("material_name") or "").strip(),
-                    (str(d.get("material_lot")).strip() if d.get("material_lot") else None),
+                    normalize_material_lot(d.get("material_lot")),
                     _opt_num(d.get("ratio")),
                     _opt_num(d.get("theory_amount")),
                     _opt_num(d.get("actual_amount")),
@@ -3295,7 +3308,7 @@ def create_batch_discard(
     cleaned = [{
         "material_name": str(d.get("material_name") or "").strip()[:200],
         "material_code": resolve_stored_material_code(connection, d, max_length=50) or "",
-        "material_lot": str(d.get("material_lot") or "").strip()[:100],
+        "material_lot": (normalize_material_lot(d.get("material_lot")) or "")[:100],
         "actual_amount": round(float(d.get("actual_amount") or 0), 2),
     } for d in details if str(d.get("material_name") or "").strip()]
     cur = connection.execute(

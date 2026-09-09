@@ -1382,6 +1382,13 @@
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #lot-invalid-modal 표시 후 값을 비운다.
       // 그 뒤 ERP 원재료 LOT 검사(제안 없는 자재만) — 경고는 저장을 막지 않는다.
       el.addEventListener("change", () => {
+        // 붙여넣기 따옴표·공백 정리 후 검증(2026-09-09 사고 재발 방지)
+        const cleaned = IRMS.blendLib.cleanLot(el.value);
+        if (cleaned !== el.value) {
+          el.value = cleaned;
+          const row = state.items[Number(el.dataset.idx)];
+          if (row) row.material_lot = cleaned;
+        }
         validateLotInput(el); checkErpLot(el);
         refreshLotViscNote(el, state.items[Number(el.dataset.idx)]?.material_name, el.value);
       });

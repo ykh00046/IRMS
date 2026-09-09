@@ -1544,6 +1544,12 @@
       // 미등록 LOT 차단 — 반제품(제안이 있는 자재)만. 편집 확정(change) 시 셀별 검증.
       // 일반 자재(제안 없음)는 변화 없음. 미등록이면 #cont-lot-invalid-modal 표시 후 값을 비운다.
       el.addEventListener("change", () => {
+        // 붙여넣기 따옴표·공백 정리 후 검증(2026-09-09 사고 재발 방지)
+        const cleaned = IRMS.blendLib.cleanLot(el.value);
+        if (cleaned !== el.value) {
+          el.value = cleaned;
+          if (state.cells[i] && state.cells[i][j]) state.cells[i][j].lot = cleaned;
+        }
         validateLotInput(el); checkErpLot(el);
         const mat = state.materials[Number(el.dataset.i)];
         refreshLotViscNote(el, mat && mat.material_name, el.value);

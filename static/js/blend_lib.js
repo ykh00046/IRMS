@@ -667,8 +667,15 @@
     return { arm, disarm, reset };
   }
 
+  // 자재 LOT 정리 — 앞뒤 공백과 따옴표(엑셀 복사 흔적 "'0029227498")를 뗀다. 서버도 같은
+  // 규칙으로 저장하지만, 화면에서 먼저 지워야 미등록 LOT 검사·제안 목록이 제대로 맞는다(2026-09-09).
+  function cleanLot(value) {
+    return String(value || "").trim().replace(/^['’‘"]+|['’‘"]+$/g, "").trim();
+  }
+
   IRMS.blendLib = {
     esc,
+    cleanLot,
     TOLERANCE_G,
     ANCHOR_BADGE,
     IDLE_LOGOUT_MINUTES,
