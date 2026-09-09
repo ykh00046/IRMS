@@ -20,7 +20,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -45,6 +45,9 @@ class AssistantError(Exception):
     def __init__(self, code: str, message: str = "") -> None:
         super().__init__(message or code)
         self.code = code
+
+
+GEMINI_BACKUP_MODEL = "gemini-2.5-flash-lite"  # 메인(2.5 flash) 이 막혔을 때 같은 키로 한 번 더
 
 
 @dataclass
@@ -297,20 +300,29 @@ def run_answer(
 
         last_exc: Exception | None = None
         if cfg.provider == "gemini" and cfg.gemini_key:
-            try:
-                return _run_gemini(query, history, system_prompt, cfg, recorder, emit)
-            except AssistantError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - 분류 후 Groq 로 넘긴다
-                last_exc = exc
-                _logger.warning(
-                    "[assistant] gemini 실패 model=%s %s: %s",
-                    cfg.model,
-                    type(exc).__name__,
-                    exc,
-                )
-                if not (cfg.groq_key and is_fallbackable(exc)):
-                    raise AssistantError(_code_for(exc), str(exc)) from exc
+            # 메인은 설정 모델(기본 gemini-2.5-flash). 429/5xx 면 같은 키로 flash-lite 를
+            # 한 번 더 시도하고(분당 한도는 모델별), 그것도 안 되면 Groq 로 넘긴다.
+            attempts = [cfg.model]
+            if cfg.model != GEMINI_BACKUP_MODEL:
+                attempts.append(GEMINI_BACKUP_MODEL)
+            for attempt_model in attempts:
+                attempt_cfg = cfg if attempt_model == cfg.model else replace(cfg, model=attempt_model)
+                try:
+                    return _run_gemini(query, history, system_prompt, attempt_cfg, recorder, emit)
+                except AssistantError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - 분류 후 다음 단계로 넘긴다
+                    last_exc = exc
+                    _logger.warning(
+                        "[assistant] gemini 실패 model=%s %s: %s",
+                        attempt_model,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    if not is_fallbackable(exc):
+                        raise AssistantError(_code_for(exc), str(exc)) from exc
+            if not cfg.groq_key:
+                raise AssistantError(_code_for(last_exc), str(last_exc)) from last_exc
 
         if cfg.groq_key:
             try:

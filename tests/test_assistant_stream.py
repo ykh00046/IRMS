@@ -311,3 +311,26 @@ def test_session_store_trims_and_expires():
     assert history[0] == ("user", "q5")
     assert store.clear("s") is True
     assert store.session_count() == 0
+
+
+def test_gemini_backup_model_before_groq(monkeypatch):
+    """메인 2.5 flash 가 429 로 막히면 같은 키로 flash-lite 를 시도하고, 그다음에야 Groq."""
+    from src.services.assistant import llm
+
+    calls: list[str] = []
+
+    class _Busy(Exception):
+        code = 429
+
+    def fake_gemini(query, history, system_prompt, cfg, recorder, emit):
+        calls.append(cfg.model)
+        if cfg.model == "gemini-2.5-flash":
+            raise _Busy("quota")
+        return llm.AnswerResult(answer="lite 답", tools_used=[], suggestions=[])
+
+    monkeypatch.setattr(llm, "_run_gemini", fake_gemini)
+    monkeypatch.setattr(llm, "_run_groq", lambda *a, **k: (_ for _ in ()).throw(AssertionError("groq 호출 금지")))
+    cfg = llm.ProviderConfig(provider="gemini", model="gemini-2.5-flash", gemini_key="k", groq_key="g")
+    result = llm.run_answer("점도?", [], None, cfg, lambda *_: None)
+    assert result.answer == "lite 답"
+    assert calls == ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
