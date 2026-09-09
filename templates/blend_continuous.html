@@ -5,8 +5,8 @@
 {% block heading %}다중 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260909h" />
-    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260909h" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260909i" />
+    <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260909i" />
 {% endblock %}
 
 {% block content %}
@@ -77,7 +77,7 @@
                 {# 저울 전용 모드 수기 입력 승인 · 모드가 켜져 있을 때만 노출. 승인은 이 배합에 한해 손입력을
                    허용하고, 손입력한 값은 기록에 수기 표시로 남는다. JS updateManualEntryControl 이 문구·버튼 갱신. #}
                 <div class="scale-only-control" id="cont-scale-only-control" hidden>
-                  <span class="scale-only-control-text" id="cont-scale-only-control-text"><b>저울 전용 모드</b> 실제량은 저울 PRINT로만 들어옵니다. 저울을 못 쓰면 책임자 승인을 받아 이 배합만 손으로 입력할 수 있습니다. 책임자가 없으면 사유를 적고 진행하며, 손입력한 값은 기록에 수기 표시로 남아 사후 확인을 받습니다.</span>
+                  <span class="scale-only-control-text" id="cont-scale-only-control-text"><b>PRINT가 안 될 때</b> 책임자 승인을 받아 이 배합만 손으로 입력합니다. 책임자가 없으면 사유를 적고 진행할 수 있습니다. 손입력한 값은 기록에 수기 표시로 남아 나중에 책임자가 확인합니다.</span>
                   <button type="button" class="btn btn-sm accent" id="cont-manual-entry-request-btn">수기 입력 승인 요청</button>
                 </div>
               </div>
@@ -259,9 +259,9 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260909h"></script>
-    <script src="/static/js/blend_drafts.js?v=20260909h"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260909h"></script>
-    <script src="/static/js/blend_lot_modal.js?v=20260909h"></script>
-    <script src="/static/js/blend_continuous.js?v=20260909h"></script>
+    <script src="/static/js/blend_lib.js?v=20260909i"></script>
+    <script src="/static/js/blend_drafts.js?v=20260909i"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260909i"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260909i"></script>
+    <script src="/static/js/blend_continuous.js?v=20260909i"></script>
 {% endblock %}
