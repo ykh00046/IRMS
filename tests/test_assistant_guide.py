@@ -193,3 +193,40 @@ def test_every_entry_has_two_follow_ups_that_are_not_its_own_title():
         for text in ups:
             assert "—" not in text and "잉크" not in text, entry["id"]
             assert text != entry["title"], entry["id"]
+
+
+def test_clear_howto_questions_are_answered_without_the_model():
+    """정해진 안내는 모델을 부르지 않는다(2026-09-10 토큰 낭비 지적)."""
+    from src.services.assistant import guide
+
+    entry = guide.answerable("기록이 저장 안 된 것 같아요")
+    assert entry is not None and entry["id"] == "missing-record"
+    text = guide.render_answer(entry)
+    assert "작성 중 배합" in text and "/blend/drafts" in text
+    assert "1. " in text                      # 번호 붙은 절차
+    assert "—" not in text and "잉크" not in text
+
+
+def test_data_questions_never_take_the_fast_path():
+    from src.services.assistant import guide
+
+    for question in (
+        "최근 배합 기록 보여줘", "오늘 배합 몇 건이야?", "지금 봐야 할 것 알려줘",
+        "NPR-S 자재 LOT 언제 바뀌었어?", "이번 달 자재 사용량 알려줘",
+        "APB17 점도 평균이 얼마야?", "점도 이상 목록 보여줘",
+    ):
+        assert guide.answerable(question) is None, question
+
+
+def test_fast_path_returns_a_guide_answer_without_any_provider():
+    from src.services.assistant import llm
+
+    seen = []
+    cfg = llm.ProviderConfig(provider=None, model="", gemini_key="", groq_key="")
+    result = llm.run_answer("수기 입력 승인은 어떻게 받나요?", [], None, cfg,
+                            lambda event, data: seen.append(event))
+    assert result.provider == "guide"
+    assert "수기 입력 승인 요청" in result.answer
+    assert [t["name"] for t in result.tools_used] == ["get_usage_guide"]
+    assert "token" in seen and "tool_call" in seen
+    assert "수기 입력 승인은 어떻게 받나요?" not in result.suggestions

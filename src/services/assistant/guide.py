@@ -994,3 +994,73 @@ def follow_ups_for(question: str, asked: str = "") -> list:
         if len(out) >= 2:
             break
     return out[:2]
+
+
+# ============================================================
+# 모델을 부르지 않고 바로 답하는 길
+# ============================================================
+# 사용법 답은 이 파일에 손으로 적어 둔 고정 문장이다. 그런데도 모델을 두 번 부르느라
+# (어떤 안내를 꺼낼지 + 문장 쓰기) 한 물음에 9,000자 남짓을 보내고 4~6초가 걸렸다
+# (2026-09-10 사용자 지적). 어느 안내인지 분명할 때는 부르지 않고 그대로 내보낸다.
+# 데이터 물음("최근 기록 보여줘")이 새지 않도록 두 겹으로 막는다.
+#   1) 물음이 사용법 말투여야 한다(HOWTO_MARKERS) — 값을 달라는 말투면 제외(DATA_MARKERS)
+#   2) 1등 항목의 점수가 충분히 높고 2등과 벌어져 있어야 한다
+# 하나라도 안 맞으면 지금처럼 모델이 답한다.
+HOWTO_MARKERS = (
+    "어떻게", "어떡", "어디서", "어디에", "어디로", "방법", "사용법",
+    "무슨 뜻", "뜻이", "안 돼", "안돼", "안 되", "안되", "안 된", "안된",
+    "막히", "막혀", "되는데", "안 나와", "안나와", "안 뜨", "안뜨",
+    "하려면", "하나요", "되나요", "사라졌", "없어졌", "안 보여", "안보여",
+)
+DATA_MARKERS = (
+    "보여줘", "보여 줘", "알려줘", "알려 줘", "몇 건", "몇건", "얼마",
+    "목록", "누가", "평균", "합계", "건수", "언제 바뀌",
+)
+FAST_MIN_SCORE = 5   # 1등 점수 하한
+FAST_MIN_GAP = 4     # 2등과의 차이 하한
+
+
+def looks_like_howto(question: str) -> bool:
+    text = str(question or "")
+    if any(word in text for word in DATA_MARKERS):
+        return False
+    return any(word in text for word in HOWTO_MARKERS)
+
+
+def answerable(question: str) -> dict | None:
+    """모델 없이 바로 답할 수 있는 안내 항목. 애매하면 None."""
+    if not looks_like_howto(question):
+        return None
+    ranked = sorted(
+        ((score(entry, question), index, entry) for index, entry in enumerate(ENTRIES)),
+        key=lambda row: (-row[0], row[1]),
+    )
+    if not ranked:
+        return None
+    best, _, entry = ranked[0]
+    runner_up = ranked[1][0] if len(ranked) > 1 else 0
+    if best < FAST_MIN_SCORE or best - runner_up < FAST_MIN_GAP:
+        return None
+    return entry
+
+
+def render_answer(entry: dict) -> str:
+    """안내 항목을 그대로 읽을 수 있는 글로 만든다.
+
+    말투를 매번 바꿀 이유가 없다 — 절차는 늘 같은 문장이어야 외워서 쓴다.
+    """
+    lines = [str(entry.get("title") or "").strip()]
+    screen = str(entry.get("screen") or "").strip()
+    path = str(entry.get("path") or "").strip()
+    if screen and path:
+        lines += ["", f"**{screen}**({path})"]
+    steps = list(entry.get("steps") or [])
+    if steps:
+        lines.append("")
+        bullet = str(entry.get("id") or "").startswith("terms")
+        for index, step in enumerate(steps, 1):
+            lines.append(f"- {step}" if bullet else f"{index}. {step}")
+    notes = str(entry.get("notes") or "").strip()
+    if notes:
+        lines += ["", notes]
+    return chr(10).join(lines).strip()

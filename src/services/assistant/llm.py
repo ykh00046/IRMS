@@ -302,6 +302,34 @@ class _ToolRecorder:
 # ============================================================
 # 공개 진입점
 # ============================================================
+def _answer_from_guide(
+    query: str,
+    recorder: "_ToolRecorder",
+    emit: Callable[[str, dict[str, Any]], None],
+) -> "AnswerResult | None":
+    """어느 안내인지 분명한 사용법 물음은 모델을 부르지 않고 바로 답한다.
+
+    안내 글은 이 저장소에 손으로 적어 둔 고정 문장이라 모델이 새로 지어낼 것이 없다.
+    부르지 않으면 답이 즉시 나오고, 무료 한도를 데이터 물음에 남겨 두며, 한도가 다 차도
+    사용법 안내는 계속 된다(2026-09-10). 애매하면 None 을 돌려 모델에게 넘긴다.
+    """
+    entry = guide_book.answerable(query)
+    if entry is None:
+        return None
+    # 화면의 도구 칩·캐시 흐름을 모델 경로와 같게 두려고 도구를 실제로 부른다(DB 미접속).
+    assistant_tools.get_usage_guide(query)
+    answer = guide_book.render_answer(entry)
+    for start in range(0, len(answer), 40):
+        emit("token", {"text": answer[start:start + 40]})
+    return AnswerResult(
+        answer=answer,
+        tools_used=recorder.entries,
+        suggestions=suggestions_for(recorder.entries, query),
+        provider="guide",
+        model="사용법 안내",
+    )
+
+
 def run_answer(
     query: str,
     history: list[tuple[str, str]],
@@ -318,6 +346,9 @@ def run_answer(
     recorder = _ToolRecorder(emit)
     assistant_tools.set_emitter(recorder)
     try:
+        fast = _answer_from_guide(query, recorder, emit)
+        if fast is not None:
+            return fast
         if cfg.provider == "fake":
             return _run_fake(query, cfg, recorder, emit)
 
