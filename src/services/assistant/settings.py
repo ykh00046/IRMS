@@ -10,14 +10,18 @@
 
 from __future__ import annotations
 
+import json
+import datetime as _dt
 import sqlite3
 
+from ...db import get_connection
 from .. import settings_service
 from ... import config
 
 ENABLED_KEY = "assistant_enabled"
 MODEL_KEY = "assistant_model"
 GEMINI_KEY = "assistant_gemini_api_key"
+QUOTA_KEY = "assistant_quota_seen"
 GROQ_KEY = "assistant_groq_api_key"
 
 # 2026-09-10 실측으로 갱신. gemini-2.5-flash 는 무료 티어 **하루 20회**라 현장에서 오전에
@@ -37,10 +41,13 @@ GROQ_MODEL = GROQ_MODELS[0]
 
 # 설정 화면에서 고를 수 있는 모델. 목록 밖 값도 저장은 되지만(운영 중 새 모델 대응)
 # 화면은 이 목록을 기본 선택지로 쓴다.
+# 2026-09-10 계정 실측(분당 한도는 429 의 quotaId 로 확인):
+#   gemini-3.5-flash       분당 5회   도구 호출 2.6초   ← 기본
+#   gemini-3.5-flash-lite  14회 연속 호출까지 한도 안 걸림   도구 호출 2.2초   ← 예비
+#   gemini-3-flash-preview 분당 5회   — 미리보기라 이름이 사라질 수 있고 3.5-flash 대비 이점 없음. 뺐다.
 MODEL_CHOICES = (
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3-flash-preview",
 )
 
 
@@ -165,4 +172,48 @@ def admin_view(connection: sqlite3.Connection) -> dict[str, object]:
         "groq_source": groq_source,
         "fake_mode": fake_mode(),
         "model_choices": list(MODEL_CHOICES),
+        "quotas": get_quotas(connection),
     }
+
+
+# ============================================================
+# 관측한 한도 — 모델마다 무료 한도가 다르고 문서로는 알 수 없다
+# ============================================================
+def get_quotas(connection: sqlite3.Connection) -> dict[str, Any]:
+    """429 를 맞으면서 알게 된 모델별 한도. {"모델": {"kind","value","at"}}"""
+    raw = settings_service.get_setting(connection, QUOTA_KEY) or ""
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_quota(model: str, kind: str, value: int) -> None:
+    """무료 한도에 걸린 사실을 남긴다 — 설정 화면이 "이 모델은 분당 5회"를 말할 수 있게.
+
+    한도는 계정·모델마다 다르고 API 로 물어볼 수 없어서, 걸렸을 때만 알 수 있다
+    (2026-09-10: gemini-2.5-flash 하루 20회를 이렇게 알아냈다).
+    """
+    name = (model or "").strip()
+    if not name or value <= 0:
+        return
+    try:
+        with get_connection() as connection:
+            seen = get_quotas(connection)
+            entry = seen.get(name) or {}
+            if entry.get("kind") == kind and entry.get("value") == value:
+                return
+            entry.update({
+                "kind": kind, "value": int(value),
+                "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            seen[name] = entry
+            settings_service.set_setting(
+                connection, QUOTA_KEY, json.dumps(seen, ensure_ascii=False),
+                updated_by="assistant",
+            )
+    except Exception:  # noqa: BLE001 - 기록 실패가 답변을 막으면 안 된다
+        pass

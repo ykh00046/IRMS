@@ -218,3 +218,36 @@ def test_model_choices_have_no_retired_entries():
     for name in assistant_settings.MODEL_CHOICES:
         assert name not in assistant_settings.RETIRED_MODELS, name
     assert assistant_settings.DEFAULT_MODEL in assistant_settings.MODEL_CHOICES
+
+
+def test_quota_is_recorded_and_shown(tmp_path, monkeypatch):
+    """429 에 적힌 무료 한도를 남겨 설정 화면이 말할 수 있게 한다(2026-09-10)."""
+    import sqlite3
+    from contextlib import contextmanager
+    from src.services.assistant import settings as assistant_settings, llm
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, "
+        "updated_at TEXT, updated_by TEXT)"
+    )
+
+    @contextmanager
+    def fake_conn():
+        yield connection
+
+    monkeypatch.setattr(assistant_settings, "get_connection", fake_conn)
+
+    class Busy(Exception):
+        code = 429
+
+    message = ("429 RESOURCE_EXHAUSTED. {'quotaId': "
+               "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaValue': '5'}")
+    llm._remember_quota("gemini-3.5-flash", Busy(message))
+    seen = assistant_settings.get_quotas(connection)
+    assert seen["gemini-3.5-flash"]["kind"] == "minute"
+    assert seen["gemini-3.5-flash"]["value"] == 5
+
+    llm._remember_quota("gemini-3.5-flash", ValueError("아무 오류"))   # 429 아니면 기록 안 함
+    assert list(assistant_settings.get_quotas(connection)) == ["gemini-3.5-flash"]

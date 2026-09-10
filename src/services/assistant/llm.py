@@ -302,6 +302,24 @@ class _ToolRecorder:
 # ============================================================
 # 공개 진입점
 # ============================================================
+_QUOTA_ID_RE = re.compile(r"'quotaId': '([^']+)'")
+_QUOTA_VALUE_RE = re.compile(r"'quotaValue': '(\d+)'")
+
+
+def _remember_quota(model: str, exc: Exception) -> None:
+    """429 안에 적힌 무료 한도를 남긴다. 설정 화면이 "이 모델은 분당 5회"를 말하게."""
+    if extract_http_status(exc) != 429:
+        return
+    message = str(exc)
+    quota_id = _QUOTA_ID_RE.search(message)
+    value = _QUOTA_VALUE_RE.search(message)
+    if not value:
+        return
+    name = quota_id.group(1) if quota_id else ""
+    kind = "minute" if "PerMinute" in name else ("day" if "PerDay" in name else "other")
+    assistant_settings.record_quota(model, kind, int(value.group(1)))
+
+
 def _answer_from_guide(
     query: str,
     recorder: "_ToolRecorder",
@@ -367,6 +385,7 @@ def run_answer(
                     raise
                 except Exception as exc:  # noqa: BLE001 - 분류 후 다음 단계로 넘긴다
                     last_exc = exc
+                    _remember_quota(attempt_model, exc)
                     _logger.warning(
                         "[assistant] gemini 실패 model=%s %s: %s",
                         attempt_model,

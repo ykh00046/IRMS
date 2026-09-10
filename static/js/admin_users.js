@@ -1154,9 +1154,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function applySettings(data) {
       if (enabledEl) enabledEl.checked = !!data.enabled;
-      if (modelEl && data.model) {
-        const has = Array.prototype.some.call(modelEl.options, (o) => o.value === data.model);
-        if (has) modelEl.value = data.model;
+      if (modelEl) {
+        // 선택지는 서버 목록으로 다시 그린다. 저장된 값이 목록에 없으면 그 값도 넣어 둔다.
+        const choices = Array.isArray(data.model_choices) ? data.model_choices.slice() : [];
+        if (data.model && !choices.includes(data.model)) choices.push(data.model);
+        modelEl.innerHTML = choices
+          .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
+          .join("");
+        if (data.model) modelEl.value = data.model;
+      }
+      const quotaEl = document.getElementById("ai-quota-note");
+      if (quotaEl) {
+        // 무료 한도는 API 로 물어볼 수 없어 429 를 맞을 때만 알 수 있다. 알게 된 것만 적는다.
+        const seen = data.quotas && typeof data.quotas === "object" ? data.quotas : {};
+        const KIND = { minute: "분당", day: "하루" };
+        const lines = Object.keys(seen)
+          .map((name) => {
+            const q = seen[name] || {};
+            if (!q.value) return "";
+            return `${name} ${KIND[q.kind] || ""} ${q.value}회`;
+          })
+          .filter(Boolean);
+        quotaEl.textContent = lines.length ? `겪어 본 무료 한도 · ${lines.join(" · ")}` : "";
+        quotaEl.hidden = !lines.length;
       }
       KEYS.forEach((key) => {
         const input = document.getElementById(`ai-${key.id}-key`);
