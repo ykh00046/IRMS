@@ -31,7 +31,8 @@ LOT 이력에 없는 교체가 생기고 역추적이 갈라진다.
   --api URL      운영 서버(기본 IRMS_API_URL 또는 http://192.168.11.194:9000)
   --tier         high | mid | all (기본 all = 점검, --apply 시 기본 high)
   --groups       위 목록의 번호만 골라 적용
-  --user/--password  책임자 계정(비번 생략 시 실행 중 입력)
+  --user/--password  책임자 계정. 비번은 환경변수 IRMS_MANAGER_PASSWORD 로 줘도 된다.
+                     비번을 안 주면 묻지 않고 안내만 하고 끝난다(창 없는 실행에서 멈추지 않게).
   --cache PATH   기록 상세 캐시 파일(기본 .tmp-tests/lot_typo_cache.json)
   --refresh      캐시를 무시하고 다시 읽는다
 
@@ -41,7 +42,7 @@ LOT 이력에 없는 교체가 생기고 역추적이 갈라진다.
 from __future__ import annotations
 
 import argparse
-import getpass
+import functools
 import http.cookiejar
 import json
 import os
@@ -51,6 +52,8 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
+
+print = functools.partial(print, flush=True)  # noqa: A001 - 백그라운드에서도 바로 보이게
 
 DEFAULT_API = os.environ.get("IRMS_API_URL", "http://192.168.11.194:9000")
 DEFAULT_CACHE = Path(".tmp-tests/lot_typo_cache.json")
@@ -303,7 +306,15 @@ def main() -> int:
         return 0
 
     print(f"\n적용 대상 {len(targets)}건 (기록 {sum(len(g['record_ids']) for g in targets)}건)")
-    password = args.password or getpass.getpass("책임자 비밀번호: ")
+    # 비밀번호는 인자나 환경변수로만 받는다. Windows 의 getpass 는 표준 입력이 아니라
+    # 콘솔을 직접 읽어서, 창 없이 돌리면(백그라운드) 아무 표시 없이 영영 멈춘다(2026-09-10).
+    password = args.password or os.environ.get("IRMS_MANAGER_PASSWORD") or ""
+    if not password:
+        print("책임자 비밀번호가 필요합니다. 둘 중 하나로 주세요.")
+        print("  IRMS_MANAGER_PASSWORD=비밀번호 .venv/Scripts/python tools/fix_material_lot_typos.py "
+              f"--tier {tier} --apply")
+        print(f"  .venv/Scripts/python tools/fix_material_lot_typos.py --tier {tier} --apply --password 비밀번호")
+        return 4
     try:
         api.call("POST", "/api/auth/management-login", {"username": args.user, "password": password})
     except urllib.error.HTTPError as exc:

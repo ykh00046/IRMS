@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import http.cookiejar
 import json
 import os
@@ -134,7 +133,12 @@ def main() -> int:
         print("\n점검만 했습니다. 고치려면 --apply 를 붙여 다시 실행하세요.")
         return 0
 
-    password = args.password or getpass.getpass("책임자 비밀번호: ")
+    # Windows 의 getpass 는 콘솔을 직접 읽어 창 없는 실행에서 멈춘다(2026-09-10). 묻지 않는다.
+    password = args.password or os.environ.get("IRMS_MANAGER_PASSWORD") or ""
+    if not password:
+        print("책임자 비밀번호가 필요합니다.")
+        print("  IRMS_MANAGER_PASSWORD=비밀번호 .venv/Scripts/python tools/fix_material_lot_quotes.py --apply")
+        return 4
     try:
         api.call("POST", "/api/auth/management-login", {"username": args.user, "password": password})
     except urllib.error.HTTPError as exc:
