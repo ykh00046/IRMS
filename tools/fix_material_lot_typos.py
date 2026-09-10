@@ -42,7 +42,6 @@ LOT 이력에 없는 교체가 생기고 역추적이 갈라진다.
 from __future__ import annotations
 
 import argparse
-import functools
 import http.cookiejar
 import json
 import os
@@ -53,7 +52,18 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-print = functools.partial(print, flush=True)  # noqa: A001 - 백그라운드에서도 바로 보이게
+def _safe(text: str) -> str:
+    """콘솔이 CP949 라 서버 오류 메시지의 줄표 같은 글자에서 죽던 것을 막는다(2026-09-10)."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return str(text).encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
+_print = print
+
+
+def print(*args, **kwargs):  # noqa: A001 - 콘솔 인코딩 방어 + 즉시 출력
+    kwargs.setdefault("flush", True)
+    _print(*[_safe(a) for a in args], **kwargs)
 
 DEFAULT_API = os.environ.get("IRMS_API_URL", "http://192.168.11.194:9000")
 DEFAULT_CACHE = Path(".tmp-tests/lot_typo_cache.json")
@@ -230,6 +240,12 @@ def apply_group(api: Api, group: dict) -> list[tuple]:
                 changed += 1
             row = {k: d.get(k) for k in DETAIL_KEYS}
             row["material_lot"] = lot
+            # 옛 기록 중에 비율이 0~100 밖인 것이 있다(단위가 달랐던 시절). 그대로 보내면
+            # 입력 검증에서 422 로 막히므로 빼고 보낸다. 총량이 그대로면 서버가 기록의
+            # 비율·이론량을 되살린다(keep_recorded_theory).
+            ratio = row.get("ratio")
+            if ratio is not None and not (0 <= float(ratio) <= 100):
+                row["ratio"] = None
             details.append(row)
         if not changed:
             problems.append((rid, "이미 바뀌어 있음"))

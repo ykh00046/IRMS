@@ -1552,7 +1552,14 @@ def build_router() -> APIRouter:
             )
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
-        if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
+        # 반응기는 계량할 때 받는 값이다. 반응기 도입 전에 저장된 옛 기록은 비어 있는데,
+        # 정정 저장이 이를 새로 요구하면 LOT 오타 하나 고치려고 반응기를 지어내야 한다
+        # (2026-09-10 일괄 정정에서 대부분 막힘). 이미 들어 있던 반응기를 비우는 것만 막는다.
+        if (
+            blend_service.product_uses_reactor(connection, body.product_name)
+            and body.reactor is None
+            and record.get("reactor") is not None
+        ):
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         details = [d.model_dump() for d in body.details]
         total_amount = body.total_amount

@@ -72,3 +72,29 @@ def test_total_change_still_rederives_theory():
     assert res.status_code == 200, res.text
     got = {d["material_name"]: d["theory_amount"] for d in res.json()["details"]}
     assert got == {"PowderA": 1200.0, "LiquidB": 800.0}
+
+
+def test_edit_of_a_record_without_reactor_is_allowed(monkeypatch):
+    """반응기 도입 전 기록(반응기 없음)도 정정할 수 있어야 한다.
+
+    정정이 반응기를 새로 요구하면 LOT 오타 하나 고치려고 없던 값을 지어내야 한다.
+    이미 들어 있던 반응기를 비우는 것만 막는다.
+    """
+    from src.services import blend_service
+
+    client = _client()
+    headers = _login(client)
+    product = "NOREACT" + _uid()[:6]
+    rid = _import(client, headers, product, {"PowderA": 60, "LiquidB": 40}).json()["created_ids"][0]
+    worker = _worker(client, headers)
+    record_id, body = _record(client, headers, product, rid, worker)
+
+    # 이제부터 이 제품은 반응기를 쓰는 제품이 된다(옛 기록에는 값이 없다).
+    monkeypatch.setattr(blend_service, "product_uses_reactor", lambda *a, **k: True)
+
+    edit = dict(body)
+    edit["details"] = [dict(d) for d in body["details"]]
+    edit["details"][0]["material_lot"] = "03136002"
+    res = client.put(f"/api/blend/records/{record_id}", json=edit, headers=headers)
+    assert res.status_code == 200, res.text
+    assert res.json()["reactor"] is None
