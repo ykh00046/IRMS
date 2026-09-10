@@ -251,3 +251,32 @@ def test_quota_is_recorded_and_shown(tmp_path, monkeypatch):
 
     llm._remember_quota("gemini-3.5-flash", ValueError("아무 오류"))   # 429 아니면 기록 안 함
     assert list(assistant_settings.get_quotas(connection)) == ["gemini-3.5-flash"]
+
+
+def test_groq_quota_comes_from_success_headers(tmp_path, monkeypatch):
+    """Groq 는 429 를 안 맞아도 성공 헤더로 한도를 준다(2026-09-10 실측)."""
+    import sqlite3
+    from contextlib import contextmanager
+    from src.services.assistant import settings as assistant_settings, llm
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, "
+        "updated_at TEXT, updated_by TEXT)"
+    )
+
+    @contextmanager
+    def fake_conn():
+        yield connection
+
+    monkeypatch.setattr(assistant_settings, "get_connection", fake_conn)
+
+    llm._remember_groq_quota("openai/gpt-oss-120b", {"x-ratelimit-limit-requests": "1000"})
+    seen = assistant_settings.get_quotas(connection)
+    assert seen["openai/gpt-oss-120b"] == {**seen["openai/gpt-oss-120b"], "kind": "day", "value": 1000}
+
+    # 헤더가 없거나 숫자가 아니면 조용히 넘어간다.
+    llm._remember_groq_quota("openai/gpt-oss-20b", {})
+    llm._remember_groq_quota("openai/gpt-oss-20b", {"x-ratelimit-limit-requests": "없음"})
+    assert list(assistant_settings.get_quotas(connection)) == ["openai/gpt-oss-120b"]

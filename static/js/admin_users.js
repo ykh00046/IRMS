@@ -1165,7 +1165,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const quotaEl = document.getElementById("ai-quota-note");
       if (quotaEl) {
-        // 무료 한도는 API 로 물어볼 수 없어 429 를 맞을 때만 알 수 있다. 알게 된 것만 적는다.
+        // Gemini 는 429 를 맞아야, Groq 는 성공 응답 헤더로 한도를 알려 준다. 알아낸 것만 적는다.
         const seen = data.quotas && typeof data.quotas === "object" ? data.quotas : {};
         const KIND = { minute: "분당", day: "하루" };
         const lines = Object.keys(seen)
@@ -1175,7 +1175,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return `${name} ${KIND[q.kind] || ""} ${q.value}회`;
           })
           .filter(Boolean);
-        quotaEl.textContent = lines.length ? `겪어 본 무료 한도 · ${lines.join(" · ")}` : "";
+        quotaEl.textContent = lines.length ? `확인한 무료 한도 · ${lines.join(" · ")}` : "";
         quotaEl.hidden = !lines.length;
       }
       KEYS.forEach((key) => {

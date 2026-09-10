@@ -686,15 +686,32 @@ def _run_groq_model(
     )
 
 
+def _remember_groq_quota(model: str, headers: Any) -> None:
+    """Groq 는 성공 응답 헤더에 한도를 실어 준다 — 429 를 기다릴 필요가 없다.
+
+    `x-ratelimit-limit-requests` 는 하루치다(2026-09-10 실측: 값 1000 일 때
+    reset 이 1m26.4s = 86400/1000, 즉 창이 하루). Gemini 는 429 를 맞아야만
+    알 수 있어 [_remember_quota] 쪽에서 따로 받는다.
+    """
+    try:
+        raw = headers.get("x-ratelimit-limit-requests")
+        if raw:
+            assistant_settings.record_quota(model, "day", int(raw))
+    except Exception:  # noqa: BLE001 - 한도 기록이 답변을 막으면 안 된다
+        pass
+
+
 def _groq_complete(
     client: Any, model: str, messages: list[dict[str, str]], max_tokens: int
 ) -> str:
-    response = client.chat.completions.create(
+    raw = client.chat.completions.with_raw_response.create(
         model=model,
         messages=messages,
         temperature=0.0,
         max_tokens=max_tokens,
     )
+    _remember_groq_quota(model, raw.headers)
+    response = raw.parse()
     return (response.choices[0].message.content or "").strip()
 
 
