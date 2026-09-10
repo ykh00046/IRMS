@@ -27,6 +27,7 @@ from typing import Any
 from ...db import get_connection
 from . import guide as assistant_guide
 from . import settings as assistant_settings
+from . import guide as guide_book
 from . import tools as assistant_tools
 
 _logger = logging.getLogger(__name__)
@@ -212,13 +213,34 @@ _SUGGESTION_BY_TOOL = {
 DEFAULT_SUGGESTIONS = ["오늘 배합 요약 보여줘", "지금 봐야 할 것 알려줘"]
 
 
-def suggestions_for(tools_used: list[dict[str, str]]) -> list[str]:
-    """마지막으로 쓴 도구를 기준으로 후속 질문 두 개."""
+def _same_question(a: str, b: str) -> bool:
+    norm = lambda t: "".join(ch for ch in str(t or "").casefold() if ch.isalnum())  # noqa: E731
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
+def suggestions_for(tools_used: list[dict[str, str]], query: str = "") -> list[str]:
+    """다음에 물을 만한 질문 두 개.
+
+    사용법 안내는 물음에 맞는 항목에서 뽑는다 — 고정 두 개만 돌려주면 수기 승인을
+    답한 뒤에도 같은 질문을 다시 권한다(2026-09-10 현장 지적). 방금 물은 것과 같은
+    질문은 언제나 뺀다.
+    """
+    picked: list[str] = []
     for entry in reversed(tools_used):
-        found = _SUGGESTION_BY_TOOL.get(entry.get("name", ""))
-        if found:
-            return list(found)
-    return list(DEFAULT_SUGGESTIONS)
+        name = entry.get("name", "")
+        if name == "get_usage_guide":
+            picked = guide_book.follow_ups_for(query, query)
+        if not picked:
+            picked = list(_SUGGESTION_BY_TOOL.get(name) or [])
+        if picked:
+            break
+    out = [s for s in picked if not _same_question(s, query)]
+    for fallback in DEFAULT_SUGGESTIONS:
+        if len(out) >= 2:
+            break
+        if not _same_question(fallback, query) and fallback not in out:
+            out.append(fallback)
+    return out[:2]
 
 
 # ============================================================
@@ -417,7 +439,7 @@ def _run_gemini(
     return AnswerResult(
         answer=answer,
         tools_used=recorder.entries,
-        suggestions=suggestions_for(recorder.entries),
+        suggestions=suggestions_for(recorder.entries, query),
         provider="gemini",
         model=cfg.model,
         usage=usage,
@@ -606,7 +628,7 @@ def _run_groq_model(
     return AnswerResult(
         answer=answer,
         tools_used=recorder.entries,
-        suggestions=suggestions_for(recorder.entries),
+        suggestions=suggestions_for(recorder.entries, query),
         provider="groq",
         model=model,
     )
@@ -689,7 +711,7 @@ def _run_fake(
     return AnswerResult(
         answer=answer,
         tools_used=recorder.entries,
-        suggestions=suggestions_for(recorder.entries),
+        suggestions=suggestions_for(recorder.entries, query),
         provider="fake",
         model="fake",
     )

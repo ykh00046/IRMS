@@ -165,3 +165,31 @@ def test_system_prompt_carries_role_and_screen_map():
     assert "[안내 답변 형식]" in prompt
     assert "get_usage_guide" in prompt
     assert "/blend/drafts" in prompt
+
+
+def test_follow_ups_differ_by_topic_and_never_repeat_the_question():
+    """방금 답한 질문을 다시 권하지 않는다(2026-09-10 현장 지적)."""
+    from src.services.assistant import guide, llm
+
+    asked = "수기 입력 승인은 어떻게 받나요?"
+    ups = guide.follow_ups_for(asked, asked)
+    assert asked not in ups
+    assert len(ups) == 2
+
+    saved = guide.follow_ups_for("기록이 저장 안 된 것 같아요", "기록이 저장 안 된 것 같아요")
+    assert saved != ups                       # 주제가 다르면 추천도 다르다
+
+    picked = llm.suggestions_for([{"name": "get_usage_guide"}], asked)
+    assert asked not in picked
+    assert len(picked) == 2
+
+
+def test_every_entry_has_two_follow_ups_that_are_not_its_own_title():
+    from src.services.assistant import guide
+
+    for entry in guide.ENTRIES:
+        ups = entry.get("follow_ups") or []
+        assert len(ups) == 2, entry["id"]
+        for text in ups:
+            assert "—" not in text and "잉크" not in text, entry["id"]
+            assert text != entry["title"], entry["id"]
