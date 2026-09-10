@@ -84,9 +84,8 @@ def build_router() -> APIRouter:
                 status_code=429,
                 content={
                     "code": assistant_stream.ERR_RATE_LIMITED,
-                    "message": assistant_stream.ERR_MESSAGES[
-                        assistant_stream.ERR_RATE_LIMITED
-                    ],
+                    # 창이 1분이라 60초 뒤면 반드시 풀린다 — 채팅방이 그렇게 말하게 한다.
+                    "message": assistant_stream.rate_limited_message(60, "minute"),
                     "retry_after": 60,
                 },
                 headers={"Retry-After": "60"},

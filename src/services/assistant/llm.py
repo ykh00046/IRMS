@@ -41,11 +41,23 @@ _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 
 
 class AssistantError(Exception):
-    """스트림이 error 프레임으로 바꿔 내보내는 오류. ``code`` 는 stream 의 코드값."""
+    """스트림이 error 프레임으로 바꿔 내보내는 오류. ``code`` 는 stream 의 코드값.
 
-    def __init__(self, code: str, message: str = "") -> None:
+    한도(429)로 넘어진 경우엔 ``retry_after``(초)와 ``quota_window``("minute"/"day")
+    를 함께 실어 보낸다 — 채팅방이 "언제 다시 물으면 되는지"까지 말할 수 있게.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str = "",
+        retry_after: int | None = None,
+        quota_window: str = "",
+    ) -> None:
         super().__init__(message or code)
         self.code = code
+        self.retry_after = retry_after
+        self.quota_window = quota_window
 
 
 GEMINI_BACKUP_MODEL = "gemini-3.5-flash-lite"  # 메인이 막혔을 때 같은 키로 한 번 더
@@ -393,9 +405,9 @@ def run_answer(
                         exc,
                     )
                     if not is_fallbackable(exc):
-                        raise AssistantError(_code_for(exc), str(exc)) from exc
+                        raise _assistant_error(exc) from exc
             if not cfg.groq_key:
-                raise AssistantError(_code_for(last_exc), str(last_exc)) from last_exc
+                raise _assistant_error(last_exc) from last_exc
 
         if cfg.groq_key:
             try:
@@ -406,10 +418,10 @@ def run_answer(
                 _logger.warning(
                     "[assistant] groq 실패 %s: %s", type(exc).__name__, exc
                 )
-                raise AssistantError(_code_for(exc), str(exc)) from exc
+                raise _assistant_error(exc) from exc
 
         if last_exc is not None:
-            raise AssistantError(_code_for(last_exc), str(last_exc)) from last_exc
+            raise _assistant_error(last_exc) from last_exc
         raise AssistantError("DISABLED", "쓸 수 있는 공급자가 없습니다.")
     finally:
         assistant_tools.set_emitter(None)
@@ -417,6 +429,49 @@ def run_answer(
 
 def _code_for(exc: Exception) -> str:
     return "RATE_LIMITED" if extract_http_status(exc) == 429 else "LLM_ERROR"
+
+
+# Gemini 는 429 본문 RetryInfo 에, Groq 는 응답 헤더 retry-after 에 대기 시간을 준다.
+_RETRY_DELAY_RE = re.compile(r"'retryDelay': '(\d+(?:\.\d+)?)s'")
+
+
+def extract_retry_seconds(exc: Exception) -> int | None:
+    """429 에서 "몇 초 뒤에 다시"를 뽑는다. 알 수 없으면 None.
+
+    헤더의 ``x-ratelimit-reset-*`` 은 쓰지 않는다 — 요청 통이 아니라 토큰 통이
+    막혔을 때 엉뚱하게 큰 하루치 숫자를 집어 올 수 있다.
+    """
+    hit = _RETRY_DELAY_RE.search(str(exc))
+    if hit:
+        return max(1, round(float(hit.group(1))))
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    raw = str(headers.get("retry-after") or "").strip() if headers is not None else ""
+    if raw.isdigit():
+        return max(1, int(raw))
+    return None
+
+
+def quota_window(exc: Exception) -> str:
+    """429 가 분당 한도인지 하루 한도인지. 모르면 빈 문자열."""
+    hit = _QUOTA_ID_RE.search(str(exc))
+    name = hit.group(1) if hit else ""
+    if "PerMinute" in name:
+        return "minute"
+    if "PerDay" in name:
+        return "day"
+    return ""
+
+
+def _assistant_error(exc: Exception) -> AssistantError:
+    """공급자 예외를 화면용 오류로 바꾼다. 한도면 재시도 정보를 같이 싣는다."""
+    code = _code_for(exc)
+    if code != "RATE_LIMITED":
+        return AssistantError(code, str(exc))
+    return AssistantError(
+        code, str(exc),
+        retry_after=extract_retry_seconds(exc),
+        quota_window=quota_window(exc),
+    )
 
 
 # ============================================================

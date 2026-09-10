@@ -36,11 +36,30 @@ ERR_BAD_REQUEST = "BAD_REQUEST"
 
 ERR_MESSAGES = {
     ERR_DISABLED: "AI 도우미가 꺼져 있습니다. 책임자가 시스템 설정에서 켤 수 있습니다.",
-    ERR_RATE_LIMITED: "요청이 너무 잦습니다. 잠시 뒤에 다시 물어보세요.",
+    ERR_RATE_LIMITED: "질문이 잠깐 몰렸습니다. 잠시 뒤에 다시 물어보세요.",
     ERR_TIMEOUT: "응답이 늦어 중단했습니다. 잠시 뒤에 다시 물어보세요.",
     ERR_LLM_ERROR: "지금은 답을 만들지 못했습니다. 잠시 뒤에 다시 물어보세요.",
     ERR_BAD_REQUEST: "질문을 이해하지 못했습니다. 다시 적어 주세요.",
 }
+
+# 사용법 안내는 모델을 부르지 않고 guide.py 에서 바로 나온다. 그래서 한도가 바닥나도
+# "어떻게 해요" 류는 그대로 답한다 — 물어본 사람이 헛걸음하지 않게 이 사실을 알린다.
+_GUIDE_STILL_WORKS = "사용법 질문은 지금도 답합니다."
+
+
+def rate_limited_message(retry_after: int | None = None, window: str = "") -> str:
+    """한도에 닿았을 때 채팅방에 띄울 문구.
+
+    물어본 사람 입장에서 쓴다 — 잘못한 게 없고, 언제 다시 물으면 되는지가 궁금하다.
+    하루치가 바닥나면 오늘은 기다려도 안 되므로 그렇게 말한다.
+    """
+    if window == "day":
+        return f"오늘 쓸 수 있는 양을 다 썼습니다. 내일 다시 물어보세요. {_GUIDE_STILL_WORKS}"
+    if retry_after and 0 < retry_after <= 300:
+        return f"질문이 잠깐 몰렸습니다. {retry_after}초 뒤에 다시 물어보세요."
+    if retry_after and retry_after > 300:
+        return f"오늘 쓸 수 있는 양을 다 썼습니다. 내일 다시 물어보세요. {_GUIDE_STILL_WORKS}"
+    return ERR_MESSAGES[ERR_RATE_LIMITED]
 
 _END_SENTINEL: dict[str, Any] = {"__sentinel__": True}
 
@@ -169,13 +188,15 @@ async def stream_answer(
         # detail 은 지원용(내부망 전용 앱). 위젯은 message 만 보여 주고, 서버 로그를 못 보는
         # 자리에서 curl 로 원인을 읽을 수 있게 예외 종류와 앞부분만 싣는다(키·본문은 없음).
         detail = f"{type(exc).__name__}: {str(exc)[:240]}"
+        if code == ERR_RATE_LIMITED:
+            message = rate_limited_message(
+                getattr(exc, "retry_after", None), getattr(exc, "quota_window", "") or ""
+            )
+        else:
+            message = ERR_MESSAGES.get(code, ERR_MESSAGES[ERR_LLM_ERROR])
         yield format_sse(
             "error",
-            {
-                "code": code,
-                "message": ERR_MESSAGES.get(code, ERR_MESSAGES[ERR_LLM_ERROR]),
-                "detail": detail,
-            },
+            {"code": code, "message": message, "detail": detail},
         )
         return
 

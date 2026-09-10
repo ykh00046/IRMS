@@ -334,3 +334,123 @@ def test_gemini_backup_model_before_groq(monkeypatch):
     result = llm.run_answer("점도?", [], None, cfg, lambda *_: None)
     assert result.answer == "lite 답"
     assert calls == ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
+
+
+# ── 한도(429)에 닿았을 때 채팅방 문구 ─────────────────────────────────
+# 배경(2026-09-10): 사용자 "한도 도달해서 내용이 안 나오는 거면 채팅방에 잠시 후
+# 시도하라고 안내하는 게 어때?" — 원인과 무관하게 같은 문구가 나오던 것을 나눴다.
+
+_REAL_GEMINI_429 = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your "
+    "current quota.\n* Quota exceeded for metric: generate_content_free_tier_requests, "
+    "limit: 5, model: gemini-3.5-flash\nPlease retry in 13.806275508s.', "
+    "'status': 'RESOURCE_EXHAUSTED', 'details': [{'quotaId': "
+    "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaValue': '5', "
+    "'retryDelay': '13.806275508s'}]}}"
+)
+
+
+def test_retry_seconds_and_window_come_from_a_real_gemini_429():
+    from src.services.assistant import llm
+
+    exc = Exception(_REAL_GEMINI_429)
+    assert llm.extract_retry_seconds(exc) == 14
+    assert llm.quota_window(exc) == "minute"
+
+
+def test_retry_seconds_reads_groq_retry_after_header():
+    from src.services.assistant import llm
+
+    class Resp:
+        headers = {"retry-after": "45"}
+
+    class Busy(Exception):
+        response = Resp()
+
+    assert llm.extract_retry_seconds(Busy("429 rate limit")) == 45
+    assert llm.extract_retry_seconds(Exception("429 아무 설명 없음")) is None
+
+
+def test_quota_window_reads_the_daily_bucket():
+    from src.services.assistant import llm
+
+    daily = Exception("429 {'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}")
+    assert llm.quota_window(daily) == "day"
+    assert llm.quota_window(Exception("429 설명 없음")) == ""
+
+
+def test_rate_limited_message_says_when_to_ask_again():
+    from src.services.assistant.stream import rate_limited_message
+
+    # 분당 한도는 곧 풀리니 초를 알려 준다.
+    assert rate_limited_message(13, "minute") == "질문이 잠깐 몰렸습니다. 13초 뒤에 다시 물어보세요."
+    # 하루치가 바닥나면 기다려도 안 되므로 그렇게 말하고, 아직 되는 것을 알려 준다.
+    day = rate_limited_message(None, "day")
+    assert "내일" in day and "사용법 질문은 지금도 답합니다." in day
+    assert rate_limited_message(4000, "") == day  # 지연이 크면 하루치로 본다
+    # 아무것도 모르면 예전처럼 두루뭉술하게.
+    assert rate_limited_message() == "질문이 잠깐 몰렸습니다. 잠시 뒤에 다시 물어보세요."
+
+
+def test_assistant_error_carries_retry_info_for_429_only():
+    from src.services.assistant import llm
+
+    quota = llm._assistant_error(Exception(_REAL_GEMINI_429))
+    assert quota.code == "RATE_LIMITED"
+    assert quota.retry_after == 14
+    assert quota.quota_window == "minute"
+
+    other = llm._assistant_error(Exception("500 서버 오류"))
+    assert other.code == "LLM_ERROR"
+    assert other.retry_after is None
+
+
+def test_stream_error_frame_tells_the_operator_when_to_ask_again(fake_client, monkeypatch):
+    """한도로 넘어지면 채팅방에 '몇 초 뒤에'까지 나가야 한다."""
+    from src.services.assistant import llm, stream as assistant_stream
+
+    def boom(*_args, **_kwargs):
+        raise llm._assistant_error(Exception(_REAL_GEMINI_429))
+
+    monkeypatch.setattr(assistant_stream.llm, "run_answer", boom)
+    res = fake_client.post(
+        "/api/assistant/stream",
+        json={"query": "오늘 배합 몇 건이야"},
+        headers=_csrf(fake_client),
+    )
+    assert res.status_code == 200
+    events = _parse_sse(res.text)
+    kinds = [name for name, _ in events]
+    assert kinds[-1] == "error"
+    frame = events[-1][1]
+    assert frame["code"] == "RATE_LIMITED"
+    assert frame["message"] == "질문이 잠깐 몰렸습니다. 14초 뒤에 다시 물어보세요."
+
+
+def test_router_rate_limit_body_says_how_long_to_wait(fake_client, monkeypatch):
+    """라우터 자체 429(6/분)도 '몇 초 뒤에'를 담아야 한다."""
+    from src.services.assistant import stream as assistant_stream
+
+    # 리미터는 pytest 안에서 꺼져 있다(src/limiter.py). 그래서 관문만 막아 세운다.
+    from slowapi.errors import RateLimitExceeded
+    from src.routers import assistant_routes
+
+    class _Limit:
+        error_message = None
+        limit = "6/minute"
+
+    def blocked(**_kwargs):
+        raise RateLimitExceeded(_Limit())
+
+    monkeypatch.setattr(assistant_routes, "_rate_gate", blocked)
+    last = fake_client.post(
+        "/api/assistant/stream",
+        json={"query": "오늘 배합 몇 건이야"},
+        headers=_csrf(fake_client),
+    )
+    assert last.status_code == 429, last.text
+    body = last.json()
+    assert body["code"] == assistant_stream.ERR_RATE_LIMITED
+    assert body["retry_after"] == 60
+    assert body["message"] == "질문이 잠깐 몰렸습니다. 60초 뒤에 다시 물어보세요."
+    assert last.headers.get("Retry-After") == "60"

@@ -721,10 +721,10 @@
           signal: controller.signal,
         });
 
-        if (response.status === 429) {
-          showError(RATE_LIMIT_TEXT);
-        } else if (!response.ok || !response.body) {
-          let message = FALLBACK_ERROR;
+        if (!response.ok || !response.body) {
+          // 429 도 여기서 함께 처리한다. 서버가 "몇 초 뒤에"까지 적어 보내므로
+          // 고정 문구로 덮어쓰면 물어본 사람이 언제 다시 오면 되는지 알 수 없다.
+          let message = response.status === 429 ? RATE_LIMIT_TEXT : FALLBACK_ERROR;
           try {
             const payload = await response.json();
             if (payload && payload.message) message = String(payload.message);
