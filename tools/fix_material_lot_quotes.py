@@ -8,7 +8,8 @@
   .venv\\Scripts\\python tools\\fix_material_lot_quotes.py --apply    # 책임자 로그인 후 수정
 옵션:
   --api http://192.168.11.194:9000   운영 서버(기본은 IRMS_API_URL 또는 위 주소)
-  --user admin --password ...        책임자 계정. 비밀번호를 안 주면 실행 중에 묻는다.
+  --user admin --password ...        책임자 계정. 환경변수 IRMS_MANAGER_PASSWORD 도 된다.
+                                     비번을 안 주면 묻지 않고 안내만 하고 끝난다.
 
 수정은 화면의 '수정'과 같은 PUT /api/blend/records/{id} 경로를 쓴다. 따라서 감사 로그에
 남고, 제품 LOT·서명·생성 정보는 보존되며 허용 편차 검증도 그대로 받는다.
