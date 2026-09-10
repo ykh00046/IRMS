@@ -48,7 +48,7 @@ class AssistantError(Exception):
         self.code = code
 
 
-GEMINI_BACKUP_MODEL = "gemini-2.5-flash-lite"  # 메인(2.5 flash) 이 막혔을 때 같은 키로 한 번 더
+GEMINI_BACKUP_MODEL = "gemini-3.5-flash-lite"  # 메인이 막혔을 때 같은 키로 한 번 더
 
 
 @dataclass
@@ -458,9 +458,11 @@ def _run_gemini(
     try:
         answer, usage = _stream(True)
     except Exception as exc:  # noqa: BLE001
-        if "thinking" not in str(exc).lower():
+        # 생각 예산 0 을 안 받는 모델이 있다(gemini-3.5-flash-lite 는 400 INVALID_ARGUMENT 를
+        # 주는데 메시지에 'thinking' 이라는 말이 없다, 2026-09-10 실측). 400 이면 빼고 한 번 더.
+        if "thinking" not in str(exc).lower() and extract_http_status(exc) != 400:
             raise
-        _logger.info("[assistant] thinking_config 미지원 — 빼고 재시도")
+        _logger.info("[assistant] thinking_config 미지원 — 빼고 재시도 model=%s", cfg.model)
         answer, usage = _stream(False)
 
     answer = answer.strip()

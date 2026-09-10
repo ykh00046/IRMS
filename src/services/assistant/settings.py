@@ -20,7 +20,16 @@ MODEL_KEY = "assistant_model"
 GEMINI_KEY = "assistant_gemini_api_key"
 GROQ_KEY = "assistant_groq_api_key"
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+# 2026-09-10 실측으로 갱신. gemini-2.5-flash 는 무료 티어 **하루 20회**라 현장에서 오전에
+# 다 쓴다(운영 장애 실측: quotaValue 20). 계정에 열려 있는 3.x flash 계열은 한도가 훨씬
+# 넉넉하고(공개 자료 기준 Flash 1,500 RPD) 도구 호출·한국어 답변 모두 정상 확인했다.
+DEFAULT_MODEL = "gemini-3.5-flash"
+# 무료로 쓸 수 없게 된(또는 사실상 못 쓰는) 옛 모델 — 저장돼 있어도 기본값으로 돌린다.
+# 2.5 계열은 하루 20회, pro 는 2026-04 부터 유료 전용.
+RETIRED_MODELS = frozenset({
+    "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
+    "gemini-1.5-flash", "gemini-1.5-pro",
+})
 # Groq 예비 모델 사슬. llama-3.3-70b-versatile 은 2026-09 현재 계정에서 404(은퇴) 라
 # 계정 모델 목록에 실제로 있는 것으로 바꿨다. 앞이 막히면(404·429·5xx) 다음으로 넘어간다.
 GROQ_MODELS = ("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b")
@@ -29,9 +38,9 @@ GROQ_MODEL = GROQ_MODELS[0]
 # 설정 화면에서 고를 수 있는 모델. 목록 밖 값도 저장은 되지만(운영 중 새 모델 대응)
 # 화면은 이 목록을 기본 선택지로 쓴다.
 MODEL_CHOICES = (
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-pro",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3-flash-preview",
 )
 
 
@@ -60,7 +69,11 @@ def set_enabled(
 
 def get_model(connection: sqlite3.Connection) -> str:
     raw = (settings_service.get_setting(connection, MODEL_KEY) or "").strip()
-    return raw or DEFAULT_MODEL
+    if not raw or raw in RETIRED_MODELS:
+        # 옛 값이 저장돼 있어도 기본값으로 돌린다 — 하루 20회짜리 모델을 물고 있으면
+        # 도우미가 오전에 죽는다. 책임자는 설정 화면에서 현재 목록 중 다시 고를 수 있다.
+        return DEFAULT_MODEL
+    return raw
 
 
 def set_model(

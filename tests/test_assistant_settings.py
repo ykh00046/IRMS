@@ -79,7 +79,7 @@ def test_put_masks_key_and_reports_source():
         "/api/assistant/settings",
         json={
             "enabled": True,
-            "model": "gemini-2.5-flash-lite",
+            "model": "gemini-3.5-flash-lite",
             "gemini_api_key": "AIzaSyABCD1234567890WXYZ",
         },
         headers=_csrf(client),
@@ -88,7 +88,7 @@ def test_put_masks_key_and_reports_source():
 
     body = client.get("/api/assistant/settings").json()
     assert body["enabled"] is True
-    assert body["model"] == "gemini-2.5-flash-lite"
+    assert body["model"] == "gemini-3.5-flash-lite"
     assert body["gemini_set"] is True
     assert body["gemini_source"] == "db"
     assert body["gemini_key_masked"] == "AIza…WXYZ"
@@ -191,3 +191,30 @@ def test_mask_key_hides_short_values():
     assert mask_key("") is None
     assert mask_key("short") == "…"
     assert mask_key("abcdefghij") == "abcd…ghij"
+
+
+def test_retired_models_fall_back_to_the_current_default(tmp_path):
+    """하루 20회짜리 옛 모델이 저장돼 있어도 기본값으로 돌린다(2026-09-10 실측)."""
+    import sqlite3
+    from src.services import settings_service
+    from src.services.assistant import settings as assistant_settings
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, "
+        "updated_at TEXT, updated_by TEXT)"
+    )
+    settings_service.set_setting(connection, assistant_settings.MODEL_KEY, "gemini-2.5-flash")
+    assert assistant_settings.get_model(connection) == assistant_settings.DEFAULT_MODEL
+
+    settings_service.set_setting(connection, assistant_settings.MODEL_KEY, "gemini-3.5-flash-lite")
+    assert assistant_settings.get_model(connection) == "gemini-3.5-flash-lite"
+
+
+def test_model_choices_have_no_retired_entries():
+    from src.services.assistant import settings as assistant_settings
+
+    for name in assistant_settings.MODEL_CHOICES:
+        assert name not in assistant_settings.RETIRED_MODELS, name
+    assert assistant_settings.DEFAULT_MODEL in assistant_settings.MODEL_CHOICES

@@ -324,13 +324,13 @@ def test_gemini_backup_model_before_groq(monkeypatch):
 
     def fake_gemini(query, history, system_prompt, cfg, recorder, emit):
         calls.append(cfg.model)
-        if cfg.model == "gemini-2.5-flash":
+        if cfg.model == "gemini-3.5-flash":
             raise _Busy("quota")
         return llm.AnswerResult(answer="lite 답", tools_used=[], suggestions=[])
 
     monkeypatch.setattr(llm, "_run_gemini", fake_gemini)
     monkeypatch.setattr(llm, "_run_groq", lambda *a, **k: (_ for _ in ()).throw(AssertionError("groq 호출 금지")))
-    cfg = llm.ProviderConfig(provider="gemini", model="gemini-2.5-flash", gemini_key="k", groq_key="g")
+    cfg = llm.ProviderConfig(provider="gemini", model="gemini-3.5-flash", gemini_key="k", groq_key="g")
     result = llm.run_answer("점도?", [], None, cfg, lambda *_: None)
     assert result.answer == "lite 답"
-    assert calls == ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    assert calls == ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
