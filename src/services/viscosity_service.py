@@ -290,16 +290,48 @@ def available_reactors(connection: sqlite3.Connection, product_id: int) -> list[
     return [int(r["reactor"]) for r in rows if r["reactor"] is not None]
 
 
+def _is_spec_out(value: float, product: dict[str, Any]) -> bool:
+    """이 값이 규격(사용 금지) 밖인가. 판정과 같은 부등호(경계 포함)를 쓴다."""
+    lower = product.get("lower_limit")
+    upper = product.get("upper_limit")
+    if lower is not None and value <= float(lower):
+        return True
+    if upper is not None and value >= float(upper):
+        return True
+    return False
+
+
+def baseline_values(product: dict[str, Any], values: list[float]) -> tuple[list[float], int]:
+    """중심·σ 를 만들 표본을 고른다. 반환: (표본, 규격 밖이라 뺀 개수).
+
+    규격 밖(사용 금지) 값은 정상 변동이 아니라 사건이다. 그걸 기준에 넣으면 그 값을
+    잡아야 할 σ 를 스스로 넓혀, 관리 하한이 사용 금지선 아래로 내려간다
+    (APB17 2026: 2건 때문에 σ 11.99, 하한 326.6 → 뺀 뒤 10.58, 331.8. 2026-09-10 현장 지적).
+    다만 표본이 너무 적어지면 기준 자체가 사라지므로, 남는 수가 σ 최소 표본에 못 미치면
+    전부 쓴다(기준 없음보다 오염된 기준이 낫다).
+    """
+    kept = [v for v in values if not _is_spec_out(v, product)]
+    dropped = len(values) - len(kept)
+    if dropped and len(kept) < MIN_SIGMA_SAMPLES:
+        return list(values), 0
+    return kept, dropped
+
+
 def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, Any]:
-    """제품 설정 + 표본으로부터 중심선/통계 관리한계를 산출."""
+    """제품 설정 + 표본으로부터 중심선/통계 관리한계를 산출.
+
+    중심·σ 는 규격 안 값으로만 만든다(baseline_values). n 은 표본 전체 수를 그대로 둔다 —
+    화면의 '측정 건수'와 σ 축적 안내가 유효 측정 수를 말해야 하기 때문.
+    """
     n = len(values)
-    mean = statistics.fmean(values) if n else None
-    std = statistics.stdev(values) if n >= 2 else 0.0
+    base, spec_out = baseline_values(product, values)
+    mean = statistics.fmean(base) if base else None
+    std = statistics.stdev(base) if len(base) >= 2 else 0.0
     center = product["target"] if product["target"] is not None else mean
     sigma_k = product["sigma_k"]
 
     ucl = lcl = uwl = lwl = None
-    sigma_ready = n >= MIN_SIGMA_SAMPLES
+    sigma_ready = len(base) >= MIN_SIGMA_SAMPLES
     if center is not None and std > 0 and sigma_ready:
         ucl = center + sigma_k * std
         lcl = center - sigma_k * std
@@ -322,8 +354,23 @@ def _control_limits(product: dict[str, Any], values: list[float]) -> dict[str, A
     if warn_high is not None:
         uwl = warn_high if uwl is None else min(uwl, warn_high)
 
+    # 이상으로 판정되는 실제 경계 — 규격과 σ 중 안쪽. 밴드 그림이 쓰는 값과 같다.
+    # 화면이 "몇부터 이상인가"를 한 줄로 말할 수 있게 서버가 함께 준다.
+    lower_spec = product.get("lower_limit")
+    upper_spec = product.get("upper_limit")
+    low_cands = [v for v in (lower_spec, lcl) if v is not None]
+    high_cands = [v for v in (upper_spec, ucl) if v is not None]
+    anomaly_low = max(low_cands) if low_cands else None
+    anomaly_high = min(high_cands) if high_cands else None
+
     return {
         "n": n,
+        # 중심·σ 를 만든 표본 수와, 규격 밖이라 기준에서 뺀 개수(화면 안내용).
+        "baseline_n": len(base),
+        "spec_out_n": spec_out,
+        # 이상 판정 경계(규격과 σ 중 안쪽). None 이면 그쪽 경계가 없다.
+        "anomaly_low": round(anomaly_low, 3) if anomaly_low is not None else None,
+        "anomaly_high": round(anomaly_high, 3) if anomaly_high is not None else None,
         # σ 판정 가능 여부 — False 면 관리한계가 없고 규격 판정만 적용된다(화면 안내용).
         "sigma_ready": sigma_ready,
         "sigma_min_samples": MIN_SIGMA_SAMPLES,

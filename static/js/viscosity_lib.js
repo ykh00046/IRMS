@@ -164,6 +164,15 @@
     if (stats.lcl !== null && stats.lcl !== undefined && stats.ucl !== null && stats.ucl !== undefined) {
       rows.push({ label: "σ 관리 한계", value: `${fmt(stats.lcl)}~${fmt(stats.ucl)}` });
     }
+    // "몇부터 이상인가"를 한 줄로. 규격과 σ 중 안쪽이 실제 경계이고 밴드 그림도 이 값을 쓴다.
+    // σ 한계가 사용 금지선 밖에 있을 때 두 숫자가 따로 놀아 보이던 것을 여기서 묶는다.
+    const bounds = [];
+    if (stats.anomaly_low != null) bounds.push(`${fmt(stats.anomaly_low)} 이하`);
+    if (stats.anomaly_high != null) bounds.push(`${fmt(stats.anomaly_high)} 이상`);
+    if (bounds.length) rows.push({ label: "이상 판정", value: bounds.join(" · ") });
+    if (stats.spec_out_n) {
+      rows.push({ label: "기준 제외", value: `사용 금지 ${stats.spec_out_n}건` });
+    }
     if (stats.sigma_ready === false) {
       const need = stats.sigma_min_samples || 8;
       rows.push({ label: "σ 기준", value: `축적 중 ${stats.n ?? 0}/${need}건` });
