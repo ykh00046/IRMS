@@ -145,6 +145,17 @@ def test_rescale_drivers_have_a_rule_of_their_own():
     assert ".blend-rescale-drivers {" in BLEND_CSS
 
 
+def test_header_sort_cycles_back_to_server_order():
+    """작업일 열을 뺀 뒤(2026-09-15) 날짜 묶음 행이 있는 기본 순서로 돌아갈 길은
+    같은 열을 세 번째로 누르는 것뿐이다 — 내림 → 오름 → 기본(key=null)."""
+    start = CONTROLLER.index('document.querySelectorAll(".status-sortable th[data-sort]").forEach((th) => {\n    th.addEventListener("click"')
+    block = CONTROLLER[start:start + 900]
+    assert 'recSort.dir === "asc"' in block, "오름차순 다음 단계 분기가 없다"
+    assert "recSort = { key: null" in block, "기본 순서(key=null)로 돌아가는 분기가 없다"
+    assert "renderTable()" in block
+    assert "loadRecords" not in block
+
+
 def test_deep_links_cover_period_and_unacked():
     """대시보드 '오늘 배합' 카드가 /status?from=…&to=… 로 들어온다."""
     for key in ('get("search")', 'get("from")', 'get("to")', 'get("unacked")'):
@@ -164,3 +175,31 @@ def test_shared_stylesheet_is_cache_busted_together():
         versions.add(m.group(1))
     assert len(versions) == 1, f"blend.css ?v= 가 화면마다 갈렸다: {versions}"
     assert re.search(r"status\.js\?v=([0-9a-z]+)", TEMPLATE), "status.js 캐시버스팅 누락"
+
+
+# ── 2026-09-15 목록 재구축 · LOT 중심 6열 + 날짜 묶음 행 ─────────────────
+def test_list_columns_are_lot_centered_with_a_status_column():
+    """작업일·제품 열을 합쳐 LOT 칸에 제품·반응기를 묶고, 상태는 전용 칸에 칩으로 뭉친다.
+    작업일은 날짜 묶음 행(dayGroupLabel)이 말한다 — 정렬 가능한 열로 남기면 안 된다."""
+    assert '<th>상태</th>' in TEMPLATE
+    assert 'data-sort="product_lot">제품 LOT · 제품</th>' in TEMPLATE
+    assert 'data-sort="work_date"' not in TEMPLATE, "작업일은 열이 아니라 날짜 묶음 행이다"
+    assert 'data-sort="product_name"' not in TEMPLATE, "제품은 LOT 칸 아래 줄에 있다"
+    # 기간 빠른 선택 버튼 3종 — 날짜 칸에 직접 치는 대신 한 번의 클릭으로 범위를 잡는다.
+    for preset in ("today", "7d", "30d"):
+        assert f'data-preset="{preset}"' in TEMPLATE, f"기간 프리셋 {preset} 이 없다"
+
+
+def test_controller_matches_the_new_table_contract():
+    """6열 표·날짜 묶음 행·상태 칩(점도 미입력/완료)이 컨트롤러에 모두 있다."""
+    assert "const COLS = 6;" in CONTROLLER
+    for marker in ("status-day-row", "function dayGroupLabel(", "status-visc-missing", "status-done"):
+        assert marker in CONTROLLER, f"{marker} 이 없다"
+
+
+def test_day_rows_render_only_in_server_order():
+    """머리글 정렬 중에는 날짜가 뒤섞여 묶음이 무의미 — !recSort.key(서버 순서)일 때만 그린다."""
+    start = CONTROLLER.index("function renderTable(")
+    end = CONTROLLER.index("function recordRow(", start)
+    block = CONTROLLER[start:end]
+    assert "!recSort.key" in block, "날짜 묶음 행이 정렬 상태와 무관하게 그려진다"

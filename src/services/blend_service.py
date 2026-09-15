@@ -2781,6 +2781,55 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
     return record
 
 
+def _viscosity_state_select_expr(connection: sqlite3.Connection) -> str:
+    """배합 기록 목록 SELECT 에 넣을 점도 등록 상태 표현식(항상 viscosity_state 로 별칭).
+
+    4상태 — 상태 판정은 점도 등록 패널(viscosity_routes.viscosity_blend_records)과
+    같은 name/code 일치 규칙을 쓴다:
+      na      — 점도 관리 대상 제품이 아니다(viscosity_products 에 is_active=1 인
+                행 중 name 또는 code 가 기록의 product_name 과 일치하는 것이 없다).
+      done    — 관리 대상이고 viscosity_readings 에 등록(blend_record_id)이 있다.
+      skipped — 관리 대상, 미등록, 측정 불가(viscosity_skips) 기록이 있다.
+      missing — 관리 대상인데 등록도 불가 기록도 없다(미등록 대기열).
+
+    상태는 전부 SQL(CASE + EXISTS)로 계산한다 — 목록 행마다 쿼리를 더 치지 않는다.
+    세 viscosity 테이블 중 하나라도 없는 구버전/단위테스트 스키마는 CASE 없이 상수
+    'na' 로 폴백한다(호출마다 1회 sqlite_master 확인 — 오류 없이 모든 행이 '해당 없음').
+    """
+    def _table_exists(table: str) -> bool:
+        try:
+            return connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", (table,)
+            ).fetchone() is not None
+        except sqlite3.OperationalError:
+            return False
+
+    if not (
+        _table_exists("viscosity_products")
+        and _table_exists("viscosity_readings")
+        and _table_exists("viscosity_skips")
+        # readings.blend_record_id 는 후속 마이그레이션 컬럼 — 없는 스키마도 상수 폴백.
+        and _table_has_column(connection, "viscosity_readings", "blend_record_id")
+    ):
+        return "'na' AS viscosity_state"
+    return (
+        "CASE"
+        " WHEN NOT EXISTS (SELECT 1 FROM viscosity_products vp"
+        "                  WHERE vp.is_active = 1"
+        "                    AND (vp.name = blend_records.product_name"
+        "                         OR vp.code = blend_records.product_name))"
+        " THEN 'na'"
+        " WHEN EXISTS (SELECT 1 FROM viscosity_readings vr"
+        "              WHERE vr.blend_record_id = blend_records.id)"
+        " THEN 'done'"
+        " WHEN EXISTS (SELECT 1 FROM viscosity_skips vsk"
+        "              WHERE vsk.blend_record_id = blend_records.id)"
+        " THEN 'skipped'"
+        " ELSE 'missing'"
+        " END AS viscosity_state"
+    )
+
+
 def list_blend_records(
     connection: sqlite3.Connection,
     *,
@@ -2844,12 +2893,18 @@ def list_blend_records(
         if _table_has_column(connection, "blend_records", "rescale_count")
         else ""
     )
+    # 반응기 번호 — 목록 SELECT 에 없어 항상 null 로 나갔다. _serialize_record 는 키가
+    # 있으면 그대로 실으므로 SELECT 만 늘리면 된다(컬럼 없는 구버전 스키마는 미선택).
+    reactor_col = ", reactor" if _table_has_column(connection, "blend_records", "reactor") else ""
+    # 점도 등록 상태(na/done/skipped/missing) — 점도 테이블 없는 스키마는 'na' 상수 폴백.
+    viscosity_state_expr = _viscosity_state_select_expr(connection)
     rows = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
                manual_entry, is_bulk_regenerated,
-               {code_expr}{badge_cols}
+               {code_expr}{badge_cols}{reactor_col},
+               {viscosity_state_expr}
         FROM blend_records
         WHERE {where}
         ORDER BY work_date DESC, id DESC
@@ -2943,6 +2998,9 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
     if "rescale_count" in keys:
         out["rescale_count"] = int(row["rescale_count"] or 0)
         out["rescale_unacked"] = bool(row["rescale_unacked"])
+    # 점도 등록 상태(na/done/skipped/missing) — 목록 SELECT 가 실었을 때만(배지 플래그와 같은 패턴).
+    if "viscosity_state" in keys:
+        out["viscosity_state"] = row["viscosity_state"]
     for f in ("reviewed_by", "reviewed_at", "approved_by", "approved_at",
               "worker_sign", "reviewed_sign", "approved_sign", "reactor",
               # 제품(반제품) 품목코드 — 저장 시점 스냅샷(없으면 레시피 조인 폴백).

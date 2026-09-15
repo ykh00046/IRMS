@@ -7,6 +7,11 @@
  * 50행/쪽으로 나눴다. 서버 조회는 종전대로 1회(최신 500건)이고 쪽 나누기는 이 화면에서만
  * 한다. 선택은 화면에 그려진 체크박스가 아니라 id 집합(Set)이 소유하므로 쪽을 넘겨도,
  * 정렬을 바꿔도, 조건을 다시 조회해도 살아남는다.
+ *
+ * 2026-09-15 목록 재구축 — 표를 LOT 중심 6열로 좁히고(작업일·제품 열 제거), 서버
+ * 순서로 볼 때 같은 작업일 행 앞에 날짜 묶음 행(요일·건수·kg)을 띄운다. 상태는
+ * 전용 칸에 칩으로 뭉친다(취소/증량/점도 미입력/완료). 기간 빠른 선택(오늘/7일/30일)
+ * 버튼을 조건 막대에 두었다.
  */
 document.addEventListener("DOMContentLoaded", () => {
   const IRMS = window.IRMS || {};
@@ -27,7 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const PAGE_SIZE = 50;          // 쪽 크기 고정 · 현장에서 고를 이유가 없다.
   const MAX_PRINT = 200;         // 일괄 출력 상한(서버 변환이 직렬이라 그 이상은 무의미).
   const MAX_BULK_CANCEL = 50;    // 한 번에 취소할 수 있는 상한 · 되돌릴 수 있어도 대량은 사고다.
-  const COLS = 7;                // 표 열 수(빈 상태 colspan)
+  const COLS = 6;                // 표 열 수(빈 상태·날짜 묶음 행 colspan)
 
   let allRecords = [];           // 이번 조회로 받아 둔 목록(정렬 전 원본)
   let listMeta = {};             // 서버 응답 메타(total_available·truncated·canceled_hidden)
@@ -260,6 +265,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderTruncNote(data);
       renderRecordSummary(data, allRecords.length);
       renderTable();
+      refreshPresetActive();
     } catch (e) {
       allRecords = [];
       listMeta = {};
@@ -268,6 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (note) note.hidden = true;
       updatePager(0, 0, 0);
       updateSelectionUI();
+      refreshPresetActive();
     }
   }
 
@@ -287,6 +294,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── 표 그리기(정렬 → 쪽 자르기 → 렌더) ──────────────────────────
   // 서버를 다시 부르지 않는다. 정렬·쪽 이동은 전부 이 함수 한 번으로 끝난다.
+
+  // 날짜 묶음 라벨("MM-DD 요일") — 순수 함수(node:test 에서도 검증).
+  // "YYYY-MM-DD" 를 현지 시각으로 해석한다 — new Date("2026-09-15") 처럼 문자열을
+  // 그대로 넘기면 UTC 자정으로 읽혀 시간대에 따라 하루 밀릴 수 있다.
+  function dayGroupLabel(workDate) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(workDate || ""));
+    if (!m) return String(workDate || "");
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const weekdays = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
+    return `${m[2]}-${m[3]} ${weekdays[d.getDay()]}`;
+  }
+
+  // 날짜 묶음 행 HTML · 건수·kg 요약은 이번 조회로 받은 목록 전체(allRecords)에서 센다.
+  // 보이는 쪽(50행)만 세면 같은 날의 숫자가 쪽마다 다르게 보인다.
+  // 이 행은 클릭·포커스·체크 대상이 아니다 — tabIndex·리스너·체크박스 없음.
+  function dayGroupRowHtml(workDate) {
+    // 취소된 기록은 빼고 센다 — 소계는 그날 실제로 배합한 건수·무게여야 한다('취소 포함'으로
+    // 조회해도 같은 날 숫자가 달라지지 않게).
+    const sameDay = allRecords.filter((r) => r.work_date === workDate && r.status !== "canceled");
+    const kg = sameDay.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0) / 1000;
+    return `<tr class="status-day-row"><td colspan="${COLS}">${dayGroupLabel(workDate)}`
+      + ` <span class="status-day-meta">· ${sameDay.length}건 · ${fmt(kg, 1)}kg</span></td></tr>`;
+  }
+
   function renderTable() {
     const body = $("status-rec-body");
     const items = sortRecords(allRecords);
@@ -305,30 +336,56 @@ document.addEventListener("DOMContentLoaded", () => {
     const start = (page - 1) * PAGE_SIZE;
     const slice = items.slice(start, start + PAGE_SIZE);
     body.innerHTML = "";
-    slice.forEach((r) => body.appendChild(recordRow(r)));
+    // 날짜 묶음 행 — 서버 순서(작업일 역순)로 볼 때만. 머리글 정렬 중에는 날짜가 뒤섞여
+    // 묶음이 무의미하다(!recSort.key = 서버 순서일 때만 그린다).
+    let lastDay = null;
+    slice.forEach((r) => {
+      if (!recSort.key && r.work_date !== lastDay) {
+        lastDay = r.work_date;
+        body.insertAdjacentHTML("beforeend", dayGroupRowHtml(r.work_date));
+      }
+      body.appendChild(recordRow(r));
+    });
     updatePager(items.length, start, slice.length);
     updateSelectionUI();
   }
 
   function recordRow(r) {
     const tr = document.createElement("tr");
-    tr.className = "blend-row";
+    // 취소된 기록은 회색 본문 + LOT 취소선으로 한눈에 구분한다(취소 포함으로 조회했을 때).
+    tr.className = r.status === "canceled" ? "blend-row is-canceled" : "blend-row";
     // 키보드만으로도 상세에 닿아야 한다 — 행이 클릭 전용이면 마우스가 없는 경로가 막힌다.
     tr.tabIndex = 0;
     tr.dataset.id = String(r.id);
+    const product_lot = r.product_lot;
+    const product_name = r.product_name;
+    const reactor = r.reactor;
+    // LOT 칸 — 번호(모노·굵게) 아래에 제품·반응기. 작업일은 날짜 묶음 행이 말한다.
+    const lotCell = `<span class="status-lot">${esc(product_lot)}</span>`
+      + `<div class="status-lot-sub">${esc(product_name)}${reactor ? ` · 반응기 ${esc(reactor)}` : ""}</div>`;
+    // 상태 칸 — 해당하는 칩만 이 순서대로: 취소 → 증량/수기 배지 → 점도 미입력 → 일괄 재생성.
+    // 칩이 하나도 없는 정상 기록은 '완료'로 마친다(⚠ 점만으로는 상태 칸이 비어 보인다).
+    let chips = "";
+    if (r.status === "canceled") {
+      // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
+      chips += ' <span class="status-chip status-canceled" title="취소된 기록 · 상세에서 복원할 수 있습니다">취소됨</span>';
+    }
+    chips += rescaleBadge(r);
+    // 점도 관리 대상인데 등록이 없는 기록 — 점도 관리 화면으로 갈 신호(취소분에는 붙이지 않는다).
+    if (r.viscosity_state === "missing" && r.status !== "canceled") {
+      chips += ' <span class="status-chip status-visc-missing" title="점도 관리 대상인데 점도가 등록되지 않았습니다">점도 미입력</span>';
+    }
+    chips += bulkBadge(r);
+    if (!chips.trim()) chips = ' <span class="status-chip status-done">완료</span>';
     // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
     // 목록에 표시해도 책임자 로그인 시에만 보인다.
     const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
-    // 취소된 기록은 목록에서 한눈에 구분되어야 한다(취소 포함으로 조회했을 때).
-    // 취소는 되돌릴 수 있는 양성 상태 — 붉은 '미승인' 배지가 아니라 중립 .status-canceled 칩.
-    const canceledTag = r.status === "canceled"
-      ? ' <span class="status-chip status-canceled" title="취소된 기록 · 상세에서 복원할 수 있습니다">취소됨</span>' : "";
     const checked = selected.has(Number(r.id)) ? " checked" : "";
     tr.innerHTML =
-      `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}"${checked} aria-label="${esc(r.product_lot)} 선택" /></td>` +
-      `<td>${esc(r.work_date)}</td><td>${esc(r.product_lot)}${manualTag}${canceledTag}${rescaleBadge(r)}${bulkBadge(r)}</td>` +
-      `<td>${esc(r.product_name)}</td>` +
-      `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>`;
+      `<td class="chk-col"><input type="checkbox" class="rec-chk" value="${r.id}"${checked} aria-label="${esc(product_lot)} 선택" /></td>` +
+      `<td>${lotCell}</td>` +
+      `<td>${esc(r.worker)}</td><td class="num">${fmt(r.total_amount)}</td><td>${esc(r.scale || "-")}</td>` +
+      `<td>${chips}${manualTag}</td>`;
     tr.addEventListener("click", () => openDetail(r.id));
     tr.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); openDetail(r.id); }
@@ -758,10 +815,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".status-sortable th[data-sort]").forEach((th) => {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;
-      recSort = {
-        key,
-        dir: recSort.key === key && recSort.dir === "desc" ? "asc" : "desc",
-      };
+      // 같은 열을 누를 때마다 내림 → 오름 → 기본(서버 순서) 순으로 돈다. 작업일 열이
+      // 빠진 뒤로(2026-09-15) 날짜 묶음 행이 있는 기본 순서로 돌아갈 길이 이것뿐이다.
+      if (recSort.key === key && recSort.dir === "asc") {
+        recSort = { key: null, dir: "desc" };
+      } else {
+        recSort = {
+          key,
+          dir: recSort.key === key && recSort.dir === "desc" ? "asc" : "desc",
+        };
+      }
       renderTable();
     });
   });
@@ -774,6 +837,38 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   if ($("status-page-prev")) $("status-page-prev").addEventListener("click", () => gotoPage(-1));
   if ($("status-page-next")) $("status-page-next").addEventListener("click", () => gotoPage(1));
+
+  // ── 기간 빠른 선택(오늘/7일/30일) ────────────────────────────────
+  // 클릭하면 시작일·종료일 칸을 채우고 곧바로 조회한다(7일 = 오늘 포함 뒤로 6일).
+  // 날짜는 현지 시각 기준 YYYY-MM-DD — toISOString 은 UTC 라 한국 저녁에 하루 밀린다.
+  const localDateText = (d) => {
+    const p = (x) => String(x).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+  const presetRange = (kind) => {
+    const today = new Date();
+    const daysBack = kind === "today" ? 0 : kind === "7d" ? 6 : 29;
+    const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack);
+    return { from: localDateText(from), to: localDateText(today) };
+  };
+  // 활성 표시 — '지금 시작일·종료일이 이 프리셋 범위와 정확히 같은가'. 조회할 때마다
+  // 다시 계산하므로 날짜 칸을 손으로 고치면 다음 조회 때 자연히 꺼진다.
+  function refreshPresetActive() {
+    const from = $("status-rec-from") ? $("status-rec-from").value : "";
+    const to = $("status-rec-to") ? $("status-rec-to").value : "";
+    document.querySelectorAll(".status-preset[data-preset]").forEach((btn) => {
+      const range = presetRange(btn.dataset.preset);
+      btn.classList.toggle("active", from === range.from && to === range.to);
+    });
+  }
+  document.querySelectorAll(".status-preset[data-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const range = presetRange(btn.dataset.preset);
+      $("status-rec-from").value = range.from;
+      $("status-rec-to").value = range.to;
+      loadRecords();
+    });
+  });
 
   // '미확인만'·'취소 포함' 은 서버 조건이라 다시 조회한다(체크 즉시 — 조회 버튼을
   // 또 누르게 하지 않는다). 선택 집합은 조회를 넘어 유지된다.
@@ -1048,5 +1143,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadWorkers();
   loadProducts();
+  // 딥링크(?from=&to=)로 들어온 경우에도 프리셋 활성 상태를 첫 조회 전에 맞춘다.
+  refreshPresetActive();
   loadRecords();
 });
