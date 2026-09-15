@@ -872,10 +872,26 @@
   async function loadWorkerNames() {
     try {
       const data = await request("/workers");
-      state.workers = (data.items || []).map((w) => w.name);
+      const items = data.items || [];
+      state.workers = items.map((w) => w.name);
+      // 작업자 파트(약품/합성/…) — 레시피 분류와 같은 값이다. 분류 초기값에 쓴다(blend.js 와 동일).
+      state.workerParts = {};
+      items.forEach((w) => { if (w.category) state.workerParts[w.name] = w.category; });
       const dl = $("worker-names");
       if (dl) dl.innerHTML = state.workers.map((n) => `<option value="${esc(n)}"></option>`).join("");
     } catch (_e) { /* optional */ }
+  }
+
+  // 작업자 파트로 분류를 미리 고른다(blend.js applyWorkerPart 와 같은 규칙) — 레시피를 이미
+  // 골랐거나 작업자가 분류를 직접 바꿨으면 두고, 파트가 없거나 선택지에 없는 값이면 그대로 둔다.
+  function applyWorkerPart(name) {
+    const catSel = $("cont-recipe-cat");
+    if (!catSel || state.current || state.catTouched) return;
+    const part = (state.workerParts || {})[name];
+    if (!part || catSel.value === part) return;
+    if (![...catSel.options].some((o) => o.value === part)) return;
+    catSel.value = part;
+    populateRecipeSelect();
   }
 
   async function switchWorker(name) {
@@ -895,6 +911,9 @@
       await request("/blend/session/login", { method: "POST", body: { worker: clean } });
       state.sessionWorker = clean;
       $("cont-worker").value = clean;
+      // 사람이 바뀌었으니 앞사람이 고른 분류 표시를 풀고 새 작업자 파트로(레시피를 골랐으면 그대로).
+      state.catTouched = false;
+      applyWorkerPart(clean);
       notify(`작업자 교대: ${clean}`, "success");
       return true;
     } catch (e) {
@@ -2913,7 +2932,8 @@
     recipeSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
     const catSel = $("cont-recipe-cat");
     if (catSel) {
-      catSel.addEventListener("change", () => { populateRecipeSelect(); });
+      // 직접 바꾼 분류는 이 화면에 있는 동안 유지한다(작업자 파트 초기값이 다시 덮지 않게).
+      catSel.addEventListener("change", () => { state.catTouched = true; populateRecipeSelect(); });
       catSel.addEventListener("focus", () => { loadRecipes().catch(() => {}); });
     }
 
@@ -3125,11 +3145,13 @@
     rebuildLotRescale();   // lotRescale을 초기 lotCount(2)에 맞춰 [null,null]로 초기화
     bind();
     loadRecipes().catch((e) => notify(`레시피 로드 실패: ${e.message}`, "error"));
-    loadWorkerNames();
     // 끊긴 작업은 "작성 중 배합"(/blend/drafts)에서만 이어간다 — 진입 배너는 폐지했다.
     // 그 화면의 [이어서 하기]가 sessionStorage 에 슬롯 id 를 남기고 여기로 보낸다.
     const resumeId = blendDrafts ? blendDrafts.takeResume("cont") : null;
     if (resumeId) restoreDraft(resumeId).catch((e) => notify(e.message, "error"));
+    // 작업자 파트로 분류 초기값 — 이어서 하기로 들어온 경우는 복구가 분류를 '전체'로 풀어
+    // 복구한 레시피가 반드시 보이게 하므로 건드리지 않는다(blend.js 와 동일).
+    loadWorkerNames().then(() => { if (!resumeId) applyWorkerPart(state.sessionWorker); });
     // F12: 초안 복구로 진입(resumeId)이 아니면 본인 초안이 있을 때 안내 + 사이드바 배지.
     // '저장 전' 완료 초안 안내 상자를 띄웠으면 토스트는 생략(안내 중복 금지).
     if (!resumeId) {
