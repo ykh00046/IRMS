@@ -226,6 +226,26 @@ def _is_excluded(row: Any) -> bool:
         return False
 
 
+def _row_value(row: Any, key: str) -> Any:
+    """행에서 열 값을 안전하게 읽는다(열이 없으면 None) — _is_excluded 와 같은 방식."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
+_OPTIONAL_READING_COLUMNS = (
+    "excluded",
+    "exclude_reason",
+    "excluded_by",
+    "excluded_at",
+    "reviewed_at",
+    "reviewed_by",
+    "review_note",
+    "blend_record_id",
+)
+
+
 def _fetch_readings(
     connection: sqlite3.Connection,
     product_id: int,
@@ -245,11 +265,20 @@ def _fetch_readings(
     elif reactor is not None:
         reactor_clause = "AND reactor = ?"
         params.append(int(reactor))
+    # 나중에 추가된 열(제외·확인 처리·배합 연계)은 구 스키마/단위테스트 스키마에 없을 수
+    # 있다 — 있는 열만 고르고 없는 열은 NULL 로 채워 호출부가 같은 키로 읽게 한다.
+    existing = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(viscosity_readings)").fetchall()
+    }
+    optional_select = ", ".join(
+        col if col in existing else f"NULL AS {col}" for col in _OPTIONAL_READING_COLUMNS
+    )
     return connection.execute(
         f"""
         SELECT id, product_id, lot_no, viscosity, measured_date,
                memo, recipe_material, material_lot, reactor, created_by, created_at,
-               excluded, exclude_reason, excluded_by, excluded_at
+               {optional_select}
         FROM viscosity_readings
         WHERE product_id = ? {year_clause} {reactor_clause}
         ORDER BY
@@ -807,6 +836,12 @@ def analyze_product(
             "exclude_reason": r["exclude_reason"],
             "excluded_by": r["excluded_by"],
             "excluded_at": r["excluded_at"],
+            # 확인 처리(실제 이상으로 보고 조치함) — 판정·통계와 무관한 표시일 뿐이다.
+            "reviewed": bool(_row_value(r, "reviewed_at")),
+            "reviewed_by": _row_value(r, "reviewed_by"),
+            "reviewed_at": _row_value(r, "reviewed_at"),
+            "review_note": _row_value(r, "review_note"),
+            "blend_record_id": _row_value(r, "blend_record_id"),
         }
         if excluded:
             # 제외된 측정은 spec/σ 판정을 건너뛰고 status='excluded' 로만 표시한다.
@@ -831,6 +866,8 @@ def analyze_product(
         "warn": sum(1 for x in valid_readings if x["status"] == "warn"),
         "normal": sum(1 for x in valid_readings if x["status"] == "normal"),
         "excluded": excluded_count,
+        # 아직 확인 처리되지 않은 이상 — 대시보드가 세는 '할 일' 건수.
+        "anomaly_unreviewed": sum(1 for x in anomalies if not x["reviewed"]),
     }
     # 기간 집계도 유효 측정만으로 — 제외된 이상이 기간 평균/σ 를 밀어올리지 않게 한다.
     periods = summarize_periods(valid_readings, granularity)
@@ -876,6 +913,7 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
     products = list_products(connection)
     items: list[dict[str, Any]] = []
     total_anomaly = 0
+    total_anomaly_unreviewed = 0
     for product in products:
         years = available_years(connection, product["id"])
         latest_year = years[0] if years else None
@@ -883,7 +921,9 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
         readings = analysis["readings"]
         last = readings[-1] if readings else None
         anomaly_count = analysis["counts"]["anomaly"]
+        anomaly_unreviewed_count = analysis["counts"]["anomaly_unreviewed"]
         total_anomaly += anomaly_count
+        total_anomaly_unreviewed += anomaly_unreviewed_count
         items.append({
             "id": product["id"],
             "code": product["code"],
@@ -899,12 +939,14 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
             "latest_date": last["measured_date"] if last else None,
             "last_status": last["status"] if last else None,
             "anomaly_count": anomaly_count,
+            "anomaly_unreviewed_count": anomaly_unreviewed_count,
             "warn_count": analysis["counts"]["warn"],
             "trend_count": len(analysis["trends"]),
         })
     return {
         "items": items,
         "total_anomaly": total_anomaly,
+        "total_anomaly_unreviewed": total_anomaly_unreviewed,
         "product_count": len(items),
     }
 
@@ -1187,6 +1229,168 @@ def include_reading(
         details={"prev_reason": row["exclude_reason"]},
     )
     return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
+
+
+def review_reading(
+    connection: sqlite3.Connection,
+    reading_id: int,
+    note: str,
+    by_name: str,
+    now: str,
+    actor: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """이상 측정 1건을 '확인 처리' — 실제 이상으로 보고 조치했다는 표시.
+
+    통계 제외와 달리 판정·통계는 그대로(이상으로 남는다). 대시보드 미확인 건수에서만 빠진다.
+    note(조치 내용)는 strip 후 2자 이상(아니면 ValueError). 알 수 없는 id 면 None.
+    감사 로그(viscosity_reading_reviewed)를 남긴다. 커밋은 호출자 책임.
+    """
+    note = (note or "").strip()
+    if len(note) < 2:
+        raise ValueError("review note must be at least 2 characters")
+    row = connection.execute(
+        "SELECT id, product_id, lot_no FROM viscosity_readings WHERE id = ?",
+        (reading_id,),
+    ).fetchone()
+    if not row:
+        return None
+    connection.execute(
+        "UPDATE viscosity_readings "
+        "SET reviewed_at = ?, reviewed_by = ?, review_note = ? "
+        "WHERE id = ?",
+        (now, by_name, note, reading_id),
+    )
+    from ..db import write_audit_log
+
+    write_audit_log(
+        connection,
+        action="viscosity_reading_reviewed",
+        actor=actor if isinstance(actor, dict) else None,
+        target_type="viscosity_reading",
+        target_id=str(reading_id),
+        target_label=str(row["lot_no"]),
+        details={"note": note[:300], "by": by_name},
+    )
+    return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
+
+
+def unreview_reading(
+    connection: sqlite3.Connection,
+    reading_id: int,
+    by: Any,
+    now: str,
+) -> dict[str, Any] | None:
+    """'확인 처리'를 취소 — 다시 미확인 이상으로 센다. 알 수 없는 id 면 None.
+
+    감사 로그(viscosity_reading_review_cleared)를 남긴다. 커밋은 호출자 책임.
+    """
+    row = connection.execute(
+        "SELECT id, product_id, lot_no, review_note, reviewed_by "
+        "FROM viscosity_readings WHERE id = ?",
+        (reading_id,),
+    ).fetchone()
+    if not row:
+        return None
+    connection.execute(
+        "UPDATE viscosity_readings "
+        "SET reviewed_at = NULL, reviewed_by = NULL, review_note = NULL "
+        "WHERE id = ?",
+        (reading_id,),
+    )
+    from ..db import write_audit_log
+
+    write_audit_log(
+        connection,
+        action="viscosity_reading_review_cleared",
+        actor=by if isinstance(by, dict) else None,
+        target_type="viscosity_reading",
+        target_id=str(reading_id),
+        target_label=str(row["lot_no"]),
+        details={"prev_note": row["review_note"], "prev_by": row["reviewed_by"]},
+    )
+    return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
+
+
+ANOMALY_STATES = ("unreviewed", "reviewed", "excluded", "all")
+
+
+def list_anomalies(
+    connection: sqlite3.Connection,
+    *,
+    state: str = "unreviewed",
+    product_id: int | None = None,
+    year: int | None = None,
+) -> dict[str, Any]:
+    """전 제품을 가로지른 이상 측정 목록 — 어느 제품·LOT·날짜인지 한 번에 본다.
+
+    범위: 사용 중 제품(product_id 지정 시 그 제품만, 사용 안 함이어도). 연도는 지정값,
+    없으면 제품별 최신 연도(overview 와 같은 규칙). state 로 미확인/확인/제외/전체를 고르고,
+    counts 는 state 와 무관하게 같은 범위의 세 갈래 건수를 준다. 잘못된 state 는 ValueError.
+    """
+    if state not in ANOMALY_STATES:
+        raise ValueError(f"invalid anomaly state: {state}")
+    if product_id is not None:
+        product = get_product(connection, int(product_id))
+        products = [product] if product else []
+    else:
+        products = list_products(connection, active_only=True)
+
+    items: list[dict[str, Any]] = []
+    counts = {"unreviewed": 0, "reviewed": 0, "excluded": 0}
+    for product in products:
+        if year is not None:
+            target_year = year
+        else:
+            years = available_years(connection, product["id"])
+            target_year = years[0] if years else None
+        analysis = analyze_product(connection, product, year=target_year)
+        stats = analysis["stats"]
+        anomalies = analysis["anomalies"]
+        unreviewed = [x for x in anomalies if not x["reviewed"]]
+        reviewed = [x for x in anomalies if x["reviewed"]]
+        excluded = [x for x in analysis["readings"] if x["status"] == "excluded"]
+        counts["unreviewed"] += len(unreviewed)
+        counts["reviewed"] += len(reviewed)
+        counts["excluded"] += len(excluded)
+        if state == "unreviewed":
+            candidates = unreviewed
+        elif state == "reviewed":
+            candidates = reviewed
+        elif state == "excluded":
+            candidates = excluded
+        else:
+            candidates = list(anomalies) + excluded
+        for x in candidates:
+            items.append({
+                "reading_id": x["id"],
+                "product_id": product["id"],
+                "product_code": product["code"],
+                "product_name": product["name"],
+                "year": target_year,
+                "lot_no": x["lot_no"],
+                "measured_date": x["measured_date"],
+                "viscosity": x["viscosity"],
+                "status": x["status"],
+                "side": x["side"],
+                "reasons": x["reasons"],
+                "anomaly_low": stats.get("anomaly_low"),
+                "anomaly_high": stats.get("anomaly_high"),
+                "reviewed": x["reviewed"],
+                "reviewed_by": x["reviewed_by"],
+                "reviewed_at": x["reviewed_at"],
+                "review_note": x["review_note"],
+                "excluded": x["excluded"],
+                "exclude_reason": x["exclude_reason"],
+                "excluded_by": x["excluded_by"],
+                "excluded_at": x["excluded_at"],
+                "blend_record_id": x["blend_record_id"],
+            })
+
+    # 최신 측정일 먼저(날짜 없음은 맨 뒤), 같은 날은 id 큰 것 먼저.
+    items.sort(key=lambda it: -int(it["reading_id"]))
+    items.sort(key=lambda it: it["measured_date"] or "", reverse=True)
+    items.sort(key=lambda it: it["measured_date"] is None)
+    return {"items": items, "counts": counts, "state": state}
 
 
 def list_readings_for_blend(

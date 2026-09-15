@@ -108,6 +108,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ["viscosity_reading_corrected", "점도값 정정"],
       ["viscosity_reading_excluded", "점도 통계 제외"],
       ["viscosity_reading_restored", "점도 제외 해제"],
+      ["viscosity_reading_reviewed", "점도 이상 확인 처리"],
+      ["viscosity_reading_review_cleared", "점도 이상 확인 취소"],
       ["viscosity_skip_recorded", "점도 측정 불가 기록"],
       ["viscosity_skip_removed", "점도 측정 불가 취소"],
       ["viscosity_product_create", "점도 품목 추가"],

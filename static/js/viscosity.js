@@ -115,6 +115,8 @@
     // 어긋난 채 남는다(PB 산점도에서 점 아홉이 왼쪽 끝에 뭉쳐 그려졌다) — 보이는 순간
     // 그 탭의 그림을 다시 그린다. 다시 그리는 재료는 이미 받아 둔 analysis 뿐이라
     // 서버를 부르지 않는다.
+    // 이상 관리 탭은 반제품 선택과 무관한 전 반제품 목록이라 열 때마다 서버에서 새로 받는다.
+    if (name === "anomaly") loadAnomalies();
     if (!state.analysis) return;
     if (name === "trend") renderPeriods();
     if (name === "pb") renderSourcePb();
@@ -137,6 +139,7 @@
     // 파생한다. 첫 진입이면 native select 가 첫 옵션을 자동 선택하므로 그것을 그대로
     // 따르고, 새로고침/설정 저장 후엔 renderProductSelect 가 유지한 currentId 를 따른다.
     renderProductSelect();
+    renderAnomalyProductSelect();
     const sel = $("visc-product-select");
     const chosen =
       sel && sel.value
@@ -430,6 +433,284 @@
       appendTextCell(row, reasons || "-");
       body.appendChild(row);
     });
+  }
+
+  // ── 이상 관리 탭(2026-09-15) ────────────────────────────────────────
+  // 전 반제품을 가로질러 이상 측정을 모으고, 현장이 조치 내용과 함께 '확인 처리'로 닫는다.
+  // 통계 제외(책임자)와 달리 판정·통계는 그대로 두며, 대시보드 '점도 이상'은 미확인만 센다.
+  // 대시보드 카드는 /viscosity?tab=anomaly&state=unreviewed 로 곧장 이 탭을 연다.
+  const ANOMALY_STATES = ["unreviewed", "reviewed", "excluded", "all"];
+  const ANOMALY_EMPTY = {
+    unreviewed: "미확인 이상이 없습니다",
+    reviewed: "확인 처리한 이상이 없습니다",
+    excluded: "통계에서 제외한 측정이 없습니다",
+    all: "이상 측정이 없습니다",
+  };
+  const ANOMALY_COLS = 7;
+  let anomalySeq = 0;       // 필터를 빠르게 바꿀 때 늦게 도착한 앞 응답이 표를 덮지 않게
+  let reviewModal = null;
+  let reviewTarget = null;  // {id, lot}
+
+  function renderAnomalyProductSelect() {
+    const sel = $("visc-anom-product");
+    if (!sel) return;
+    const keep = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    state.products.forEach((product) => {
+      const opt = document.createElement("option");
+      opt.value = String(product.id);
+      opt.textContent = productLabel(product);
+      sel.appendChild(opt);
+    });
+    if (Array.from(sel.options).some((o) => o.value === keep)) sel.value = keep;
+  }
+
+  function renderAnomalyYearSelect() {
+    const sel = $("visc-anom-year");
+    if (!sel || sel.options.length > 1) return;
+    const thisYear = new Date().getFullYear();
+    for (let year = thisYear; year > thisYear - 4; year -= 1) {
+      const opt = document.createElement("option");
+      opt.value = String(year);
+      opt.textContent = `${year}년`;
+      sel.appendChild(opt);
+    }
+  }
+
+  function selectedAnomalyState() {
+    const sel = $("visc-anom-state");
+    return sel && ANOMALY_STATES.includes(sel.value) ? sel.value : "unreviewed";
+  }
+
+  async function loadAnomalies() {
+    const body = $("visc-anom-body");
+    if (!body) return;
+    const anomalyState = selectedAnomalyState();
+    const seq = ++anomalySeq;
+    let data;
+    try {
+      data = await request("/viscosity/anomalies", {
+        query: {
+          state: anomalyState,
+          product_id: $("visc-anom-product").value,
+          year: $("visc-anom-year").value,
+        },
+      });
+    } catch (error) {
+      if (seq !== anomalySeq) return;
+      // 실패를 '이상 없음'으로 보이게 두지 않는다 — 표와 건수를 비우고 알린다.
+      body.innerHTML = "";
+      $("visc-anom-counts").textContent = "";
+      notify(String(error.message || error), "error");
+      return;
+    }
+    if (seq !== anomalySeq) return;
+    const counts = data.counts || {};
+    $("visc-anom-counts").textContent =
+      `미확인 ${counts.unreviewed || 0} · 확인됨 ${counts.reviewed || 0} · 제외됨 ${counts.excluded || 0}`;
+    const items = data.items || [];
+    body.innerHTML = "";
+    if (!items.length) {
+      body.appendChild(emptyRow(ANOMALY_COLS, ANOMALY_EMPTY[anomalyState]));
+      return;
+    }
+    items.forEach((item) => body.appendChild(anomalyRow(item)));
+  }
+
+  function anomalyVerdict(item, excluded) {
+    if (excluded) return "-";
+    if (item.side === "low") return `하한 이탈 · 기준 ${fmt(item.anomaly_low)}`;
+    if (item.side === "high") return `상한 이탈 · 기준 ${fmt(item.anomaly_high)}`;
+    return "이상";
+  }
+
+  function anomalyButton(label, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm";
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  function anomalyRow(item) {
+    const row = document.createElement("tr");
+    const excluded = Boolean(item.excluded || item.status === "excluded");
+    const reviewed = !excluded && Boolean(item.reviewed);
+    const lot = item.lot_no || "";
+
+    appendTextCell(row, item.measured_date || "-");
+
+    const productCell = document.createElement("td");
+    productCell.appendChild(document.createTextNode(item.product_name || item.product_code || "-"));
+    if (item.product_code && item.product_name && item.product_code !== item.product_name) {
+      productCell.appendChild(document.createTextNode(" "));
+      const code = document.createElement("span");
+      code.className = "muted";
+      code.textContent = item.product_code;
+      productCell.appendChild(code);
+    }
+    row.appendChild(productCell);
+
+    const lotCell = document.createElement("td");
+    lotCell.innerHTML = lot
+      ? `<a class="visc-anom-lot" href="/status?search=${IRMS.escapeHtml(encodeURIComponent(lot))}">${IRMS.escapeHtml(lot)}</a>`
+      : "-";
+    row.appendChild(lotCell);
+
+    appendTextCell(row, fmt(item.viscosity), "num");
+    appendTextCell(row, anomalyVerdict(item, excluded));
+
+    const stateCell = document.createElement("td");
+    const chip = document.createElement("span");
+    let sub = "";
+    if (excluded) {
+      chip.className = "status-chip visc-anom-excluded";
+      chip.textContent = "제외됨";
+      sub = [item.excluded_by, item.exclude_reason].filter(Boolean).join(" · ");
+    } else if (reviewed) {
+      chip.className = "status-chip status-completed";
+      chip.textContent = "확인됨";
+      const reviewedDate = item.reviewed_at ? String(item.reviewed_at).slice(0, 10) : "";
+      sub = [item.reviewed_by, reviewedDate, item.review_note].filter(Boolean).join(" · ");
+    } else {
+      chip.className = "status-chip visc-anom-open";
+      chip.textContent = "미확인";
+    }
+    stateCell.appendChild(chip);
+    if (sub) {
+      const line = document.createElement("span");
+      line.className = "visc-anom-sub";
+      line.textContent = sub;
+      stateCell.appendChild(line);
+    }
+    row.appendChild(stateCell);
+
+    const actionCell = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "visc-anom-actions";
+    if (excluded) {
+      if (isManager) {
+        actions.appendChild(anomalyButton("제외 해제", () => includeReading(item.reading_id, lot)));
+      }
+    } else if (reviewed) {
+      if (isManager) {
+        actions.appendChild(anomalyButton("확인 취소", () => unreviewReading(item.reading_id)));
+      }
+    } else {
+      actions.appendChild(anomalyButton("확인 처리", () => openReviewModal(item.reading_id, lot)));
+      if (isManager) {
+        actions.appendChild(anomalyButton("통계 제외", () => openExcludeModal(item.reading_id, lot)));
+      }
+    }
+    actionCell.appendChild(actions);
+    row.appendChild(actionCell);
+    return row;
+  }
+
+  function openReviewModal(readingId, lotNo) {
+    if (!$("visc-review-modal")) return;
+    reviewTarget = { id: readingId, lot: lotNo };
+    $("visc-review-title").textContent = `이상 확인 처리 · LOT ${lotNo}`;
+    $("visc-review-note").value = "";
+    $("visc-review-error").hidden = true;
+    $("visc-review-submit").disabled = false;
+    if (reviewModal) reviewModal.open($("visc-review-note"));
+    prepareReviewer();
+  }
+
+  // 확인한 사람 칸 · 책임자 로그인이면 서버가 그 이름을 쓰므로 숨긴다. 배합 작업자 세션이
+  // 있으면 그 이름으로 고정한다. 둘 다 없으면 명단 자동완성으로 적게 한다.
+  // 세션 조회는 공용 request() 를 쓰지 않는다 · 401 이면 로그인 화면으로 옮겨 가기 때문이다.
+  let reviewWorkersLoaded = false;
+  async function prepareReviewer() {
+    const who = $("visc-review-who");
+    const input = $("visc-review-reviewer");
+    if (!who || !input) return;
+    if (isManager) {
+      who.hidden = true;
+      return;
+    }
+    who.hidden = false;
+    let sessionWorker = "";
+    try {
+      const res = await fetch("/api/blend/session/me", { credentials: "same-origin" });
+      if (res.ok) sessionWorker = ((await res.json()) || {}).worker || "";
+    } catch (_e) { /* 세션 없음과 같게 본다 */ }
+    input.readOnly = Boolean(sessionWorker);
+    if (sessionWorker) input.value = sessionWorker;
+    if (!reviewWorkersLoaded) {
+      try {
+        const res = await fetch("/api/workers", { credentials: "same-origin" });
+        const data = res.ok ? await res.json() : {};
+        const list = $("visc-review-workers");
+        (data.items || []).forEach((w) => {
+          const opt = document.createElement("option");
+          opt.value = w.name;
+          list.appendChild(opt);
+        });
+        reviewWorkersLoaded = true;
+      } catch (_e) { /* 자동완성만 빠진다 */ }
+    }
+  }
+
+  async function submitReview(event) {
+    event.preventDefault();
+    const target = reviewTarget;
+    if (!target) {
+      if (reviewModal) reviewModal.close();
+      return;
+    }
+    const error = $("visc-review-error");
+    const submit = $("visc-review-submit");
+    error.hidden = true;
+    submit.disabled = true;
+    try {
+      await request(`/viscosity/readings/${target.id}/review`, {
+        method: "POST",
+        body: {
+          note: $("visc-review-note").value.trim(),
+          reviewer: ($("visc-review-reviewer") && $("visc-review-reviewer").value.trim()) || null,
+        },
+      });
+    } catch (error_) {
+      // request() 는 서버 detail 을 메시지로 던진다(이름·조치 내용 400 은 그대로 보인다).
+      error.textContent = String((error_ && error_.message) || error_);
+      error.hidden = false;
+      submit.disabled = false;
+      return;
+    }
+    submit.disabled = false;
+    if (reviewModal) reviewModal.close();
+    notify("이상을 확인 처리했습니다.", "success");
+    await loadAnomalies();
+    if (state.currentId) await reloadProduct(state.currentId);
+  }
+
+  async function unreviewReading(readingId) {
+    try {
+      await request(`/viscosity/readings/${readingId}/unreview`, { method: "POST" });
+    } catch (error) {
+      notify(String(error.message || error), "error");
+      return;
+    }
+    notify("확인 처리를 취소했습니다.", "success");
+    await loadAnomalies();
+    if (state.currentId) await reloadProduct(state.currentId);
+  }
+
+  // 딥링크 · ?tab=anomaly 면 이상 관리 탭을 열고, ?state= 로 상태 필터를 미리 고른다.
+  function applyDeepLink() {
+    let params;
+    try {
+      params = new URLSearchParams(window.location.search);
+    } catch (_e) {
+      return;
+    }
+    const wanted = params.get("state");
+    const stateSelect = $("visc-anom-state");
+    if (stateSelect && ANOMALY_STATES.includes(wanted)) stateSelect.value = wanted;
+    if (params.get("tab") === "anomaly") activateTab("anomaly");
   }
 
   function renderCondition() {
@@ -1356,8 +1637,11 @@
       });
       closeExcludeModal();
       IRMS.notify("측정값을 통계에서 제외했습니다.", "success");
+      // 이상 관리 탭에서는 반제품을 고르지 않고도 제외할 수 있다 — 목록을 갱신하고,
+      // 분석이 열려 있을 때만 재조회한다(없는 id 로 조회하면 실패로 보인다).
+      if (state.tab === "anomaly") await loadAnomalies();
       // 재조회로 평균·σ·추세가 즉시 갱신되고, 목록 배지·카드가 일치한다.
-      await loadProduct(state.currentId);
+      if (state.currentId) await loadProduct(state.currentId);
     } catch (error_) {
       error.textContent = error_.message;
       error.hidden = false;
@@ -1374,7 +1658,8 @@
     try {
       await request(`/viscosity/readings/${readingId}/include`, { method: "POST" });
       IRMS.notify("측정값을 통계에 다시 포함했습니다.", "success");
-      await loadProduct(state.currentId);
+      if (state.tab === "anomaly") await loadAnomalies();
+      if (state.currentId) await loadProduct(state.currentId);
     } catch (error) {
       IRMS.notify(`제외 해제 실패: ${error.message}`, "error");
     }
@@ -1692,6 +1977,22 @@
       excludeForm.addEventListener("submit", submitExclude);
       $("visc-exclude-close").addEventListener("click", closeExcludeModal);
     }
+    // 이상 관리 탭 — 필터가 바뀌면 다시 받는다.
+    ["visc-anom-state", "visc-anom-product", "visc-anom-year"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("change", () => { loadAnomalies(); });
+    });
+    renderAnomalyYearSelect();
+    // 이상 확인 처리 모달 (담당자·책임자 모두) — 취소 버튼 · Esc · 배경 클릭으로 닫힌다.
+    const reviewForm = $("visc-review-form");
+    if (reviewForm) {
+      reviewModal = createModal("visc-review-modal", {
+        initialFocus: "visc-review-note",
+        onClose: () => { reviewTarget = null; },
+      });
+      reviewForm.addEventListener("submit", submitReview);
+      $("visc-review-cancel").addEventListener("click", () => reviewModal.close());
+    }
   }
 
   function getCssVar(name) {
@@ -1704,6 +2005,7 @@
       return;
     }
     bind();
+    applyDeepLink();
     loadOverview().catch((error) => notify(`불러오기 실패: ${error.message}`, "error"));
   });
 })();

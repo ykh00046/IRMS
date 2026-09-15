@@ -266,3 +266,16 @@ def test_material_lot_file_summary_when_no_file(tmp_path, monkeypatch):
     assert erp_lot_service.latest_file_summary() == {
         "file_name": None, "file_date": None, "found": False,
     }
+
+
+def test_viscosity_anomaly_card_links_to_the_anomaly_tab():
+    """'점도 이상' 카드는 미확인만 세므로 점도 화면의 이상 관리 탭으로 곧장 간다(2026-09-15)."""
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent / "templates" / "dashboard.html").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r'<a [^>]*id="act-visc-anomaly"[^>]*href="([^"]*)"', html)
+    assert match, "act-visc-anomaly 카드 링크가 없다"
+    assert "/viscosity?tab=anomaly" in match.group(1)

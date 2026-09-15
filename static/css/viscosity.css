@@ -874,3 +874,59 @@ body {
   pointer-events: none;
 }
 .visc-chart-empty[hidden] { display: none; }
+
+/* ── 이상 관리 탭(2026-09-15) ──────────────────────────────────────────
+   필터 한 줄 · 상태 칩 아래 처리 내역 한 줄. 색은 상태 토큰에서만 온다. */
+.visc-anom-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+/* 공용 .input 은 width:100% · 필터 셀렉트는 내용 크기로 한 줄에 둔다(좁은 화면은 아래 미디어 규칙). */
+.visc-anom-filters .input {
+  width: auto;
+  min-width: 8rem;
+  margin: 0;
+}
+.visc-anom-filters .filter-label {
+  margin: 0;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .visc-anom-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .visc-anom-filters .input {
+    width: 100%;
+  }
+}
+/* LOT 링크 · 브라우저 기본 파랑 밑줄 대신 LOT 이력 화면(.lh-lot-link)과 같은 모양. */
+.visc-anom-lot {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.visc-anom-lot:hover { text-decoration: underline; }
+.visc-anom-sub {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+.status-chip.visc-anom-open {
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
+}
+.status-chip.visc-anom-excluded {
+  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+}
+.visc-anom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

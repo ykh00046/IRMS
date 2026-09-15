@@ -21,6 +21,9 @@ Endpoints:
     DELETE /viscosity/readings/{id}             (책임자)
     POST   /viscosity/readings/{id}/exclude     통계 제외 (책임자)
     POST   /viscosity/readings/{id}/include     제외 해제 (책임자)
+    GET    /viscosity/anomalies                 전 제품 이상 목록 (개방)
+    POST   /viscosity/readings/{id}/review      확인 처리 (배합 작업자 또는 로그인 사용자)
+    POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
 """
 
@@ -70,11 +73,13 @@ from ..db import get_db, local_today_text, utc_now_text, write_audit_log
 # (2026-08-14 사용자 결정 '10분'). 이후는 책임자만.
 CORRECTION_GRACE = timedelta(minutes=10)
 from ..services import viscosity_service
+from ..blend_session import current_blend_worker
 from .models import (
     ViscosityExcludeBody,
     ViscosityProductCreateBody,
     ViscosityProductUpdateBody,
     ViscosityReadingBody,
+    ViscosityReviewBody,
     actor_name,
 )
 
@@ -658,6 +663,87 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         """측정 1건의 통계 제외를 해제 — 책임자 전용. 다시 통계에 포함된다."""
         current_user = get_current_user(request, required=False)
         result = viscosity_service.include_reading(
+            connection,
+            reading_id,
+            by=current_user,
+            now=utc_now_text(),
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+        connection.commit()
+        return {"ok": True, "id": reading_id}
+
+    # ---- 이상 확인 처리(2026-09-15) ---------------------------------------
+    @op_router.get("/viscosity/anomalies")
+    def viscosity_anomalies(
+        state: str = "unreviewed",
+        product_id: int | None = None,
+        year: int | None = None,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """전 제품 이상 측정 목록 — 제품을 하나씩 고르지 않고 어느 LOT·날짜인지 본다."""
+        try:
+            return viscosity_service.list_anomalies(
+                connection, state=state, product_id=product_id, year=year
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="잘못된 상태 값입니다.")
+
+    @op_router.post("/viscosity/readings/{reading_id}/review")
+    def viscosity_review_reading(
+        reading_id: int,
+        body: ViscosityReviewBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """이상 측정 1건을 '확인 처리'(실제 이상, 조치 내용 기록). 통계에는 이상으로 남는다.
+        누구나 가능하다 — 통계 제외(책임자 전용)와 다르다. 확인한 사람은 로그인 사용자 →
+        배합 작업자 세션 → 본문 reviewer(명단에 있는 이름) 순으로 정한다.
+        점도 화면은 로그인 없이 쓰는 화면이라 세션을 요구하면 401 이 공용 request() 의
+        로그인 화면 이동을 부르고 적던 조치 내용이 사라졌다(2026-09-15 E2E). 그래서 401 대신 400."""
+        from ..services import worker_service
+
+        current_user = get_current_user(request, required=False)
+        actor = None
+        if current_user:
+            by_name = actor_name(current_user)
+            actor = current_user
+        else:
+            by_name = current_blend_worker(request)
+            if not by_name:
+                reviewer = (body.reviewer or "").strip()
+                if not reviewer:
+                    raise HTTPException(status_code=400, detail="확인한 사람 이름을 적어 주세요.")
+                if not worker_service.exists(connection, reviewer):
+                    raise HTTPException(
+                        status_code=400, detail="명단에 없는 이름입니다. 이름을 확인해 주세요."
+                    )
+                by_name = reviewer
+        try:
+            result = viscosity_service.review_reading(
+                connection,
+                reading_id,
+                body.note,
+                by_name=by_name,
+                now=utc_now_text(),
+                actor=actor,
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="조치 내용을 2자 이상 적어 주세요.")
+        if result is None:
+            raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
+        connection.commit()
+        return {"ok": True, "id": reading_id}
+
+    @mgr_router.post("/viscosity/readings/{reading_id}/unreview")
+    def viscosity_unreview_reading(
+        reading_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """'확인 처리'를 취소 — 책임자 전용. 다시 미확인 이상으로 센다."""
+        current_user = get_current_user(request, required=False)
+        result = viscosity_service.unreview_reading(
             connection,
             reading_id,
             by=current_user,

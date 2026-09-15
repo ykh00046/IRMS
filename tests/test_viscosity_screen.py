@@ -85,6 +85,47 @@ def test_delete_confirms_once():
     assert CONTROLLER.count("window.confirm", start, end) == 1
 
 
+def test_anomaly_tab_and_filters_exist():
+    """이상 관리 탭(2026-09-15) — 전 반제품 이상 목록과 상태 필터."""
+    assert 'data-tab="anomaly"' in TEMPLATE
+    assert 'id="tab-anomaly"' in TEMPLATE
+    assert 'id="visc-anom-state"' in TEMPLATE
+    start = TEMPLATE.index('id="visc-anom-state"')
+    end = TEMPLATE.index("</select>", start)
+    for value in ("unreviewed", "reviewed", "excluded", "all"):
+        assert f'value="{value}"' in TEMPLATE[start:end], f"상태 옵션 {value} 가 없다"
+    assert 'id="visc-anom-body"' in TEMPLATE
+
+
+def test_review_modal_renders_for_everyone():
+    """확인 처리는 담당자도 하므로 책임자 전용 블록(통계 제외 모달) 밖에 있어야 한다."""
+    exclude_at = TEMPLATE.index('id="visc-exclude-modal"')
+    block_start = TEMPLATE.rindex("{% if can_manage %}", 0, exclude_at)
+    block_end = TEMPLATE.index("{% endif %}", exclude_at)
+    review_at = TEMPLATE.index('id="visc-review-modal"')
+    assert not (block_start < review_at < block_end), "확인 처리 모달이 책임자 블록 안에 있다"
+    # 다른 {% if can_manage %} 블록 안에 들어가 있지도 않다.
+    before = TEMPLATE[:review_at]
+    assert before.count("{% if can_manage %}") == before.count("{% endif %}")
+
+
+def test_anomaly_controller_contract():
+    for text in (
+        "미확인 이상이 없습니다",
+        "확인 처리한 이상이 없습니다",
+        "통계에서 제외한 측정이 없습니다",
+        "이상 측정이 없습니다",
+    ):
+        assert text in CONTROLLER, f"빈 목록 문구 '{text}' 가 없다"
+    assert "/viscosity/anomalies" in CONTROLLER
+    assert "/review" in CONTROLLER
+    assert "/unreview" in CONTROLLER
+    # 대시보드 카드 딥링크(?tab=anomaly&state=...)를 받는다.
+    assert "URLSearchParams" in CONTROLLER
+    assert 'params.get("tab") === "anomaly"' in CONTROLLER
+    assert 'params.get("state")' in CONTROLLER
+
+
 def test_static_assets_are_cache_busted_together():
     """세 파일이 **같은 버전**으로 함께 갱신되는지 — 특정 값이 아니라 일치가 계약이다.
 

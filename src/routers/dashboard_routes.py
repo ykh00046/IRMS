@@ -78,7 +78,9 @@ def build_router() -> APIRouter:
             # NOTE: 결재 대기(approval_pending)·worker_count·viscosity_due_today 은
             # 2026-07~08 에 걸쳐 제거했다 — 결재는 현장 미사용, worker/미입력 목록은
             # /attention 쪽에서만 쓰이는 중복 계산이었다(죽은 값을 매 호출 반환하지 않음).
-            viscosity_anomaly = viscosity_service.overview(connection)["total_anomaly"]
+            # 점도 이상은 '확인 처리' 안 된 것만 센다(2026-09-15) — 조치한 이상은 할 일이 아니다.
+            # 통계상 이상 전체는 overview 의 total_anomaly 에 그대로 남는다.
+            viscosity_anomaly = viscosity_service.overview(connection)["total_anomaly_unreviewed"]
 
         return {
             "range": {"from": from_date, "to": to_date},

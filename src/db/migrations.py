@@ -474,6 +474,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "viscosity_readings", "exclude_reason", "TEXT")
     ensure_column(connection, "viscosity_readings", "excluded_by", "TEXT")
     ensure_column(connection, "viscosity_readings", "excluded_at", "TEXT")
+    # 확인 처리(2026-09-15): 실제 이상으로 보고 조치했다는 표시. 통계에는 이상으로 남고,
+    # 대시보드 '점도 이상' 건수에서만 빠진다(미확인만 센다). 담당자·책임자 모두 가능.
+    ensure_column(connection, "viscosity_readings", "reviewed_at", "TEXT")
+    ensure_column(connection, "viscosity_readings", "reviewed_by", "TEXT")
+    ensure_column(connection, "viscosity_readings", "review_note", "TEXT")
     # 반응기는 배합 실적을 진행한 위치 → blend_records 에 기록. 점도는 실적에서 물려받아 표시.
     ensure_column(connection, "blend_records", "reactor", "INTEGER")
     # 수동 입력 여부: 저울 연동 중 계량값을 직접 입력했는가(추적성).

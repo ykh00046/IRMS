@@ -145,6 +145,14 @@ class ViscosityExcludeBody(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class ViscosityReviewBody(BaseModel):
+    # 확인 처리 조치 내용(필수) — 실제 이상을 어떻게 처리했는지 기록으로 남긴다.
+    note: str = Field(min_length=1, max_length=500)
+    # 확인한 사람 — 점도 화면은 로그인 없이 쓰므로, 로그인·배합 작업자 세션이 없을 때만
+    # 명단(workers)에 있는 이름으로 받는다.
+    reviewer: str | None = Field(default=None, max_length=100)
+
+
 class BlendDetailBody(BaseModel):
     material_id: int | None = None
     material_code: str | None = Field(default=None, max_length=100)
