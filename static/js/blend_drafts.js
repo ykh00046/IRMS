@@ -451,6 +451,19 @@
     return { filled, total: items.length };
   }
 
+  /** 완료 판정 — 계량 칸이 하나라도 있고(total > 0) 전부 들어간 경우에만 true. */
+  function isComplete(kind, slot) {
+    if (!slot) return false;
+    const p = progressOf(kind, slot);
+    return p.total > 0 && p.filled === p.total;
+  }
+
+  /** 초안의 작업자 이름(순수) — 있으면 trim 해서 문자열로, 없으면 빈 문자열(null 안전). */
+  function workerOf(slot) {
+    if (!slot || slot.worker === null || slot.worker === undefined) return "";
+    return String(slot.worker).trim();
+  }
+
   /** 저장 시각(로컬) — "2026-08-08 09:12".
    *
    * savedAt 은 new Date().toISOString() 이라 UTC(Z)다. 예전에는 앞 16자를 잘라 T 만
@@ -571,6 +584,8 @@
     baseChanges,
     buildDiff,
     progressOf,
+    isComplete,
+    workerOf,
     savedAtText,
     savedAgoText,
     expiresInMs,

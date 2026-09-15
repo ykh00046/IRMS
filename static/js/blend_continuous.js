@@ -360,6 +360,9 @@
     return {
       recipe_id: state.current.recipe.id,
       product_name: state.current.recipe.product_name,
+      // 계량한 작업자 — 공용 PC 에서 다른 사람이 이어서 저장해도 계량한 사람 이름으로
+      // 교대해 기록하고(2026-09-14 사용자 결정), 저장 안 된 배합 안내에 이름을 보여 준다.
+      worker: lockedWorkerName() || state.sessionWorker || "",
       schema: blendDrafts ? blendDrafts.SCHEMA : 2,
       // 줄(재료)마다 품목 식별자 — 복구 시 위치가 아니라 이 값으로 매칭한다. 초안 저장 후
       // 재료 순서가 바뀌거나 중간에 삽입/삭제돼도 계량값이 다른 재료 줄로 흘러들지 않는다.
@@ -431,14 +434,17 @@
 
   // F12: 본인 초안(이 kind)이 1건 이상이면 페이지 로드당 1회 안내 + 사이드바
   // [작성 중 배합] 링크에 개수 배지. 초안 복구로 진입한 경우는 호출부에서 제외한다(중복 안내 금지).
+  // opts.silent — 화면에 '저장 전' 안내 상자가 이미 떠 있을 때 토스트만 생략한다(배지는 갱신).
   // localStorage 직접 파싱 금지 — blendDrafts.listAll(localStorage) 사용.
-  function notifyDraftCount(kind) {
+  function notifyDraftCount(kind, opts) {
     if (!blendDrafts || typeof blendDrafts.listAll !== "function") return;
     let slots = [];
     try { slots = blendDrafts.listAll(localStorage).filter((s) => s.kind === kind); }
     catch (_e) { return; }  // 저장소 접근 불가 등 · 조용히 무동작
     if (!slots.length) return;
-    notify(`작성 중 배합 ${slots.length}건이 있습니다. 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
+    if (!(opts && opts.silent)) {
+      notify(`작성 중 배합 ${slots.length}건이 있습니다. 사이드바 [작성 중 배합]에서 이어서 작업할 수 있습니다.`, "warn");
+    }
     // 사이드바 링크에 개수 배지(이미 있으면 갱신).
     const link = document.querySelector('a[href="/blend/drafts"]');
     if (link) {
@@ -451,6 +457,31 @@
       }
       badge.textContent = String(slots.length);
     }
+  }
+
+  // 재진입 안내 — 이 PC 에 "계량을 다 마치고도 저장하지 않은" 초안(두 화면 모두)이 남아
+  // 있으면 목록으로 가는 상자를 화면에 띄운다. 완료 판정은 blendDrafts.isComplete 로
+  // 화면 공통으로 한다. 반환: 안내를 띄웠는지(호출부가 토스트 중복을 피하는 근거).
+  function showUnsavedDrafts() {
+    const box = $("cont-unsaved-drafts");
+    const body = $("cont-unsaved-drafts-body");
+    if (!box || !body) return false;
+    if (!blendDrafts || typeof blendDrafts.listAll !== "function") { box.hidden = true; return false; }
+    let entries = [];
+    try {
+      entries = blendDrafts.listAll(localStorage)
+        .filter((e) => blendDrafts.isComplete(e.kind, e.slot));
+    } catch (_e) { box.hidden = true; return false; }
+    if (!entries.length) { box.hidden = true; return false; }
+    const esc = blendDrafts.esc;
+    body.innerHTML = '<p class="blend-draft-notice-line"><b>계량을 마치고 저장하지 않은 배합이 있습니다</b></p>'
+      + '<ul class="blend-draft-notice-list">'
+      + entries.map((e) => `<li>${esc(e.slot.product_name)} · `
+        + `${esc(blendDrafts.workerOf(e.slot) || "작업자 미상")} · `
+        + `${esc(blendDrafts.savedAtText(e.slot))} · ${esc(e.label)}</li>`).join("")
+      + "</ul>";
+    box.hidden = false;
+    return true;
   }
 
   // 복구 후 남는 안내 상자(사라진 재료의 계량값·신규 재료·기준 배합량 변경).
@@ -511,6 +542,15 @@
     state.lotOverrides = draft.lotOverrides || {};
     // 수기 입력 승인/부재 상태 복구(onRecipeChange 가 null 로 리셋했으므로 되살린다).
     state.manualApproved = draft.manualApproved ? { ...draft.manualApproved } : null;
+    // 계량한 작업자로 교대(사용자 결정: 기록은 계량한 사람 이름으로 남긴다). 입력칸 값만
+    // 바꾸는 것으로는 부족하다 — 입력칸의 focus 핸들러가 값을 지우고 blur 가 세션 작업자로
+    // 되돌리므로 반드시 switchWorker 로 세션 자체를 넘겨야 복구 후 저장에 계량자가 실린다.
+    const weigher = blendDrafts ? blendDrafts.workerOf(draft) : "";
+    let workerLine = "";
+    if (weigher && weigher !== state.sessionWorker) {
+      if (await switchWorker(weigher)) workerLine = `<p class="blend-draft-notice-line">계량한 작업자 ${blendDrafts.esc(weigher)} 이름으로 교대했습니다.</p>`;
+      else workerLine = `<p class="blend-draft-notice-line">계량한 작업자는 ${blendDrafts.esc(weigher)}입니다.</p>`;
+    }
     // 총 배합량 복구 → 이론량 재산출(placeholder·편차 기준).
     if (draft.total) {
       $("cont-total").value = draft.total;
@@ -563,8 +603,9 @@
     updateManualEntryControl();
     notify("작성 중이던 다중 계량을 복원했습니다.", "success");
     // 레시피 변경 고지 — 사라진 재료의 계량값은 조용히 버리지 않고 값까지 적어 남긴다.
+    // 작업자 교대 문구를 앞에 얹어, 변경이 없어도 누가 계량했는지는 남는다(빈 상자 없음).
     if (blendDrafts) {
-      showDraftNotice(blendDrafts.restoreNoticeHtml(diff));
+      showDraftNotice(workerLine + blendDrafts.restoreNoticeHtml(diff));
       if (diff.legacy) {
         notify("레시피 변경 여부를 확인할 수 없는 오래된 임시저장입니다. 재료별 값을 확인하세요.", "warn");
       }
@@ -1617,9 +1658,14 @@
   function updateProgress() {
     const el = $("cont-progress");
     if (!el) return;
+    const note = $("cont-unsaved-note");
     const rows = (state.materials || []).length;
     const lots = state.lotCount || 0;
-    if (!rows || !lots) { el.hidden = true; return; }
+    if (!rows || !lots) {
+      el.hidden = true;
+      if (note) note.hidden = true;   // 레시피가 없으면 '저장 전' 안내도 내려간다
+      return;
+    }
     let filled = 0;
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < lots; j++) {
@@ -1634,6 +1680,9 @@
     el.textContent = done
       ? `계량 완료 · ${total}칸 모두 입력되었습니다.`
       : `계량 ${filled} / ${total} 칸 · ${total - filled}칸 남음`;
+    // 다 계량했지만 저장 전 상태 안내 — 기록은 저장을 눌러야 남는다(저장 후 초기화·
+    // 레시피 변경 뒤에는 내려간다). PRINT·손입력·복구 어느 경로든 이 함수가 체감한다.
+    if (note) note.hidden = !(state.current && rows && lots && done);
   }
 
   // 저장에서 빈 칸이 걸렸을 때 그 칸을 표에서 짚어 준다 — 문구로 이름만 나열하면
@@ -2944,7 +2993,14 @@
     const resumeId = blendDrafts ? blendDrafts.takeResume("cont") : null;
     if (resumeId) restoreDraft(resumeId).catch((e) => notify(e.message, "error"));
     // F12: 초안 복구로 진입(resumeId)이 아니면 본인 초안이 있을 때 안내 + 사이드바 배지.
-    if (!resumeId) notifyDraftCount("cont");
+    // '저장 전' 완료 초안 안내 상자를 띄웠으면 토스트는 생략(안내 중복 금지).
+    if (!resumeId) {
+      const shown = showUnsavedDrafts();
+      notifyDraftCount("cont", { silent: shown });
+    }
+    const unsavedClose = $("cont-unsaved-drafts-close");
+    const unsavedBox = $("cont-unsaved-drafts");
+    if (unsavedClose && unsavedBox) unsavedClose.addEventListener("click", () => { unsavedBox.hidden = true; });
     detectScale();
     setInterval(detectScale, 30000);
     setInterval(pollScaleEvents, 800);

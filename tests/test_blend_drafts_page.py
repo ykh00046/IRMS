@@ -106,3 +106,19 @@ def test_blend_screens_no_longer_ship_restore_banner():
     # 대신 복구 후 레시피 변경 고지 상자가 들어간다
     assert "blend-draft-notice" in client.get("/blend").text
     assert "cont-draft-notice" in client.get("/blend/continuous").text
+
+
+def test_unsaved_note_and_worker_column_ship_on_screens():
+    """계량 완료·미저장 안내(두 화면) + 목록 작업자 칸이 마크업에 실린다(2026-09-14)."""
+    client = _client()
+    _worker_session(client)
+
+    blend = client.get("/blend").text
+    assert 'id="blend-unsaved-note"' in blend
+    assert 'id="blend-unsaved-drafts"' in blend
+
+    cont = client.get("/blend/continuous").text
+    assert 'id="cont-unsaved-note"' in cont
+    assert 'id="cont-unsaved-drafts"' in cont
+
+    assert "<th>작업자</th>" in client.get("/blend/drafts").text

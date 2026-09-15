@@ -391,3 +391,44 @@ test("totalOf reads either screen's total field", () => {
   assert.equal(d.totalOf({}), "");
   assert.equal(d.totalOf(null), "");
 });
+
+// ── 완료 판정 · 작업자 이름 (2026-09-14) ─────────────────────────
+// 작성 중 배합 목록에서 "다 채운 초안"을 구분하고, 복구·재저장 때 작업자가
+// 조용히 비는 것을 막는 순수 헬퍼. 진행도(progressOf) 위에 얹힌 판정만 담당한다.
+
+test("isComplete: 단건 배합은 모든 자재에 계량값이 들어차야 완료다", () => {
+  const d = load();
+  assert.equal(d.isComplete("blend", { items: [{ actual_amount: "100.5" }, { actual_amount: "52.3" }] }), true);
+  assert.equal(d.isComplete("blend", { items: [{ actual_amount: "100.5" }, { actual_amount: "" }] }), false);
+  assert.equal(d.isComplete("blend", { items: [] }), false, "빈 초안(total=0)은 완료가 아니다");
+  assert.equal(d.isComplete("blend", null), false);
+});
+
+test("isComplete: 다중 계량은 모든 셀에 계량값이 들어차야 완료다", () => {
+  const d = load();
+  assert.equal(
+    d.isComplete("cont", { cells: [[{ actual: "10" }, { actual: "11" }], [{ actual: "12" }, { actual: "" }]] }),
+    false,
+  );
+  assert.equal(
+    d.isComplete("cont", { cells: [[{ actual: "10" }, { actual: "11" }], [{ actual: "12" }, { actual: "13" }]] }),
+    true,
+  );
+});
+
+test("workerOf: 작업자 이름을 trim 해서 돌려주고 없으면 빈 문자열이다(null 안전)", () => {
+  const d = load();
+  assert.equal(d.workerOf({ worker: " 이시현 " }), "이시현");
+  assert.equal(d.workerOf({}), "");
+  assert.equal(d.workerOf(null), "");
+});
+
+test("초안은 작업자 이름을 가공 없이 왕복시킨다(saveSlot → getSlot)", () => {
+  const d = load();
+  const st = makeStorage();
+  const draft = Object.assign(blendDraft(11, "제품", ago(MIN)), { worker: " 이시현 " });
+  const id = d.saveSlot("blend", draft, st);
+  const back = d.getSlot("blend", id, st);
+  assert.ok(back, "저장한 슬롯을 다시 읽을 수 있어야 한다");
+  assert.equal(back.worker, " 이시현 ", "저장·복원이 값을 다듬거나 비우면 안 된다");
+});

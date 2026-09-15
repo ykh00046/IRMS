@@ -263,3 +263,55 @@ test("[삭제] 확인창을 취소하면 아무것도 지우지 않는다", asyn
 
   assert.equal(d.readSlots("blend", env.win.localStorage).length, 1);
 });
+
+// ── 작업자 칸 · 계량 완료(저장 전) 표시 (2026-09-14) ────────────────
+// 계량을 다 마친 초안은 '저장하지 않으면 기록이 안 남는' 것이므로 목록에서 먼저
+// 눈에 띄어야 하고, 누가 계량했는지도 목록에서 바로 보여야 한다.
+
+// 칩 문구는 "저장 전" 하나다. "계량 완료"는 옆 진행도 칸(3 / 3 칸)과 겹치고, 칩이 줄바꿈되지
+// 않아 제품 칸 최소 폭을 늘려 930px 창에서 표가 40px 넘쳤다(작업자 칸 추가와 겹침, 2026-09-14 실측).
+const SAVE_PENDING_CHIP = '<span class="status-chip drafts-badge-warn">저장 전</span>';
+
+test("계량 완료 초안은 작업자 칸에 이름이 나오고 '저장 전' 칩이 붙는다", async () => {
+  const recipes = {
+    1: { recipe: { default_totals: [], tolerance_g: 0.05, anchor_material_id: null },
+         items: [{ material_code: "C1", material_name: "원료A" }] },
+  };
+  const env = makeEnv({ recipes });
+  env.drafts.saveSlot("blend", {
+    recipe_id: 1, product_name: "완료제품", savedAt: ago(60000), schema: 2, worker: "이시현",
+    materials: [{ code: "C1", name: "원료A" }],
+    items: [{ actual_amount: "10", material_lot: "" }],
+    recipeMeta: { default_totals: [], tolerance_g: 0.05, anchor_material_id: null },
+  }, env.win.localStorage);
+
+  env.domListeners.DOMContentLoaded();
+  await flush();
+  await flush();
+
+  const html = env.elements.get("drafts-body").innerHTML;
+  assert.ok(html.includes("<td>이시현</td>"), "작업자 칸에 계량자 이름");
+  assert.ok(html.includes(SAVE_PENDING_CHIP), "완료·미저장 칩");
+});
+
+test("미완료·작업자 없는 초안은 작업자 칸이 '-'이고 '저장 전' 칩이 없다", async () => {
+  const recipes = {
+    1: { recipe: { default_totals: [], tolerance_g: 0.05, anchor_material_id: null },
+         items: [{ material_code: "C1", material_name: "원료A" }] },
+  };
+  const env = makeEnv({ recipes });
+  env.drafts.saveSlot("blend", {
+    recipe_id: 1, product_name: "미완료제품", savedAt: ago(60000), schema: 2,
+    materials: [{ code: "C1", name: "원료A" }],
+    items: [{ actual_amount: "", material_lot: "" }],
+    recipeMeta: { default_totals: [], tolerance_g: 0.05, anchor_material_id: null },
+  }, env.win.localStorage);
+
+  env.domListeners.DOMContentLoaded();
+  await flush();
+  await flush();
+
+  const html = env.elements.get("drafts-body").innerHTML;
+  assert.ok(html.includes("<td>-</td>"), "작업자 없으면 '-'");
+  assert.ok(!html.includes(SAVE_PENDING_CHIP), "미완료면 '저장 전' 칩이 없다");
+});

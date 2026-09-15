@@ -5,7 +5,7 @@
 {% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260914a" />
 {% endblock %}
 
 {% block content %}
@@ -17,6 +17,15 @@
           <div class="blend-draft-notice" id="blend-draft-notice" hidden>
             <div class="blend-draft-notice-body" id="blend-draft-notice-body"></div>
             <button type="button" class="btn btn-sm" id="blend-draft-notice-close">확인</button>
+          </div>
+          <!-- 재진입 안내 · 계량을 다 마치고도 저장하지 않은 초안이 이 PC에 남아 있을 때
+               보인다. 목록 화면으로 바로 갈 수 있게 한다(토스트는 사라지므로 화면에 남긴다). -->
+          <div class="blend-draft-notice" id="blend-unsaved-drafts" hidden>
+            <div class="blend-draft-notice-body" id="blend-unsaved-drafts-body"></div>
+            <div class="blend-unsaved-drafts-actions">
+              <a class="btn btn-sm accent" href="/blend/drafts">목록 열기</a>
+              <button type="button" class="btn btn-sm" id="blend-unsaved-drafts-close">닫기</button>
+            </div>
           </div>
           <div class="blend-top-grid">
             <section class="panel">
@@ -146,6 +155,7 @@
                 <canvas id="blend-worker-sign" class="blend-sign-pad" width="240" height="70"></canvas>
                 <button class="btn btn-sm" id="blend-worker-sign-clear" type="button">지우기</button>
               </div>
+              <p class="blend-unsaved-note" id="blend-unsaved-note" hidden>모든 자재 계량 완료 · 저장을 눌러야 기록이 남습니다</p>
               <p class="login-error" id="blend-error" hidden></p>
               <button class="btn accent" id="blend-save" type="button">배합 실적 저장</button>
             </div>
@@ -471,11 +481,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260910a"></script>
-    <script src="/static/js/blend_drafts.js?v=20260910a"></script>
-    <script src="/static/js/blend_window_guard.js?v=20260910a"></script>
-    <script src="/static/js/blend_lot_modal.js?v=20260910a"></script>
-    <script src="/static/js/blend.js?v=20260910a"></script>
+    <script src="/static/js/blend_lib.js?v=20260914a"></script>
+    <script src="/static/js/blend_drafts.js?v=20260914a"></script>
+    <script src="/static/js/blend_window_guard.js?v=20260914a"></script>
+    <script src="/static/js/blend_lot_modal.js?v=20260914a"></script>
+    <script src="/static/js/blend.js?v=20260914a"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

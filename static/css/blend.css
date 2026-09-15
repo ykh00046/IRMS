@@ -281,6 +281,13 @@
 .blend-draft-notice-list { margin: 2px 0 6px; padding-left: 1.2em; }
 .blend-draft-notice-list li { margin: 2px 0; font-variant-numeric: tabular-nums; }
 
+/* 계량은 끝났지만 저장 전 상태 안내 · 저장 버튼 근처에 상시 뜬다(저장하면 내려간다). */
+.blend-unsaved-note { margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--status-warning-bg); border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent); color: var(--status-warning); font-size: var(--fs-sm); font-weight: 600; }
+.blend-unsaved-note[hidden] { display: none; }
+
+/* 재진입 안내 상자의 버튼 줄 — 본문(body)과 나란히, 좁아지면 아래로 흘러 내려간다. */
+.blend-unsaved-drafts-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; flex: 0 0 auto; }
+
 /* LOT 확인 창의 보조 상자(사유 · 책임자 인증 · 기록된 LOT 후보) — 배합·다중 계량 공용.
    2026-08-04: 마크업에서 .ss-modal-body **안**으로 옮겼다(전에는 body 의 형제라 모달
    좌우 여백 밖으로 삐져나와 테두리에 붙었다 — CSS 추가 없이 해결). */

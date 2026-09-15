@@ -80,6 +80,10 @@
     const prog = drafts.progressOf(entry.kind, slot);
     const progText = prog.total ? `${prog.filled} / ${prog.total} 칸` : "-";
     const name = slot.product_name || "(제품명 없음)";
+    // 계량을 다 마치고도 저장하지 않은 초안 — 저울로 잰 값이 조용히 사라지는 일을 막으려
+    // 목록에서 먼저 눈에 띄어야 한다. 완료 판정은 blend_drafts.js isComplete 공용.
+    const completeChip = drafts.isComplete(entry.kind, slot)
+      ? chip("drafts-badge-warn", "저장 전") : "";
     // 같은 제품의 초안이 두 칸에 걸릴 수 있다 — 총 배합량까지 보여야 어느 작업인지 갈린다.
     const total = drafts.totalOf(slot);
     const totalHtml = total ? `<span class="drafts-total">총량 ${esc(total)}g</span>` : "";
@@ -89,7 +93,8 @@
     // 삭제 확인 문구에 쓸 제품명은 data 속성으로 따로 싣는다 — 셀 textContent 에는
     // 변경 배지·상세 문구가 섞여 있어 그대로 쓰면 확인창이 읽을 수 없게 된다.
     return `<tr data-kind="${esc(entry.kind)}" data-id="${esc(slot.id)}" data-name="${esc(name)}">`
-      + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${totalHtml}</div>${changeHtml}</td>`
+      + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${totalHtml}${completeChip}</div>${changeHtml}</td>`
+      + `<td>${esc(drafts.workerOf(slot) || "-")}</td>`
       + `<td>${esc(entry.label)}</td>`
       + `<td class="drafts-progress">${esc(progText)}</td>`
       + `<td class="drafts-saved">`
@@ -121,11 +126,13 @@
     const rows = entries.map((e, i) => rowHtml(e, changeCellHtml(e.kind, e.slot, recipes[i])));
 
     $("drafts-body").innerHTML = rows.join("");
-    // 건수 — 다른 목록 화면과 같은 요약 줄. 임박 건이 있으면 함께 알린다.
+    // 건수 — 다른 목록 화면과 같은 요약 줄. '저장 전'(완료·미저장) 건과 임박 건을 알린다.
     const summary = $("drafts-summary");
     if (summary) {
       const soon = entries.filter((e) => drafts.expiryText(e.slot).soon).length;
+      const n = entries.filter((e) => drafts.isComplete(e.kind, e.slot)).length;
       summary.textContent = `${entries.length}건`
+        + (n ? ` · 저장 전 ${n}건` : "")
         + (soon ? ` · ${soon}건은 곧 사라집니다` : "");
       summary.classList.toggle("drafts-summary-warn", soon > 0);
     }
