@@ -238,18 +238,38 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el) el.classList.toggle("needs-action", !!on);
   }
 
+  // 조치가 필요한 항목은 왼쪽 카드 칸(#dash-act-list)으로, 정상 항목은 오른쪽 '이상 없음'
+  // 목록(#dash-ok-list)으로 옮긴다(2026-09-15 시안 흡수). 요소를 옮기기만 하므로 id·링크·값
+  // 갱신은 그대로다. data-order 로 두 칸 안의 순서를 지키고, 정보 줄(is-info)은 늘 오른쪽이다.
+  function arrangeAttention() {
+    const actList = document.getElementById("dash-act-list");
+    const okList = document.getElementById("dash-ok-list");
+    if (!actList || !okList) return;
+    const items = [...document.querySelectorAll(".dash-act[data-order]")]
+      .sort((a, b) => Number(a.dataset.order) - Number(b.dataset.order));
+    let actionCount = 0;
+    items.forEach((el) => {
+      const needs = el.classList.contains("needs-action") && !el.classList.contains("is-info");
+      if (needs) actionCount += 1;
+      (needs ? actList : okList).appendChild(el);
+    });
+    const empty = document.getElementById("dash-act-empty");
+    if (empty) empty.hidden = actionCount > 0;
+  }
+
   function renderAttention(data) {
     const anomaly = data.viscosity_anomaly;
     const anomalyEl = document.getElementById("card-visc-anomaly");
     // /summary 실패 시 viscosity_anomaly 가 undefined — 그러면 덮어쓰지 않고 마지막 값 유지.
+    // 단위를 값에 붙인다 — '이상 없음' 목록의 한 줄에서는 설명 줄이 숨겨져 숫자만 남는다.
     if (anomaly !== undefined && anomalyEl) {
-      anomalyEl.textContent = fmtNumber(anomaly);
+      anomalyEl.textContent = `${fmtNumber(anomaly)}건`;
       markAct("act-visc-anomaly", Number(anomaly) > 0);
     }
 
     const due = data.viscosity_due_today || [];
     const dueEl = document.getElementById("card-visc-due");
-    if (dueEl) dueEl.textContent = fmtNumber(due.length);
+    if (dueEl) dueEl.textContent = `${fmtNumber(due.length)}건`;
     // 대상 코드는 3개까지 + '외 N건' — 길어지면 카드 높이가 들쭉날쭉해진다.
     const codesEl = document.getElementById("card-visc-due-codes");
     if (codesEl) {
@@ -273,7 +293,11 @@ document.addEventListener("DOMContentLoaded", () => {
       markAct("act-lot-file", true);
     } else {
       const days = file.stale_days;
-      if (staleEl) staleEl.textContent = days === null || days === undefined ? "-" : `${days}일 전`;
+      // 오늘 받은 파일은 '0일 전'보다 '오늘'이 읽힌다('이상 없음' 한 줄에서 특히).
+      if (staleEl) {
+        staleEl.textContent = days === null || days === undefined ? "-"
+          : Number(days) === 0 ? "오늘" : `${days}일 전`;
+      }
       if (fileEl) fileEl.textContent = file.file_name || "-";
       // 3영업일 넘게 지난 파일로 원료 LOT 을 판정하고 있으면 알린다.
       // (주말 보정 — 금요일 파일이 월요일에 달력 3일로 경고 뜨는 오탐 방지)
@@ -289,6 +313,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ? `마지막 ${data.last_blend_at}`
         : "기록 없음";
     }
+    // 판정(markAct)이 모두 끝난 뒤에 두 칸으로 나눈다.
+    arrangeAttention();
   }
 
   // partialFail: 어떤 요청이든 실패가 섞이면 '일부 갱신 실툐' 경고 톤(stale) 으로.

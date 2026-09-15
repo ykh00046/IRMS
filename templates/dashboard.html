@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260915a" />
 {% endblock %}
 
 {% block content %}
@@ -18,29 +18,46 @@
             <span class="dash-section-note">기간 선택과 무관 · 현재 상태</span>
             <span class="dash-fail muted small" id="dash-attention-fail" hidden>갱신 실패</span>
           </div>
-          <div class="dash-attention-grid">
-            <a class="panel dash-act" id="act-visc-due" href="/viscosity">
-              <span class="dash-act-label">오늘 점도 미입력</span>
-              <strong class="dash-act-value" id="card-visc-due" aria-live="polite">-</strong>
-              <span class="dash-act-note" id="card-visc-due-codes">알림 대상 기준</span>
-            </a>
-            <a class="panel dash-act" id="act-visc-anomaly" href="/viscosity">
-              <span class="dash-act-label">점도 이상</span>
-              <strong class="dash-act-value" id="card-visc-anomaly" aria-live="polite">-</strong>
-              <span class="dash-act-note">건 · 최신 연도</span>
-            </a>
-            {# 자재 LOT 기준 파일이 낡으면 배합 화면의 원료 LOT 검증이 낡은 재고로
-               판정한다. 그 사실을 알려면 자재 LOT 화면까지 들어가야 했다. #}
-            <a class="panel dash-act" id="act-lot-file" href="/materials?tab=lots">
-              <span class="dash-act-label">자재 LOT 기준 파일</span>
-              <strong class="dash-act-value" id="card-lot-stale" aria-live="polite">-</strong>
-              <span class="dash-act-note" id="card-lot-file">-</span>
-            </a>
-            <a class="panel dash-act" id="act-today" href="/status">
-              <span class="dash-act-label">오늘 배합</span>
-              <strong class="dash-act-value" id="card-today-count" aria-live="polite">-</strong>
-              <span class="dash-act-note" id="card-last-blend">-</span>
-            </a>
+          {# 2026-09-15 시안 흡수 · 네 항목이 값이 0이어도 같은 크기로 나란히 있어 볼 것이
+             드러나지 않았다. 조치가 필요한 항목만 왼쪽 큰 카드로 올리고, 정상 항목은 오른쪽
+             '이상 없음' 목록에 한 줄로 모은다. 요소 이동은 dashboard.js arrangeAttention 이 한다
+             (id·링크·값 갱신은 그대로). data-order 는 두 칸 안의 순서다. #}
+          <div class="dash-attention-layout">
+            <div class="dash-attention-grid" id="dash-act-list">
+              <p class="dash-act-empty" id="dash-act-empty" hidden>지금 조치할 항목이 없습니다</p>
+              <a class="panel dash-act" id="act-visc-due" href="/viscosity" data-order="1">
+                <span class="dash-ok-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg></span>
+                <span class="dash-act-label">오늘 점도 미입력</span>
+                <strong class="dash-act-value" id="card-visc-due" aria-live="polite">-</strong>
+                <span class="dash-act-note" id="card-visc-due-codes">알림 대상 기준</span>
+              </a>
+              <a class="panel dash-act is-error" id="act-visc-anomaly" href="/viscosity" data-order="2">
+                <span class="dash-ok-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg></span>
+                <span class="dash-act-label">점도 이상</span>
+                <strong class="dash-act-value" id="card-visc-anomaly" aria-live="polite">-</strong>
+                <span class="dash-act-note">최신 연도 기준</span>
+              </a>
+              {# 자재 LOT 기준 파일이 낡으면 배합 화면의 원료 LOT 검증이 낡은 재고로
+                 판정한다. 그 사실을 알려면 자재 LOT 화면까지 들어가야 했다. #}
+              <a class="panel dash-act" id="act-lot-file" href="/materials?tab=lots" data-order="3">
+                <span class="dash-ok-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg></span>
+                <span class="dash-act-label">자재 LOT 기준 파일</span>
+                <strong class="dash-act-value" id="card-lot-stale" aria-live="polite">-</strong>
+                <span class="dash-act-note" id="card-lot-file">-</span>
+              </a>
+            </div>
+            <div class="panel dash-ok-panel">
+              <span class="dash-ok-title">이상 없음</span>
+              <div class="dash-ok-list" id="dash-ok-list">
+                {# 오늘 배합은 조치 대상이 아니다 · 늘 이 목록의 정보 줄로 둔다(is-info). #}
+                <a class="panel dash-act is-info" id="act-today" href="/status" data-order="9">
+                  <span class="dash-ok-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="3.5"/></svg></span>
+                  <span class="dash-act-label">오늘 배합</span>
+                  <strong class="dash-act-value" id="card-today-count" aria-live="polite">-</strong>
+                  <span class="dash-act-note" id="card-last-blend">-</span>
+                </a>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -161,6 +178,6 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260910a"></script>
-    <script src="/static/js/dashboard.js?v=20260910a"></script>
+    <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260915a"></script>
+    <script src="/static/js/dashboard.js?v=20260915a"></script>
 {% endblock %}
