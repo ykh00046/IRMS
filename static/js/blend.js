@@ -125,6 +125,10 @@
     // 레시피 변경·저장 시 [] 로 초기화, '방금 증량 취소' 시 마지막 1건 pop.
     // length>=2 이면 3회째 증량 제안 자체가 차단된다(책임자 폐기 협의 유도).
     rescaleEvents: [],
+    // 계량 완료 저장 확인 창('계량이 끝났습니다') 자동 제안을 작업자가 '다시 보기'로
+    // 닫았다. 이 배합에서는 다시 자동으로 뜨지 않는다(수동 저장 버튼은 언제나 연다).
+    // 레시피 변경·저장 성공·초안 복구 시 false 로 되돌린다.
+    saveOfferDismissed: false,
   };
 
   // ── 저울 에이전트(현장 PC의 127.0.0.1:8787, scale_agent/) ────────
@@ -584,10 +588,11 @@
   // 부족 흐름은 이제 scale-state-modal 로 통합됐으므로 그 창이 떠 있을 때 PRINT 는 게이트가 버린다.
   function printBlockingModalVisible() {
     // scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
+    // save-confirm-modal: 저장 확인이 떠 있는 동안 저장 요청이 확정되지 않았으므로 버린다.
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal",
       "lot-invalid-modal", "scale-state-modal",
-      "discard-ask-modal", "batch-discard-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "discard-ask-modal", "batch-discard-modal", "save-confirm-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -878,6 +883,7 @@
     // (그대로 두면 옛 키로 저장돼, 앞 요청이 사실 커밋돼 있었을 때 새 배합 대신 옛
     //  기록이 되돌아온다.)
     _saveRequestId = null;
+    state.saveOfferDismissed = false;  // 새 레시피 = 새 배합 · 저장 확인 자동 제안 다시 허용
     clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준 버튼).
@@ -1081,6 +1087,7 @@
       return;
     }
     state.draftSlotId = draft.id || null;
+    state.saveOfferDismissed = false;  // 이어서 하는 배합 · 완료 상태면 저장 확인 제안이 다시 뜬다
     // 레시피 목록이 아직이면 먼저 로드하고, 분류 필터를 전체로 되돌려 그 레시피 option 이
     // 반드시 존재하게 한다(분류로 걸러져 있으면 value 지정이 붙지 않는다).
     if (!state.recipes.length) {
@@ -3205,6 +3212,44 @@
       (it) => it.actual_amount !== "" && it.actual_amount != null,
     );
     note.hidden = !done;
+    if (done && !_unsavedWasDone) scheduleSaveOffer();
+    _unsavedWasDone = done;
+  }
+
+  // ── 계량 완료 → 저장 확인 창 자동 제안 ──────────────────────
+  // 2026-09-12 사고: 자재 전부를 계량하고도 저장을 누르지 않아 기록이 남지 않았다.
+  // 계량이 '끝나는 순간'(미완료→완료 전환)에 저장 확인 창을 한 번 띄운다. 창을 닫은
+  // 뒤에도 노란 안내(blend-unsaved-note)는 그대로 남는다. '다시 보기'로 닫으면 이 배합에서는
+  // 계량값을 고쳐 다시 완료되어도 자동으로 뜨지 않는다(saveOfferDismissed). 저장 버튼은 언제나 연다.
+  let _unsavedWasDone = false;
+
+  function scheduleSaveOffer() { setTimeout(maybeOfferSave, 500); }
+
+  function maybeOfferSave() { if (saveOfferReady()) saveBlend(); }
+
+  // 자동 제안이 떠도 되는가 — 저장 확인 창을 띄우기 전의 모든 조건을 조용히 확인한다
+  // (알림 없음·부작용 없음). 마지막 계량 직후에는 편차 경고·증량 제안·저울 상태 창이
+  // 먼저 열릴 수 있으므로, 그 창들이 닫힌 뒤에도 조건이 참일 때만 뜬다.
+  function saveOfferReady() {
+    if (!state.current || !state.current.recipe) return false;
+    if (_saving) return false;
+    if (state.saveOfferDismissed) return false;
+    if (window.IRMS && window.IRMS.blendWindowBlocked) return false;
+    if (printBlockingModalVisible()) return false;
+    const addWeigh = $("add-weigh-modal");
+    if (addWeigh && !addWeigh.hidden) return false;
+    if (state.pendingRescale) return false;
+    if (state.addModeIdx != null) return false;
+    if (!(state.items.length > 0)) return false;
+    if (!state.items.every((it) => it.actual_amount !== "" && it.actual_amount != null)) return false;
+    if (missingLotNames(state.items).length !== 0) return false;
+    if (state.items.some((it, i) =>
+      i !== state.anchorIndex && !varianceVerdict(Number(it.actual_amount), it.theory_amount, state.toleranceG).within
+    )) return false;
+    if (state.current.recipe.use_reactor && !$("blend-reactor").value) return false;
+    if (!(Number($("blend-total").value) > 0)) return false;
+    if (!lockedWorkerName()) return false;
+    return true;
   }
 
   // 총 배합량 잠금 — 자재 실제량이 하나라도 입력되면 총 배합량을 바꿀 수 없다
@@ -3280,6 +3325,73 @@
       }
     } catch (e) { /* 구형 브라우저 · 아래 폴백 */ }
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  // ── 저장 확인 창(계량이 끝났습니다) ──────────────────────────
+  // 저장 직전 작업자 확인을 브라우저 window.confirm 대신 화면 한가운데 창으로 한다.
+  // 바깥 클릭·Esc 로는 닫히지 않고 버튼으로만 닫는다('다시 보기' 취소 · '저장' 확정).
+  // 창 요소가 없는 환경(테스트·구 템플릿 캐시)에서는 예전 window.confirm 으로 폴백.
+  let _saveConfirmBound = false;
+  let _saveConfirmResolve = null;
+
+  function _settleSaveConfirm(result) {
+    const resolve = _saveConfirmResolve;
+    _saveConfirmResolve = null;
+    if (resolve) resolve(result);
+  }
+
+  // 저장 창에 보일 제품 LOT — 저장 순간 서버가 매기는 번호의 지금 기준 예정값. 화면 상단
+  // 미리보기(blend-lot-preview)는 레시피·날짜를 바꿀 때만 갱신돼 그사이 다른 PC 의 저장을
+  // 반영하지 못하므로, 창을 여는 시점에 새로 받는다. 실패하면 "" (창에는 "-").
+  async function fetchNextLot() {
+    if (!state.current || !state.current.recipe) return "";
+    try {
+      const data = await request("/blend/next-lot", {
+        query: { product: state.current.recipe.product_name, date: $("blend-date").value || todayISO() },
+      });
+      return String((data && data.next_lot) || "");
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function confirmSaveModal(info) {
+    const modal = $("save-confirm-modal");
+    if (!modal) {
+      return Promise.resolve(window.confirm(`작업자 '${info.worker}' 이름으로 저장합니다. 맞습니까?`));
+    }
+    if (!modal.hidden) return Promise.resolve(false);  // 이미 열려 있으면 새 확인을 무시한다
+    const productEl = $("save-confirm-product");
+    const workerEl = $("save-confirm-worker");
+    const lotEl = $("save-confirm-lot");
+    const totalEl = $("save-confirm-total");
+    if (productEl) productEl.textContent = info.product || "";
+    if (workerEl) workerEl.textContent = info.worker || "";
+    if (lotEl) lotEl.textContent = info.lot || "-";
+    if (totalEl) totalEl.textContent = info.totalText || "";
+    // 버튼 리스너는 한 번만 단다(모달 요소는 화면 수명 동안 같은 것을 쓴다).
+    if (!_saveConfirmBound) {
+      _saveConfirmBound = true;
+      const okBtn = $("save-confirm-ok");
+      if (okBtn) okBtn.addEventListener("click", (event) => {
+        // 키보드(Enter/Space)가 만든 클릭은 detail 이 0이다 — 확인 없이 흘러가는
+        // 저장을 막으려는 창이므로 마우스·터치 클릭만 저장으로 받는다.
+        if (event.detail === 0) return;
+        modal.hidden = true;
+        _settleSaveConfirm(true);
+      });
+      const reviewBtn = $("save-confirm-review");
+      if (reviewBtn) reviewBtn.addEventListener("click", () => {
+        modal.hidden = true;
+        _settleSaveConfirm(false);
+      });
+    }
+    return new Promise((resolve) => {
+      _saveConfirmResolve = resolve;
+      modal.hidden = false;
+      const focusBtn = $("save-confirm-review");
+      if (focusBtn) focusBtn.focus();  // 기본 포커스는 취소 쪽 · Enter 로 잘못 저장하지 않는다
+    });
   }
 
   // 중복 저장 가드는 **첫 await 앞**에서 세운다. 예전에는 `if (_saving) return` 검사만
@@ -3404,7 +3516,9 @@
     const overrideNote = buildOverrideNote();
     const lotOverrides = buildLotOverrides().concat(unacked);
     // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
-    if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 저장합니다. 맞습니까?`)) return;
+    // (화면 중앙 저장 확인 창 · '다시 보기'로 닫으면 이 배합의 자동 제안은 끈다)
+    const lotPreview = await fetchNextLot();
+    if (!(await confirmSaveModal({ product: state.current.recipe.product_name, worker: state.sessionWorker, lot: lotPreview, totalText: `${fmt(total, dp())} g` }))) { state.saveOfferDismissed = true; return; }
     // 이 저장 시도의 멱등 키 — 성공할 때까지 재사용한다(재시도 = 같은 요청).
     if (!_saveRequestId) _saveRequestId = newRequestId();
     const body = {
@@ -3457,6 +3571,7 @@
       const rec = await request("/blend/records", { method: "POST", body });
       notify(`배합 실적 저장: ${rec.product_lot} (작업자: ${rec.worker})`, "success");
       _saveRequestId = null;   // 저장 성공 → 다음 배합은 새 멱등 키
+      state.saveOfferDismissed = false;  // 저장 성공 → 다음 배합 자동 제안 다시 허용
       clearDraft();  // 저장 완료 → 임시 저장 삭제
       // 실제량/LOT 초기화 (연속 작업 편의). 기준 자재 모드면 이론량·총량도 함께 초기화해
       // 다음 배합을 '기준 자재 먼저 계량' 상태로 되돌린다. 이월 표식도 함께 지운다.

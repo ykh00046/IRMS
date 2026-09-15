@@ -102,6 +102,10 @@
     //  새로고침 전까지 계속 막혔다.)
     // 앞 단계 기록에 없는 LOT '확인하고 진행' — (자재명::LOT) → 사유(빈 값 가능).
     lotOverrides: {},
+    // 계량 완료 저장 확인 창('계량이 끝났습니다') 자동 제안을 작업자가 '다시 보기'로
+    // 닫았다. 이 화면에서는 다시 자동으로 뜨지 않는다(수동 저장 버튼은 언제나 연다).
+    // 레시피 변경·초안 복구 시 false 로 되돌린다(blend.js saveOfferDismissed 와 동일).
+    saveOfferDismissed: false,
   };
 
   // ── 저울 에이전트(현장 PC 127.0.0.1:8787) — 배합 화면과 동일 연동 ──
@@ -504,6 +508,7 @@
       return;
     }
     state.draftSlotId = draft.id || null;
+    state.saveOfferDismissed = false;  // 이어서 하는 작업 · 완료 상태면 저장 확인 제안이 다시 뜬다
     // 레시피 목록이 아직이면 먼저 로드해 select 옵션이 존재하게 한다(값 세팅이 붙도록).
     if (!state.recipes.length) {
       try { await loadRecipes(); } catch (_e) { /* onRecipeChange가 id로 직접 조회 */ }
@@ -652,9 +657,10 @@
   // 흘렀다(현장 실측 2026-08-04 — "포커스를 안 뺏으니 안전"이라던 이전 판단은 틀렸다).
   function printBlockingModalVisible() {
     // cont-scale-state-modal: 저울 상태(추가분/누계) 선택 전의 PRINT 는 해석할 방법이 없다.
+    // cont-save-confirm-modal: 저장 확인이 떠 있는 동안 저장이 확정되지 않았으므로 버린다.
     return ["cont-rescale-approve-modal", "cont-manual-approve-modal", "cont-rescale-modal",
       "cont-discard-modal", "cont-rescale-block-modal",
-      "cont-lot-invalid-modal", "cont-scale-state-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "cont-lot-invalid-modal", "cont-scale-state-modal", "cont-save-confirm-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -1002,6 +1008,7 @@
     // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다
     // (blend.js 와 동일 규약).
     _saveRequestId = null;
+    state.saveOfferDismissed = false;  // 새 레시피 = 새 작업 · 저장 확인 자동 제안 다시 허용
     rebuildCells();
     rebuildLotRescale();
     clearContRescaleSummary();
@@ -1661,28 +1668,71 @@
     const note = $("cont-unsaved-note");
     const rows = (state.materials || []).length;
     const lots = state.lotCount || 0;
+    let done = false;   // 조기 반환 경로(표 없음)에서는 완료가 아니다
     if (!rows || !lots) {
       el.hidden = true;
       if (note) note.hidden = true;   // 레시피가 없으면 '저장 전' 안내도 내려간다
-      return;
+    } else {
+      let filled = 0;
+      for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < lots; j++) {
+          const cell = state.cells[i] && state.cells[i][j];
+          if (cell && cell.actual !== "" && cell.actual !== null && cell.actual !== undefined) filled += 1;
+        }
+      }
+      const total = rows * lots;
+      done = filled === total;
+      el.hidden = false;
+      el.classList.toggle("done", done);
+      el.textContent = done
+        ? `계량 완료 · ${total}칸 모두 입력되었습니다.`
+        : `계량 ${filled} / ${total} 칸 · ${total - filled}칸 남음`;
+      // 다 계량했지만 저장 전 상태 안내 — 기록은 저장을 눌러야 남는다(저장 후 초기화·
+      // 레시피 변경 뒤에는 내려간다). PRINT·손입력·복구 어느 경로든 이 함수가 체감한다.
+      if (note) note.hidden = !(state.current && rows && lots && done);
     }
-    let filled = 0;
-    for (let i = 0; i < rows; i++) {
-      for (let j = 0; j < lots; j++) {
+    // 계량 완료 전환 순간 저장 확인 창 자동 제안(2026-09-12 미저장 사고 · blend.js 와 동일).
+    // 레시피가 없는 조기 반환 경로도 doneNow=false 로 항상 갱신한다.
+    const doneNow = Boolean(state.current) && done;
+    if (doneNow && !_contWasDone) scheduleSaveOffer();
+    _contWasDone = doneNow;
+  }
+
+  // ── 계량 완료 → 저장 확인 창 자동 제안 ──────────────────────
+  // blend.js 와 같은 목적(계량만 끝내고 저장을 잊는 사고 방지)의 다중 계량 판.
+  // 모든 칸이 채워지는 순간 한 번 띄우고, '다시 보기'로 닫으면 이 작업에서는 다시
+  // 자동으로 뜨지 않는다. _saving/_addWeighCell 은 아래쪽 let 선언을 호출 시점에 읽는다.
+  let _contWasDone = false;
+
+  function scheduleSaveOffer() { setTimeout(maybeOfferSave, 500); }
+
+  function maybeOfferSave() { if (saveOfferReady()) save(); }
+
+  // 자동 제안이 떠도 되는가 — 조용히 조건만 확인한다(알림 없음·부작용 없음).
+  // saveInner 의 저장 가능 판정(빈 칸·편차·LOT·반응기·총량·작업자)을 미리 거울해,
+  // 확인 창이 떴다가 곧바로 오류만 남기고 닫히는 일이 없게 한다.
+  function saveOfferReady() {
+    if (!state.current || !state.current.recipe) return false;
+    if (state.anchorBlocked) return false;
+    if (_saving) return false;
+    if (state.saveOfferDismissed) return false;
+    if (window.IRMS && window.IRMS.blendWindowBlocked) return false;
+    if (printBlockingModalVisible()) return false;
+    if (_addWeighCell != null) return false;
+    if (state.pendingContRescale) return false;
+    for (let i = 0; i < state.materials.length; i++) {
+      for (let j = 0; j < state.lotCount; j++) {
         const cell = state.cells[i] && state.cells[i][j];
-        if (cell && cell.actual !== "" && cell.actual !== null && cell.actual !== undefined) filled += 1;
+        if (!cell) return false;
+        if (cell.actual === "" || cell.actual == null) return false;
+        if (Number(cell.actual) > 0 && !(cell.lot || "").trim()) return false;
+        if (!varianceVerdict(Number(cell.actual), theoryFor(i, j) || 0, state.toleranceG).within) return false;
       }
     }
-    const total = rows * lots;
-    const done = filled === total;
-    el.hidden = false;
-    el.classList.toggle("done", done);
-    el.textContent = done
-      ? `계량 완료 · ${total}칸 모두 입력되었습니다.`
-      : `계량 ${filled} / ${total} 칸 · ${total - filled}칸 남음`;
-    // 다 계량했지만 저장 전 상태 안내 — 기록은 저장을 눌러야 남는다(저장 후 초기화·
-    // 레시피 변경 뒤에는 내려간다). PRINT·손입력·복구 어느 경로든 이 함수가 체감한다.
-    if (note) note.hidden = !(state.current && rows && lots && done);
+    if (state.current.recipe.use_reactor && !$("cont-reactor").value) return false;
+    if (!(state.total > 0)) return false;
+    if (!lockedWorkerName()) return false;
+    return true;
   }
 
   // 저장에서 빈 칸이 걸렸을 때 그 칸을 표에서 짚어 준다 — 문구로 이름만 나열하면
@@ -2547,6 +2597,89 @@
     return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
 
+  // ── 저장 확인 창(계량이 끝났습니다) ──────────────────────────
+  // 저장 직전 작업자 확인을 브라우저 window.confirm 대신 화면 한가운데 창으로 한다
+  // (배합 화면 blend.js confirmSaveModal 과 같은 규칙의 다중 계량 판). 바깥 클릭·Esc
+  // 로는 닫히지 않고 버튼으로만 닫는다('다시 보기' 취소 · '저장' 확정). 창 요소가 없는
+  // 환경에서는 예전 window.confirm 으로 폴백.
+  let _saveConfirmBound = false;
+  let _saveConfirmResolve = null;
+
+  function _settleSaveConfirm(result) {
+    const resolve = _saveConfirmResolve;
+    _saveConfirmResolve = null;
+    if (resolve) resolve(result);
+  }
+
+  // 저장 창에 보일 로트별 제품 LOT — 첫 번호를 창을 여는 시점에 새로 받아 로트 순서대로
+  // 순번을 붙인다(서버도 같은 순서로 매긴다). 로트 머리글 미리보기는 레시피·날짜를 바꿀
+  // 때만 갱신돼 그사이 다른 PC 의 저장을 반영하지 못한다. 실패하면 번호 자리에 "-".
+  async function fetchLotPreviews() {
+    const out = Array.from({ length: state.lotCount }, () => "-");
+    if (!state.current || !state.current.recipe) return out;
+    try {
+      const data = await request("/blend/next-lot", {
+        query: { product: state.current.recipe.product_name, date: $("cont-date").value || todayISO() },
+      });
+      const m = String((data && data.next_lot) || "").match(/^(.*?)(\d{2})$/);
+      if (m) {
+        const seq = Number(m[2]);
+        for (let j = 0; j < state.lotCount; j++) out[j] = `${m[1]}${String(seq + j).padStart(2, "0")}`;
+      }
+    } catch (_e) { /* 번호 없이 "-" 로 보여 준다 */ }
+    return out;
+  }
+
+  function confirmSaveModal(info) {
+    const modal = $("cont-save-confirm-modal");
+    if (!modal) {
+      return Promise.resolve(window.confirm(`작업자 '${info.worker}' 이름으로 ${state.lotCount}개 로트를 저장합니다. 맞습니까?`));
+    }
+    if (!modal.hidden) return Promise.resolve(false);  // 이미 열려 있으면 새 확인을 무시한다
+    const productEl = $("cont-save-confirm-product");
+    const workerEl = $("cont-save-confirm-worker");
+    const lotsEl = $("cont-save-confirm-lots");
+    if (productEl) productEl.textContent = info.product || "";
+    if (workerEl) workerEl.textContent = info.worker || "";
+    if (lotsEl) {
+      // 로트별 한 줄(제품 LOT · 로트 총량). 제품명·LOT 에 어떤 문자가 와도 안전하게 textContent 로만 채운다.
+      lotsEl.textContent = "";
+      (info.lots || []).forEach((row) => {
+        const li = document.createElement("li");
+        const lot = document.createElement("span");
+        lot.className = "save-confirm-lot";
+        lot.textContent = row.lot || "-";
+        const total = document.createElement("span");
+        total.textContent = row.totalText || "";
+        li.append(lot, total);
+        lotsEl.appendChild(li);
+      });
+    }
+    // 버튼 리스너는 한 번만 단다(모달 요소는 화면 수명 동안 같은 것을 쓴다).
+    if (!_saveConfirmBound) {
+      _saveConfirmBound = true;
+      const okBtn = $("cont-save-confirm-ok");
+      if (okBtn) okBtn.addEventListener("click", (event) => {
+        // 키보드(Enter/Space)가 만든 클릭은 detail 이 0이다 — 확인 없이 흘러가는
+        // 저장을 막으려는 창이므로 마우스·터치 클릭만 저장으로 받는다.
+        if (event.detail === 0) return;
+        modal.hidden = true;
+        _settleSaveConfirm(true);
+      });
+      const reviewBtn = $("cont-save-confirm-review");
+      if (reviewBtn) reviewBtn.addEventListener("click", () => {
+        modal.hidden = true;
+        _settleSaveConfirm(false);
+      });
+    }
+    return new Promise((resolve) => {
+      _saveConfirmResolve = resolve;
+      modal.hidden = false;
+      const focusBtn = $("cont-save-confirm-review");
+      if (focusBtn) focusBtn.focus();  // 기본 포커스는 취소 쪽 · Enter 로 잘못 저장하지 않는다
+    });
+  }
+
   // 중복 저장 가드는 **첫 await 앞**에서 세운다 — 예전에는 `_saving = true` 가 작업자
   // 교대·미등록 LOT 조회 await 뒤에 있어, 그 사이 재클릭이면 N로트가 두 벌 생겼다.
   async function save() {
@@ -2660,7 +2793,12 @@
         }
       }
     }
-    if (!window.confirm(`작업자 '${state.sessionWorker}' 이름으로 ${state.lotCount}개 로트를 저장합니다. 맞습니까?`)) return;
+    // 저장 직전 작업자 확인 — 교대 잊고 앞사람 이름으로 저장되는 것 차단
+    // (화면 중앙 저장 확인 창 · '다시 보기'로 닫으면 이 작업의 자동 제안은 끈다)
+    // 로트별 한 줄 — 제품 LOT(예정)과 그 로트의 총량. 증량된 로트는 lotTotal(j) 로 그 로트 총량이 나온다.
+    const lotNos = await fetchLotPreviews();
+    const lotRows = lotNos.map((lot, j) => ({ lot, totalText: `${fmt(lotTotal(j), 2)} g` }));
+    if (!(await confirmSaveModal({ product: state.current.recipe.product_name, worker: state.sessionWorker, lots: lotRows }))) { state.saveOfferDismissed = true; return; }
     // 이 저장 시도의 멱등 키 — 성공할 때까지 재사용(재시도 = 같은 요청).
     if (!_saveRequestId) _saveRequestId = newRequestId();
     // 승인된 미등록 LOT 이 저장에 포함되면 사유를 비고 앞에 남긴다(전 로트 공통 비고).

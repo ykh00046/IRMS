@@ -116,9 +116,15 @@ def test_unsaved_note_and_worker_column_ship_on_screens():
     blend = client.get("/blend").text
     assert 'id="blend-unsaved-note"' in blend
     assert 'id="blend-unsaved-drafts"' in blend
+    assert 'id="save-confirm-lot"' in blend
+    # 계량 완료 저장 확인 창 — 완료 순간·저장 버튼 모두 이 창으로 확인한다(2026-09-12 사고).
+    assert 'id="save-confirm-modal"' in blend
 
     cont = client.get("/blend/continuous").text
     assert 'id="cont-unsaved-note"' in cont
     assert 'id="cont-unsaved-drafts"' in cont
+    assert 'id="cont-save-confirm-lots"' in cont
+    # 계량 완료 저장 확인 창(다중 계량 판) — 배합 화면과 같은 규칙으로 뜬다.
+    assert 'id="cont-save-confirm-modal"' in cont
 
     assert "<th>작업자</th>" in client.get("/blend/drafts").text

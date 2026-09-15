@@ -1059,3 +1059,19 @@ body.dhr-open { overflow: hidden; }
   color: var(--status-error);
   border: 1px solid color-mix(in srgb, var(--status-error) 30%, transparent);
 }
+
+/* 계량 완료 저장 확인 창(save-confirm-modal) 본문 — 제품명·작업자·총 배합량 확인.
+   저장 버튼을 눌렀을 때와 계량 완료 자동 제안이 함께 쓴다(2026-09-12 미저장 사고). */
+.save-confirm-product { margin: 0 0 var(--space-3); font-size: var(--fs-xl); font-weight: 700; color: var(--text-primary); }
+.save-confirm-facts { margin: 0 0 var(--space-3); display: grid; gap: var(--space-2); }
+.save-confirm-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); }
+.save-confirm-facts dt { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+.save-confirm-facts dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.save-confirm-facts dd.save-confirm-worker { font-size: var(--fs-xl); font-weight: 700; }
+.save-confirm-guide { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+/* 제품 LOT(예정) — 번호는 저장 순간 서버가 매긴다. 다중 계량은 로트별 한 줄(LOT · 로트 총량),
+   로트가 많으면 목록 안에서만 스크롤한다(창이 화면 밖으로 길어지지 않게). */
+.save-confirm-lot { font-family: var(--font-mono); }
+.save-confirm-lots-label { margin: 0 0 var(--space-1); font-size: var(--fs-sm); color: var(--text-secondary); }
+.save-confirm-lots { margin: 0 0 var(--space-3); padding: 0; list-style: none; display: grid; gap: var(--space-1); max-height: calc(var(--space-12) * 4); overflow-y: auto; }
+.save-confirm-lots li { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
