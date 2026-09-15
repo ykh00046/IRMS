@@ -106,11 +106,9 @@
           </div>
         </section>
 
-        <div class="dash-section-head">
-          <h3 class="dash-section-title">기간 실적</h3>
-          <span class="dash-section-note" id="dash-period-note">위에서 고른 기간 기준</span>
-          <span class="dash-fail muted small" id="dash-period-fail" hidden>갱신 실패</span>
-        </div>
+        {# '기간 실적 · 위에서 고른 기간 기준' 제목 줄은 2026-09-15 삭제(사용자 결정) · 바로 위
+           기간 선택 막대와 카드가 붙어 있어 설명이 중복이었다. 갱신 실패는 상단 '일부 갱신
+           실패' 표시와 알림이 알린다(setSectionFail 은 요소가 없어도 안전). #}
         <section class="dashboard-cards">
           {# 기간 실적 3카드는 클릭하면 기간 분석(/insight)으로 간다. 조치 카드와 같은
              클릭 가능 스타일(dash-metric-link)로 재사용. #}
