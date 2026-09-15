@@ -216,16 +216,6 @@
   .dash-attention-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* 빠른 시작 — 현장 PC 의 홈에서 실제로 할 일로 가는 입구. */
-.dash-quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 18px;
-}
-
-.dash-quick-btn { min-width: 130px; justify-content: center; }
-
 .dash-auto {
   display: inline-flex;
   align-items: center;

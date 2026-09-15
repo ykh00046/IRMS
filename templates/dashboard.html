@@ -5,7 +5,7 @@
 {% block heading %}운영 대시보드{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260915a" />
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20260915b" />
 {% endblock %}
 
 {% block content %}
@@ -78,17 +78,8 @@
         </section>
         {% endif %}
 
-        {# 빠른 시작 · 현장 PC의 홈이 이 화면이라, 실제로 할 일로 가는 입구가
-           사이드바 글자 링크뿐이었다. 다른 묶음과 같은 제목 줄을 달아 준다. #}
-        <div class="dash-section-head">
-          <h3 class="dash-section-title">바로가기</h3>
-        </div>
-        <section class="dash-quick" id="dash-quick">
-          <a class="btn accent dash-quick-btn" href="/blend">배합 시작</a>
-          <a class="btn dash-quick-btn" href="/blend/continuous">다중 계량</a>
-          <a class="btn dash-quick-btn" href="/viscosity">점도 등록</a>
-          <a class="btn dash-quick-btn" href="/blend/drafts">작성 중 배합</a>
-        </section>
+        {# 바로가기(배합 시작·다중 계량·점도 등록·작성 중 배합)는 2026-09-15 삭제 ·
+           같은 입구가 사이드바에 모두 있어 중복이었다(사용자 결정). #}
 
         <section class="panel dashboard-filter-panel">
           <div class="dashboard-filter-row">
