@@ -188,6 +188,7 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         return _render(templates, request, "blend.html", {
             "current_user": get_current_user(request, required=False),
             "blend_worker": worker,
+            "test_mode": False,
         })
 
     @router.get("/blend/bulk", response_class=HTMLResponse)
@@ -198,6 +199,24 @@ def build_router(templates: Jinja2Templates) -> APIRouter:
         return _render(templates, request, "blend.html", {
             "current_user": get_current_user(request, required=False),
             "blend_worker": worker,
+            "test_mode": False,
+        })
+
+    @router.get("/blend/test", response_class=HTMLResponse)
+    def blend_test_page(request: Request) -> Response:
+        """시험 배합 — 주소는 따로, 화면 코드는 배합 화면 하나(계약 §7).
+
+        같은 템플릿·같은 JS 를 test_mode=True 로 렌더한다. 별도 화면을 복제하면 정식
+        배합의 통제(저울·LOT·편차·증량·서명)가 한쪽만 고쳐져 갈라진다. 작업자 가드도
+        /blend 와 동일하다 — 시험도 현장 계량이다.
+        """
+        worker = _blend_worker_or_bridge(request)
+        if not worker:
+            return _entry_redirect("/blend/login", request)
+        return _render(templates, request, "blend.html", {
+            "current_user": get_current_user(request, required=False),
+            "blend_worker": worker,
+            "test_mode": True,
         })
 
     @router.get("/blend/continuous", response_class=HTMLResponse)

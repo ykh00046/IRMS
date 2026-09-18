@@ -550,6 +550,27 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 위험 — 자재 코드는 이미 blend_details.material_code 로 스냅샷돼 있었다).
     # 레시피 개정에도 기록은 불변. NULL = 구 기록(스냅샷 이전) → 읽기 시 레시피 조인 폴백.
     ensure_column(connection, "blend_records", "product_code", "TEXT")
+    # 시험 배합(test-blend, 2026-09-18): 시험 목적의 배합(새 시도·양 조정·새 원재료)을
+    # 정식과 **같은 통제**(저울·LOT·편차·서명·수기·증량·폐기)로 기록하되, 정식 생산
+    # 통계·알림(대시보드·배합 분석·LOT 이력·다음 LOT·트레이)을 오염하지 않게 격리한다.
+    #   is_test         1 = 시험 기록. 기본 0 이므로 기존 행·정식 경로는 그대로다.
+    #   base_recipe_id  불러온 레시피(선택). **FK 강제 없음** — 레시피가 개정·삭제돼도
+    #                   기록은 남아야 한다(recipe_id 는 시험 기록에서 항상 NULL).
+    # 부분 인덱스만 둔다 — 시험은 소수라 is_test=1 쪽만 색인하면 충분하고, 격리 조건
+    # (COALESCE(is_test,0)=0)은 대부분의 행을 읽는 집계라 인덱스가 도움이 되지 않는다.
+    ensure_column(connection, "blend_records", "is_test", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "blend_records", "base_recipe_id", "INTEGER")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blend_records_is_test "
+        "ON blend_records(is_test) WHERE is_test = 1"
+    )
+    # 시험 배합 LOT 의 점도 측정 — 등록은 허용하되 알림·이상 통계·관리한계에서 제외한다
+    # (판정 로직은 패키지 C 소유. 여기서는 컬럼만 만든다).
+    ensure_column(connection, "viscosity_readings", "is_test", "INTEGER NOT NULL DEFAULT 0")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_visc_readings_is_test "
+        "ON viscosity_readings(is_test) WHERE is_test = 1"
+    )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_oversize_total "
         "ON blend_records(oversize_total) WHERE oversize_total = 1"

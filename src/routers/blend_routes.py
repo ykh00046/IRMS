@@ -9,7 +9,7 @@ Design: docs/02-design/features/blend-overhaul.design.md
 Endpoints:
     GET    /blend/recipes                     배합용 레시피 목록 (최신 개정판만)
     GET    /blend/recipes/{id}?total=...      비율·이론량 환산 (개정 자동 귀결)
-    GET    /blend/next-lot                    저장 시 부여될 제품 LOT 미리보기
+    GET    /blend/next-lot[?test=1]           저장 시 부여될 제품 LOT 미리보기(시험은 "T-" 접두)
     GET    /blend/workers                     작업자 목록(필터용)
     GET    /blend/analysis                    배합 분석 통합 집계(/insight 전용)
     GET    /blend/analysis/export             배합 분석 리포트 Excel(5시트)
@@ -18,7 +18,7 @@ Endpoints:
     GET    /blend/batch-details[/export]      배치 상세(+Excel)
     POST   /blend/records                     배합 실적 저장 (작업자 세션 필요)
     POST   /blend/records/bulk                일괄 생성
-    GET    /blend/records                     기록 조회(필터)
+    GET    /blend/records                     기록 조회(필터 + test=all|only|exclude)
     GET    /blend/records/export-all          전체 Excel 백업
     GET    /blend/records/dhr-batch           배합일지 일괄 PDF (한 파일로 병합)
     GET    /blend/records/dhr-zip             배합일지 ZIP (반제품명 폴더로 묶음)
@@ -342,11 +342,17 @@ def build_router() -> APIRouter:
     def blend_next_lot(
         product: str = Query(..., min_length=1),
         date: str | None = Query(default=None),
+        test: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """저장 시 실제 부여될 product_lot 미리보기({제품명}{YYMMDD}{순번:02d})."""
+        """저장 시 실제 부여될 product_lot 미리보기({제품명}{YYMMDD}{순번:02d}).
+
+        test=1 이면 시험 배합 규칙(`"T-" + 시험명` + YYMMDD + 순번)으로 미리 본다 —
+        접두가 달라 정식 순번과 자동 분리된다(계약 §3).
+        """
         work_date = date or utc_now_text()[:10]
-        return {"next_lot": blend_service.generate_product_lot(connection, product, work_date)}
+        name = blend_service.test_lot_base_name(product) if test else product
+        return {"next_lot": blend_service.generate_product_lot(connection, name, work_date)}
 
     @router.get("/blend/material-usage")
     def blend_material_usage(
@@ -658,6 +664,9 @@ def build_router() -> APIRouter:
     def blend_recent_product_lots(
         names: str = Query(default=""),
         limit: int = Query(default=5),
+        # 시험 배합 모드(계약 §5) — 기본은 정식(is_test=0) LOT 만, test=1 이면 시험 LOT 만.
+        # 시험 2차 배합의 원료 LOT 제안은 시험 LOT 끼리 이어야 한다(정식 LOT 오염 방지).
+        test: bool = Query(default=False),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         """반제품 원료 LOT 자동 제안용 — names 에 든 제품(반제품)명별 최근 product_lot.
@@ -689,9 +698,15 @@ def build_router() -> APIRouter:
             return {"items": items}
         # IN (?, ?, ...) 자리표시자 — 제품명 수만큼. total_amount 까지 함께 가져온다(이월 채움용).
         placeholders = ",".join("?" for _ in name_list)
+        # 시험/정식 분리 — is_test 컬럼이 없는 구버전 스키마는 헬퍼가 폴백한다
+        # (test=1 이면 '1=0' → 빈 결과, 기본은 '1=1').
+        test_clause = blend_service.test_filter_clause(
+            connection, "only" if test else "exclude"
+        )
         rows = connection.execute(
             f"SELECT product_name, product_lot, total_amount FROM blend_records "
             f"WHERE product_name IN ({placeholders}) AND status = 'completed' "
+            f"AND {test_clause} "
             f"ORDER BY id DESC",
             name_list,
         ).fetchall()
@@ -778,6 +793,9 @@ def build_router() -> APIRouter:
         limit: int = Query(default=500, ge=1, le=1000),
         include_canceled: bool = Query(default=False),
         unacked: bool = Query(default=False),
+        # 시험 배합 필터(계약 §5) — all(기본) | only(시험만) | exclude(시험 제외).
+        # 잘못된 값은 pattern 검증으로 422(조용한 무시 금지).
+        test: str = Query(default="all", pattern="^(all|only|exclude)$"),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         # 최신 limit 건만 반환(기본 500). 날짜·작업자·검색 필터가 범위를 좁히는 도구다.
@@ -795,6 +813,7 @@ def build_router() -> APIRouter:
             limit=limit,
             include_canceled=include_canceled,
             only_unacked=unacked,
+            test=test,
         )
         for item in items:
             _mask_manual_entry(request, item)
@@ -807,6 +826,7 @@ def build_router() -> APIRouter:
             search=search,
             include_canceled=include_canceled,
             only_unacked=unacked,
+            test=test,
         )
         # 취소분을 숨기고 보는 게 기본인데, 몇 건이 숨겨졌는지 화면이 말할 방법이 없었다.
         # ('취소된 기록 포함'을 켜 보기 전에는 0건인지 12건인지 알 수 없다.)
@@ -824,6 +844,7 @@ def build_router() -> APIRouter:
                 search=search,
                 include_canceled=True,
                 only_unacked=unacked,
+                test=test,
             ) - total_available
         return {
             "items": items,
@@ -870,7 +891,8 @@ def build_router() -> APIRouter:
         ws = wb.active
         ws.title = "배합기록"
         # 열 내용은 레거시 ink_name 컬럼 — 사용자 노출 라벨에 '잉크'는 금칙어(CLAUDE.md).
-        headers = ["작업일", "제품LOT", "제품", "세부 품명", "작업자", "총량(g)", "저울", "상태", "비고"]
+        headers = ["작업일", "제품LOT", "제품", "세부 품명", "작업자", "총량(g)", "저울",
+                   "상태", "시험", "비고"]
         ws.append(headers)
         for c in range(1, len(headers) + 1):
             ws.cell(row=1, column=c).font = Font(bold=True)
@@ -879,9 +901,12 @@ def build_router() -> APIRouter:
             ws.append([
                 r["work_date"], r["product_lot"], r["product_name"], r.get("ink_name") or "",
                 r["worker"], r["total_amount"], r.get("scale") or "",
-                _status_label.get(r["status"], r["status"]), r.get("note") or "",
+                _status_label.get(r["status"], r["status"]),
+                # 시험 배합은 백업 파일에서도 구분돼야 한다(계약 §5) — 정식은 빈 칸.
+                "시험" if r.get("is_test") else "",
+                r.get("note") or "",
             ])
-        widths = [12, 18, 16, 14, 10, 10, 10, 10, 24]
+        widths = [12, 18, 16, 14, 10, 10, 10, 10, 8, 24]
         for col, w in enumerate(widths, start=1):
             ws.column_dimensions[chr(64 + col)].width = w
         buf = io.BytesIO()
@@ -1321,36 +1346,66 @@ def build_router() -> APIRouter:
                     return _mask_manual_entry(request, existing)
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
+        # 시험 배합(계약 §4) — recipe_id 는 서버가 NULL 로 강제하고(보내와도 무시),
+        # 불러온 레시피는 base_recipe_id 로만 남는다(편차 허용치의 근거).
+        is_test = bool(body.is_test)
+        recipe_id = None if is_test else body.recipe_id
+        base_recipe_id = body.base_recipe_id if is_test else None
+        if base_recipe_id is not None and not blend_service.recipe_exists(
+            connection, base_recipe_id
+        ):
+            raise HTTPException(status_code=400, detail="기준 레시피를 찾을 수 없습니다.")
         # 반응기 진행 반제품은 실적 저장 시 반응기(1~4) 지정 필수.
-        if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
+        # 시험은 건너뛴다(계약 §4.4) — 시험 배합은 반응기를 쓰지 않는다(reactor=None 저장).
+        if (
+            not is_test
+            and blend_service.product_uses_reactor(connection, body.product_name)
+            and body.reactor is None
+        ):
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
 
         # 비율·이론량은 서버가 레시피에서 직접 산출한다 — 클라이언트 값은 쓰지 않는다(감사 F-5).
         # 레시피 없이 저장되는 경로(옛 데이터 이관·수동 입력)는 대조할 근거가 없어 그대로 둔다.
         details = [d.model_dump() for d in body.details]
         total_amount = body.total_amount
-        # 반응기 이월(carry-over) 검증·강제 채움 — derive 보다 먼저. 이월 행의 actual_amount
-        # 를 1차 배합 총량으로 덮어쓰므로, 그 뒤 derive 가 올바른 기준 실측값으로 이론·총량을
-        # 산출하게 한다(잘못된 클라이언트 값이 편차·총량에 스며드는 것을 막는다).
-        try:
-            blend_service.enforce_carry_over(
-                connection, body.recipe_id, body.product_name, details
-            )
-        except blend_service.CarryOverError as exc:
-            raise HTTPException(status_code=400, detail=exc.detail) from exc
-        if body.recipe_id:
-            # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
-            if blend_service.resolve_chain_tip(connection, body.recipe_id) != body.recipe_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
-                )
+        if is_test:
+            # 시험 경로: 목표량(theory_amount) 직접 입력 → 총량 = 목표량 합, 비율 = 목표량/합.
+            # 반응기 이월·레시피 개정 409·자재 구성 대조는 전부 건너뛴다(대조할 레시피가 없다).
             try:
-                details, total_amount = blend_service.derive_details_from_recipe(
-                    connection, body.recipe_id, body.total_amount, details
-                )
-            except blend_service.RecipeMismatchError as exc:
+                details, total_amount = blend_service.derive_test_details(details)
+                blend_service.validate_test_materials(connection, details)
+            except blend_service.TestBlendError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
+            # 총량 상한은 시험에도 그대로(계약 §4.5) — 본문 total_amount 는 무시하므로
+            # 스키마 검증(le=BLEND_TOTAL_MAX_G)이 산출값에 걸리지 않는다. 여기서 막는다.
+            if total_amount > blend_service.BLEND_TOTAL_MAX_G:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"총 배합량이 상한({blend_service.BLEND_TOTAL_MAX_G:,.0f} g)을 넘습니다.",
+                )
+        else:
+            # 반응기 이월(carry-over) 검증·강제 채움 — derive 보다 먼저. 이월 행의 actual_amount
+            # 를 1차 배합 총량으로 덮어쓰므로, 그 뒤 derive 가 올바른 기준 실측값으로 이론·총량을
+            # 산출하게 한다(잘못된 클라이언트 값이 편차·총량에 스며드는 것을 막는다).
+            try:
+                blend_service.enforce_carry_over(
+                    connection, recipe_id, body.product_name, details
+                )
+            except blend_service.CarryOverError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail) from exc
+            if recipe_id:
+                # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
+                if blend_service.resolve_chain_tip(connection, recipe_id) != recipe_id:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
+                    )
+                try:
+                    details, total_amount = blend_service.derive_details_from_recipe(
+                        connection, recipe_id, body.total_amount, details
+                    )
+                except blend_service.RecipeMismatchError as exc:
+                    raise HTTPException(status_code=400, detail=exc.detail) from exc
 
         # 전 자재 계량 완료 — 실제량이 빈 자재가 하나라도 있으면 저장 거부.
         # 편차 검사는 이 결손을 못 잡는다(actual is None 이면 건너뛴다). 그대로 저장되면
@@ -1385,7 +1440,11 @@ def build_router() -> APIRouter:
 
         # 자재별 허용 편차 검사 — 합계 편차는 제한 없음. 편차는 레시피에서 결정
         # (recipe_id 가 없으면 기본값 0.05g). 메시지는 실제 적용된 편차를 표시.
-        tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
+        # 시험은 불러온 레시피(base_recipe_id)의 허용 편차를 쓴다 — 최소 눈금이 굵은
+        # 품목(CBX-22KH 0.1g)을 시험할 때 기본 0.05g 로 막히면 현장이 멈춘다(계약 §4.5).
+        tolerance = blend_service.recipe_tolerance_g(
+            connection, base_recipe_id if is_test else recipe_id
+        )
         offenders = blend_service.weighing_tolerance_violations(
             details, tolerance_g=tolerance
         )
@@ -1407,7 +1466,7 @@ def build_router() -> APIRouter:
         actor = actor_name(current_user) if current_user else "현장"
         record_id = blend_service.create_blend_record(
             connection,
-            recipe_id=body.recipe_id,
+            recipe_id=recipe_id,
             product_name=body.product_name,
             ink_name=body.ink_name,
             position=body.position,
@@ -1421,8 +1480,11 @@ def build_router() -> APIRouter:
             created_by=actor,
             created_at=utc_now_text(),
             worker_sign=body.worker_sign,
-            reactor=body.reactor,
+            # 시험은 반응기를 쓰지 않는다 — 클라이언트가 보내도 None 으로 저장(계약 §4.4).
+            reactor=None if is_test else body.reactor,
             manual_entry=body.manual_entry,
+            is_test=is_test,
+            base_recipe_id=base_recipe_id,
         )
         record = blend_service.get_blend_record(connection, record_id)
         # 증량 이벤트가 있으면 컬럼 기록 + 감사. 없으면(rescale=None) 기존 동작 유지(컬럼 기본값 0).
@@ -1482,16 +1544,21 @@ def build_router() -> APIRouter:
             record_id=record_id,
             product_lot=record["product_lot"],
             total_amount=total_amount,
-            recipe_id=body.recipe_id,
+            recipe_id=recipe_id,
             rescale_count=(rescale["count"] if rescale else 0),
             current_user=current_user,
         )
         create_audit_details: dict[str, Any] = {
             "product_name": body.product_name,
-            "total_amount": body.total_amount,
+            # 시험은 총량을 서버가 산출하므로(목표량 합) 클라이언트 값이 아닌 저장값을 남긴다.
+            "total_amount": total_amount if is_test else body.total_amount,
             "items": len(body.details),
             "manual_entry": body.manual_entry,
+            # 시험 여부는 감사에도 남긴다(계약 §4.5) — 나중에 통계에서 왜 빠졌는지의 근거.
+            "is_test": is_test,
         }
+        if base_recipe_id is not None:
+            create_audit_details["base_recipe_id"] = base_recipe_id
         if total_flags["oversize_total"] or total_flags["total_bypass_suspect"]:
             create_audit_details["total_flags"] = total_flags
         # 감사에도 같은 항목을 구조화 보존한다(GAP-1 belt-and-braces). blend_lot_acks 가

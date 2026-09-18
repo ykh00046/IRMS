@@ -261,6 +261,13 @@ class BlendCreateBody(BaseModel):
     # 않고 첫 결과를 그대로 돌려준다 — 타임아웃 재시도로 같은 계량값이 두 LOT 이 되는
     # 것을 막는다. 미전송(None)이면 종전과 동일하게 매번 새 기록(하위호환).
     request_id: str | None = Field(default=None, max_length=64)
+    # 시험 배합(2026-09-18). True 면 details[*].theory_amount 가 **목표량(g) 직접 입력**
+    # 이고 총량은 서버가 그 합으로 산출한다. recipe_id 는 서버가 NULL 로 강제하며,
+    # 불러온 레시피는 base_recipe_id 로만 남는다(편차 허용치의 근거). 반응기·이월·
+    # 레시피 개정 검사는 건너뛰고, 그 밖의 통제(실제량·LOT·편차·증량·폐기·수기·서명)는
+    # 정식과 동일하다. False(기본) 경로의 동작은 한 줄도 바뀌지 않는다.
+    is_test: bool = False
+    base_recipe_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":

@@ -13,6 +13,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 from . import viscosity_service
+from .blend_service import not_test_clause
 
 
 def _section(ws, row: int, title: str, headers: list[str] | None, rows: list[list[Any]]) -> int:
@@ -43,13 +44,16 @@ def build_dashboard_excel(
     ws.cell(row=2, column=1, value=f"기간: {from_date} ~ {to_date}")
 
     # 요약
+    # 시험 배합 제외 — 화면(/dashboard/summary)과 같은 기준(계약 §6). is_test 컬럼이
+    # 없는 구버전/단위테스트 스키마는 헬퍼가 '1=1' 로 폴백한다.
     summary = connection.execute(
-        """
+        f"""
         SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount), 0) AS w,
                COUNT(DISTINCT product_name) AS products,
                COUNT(DISTINCT worker) AS workers
         FROM blend_records
         WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+          AND {not_test_clause(connection)}
           AND work_date BETWEEN ? AND ?
         """,
         (from_date, to_date),

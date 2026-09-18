@@ -115,6 +115,36 @@ def _table_has_column(connection: sqlite3.Connection, table: str, column: str) -
         return False
 
 
+def not_test_clause(connection: sqlite3.Connection, alias: str = "") -> str:
+    """시험 배합(is_test=1)을 빼는 WHERE 조각. 컬럼이 없는 구버전/단위테스트 스키마는 '1=1'.
+
+    시험 배합은 정식과 같은 통제로 기록되지만 생산 통계·알림에는 섞이지 않아야 한다
+    (대시보드·배합 분석·LOT 이력). 격리가 필요한 SQL 마다 이 조각을 AND 로 붙인다.
+    alias 는 blend_records 의 테이블 별칭(예: "br"). 빈 문자열이면 별칭 없이 쓴다.
+    """
+    if not _table_has_column(connection, "blend_records", "is_test"):
+        return "1=1"
+    prefix = f"{alias}." if alias else ""
+    return f"COALESCE({prefix}is_test, 0) = 0"
+
+
+def test_filter_clause(
+    connection: sqlite3.Connection, mode: str, alias: str = ""
+) -> str:
+    """기록 조회의 시험 필터 조각 — mode: all(전체) | only(시험만) | exclude(시험 제외).
+
+    컬럼이 없는 구버전/단위테스트 스키마에서는 시험 기록이 존재할 수 없으므로
+    only 는 '1=0'(빈 결과), exclude·all 은 '1=1' 로 폴백한다.
+    """
+    has_column = _table_has_column(connection, "blend_records", "is_test")
+    prefix = f"{alias}." if alias else ""
+    if mode == "only":
+        return f"COALESCE({prefix}is_test, 0) = 1" if has_column else "1=0"
+    if mode == "exclude":
+        return not_test_clause(connection, alias)
+    return "1=1"
+
+
 def product_code_select_expr(connection: sqlite3.Connection) -> str:
     """배합 기록 조회 SELECT 에 넣을 제품 품목코드 표현식(항상 product_code 로 별칭).
 
@@ -641,12 +671,18 @@ def material_usage_periods(
     end_date: str,
     group: str = "total",
     by_product: bool = False,
+    include_test: bool = True,
 ) -> dict[str, Any]:
     """자재 사용량(불출) 기간 집계 — 외부 재고 대시보드 연동용([[roadmap-2026H2]] P3).
 
     group: total(기간 합계, 기본) | day(작업일별) | month(월별).
     by_product=True 면 제품(product_name) 차원 추가 — 자재별 '주 사용처(제품)' 분석용.
     erp_code(RM 품목코드 — 재고 시스템 매칭 키)·material_code 포함, 단위 g 고정.
+
+    include_test 기본이 True(시험 배합 **포함**)인 이유: 이 함수의 유일한 호출부가
+    자재 불출량 공개 API(상위 재고 대시보드)이고, 시험 배합도 실제로 자재를 소모하므로
+    재고에는 반영돼야 한다(사용자 결정 2026-09-18, 계약 §6). 생산 분석에서 쓰려면
+    include_test=False 로 부른다.
     """
     period_expr = {
         "total": "NULL",
@@ -662,6 +698,7 @@ def material_usage_periods(
     # fk_code 컬럼은 SELECT 에서 참조되므로 materials 가 없을 땐 NULL AS fk_code 로
     # 채워 해석 사슬(_resolve_erp_code)이 자연스럽게 다음 우선순위로 넘어가게 한다.
     has_materials = _has_materials_table(connection)
+    test_clause = "1=1" if include_test else not_test_clause(connection, "br")
     materials_join = "LEFT JOIN materials m ON m.id = bd.material_id" if has_materials else ""
     fk_code_expr = (
         "MAX(CASE WHEN m.code IS NOT NULL AND m.code != '' THEN m.code END) AS fk_code"
@@ -682,6 +719,7 @@ def material_usage_periods(
         JOIN blend_records br ON br.id = bd.blend_record_id
         {materials_join}
         WHERE br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0
+          AND {test_clause}
           AND br.work_date >= ? AND br.work_date <= ?
         GROUP BY {period_expr}{product_group}, bd.material_code, bd.material_name
         ORDER BY period, total_actual DESC
@@ -710,6 +748,7 @@ def material_usage_periods(
     rec_count = connection.execute(
         "SELECT COUNT(*) FROM blend_records br "
         "WHERE br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0) = 0 "
+        f"AND {test_clause} "
         "AND br.work_date >= ? AND br.work_date <= ?",
         (start_date, end_date),
     ).fetchone()[0]
@@ -765,6 +804,8 @@ def material_usage(
 ) -> dict[str, Any]:
     """배합 기록 기반 자재 사용 분석. 기간 내 완료 기록의 자재별 실제/이론 사용량·건수."""
     where = ["br.status = 'completed'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    # 시험 배합 제외(계약 §6) — 시험은 실제 소모지만 생산 분석 지표를 오염시키면 안 된다.
+    where.append(not_test_clause(connection, "br"))
     params: list[Any] = []
     if start_date:
         where.append("br.work_date >= ?")
@@ -815,6 +856,8 @@ def product_usage(
 ) -> dict[str, Any]:
     """제품별 배합 빈도 분석. 기간 내 완료 기록의 제품별 배치 수·총 배합량·최근 작업일."""
     where = ["status = 'completed'", "COALESCE(is_bulk_regenerated, 0) = 0"]
+    # 시험 배합 제외(계약 §6).
+    where.append(not_test_clause(connection))
     params: list[Any] = []
     if start_date:
         where.append("work_date >= ?")
@@ -878,6 +921,9 @@ def mistake_stats(
         return ((" AND " + " AND ".join(parts)) if parts else ""), vals
 
     wclause, wparams = _date_clause("work_date")
+    # 시험 배합 제외(계약 §6) — 시험의 수동 입력·취소를 작업자 이상 통계에 세면 안 된다.
+    not_test = not_test_clause(connection)
+    not_test_r = not_test_clause(connection, "r")
     worker_rows = connection.execute(
         f"""
         SELECT worker,
@@ -885,7 +931,7 @@ def mistake_stats(
                SUM(CASE WHEN status = 'completed' AND manual_entry = 1 THEN 1 ELSE 0 END) AS manual_records,
                SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_records
         FROM blend_records
-        WHERE COALESCE(is_bulk_regenerated, 0) = 0 {wclause}
+        WHERE COALESCE(is_bulk_regenerated, 0) = 0 AND {not_test} {wclause}
         GROUP BY worker
         HAVING records > 0 OR canceled_records > 0
         ORDER BY manual_records DESC, canceled_records DESC, worker ASC
@@ -912,7 +958,8 @@ def mistake_stats(
                SUM(CASE WHEN d.manual_entry = 1 THEN 1 ELSE 0 END) AS manual_rows
         FROM blend_details d
         JOIN blend_records r ON r.id = d.blend_record_id
-        WHERE r.status = 'completed' AND COALESCE(r.is_bulk_regenerated, 0) = 0 {mclause}
+        WHERE r.status = 'completed' AND COALESCE(r.is_bulk_regenerated, 0) = 0
+          AND {not_test_r} {mclause}
         GROUP BY d.material_name
         ORDER BY manual_rows DESC, d.material_name ASC
         """,
@@ -942,10 +989,18 @@ _ANALYSIS_DONE = "br.status = 'completed' AND COALESCE(br.is_bulk_regenerated, 0
 
 
 def _analysis_window(
-    start_date: str | None, end_date: str | None, alias: str = "br"
+    connection: sqlite3.Connection,
+    start_date: str | None,
+    end_date: str | None,
+    alias: str = "br",
 ) -> tuple[str, list[Any]]:
-    """기간 WHERE 조각 — 완료 조건까지 붙여서 돌려준다(양끝 포함)."""
-    where = [_ANALYSIS_DONE.replace("br.", f"{alias}.")]
+    """기간 WHERE 조각 — 완료 조건까지 붙여서 돌려준다(양끝 포함).
+
+    시험 배합(is_test=1)은 여기서 통째로 빠진다(계약 §6) — 배합 분석의 모든 지표·추세·
+    제품·자재·품질이 이 조각을 공유하므로, 격리를 한 곳에 두면 새 지표가 추가돼도
+    시험이 새어 나가지 않는다.
+    """
+    where = [_ANALYSIS_DONE.replace("br.", f"{alias}."), not_test_clause(connection, alias)]
     params: list[Any] = []
     if start_date:
         where.append(f"{alias}.work_date >= ?")
@@ -970,7 +1025,7 @@ def _analysis_core(
     된다(2026-08-10 운영 데이터에서 확인). 유효 표본이 없으면 None — 0% 도 100% 도
     아닌 '해당 없음'이다.
     """
-    wsql, params = _analysis_window(start_date, end_date)
+    wsql, params = _analysis_window(connection, start_date, end_date)
     row = connection.execute(
         f"""
         SELECT COUNT(*) AS records,
@@ -1005,7 +1060,11 @@ def _analysis_core(
     ).fetchone()[0]
 
     # 취소는 완료 조건 밖이라 따로 센다(일괄 재생성 제외는 동일하게 적용).
-    cwhere = ["br.status = 'canceled'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    cwhere = [
+        "br.status = 'canceled'",
+        "COALESCE(br.is_bulk_regenerated, 0) = 0",
+        not_test_clause(connection, "br"),   # 시험 배합 제외(계약 §6)
+    ]
     cparams: list[Any] = []
     if start_date:
         cwhere.append("br.work_date >= ?")
@@ -1025,7 +1084,7 @@ def _analysis_core(
     # 비율 지표다(편차는 허용치 내로 강제되므로 신호가 되지 못한다). 도입일 이후
     # 기록만 센다 — 그 전은 표시가 없어 '저울로 쟀다'와 구분되지 않는다.
     scale_start = max(x for x in (start_date, scale_since) if x) if (start_date or scale_since) else None
-    swhere, sparams = _analysis_window(scale_start, end_date)
+    swhere, sparams = _analysis_window(connection, scale_start, end_date)
     scale_row = connection.execute(
         f"""
         SELECT COUNT(*) AS records,
@@ -1127,7 +1186,7 @@ def analysis(
             prev_core[key] if prev_core else None
         )
 
-    wsql, params = _analysis_window(start_date, end_date)
+    wsql, params = _analysis_window(connection, start_date, end_date)
 
     # 계량률용 표본은 구간 안에서도 도입일 이후만 센다 — 도입일이 낀 달(7/1~7/9 는
     # 표시 없음, 7/10 부터 표시 있음)을 통째로 세면 그 달만 부풀려진다.
@@ -1151,7 +1210,11 @@ def analysis(
         [*since_params, *params] if scale_since else params,
     ).fetchall()
     # 취소는 완료가 아니라 같은 쿼리로 못 센다 — 버킷별로 따로 세서 합친다.
-    cwhere = ["br.status = 'canceled'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    cwhere = [
+        "br.status = 'canceled'",
+        "COALESCE(br.is_bulk_regenerated, 0) = 0",
+        not_test_clause(connection, "br"),   # 시험 배합 제외(계약 §6)
+    ]
     cparams: list[Any] = []
     if start_date:
         cwhere.append("br.work_date >= ?")
@@ -1312,9 +1375,18 @@ def batch_details(
     end_date: str | None = None,
     product: str | None = None,
     limit: int = 2000,
+    *,
+    include_test: bool = False,
 ) -> dict[str, Any]:
-    """배치 상세 — 완료 기록의 자재별 비율·이론량·실제량·편차 평면 목록(작업일 역순)."""
+    """배치 상세 — 완료 기록의 자재별 비율·이론량·실제량·편차 평면 목록(작업일 역순).
+
+    include_test=False(기본) 면 시험 배합을 뺀다(/insight 배합 분석, 계약 §6).
+    include_test=True 는 자재 불출량 공개 API 전용 — 시험도 실제 소모이므로 상위
+    재고 대시보드에는 포함해야 한다(material_usage_details 가 이 값으로 부른다).
+    """
     where = ["br.status = 'completed'", "COALESCE(br.is_bulk_regenerated, 0) = 0"]
+    if not include_test:
+        where.append(not_test_clause(connection, "br"))
     params: list[Any] = []
     if start_date:
         where.append("br.work_date >= ?")
@@ -1403,7 +1475,11 @@ def material_usage_details(
     해석 체계는 집계 API(material_usage_periods)와 동일(_resolve_erp_code) —
     두 API 가 같은 자재를 다른 코드로 보고하지 않도록 단일 소스를 공유한다.
     """
-    result = batch_details(connection, start_date, end_date, None, limit=limit)
+    # 시험 배합 **포함** — 상위 재고 대시보드의 LOT 배정은 실제 소모를 봐야 한다
+    # (집계 API material_usage_periods 의 include_test 기본값과 같은 기준, 계약 §6).
+    result = batch_details(
+        connection, start_date, end_date, None, limit=limit, include_test=True
+    )
     alias_map = _erp_code_map(connection)
     material_code_map = _material_code_map(connection)
     alias_code_map = _alias_code_map(connection)
@@ -1458,14 +1534,22 @@ def trace_material_lot(
 
     부분 일치(LIKE %lot%) — 현장에서 접두/접미만 기억하는 경우 대응. 취소 기록도
     포함하되 status 를 함께 반환해 화면에서 구분한다(리콜 추적은 누락이 더 위험).
+    같은 이유로 시험 배합도 **포함**한다(계약 §6) — 대신 각 행에 is_test 를 실어
+    화면이 시험임을 표시할 수 있게 한다.
     사용자 입력의 %/_ 는 리터럴로 이스케이프(generate_product_lot 과 동일 패턴).
     """
     clean = str(lot).strip()
     escaped = clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    # is_test 컬럼이 없는 구버전/단위테스트 스키마는 상수 0 으로 채운다(행 계약 고정).
+    test_expr = (
+        "COALESCE(r.is_test, 0) AS is_test"
+        if _table_has_column(connection, "blend_records", "is_test")
+        else "0 AS is_test"
+    )
     rows = connection.execute(
-        """
+        f"""
         SELECT r.id AS record_id, r.product_lot, r.product_name, r.work_date,
-               r.worker, r.status, r.total_amount,
+               r.worker, r.status, r.total_amount, {test_expr},
                d.material_name, d.material_code, d.material_lot,
                d.actual_amount, d.theory_amount
         FROM blend_details d
@@ -2249,6 +2333,137 @@ def derive_details_from_recipe(
     return derived, total
 
 
+def test_lot_base_name(product_name: str) -> str:
+    """시험 배합 LOT 채번용 제품명 자리 — `"T-" + 시험명`(계약 §3).
+
+    접두가 다르면 generate_product_lot 의 base 가 달라져 **정식 순번과 자동 분리**된다
+    (같은 날 같은 이름의 정식 기록이 있어도 시험 순번은 01 부터). product_name 컬럼에는
+    접두 없는 시험명을 저장하므로, 채번에만 쓰는 이름을 여기서 만든다.
+    """
+    return f"T-{str(product_name or '').strip()}"
+
+
+def recipe_exists(connection: sqlite3.Connection, recipe_id: int | None) -> bool:
+    """레시피 id 가 실존하는가(시험 배합의 base_recipe_id 검증용)."""
+    if recipe_id is None:
+        return False
+    try:
+        row = connection.execute(
+            "SELECT 1 FROM recipes WHERE id = ?", (int(recipe_id),)
+        ).fetchone()
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        return False
+    return row is not None
+
+
+class TestBlendError(Exception):
+    """시험 배합 저장 요청이 시험 경로의 전제를 어겼다(목표량·자재명·마스터 대조)."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+def derive_test_details(
+    details: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], float]:
+    """시험 배합의 상세·총량을 서버가 산출한다 — 목표량(g) 직접 입력 경로.
+
+    시험은 레시피 비율이 아니라 **자재별 목표량 직접 입력**이다(사용자 결정 2026-09-18).
+    각 행의 theory_amount 가 목표량이고 총량은 그 합이다 — 클라이언트 total_amount 는
+    쓰지 않는다(정식 경로가 클라이언트 ratio·theory 를 버리는 것과 같은 신뢰 경계).
+    ratio 는 목표량/합 으로, 정식 경로(compute_ratios)와 **같은 4자리 반올림**.
+
+    반응기 이월·투입 로스 보정·기준 자재 파생은 시험에 없다(계약 §4.4) — carried_over
+    는 항상 False, loss_comp_g 는 0 으로 저장한다. 같은 자재명이 여러 행이어도 된다
+    (분할 계량) — 레시피 대조가 없으니 짝짓기 문제 자체가 없다.
+    """
+    if not details:
+        raise TestBlendError("배합 상세가 비어 있습니다.")
+    names: list[str] = []
+    theories: list[float] = []
+    for d in details:
+        name = str(d.get("material_name") or "").strip()
+        if not name:
+            raise TestBlendError("자재명을 입력하세요.")
+        theory = _opt_num(d.get("theory_amount"))
+        if theory is None or theory <= 0:
+            raise TestBlendError(f"목표량을 0 보다 크게 입력하세요: {name}")
+        names.append(name)
+        theories.append(float(theory))
+    total = round(sum(theories), 2)
+    ratios = compute_ratios(theories)
+    derived: list[dict[str, Any]] = []
+    for order, d in enumerate(details, start=1):
+        derived.append({
+            "material_id": d.get("material_id"),
+            "material_code": d.get("material_code"),
+            "material_name": names[order - 1],
+            "material_lot": d.get("material_lot"),       # 사람만 아는 값
+            "actual_amount": _opt_num(d.get("actual_amount")),
+            "manual_entry": bool(d.get("manual_entry")),
+            "carried_over": False,                        # 시험은 반응기 이월 없음
+            "ratio": ratios[order - 1],                   # ← 서버 산출(목표량/합)
+            "theory_amount": round(theories[order - 1], 2),  # ← 목표량(저울 해상도 2자리)
+            "loss_comp_g": 0.0,
+            "sequence_order": order,
+        })
+    return derived, total
+
+
+def validate_test_materials(
+    connection: sqlite3.Connection, details: list[dict[str, Any]]
+) -> None:
+    """시험 상세의 material_id·material_code 를 자재 마스터와 대조한다(불일치는 오류).
+
+    시험은 마스터에 없는 새 원재료를 이름만으로 추가할 수 있다(계약 §2) — 그래서
+    material_id·material_code 가 **없으면 통과**(NULL 저장). 그러나 값을 **보냈다면**
+    마스터와 맞아야 한다. 맞지 않는 id/코드를 그냥 저장하면 규제 기록에 위조 코드가
+    박히고 자재 사용량 집계가 엉뚱한 자재로 합산된다.
+
+    materials 테이블이 없는 최소 스키마(일부 단위테스트)에서는 대조할 근거가 없어
+    조용히 통과한다(다른 폴백과 같은 패턴).
+    """
+    try:
+        rows = connection.execute(
+            "SELECT id, name, code FROM materials"
+        ).fetchall()
+    except sqlite3.OperationalError:  # materials/code 없는 최소 스키마
+        return
+    by_id = {int(r["id"]): r for r in rows}
+    codes = {
+        str(r["code"]).strip().upper()
+        for r in rows
+        if r["code"] is not None and str(r["code"]).strip()
+    }
+    for d in details:
+        name = str(d.get("material_name") or "").strip() or "(이름 없음)"
+        mid = d.get("material_id")
+        master = None
+        if mid is not None:
+            try:
+                master = by_id.get(int(mid))
+            except (TypeError, ValueError):
+                master = None
+            if master is None:
+                raise TestBlendError(
+                    f"자재 마스터에 없는 자재입니다: {name} — 코드 없이 이름만으로 추가하세요."
+                )
+        code = str(d.get("material_code") or "").strip()
+        if not code:
+            continue
+        if master is not None:
+            master_code = str(master["code"] or "").strip()
+            if master_code.upper() != code.upper():
+                raise TestBlendError(
+                    f"자재 품목코드가 마스터와 다릅니다: {name} ({code})"
+                )
+        elif code.upper() not in codes:
+            raise TestBlendError(
+                f"자재 품목코드가 마스터와 다릅니다: {name} ({code})"
+            )
+
+
 def missing_actual_names(details: list[dict[str, Any]]) -> list[str]:
     """실제량(actual_amount)이 비어 있는 행의 자재명 목록(순서 보존).
 
@@ -2362,6 +2577,9 @@ def create_blend_record(
     reactor: int | None = None,
     manual_entry: bool = False,
     is_bulk_regenerated: bool = False,
+    is_test: bool = False,
+    base_recipe_id: int | None = None,
+    lot_name: str | None = None,
 ) -> int:
     """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성.
 
@@ -2373,6 +2591,12 @@ def create_blend_record(
     나중에 개정·수정돼도 이 기록의 제품 코드는 바뀌지 않는다(자재 코드가
     blend_details.material_code 로 스냅샷되는 것과 같은 원칙). 이어서 계량·일괄
     재생성도 이 함수를 거치므로 같은 규칙이 적용된다.
+
+    is_test=True 는 시험 배합 기록이다 — recipe_id 는 항상 None 이고 불러온 레시피는
+    base_recipe_id 로만 남는다(FK 강제 없음). product_lot 은 `"T-" + 시험명` 으로
+    채번해 정식 순번과 자동 분리하고(product_name 컬럼에는 접두 없는 시험명을 저장),
+    lot_name 을 주면 그 이름으로 채번한다(기본은 is_test 여부에 따라 자동).
+    컬럼이 없는 구버전/단위테스트 스키마는 두 값을 저장하지 않는다(폴백).
     """
     # 감사 F-1: 채번+INSERT 원자화. 쓰기 락을 선획득(BEGIN IMMEDIATE)해 동시 요청의
     # 채번을 직렬화한다(WAL 에서 리더는 라이터를 막지 않으므로 명시 락이 필요).
@@ -2388,8 +2612,22 @@ def create_blend_record(
     product_code = _recipe_product_code(connection, recipe_id) if has_product_code else None
     code_col = ", product_code" if has_product_code else ""
     code_val = ", ?" if has_product_code else ""
+    # 시험 배합 표식 — 컬럼이 없는 구버전/단위테스트 스키마는 컬럼째 생략(폴백).
+    has_test_cols = _table_has_column(connection, "blend_records", "is_test")
+    test_col = ", is_test, base_recipe_id" if has_test_cols else ""
+    test_val = ", ?, ?" if has_test_cols else ""
+    test_params: tuple[Any, ...] = (
+        (
+            1 if is_test else 0,
+            int(base_recipe_id) if base_recipe_id is not None else None,
+        )
+        if has_test_cols
+        else ()
+    )
+    # 채번용 이름 — 시험은 "T-" + 시험명(정식 순번과 분리). 저장되는 product_name 은 불변.
+    lot_base = lot_name or (test_lot_base_name(product_name) if is_test else product_name)
     for _attempt in range(3):
-        product_lot = generate_product_lot(connection, product_name, work_date)
+        product_lot = generate_product_lot(connection, lot_base, work_date)
         try:
             cur = connection.execute(
                 f"""
@@ -2397,8 +2635,8 @@ def create_blend_record(
                     (product_lot, recipe_id, product_name, ink_name, position, worker,
                      work_date, work_time, total_amount, scale, status, note,
                      worker_sign, reactor, manual_entry, is_bulk_regenerated,
-                     created_by, created_at, updated_at{code_col})
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?{code_val})
+                     created_by, created_at, updated_at{code_col}{test_col})
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?{code_val}{test_val})
                 """,
                 (
                     product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
@@ -2409,6 +2647,7 @@ def create_blend_record(
                     1 if is_bulk_regenerated else 0,
                     created_by, created_at, created_at,
                     *((product_code,) if has_product_code else ()),
+                    *test_params,
                 ),
             )
             break
@@ -2710,6 +2949,15 @@ def create_continuous(
 def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str, Any] | None:
     # 제품 품목코드는 기록의 스냅샷 우선, 없으면(구 기록) 레시피 조인 폴백.
     code_expr = product_code_select_expr(connection)
+    # 시험 배합 표식 + 기준 레시피 — 컬럼이 없는 구버전/단위테스트 스키마는 미선택.
+    # base_recipe_name 은 상세 화면의 "기준 레시피: …" 표시용(레시피가 지워졌으면 NULL).
+    test_cols = (
+        ", COALESCE(is_test, 0) AS is_test, base_recipe_id"
+        ", (SELECT r.product_name FROM recipes r WHERE r.id = blend_records.base_recipe_id)"
+        " AS base_recipe_name"
+        if _table_has_column(connection, "blend_records", "is_test")
+        else ""
+    )
     row = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
@@ -2719,7 +2967,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
                reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at,
-               {code_expr}
+               {code_expr}{test_cols}
         FROM blend_records WHERE id = ?
         """,
         (record_id,),
@@ -2812,8 +3060,22 @@ def _viscosity_state_select_expr(connection: sqlite3.Connection) -> str:
         and _table_has_column(connection, "viscosity_readings", "blend_record_id")
     ):
         return "'na' AS viscosity_state"
+    # 시험 기록은 '점도 미입력(missing)' 이 되지 않는다(계약 §5) — 점도 등록은 허용하되
+    # 미등록을 독촉하지 않는다(알림·대기열에서 제외되므로 칩만 남으면 거짓 할 일이 된다).
+    # 등록이 있으면 done, 측정 불가 기록이 있으면 skipped, 그 외는 na.
+    test_na = (
+        " WHEN COALESCE(blend_records.is_test, 0) = 1"
+        "      AND NOT EXISTS (SELECT 1 FROM viscosity_readings vr2"
+        "                      WHERE vr2.blend_record_id = blend_records.id)"
+        "      AND NOT EXISTS (SELECT 1 FROM viscosity_skips vsk2"
+        "                      WHERE vsk2.blend_record_id = blend_records.id)"
+        " THEN 'na'"
+        if _table_has_column(connection, "blend_records", "is_test")
+        else ""
+    )
     return (
         "CASE"
+        + test_na +
         " WHEN NOT EXISTS (SELECT 1 FROM viscosity_products vp"
         "                  WHERE vp.is_active = 1"
         "                    AND (vp.name = blend_records.product_name"
@@ -2841,11 +3103,19 @@ def list_blend_records(
     limit: int = 200,
     include_canceled: bool = False,
     only_unacked: bool = False,
+    test: str = "all",
 ) -> list[dict[str, Any]]:
+    # test: all(기본 — 시험 포함) | only(시험만) | exclude(시험 제외). 기록 조회 화면의
+    # '시험' 필터. 기본이 all 인 이유는 기록은 '일어난 일 전부' 를 보여 주는 화면이고,
+    # 격리가 필요한 곳(대시보드·분석·LOT 이력)은 각자 exclude 를 SQL 에 박고 있기 때문이다.
     # 기본은 취소분 제외(현장 목록). include_canceled=True 면 함께 조회한다 — 취소한 기록을
     # 다시 열어 '복원'하거나 취소 이력을 확인할 유일한 경로이고, 전체 Excel 백업에서도
     # 취소는 지워진 게 아니라 보존해야 할 증거라 포함이 맞다.
     clauses = [] if include_canceled else ["status != 'canceled'"]
+    if test not in ("all", "only", "exclude"):
+        raise ValueError("test 는 all | only | exclude 중 하나여야 합니다.")
+    if test != "all":
+        clauses.append(test_filter_clause(connection, test))
     params: list[Any] = []
     if only_unacked:
         # '미확인만' — 종전에는 화면이 LIMIT 로 잘려 온 목록을 클라이언트에서 걸렀다.
@@ -2896,6 +3166,12 @@ def list_blend_records(
     # 반응기 번호 — 목록 SELECT 에 없어 항상 null 로 나갔다. _serialize_record 는 키가
     # 있으면 그대로 실으므로 SELECT 만 늘리면 된다(컬럼 없는 구버전 스키마는 미선택).
     reactor_col = ", reactor" if _table_has_column(connection, "blend_records", "reactor") else ""
+    # 시험 배합 표식 + 기준 레시피 id — 목록 행의 '시험' 칩·필터 복원용(계약 §5).
+    test_cols = (
+        ", COALESCE(is_test, 0) AS is_test, base_recipe_id"
+        if _table_has_column(connection, "blend_records", "is_test")
+        else ""
+    )
     # 점도 등록 상태(na/done/skipped/missing) — 점도 테이블 없는 스키마는 'na' 상수 폴백.
     viscosity_state_expr = _viscosity_state_select_expr(connection)
     rows = connection.execute(
@@ -2903,7 +3179,7 @@ def list_blend_records(
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
                manual_entry, is_bulk_regenerated,
-               {code_expr}{badge_cols}{reactor_col},
+               {code_expr}{badge_cols}{reactor_col}{test_cols},
                {viscosity_state_expr}
         FROM blend_records
         WHERE {where}
@@ -2925,6 +3201,7 @@ def count_blend_records(
     search: str | None = None,
     include_canceled: bool = False,
     only_unacked: bool = False,
+    test: str = "all",
 ) -> int:
     """list_blend_records 와 동일 필터의 전체 건수(표시 상한과 무관한 '전체 M').
 
@@ -2932,6 +3209,10 @@ def count_blend_records(
     정확히 보여주기 위한 경량 COUNT. WHERE 절은 list_blend_records 와 일치해야 한다.
     """
     clauses = [] if include_canceled else ["status != 'canceled'"]
+    if test not in ("all", "only", "exclude"):
+        raise ValueError("test 는 all | only | exclude 중 하나여야 합니다.")
+    if test != "all":
+        clauses.append(test_filter_clause(connection, test))
     params: list[Any] = []
     if only_unacked:
         clauses.append(
@@ -2992,6 +3273,8 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"] if "created_at" in keys else None,
         "manual_entry": bool(row["manual_entry"]) if "manual_entry" in keys else False,
         "is_bulk_regenerated": bool(row["is_bulk_regenerated"]) if "is_bulk_regenerated" in keys else False,
+        # 시험 배합 표식 — 컬럼이 없는 구버전/단위테스트 스키마는 항상 False(정식).
+        "is_test": bool(row["is_test"]) if "is_test" in keys else False,
     }
     # 증량 미확인 배지 플래그 — 목록 SELECT 가 실었을 때만(구버전 DB 폴백 없음).
     # manual_unacked 는 아래 공통 루프가 싣는다(상세 응답과 같은 키).
@@ -3009,6 +3292,9 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
               # 수기 입력(책임자 부재) 사유·미확인 플래그 — SELECT 에는 있었지만 여기서
               # 빠뜨려 상세 응답에 실리지 않았다(화면이 '사유: -' 로 표시되던 원인).
               "manual_absence_reason", "manual_unacked",
+              # 시험 배합이 불러온 기준 레시피(있을 때만 — 없으면 null).
+              # base_recipe_name 은 상세 SELECT 만 싣는다(목록은 null).
+              "base_recipe_id", "base_recipe_name",
               # 취소 시각·자동 삭제 예정일 계산(F15) — 취소가 마지막 쓰기라 updated_at 이 기준.
               "updated_at"):
         out[f] = row[f] if f in keys else None

@@ -10,6 +10,9 @@
 작업자별 실적이 양쪽에 다 있었고, 정작 세는 기준이 서로 달랐다(여기 `status != 'canceled'`
 = 초안 포함, 저기 `status = 'completed'`). 지금은 양쪽 다 완료·비-bulk 기준이다.
 
+시험 배합(is_test=1)은 모든 집계에서 제외한다 — 대시보드는 '정식 생산의 지금'이다
+(계약 docs/test-blend-design.md §6).
+
 Endpoints (무로그인 개방, 조회 전용):
     GET /dashboard/summary   기간 KPI + 현재 점도 이상
     GET /dashboard/trend     일별 배합 건수·총량
@@ -70,6 +73,7 @@ def build_router() -> APIRouter:
                        COUNT(DISTINCT product_name) AS products
                 FROM blend_records
                 WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND COALESCE(is_test, 0) = 0
                   AND work_date BETWEEN ? AND ?
                 """,
                 (from_date, to_date),
@@ -103,6 +107,7 @@ def build_router() -> APIRouter:
                        COALESCE(SUM(total_amount), 0) AS total_weight
                 FROM blend_records
                 WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND COALESCE(is_test, 0) = 0
                   AND work_date BETWEEN ? AND ?
                 GROUP BY work_date
                 """,
@@ -138,12 +143,14 @@ def build_router() -> APIRouter:
                        MAX(work_date || ' ' || COALESCE(work_time, '')) AS last_at
                 FROM blend_records
                 WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND COALESCE(is_test, 0) = 0
                 """
             ).fetchone()
             today_row = connection.execute(
                 """
                 SELECT COUNT(*) AS cnt FROM blend_records
                 WHERE status = 'completed' AND COALESCE(is_bulk_regenerated, 0) = 0
+                  AND COALESCE(is_test, 0) = 0
                   AND work_date = ?
                 """,
                 (today,),
@@ -194,6 +201,7 @@ def build_router() -> APIRouter:
                 FROM blend_records br
                 WHERE br.status = 'completed'
                   AND COALESCE(br.is_bulk_regenerated, 0) = 0
+                  AND COALESCE(br.is_test, 0) = 0
                 ORDER BY br.id DESC
                 LIMIT ?
                 """,

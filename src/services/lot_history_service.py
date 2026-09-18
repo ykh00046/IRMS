@@ -85,15 +85,32 @@ def _family_maps(connection: sqlite3.Connection) -> tuple[dict[int, int], dict[i
     return recipe_root, families, name_root
 
 
+def _has_is_test(connection: sqlite3.Connection) -> bool:
+    """blend_records 에 is_test 컬럼이 있는가(구버전/단위테스트 스키마 폴백용)."""
+    try:
+        cols = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(blend_records)").fetchall()
+        }
+        return "is_test" in cols
+    except sqlite3.OperationalError:
+        return False
+
+
 def _fetch_detail_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
+    # 시험 배합(is_test=1) 제외 — 시험은 정식 LOT 교체 이력이 아니다(계약 §6).
+    # 한 번 쓴 시험 LOT 이 교체 사건으로 잡히면 "이 자재를 이때 바꿨다"가 거짓이 된다.
+    test_clause = (
+        " AND COALESCE(r.is_test, 0) = 0" if _has_is_test(connection) else ""
+    )
     return connection.execute(
-        """
+        f"""
         SELECT r.id AS record_id, r.recipe_id, r.product_name, r.product_lot,
                r.work_date, r.worker,
                d.material_code, d.material_name, d.material_lot, d.sequence_order
         FROM blend_details d
         JOIN blend_records r ON r.id = d.blend_record_id
-        WHERE r.status = 'completed'
+        WHERE r.status = 'completed'{test_clause}
         ORDER BY r.work_date, r.id, d.sequence_order, d.id
         """
     ).fetchall()
