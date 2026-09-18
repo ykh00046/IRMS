@@ -866,6 +866,9 @@ def build_router() -> APIRouter:
         product: str | None = None,
         search: str | None = None,
         include_canceled: bool = False,
+        # 시험 필터 — 목록 조회와 같은 값. 화면은 '시험만'인데 파일은 전체가 나오던
+        # 어긋남을 막는다(R-12 와 같은 규칙: '전체'는 화면 조건 안의 전체).
+        test: str = Query(default="all", pattern="^(all|only|exclude)$"),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> StreamingResponse:
         """전체(필터) 배합 기록을 한 시트로 — 데이터 백업·이관용.
@@ -877,7 +880,7 @@ def build_router() -> APIRouter:
         records = blend_service.list_blend_records(
             connection, start_date=start_date, end_date=end_date,
             worker=worker, product=product, search=search, limit=10000,
-            include_canceled=include_canceled,
+            include_canceled=include_canceled, test=test,
         )
         _audit_dhr_export(
             connection, request, fmt="xlsx_all",

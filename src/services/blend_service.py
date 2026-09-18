@@ -2418,54 +2418,43 @@ def derive_test_details(
 def validate_test_materials(
     connection: sqlite3.Connection, details: list[dict[str, Any]]
 ) -> None:
-    """시험 상세의 material_id·material_code 를 자재 마스터와 대조한다(불일치는 오류).
+    """시험 상세의 자재를 자재 마스터로 확정한다 — **등록된 자재만** 쓸 수 있다.
 
-    시험은 마스터에 없는 새 원재료를 이름만으로 추가할 수 있다(계약 §2) — 그래서
-    material_id·material_code 가 **없으면 통과**(NULL 저장). 그러나 값을 **보냈다면**
-    마스터와 맞아야 한다. 맞지 않는 id/코드를 그냥 저장하면 규제 기록에 위조 코드가
-    박히고 자재 사용량 집계가 엉뚱한 자재로 합산된다.
+    이름만으로 새 원재료를 넣게 하면 같은 원재료가 이름 여러 개로 갈라져 품목코드 대조와
+    자재 사용량 집계에서 누락된다(2026-09-18 사용자 결정: 시험이어도 등록된 원재료를 쓴다.
+    품목마다 코드로 대조하고, 시험 제품 자체는 코드가 없어도 된다).
+
+    그래서 행마다 material_id 가 필수이고 사용 중인 자재여야 한다. material_code·
+    material_name 은 클라이언트 값을 믿지 않고 **마스터 값으로 덮어쓴다** — 화면이 오래
+    열려 있는 사이 이름이 바뀌었거나 값이 조작돼도 기록은 마스터와 같은 이름·코드를 갖는다
+    (정식 경로가 derive_details_from_recipe 로 레시피에서 채우는 것과 같은 원칙).
 
     materials 테이블이 없는 최소 스키마(일부 단위테스트)에서는 대조할 근거가 없어
     조용히 통과한다(다른 폴백과 같은 패턴).
     """
     try:
-        rows = connection.execute(
-            "SELECT id, name, code FROM materials"
-        ).fetchall()
-    except sqlite3.OperationalError:  # materials/code 없는 최소 스키마
+        rows = connection.execute("SELECT * FROM materials").fetchall()
+    except sqlite3.OperationalError:  # materials 없는 최소 스키마
         return
     by_id = {int(r["id"]): r for r in rows}
-    codes = {
-        str(r["code"]).strip().upper()
-        for r in rows
-        if r["code"] is not None and str(r["code"]).strip()
-    }
     for d in details:
         name = str(d.get("material_name") or "").strip() or "(이름 없음)"
-        mid = d.get("material_id")
         master = None
+        mid = d.get("material_id")
         if mid is not None:
             try:
                 master = by_id.get(int(mid))
             except (TypeError, ValueError):
                 master = None
-            if master is None:
-                raise TestBlendError(
-                    f"자재 마스터에 없는 자재입니다: {name} — 코드 없이 이름만으로 추가하세요."
-                )
-        code = str(d.get("material_code") or "").strip()
-        if not code:
-            continue
-        if master is not None:
-            master_code = str(master["code"] or "").strip()
-            if master_code.upper() != code.upper():
-                raise TestBlendError(
-                    f"자재 품목코드가 마스터와 다릅니다: {name} ({code})"
-                )
-        elif code.upper() not in codes:
-            raise TestBlendError(
-                f"자재 품목코드가 마스터와 다릅니다: {name} ({code})"
-            )
+        if master is None:
+            raise TestBlendError(f"자재 관리에 등록된 자재만 쓸 수 있습니다: {name}")
+        keys = master.keys()
+        if "is_active" in keys and not int(master["is_active"] or 0):
+            raise TestBlendError(f"사용 안 함으로 바뀐 자재입니다: {master['name']}")
+        d["material_id"] = int(master["id"])
+        d["material_name"] = str(master["name"])
+        code = master["code"] if "code" in keys else None
+        d["material_code"] = str(code).strip() if code is not None and str(code).strip() else None
 
 
 def missing_actual_names(details: list[dict[str, Any]]) -> list[str]:

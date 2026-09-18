@@ -83,13 +83,6 @@ test("시험 행은 목표량 입력칸·비율 칸·행 삭제 버튼을 갖는
   assert.ok(!html.includes("blend-theory"), "이론량 표시 칸은 없다(입력칸이 대신한다)");
 });
 
-test("마스터에 없는 자재는 이름 옆에 표시가 붙는다", () => {
-  const plain = lib.materialRowHtml(0, ROW, { test: true });
-  assert.ok(!plain.includes("마스터에 없는 자재"));
-  const free = lib.materialRowHtml(1, { ...ROW, not_in_master: true }, { test: true });
-  assert.ok(free.includes("마스터에 없는 자재"));
-});
-
 test("정식 행 HTML 은 시험 옵션 없이 종전과 같다(목표량 입력칸·삭제 버튼 없음)", () => {
   const html = lib.materialRowHtml(0, ROW);
   assert.ok(html.includes('class="num blend-theory" data-idx="0"'), "이론량 표시 칸");

@@ -116,16 +116,13 @@
   }
 
   // 시험 배합 행(계약 §8.4) — 이론량 칸이 목표량 입력칸이고, 행 삭제(×) 버튼이 붙는다.
-  // 마스터에 없는 자재는 이름 옆에 옅은 표시를 남긴다(품목코드 없이 저장되는 행).
+  // 행은 등록된 자재만 올 수 있다(자재 검색 창이 마스터 자재만 보여 준다).
   // 정식 행 HTML 은 한 글자도 건드리지 않는다 — 이 함수는 test 옵션에서만 쓰인다.
   function testMaterialRowHtml(idx, it) {
-    const mark = it && it.not_in_master
-      ? ' <span class="blend-nomaster">마스터에 없는 자재</span>'
-      : "";
     const target = (it.theory_amount === null || it.theory_amount === undefined)
       ? "" : String(it.theory_amount);
     return `<td>${idx + 1}</td>` +
-      `<td><span class="blend-mat-name">${esc(it.material_name)}</span>${mark}` +
+      `<td><span class="blend-mat-name">${esc(it.material_name)}</span>` +
       `<button type="button" class="blend-row-del" data-idx="${idx}" title="이 행을 지웁니다" aria-label="행 삭제">×</button></td>` +
       `<td class="num blend-ratio" data-idx="${idx}">${fmt(it.ratio, 2)}</td>` +
       `<td class="num blend-target-cell"><input class="input blend-target" data-idx="${idx}" type="number" step="any" min="0" value="${esc(target)}" placeholder="목표량" aria-label="목표량 (g)" /></td>` +

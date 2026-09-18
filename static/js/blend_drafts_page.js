@@ -100,7 +100,8 @@
     return `<tr data-kind="${esc(entry.kind)}" data-id="${esc(slot.id)}" data-name="${esc(name)}"${isTest ? ' data-test="1"' : ""}>`
       + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${testChip}${totalHtml}${completeChip}</div>${changeHtml}</td>`
       + `<td>${esc(drafts.workerOf(slot) || "-")}</td>`
-      + `<td>${esc(entry.label)}</td>`
+      // 화면 칸 — 시험 초안은 시험 배합 화면에서 이어 가므로 그 이름을 적는다.
+      + `<td>${esc(isTest ? "시험 배합" : entry.label)}</td>`
       + `<td class="drafts-progress">${esc(progText)}</td>`
       + `<td class="drafts-saved">`
       + `<span class="drafts-ago">${esc(ago || "-")}</span>`

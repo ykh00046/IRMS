@@ -998,7 +998,6 @@
       it.theory_amount = Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null;
       it.loss_comp_g = 0;
       it.is_anchor = false;
-      it.not_in_master = false;
     });
   }
 
@@ -1063,11 +1062,14 @@
   }
 
   function addTestRow(mat) {
-    const name = String((mat && mat.name) || "").trim();
+    // 등록된 자재만 — id 없는 이름은 받지 않는다(이름이 여러 개로 갈라져 품목코드 대조에서
+    // 누락된다. 2026-09-18 사용자 결정: 시험이어도 등록된 원재료를 쓴다).
+    if (!mat || mat.id == null) return;
+    const name = String(mat.name || "").trim();
     if (!name) return;
     resetRowIndexState();
     state.items.push({
-      material_id: (mat && mat.id != null) ? mat.id : null,
+      material_id: mat.id,
       material_code: (mat && mat.code) ? String(mat.code) : "",
       material_name: name,
       unit: (mat && mat.unit) || "g",
@@ -1076,7 +1078,6 @@
       theory_amount: null,
       loss_comp_g: 0,
       is_anchor: false,
-      not_in_master: !(mat && mat.id != null),
       actual_amount: "",
       material_lot: "",
       portions: [],
@@ -1111,7 +1112,7 @@
 
   // ── 시험 배합: 자재 검색 창(행 추가) ────────────────────────────
   // GET /materials 의 품목코드·자재명·동의어로 찾는다(순수 판정은 blendLib.filterMaterials).
-  // 마스터에 없는 이름도 그대로 추가할 수 있다 — 시험은 새 원재료를 시도하는 자리다.
+  // 등록된 자재만 고를 수 있다. 새 원재료는 자재 관리에서 먼저 등록한다.
   let _pickerActive = 0;
   let _pickerRows = [];
 
@@ -1121,8 +1122,9 @@
       const data = await request("/materials");
       state.materialsCache = (data && data.items) || [];
     } catch (_e) {
-      state.materialsCache = [];
-      notify("자재 목록을 읽지 못했습니다. 이름으로 추가할 수 있습니다.", "warn");
+      // 캐시하지 않는다 — 다음에 창을 열 때 다시 읽는다.
+      notify("자재 목록을 읽지 못했습니다. 자재 추가를 다시 누르세요.", "warn");
+      return [];
     }
     return state.materialsCache;
   }
@@ -1153,21 +1155,16 @@
     _pickerRows = found.map((m) => ({
       id: m.id, name: m.name, code: m.code || "", unit: m.unit || "g",
     }));
-    // 마스터에 없는 이름 — 검색어가 어느 자재명과도 정확히 같지 않을 때만 제안한다.
-    const exact = _pickerRows.some((m) => m.name.trim().toLowerCase() === q.toLowerCase());
-    if (q && !exact) _pickerRows.push({ id: null, name: q, code: "", unit: "g", free: true });
     if (_pickerActive >= _pickerRows.length) _pickerActive = Math.max(0, _pickerRows.length - 1);
     if (!_pickerRows.length) {
-      listEl.innerHTML = '<p class="blend-mat-picker-empty">찾는 자재가 없습니다. 이름을 입력하면 그대로 추가합니다.</p>';
+      listEl.innerHTML = '<p class="blend-mat-picker-empty">찾는 자재가 없으면 자재 관리에서 먼저 등록하세요.</p>';
       return;
     }
     listEl.innerHTML = _pickerRows.map((m, i) => (
       `<button type="button" class="blend-mat-option${i === _pickerActive ? " is-active" : ""}" `
       + `data-i="${i}" role="option" aria-selected="${i === _pickerActive}">`
       + `<span class="blend-mat-option-name">${esc(m.name)}</span>`
-      + (m.free
-        ? '<span class="blend-mat-option-mark">마스터에 없는 자재</span>'
-        : (m.code ? `<span class="blend-mat-option-code">${esc(m.code)}</span>` : ""))
+      + (m.code ? `<span class="blend-mat-option-code">${esc(m.code)}</span>` : "")
       + "</button>"
     )).join("");
     listEl.querySelectorAll(".blend-mat-option").forEach((btn) => {
@@ -1309,7 +1306,6 @@
         material_name: it.material_name,
         material_code: it.material_code || "",
         material_id: it.material_id == null ? null : it.material_id,
-        not_in_master: it.not_in_master === true,
         theory_amount: it.theory_amount == null ? null : Number(it.theory_amount),
         material_lot: it.material_lot || "",
         actual_amount: (it.actual_amount === "" || it.actual_amount == null) ? "" : String(it.actual_amount),
@@ -1461,7 +1457,6 @@
       theory_amount: di.theory_amount == null ? null : Number(di.theory_amount),
       loss_comp_g: 0,
       is_anchor: false,
-      not_in_master: di.not_in_master === true,
       actual_amount: di.actual_amount === "" ? "" : di.actual_amount,
       material_lot: di.material_lot || "",
       manual: di.manual === true,
@@ -4074,8 +4069,7 @@
     const body = state.testMode ? {
       // ── 시험 저장 payload(계약 §8.7) ──
       // recipe_id 는 null, 총량·비율은 서버가 목표량에서 산출한다(보내는 total 은 무시됨).
-      // 자재 마스터에 없는 행은 material_id·material_code 를 아예 보내지 않는다 —
-      // 빈 값을 보내면 '위조 코드' 검사에 걸릴 이유가 없는데도 판정 경로를 타게 된다.
+      // 자재는 등록된 자재만 — material_id 로 보내면 서버가 품목코드·이름을 마스터에서 채운다.
       is_test: true,
       base_recipe_id: state.baseRecipeId,
       recipe_id: null,
@@ -4105,7 +4099,6 @@
           carried_over: false,
         };
         if (it.material_id != null && it.material_id !== "") d.material_id = it.material_id;
-        if (String(it.material_code || "").trim()) d.material_code = String(it.material_code).trim();
         return d;
       }),
     } : {

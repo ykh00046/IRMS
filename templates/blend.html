@@ -5,7 +5,7 @@
 {% block heading %}{{ '시험 배합' if test_mode else '배합 · 반제품 제조 (DHR)' }}{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260918a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260918b" />
 {% endblock %}
 
 {% block content %}
@@ -54,7 +54,7 @@
                   </select>
                 </div>
                 <div class="blend-field">
-                  <label class="filter-label" for="blend-recipe">레시피{% if test_mode %} <span class="blend-worker-hint">(선택하지 않아도 됩니다)</span>{% endif %}</label>
+                  <label class="filter-label" for="blend-recipe">레시피{% if test_mode %} <span class="blend-worker-hint">(선택)</span>{% endif %}</label>
                   <select class="input" id="blend-recipe"><option value="">레시피 선택…</option></select>
                 </div>
                 <div class="blend-field blend-field-total">
@@ -529,11 +529,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260918a"></script>
+    <script src="/static/js/blend_lib.js?v=20260918b"></script>
     <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend.js?v=20260918a"></script>
+    <script src="/static/js/blend.js?v=20260918b"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

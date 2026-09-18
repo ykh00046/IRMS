@@ -1153,6 +1153,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if ($("status-rec-canceled") && $("status-rec-canceled").checked) {
       q.set("include_canceled", "1");
     }
+    // 시험 조건도 화면과 같게 — '시험만'을 보고 있으면 파일에도 시험 기록만 담긴다.
+    if (testMode() !== "all") q.set("test", testMode());
     const count = Number(listMeta.total_available || allRecords.length || 0);
     startLongExport($("status-rec-export-all"), count, "전체 Excel");
     window.open(`/api/blend/records/export-all?${q.toString()}`, "_blank");

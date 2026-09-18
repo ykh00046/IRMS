@@ -103,10 +103,30 @@ def _test_payload(product, *, rows, base_recipe_id=None, work_date=_WORK_DATE, *
     return body
 
 
-def _save_test(client, csrf, product, **kwargs):
-    return client.post(
-        "/api/blend/records", json=_test_payload(product, **kwargs), headers=csrf()
-    )
+def _material_id(client, csrf, name: str) -> int:
+    """자재 마스터에서 이름으로 id 를 찾고, 없으면 등록한다.
+
+    시험 배합도 등록된 자재만 받는다(2차 결정) — 테스트 행도 마스터 자재로 보낸다.
+    """
+    for m in client.get("/api/materials").json()["items"]:
+        if m["name"] == name:
+            return int(m["id"])
+    res = client.post("/api/materials", json={"name": name}, headers=csrf())
+    assert res.status_code == 200, res.text
+    return int(res.json()["id"])
+
+
+def _save_test(client, csrf, product, *, resolve_materials=True, **kwargs):
+    """시험 저장. 기본은 이름만 적은 행에 마스터 자재 id 를 채워 보낸다(화면과 같은 모양).
+
+    resolve_materials=False 면 본문을 그대로 보낸다 — 등록 자재 규칙 자체를 검사할 때.
+    """
+    body = _test_payload(product, **kwargs)
+    if resolve_materials:
+        for d in body["details"]:
+            if "material_id" not in d and d.get("material_name"):
+                d["material_id"] = _material_id(client, csrf, d["material_name"])
+    return client.post("/api/blend/records", json=body, headers=csrf())
 
 
 # ── §4 저장 ────────────────────────────────────────────────────────
@@ -267,31 +287,67 @@ def test_test_save_rejects_unknown_base_recipe():
     assert "기준 레시피" in res.text
 
 
-def test_test_save_allows_unknown_material_and_rejects_wrong_code():
-    """마스터에 없는 새 원재료는 이름만으로 통과(NULL 저장), 틀린 품목코드는 400(§4.2)."""
+def test_test_save_requires_registered_material():
+    """시험도 **등록된 자재만**(2차 결정) — 이름만 적은 행·사용 안 함 자재는 400.
+
+    이름만으로 원재료를 넣게 하면 같은 원재료가 이름 여러 개로 갈라져 품목코드 대조와
+    사용량 집계에서 누락된다. 그래서 화면이 보낸 이름·품목코드는 믿지 않고 마스터 값으로
+    덮어쓴다(시험 제품 자체는 코드가 없어도 된다).
+    """
     client, csrf = _mgmt_client()
-    product = "새원재료" + _uid()
-    _worker_session(client, csrf, "새원료작업" + _uid())
+    product = "등록자재" + _uid()
+    _worker_session(client, csrf, "등록자재작업" + _uid())
 
-    ok = _save_test(client, csrf, product, rows=[
-        {"material_name": "미등록원료" + _uid(), "theory_amount": 12.5,
-         "actual_amount": 12.5, "material_lot": "TX1"},
-        # 같은 이름이 여러 행이어도 된다(분할 계량) — 레시피 대조가 없다.
-        {"material_name": "분할원료", "theory_amount": 10, "actual_amount": 10,
-         "material_lot": "TX2"},
-        {"material_name": "분할원료", "theory_amount": 5, "actual_amount": 5,
-         "material_lot": "TX2"},
+    # 1) 이름만 — 마스터에 없는 원재료는 받지 않는다.
+    free = _save_test(client, csrf, product, resolve_materials=False, rows=[
+        {"material_name": "미등록원료" + _uid(), "theory_amount": 10,
+         "actual_amount": 10, "material_lot": "TX1"},
     ])
-    assert ok.status_code == 200, ok.text
-    assert ok.json()["total_amount"] == 27.5
-    assert [d["material_id"] for d in ok.json()["details"]] == [None, None, None]
+    assert free.status_code == 400, free.text
+    assert "등록된 자재" in free.text
 
-    ng = _save_test(client, csrf, product, rows=[
-        {"material_name": "코드위조원료", "material_code": "ZZ-NO-SUCH-CODE",
+    # 2) 등록된 자재 — 보낸 이름·코드가 달라도 마스터 값으로 저장된다.
+    #    품목코드는 materials 에만 직접 넣는다. API 로 코드를 붙이면 ERP 품목 마스터
+    #    (item_code_master)에도 한 줄이 생기고, 그러면 같은 DB 를 쓰는 뒤 테스트의 레시피
+    #    임포트가 '마스터에 없는 품목'으로 막힌다(마스터가 비어 있을 때만 자동 등록).
+    from src.db import get_connection
+
+    name = "등록원료" + _uid()
+    code = "TZ" + _uid()
+    created = client.post("/api/materials", json={"name": name}, headers=csrf())
+    assert created.status_code == 200, created.text
+    mid = int(created.json()["id"])
+    with get_connection() as conn:
+        conn.execute("UPDATE materials SET code = ? WHERE id = ?", (code, mid))
+    try:
+        ok = _save_test(client, csrf, product, resolve_materials=False, rows=[
+            {"material_id": mid, "material_name": "옛이름", "material_code": "WRONG1",
+             "theory_amount": 10, "actual_amount": 10, "material_lot": "TX2"},
+            # 같은 자재가 여러 행이어도 된다(분할 계량).
+            {"material_id": mid, "material_name": name,
+             "theory_amount": 5, "actual_amount": 5, "material_lot": "TX2"},
+        ])
+    finally:
+        with get_connection() as conn:
+            conn.execute("UPDATE materials SET code = NULL WHERE id = ?", (mid,))
+    assert ok.status_code == 200, ok.text
+    saved = ok.json()["details"]
+    assert ok.json()["total_amount"] == 15.0
+    assert [d["material_id"] for d in saved] == [mid, mid]
+    assert {d["material_name"] for d in saved} == {name}
+    assert {d["material_code"] for d in saved} == {code}
+
+    # 3) 사용 안 함으로 바뀐 자재는 받지 않는다.
+    off = client.put(
+        f"/api/materials/{mid}/active", json={"is_active": 0}, headers=csrf()
+    )
+    assert off.status_code == 200, off.text
+    inactive = _save_test(client, csrf, product, resolve_materials=False, rows=[
+        {"material_id": mid, "material_name": name,
          "theory_amount": 10, "actual_amount": 10, "material_lot": "TX3"},
     ])
-    assert ng.status_code == 400, ng.text
-    assert "품목코드" in ng.text
+    assert inactive.status_code == 400, inactive.text
+    assert "사용 안 함" in inactive.text
 
 
 def test_test_save_audit_records_is_test():
@@ -476,6 +532,53 @@ def test_export_all_has_test_column():
     col = headers.index("시험")
     body_rows = [[c.value for c in row] for row in ws.iter_rows(min_row=2)]
     assert body_rows and all(r[col] == "시험" for r in body_rows)
+
+
+def test_export_all_follows_test_filter():
+    """전체 Excel 은 화면의 시험 조건을 그대로 따른다(2차 결정 · R-12 와 같은 규칙).
+
+    화면은 '시험만'인데 파일에는 정식까지 섞여 나오던 어긋남을 막는다.
+    """
+    from openpyxl import load_workbook
+
+    client, csrf = _mgmt_client()
+    product = "백업필터" + _uid()
+    worker = "백업필터작업" + _uid()
+    _worker_session(client, csrf, worker)
+    rid = _import_recipe(client, csrf, product, [("원료A", 60), ("원료B", 40)])
+    prod = client.post("/api/blend/records", json={
+        "recipe_id": rid, "product_name": product, "worker": "무시됨",
+        "work_date": _WORK_DATE, "total_amount": 100,
+        "details": [
+            {"material_name": "원료A", "actual_amount": 60, "material_lot": "LA"},
+            {"material_name": "원료B", "actual_amount": 40, "material_lot": "LB"},
+        ],
+    }, headers=csrf())
+    assert prod.status_code == 200, prod.text
+    test_res = _save_test(client, csrf, product, rows=[("원료A", 10, 10, "TLA")])
+    assert test_res.status_code == 200, test_res.text
+
+    def marks(mode):
+        params = {"worker": worker}
+        if mode:
+            params["test"] = mode
+        export = client.get("/api/blend/records/export-all", params=params)
+        assert export.status_code == 200, export.text
+        ws = load_workbook(io.BytesIO(export.content)).active
+        headers = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+        col = headers.index("시험")
+        return sorted(
+            (row[col].value or "") for row in ws.iter_rows(min_row=2)
+            if any(c.value is not None for c in row)
+        )
+
+    assert marks(None) == ["", "시험"]
+    assert marks("only") == ["시험"]
+    assert marks("exclude") == [""]
+    bad = client.get(
+        "/api/blend/records/export-all", params={"worker": worker, "test": "bogus"}
+    )
+    assert bad.status_code == 422, bad.text
 
 
 def test_dhr_excel_export_has_no_test_marker():
