@@ -1,19 +1,24 @@
 {% extends "_base_app.html" %}
 
-{% block title %}배합 실적{% endblock %}
+{% block title %}{{ '시험 배합' if test_mode else '배합 실적' }}{% endblock %}
 {% block eyebrow %}현장 작업{% endblock %}
-{% block heading %}배합 · 반제품 제조 (DHR){% endblock %}
+{% block heading %}{{ '시험 배합' if test_mode else '배합 · 반제품 제조 (DHR)' }}{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260915a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260918a" />
 {% endblock %}
 
 {% block content %}
         <!-- ===== 배합 입력 ===== -->
-        <div id="blend-entry-mode">
+        {# 시험 모드 판정은 이 속성 하나뿐이다(계약 §7) — JS 는 경로를 보지 않는다. #}
+        <div id="blend-entry-mode"{% if test_mode %} data-test-mode="1"{% endif %}>
           <!-- 임시저장 복구 후 레시피 변경 고지 · 사라진 재료의 계량값·새로 추가된 재료·
                기준 배합량 변경을 값까지 적어 남긴다(토스트는 사라지므로 조용한 폐기 방지).
                끊긴 작업을 이어서 하는 입구는 "작성 중 배합"(/blend/drafts) 한 곳뿐이다. -->
+          {% if test_mode %}
+          {# 시험 띠 · 이 화면이 정식 기록과 다른 곳임을 맨 위에서 한 줄로 알린다. #}
+          <p class="panel-notice blend-test-banner">시험 배합입니다. 정식 기록과 구분되어 저장됩니다.</p>
+          {% endif %}
           <div class="blend-draft-notice" id="blend-draft-notice" hidden>
             <div class="blend-draft-notice-body" id="blend-draft-notice-body"></div>
             <button type="button" class="btn btn-sm" id="blend-draft-notice-close">확인</button>
@@ -29,8 +34,15 @@
           </div>
           <div class="blend-top-grid">
             <section class="panel">
-              <h3 class="panel-title">배합 설정</h3>
+              <h3 class="panel-title">{{ '시험 설정' if test_mode else '배합 설정' }}</h3>
               <div class="blend-form-grid">
+                {% if test_mode %}
+                {# 시험명 · 제품명 자리. 저장 시 product_name 으로 간다(LOT 은 "T-시험명"). #}
+                <div class="blend-field">
+                  <label class="filter-label" for="blend-test-name">시험명</label>
+                  <input class="input" id="blend-test-name" placeholder="예: PB 점도 시험" maxlength="100" autocomplete="off" />
+                </div>
+                {% endif %}
                 <div class="blend-field">
                   <label class="filter-label" for="blend-recipe-cat">분류</label>
                   <select class="input" id="blend-recipe-cat">
@@ -42,7 +54,7 @@
                   </select>
                 </div>
                 <div class="blend-field">
-                  <label class="filter-label" for="blend-recipe">레시피</label>
+                  <label class="filter-label" for="blend-recipe">레시피{% if test_mode %} <span class="blend-worker-hint">(선택하지 않아도 됩니다)</span>{% endif %}</label>
                   <select class="input" id="blend-recipe"><option value="">레시피 선택…</option></select>
                 </div>
                 <div class="blend-field blend-field-total">
@@ -52,7 +64,8 @@
                     <label class="filter-label" for="blend-total">총 배합량 (g)</label>
                     <span class="blend-base-links" id="blend-base-links" hidden></span>
                   </div>
-                  <input class="input" id="blend-total" type="number" step="0.1" min="0" />
+                  {# 시험은 총량이 목표량 합이다 — 직접 입력하지 않는다(읽기 전용). #}
+                  <input class="input" id="blend-total" type="number" step="0.1" min="0"{% if test_mode %} readonly placeholder="목표량 합"{% endif %} />
                 </div>
                 <div class="blend-field">
                   <label class="filter-label" for="blend-worker">작업자 <span class="blend-worker-hint">(클릭해 교대)</span></label>
@@ -96,8 +109,8 @@
             </section>
 
             <section class="blend-dhr-card is-empty">
-              <div class="blend-dhr-head">제품 · DHR</div>
-              <p class="blend-dhr-empty">레시피를 선택하면 제품 LOT과 이론·실제 합계가 여기에 표시됩니다.</p>
+              <div class="blend-dhr-head">{{ '시험 · DHR' if test_mode else '제품 · DHR' }}</div>
+              <p class="blend-dhr-empty">{{ '시험명을 입력하면 제품 LOT과 합계가 여기에 표시됩니다.' if test_mode else '레시피를 선택하면 제품 LOT과 이론·실제 합계가 여기에 표시됩니다.' }}</p>
               <div class="blend-dhr-lot">
                 <span class="blend-dhr-lot-label">제품 LOT · 저장 시 확정</span>
                 <span class="blend-dhr-lot-value" id="blend-lot-preview">-</span>
@@ -137,17 +150,32 @@
                     <th>#</th>
                     <th>품목</th>
                     <th class="num">비율(%)</th>
-                    <th class="num">이론량(g)</th>
+                    <th class="num">{{ '목표량(g)' if test_mode else '이론량(g)' }}</th>
                     <th>자재 LOT</th>
                     <th class="num">실제량(g)</th>
                     <th class="num">편차(g)</th>
                   </tr>
                 </thead>
                 <tbody id="blend-mat-body">
-                  <tr><td colspan="7" class="muted">레시피를 선택하세요.</td></tr>
+                  <tr><td colspan="7" class="muted">{{ '자재를 추가하세요.' if test_mode else '레시피를 선택하세요.' }}</td></tr>
                 </tbody>
               </table>
             </div>
+            {% if test_mode %}
+            {# 자재 추가 · 마스터 검색(품목코드·자재명·동의어)으로 고르거나 이름만으로 넣는다.
+               키보드만으로 끝낼 수 있게 위/아래·Enter·Esc 를 받는다(blend.js 가 배선). #}
+            <div class="blend-test-add">
+              <button class="btn btn-sm" id="blend-add-row" type="button">자재 추가</button>
+              <div class="blend-mat-picker" id="blend-mat-picker" hidden>
+                <input class="input" id="blend-mat-search" placeholder="자재명 또는 품목코드" autocomplete="off" aria-label="자재 검색" />
+                <div class="blend-mat-picker-list" id="blend-mat-picker-list" role="listbox"></div>
+                <div class="blend-mat-picker-foot">
+                  <span class="muted">위·아래로 고르고 Enter로 추가합니다</span>
+                  <button class="btn btn-sm" id="blend-mat-picker-close" type="button">닫기</button>
+                </div>
+              </div>
+            </div>
+            {% endif %}
             <div class="blend-actions">
               <textarea class="input" id="blend-note" rows="1" placeholder="비고 (선택)"></textarea>
               <div class="blend-sign-field">
@@ -501,11 +529,11 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lib.js?v=20260915a"></script>
-    <script src="/static/js/blend_drafts.js?v=20260915a"></script>
+    <script src="/static/js/blend_lib.js?v=20260918a"></script>
+    <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend.js?v=20260915b"></script>
+    <script src="/static/js/blend.js?v=20260918a"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

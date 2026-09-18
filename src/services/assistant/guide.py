@@ -24,6 +24,7 @@ SCREEN_MAP = [
     {"menu": "홈", "path": "/", "what": "근태와 반제품 제조 입구를 고르는 첫 화면"},
     {"menu": "대시보드", "path": "/dashboard", "what": "오늘 현황과 봐야 할 항목 요약"},
     {"menu": "배합", "path": "/blend", "what": "레시피를 골라 한 로트를 계량하고 저장"},
+    {"menu": "시험 배합", "path": "/blend/test", "what": "자재별 목표량을 직접 넣어 시험으로 계량"},
     {"menu": "다중 계량", "path": "/blend/continuous", "what": "같은 레시피로 여러 로트를 연속 계량"},
     {"menu": "작성 중 배합", "path": "/blend/drafts", "what": "끊긴 배합의 임시저장을 이어서 하기"},
     {"menu": "배합 기록", "path": "/status", "what": "저장된 기록 조회와 배합일지 출력"},

@@ -698,8 +698,8 @@ def test_material_lot_trace_includes_test_with_flag():
 def test_blend_test_page_renders_blend_screen():
     """GET /blend/test — /blend 와 같은 작업자 가드로 배합 화면을 시험 모드로 렌더(§7).
 
-    TODO(패키지 B): 템플릿이 `#blend-entry-mode` 에 `data-test-mode="1"` 을 붙인 뒤
-    그 속성까지 여기서 확인한다(지금은 템플릿이 test_mode 를 읽지 않아 속성이 없다).
+    시험 여부의 유일한 판정 근거는 `#blend-entry-mode` 의 `data-test-mode="1"` 이다
+    (JS 는 경로를 보지 않는다) — 정식 화면에는 그 속성이 없어야 한다.
     """
     client, csrf = _mgmt_client()
     _worker_session(client, csrf, "페이지작업" + _uid())
@@ -707,8 +707,10 @@ def test_blend_test_page_renders_blend_screen():
     assert res.status_code == 200, res.text
     # blend.html 이 렌더됐다는 증거(배합 화면 전용 자산).
     assert "blend.js" in res.text
+    assert 'id="blend-entry-mode" data-test-mode="1"' in res.text, res.text[:2000]
     plain = client.get("/blend")
     assert plain.status_code == 200, plain.text
+    assert "data-test-mode" not in plain.text
 
 
 def test_blend_test_page_requires_worker_session():

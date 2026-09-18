@@ -45,6 +45,8 @@
 
   // 복구 전 고지 배지 + 상세 문구. diff 가 null 이면 레시피 조회 실패.
   function changeCellHtml(kind, slot, recipeData) {
+    // 시험 초안은 대조할 레시피 구성이 없다 — 변경 고지 없이 '시험' 칩만 붙는다.
+    if (drafts.isTestSlot(slot)) return "";
     if (!recipeData) {
       return chip("drafts-badge-info", "레시피 확인 불가");
     }
@@ -84,6 +86,9 @@
     // 목록에서 먼저 눈에 띄어야 한다. 완료 판정은 blend_drafts.js isComplete 공용.
     const completeChip = drafts.isComplete(entry.kind, slot)
       ? chip("drafts-badge-warn", "저장 전") : "";
+    // 시험 배합 초안 — 중립 칩. 이어서 하기는 시험 배합 화면으로 간다(계약 §8.9).
+    const isTest = drafts.isTestSlot(slot);
+    const testChip = isTest ? chip("drafts-badge-info", "시험") : "";
     // 같은 제품의 초안이 두 칸에 걸릴 수 있다 — 총 배합량까지 보여야 어느 작업인지 갈린다.
     const total = drafts.totalOf(slot);
     const totalHtml = total ? `<span class="drafts-total">총량 ${esc(total)}g</span>` : "";
@@ -92,8 +97,8 @@
     const exp = drafts.expiryText(slot);
     // 삭제 확인 문구에 쓸 제품명은 data 속성으로 따로 싣는다 — 셀 textContent 에는
     // 변경 배지·상세 문구가 섞여 있어 그대로 쓰면 확인창이 읽을 수 없게 된다.
-    return `<tr data-kind="${esc(entry.kind)}" data-id="${esc(slot.id)}" data-name="${esc(name)}">`
-      + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${totalHtml}${completeChip}</div>${changeHtml}</td>`
+    return `<tr data-kind="${esc(entry.kind)}" data-id="${esc(slot.id)}" data-name="${esc(name)}"${isTest ? ' data-test="1"' : ""}>`
+      + `<td class="product-cell"><div class="drafts-name-row"><b>${esc(name)}</b>${testChip}${totalHtml}${completeChip}</div>${changeHtml}</td>`
       + `<td>${esc(drafts.workerOf(slot) || "-")}</td>`
       + `<td>${esc(entry.label)}</td>`
       + `<td class="drafts-progress">${esc(progText)}</td>`
@@ -122,7 +127,10 @@
     if (!entries.length) { showEmpty(); return; }
 
     // 레시피 변경 고지는 복구 "전"에 보여야 의미가 있다 — 목록을 그리기 전에 모아 읽는다.
-    const recipes = await Promise.all(entries.map((e) => loadRecipe(e.slot.recipe_id)));
+    // 시험 초안은 레시피를 조회하지 않는다(없어도 성립 · /blend/recipes/null 호출 금지).
+    const recipes = await Promise.all(entries.map((e) =>
+      drafts.isTestSlot(e.slot) || !e.slot.recipe_id ? null : loadRecipe(e.slot.recipe_id)
+    ));
     const rows = entries.map((e, i) => rowHtml(e, changeCellHtml(e.kind, e.slot, recipes[i])));
 
     $("drafts-body").innerHTML = rows.join("");
@@ -155,7 +163,8 @@
         notify("이 브라우저에서 이어서 하기를 사용할 수 없습니다(저장소 접근 불가).", "error");
         return;
       }
-      window.location.assign(meta.path);
+      // 시험 초안은 시험 배합 화면으로 — 그 화면만 목표량·시험명 칸을 갖는다.
+      window.location.assign(row.dataset.test === "1" ? "/blend/test" : meta.path);
       return;
     }
     if (event.target.classList.contains("drafts-delete")) {

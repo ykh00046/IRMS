@@ -12,6 +12,7 @@
  *   varianceVerdict,
  *   baseTotalValues, materialRowHtml, baseTotalLinksHtml, bulkRowHtml,
  *   computeTotals, computeTheoryAmount,
+ *   sumTargets, targetRatio, testDefaultName, filterMaterials,   // 시험 배합(계약 §8)
  *   varianceDisplay(it, toleranceG?), varianceWarnMessage(it, v, toleranceG?),
  *   badVarianceNames(bad), varianceBlockMessage(names, toleranceG?),
  *   option, stepRowsHtml, lotFallbackText,
@@ -114,11 +115,85 @@
     return list.filter((v) => Number(v) > 0);
   }
 
+  // 시험 배합 행(계약 §8.4) — 이론량 칸이 목표량 입력칸이고, 행 삭제(×) 버튼이 붙는다.
+  // 마스터에 없는 자재는 이름 옆에 옅은 표시를 남긴다(품목코드 없이 저장되는 행).
+  // 정식 행 HTML 은 한 글자도 건드리지 않는다 — 이 함수는 test 옵션에서만 쓰인다.
+  function testMaterialRowHtml(idx, it) {
+    const mark = it && it.not_in_master
+      ? ' <span class="blend-nomaster">마스터에 없는 자재</span>'
+      : "";
+    const target = (it.theory_amount === null || it.theory_amount === undefined)
+      ? "" : String(it.theory_amount);
+    return `<td>${idx + 1}</td>` +
+      `<td><span class="blend-mat-name">${esc(it.material_name)}</span>${mark}` +
+      `<button type="button" class="blend-row-del" data-idx="${idx}" title="이 행을 지웁니다" aria-label="행 삭제">×</button></td>` +
+      `<td class="num blend-ratio" data-idx="${idx}">${fmt(it.ratio, 2)}</td>` +
+      `<td class="num blend-target-cell"><input class="input blend-target" data-idx="${idx}" type="number" step="any" min="0" value="${esc(target)}" placeholder="목표량" aria-label="목표량 (g)" /></td>` +
+      `<td><input class="input blend-lot" data-idx="${idx}" value="${esc(it.material_lot)}" placeholder="LOT" /></td>` +
+      `<td class="num blend-actual-cell"><input class="input blend-actual" data-idx="${idx}" type="number" step="any" min="0" value="${esc(it.actual_amount)}" placeholder="${it.theory_amount == null ? "" : fmt(it.theory_amount)}" /></td>` +
+      `<td class="num blend-var" data-idx="${idx}">-</td>`;
+  }
+
+  // 목표량 합(g) — 시험 배합의 총 배합량. 저울 해상도(2자리)로 반올림한다.
+  function sumTargets(items) {
+    const list = Array.isArray(items) ? items : [];
+    let sum = 0;
+    for (const it of list) {
+      const v = Number(it && it.theory_amount);
+      if (Number.isFinite(v) && v > 0) sum += v;
+    }
+    return Math.round(sum * 100) / 100;
+  }
+
+  // 비율(%) = 목표량 / 목표량 합 × 100. 합이 0 이거나 목표량이 없으면 0.
+  function targetRatio(theory, total) {
+    const t = Number(theory);
+    const sum = Number(total);
+    if (!Number.isFinite(t) || !(t > 0) || !Number.isFinite(sum) || !(sum > 0)) return 0;
+    return Math.round((t / sum) * 10000) / 100;
+  }
+
+  // 시험명 기본값 — 레시피를 불러오면 "{제품명} 시험".
+  function testDefaultName(productName) {
+    const name = String(productName === null || productName === undefined ? "" : productName).trim();
+    return name ? `${name} 시험` : "";
+  }
+
+  // 자재 검색(순수) — 품목코드·자재명·동의어를 공백 무시·대소문자 무시로 찾는다.
+  // 정렬: 완전일치 → 앞부분 일치 → 포함. 같은 급이면 원래 순서(이름 정렬)를 유지한다.
+  // query 가 비면 앞에서 limit 개를 그대로 돌려준다(목록 미리 보기).
+  function filterMaterials(items, query, limit) {
+    const list = Array.isArray(items) ? items : [];
+    const max = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 20;
+    const squash = (v) => String(v === null || v === undefined ? "" : v)
+      .trim().toLowerCase().replace(/\s+/g, "");
+    const q = squash(query);
+    if (!q) return list.slice(0, max);
+    const scored = [];
+    list.forEach((it, order) => {
+      if (!it) return;
+      const hay = [squash(it.name), squash(it.code)];
+      if (Array.isArray(it.aliases)) it.aliases.forEach((a) => hay.push(squash(a)));
+      let score = 99;
+      hay.forEach((h) => {
+        if (!h) return;
+        if (h === q) score = Math.min(score, 0);
+        else if (h.startsWith(q)) score = Math.min(score, 1);
+        else if (h.includes(q)) score = Math.min(score, 2);
+      });
+      if (score < 99) scored.push({ it, score, order });
+    });
+    scored.sort((a, b) => (a.score - b.score) || (a.order - b.order));
+    return scored.slice(0, max).map((s) => s.it);
+  }
+
   function materialRowHtml(idx, it, opts) {
     // opts (선택):
     //   anchor         (bool) 이 행이 기준 자재 — 이름 옆에 안내 배지 표시
     //   disableActual  (bool) 기준 자재 실측값 입력 전 — 이 행 실제량 입력 비활성화
+    //   test           (bool) 시험 배합 행 — 목표량 입력칸 + 행 삭제 버튼
     const o = opts || {};
+    if (o.test) return testMaterialRowHtml(idx, it);
     const nameCell = o.anchor
       ? `<td>${esc(it.material_name)} <span class="blend-anchor-badge">${esc(ANCHOR_BADGE)}</span></td>`
       : `<td>${esc(it.material_name)}</td>`;
@@ -692,6 +767,10 @@
     bulkRowHtml,
     computeTotals,
     computeTheoryAmount,
+    sumTargets,
+    targetRatio,
+    testDefaultName,
+    filterMaterials,
     resolveAddPortion,
     varianceDisplay,
     varianceWarnMessage,

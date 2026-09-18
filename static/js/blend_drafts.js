@@ -24,6 +24,11 @@
  *     ...화면별 진행분(blend: items[] / cont: cells[][]) }
  *   schema/materials 가 없으면 "옛 초안" — 위치 기반 복구 + 경고.
  *
+ * 시험 배합 초안(계약 §8.9): { is_test:true, test_name, base_recipe_id, recipe_id:null,
+ *   items:[{material_name, material_code, material_id, theory_amount(목표량), …}] }.
+ *   레시피 없이 성립하므로 묶음 키는 recipe_id 가 아니라 시험명이다(slotKey).
+ *   복구는 /blend/test 로 간다. 정식 초안 스키마·동작은 불변.
+ *
  * 화면 간 전달: sessionStorage "irms.blend.resume" = {kind, id} (한 번 읽고 지움).
  *
  * Side effects: window.IRMS.blendDrafts 부착만. 모든 저장소 접근은 인자로 주입 가능
@@ -111,8 +116,27 @@
   }
 
   // ── 슬롯 목록 읽기/쓰기 ─────────────────────────────────────────
+  /** 시험 배합 초안인가 — 레시피 없이도 성립한다(계약 §8.9). */
+  function isTestSlot(slot) {
+    return Boolean(slot && slot.is_test);
+  }
+
+  /**
+   * 같은 작업으로 묶는 키. 정식은 레시피 id, 시험은 시험명이다 — 시험은 레시피를
+   * 안 고르고도 시작할 수 있어 recipe_id 로는 묶을 수 없다(칸 3개가 한 작업으로
+   * 순식간에 차거나, 반대로 같은 시험이 매 저장마다 새 칸을 먹는다).
+   */
+  function slotKey(slot) {
+    if (!slot) return "";
+    if (isTestSlot(slot)) {
+      const name = String(slot.test_name || slot.product_name || "").trim().toLowerCase();
+      return "test:" + name;
+    }
+    return "recipe:" + String(slot.recipe_id);
+  }
+
   function isFresh(slot) {
-    if (!slot || !slot.recipe_id) return false;
+    if (!slot || (!slot.recipe_id && !isTestSlot(slot))) return false;
     if (!slot.savedAt) return true;               // 시각이 없으면 만료 판정 불가 · 살린다
     const t = Date.parse(slot.savedAt);
     if (!Number.isFinite(t)) return true;
@@ -175,15 +199,15 @@
   function saveSlot(kind, draft, storage, preferredId) {
     const meta = kindMeta(kind);
     const st = localStore(storage);
-    if (!meta || !st || !draft || !draft.recipe_id) return null;
+    if (!meta || !st || !draft || (!draft.recipe_id && !isTestSlot(draft))) return null;
 
     let slots = readSlots(kind, st);
-    const rid = String(draft.recipe_id);
+    const key = slotKey(draft);
     let idx = -1;
     if (preferredId) {
-      idx = slots.findIndex((s) => s.id === preferredId && String(s.recipe_id) === rid);
+      idx = slots.findIndex((s) => s.id === preferredId && slotKey(s) === key);
     }
-    if (idx < 0) idx = slots.findIndex((s) => String(s.recipe_id) === rid);
+    if (idx < 0) idx = slots.findIndex((s) => slotKey(s) === key);
 
     const id = idx >= 0 ? slots[idx].id : newId();
     const slot = Object.assign({}, draft, { id, kind, schema: draft.schema || SCHEMA });
@@ -410,6 +434,15 @@
    * 반환: { legacy, align, added:[names], dropped:[{name,text}], baseNotes:[], changed }
    */
   function buildDiff(kind, slot, recipeData) {
+    // 시험 초안은 대조할 레시피 구성이 없다 — 표 정의를 초안이 직접 들고 있다(계약 §8.9).
+    // 기준 레시피가 바뀌어도 시험 목표량은 사람이 정한 값이라 '변경 고지' 자체가 없다.
+    if (isTestSlot(slot)) {
+      return {
+        test: true, legacy: false,
+        align: { legacy: false, map: null, addedIdx: [], removedIdx: [] },
+        added: [], dropped: [], baseNotes: [], changed: false,
+      };
+    }
     const data = recipeData || {};
     const current = materialIdentities(data.items || []);
     const align = alignRows(slot && slot.materials, current);
@@ -566,6 +599,8 @@
     KINDS,
     KIND_ORDER,
     kindMeta,
+    isTestSlot,
+    slotKey,
     newId,
     readSlots,
     writeSlots,

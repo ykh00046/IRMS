@@ -2339,8 +2339,12 @@ def test_lot_base_name(product_name: str) -> str:
     접두가 다르면 generate_product_lot 의 base 가 달라져 **정식 순번과 자동 분리**된다
     (같은 날 같은 이름의 정식 기록이 있어도 시험 순번은 01 부터). product_name 컬럼에는
     접두 없는 시험명을 저장하므로, 채번에만 쓰는 이름을 여기서 만든다.
+
+    시험명 안의 공백은 LOT 에서 제거한다("PB 점도 개선" → "T-PB점도개선260918 01" 이 아니라
+    "T-PB점도개선26091801"). LOT 은 손으로 옮겨 적고 검색하는 값이라 공백이 섞이면 대조가 깨진다.
     """
-    return f"T-{str(product_name or '').strip()}"
+    compact = "".join(str(product_name or "").split())
+    return f"T-{compact}"
 
 
 def recipe_exists(connection: sqlite3.Connection, recipe_id: int | None) -> bool:

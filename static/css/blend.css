@@ -1075,3 +1075,73 @@ body.dhr-open { overflow: hidden; }
 .save-confirm-lots-label { margin: 0 0 var(--space-1); font-size: var(--fs-sm); color: var(--text-secondary); }
 .save-confirm-lots { margin: 0 0 var(--space-3); padding: 0; list-style: none; display: grid; gap: var(--space-1); max-height: calc(var(--space-12) * 4); overflow-y: auto; }
 .save-confirm-lots li { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+
+/* =========================================================================
+   시험 배합(test blend) — /blend/test 에서만 렌더되는 부분(계약 §8)
+   ========================================================================= */
+
+/* 상단 띠 · 공용 .panel-notice 를 그대로 쓰고 폭만 표 기준으로 넓힌다. */
+.blend-test-banner { max-width: none; margin-bottom: 0; }
+
+/* 자재 추가 줄 + 검색 창 */
+.blend-test-add { position: relative; margin-top: var(--space-3); }
+.blend-mat-picker {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: min(420px, 92vw);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-prominent);
+}
+.blend-mat-picker[hidden] { display: none; }
+.blend-mat-picker-list { max-height: calc(var(--space-12) * 5); overflow-y: auto; display: grid; gap: 2px; }
+.blend-mat-picker-empty { margin: 0; padding: var(--space-2); font-size: var(--fs-xs); color: var(--text-tertiary); }
+.blend-mat-picker-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.blend-mat-picker-foot .muted { font-size: var(--fs-2xs); }
+.blend-mat-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.blend-mat-option:hover,
+.blend-mat-option.is-active { background: var(--bg-surface-200); }
+.blend-mat-option-code { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.blend-mat-option-mark { font-size: var(--fs-2xs); color: var(--text-tertiary); }
+
+/* 표 · 목표량 입력칸과 행 삭제 버튼 */
+.blend-target-cell .blend-target { width: 100%; max-width: 110px; text-align: right; }
+.blend-nomaster { margin-left: var(--space-1); font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.blend-row-del {
+  margin-left: var(--space-2);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  cursor: pointer;
+}
+.blend-row-del:hover {
+  background: var(--status-error-bg);
+  border-color: color-mix(in srgb, var(--status-error) 30%, transparent);
+  color: var(--status-error);
+}
