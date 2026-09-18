@@ -116,6 +116,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ["viscosity_product_update", "점도 품목 수정"],
       ["blend_viscosity_link", "점도 등록(배합 연계)"],
       ["viscosity_exported_all", "점도 전체 내보내기"],
+      // 시험 배합 LOT 점도(2026-09-18) — 정식 표본과 따로 남는다(점도 화면 '시험' 탭).
+      ["test_viscosity_add", "시험 점도 등록"],
+      ["test_viscosity_corrected", "시험 점도값 정정"],
+      ["test_viscosity_delete", "시험 점도 삭제"],
+      ["test_viscosity_migrated", "시험 점도 이관"],
     ]],
     ["자재 LOT", [
       ["material_lot_added", "수동 LOT 추가"],

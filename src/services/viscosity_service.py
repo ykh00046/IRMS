@@ -243,7 +243,6 @@ _OPTIONAL_READING_COLUMNS = (
     "reviewed_by",
     "review_note",
     "blend_record_id",
-    "is_test",
 )
 
 
@@ -265,27 +264,6 @@ def _has_table(connection: sqlite3.Connection, table: str) -> bool:
     )
 
 
-def not_test_reading_clause(connection: sqlite3.Connection, alias: str = "") -> str:
-    """시험 배합 LOT 의 점도 측정을 빼는 WHERE 조각(계약 §9-3).
-
-    시험 측정은 정식과 같은 방식으로 등록·정정·삭제되지만, 통계·관리한계·판정·추세·
-    이상 목록·알림에는 섞이지 않아야 한다. 컬럼이 없는 구버전·단위테스트 스키마에서는
-    시험 측정이 존재할 수 없으므로 '1=1' 로 폴백한다.
-    """
-    if not _has_column(connection, "viscosity_readings", "is_test"):
-        return "1=1"
-    prefix = f"{alias}." if alias else ""
-    return f"COALESCE({prefix}is_test, 0) = 0"
-
-
-def _test_reading_clause(connection: sqlite3.Connection, alias: str = "") -> str:
-    """시험 측정만 고르는 WHERE 조각. 컬럼이 없으면 빈 결과('1=0')."""
-    if not _has_column(connection, "viscosity_readings", "is_test"):
-        return "1=0"
-    prefix = f"{alias}." if alias else ""
-    return f"COALESCE({prefix}is_test, 0) = 1"
-
-
 def _blend_not_test_clause(connection: sqlite3.Connection, alias: str = "") -> str:
     """시험 **배합 기록**을 빼는 WHERE 조각(blend_service.not_test_clause 와 같은 규약).
 
@@ -304,14 +282,7 @@ def _fetch_readings(
     product_id: int,
     year: int | None = None,
     reactor: int | None = None,
-    *,
-    scope: str = "real",
 ) -> list[sqlite3.Row]:
-    """제품의 측정 표본. scope: real(정식만·기본) | test(시험만) | all(둘 다).
-
-    기본이 real 이다 — 통계·관리한계·판정·추세·이상·알림은 전부 이 함수를 지나므로,
-    기본값을 정식으로 두는 것이 시험 격리의 단일 지점이다(계약 §9-3).
-    """
     params: list[Any] = [product_id]
     year_clause = ""
     if year is not None:
@@ -334,19 +305,17 @@ def _fetch_readings(
     optional_select = ", ".join(
         col if col in existing else f"NULL AS {col}" for col in _OPTIONAL_READING_COLUMNS
     )
-    if scope == "test":
-        test_clause = f"AND {_test_reading_clause(connection)}"
-    elif scope == "all":
-        test_clause = ""
-    else:
-        test_clause = f"AND {not_test_reading_clause(connection)}"
+    # 1차 구현(v1)이 남긴 is_test 열(운영 DB 에는 있다). 시험 값은 기동 마이그레이션
+    # (migrate_v1_test_viscosity)이 test_viscosity_readings 로 옮기고, 옮기지 못한 고아 행만
+    # 여기 남는다 — 통계·판정에 섞이지 않게 이 한 곳에서 뺀다. 열이 없으면 조건도 없다.
+    legacy_test_clause = "AND COALESCE(is_test, 0) = 0" if "is_test" in existing else ""
     return connection.execute(
         f"""
         SELECT id, product_id, lot_no, viscosity, measured_date,
                memo, recipe_material, material_lot, reactor, created_by, created_at,
                {optional_select}
         FROM viscosity_readings
-        WHERE product_id = ? {year_clause} {reactor_clause} {test_clause}
+        WHERE product_id = ? {year_clause} {reactor_clause} {legacy_test_clause}
         ORDER BY
             CASE WHEN measured_date IS NULL THEN 1 ELSE 0 END,
             measured_date ASC,
@@ -357,25 +326,13 @@ def _fetch_readings(
     ).fetchall()
 
 
-def available_years(
-    connection: sqlite3.Connection, product_id: int, *, scope: str = "real"
-) -> list[int]:
-    """제품에 측정 기록이 있는 연도 목록 (내림차순).
-
-    기본은 정식 측정만 — 시험 측정만 있는 연도가 분석 연도 탭에 나타나면 그 연도를
-    골랐을 때 표본이 0 이 된다(계약 §9-3).
-    """
-    if scope == "test":
-        clause = _test_reading_clause(connection)
-    elif scope == "all":
-        clause = "1=1"
-    else:
-        clause = not_test_reading_clause(connection)
+def available_years(connection: sqlite3.Connection, product_id: int) -> list[int]:
+    """제품에 측정 기록이 있는 연도 목록 (내림차순)."""
     rows = connection.execute(
-        f"""
+        """
         SELECT DISTINCT substr(measured_date, 1, 4) AS y
         FROM viscosity_readings
-        WHERE product_id = ? AND measured_date IS NOT NULL AND {clause}
+        WHERE product_id = ? AND measured_date IS NOT NULL
         ORDER BY y DESC
         """,
         (product_id,),
@@ -384,13 +341,12 @@ def available_years(
 
 
 def available_reactors(connection: sqlite3.Connection, product_id: int) -> list[int]:
-    """제품에 정식 측정 기록이 있는 반응기 번호 목록 (오름차순)."""
+    """제품에 측정 기록이 있는 반응기 번호 목록 (오름차순)."""
     rows = connection.execute(
-        f"""
+        """
         SELECT DISTINCT reactor
         FROM viscosity_readings
         WHERE product_id = ? AND reactor IS NOT NULL
-          AND {not_test_reading_clause(connection)}
         ORDER BY reactor ASC
         """,
         (product_id,),
@@ -788,7 +744,6 @@ def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
     rows = connection.execute(
         "SELECT lot_no, viscosity FROM viscosity_readings WHERE product_id = ? "
         "AND excluded = 0 "
-        f"AND {not_test_reading_clause(connection)} "
         "ORDER BY measured_date ASC, id ASC",
         (pb["id"],),
     ).fetchall()
@@ -922,8 +877,6 @@ def analyze_product(
             "reviewed_at": _row_value(r, "reviewed_at"),
             "review_note": _row_value(r, "review_note"),
             "blend_record_id": _row_value(r, "blend_record_id"),
-            # 표본은 정식만이라 여기서는 항상 False — 화면이 같은 키로 읽게 둔다.
-            "is_test": bool(_row_value(r, "is_test")),
         }
         if excluded:
             # 제외된 측정은 spec/σ 판정을 건너뛰고 status='excluded' 로만 표시한다.
@@ -983,44 +936,6 @@ def analyze_product(
         "available_reactors": available_reactors(connection, product["id"]),
         "periods": periods,
         "period_alerts": _period_alerts(periods, control["std"], granularity),
-    }
-
-
-def test_readings(
-    connection: sqlite3.Connection,
-    product: dict[str, Any],
-    *,
-    year: int | None = None,
-) -> dict[str, Any]:
-    """시험 배합 LOT 의 점도 측정 목록 — 점그래프용(계약 §9-5).
-
-    판정(정상·경고·이상)도 σ 도 붙이지 않는다. 시험은 표본이 몇 건뿐이고 목적도
-    비교가 아니라 확인이라, 정식 기준으로 판정하면 늘 '이상'이 된다. 화면은 값과
-    제품 기준선(target·관리 한계·경고 문턱)만 그린다.
-    """
-    rows = _fetch_readings(connection, product["id"], year, scope="test")
-    items = [
-        {
-            "id": int(r["id"]),
-            "lot_no": r["lot_no"],
-            "viscosity": float(r["viscosity"]),
-            "measured_date": r["measured_date"],
-            "memo": r["memo"],
-            "reactor": r["reactor"],
-            "created_by": r["created_by"],
-            "blend_record_id": _row_value(r, "blend_record_id"),
-            "is_test": True,
-        }
-        for r in rows
-    ]
-    values = [it["viscosity"] for it in items]
-    return {
-        "product": product,
-        "items": items,
-        "count": len(items),
-        "mean": round(statistics.fmean(values), 2) if values else None,
-        "year": year,
-        "available_years": available_years(connection, product["id"], scope="test"),
     }
 
 
@@ -1141,6 +1056,7 @@ def daily_reading_reminders(
         # 시험 배합은 알림 대상이 아니다(계약 §9-3) — 트레이가 읽는 pending_lots 에
         # 시험 LOT 이 섞이면 현장은 정식 LOT 을 못 잰 것으로 읽는다. 시험명은 반제품
         # 이름과 다르므로 위 이름 조건에 자연히 걸리지 않지만, 우연한 동명에도 막힌다.
+        # (시험 점도 자체는 test_viscosity_readings 에만 있어 아래 최근값에는 섞일 수 없다.)
         f"{_blend_not_test_clause(connection, 'b')}",
     ]
     lot_params: list[Any] = [target_date]
@@ -1161,9 +1077,6 @@ def daily_reading_reminders(
             "            WHERE s.blend_record_id = b.id)"
         )
     lot_condition = " AND ".join(lot_where)
-    # 최근값(latest_value) 도 정식 측정만 — 알림 팝업이 시험값을 '최근 점도'로 말하면
-    # 현장이 정식 추세를 잘못 읽는다.
-    reading_not_test = not_test_reading_clause(connection)
 
     # 한 번의 조인으로 제품별 pending LOT 을 모두 가져와 파이썬에서 묶는다.
     # 정렬(p.code ASC, work_date ASC, id ASC)이 곧 항목 순서·LOT 순서(오래된 것부터
@@ -1188,7 +1101,7 @@ def daily_reading_reminders(
             JOIN (
                 SELECT product_id, MAX(measured_date || ':' || printf('%012d', id)) AS max_key
                 FROM viscosity_readings
-                WHERE measured_date IS NOT NULL AND {reading_not_test}
+                WHERE measured_date IS NOT NULL
                 GROUP BY product_id
             ) pick
               ON pick.product_id = r.product_id
@@ -1247,72 +1160,86 @@ def add_reading(
     blend_record_id 지정 시 해당 배합 실적과 연계된다([[blend-overhaul]]).
     reactor 지정 시 반응기 번호(1~4)를 기록한다(반응기 진행 반제품).
 
-    LOT 이 시험 배합 기록(blend_records.is_test = 1)의 제품 LOT 이면 is_test = 1 로
-    저장한다(계약 §9-1). 판정은 등록 경로가 아니라 **LOT 자체**가 결정해야 한다 —
-    시험 LOT 은 배합 화면·점도 화면·엑셀 임포트 어느 경로로 들어와도 시험이다.
+    시험 배합 LOT 은 받지 않는다(TestLotError, 계약 §9-2). 시험 점도는
+    test_viscosity_readings 에만 산다 — 여기서 막으면 정식 통계·관리한계·이상·추세·
+    알림·대시 카드가 시험 값을 볼 길이 없다(측정값 단위 필터는 v1 이 남긴 고아 행용
+    _fetch_readings 한 곳뿐). 판정은 등록 경로가 아니라 LOT 자체가 한다(배합 연계 등록·
+    직접 등록·엑셀 임포트 모두 이 함수를 지난다).
     """
+    if is_test_blend_lot(connection, lot_no, blend_record_id):
+        raise TestLotError(TEST_LOT_DETAIL)
     # 측정일 폴백은 로컬 '오늘' — created_at(UTC) 을 자르면 자정 부근 하루 밀림.
     resolved_date = measured_date or parse_lot_date(lot_no) or date.today().isoformat()
-    lot = lot_no.strip()
-    is_test = _lot_is_test_blend(connection, lot, blend_record_id)
-    test_col = ", is_test" if _has_column(connection, "viscosity_readings", "is_test") else ""
-    test_val = ", ?" if test_col else ""
-    params: list[Any] = [
-        product_id,
-        lot,
-        viscosity,
-        resolved_date,
-        (memo or "").strip() or None,
-        (recipe_material or "").strip() or None,
-        (material_lot or "").strip() or None,
-        created_by,
-        created_at,
-        blend_record_id,
-        int(reactor) if reactor is not None else None,
-    ]
-    if test_col:
-        params.append(1 if is_test else 0)
     cur = connection.execute(
-        f"""
+        """
         INSERT INTO viscosity_readings
             (product_id, lot_no, viscosity, measured_date, memo,
-             recipe_material, material_lot, created_by, created_at, blend_record_id,
-             reactor{test_col})
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{test_val})
+             recipe_material, material_lot, created_by, created_at, blend_record_id, reactor)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        params,
+        (
+            product_id,
+            lot_no.strip(),
+            viscosity,
+            resolved_date,
+            (memo or "").strip() or None,
+            (recipe_material or "").strip() or None,
+            (material_lot or "").strip() or None,
+            created_by,
+            created_at,
+            blend_record_id,
+            int(reactor) if reactor is not None else None,
+        ),
     )
     return int(cur.lastrowid)
 
 
-def _lot_is_test_blend(
-    connection: sqlite3.Connection, lot: str, blend_record_id: int | None = None
-) -> bool:
-    """이 LOT(또는 연계 배합 기록)이 시험 배합인가.
+# 정식 점도에 시험 LOT 이 들어오려 할 때의 안내 — 읽는 사람이 갈 곳을 말한다.
+TEST_LOT_DETAIL = "시험 LOT은 시험 탭에서 등록하세요."
 
-    blend_record_id 가 있으면 그 기록을 우선 본다(연계 등록). 없으면 product_lot
-    일치로 찾는다(점도 화면 직접 등록·엑셀 임포트). blend_records 테이블이나
-    is_test 컬럼이 없는 최소 스키마에서는 항상 False.
+
+class TestLotError(ValueError):
+    """정식 점도(viscosity_readings)에 시험 배합 LOT 을 넣으려 했다(계약 §9-2).
+
+    호출하는 라우트는 400 으로 바꾼다. 엑셀 임포트 스크립트(scripts/import_*viscosity.py)
+    는 이 오류에서 멈추고, 끝에 한 번만 커밋하므로 그 실행분은 적재되지 않는다(시험 LOT
+    은 'T-' 로 시작해 옛 엑셀 LOT 과 겹칠 일이 없다).
+    """
+
+    # pytest 가 'Test' 로 시작하는 이름을 테스트 클래스로 모으지 않게 한다.
+    __test__ = False
+
+
+def is_test_blend_lot(
+    connection: sqlite3.Connection, lot_no: Any, blend_record_id: int | None = None
+) -> bool:
+    """이 LOT 또는 연계 배합 기록이 시험 배합인가.
+
+    product_lot 은 전역 유일이므로 LOT 이 시험 기록의 제품 LOT 과 같으면 시험이다.
+    연계 등록(blend_record_id)은 그 기록이 시험이어도 시험이다. blend_records 나
+    is_test 컬럼이 없는 최소 스키마에서는 시험 기록이 있을 수 없으므로 False.
     """
     if not _has_table(connection, "blend_records"):
         return False
     if not _has_column(connection, "blend_records", "is_test"):
         return False
+    clauses: list[str] = []
+    params: list[Any] = []
+    lot = str(lot_no or "").strip()
+    if lot:
+        clauses.append("product_lot = ?")
+        params.append(lot)
     if blend_record_id is not None:
-        row = connection.execute(
-            "SELECT COALESCE(is_test, 0) AS is_test FROM blend_records WHERE id = ?",
-            (blend_record_id,),
-        ).fetchone()
-        if row is not None:
-            return bool(row["is_test"])
-    if not lot:
+        clauses.append("id = ?")
+        params.append(int(blend_record_id))
+    if not clauses:
         return False
     row = connection.execute(
-        "SELECT 1 FROM blend_records WHERE product_lot = ? AND COALESCE(is_test, 0) = 1 "
-        "LIMIT 1",
-        (lot,),
+        "SELECT 1 FROM blend_records "
+        f"WHERE COALESCE(is_test, 0) = 1 AND ({' OR '.join(clauses)}) LIMIT 1",
+        params,
     ).fetchone()
-    return bool(row)
+    return row is not None
 
 
 def _actor_display(by: Any) -> str:
@@ -1567,18 +1494,13 @@ def list_readings_for_blend(
 ) -> list[dict[str, Any]]:
     """배합 실적에 연계된 점도 측정 목록 (제품 코드 포함).
 
-    시험 측정도 **포함**한다(계약 §9-4) — LOT 단건 조회는 "그 배합이 실제로 잰 값"이
-    관심사이고, 시험 배합의 상세도 자기 점도를 보여야 한다. 행에 is_test 를 실어 준다.
+    시험 배합 기록이면 시험 점도(test_viscosity_readings)를 **같은 모양**으로 앞에 싣는다
+    (계약 §9-6). 반제품이 없으므로 product_code 자리에 '시험' 을 둔다 — 기록 조회 상세의
+    '점도 측정' 칸이 정식과 같은 줄로 그린다. 정식 기록에는 시험 행이 없으니 그대로다.
     """
-    test_expr = (
-        "COALESCE(r.is_test, 0) AS is_test"
-        if _has_column(connection, "viscosity_readings", "is_test")
-        else "0 AS is_test"
-    )
     rows = connection.execute(
-        f"""
+        """
         SELECT r.id, r.viscosity, r.measured_date, r.memo, r.lot_no, r.reactor, r.created_by,
-               {test_expr},
                p.code AS product_code, p.name AS product_name, p.id AS product_id
         FROM viscosity_readings r
         JOIN viscosity_products p ON p.id = r.product_id
@@ -1587,7 +1509,7 @@ def list_readings_for_blend(
         """,
         (blend_record_id,),
     ).fetchall()
-    return [
+    return _test_readings_for_blend(connection, blend_record_id) + [
         {
             "id": int(r["id"]),
             "viscosity": float(r["viscosity"]),
@@ -1599,7 +1521,282 @@ def list_readings_for_blend(
             "product_code": r["product_code"],
             "product_name": r["product_name"],
             "created_by": r["created_by"],
-            "is_test": bool(r["is_test"]),
         }
         for r in rows
     ]
+
+
+# ── 시험 배합 LOT 점도(2026-09-18 2차 결정, docs/test-blend-design.md §9) ──────────
+# 시험 점도는 반제품(PB·SBCT·SCRA …)과 무관하게 **시험 LOT 하나에 값 하나**다. 기준
+# 레시피가 없는 새 레시피 시험도 등록된다. 비교할 반제품 기준이 없을 수 있으므로 판정·
+# σ·요약 숫자·규격선은 만들지 않는다 — 값과 누가 언제 쟀는지만 남긴다.
+# 등록·정정·삭제 권한은 정식과 같다(라우트가 정식 규칙을 그대로 적용한다).
+
+TEST_VISCOSITY_LABEL = "시험"   # 기록 조회 상세에서 반제품 코드 자리에 들어가는 표기
+TEST_RECORD_LIMIT_MAX = 200
+
+
+class TestViscosityError(ValueError):
+    """시험 점도를 등록할 수 없는 기록 — detail 은 화면에 그대로 보여 줄 문장.
+
+    status 는 라우트가 그대로 쓰는 HTTP 코드(404 기록 없음 · 400 시험 아님/취소 ·
+    409 이미 등록).
+    """
+
+    __test__ = False  # pytest 가 테스트 클래스로 모으지 않게
+
+    def __init__(self, detail: str, status: int = 400) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status = status
+
+
+def _test_viscosity_ready(connection: sqlite3.Connection) -> bool:
+    """시험 점도를 다룰 스키마가 있는가(최소 스키마·구버전 DB 폴백)."""
+    return (
+        _has_table(connection, "test_viscosity_readings")
+        and _has_table(connection, "blend_records")
+        and _has_column(connection, "blend_records", "is_test")
+    )
+
+
+def get_test_reading(
+    connection: sqlite3.Connection, blend_record_id: int
+) -> dict[str, Any] | None:
+    """시험 LOT 의 점도 한 건 + 그 기록의 제품 LOT(없으면 None)."""
+    if not _has_table(connection, "test_viscosity_readings"):
+        return None
+    row = connection.execute(
+        "SELECT tv.id, tv.blend_record_id, tv.viscosity, tv.measured_date, tv.memo, "
+        "tv.created_by, tv.created_at, tv.updated_by, tv.updated_at, br.product_lot "
+        "FROM test_viscosity_readings tv "
+        "LEFT JOIN blend_records br ON br.id = tv.blend_record_id "
+        "WHERE tv.blend_record_id = ?",
+        (int(blend_record_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "blend_record_id": int(row["blend_record_id"]),
+        "product_lot": row["product_lot"],
+        "viscosity": float(row["viscosity"]),
+        "measured_date": row["measured_date"],
+        "memo": row["memo"],
+        "created_by": row["created_by"],
+        "created_at": row["created_at"],
+        "updated_by": row["updated_by"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _test_readings_for_blend(
+    connection: sqlite3.Connection, blend_record_id: int
+) -> list[dict[str, Any]]:
+    """list_readings_for_blend 모양의 시험 점도 행(0 또는 1건)."""
+    reading = get_test_reading(connection, blend_record_id)
+    if reading is None:
+        return []
+    return [
+        {
+            "id": reading["id"],
+            "viscosity": reading["viscosity"],
+            "measured_date": reading["measured_date"],
+            "memo": reading["memo"],
+            "lot_no": reading["product_lot"],
+            "reactor": None,
+            "product_id": None,
+            "product_code": TEST_VISCOSITY_LABEL,
+            "product_name": TEST_VISCOSITY_LABEL,
+            "created_by": reading["created_by"],
+        }
+    ]
+
+
+def list_test_records(
+    connection: sqlite3.Connection,
+    *,
+    q: str | None = None,
+    unregistered: bool = False,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """점도 화면 '시험' 탭 목록 — 완료된 시험 배합 기록 전부(반제품 선택과 무관).
+
+    최신순(work_date, id 내림차순). q 는 제품 LOT·시험명·작업자 부분 일치,
+    unregistered 는 점도가 아직 없는 LOT 만. 건수(total·unregistered_total)는 q 를
+    반영하되 unregistered 와는 무관하다(정식 등록 대기열과 같은 규약).
+    기준 레시피 이름은 base_recipe_id 의 레시피 제품명(없거나 지워졌으면 None).
+    """
+    limit = max(1, min(int(limit or 20), TEST_RECORD_LIMIT_MAX))
+    empty = {"items": [], "total": 0, "unregistered_total": 0, "limit": limit}
+    if not _test_viscosity_ready(connection):
+        return empty
+    where = ["COALESCE(br.is_test, 0) = 1", "br.status = 'completed'"]
+    params: list[Any] = []
+    query = (q or "").strip()
+    if query:
+        like = f"%{query}%"
+        where.append(
+            "(br.product_lot LIKE ? OR br.product_name LIKE ? OR br.worker LIKE ?)"
+        )
+        params.extend([like, like, like])
+    where_sql = " AND ".join(where)
+    registered_sql = (
+        "EXISTS (SELECT 1 FROM test_viscosity_readings tv0 "
+        "        WHERE tv0.blend_record_id = br.id)"
+    )
+    total = connection.execute(
+        f"SELECT COUNT(*) FROM blend_records br WHERE {where_sql}", params
+    ).fetchone()[0]
+    unregistered_total = connection.execute(
+        f"SELECT COUNT(*) FROM blend_records br WHERE {where_sql} AND NOT {registered_sql}",
+        params,
+    ).fetchone()[0]
+    has_base = _has_column(connection, "blend_records", "base_recipe_id")
+    base_id_sql = "br.base_recipe_id" if has_base else "NULL"
+    base_name_sql = (
+        "(SELECT r.product_name FROM recipes r WHERE r.id = br.base_recipe_id)"
+        if has_base and _has_table(connection, "recipes")
+        else "NULL"
+    )
+    rows = connection.execute(
+        f"""
+        SELECT br.id, br.product_lot, br.product_name, br.work_date, br.worker,
+               {base_id_sql} AS base_recipe_id,
+               {base_name_sql} AS base_recipe_name,
+               tv.id AS reading_id, tv.viscosity, tv.measured_date, tv.memo,
+               tv.created_by, tv.created_at, tv.updated_by, tv.updated_at
+        FROM blend_records br
+        LEFT JOIN test_viscosity_readings tv ON tv.blend_record_id = br.id
+        WHERE {where_sql}
+        {"AND tv.id IS NULL" if unregistered else ""}
+        ORDER BY br.work_date DESC, br.id DESC
+        LIMIT ?
+        """,
+        [*params, limit],
+    ).fetchall()
+    items = []
+    for r in rows:
+        registered = r["reading_id"] is not None
+        items.append({
+            "id": int(r["id"]),
+            "product_lot": r["product_lot"],
+            "product_name": r["product_name"],
+            "work_date": r["work_date"],
+            "worker": r["worker"],
+            "base_recipe_id": r["base_recipe_id"],
+            "base_recipe_name": r["base_recipe_name"],
+            "registered": registered,
+            "reading_id": int(r["reading_id"]) if registered else None,
+            "viscosity": float(r["viscosity"]) if registered else None,
+            "measured_date": r["measured_date"],
+            "memo": r["memo"],
+            "created_by": r["created_by"],
+            "created_at": r["created_at"],
+            "updated_by": r["updated_by"],
+            "updated_at": r["updated_at"],
+        })
+    return {
+        "items": items,
+        "total": int(total),
+        "unregistered_total": int(unregistered_total),
+        "limit": limit,
+    }
+
+
+def add_test_reading(
+    connection: sqlite3.Connection,
+    *,
+    blend_record_id: int,
+    viscosity: float,
+    measured_date: str | None,
+    memo: str | None,
+    created_by: str | None,
+    created_at: str,
+) -> dict[str, Any]:
+    """완료된 시험 배합 기록에 점도 한 건을 등록한다. 커밋은 호출자 책임.
+
+    기록이 없으면 404, 시험이 아니거나 완료가 아니면 400, 이미 값이 있으면 409 로
+    TestViscosityError 를 던진다. 측정일이 비면 로컬 '오늘'이다. 반환: 등록한 행
+    (get_test_reading 모양, product_lot 포함).
+    """
+    if not _test_viscosity_ready(connection):
+        raise TestViscosityError("시험 점도를 저장할 준비가 되지 않았습니다.", 400)
+    record = connection.execute(
+        "SELECT id, product_lot, status, COALESCE(is_test, 0) AS is_test "
+        "FROM blend_records WHERE id = ?",
+        (int(blend_record_id),),
+    ).fetchone()
+    if record is None:
+        raise TestViscosityError("배합 기록을 찾을 수 없습니다.", 404)
+    if not record["is_test"]:
+        raise TestViscosityError("정식 LOT은 측정 등록 탭에서 등록하세요.", 400)
+    if record["status"] != "completed":
+        raise TestViscosityError("취소된 시험 기록에는 점도를 등록할 수 없습니다.", 400)
+    lot = str(record["product_lot"])
+    if get_test_reading(connection, int(blend_record_id)) is not None:
+        raise TestViscosityError(f"이미 점도가 등록된 LOT입니다: {lot}", 409)
+    resolved_date = (measured_date or "").strip() or date.today().isoformat()
+    try:
+        cur = connection.execute(
+            "INSERT INTO test_viscosity_readings "
+            "(blend_record_id, viscosity, measured_date, memo, created_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                int(blend_record_id),
+                float(viscosity),
+                resolved_date,
+                (memo or "").strip() or None,
+                created_by,
+                created_at,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        # 확인과 저장 사이에 다른 창이 먼저 등록한 경우(blend_record_id UNIQUE).
+        raise TestViscosityError(f"이미 점도가 등록된 LOT입니다: {lot}", 409) from exc
+    return get_test_reading(connection, int(blend_record_id)) or {
+        "id": int(cur.lastrowid),
+        "blend_record_id": int(blend_record_id),
+        "product_lot": lot,
+    }
+
+
+def correct_test_reading(
+    connection: sqlite3.Connection,
+    blend_record_id: int,
+    *,
+    viscosity: float,
+    updated_by: str | None,
+    updated_at: str,
+) -> dict[str, Any] | None:
+    """시험 점도 값을 정정한다. 값이 없으면 None. 권한·사유 판정은 라우트 몫.
+
+    반환: {"old", "new", "changed"}. 같은 값이면 쓰지 않는다(changed False).
+    """
+    reading = get_test_reading(connection, blend_record_id)
+    if reading is None:
+        return None
+    old_value = float(reading["viscosity"])
+    new_value = float(viscosity)
+    if old_value == new_value:
+        return {"old": old_value, "new": new_value, "changed": False}
+    connection.execute(
+        "UPDATE test_viscosity_readings SET viscosity = ?, updated_by = ?, updated_at = ? "
+        "WHERE blend_record_id = ?",
+        (new_value, updated_by, updated_at, int(blend_record_id)),
+    )
+    return {"old": old_value, "new": new_value, "changed": True}
+
+
+def delete_test_reading(
+    connection: sqlite3.Connection, blend_record_id: int
+) -> dict[str, Any] | None:
+    """시험 점도를 지운다. 지운 행을 돌려준다(없으면 None). 커밋은 호출자 책임."""
+    reading = get_test_reading(connection, blend_record_id)
+    if reading is None:
+        return None
+    connection.execute(
+        "DELETE FROM test_viscosity_readings WHERE blend_record_id = ?",
+        (int(blend_record_id),),
+    )
+    return reading

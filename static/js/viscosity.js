@@ -28,7 +28,6 @@
     pbLinkNotice,
     pbLinearFit,
     pbScatterSummary,
-    testChartDatasets,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -91,18 +90,24 @@
     selectedBlendId: null,
     selectedBlendDetail: null,
     usedPb: null,          // {lot, method, pb_viscosity} · 선택 기록의 '사용한 PB'
-    // 시험 배합(2026-09-18) — 등록 대기열이 시험 LOT 모드인지, 시험 탭의 측정 목록.
-    blendTestMode: false,
-    testData: null,
     periodChart: null,
     pbChart: null,
-    testChart: null,
     periodRows: PERIOD_TABLE_ROWS,
     pbRows: PB_TABLE_ROWS,
     tab: "register",
     granularity: "day",
     year: null,
     reactor: null,
+    // 시험 탭(2026-09-18 2차 결정) · 반제품 선택과 무관한 시험 LOT 목록과 선택.
+    test: {
+      items: [],
+      total: 0,
+      unregisteredTotal: 0,
+      limit: BLEND_LIMIT_STEPS[0],
+      returned: 0,
+      selectedId: null,
+      resultId: null,     // 폼 아래 등록 결과 줄이 가리키는 기록(다른 행을 고르면 치운다)
+    },
   };
 
   // ── 탭 ───────────────────────────────────────────────────────────────
@@ -110,6 +115,9 @@
   // 규약은 레시피 관리·자재 관리와 동일(.mgmt-tab[data-tab] ↔ .tab-panel#tab-{name}).
   function activateTab(name) {
     state.tab = name;
+    // 시험 탭에서는 반제품 요약 줄·추세 경보를 CSS 가 감춘다(.visc-page[data-visc-tab]).
+    const page = $("main-content");
+    if (page) page.dataset.viscTab = name;
     document.querySelectorAll(".visc-tabs .mgmt-tab").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tab === name);
     });
@@ -122,8 +130,8 @@
     // 서버를 부르지 않는다.
     // 이상 관리 탭은 반제품 선택과 무관한 전 반제품 목록이라 열 때마다 서버에서 새로 받는다.
     if (name === "anomaly") loadAnomalies();
-    // 시험 탭은 정식 분석 표본에 없는 측정을 보여주므로 별도 요청이 필요하다.
-    if (name === "test") loadTestReadings();
+    // 시험 탭도 반제품과 무관한 목록이다. 반제품을 고르지 않았어도 열 때마다 받는다.
+    if (name === "test") loadTestRecords();
     if (!state.analysis) return;
     if (name === "trend") renderPeriods();
     if (name === "pb") renderSourcePb();
@@ -193,21 +201,10 @@
     // 인스턴스도 함께 버린다 — 남겨두면 빈 상태인데 이전 추세가 그대로 보인다).
     if (state.periodChart) { state.periodChart.destroy(); state.periodChart = null; }
     if (state.pbChart) { state.pbChart.destroy(); state.pbChart = null; }
-    if (state.testChart) { state.testChart.destroy(); state.testChart = null; }
-    state.testData = null;
     const emptyNote = $("visc-chart-empty");
     if (emptyNote) emptyNote.hidden = false;
     const pbEmptyNote = $("visc-pb-chart-empty");
     if (pbEmptyNote) pbEmptyNote.hidden = false;
-    const testEmptyNote = $("visc-test-chart-empty");
-    if (testEmptyNote) testEmptyNote.hidden = false;
-    const testBody = $("visc-test-body");
-    if (testBody) {
-      testBody.innerHTML = "";
-      testBody.appendChild(emptyRow(5, "반제품을 선택하면 시험 배합 점도가 표시됩니다."));
-    }
-    const testNote = $("visc-test-note");
-    if (testNote) testNote.textContent = "";
     const blendBody = $("visc-blend-body");
     blendBody.innerHTML = "";
     blendBody.appendChild(emptyRow(BLEND_COLS, "반제품을 선택하면 배합 기록이 표시됩니다."));
@@ -305,9 +302,6 @@
     renderSourcePb();
     renderCondition();
     await loadBlendRecords({ reset: true });
-    // 시험 탭을 보고 있으면 그 목록도 새로 받는다(등록·정정·삭제 후 숫자가 맞게).
-    // 시험 대기열 모드는 loadBlendRecords 가 이미 받아 왔다.
-    if (state.tab === "test" && !state.blendTestMode) await loadTestReadings();
   }
 
   function renderYearSelect() {
@@ -732,6 +726,7 @@
     const stateSelect = $("visc-anom-state");
     if (stateSelect && ANOMALY_STATES.includes(wanted)) stateSelect.value = wanted;
     if (params.get("tab") === "anomaly") activateTab("anomaly");
+    if (params.get("tab") === "test") activateTab("test");
   }
 
   function renderCondition() {
@@ -1007,87 +1002,6 @@
     });
   }
 
-  // ── 시험 배합 점도(2026-09-18) ──────────────────────────────────────
-  // 시험 측정은 통계·관리한계·판정·이상·알림에서 빠지므로(계약 §9-3) 정식 분석
-  // 응답(state.analysis)에 없다. 이 탭만 따로 받아 값·기준선만 그린다. 판정 칩·σ 는
-  // 붙이지 않는다 — 시험은 정식 기준으로 합불을 가르는 대상이 아니다.
-  async function loadTestReadings() {
-    const product = currentProduct();
-    if (!product) {
-      state.testData = null;
-      renderTestReadings();
-      return;
-    }
-    try {
-      state.testData = await request(`/viscosity/products/${product.id}/test-readings`);
-    } catch (error) {
-      state.testData = null;
-      notify(`시험 점도를 불러오지 못했습니다: ${error.message || error}`, "error");
-    }
-    renderTestReadings();
-  }
-
-  function renderTestReadings() {
-    const body = $("visc-test-body");
-    if (!body) return;
-    const data = state.testData;
-    const items = (data && data.items) || [];
-    const note = $("visc-test-note");
-    if (note) {
-      note.textContent = items.length
-        ? `${items.length}건 · 평균 ${fmt(data.mean)}`
-        : "";
-    }
-    body.innerHTML = "";
-    if (!items.length) {
-      body.appendChild(emptyRow(5, "시험 배합 점도가 없습니다."));
-    } else {
-      // 최신 측정을 위로 — 표는 최근을 먼저 읽고, 차트는 시간순으로 본다.
-      items.slice().reverse().forEach((item) => {
-        const row = document.createElement("tr");
-        appendTextCell(row, item.measured_date || "-");
-        appendTextCell(row, item.lot_no || "-");
-        appendTextCell(row, fmt(item.viscosity), "num");
-        appendTextCell(row, item.memo || "-");
-        appendTextCell(row, item.created_by || "-");
-        body.appendChild(row);
-      });
-    }
-    renderTestChart(items, (data && data.product) || currentProduct() || {});
-  }
-
-  function renderTestChart(items, product) {
-    const canvas = $("visc-test-chart");
-    if (!canvas) return;
-    const emptyNote = $("visc-test-chart-empty");
-    if (emptyNote) emptyNote.hidden = items.length > 0;
-    const { labels, datasets } = testChartDatasets(items, product, getCssVar);
-    if (state.testChart) state.testChart.destroy();
-    state.testChart = new Chart(canvas.getContext("2d"), {
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { labels: { boxWidth: 12, font: { size: 12 }, usePointStyle: true } },
-          tooltip: {
-            callbacks: {
-              afterLabel: (item) => {
-                const point = item.raw;
-                if (!point || typeof point !== "object" || !point.lot) return [];
-                return [`LOT ${point.lot}`];
-              },
-            },
-          },
-        },
-        scales: {
-          x: { type: "category" },
-          y: { beginAtZero: false },
-        },
-      },
-    });
-  }
-
   // 배합 기록 목록 — 서버가 한 번에 준다(GET /viscosity/products/{id}/blend-records).
   //
   // 종전에는 /blend/records 를 코드·이름으로 두 번 검색한 뒤 20건을 낱개 상세 조회해
@@ -1109,10 +1023,6 @@
     const q = $("visc-blend-filter").value.trim();
     if (q) query.q = q;
     if ($("visc-open-only").checked) query.unregistered = "1";
-    // 시험 배합 LOT 전환 — 켜면 이 반제품을 기준 레시피로 삼은 시험 기록만 받는다.
-    // 시험명은 반제품명과 다르므로 서버가 base_recipe_id 로 잇는다(계약 §9-2).
-    state.blendTestMode = Boolean($("visc-test-only") && $("visc-test-only").checked);
-    if (state.blendTestMode) query.test = "1";
     // 반응기 필터도 서버로 — 클라이언트에서 거르면 받아온 limit 건 안에서만 걸러져
     // 반응기별 옛 기록을 [더보기] 없이는 못 본다(분석 select 와 같은 규약: 1~4/none).
     if (state.reactor === "none") query.reactor = "none";
@@ -1131,9 +1041,6 @@
     state.blendTotal = data.total || 0;
     state.blendUnregisteredTotal = data.unregistered_total || 0;
     state.blendRecords = items;
-    // 시험 모드에서는 시험 측정 목록도 함께 받아 둔다 — 대기열 행의 점도·관리 버튼이
-    // 참조할 표본이 정식 분석 응답에 없기 때문이다.
-    if (state.blendTestMode) await loadTestReadings();
     const keep = items.some((r) => r.id === state.selectedBlendId);
     if (!keep) state.selectedBlendId = items.length ? items[0].id : null;
     renderBlendRecords();
@@ -1162,11 +1069,9 @@
     const body = $("visc-blend-body");
     body.innerHTML = "";
     const openOnly = $("visc-open-only").checked;
-    const testOnly = state.blendTestMode;
     const scope = openOnly ? state.blendUnregisteredTotal : state.blendTotal;
-    const tags = [openOnly ? "미등록" : null, testOnly ? "시험" : null].filter(Boolean);
     $("visc-record-count").textContent = scope
-      ? `${records.length} / ${scope}건${tags.length ? ` (${tags.join(" · ")})` : ""}`
+      ? `${records.length} / ${scope}건${openOnly ? " (미등록)" : ""}`
       : "0건";
     // [더보기] — 서버가 limit 만큼만 줬고 전체가 더 많으면 다음 단계로 올려 다시 받는다.
     const more = $("visc-blend-more");
@@ -1176,16 +1081,18 @@
       more.textContent = `더보기 (${step}건까지)`;
     }
     if (!records.length) {
-      let message = "이 반제품의 배합 기록이 없습니다.";
-      if (testOnly) message = "이 반제품을 기준으로 한 시험 배합 기록이 없습니다.";
-      else if (openOnly) message = "미등록 배합 기록이 없습니다. (모두 점도가 등록되었습니다)";
-      body.appendChild(emptyRow(BLEND_COLS, message));
+      body.appendChild(emptyRow(
+        BLEND_COLS,
+        openOnly
+          ? "미등록 배합 기록이 없습니다. (모두 점도가 등록되었습니다)"
+          : "이 반제품의 배합 기록이 없습니다.",
+      ));
       return;
     }
     records.forEach((record) => {
       const row = document.createElement("tr");
       row.classList.toggle("is-selected", record.id === state.selectedBlendId);
-      const analysisReading = readingForRecord(record);
+      const analysisReading = record.registered ? findReadingByLot(record.product_lot) : null;
       if (analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)) {
         row.classList.add("row-excluded");
       }
@@ -1219,7 +1126,7 @@
   function appendManageCell(row, record) {
     const cell = document.createElement("td");
     cell.className = "visc-manage-cell";
-    const reading = readingForRecord(record);
+    const reading = record.registered ? findReadingByLot(record.product_lot) : null;
     if (!reading) {
       // 측정 불가 기록의 되돌리기(책임자) — 잘못 눌린 불가를 취소해 알림을 재개.
       if (record.skipped) {
@@ -1246,10 +1153,7 @@
     );
     // 통계 제외 / 제외 해제 — 삭제와 별개. 제외는 값을 남기고 통계에서만 빼며,
     // 어느 행이든(경고·이상뿐 아니라) 책임자가 치워둘 수 있다.
-    // 시험 LOT 은 이미 통계 밖이라 이 버튼을 내지 않는다(누를 이유가 없다).
-    if (record.is_test) {
-      /* 값 수정·삭제만 — 아래에서 공통으로 붙인다. */
-    } else if (isExcluded) {
+    if (isExcluded) {
       const inc = document.createElement("button");
       inc.className = "visc-inc-btn";
       inc.type = "button";
@@ -1393,17 +1297,6 @@
       row.appendChild(cell);
       return;
     }
-    // 시험 배합 LOT — 판정을 붙이지 않는다(계약 §9-5). 정식 기준으로 합불을 가르는
-    // 대상이 아니므로 '등록됨' 이라는 사실만 중립 배지로 말한다.
-    if (record.is_test) {
-      const chip = document.createElement("span");
-      chip.className = "visc-status";
-      chip.textContent = "등록됨";
-      chip.title = "시험 배합 LOT · 판정·통계에 들어가지 않습니다";
-      cell.appendChild(chip);
-      row.appendChild(cell);
-      return;
-    }
     const reading = findReadingByLot(record.product_lot);
     const status = reading ? reading.status : null;
     const badge = document.createElement("span");
@@ -1452,7 +1345,7 @@
       row.appendChild(cell);
       return;
     }
-    const analysisReading = readingForRecord(record);
+    const analysisReading = findReadingByLot(record.product_lot);
     const isExcluded = Boolean(
       analysisReading && (analysisReading.status === "excluded" || analysisReading.excluded)
     );
@@ -1578,24 +1471,6 @@
     return null;
   }
 
-  function findTestReadingByLot(lotNo) {
-    if (!lotNo) return null;
-    const items = (state.testData && state.testData.items) || [];
-    for (let i = items.length - 1; i >= 0; i -= 1) {
-      if (items[i].lot_no === lotNo) return items[i];
-    }
-    return null;
-  }
-
-  // 대기열 행에 달린 측정 — 시험 LOT 의 측정은 정식 분석 표본(analysis.readings)에
-  // 없으므로 시험 목록에서 찾는다. 그래야 값 수정·삭제 버튼이 시험에서도 뜬다(§9-6).
-  function readingForRecord(record) {
-    if (!record || !record.registered) return null;
-    return record.is_test
-      ? findTestReadingByLot(record.product_lot)
-      : findReadingByLot(record.product_lot);
-  }
-
   function setSubmitEnabled(enabled) {
     $("visc-submit").disabled = !enabled;
     $("visc-value").disabled = !enabled;
@@ -1639,32 +1514,15 @@
       $("visc-value").value = "";
       $("visc-memo").value = "";
       const selectedId = recordId;
-      const wasTest = Boolean(submittedRecord && submittedRecord.is_test);
       // 재조회로 방금 등록한 측정의 판정(이상/경고/정상)을 확정한다 — analyze_product 이
       // 각 측정에 status 를 붙이므로 목록 배지·카드·알림이 항상 일치한다.
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });
-      if (wasTest) {
-        // 시험 LOT 은 판정을 말하지 않는다(계약 §9-5). 등록 사실과 정정 버튼만.
-        showTestResult(value, lotNo);
-        return;
-      }
       // 판정은 제출 버튼 바로 위에 남긴다 — 정상이어도 무엇으로 판정됐는지 보이게.
       showVerdict(value, lotNo, saved && saved.used_pb);
     } catch (error_) {
       showFormError(error_.message);
     }
-  }
-
-  // 시험 LOT 등록 결과 — 판정 없이 사실만. 정정 버튼은 정식과 같게 붙인다(§9-6).
-  function showTestResult(value, lotNo) {
-    const reading = findTestReadingByLot(lotNo);
-    const result = $("visc-form-result");
-    result.hidden = false;
-    result.className = "visc-form-result";
-    result.textContent = `시험 점도를 등록했습니다. (점도 ${fmt(value)})`;
-    attachQuickFix(result, reading, lotNo, value);
-    notify(`시험 점도를 등록했습니다. (${fmt(value)})`, "success");
   }
 
   // 등록 직후 판정(정상/경고/이상)을 폼 안에 표시한다. 종전에는 정상일 때 토스트
@@ -1820,6 +1678,347 @@
       if (state.currentId) await loadProduct(state.currentId);
     } catch (error) {
       IRMS.notify(`제외 해제 실패: ${error.message}`, "error");
+    }
+  }
+
+  // ── 시험 탭(2026-09-18 2차 결정, docs/test-blend-design.md §9) ─────────────
+  // 시험 배합 LOT 의 점도는 반제품(PB 등)과 무관하게 LOT 하나에 값 하나다. 새 레시피
+  // 시험처럼 비교할 반제품 기준이 없을 수 있어 판정·σ·요약 숫자·그래프·규격선은 만들지
+  // 않는다. 목록·선택·등록 흐름과 정정·삭제 규칙은 측정 등록 탭을 그대로 따른다
+  // (정정: 등록 후 10분은 현장, 이후 책임자 · 삭제: 책임자 · 관리 열: 책임자 화면에만).
+  const TEST_COLS = isManager ? 8 : 7;
+  let testSeq = 0;          // 검색을 빠르게 바꿀 때 늦게 온 앞 응답이 표를 덮지 않게
+
+  function todayText() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+
+  async function loadTestRecords(options) {
+    const opts = options || {};
+    const test = state.test;
+    if (opts.reset) test.limit = BLEND_LIMIT_STEPS[0];
+    const query = { limit: test.limit };
+    const q = $("visc-test-filter").value.trim();
+    if (q) query.q = q;
+    if ($("visc-test-open-only").checked) query.unregistered = "1";
+    const seq = ++testSeq;
+    let data;
+    try {
+      data = await request("/viscosity/test-records", { query });
+    } catch (error) {
+      if (seq !== testSeq) return;
+      // 실패를 '시험 기록 없음'으로 보이게 두지 않는다 · 표를 비우고 알린다.
+      test.items = [];
+      test.total = 0;
+      test.unregisteredTotal = 0;
+      test.returned = 0;
+      renderTestRecords();
+      notify(`시험 기록을 불러오지 못했습니다: ${error.message || error}`, "error");
+      return;
+    }
+    if (seq !== testSeq) return;
+    test.items = data.items || [];
+    test.returned = test.items.length;
+    test.total = data.total || 0;
+    test.unregisteredTotal = data.unregistered_total || 0;
+    if (!test.items.some((item) => item.id === test.selectedId)) {
+      test.selectedId = test.items.length ? test.items[0].id : null;
+    }
+    renderTestRecords();
+  }
+
+  function selectedTestRecord() {
+    return state.test.items.find((item) => item.id === state.test.selectedId) || null;
+  }
+
+  function renderTestRecords() {
+    renderTestTable();
+    renderTestSelected();
+  }
+
+  function renderTestTable() {
+    const test = state.test;
+    const body = $("visc-test-body");
+    body.innerHTML = "";
+    const openOnly = $("visc-test-open-only").checked;
+    const scope = openOnly ? test.unregisteredTotal : test.total;
+    $("visc-test-count").textContent = scope
+      ? `${test.items.length} / ${scope}건${openOnly ? " (미등록)" : ""}`
+      : "0건";
+    // [더보기] · 측정 등록 탭과 같은 단계로 서버 limit 을 올려 다시 받는다.
+    const more = $("visc-test-more");
+    if (more) {
+      const step = BLEND_LIMIT_STEPS.find((value) => value > test.limit) || null;
+      more.hidden = !(step && test.returned >= test.limit && scope > test.returned);
+      more.textContent = `더보기 (${step}건까지)`;
+    }
+    if (!test.items.length) {
+      const filtered = openOnly || $("visc-test-filter").value.trim();
+      body.appendChild(emptyRow(
+        TEST_COLS,
+        filtered ? "조건에 맞는 시험 LOT이 없습니다." : "시험 배합 기록이 없습니다.",
+      ));
+      return;
+    }
+    test.items.forEach((item) => {
+      const row = document.createElement("tr");
+      row.classList.toggle("is-selected", item.id === test.selectedId);
+      row.addEventListener("click", () => selectTestRecord(item.id, { focus: true }));
+      appendTextCell(row, item.work_date || "-");
+      appendClipCell(row, item.product_name);
+      appendTextCell(row, item.product_lot || "-");
+      appendClipCell(row, item.base_recipe_name);
+      appendTestValueCell(row, item);
+      appendClipCell(row, item.memo);
+      appendTestWhoCell(row, item);
+      if (isManager) appendTestManageCell(row, item);
+      body.appendChild(row);
+    });
+  }
+
+  // 길 수 있는 글(시험명·기준 레시피·메모) · 한 줄로 자르고 전체는 title 로.
+  function appendClipCell(row, text) {
+    const cell = document.createElement("td");
+    if (!text) {
+      cell.className = "muted";
+      cell.textContent = "-";
+      row.appendChild(cell);
+      return;
+    }
+    const clip = document.createElement("span");
+    clip.className = "visc-test-clip";
+    clip.textContent = text;
+    clip.title = text;
+    cell.appendChild(clip);
+    row.appendChild(cell);
+  }
+
+  function appendTestValueCell(row, item) {
+    const cell = document.createElement("td");
+    if (!item.registered) {
+      cell.className = "num muted";
+      cell.textContent = "미입력";
+      row.appendChild(cell);
+      return;
+    }
+    cell.className = "num visc-reading-cell";
+    const value = document.createElement("span");
+    value.className = "visc-reading-value";
+    value.textContent = fmt(item.viscosity);
+    cell.appendChild(value);
+    if (item.measured_date) cell.title = `측정일 ${item.measured_date}`;
+    row.appendChild(cell);
+  }
+
+  // 등록 열 · 누가(로그인 이름, 없으면 '현장') 언제 등록했는지. 정정됐으면 표시를 붙인다.
+  function appendTestWhoCell(row, item) {
+    const cell = document.createElement("td");
+    if (!item.registered) {
+      cell.className = "muted";
+      cell.textContent = "-";
+      row.appendChild(cell);
+      return;
+    }
+    cell.appendChild(document.createTextNode(item.created_by || "-"));
+    if (item.updated_at) {
+      const fixed = document.createElement("span");
+      fixed.className = "visc-test-fixed";
+      fixed.textContent = " · 정정";
+      fixed.title = `정정 ${item.updated_by || "-"} · ${IRMS.formatDateTime(item.updated_at)}`;
+      cell.appendChild(fixed);
+    }
+    const when = document.createElement("span");
+    when.className = "visc-test-when";
+    when.textContent = IRMS.formatDateTime(item.created_at);
+    cell.appendChild(when);
+    row.appendChild(cell);
+  }
+
+  // 관리 열(책임자) · 측정 등록 탭과 같은 버튼(값 수정 · 삭제). 통계 제외는 없다(통계가 없다).
+  function appendTestManageCell(row, item) {
+    const cell = document.createElement("td");
+    cell.className = "visc-manage-cell";
+    if (!item.registered) {
+      cell.className = "visc-manage-cell muted";
+      cell.textContent = "-";
+      row.appendChild(cell);
+      return;
+    }
+    const fix = document.createElement("button");
+    fix.className = "visc-fix-btn";
+    fix.type = "button";
+    fix.textContent = "값 수정";
+    fix.addEventListener("click", (event) => {
+      event.stopPropagation();
+      correctTestReading(item.id, item.product_lot, item.viscosity);
+    });
+    cell.appendChild(fix);
+    const del = document.createElement("button");
+    del.className = "visc-del-btn";
+    del.type = "button";
+    del.textContent = "삭제";
+    del.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteTestReading(item.id, item.product_lot);
+    });
+    cell.appendChild(del);
+    row.appendChild(cell);
+  }
+
+  function renderTestSelected() {
+    const box = $("visc-test-selected");
+    const item = selectedTestRecord();
+    if (!item) {
+      box.textContent = "시험 기록 표에서 미등록 행을 선택하세요.";
+      setTestFormEnabled(false);
+      return;
+    }
+    box.textContent = item.registered
+      ? `${item.product_lot} · 점도 ${fmt(item.viscosity)} 등록됨`
+        + `${item.measured_date ? ` · 측정일 ${item.measured_date}` : ""}`
+      : `${item.product_lot} · ${item.work_date || "-"} · ${item.worker || "-"} 선택`;
+    setTestFormEnabled(!item.registered);
+  }
+
+  function setTestFormEnabled(enabled) {
+    ["visc-test-submit", "visc-test-value", "visc-test-date", "visc-test-memo"].forEach((id) => {
+      $(id).disabled = !enabled;
+    });
+  }
+
+  function selectTestRecord(recordId, options) {
+    state.test.selectedId = Number(recordId);
+    // 다른 행을 고르면 앞 행의 등록 결과(방금 값 정정 버튼 포함)는 치운다.
+    if (state.test.resultId !== null && state.test.resultId !== state.test.selectedId) {
+      hideTestResult();
+    }
+    renderTestRecords();
+    if (options && options.focus) {
+      const item = selectedTestRecord();
+      if (item && !item.registered) $("visc-test-value").focus();
+    }
+  }
+
+  function showTestError(message) {
+    const error = $("visc-test-error");
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+  async function submitTestReading(event) {
+    event.preventDefault();
+    $("visc-test-error").hidden = true;
+    const item = selectedTestRecord();
+    const value = Number($("visc-test-value").value);
+    if (!item) {
+      showTestError("시험 기록을 선택하세요.");
+      return;
+    }
+    if (!(value > 0)) {
+      showTestError("점도값을 입력하세요.");
+      return;
+    }
+    const recordId = item.id;
+    const lotNo = item.product_lot;
+    try {
+      await request(`/viscosity/test-records/${recordId}`, {
+        method: "POST",
+        body: {
+          viscosity: value,
+          measured_date: $("visc-test-date").value || null,
+          memo: $("visc-test-memo").value.trim() || null,
+        },
+      });
+    } catch (error_) {
+      showTestError(error_.message);
+      return;
+    }
+    $("visc-test-value").value = "";
+    $("visc-test-memo").value = "";
+    $("visc-test-date").value = todayText();
+    await loadTestRecords();
+    showTestResult(recordId, lotNo, value);
+  }
+
+  function hideTestResult() {
+    const result = $("visc-test-result");
+    result.hidden = true;
+    result.textContent = "";
+    state.test.resultId = null;
+  }
+
+  // 등록 결과 · 판정 없이 사실만 남기고, 정식과 같은 '방금 값 정정' 버튼을 붙인다.
+  // 서버가 유예창(등록 후 10분)을 판정하므로 화면은 버튼만 내면 된다.
+  function showTestResult(recordId, lotNo, value) {
+    const result = $("visc-test-result");
+    state.test.resultId = recordId;
+    result.hidden = false;
+    result.className = "visc-form-result";
+    result.textContent = `등록했습니다. (${lotNo} · 점도 ${fmt(value)})`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm visc-quickfix-btn";
+    btn.textContent = "방금 값 정정";
+    btn.title = "등록 후 10분 안에는 바로 정정할 수 있습니다.";
+    btn.addEventListener("click", () => {
+      const item = state.test.items.find((row) => row.id === recordId);
+      correctTestReading(recordId, lotNo, item && item.registered ? item.viscosity : value);
+    });
+    result.appendChild(document.createTextNode(" "));
+    result.appendChild(btn);
+    notify(`시험 점도를 등록했습니다. (${fmt(value)})`, "success");
+  }
+
+  // 값 정정 · 측정 등록 탭과 같은 흐름(새 값 → 사유). 사유와 원래 값·새 값은 감사에 남는다.
+  async function correctTestReading(recordId, lotNo, currentValue) {
+    const raw = window.prompt(
+      `LOT ${lotNo} 점도값을 정정합니다.\n현재 값: ${fmt(currentValue)}\n새 값을 입력하세요.`,
+      String(currentValue ?? ""),
+    );
+    if (raw === null) return;
+    const value = Number(String(raw).trim());
+    if (!Number.isFinite(value) || value <= 0) {
+      notify("점도값을 숫자로 입력하세요.", "error");
+      return;
+    }
+    if (value === Number(currentValue)) {
+      notify("값이 그대로라 바꾸지 않았습니다.", "warn");
+      return;
+    }
+    const reason = window.prompt("정정 사유를 입력하세요.", "입력 오타 정정");
+    if (reason === null) return;
+    if (String(reason).trim().length < 2) {
+      notify("정정 사유를 입력하세요.", "error");
+      return;
+    }
+    try {
+      await request(`/viscosity/test-records/${recordId}`, {
+        method: "PUT",
+        body: { viscosity: value, reason: String(reason).trim() },
+      });
+      notify(`점도값을 정정했습니다. (${fmt(currentValue)} → ${fmt(value)})`, "success");
+      await loadTestRecords();
+    } catch (error) {
+      notify(`정정 실패: ${error.message || error}`, "error");
+    }
+  }
+
+  async function deleteTestReading(recordId, lotNo) {
+    // 확인은 한 번 · 되돌릴 수 없다는 것과 값 수정이라는 대안을 그 한 번에 말한다.
+    if (!window.confirm(
+      `LOT ${lotNo} 시험 점도를 삭제할까요?\n`
+      + "값만 틀렸다면 [값 수정]을 쓰세요.\n"
+      + "삭제는 되돌릴 수 없습니다."
+    )) return;
+    try {
+      await request(`/viscosity/test-records/${recordId}`, { method: "DELETE" });
+      notify("시험 점도를 삭제했습니다.", "success");
+      if (state.test.resultId === recordId) hideTestResult();
+      await loadTestRecords();
+    } catch (error) {
+      notify(`삭제 실패: ${error.message || error}`, "error");
     }
   }
 
@@ -2035,6 +2234,8 @@
     $("visc-refresh").addEventListener("click", () => {
       loadOverview().catch((e) =>
         IRMS.notify(`새로고침 실패: ${e.message || e}`, "error"));
+      // 시험 탭은 반제품과 무관한 목록이라 따로 다시 받는다.
+      if (state.tab === "test") loadTestRecords();
     });
     // 분류를 바꾸면 반제품 목록만 다시 그린다. 고른 반제품이 새 분류에 없으면
     // 선택을 비우고 빈 안내 상태로 — 목록에 없는 반제품의 숫자가 남아 있으면
@@ -2074,19 +2275,30 @@
     $("visc-open-only").addEventListener("change", () => {
       loadBlendRecords({ reset: true }).catch(() => {});
     });
-    // 시험 배합 LOT 전환 — 대기열을 시험/정식 한쪽만 담은 목록으로 다시 받는다.
-    const testOnly = $("visc-test-only");
-    if (testOnly) {
-      testOnly.addEventListener("change", () => {
-        loadBlendRecords({ reset: true }).catch(() => {});
-      });
-    }
     $("visc-blend-more").addEventListener("click", () => {
       const step = nextBlendLimit();
       if (!step) return;
       state.blendLimit = step;
       loadBlendRecords().catch(() => {});
     });
+    // 시험 탭 · 검색(300ms 디바운스)·미등록만·더보기·등록. 측정 등록 탭과 같은 규약.
+    let testSearchTimer = null;
+    $("visc-test-filter").addEventListener("input", () => {
+      if (testSearchTimer) clearTimeout(testSearchTimer);
+      testSearchTimer = setTimeout(() => { loadTestRecords({ reset: true }); }, 300);
+    });
+    $("visc-test-open-only").addEventListener("change", () => {
+      loadTestRecords({ reset: true });
+    });
+    $("visc-test-more").addEventListener("click", () => {
+      const step = BLEND_LIMIT_STEPS.find((value) => value > state.test.limit);
+      if (!step) return;
+      state.test.limit = step;
+      loadTestRecords();
+    });
+    $("visc-test-form").addEventListener("submit", submitTestReading);
+    $("visc-test-date").value = todayText();
+    setTestFormEnabled(false);
     $("visc-period-more").addEventListener("click", () => {
       state.periodRows += PERIOD_TABLE_ROWS;
       renderPeriods();

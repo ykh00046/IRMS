@@ -79,6 +79,19 @@ class ViscosityReadingBody(BaseModel):
     reactor: int | None = Field(default=None, ge=1, le=4)
 
 
+class TestViscosityBody(BaseModel):
+    """시험 배합 LOT 점도 등록(점도 화면 '시험' 탭). 값 범위는 정식 등록과 같다.
+
+    측정일은 비우면 오늘(로컬). 형식(YYYY-MM-DD)은 라우트가 한글 안내로 검사한다.
+    """
+
+    __test__ = False  # pytest 가 테스트 클래스로 모으지 않게
+
+    viscosity: float = Field(gt=0, le=100000)
+    measured_date: str | None = Field(default=None, max_length=10)
+    memo: str | None = Field(default=None, max_length=1000)
+
+
 class ViscosityProductCreateBody(BaseModel):
     # code 는 레시피 제품명과 연동(라우트에서 존재 검증) — 한글 제품명 허용.
     code: str = Field(min_length=1, max_length=100)

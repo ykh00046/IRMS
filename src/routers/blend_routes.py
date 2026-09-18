@@ -1130,6 +1130,10 @@ def build_router() -> APIRouter:
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        # 시험 배합 LOT 은 정식 점도에 넣지 않는다(test-blend 계약 §9-2) — 반제품을
+        # 자동 확보(ensure_product_by_code)하기 전에 막아 시험명 유령 반제품도 안 생긴다.
+        if record.get("is_test"):
+            raise HTTPException(status_code=400, detail=viscosity_service.TEST_LOT_DETAIL)
         current_user = get_current_user(request, required=False)
         actor = actor_name(current_user) if current_user else "현장"
         now = utc_now_text()
@@ -1176,6 +1180,8 @@ def build_router() -> APIRouter:
                 blend_record_id=record_id,
                 reactor=record.get("reactor"),
             )
+        except viscosity_service.TestLotError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         except sqlite3.IntegrityError:
             raise HTTPException(
                 status_code=409,

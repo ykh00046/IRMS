@@ -31,6 +31,7 @@ _ALLOWED_TABLES = frozenset({
     "item_code_master",
     "recipe_steps",
     "manual_material_lots",
+    "test_viscosity_readings",
 })
 
 
@@ -564,13 +565,32 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_blend_records_is_test "
         "ON blend_records(is_test) WHERE is_test = 1"
     )
-    # 시험 배합 LOT 의 점도 측정 — 등록은 허용하되 알림·이상 통계·관리한계에서 제외한다
-    # (판정 로직은 패키지 C 소유. 여기서는 컬럼만 만든다).
-    ensure_column(connection, "viscosity_readings", "is_test", "INTEGER NOT NULL DEFAULT 0")
+    # 시험 배합 LOT 의 점도(2026-09-18 2차 결정, docs/test-blend-design.md §9).
+    # 정식 viscosity_readings 는 반제품(PB·SBCT·SCRA …) 단위 표본이라, 기준 레시피가 없는
+    # 새 레시피 시험은 들어갈 자리가 없었다. 시험 점도는 반제품과 무관하게 **시험 LOT
+    # 하나에 값 하나**로 여기에만 남긴다(blend_record_id UNIQUE). 정식 표본에는 시험 LOT
+    # 이 들어가지 않으므로(add_reading 이 거부) 정식 통계·관리한계·알림은 시험을 몰라도 된다.
+    # 배합 기록이 물리 삭제되면 함께 지운다(viscosity_skips 와 같은 규칙).
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_visc_readings_is_test "
-        "ON viscosity_readings(is_test) WHERE is_test = 1"
+        """
+        CREATE TABLE IF NOT EXISTS test_viscosity_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blend_record_id INTEGER NOT NULL UNIQUE
+                REFERENCES blend_records(id) ON DELETE CASCADE,
+            viscosity REAL NOT NULL,
+            measured_date TEXT,
+            memo TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL,
+            updated_by TEXT,
+            updated_at TEXT
+        )
+        """
     )
+    # 1차 구현(v1)이 정식 표에 is_test=1 로 남긴 시험 점도를 위 표로 옮긴다. v1 은 운영에
+    # 배포됐다(2026-09-18) — 옮기지 않으면 정식 통계에 섞인다. 멱등: 옮길 행이 없으면(열이
+    # 없거나 is_test=1 행이 없으면) 아무것도 하지 않으므로 기동마다 돌려도 된다.
+    migrate_v1_test_viscosity(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_records_oversize_total "
         "ON blend_records(oversize_total) WHERE oversize_total = 1"
@@ -975,3 +995,119 @@ def dedup_product_lots(connection: sqlite3.Connection) -> list[dict]:
         )
         changes.append({"id": int(row["id"]), "old": old, "new": new})
     return changes
+
+
+def migrate_v1_test_viscosity(connection: sqlite3.Connection) -> dict[str, int]:
+    """v1 시험 점도(viscosity_readings.is_test = 1)를 test_viscosity_readings 로 옮긴다(멱등).
+
+    2026-09-18 1차 구현(v1)은 시험 배합 LOT 의 점도를 정식 viscosity_readings 에 is_test=1
+    로 남겼고 그 버전이 운영에 배포됐다. 2차 결정(docs/test-blend-design.md §9)으로 시험
+    점도는 test_viscosity_readings 에만 살고 정식 표본의 시험 필터는 없어졌으므로, 남은 v1
+    시험 행을 옮기지 않으면 정식 통계·관리한계·이상·알림에 섞인다.
+
+    - 대상 기록: blend_record_id 가 시험 기록이면 그 기록, 아니면 lot_no = product_lot 인
+      시험 기록. 어느 쪽이든 기록이 측정보다 먼저 만들어졌어야 한다 — 물리 삭제로 풀린
+      LOT 이 새 시험에 다시 발번된 경우, 옛 값이 엉뚱한 새 기록에 붙지 않게 한다.
+    - 값·측정일·메모·등록자·등록 시각을 그대로 옮기고 정식 표에서 지운다(행마다 감사 로그
+      test_viscosity_migrated).
+    - 대상 기록에 이미 시험 점도가 있으면(시험 LOT 하나에 값 하나) 등록 시각이 늦은 쪽을
+      남긴다(같으면 이미 있는 값). 버린 값은 감사 로그 details.dropped 에 그대로 남는다.
+    - 대상을 찾지 못한 행(시험 기록이 물리 삭제된 고아)은 그대로 둔다. 정식 통계에서는
+      viscosity_service._fetch_readings 가 is_test 열이 있을 때 빼 준다.
+    커밋은 호출자(init_db) 책임. 반환: {"moved", "dropped", "unmapped"} 건수.
+    """
+    from .audit import write_audit_log  # 같은 패키지 — dedup_product_lots 와 같은 방식
+
+    result = {"moved": 0, "dropped": 0, "unmapped": 0}
+
+    def columns(table: str) -> set[str]:
+        return {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+
+    if "is_test" not in columns("viscosity_readings"):
+        return result  # v1 을 거치지 않은 DB — 옮길 것이 없다
+    if "is_test" not in columns("blend_records") or not columns("test_viscosity_readings"):
+        return result
+    rows = connection.execute(
+        "SELECT id, product_id, blend_record_id, lot_no, viscosity, measured_date, memo, "
+        "created_by, created_at FROM viscosity_readings WHERE is_test = 1 ORDER BY id"
+    ).fetchall()
+
+    def resolve(row: sqlite3.Row) -> sqlite3.Row | None:
+        created = str(row["created_at"] or "")
+        if row["blend_record_id"] is not None:
+            record = connection.execute(
+                "SELECT id, product_lot FROM blend_records "
+                "WHERE id = ? AND COALESCE(is_test, 0) = 1 AND created_at <= ?",
+                (int(row["blend_record_id"]), created),
+            ).fetchone()
+            if record is not None:
+                return record
+        lot = str(row["lot_no"] or "").strip()
+        if not lot:
+            return None
+        return connection.execute(
+            "SELECT id, product_lot FROM blend_records "
+            "WHERE product_lot = ? AND COALESCE(is_test, 0) = 1 AND created_at <= ? "
+            "ORDER BY id LIMIT 1",
+            (lot, created),
+        ).fetchone()
+
+    for row in rows:
+        record = resolve(row)
+        if record is None:
+            result["unmapped"] += 1
+            continue
+        target = int(record["id"])
+        incoming = {
+            "viscosity": float(row["viscosity"]),
+            "measured_date": row["measured_date"],
+            "memo": row["memo"],
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+        }
+        existing = connection.execute(
+            "SELECT viscosity, measured_date, memo, created_by, created_at, updated_by, "
+            "updated_at FROM test_viscosity_readings WHERE blend_record_id = ?",
+            (target,),
+        ).fetchone()
+        dropped = None
+        kept = True
+        if existing is None:
+            connection.execute(
+                "INSERT INTO test_viscosity_readings "
+                "(blend_record_id, viscosity, measured_date, memo, created_by, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (target, incoming["viscosity"], incoming["measured_date"], incoming["memo"],
+                 incoming["created_by"], incoming["created_at"]),
+            )
+        elif str(incoming["created_at"] or "") > str(existing["created_at"] or ""):
+            dropped = {key: existing[key] for key in existing.keys()}
+            connection.execute(
+                "UPDATE test_viscosity_readings SET viscosity = ?, measured_date = ?, memo = ?, "
+                "created_by = ?, created_at = ?, updated_by = NULL, updated_at = NULL "
+                "WHERE blend_record_id = ?",
+                (incoming["viscosity"], incoming["measured_date"], incoming["memo"],
+                 incoming["created_by"], incoming["created_at"], target),
+            )
+        else:
+            dropped = incoming
+            kept = False
+        connection.execute("DELETE FROM viscosity_readings WHERE id = ?", (int(row["id"]),))
+        result["moved"] += 1
+        if dropped is not None:
+            result["dropped"] += 1
+        write_audit_log(
+            connection,
+            action="test_viscosity_migrated",
+            target_type="blend_record",
+            target_id=target,
+            target_label=str(record["product_lot"]),
+            details={
+                "from_reading_id": int(row["id"]),
+                "product_id": row["product_id"],
+                **incoming,
+                "kept": kept,
+                "dropped": dropped,
+            },
+        )
+    return result

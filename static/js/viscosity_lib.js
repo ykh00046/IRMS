@@ -15,7 +15,7 @@
  *   controlSummaryRows, controlSummaryHtml,
  *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
  *   readingOverlayDatasets, sourcePbLinkedReadings, sourcePbScatterDatasets,
- *   pbLinkNotice, testChartDatasets
+ *   pbLinkNotice
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -728,61 +728,6 @@
     return `${linkedCount}건 · 사용한 PB의 점도와 나란히`;
   }
 
-  // 시험 배합 LOT 점도 — 값 점·선 + 제품 기준선(참고선)만. 판정색을 쓰지 않는다
-  // (시험은 정식 기준으로 합불을 가르는 대상이 아니다, 계약 §9-5). 라벨은 측정일,
-  // 같은 날 여러 건이면 순서대로 늘어선다(x 는 category 축).
-  function testChartDatasets(items, product, resolveCss) {
-    const rows = items || [];
-    const labels = rows.map((it) => it.measured_date || it.lot_no || "");
-    const datasets = [{
-      type: "line",
-      label: "시험 점도",
-      data: rows.map((it) => ({
-        x: it.measured_date || it.lot_no || "",
-        y: it.viscosity,
-        lot: it.lot_no,
-        date: it.measured_date,
-      })),
-      borderColor: resolveCss("--brand-mid"),
-      backgroundColor: resolveCss("--brand-mid"),
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      borderWidth: 2,
-      tension: 0,
-      spanGaps: true,
-      fill: false,
-      order: 2,
-    }];
-    if (!labels.length) return { labels, datasets: [] };
-    // ⚠ Number(null) === 0 · 0 은 유한수다. 기준을 정하지 않은 반제품에 0 위치의
-    // 참고선을 그리지 않도록 null 을 먼저 걸러낸다(periodChartDatasets 와 같은 이유).
-    const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
-    const refLine = (label, value, token, dash) => ({
-      type: "line",
-      label,
-      data: labels.map((x) => ({ x, y: value })),
-      borderColor: resolveCss(token),
-      borderDash: dash,
-      borderWidth: 1,
-      pointRadius: 0,
-      order: 1,
-    });
-    const spec = product || {};
-    const refs = [
-      ["목표", num(spec.target), "--status-success", [4, 4]],
-      ["관리 하한", num(spec.lower_limit), "--status-error", [2, 3]],
-      ["관리 상한", num(spec.upper_limit), "--status-error", [2, 3]],
-      ["경고 하한", num(spec.warn_low), "--status-warning", [3, 3]],
-      ["경고 상한", num(spec.warn_high), "--status-warning", [3, 3]],
-    ];
-    refs.forEach(([label, value, token, dash]) => {
-      if (value !== null && Number.isFinite(value)) {
-        datasets.push(refLine(label, value, token, dash));
-      }
-    });
-    return { labels, datasets };
-  }
-
   IRMS.viscLib = {
     STATUS_LABEL,
     REASON_LABEL,
@@ -809,7 +754,6 @@
     pbLinkNotice,
     pbLinearFit,
     pbScatterSummary,
-    testChartDatasets,
     withAlpha,
   };
 })();

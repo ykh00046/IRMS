@@ -15,7 +15,6 @@ Endpoints:
     GET    /viscosity/overview                  (개방)
     GET    /viscosity/products                  (개방)
     GET    /viscosity/products/{id}             분석 포함 (개방)
-    GET    /viscosity/products/{id}/test-readings  시험 LOT 측정 (개방)
     POST   /viscosity/readings                  (개방 — 현장 등록)
     POST   /viscosity/products                  (책임자)
     PATCH  /viscosity/products/{id}             (책임자)
@@ -26,6 +25,10 @@ Endpoints:
     POST   /viscosity/readings/{id}/review      확인 처리 (배합 작업자 또는 로그인 사용자)
     POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
+    GET    /viscosity/test-records              시험 LOT 목록·점도 (개방, 반제품 무관)
+    POST   /viscosity/test-records/{record_id}  시험 점도 등록 (개방 — 현장 등록)
+    PUT    /viscosity/test-records/{record_id}  시험 점도 정정 (10분 유예 현장, 이후 책임자)
+    DELETE /viscosity/test-records/{record_id}  시험 점도 삭제 (책임자)
 """
 
 import io
@@ -73,9 +76,28 @@ from ..db import get_db, local_today_text, utc_now_text, write_audit_log
 # 측정값 정정 유예창 — 등록 후 이 시간 안에는 현장에서 직접 정정할 수 있다
 # (2026-08-14 사용자 결정 '10분'). 이후는 책임자만.
 CORRECTION_GRACE = timedelta(minutes=10)
+
+
+def _within_correction_grace(created_raw: Any) -> bool:
+    """등록 시각(UTC 텍스트)이 지금부터 정정 유예창(10분) 안인가.
+
+    정식 측정 정정과 시험 점도 정정이 같은 규칙을 쓴다. 시각을 읽을 수 없으면 유예
+    밖으로 본다(책임자만 정정).
+    """
+    try:
+        created = datetime.fromisoformat(str(created_raw or "").replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - created
+    return timedelta(0) <= age <= CORRECTION_GRACE
+
+
 from ..services import viscosity_service
 from ..blend_session import current_blend_worker
 from .models import (
+    TestViscosityBody,
     ViscosityExcludeBody,
     ViscosityProductCreateBody,
     ViscosityProductUpdateBody,
@@ -128,23 +150,12 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
 
-    @op_router.get("/viscosity/products/{product_id}/test-readings")
-    def viscosity_test_readings(
-        product_id: int,
-        year: int | None = None,
-        connection: sqlite3.Connection = Depends(get_db),
-    ) -> dict[str, Any]:
-        """시험 배합 LOT 의 점도 측정 — 값과 제품 기준선만(판정·σ 없음, 계약 §9-5)."""
-        product = _require_product(connection, product_id)
-        return viscosity_service.test_readings(connection, product, year=year)
-
     @op_router.get("/viscosity/products/{product_id}/blend-records")
     def viscosity_blend_records(
         product_id: int,
         unregistered: str | None = None,
         q: str | None = None,
         reactor: str | None = None,
-        test: str | None = None,
         limit: int = 20,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
@@ -155,9 +166,9 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         빈 목록이 나왔다(2026-08-13 검토 4·10번). 여기서는 서버가 점도 등록 여부를
         LEFT JOIN 으로 함께 계산해 필터·집계까지 끝낸다.
 
-        기본 목록은 정식 배합만이다. test=1 이면 시험 배합만 — 시험 기록의 제품명은
-        자유 시험명이라 반제품 이름과 맞지 않으므로 **기준 레시피**로 잇는다
-        (계약 §9-2). 건수(total·unregistered_total)도 같은 모드를 따른다.
+        정식 배합만 담는다(계약 §9-3). 시험 배합 LOT 은 반제품과 무관한 '시험' 탭
+        (GET /viscosity/test-records)이 따로 보여 준다 — 우연히 시험명이 반제품 이름과
+        같아도 여기에는 섞이지 않는다.
         """
         from ..services import blend_service
 
@@ -165,28 +176,13 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         limit = max(1, min(int(limit or 20), 200))
         names = {product["name"], product["code"]}
         placeholders = ",".join("?" for _n in names)
-        test_mode = str(test or "").strip() == "1"
         params: list[Any] = list(names)
-        if test_mode:
-            scope = (
-                f"br.base_recipe_id IN (SELECT id FROM recipes "
-                f"WHERE product_name IN ({placeholders}) "
-                f"OR product_code IN ({placeholders}))"
-            )
-            params = [*names, *names]
-            where = [
-                blend_service.test_filter_clause(connection, "only", "br"),
-                scope,
-                "br.status = 'completed'",
-                "COALESCE(br.is_bulk_regenerated, 0) = 0",
-            ]
-        else:
-            where = [
-                f"br.product_name IN ({placeholders})",
-                blend_service.not_test_clause(connection, "br"),
-                "br.status = 'completed'",
-                "COALESCE(br.is_bulk_regenerated, 0) = 0",
-            ]
+        where = [
+            f"br.product_name IN ({placeholders})",
+            blend_service.not_test_clause(connection, "br"),
+            "br.status = 'completed'",
+            "COALESCE(br.is_bulk_regenerated, 0) = 0",
+        ]
         query = (q or "").strip()
         if query:
             like = f"%{query}%"
@@ -255,15 +251,12 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         if r["reading_value"] is not None
                         else None
                     ),
-                    # 목록 자체가 한 모드만 담으므로 행 플래그는 모드와 같다.
-                    "is_test": test_mode,
                 }
                 for r in rows
             ],
             "total": int(total),
             "unregistered_total": int(unregistered_total),
             "limit": limit,
-            "test": test_mode,
         }
 
     @op_router.post("/viscosity/blend-records/{record_id}/skip")
@@ -293,6 +286,11 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         ).fetchone()
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
+        # 시험 배합은 알림·미등록 대기열에 없으므로 '측정 불가'로 닫을 일이 없다(계약 §9-5).
+        if viscosity_service.is_test_blend_lot(connection, None, record_id):
+            raise HTTPException(
+                status_code=400, detail="시험 LOT은 측정 불가 기록이 필요 없습니다."
+            )
         has_reading = connection.execute(
             "SELECT 1 FROM viscosity_readings WHERE blend_record_id = ? LIMIT 1",
             (record_id,),
@@ -419,6 +417,9 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 created_at=utc_now_text(),
                 reactor=body.reactor,
             )
+        except viscosity_service.TestLotError as exc:
+            # 시험 LOT 은 정식 표본에 넣지 않는다(계약 §9-2) — 시험 탭으로 안내.
+            raise HTTPException(status_code=400, detail=str(exc))
         except sqlite3.IntegrityError:
             raise HTTPException(
                 status_code=409,
@@ -597,15 +598,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
 
         within_grace = False
         if not is_manager:
-            created_raw = str(row["created_at"] or "")
-            try:
-                created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=timezone.utc)
-                age = datetime.now(timezone.utc) - created
-                within_grace = timedelta(0) <= age <= CORRECTION_GRACE
-            except ValueError:
-                within_grace = False
+            within_grace = _within_correction_grace(row["created_at"])
             if not within_grace:
                 raise HTTPException(
                     status_code=403,
@@ -790,6 +783,160 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
         connection.commit()
         return {"ok": True, "id": reading_id}
+
+    # ---- 시험 배합 LOT 점도(2026-09-18 2차 결정, 계약 §9) --------------------
+    # 반제품과 무관하게 시험 LOT 하나에 값 하나(test_viscosity_readings). 등록·정정·삭제
+    # 규칙은 위 정식 측정과 **같다**: 등록은 개방(로그인 이름 또는 '현장'), 정정은 사유
+    # 필수·등록 후 10분은 현장·이후 책임자, 삭제는 책임자(mgr_router). 측정 불가는 없다.
+    @op_router.get("/viscosity/test-records")
+    def viscosity_test_records(
+        q: str | None = None,
+        unregistered: str | None = None,
+        limit: int = 20,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """시험 탭 목록 — 완료된 시험 배합 기록 전부(반제품 선택과 무관), 최신순."""
+        return viscosity_service.list_test_records(
+            connection, q=q, unregistered=unregistered == "1", limit=limit
+        )
+
+    @op_router.post("/viscosity/test-records/{record_id}")
+    def viscosity_test_record_add(
+        record_id: int,
+        body: TestViscosityBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """시험 점도 등록 — 정식 배합 연계 등록과 같은 규칙(개방, 로그인 이름 또는 '현장').
+
+        완료된 시험 기록만(아니면 400), LOT 하나에 값 하나(이미 있으면 409).
+        """
+        current_user = get_current_user(request, required=False)
+        measured_date = (body.measured_date or "").strip()
+        if measured_date:
+            try:
+                measured_date = date.fromisoformat(measured_date).isoformat()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="측정일 형식이 올바르지 않습니다.")
+        try:
+            saved = viscosity_service.add_test_reading(
+                connection,
+                blend_record_id=record_id,
+                viscosity=body.viscosity,
+                # 측정일 기본값은 현장 기준 '오늘'(로컬) — 정식 등록과 같은 규칙.
+                measured_date=measured_date or local_today_text(),
+                memo=body.memo,
+                created_by=actor_name(current_user) if current_user else "현장",
+                created_at=utc_now_text(),
+            )
+        except viscosity_service.TestViscosityError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail)
+        write_audit_log(
+            connection,
+            action="test_viscosity_add",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=str(saved.get("product_lot") or record_id),
+            details={
+                "viscosity": body.viscosity,
+                "measured_date": saved.get("measured_date"),
+            },
+        )
+        connection.commit()
+        return {"status": "ok", "record_id": record_id, "reading": saved}
+
+    @op_router.put("/viscosity/test-records/{record_id}")
+    def viscosity_test_record_correct(
+        record_id: int,
+        body: dict[str, Any],
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """시험 점도 정정 — 정식 측정 정정(PUT /viscosity/readings/{id})과 같은 규칙.
+
+        등록 후 10분 이내는 현장 누구나, 이후는 책임자만. 사유는 필수이고 원래 값·새 값·
+        사유가 감사 로그에 남는다.
+        """
+        current_user = get_current_user(request, required=False)
+        is_manager = bool(current_user) and has_access_level(current_user, "manager")
+        try:
+            new_value = float(body.get("viscosity"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="점도값을 숫자로 입력하세요.")
+        if not (0 < new_value <= 100000):
+            raise HTTPException(status_code=400, detail="점도값 범위가 올바르지 않습니다.")
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 2:
+            raise HTTPException(status_code=400, detail="정정 사유를 입력하세요.")
+
+        reading = viscosity_service.get_test_reading(connection, record_id)
+        if reading is None:
+            raise HTTPException(status_code=404, detail="등록된 시험 점도가 없습니다.")
+
+        within_grace = False
+        if not is_manager:
+            within_grace = _within_correction_grace(reading["created_at"])
+            if not within_grace:
+                raise HTTPException(
+                    status_code=403,
+                    detail="등록 후 10분이 지난 값은 책임자 로그인 후 정정하세요.",
+                )
+
+        result = viscosity_service.correct_test_reading(
+            connection,
+            record_id,
+            viscosity=new_value,
+            updated_by=actor_name(current_user) if current_user else "현장",
+            updated_at=utc_now_text(),
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="등록된 시험 점도가 없습니다.")
+        if not result["changed"]:
+            return {"status": "ok", "old": result["old"], "new": result["new"]}
+        write_audit_log(
+            connection,
+            action="test_viscosity_corrected",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=str(reading.get("product_lot") or record_id),
+            details={
+                "old": result["old"],
+                "new": result["new"],
+                "reason": reason,
+                # 어느 경로였는지 — 유예창(현장) 정정인지 책임자 정정인지.
+                "grace_window": within_grace,
+            },
+        )
+        connection.commit()
+        return {"status": "ok", "old": result["old"], "new": result["new"]}
+
+    @mgr_router.delete("/viscosity/test-records/{record_id}")
+    def viscosity_test_record_delete(
+        record_id: int,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """시험 점도 삭제(책임자) — 정식 측정 삭제와 같은 권한."""
+        current_user = get_current_user(request, required=False)
+        removed = viscosity_service.delete_test_reading(connection, record_id)
+        if removed is None:
+            raise HTTPException(status_code=404, detail="등록된 시험 점도가 없습니다.")
+        write_audit_log(
+            connection,
+            action="test_viscosity_delete",
+            actor=current_user,
+            target_type="blend_record",
+            target_id=str(record_id),
+            target_label=str(removed.get("product_lot") or record_id),
+            details={
+                "viscosity": removed["viscosity"],
+                "measured_date": removed["measured_date"],
+            },
+        )
+        connection.commit()
+        return {"deleted": record_id}
 
     @mgr_router.get("/viscosity/products/{product_id}/export")
     def viscosity_export(
