@@ -416,6 +416,17 @@ def _save_real(client, csrf, recipe_id, product, materials):
     return res.json()
 
 
+def _material_id(client, name: str) -> int:
+    """자재 마스터에서 이름으로 id 를 찾는다(레시피 임포트가 등록해 둔 자재).
+
+    시험 배합도 등록된 자재만 받는다 — 행마다 material_id 를 실어 보내야 한다.
+    """
+    for m in client.get("/api/materials").json()["items"]:
+        if m["name"] == name:
+            return int(m["id"])
+    raise AssertionError(f"자재 마스터에 없음: {name}")
+
+
 def _save_test_record(client, csrf, name, recipe_id, materials):
     res = client.post(
         "/api/blend/records",
@@ -428,6 +439,7 @@ def _save_test_record(client, csrf, name, recipe_id, materials):
             "total_amount": 1,
             "details": [
                 {
+                    "material_id": _material_id(client, m[0]),
                     "material_name": m[0],
                     "theory_amount": m[1],
                     "actual_amount": m[1],
