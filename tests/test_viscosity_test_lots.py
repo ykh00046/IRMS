@@ -200,7 +200,10 @@ def test_schema_has_test_table_and_no_reading_level_flag():
 
 # ── 등록·목록(§9-1·§9-4) ─────────────────────────────────────────────
 def test_new_recipe_test_gets_viscosity_and_is_listed():
-    """기준 레시피가 없는 새 레시피 시험도 점도가 등록되고 목록에 나온다(재설계의 이유)."""
+    """기준 레시피가 없는 새 레시피 시험도 점도가 등록되고 목록에 나온다(재설계의 이유).
+
+    목록 기본(recorded)은 기록한 시험만 — 등록 전에는 기록 창 후보(unrecorded)에만 있다.
+    """
     client = _mgmt_client()
     worker = _worker_session(client, "시험점도" + _uid())
     name = "새레시피시험" + _uid()
@@ -209,8 +212,12 @@ def test_new_recipe_test_gets_viscosity_and_is_listed():
     assert record["base_recipe_id"] is None
 
     before = _list(client, q=name)
-    assert before["total"] == 1 and before["unregistered_total"] == 1
-    item = before["items"][0]
+    assert before["state"] == "recorded"
+    assert before["items"] == [] and before["total"] == 0
+    assert before["counts"] == {"recorded": 0, "unrecorded": 1, "all": 1}
+    picks = _list(client, q=name, state="unrecorded")
+    assert picks["total"] == 1
+    item = picks["items"][0]
     assert item["id"] == record["id"]
     assert item["product_name"] == name
     assert item["product_lot"] == record["product_lot"]
@@ -223,7 +230,8 @@ def test_new_recipe_test_gets_viscosity_and_is_listed():
     assert res.json()["reading"]["viscosity"] == 123.4
 
     after = _list(client, q=name)
-    assert after["total"] == 1 and after["unregistered_total"] == 0
+    assert after["total"] == 1
+    assert after["counts"] == {"recorded": 1, "unrecorded": 0, "all": 1}
     got = after["items"][0]
     assert got["registered"] is True
     assert got["viscosity"] == 123.4
@@ -232,42 +240,73 @@ def test_new_recipe_test_gets_viscosity_and_is_listed():
     # 책임자 로그인 단말에서 등록 → 로그인 이름(정식 등록과 같은 규칙).
     assert got["created_by"] and got["created_by"] != "현장"
     assert got["created_at"]
+    assert _list(client, q=name, state="unrecorded")["items"] == []
 
 
-def test_list_is_product_independent_newest_first_with_search_and_unregistered():
-    """시험 탭 목록: 반제품과 무관 · 최신순(작업일, id) · 검색(LOT·시험명·작업자) · 미등록만."""
+def test_list_states_order_search_and_counts():
+    """시험 점도 목록: 반제품과 무관 · state 별 내용과 순서 · 검색(LOT·시험명·작업자) · 건수.
+
+    recorded(기본) = 기록한 시험만, 최근 측정 먼저(측정일, 같은 날은 나중 기록 먼저).
+    unrecorded(기록 창 후보)·all = 최근 배합 먼저(작업일, id).
+    """
     client = _mgmt_client()
     tag = "목록" + _uid()
     worker = _worker_session(client, "목록작업" + _uid())
     recipe_id, mats = _recipe_materials(
         client, "기준" + tag, [("목록원료A" + _uid(), 60), ("목록원료B" + _uid(), 40)]
     )
-    older = _save_test(client, tag + "가", mats, base_recipe_id=recipe_id, work_date="2026-09-17")
+    a = _save_test(client, tag + "가", mats, base_recipe_id=recipe_id, work_date="2026-09-17")
     b = _save_test(client, tag + "나", mats, work_date="2026-09-15")
     c = _save_test(client, tag + "다", mats, work_date="2026-09-15")
+    d = _save_test(client, tag + "라", mats, work_date="2026-09-14")
 
-    listed = _list(client, q=tag)
-    assert [it["id"] for it in listed["items"]] == [older["id"], c["id"], b["id"]]
-    assert listed["total"] == 3 and listed["unregistered_total"] == 3
-    by_id = {it["id"]: it for it in listed["items"]}
-    assert by_id[older["id"]]["base_recipe_id"] == recipe_id
-    assert by_id[older["id"]]["base_recipe_name"] == "기준" + tag
+    # 아직 아무것도 기록하지 않았다 — 기본 목록은 비고, 후보는 최근 배합 먼저.
+    assert _list(client, q=tag)["items"] == []
+    picks = _list(client, q=tag, state="unrecorded")
+    assert [it["id"] for it in picks["items"]] == [a["id"], c["id"], b["id"], d["id"]]
+    assert picks["counts"] == {"recorded": 0, "unrecorded": 4, "all": 4}
+    by_id = {it["id"]: it for it in picks["items"]}
+    assert by_id[a["id"]]["base_recipe_id"] == recipe_id
+    assert by_id[a["id"]]["base_recipe_name"] == "기준" + tag
     assert by_id[b["id"]]["base_recipe_name"] is None
 
-    assert _register(client, c["id"], 55.5).status_code == 200
-    open_only = _list(client, q=tag, unregistered="1")
-    assert [it["id"] for it in open_only["items"]] == [older["id"], b["id"]]
-    # 건수는 검색을 따르되 '미등록만' 과는 무관(정식 등록 대기열과 같은 규약).
-    assert open_only["total"] == 3 and open_only["unregistered_total"] == 2
+    # 측정일 순서 · C 먼저 기록, B 나중(같은 측정일 → 나중 기록 먼저), A 는 더 최근 측정.
+    assert _register(client, c["id"], 55.5, measured_date="2026-09-16").status_code == 200
+    assert _register(client, b["id"], 56.5, measured_date="2026-09-16").status_code == 200
+    assert _register(client, a["id"], 57.5, measured_date="2026-09-18").status_code == 200
 
-    # 검색: 제품 LOT · 시험명 · 작업자.
+    recorded = _list(client, q=tag)
+    assert [it["id"] for it in recorded["items"]] == [a["id"], b["id"], c["id"]]
+    assert all(it["registered"] for it in recorded["items"])
+    assert recorded["total"] == 3
+    assert recorded["counts"] == {"recorded": 3, "unrecorded": 1, "all": 4}
+    unrecorded = _list(client, q=tag, state="unrecorded")
+    assert [it["id"] for it in unrecorded["items"]] == [d["id"]]
+    assert unrecorded["total"] == 1
+    everything = _list(client, q=tag, state="all")
+    assert [it["id"] for it in everything["items"]] == [a["id"], c["id"], b["id"], d["id"]]
+    assert everything["total"] == 4
+
+    # 검색(서버): 제품 LOT · 시험명 · 작업자. 기록 창 후보도 같은 검색을 쓴다.
     assert [it["id"] for it in _list(client, q=b["product_lot"])["items"]] == [b["id"]]
     assert [it["id"] for it in _list(client, q=tag + "다")["items"]] == [c["id"]]
-    assert {it["id"] for it in _list(client, q=worker)["items"]} == {
-        older["id"], b["id"], c["id"]
-    }
+    assert {it["id"] for it in _list(client, q=worker)["items"]} == {a["id"], b["id"], c["id"]}
+    assert [it["id"] for it in _list(client, q=d["product_lot"], state="unrecorded")["items"]] == [
+        d["id"]
+    ]
+    assert _list(client, q=d["product_lot"])["items"] == []
     # limit
     assert len(_list(client, q=tag, limit=2)["items"]) == 2
+
+
+def test_list_state_rejects_unknown_values():
+    """state 는 recorded·unrecorded·all 만 — 그 밖은 422(배합 기록 test 필터와 같은 방식)."""
+    client = _anon_client()
+    for bad in ("registered", "unregistered", "ALL", ""):
+        res = client.get("/api/viscosity/test-records", params={"state": bad})
+        assert res.status_code == 422, (bad, res.text)
+    with pytest.raises(ValueError):
+        vs.list_test_records(_make_db(), state="nope")
 
 
 def test_second_create_is_409_and_bad_records_are_400_or_404():
@@ -298,7 +337,9 @@ def test_second_create_is_409_and_bad_records_are_400_or_404():
     )
     assert res.status_code == 200, res.text
     assert _register(client, canceled["id"], 40.0).status_code == 400
-    assert canceled["id"] not in [it["id"] for it in _list(client, q=product)["items"]]
+    assert canceled["id"] not in [
+        it["id"] for it in _list(client, q=product, state="all")["items"]
+    ]
 
     assert _register(client, 99_999_999, 40.0).status_code == 404
     # 값 범위는 정식 등록과 같다(0 초과 · 100000 이하) · 측정일 형식 검사.
@@ -402,7 +443,9 @@ def test_delete_is_manager_only_and_audited():
     ok = client.delete(f"/api/viscosity/test-records/{rid}", headers=_csrf(client))
     assert ok.status_code == 200, ok.text
     assert ok.json() == {"deleted": rid}
-    assert _list(client, q=record["product_lot"])["items"][0]["registered"] is False
+    # 지우면 기록 목록에서 빠지고 기록 창 후보로 돌아간다.
+    assert _list(client, q=record["product_lot"])["items"] == []
+    assert [it["id"] for it in _list(client, q=record["product_lot"], state="unrecorded")["items"]] == [rid]
     assert client.delete(
         f"/api/viscosity/test-records/{rid}", headers=_csrf(client)
     ).status_code == 404
@@ -751,28 +794,50 @@ def test_v1_migration_is_a_no_op_without_the_v1_column():
 
 
 # ── 화면 구조(§9-4) — 브라우저 없이 지킬 수 있는 것만 ──────────────────
-def test_screen_has_product_independent_test_tab():
-    """점도 화면 '시험' 탭: 반제품과 무관한 목록 API · 요약 줄 숨김 고리 · 1차 구현 흔적 없음."""
+def test_screen_layout_and_test_tab_structure():
+    """점도 화면 배치(2026-09-18): 탭 줄이 맨 위 · 반제품 탭 셋 | 구분선 | 이상 관리·시험 점도 ·
+    반제품 조회 조건은 반제품 탭 전용 한 벌 안 · 시험 점도 탭은 기록 목록 + [점도 기록] 창."""
+    import re
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent
     template = (base / "templates" / "viscosity.html").read_text(encoding="utf-8")
     controller = (base / "static" / "js" / "viscosity.js").read_text(encoding="utf-8")
     css = (base / "static" / "css" / "viscosity.css").read_text(encoding="utf-8")
+    status_js = (base / "static" / "js" / "status.js").read_text(encoding="utf-8")
 
-    assert 'data-tab="test"' in template and 'id="tab-test"' in template
-    for marker in ('id="visc-test-body"', 'id="visc-test-form"', 'id="visc-test-date"',
-                   'id="visc-test-filter"', 'id="visc-test-open-only"'):
-        assert marker in template, f"{marker} 가 없다"
-    # 등록 대기열의 '시험 배합 LOT' 전환·반제품별 시험 그래프(1차 구현)는 없어졌다.
-    assert "visc-test-only" not in template and "visc-test-chart" not in template
+    # 탭 순서와 구분선 · 탭 줄이 콘텐츠 맨 앞.
+    nav = template[template.index('<nav class="mgmt-tabs visc-tabs"'):]
+    nav = nav[: nav.index("</nav>")]
+    order = re.findall(r'data-tab="(\w+)"|class="(visc-tab-divider)"', nav)
+    assert [a or b for a, b in order] == [
+        "register", "trend", "pb", "visc-tab-divider", "anomaly", "test",
+    ]
+    assert '>시험 점도</button>' in nav and '>시험</button>' not in nav
+    content = template[template.index("{% block content %}"):]
+    assert content.index('<nav class="mgmt-tabs visc-tabs"') < content.index("<section")
+    # 반제품 조회 조건·요약은 탭 줄 아래 한 벌(반제품 탭에서만 보인다).
+    scope_at = template.index('id="visc-product-scope"')
+    for marker in ('id="visc-product-select"', 'id="visc-refresh"', 'class="visc-summary"'):
+        assert scope_at < template.index(marker) < template.index('<div class="tab-panel')
+    assert ".visc-product-scope[hidden] { display: none; }" in css
+    # 1차·2차 흔적 없음: 요약 줄 CSS 숨김 고리, 미등록만 체크, 대기열 시험 전환, 시험 그래프.
+    for gone in ("visc-page", "visc-test-open-only", "visc-test-only", "visc-test-chart",
+                 "visc-test-selected"):
+        assert gone not in template, f"{gone} 가 남았다"
+    assert "dataset.viscTab" not in controller and "data-visc-tab" not in css
     assert "test-readings" not in controller and "testChartDatasets" not in controller
-    # 목록·등록·정정·삭제는 반제품과 무관한 새 경로.
-    assert "/viscosity/test-records" in controller
-    # 요약 줄은 이 탭에서 감춘다(main.visc-page[data-visc-tab]).
-    assert "{% block main_class %}visc-page{% endblock %}" in template
-    assert "dataset.viscTab" in controller
-    assert '.visc-page[data-visc-tab="test"] .visc-summary' in css
+    # 시험 점도 탭 · 기록 목록(기본 recorded) + [점도 기록] 창(후보 = unrecorded).
+    for marker in ('id="visc-test-body"', 'id="visc-test-filter"', 'id="visc-test-add"',
+                   'id="visc-test-modal"', 'id="visc-test-lot-q"', 'id="visc-test-pick-body"',
+                   'id="visc-test-form"', 'id="visc-test-value"', 'id="visc-test-date"'):
+        assert marker in template, f"{marker} 가 없다"
+    modal_line = next(line for line in template.splitlines() if 'id="visc-test-modal"' in line)
+    assert "hidden" in modal_line
+    assert 'state: "recorded"' in controller and 'state: "unrecorded"' in controller
+    # 딥링크 ?tab=test&lot=… · 기록 조회 상세의 링크가 여기로 온다.
+    assert 'params.get("lot")' in controller
+    assert "/viscosity?tab=test&amp;lot=" in status_js
 
 
 # ── 서비스 단위(최소 스키마 폴백) ────────────────────────────────────

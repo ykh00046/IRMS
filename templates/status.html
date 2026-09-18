@@ -105,6 +105,9 @@
       }
       /* 상세 헤더의 기준 레시피 한 줄 · 값 칸(.dhr-head)에 맞춘 보조 글자. */
       .status-base-recipe { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--fs-xs); }
+      /* 시험 기록 상세 · 점도가 없을 때 점도 화면 [점도 기록]으로 가는 링크(LOT 이 골라진 채 열린다). */
+      .status-visc-link { color: var(--accent-primary); font-weight: 600; text-decoration: none; }
+      .status-visc-link:hover { text-decoration: underline; }
 
       /* 취소된 행 · 본문은 눈게(tertiary), LOT 에만 취소선 — 내용은 여전히 읽힌다. */
       .blend-row.is-canceled td { color: var(--text-tertiary); }
@@ -283,5 +286,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260918c"></script>
+    <script src="/static/js/status.js?v=20260918d"></script>
 {% endblock %}

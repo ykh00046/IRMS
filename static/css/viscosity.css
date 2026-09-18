@@ -931,31 +931,46 @@ body {
   gap: var(--space-2);
 }
 
-/* ── 시험 탭(2026-09-18 2차 결정) ─────────────────────────────────────────
-   시험 LOT 은 반제품 기준과 무관하다. 이 탭에서는 반제품 요약 줄과 추세·기간 경보를
-   감춘다(main.visc-page 의 data-visc-tab 은 JS 가 탭을 바꿀 때 단다). 표·폼은 측정 등록
-   탭의 부품(.visc-register-grid · .visc-blend-table · .visc-register-form)을 그대로 쓴다. */
-.visc-page[data-visc-tab="test"] .visc-summary,
-.visc-page[data-visc-tab="test"] .visc-trend-banner {
-  display: none;
+/* ── 탭 묶음과 반제품 범위(2026-09-18) ───────────────────────────────────
+   탭 줄이 맨 위다. 앞 세 탭(측정 등록·추세·분석·PB 연계)만 반제품을 고르므로 조회 조건·
+   요약 줄·경보는 그 세 탭이 함께 쓰는 한 벌(.visc-product-scope)에 모았다. 보일 때는 안의
+   패널이 page-grid 간격을 그대로 물려받게 contents, 숨길 때는 hidden 속성(JS)이다. */
+.visc-product-scope { display: contents; }
+.visc-product-scope[hidden] { display: none; }
+
+/* 반제품 탭과 반제품과 무관한 탭(이상 관리·시험 점도) 사이의 구분선. */
+.visc-tab-divider {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--border-strong);
 }
 
-/* 시험 표는 열이 여덟이라(책임자) 폼 칸을 조금 좁혀 표에 폭을 더 준다. 폼 내용은
-   점도값·측정일·메모뿐이라 260px 이면 충분하다(1440px 실측, 관리 열이 잘리지 않게). */
-.visc-register-grid.visc-test-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 260px);
-}
+/* ── 시험 점도 탭 ─────────────────────────────────────────────────────────
+   기록한 시험 점도만 싣는 표와 [점도 기록] 창. 표는 측정 등록 표(.visc-blend-table)의
+   촘촘한 모양을 빌리되 행을 고르는 표가 아니므로 커서는 기본으로 둔다. */
+.visc-test-head { align-items: center; }
 
-/* 시험명·기준 레시피·메모는 길 수 있다. 한 줄로 자르고 전체는 title 로 본다
-   (폭은 측정 등록 표의 제외 사유 칸과 같다). */
+.visc-test-table tbody tr { cursor: default; }
+
+/* 시험명·기준 레시피·메모는 길 수 있다. 한 줄로 자르고 전체는 title 로 본다. */
 .visc-test-clip {
   display: inline-block;
-  max-width: 110px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
 }
+
+/* 점도 기록 창 · LOT 고르는 표가 들어가 기본 모달보다 넓다. 목록은 창 안에서만 스크롤한다. */
+.ss-modal.visc-test-modal { width: min(640px, 92vw); }
+.visc-test-pick-wrap {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.visc-test-pick .visc-test-clip { max-width: 120px; }
 
 /* 등록한 사람 아래 시각 · 부가 표기라 한 단 작게. 이름 옆에 두면 표가 칸보다 넓어져
    가로로 밀렸다(1440px 실측, 시각이 잘림). 줄을 나눠 열 폭을 줄인다. */
@@ -970,10 +985,4 @@ body {
 .visc-test-fixed {
   color: var(--text-tertiary);
   font-size: var(--fs-2xs);
-}
-
-@media (max-width: 900px) {
-  .visc-register-grid.visc-test-grid {
-    grid-template-columns: 1fr;
-  }
 }

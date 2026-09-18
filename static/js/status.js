@@ -603,6 +603,17 @@ document.addEventListener("DOMContentLoaded", () => {
         },
       )
       .join("") + stepRowsAt((rec.details || []).length);
+    // 시험 기록은 필요할 때만 점도를 잰다 · 아직 없으면 점도 화면의 [점도 기록]으로 바로 간다
+    // (그 LOT 이 골라진 채 기록 창이 열린다). 취소된 시험에는 기록할 수 없어 링크가 없다.
+    // 정식 기록의 문구는 그대로다.
+    let emptyVisc = '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
+    if (rec.is_test) {
+      emptyVisc = rec.status === "canceled"
+        ? '<p class="muted small">기록한 점도가 없습니다.</p>'
+        : '<p class="muted small">점도를 쟀다면 '
+          + `<a class="status-visc-link" href="/viscosity?tab=test&amp;lot=${esc(encodeURIComponent(rec.product_lot || ""))}">점도 기록</a>`
+          + "으로 남기세요.</p>";
+    }
     const linkedVisc = (rec.viscosity || []).length
       ? `<ul class="blend-visc-list">${rec.viscosity
           .map(
@@ -610,7 +621,7 @@ document.addEventListener("DOMContentLoaded", () => {
               `<li><b>${esc(x.product_code)}</b> ${fmt(x.viscosity)} <span class="muted small">${esc(x.measured_date || "")}${x.created_by ? " · " + esc(x.created_by) : ""}</span></li>`,
           )
           .join("")}</ul>`
-      : '<p class="muted small">측정된 점도가 없습니다. (등록은 점도 관리 화면에서)</p>';
+      : emptyVisc;
     // 점도 등록은 '점도 관리' 화면 한 곳으로 통일 — 여기선 측정값을 읽기전용으로만 표시.
     const visc = `<div class="blend-visc-block"><b>점도 측정</b>${linkedVisc}</div>`;
     const manualBadge = rec.manual_entry

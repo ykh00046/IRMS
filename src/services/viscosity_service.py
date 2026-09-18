@@ -1613,22 +1613,36 @@ def _test_readings_for_blend(
     ]
 
 
+TEST_RECORD_STATES = ("recorded", "unrecorded", "all")
+
+
 def list_test_records(
     connection: sqlite3.Connection,
     *,
+    state: str = "recorded",
     q: str | None = None,
-    unregistered: bool = False,
     limit: int = 20,
 ) -> dict[str, Any]:
-    """점도 화면 '시험' 탭 목록 — 완료된 시험 배합 기록 전부(반제품 선택과 무관).
+    """점도 화면 '시험 점도' 탭 목록 — 완료된 시험 배합 기록(반제품 선택과 무관).
 
-    최신순(work_date, id 내림차순). q 는 제품 LOT·시험명·작업자 부분 일치,
-    unregistered 는 점도가 아직 없는 LOT 만. 건수(total·unregistered_total)는 q 를
-    반영하되 unregistered 와는 무관하다(정식 등록 대기열과 같은 규약).
+    시험은 필요할 때만 점도를 잰다(2026-09-18 사용자 결정). 그래서 기본(recorded)은
+    점도를 기록한 시험만, 최근 측정 먼저(measured_date, 점도 id 내림차순)다.
+    unrecorded 는 아직 기록이 없는 시험(점도 기록 창의 LOT 고르기), all 은 둘 다이고
+    둘 다 최근 배합 먼저(work_date, id 내림차순)다. q 는 제품 LOT·시험명·작업자 부분 일치.
+    total 은 요청한 state 의 건수, counts 는 같은 q 로 센 state 별 건수다.
     기준 레시피 이름은 base_recipe_id 의 레시피 제품명(없거나 지워졌으면 None).
+    잘못된 state 는 ValueError(라우트는 먼저 422 로 거른다).
     """
+    if state not in TEST_RECORD_STATES:
+        raise ValueError(f"invalid test record state: {state}")
     limit = max(1, min(int(limit or 20), TEST_RECORD_LIMIT_MAX))
-    empty = {"items": [], "total": 0, "unregistered_total": 0, "limit": limit}
+    empty = {
+        "items": [],
+        "total": 0,
+        "counts": {name: 0 for name in TEST_RECORD_STATES},
+        "state": state,
+        "limit": limit,
+    }
     if not _test_viscosity_ready(connection):
         return empty
     where = ["COALESCE(br.is_test, 0) = 1", "br.status = 'completed'"]
@@ -1641,17 +1655,28 @@ def list_test_records(
         )
         params.extend([like, like, like])
     where_sql = " AND ".join(where)
-    registered_sql = (
-        "EXISTS (SELECT 1 FROM test_viscosity_readings tv0 "
-        "        WHERE tv0.blend_record_id = br.id)"
-    )
-    total = connection.execute(
-        f"SELECT COUNT(*) FROM blend_records br WHERE {where_sql}", params
-    ).fetchone()[0]
-    unregistered_total = connection.execute(
-        f"SELECT COUNT(*) FROM blend_records br WHERE {where_sql} AND NOT {registered_sql}",
+    # 한 번에 센다 — 값은 기록 하나에 하나(UNIQUE)라 LEFT JOIN 이 행을 불리지 않는다.
+    count_row = connection.execute(
+        "SELECT COUNT(*) AS all_n, COUNT(tv.id) AS recorded_n "
+        "FROM blend_records br "
+        "LEFT JOIN test_viscosity_readings tv ON tv.blend_record_id = br.id "
+        f"WHERE {where_sql}",
         params,
-    ).fetchone()[0]
+    ).fetchone()
+    counts = {
+        "recorded": int(count_row["recorded_n"] or 0),
+        "unrecorded": int(count_row["all_n"] or 0) - int(count_row["recorded_n"] or 0),
+        "all": int(count_row["all_n"] or 0),
+    }
+    if state == "recorded":
+        state_sql = "AND tv.id IS NOT NULL"
+        order_sql = (
+            "CASE WHEN tv.measured_date IS NULL THEN 1 ELSE 0 END, "
+            "tv.measured_date DESC, tv.id DESC"
+        )
+    else:
+        state_sql = "AND tv.id IS NULL" if state == "unrecorded" else ""
+        order_sql = "br.work_date DESC, br.id DESC"
     has_base = _has_column(connection, "blend_records", "base_recipe_id")
     base_id_sql = "br.base_recipe_id" if has_base else "NULL"
     base_name_sql = (
@@ -1669,8 +1694,8 @@ def list_test_records(
         FROM blend_records br
         LEFT JOIN test_viscosity_readings tv ON tv.blend_record_id = br.id
         WHERE {where_sql}
-        {"AND tv.id IS NULL" if unregistered else ""}
-        ORDER BY br.work_date DESC, br.id DESC
+        {state_sql}
+        ORDER BY {order_sql}
         LIMIT ?
         """,
         [*params, limit],
@@ -1698,8 +1723,9 @@ def list_test_records(
         })
     return {
         "items": items,
-        "total": int(total),
-        "unregistered_total": int(unregistered_total),
+        "total": counts[state],
+        "counts": counts,
+        "state": state,
         "limit": limit,
     }
 

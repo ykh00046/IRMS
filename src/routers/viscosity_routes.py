@@ -25,7 +25,7 @@ Endpoints:
     POST   /viscosity/readings/{id}/review      확인 처리 (배합 작업자 또는 로그인 사용자)
     POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
-    GET    /viscosity/test-records              시험 LOT 목록·점도 (개방, 반제품 무관)
+    GET    /viscosity/test-records              시험 점도 목록 (개방, 반제품 무관, state=recorded|unrecorded|all)
     POST   /viscosity/test-records/{record_id}  시험 점도 등록 (개방 — 현장 등록)
     PUT    /viscosity/test-records/{record_id}  시험 점도 정정 (10분 유예 현장, 이후 책임자)
     DELETE /viscosity/test-records/{record_id}  시험 점도 삭제 (책임자)
@@ -36,7 +36,7 @@ import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 
@@ -791,13 +791,15 @@ def build_router() -> tuple[APIRouter, APIRouter]:
     @op_router.get("/viscosity/test-records")
     def viscosity_test_records(
         q: str | None = None,
-        unregistered: str | None = None,
+        # recorded(기본) = 점도를 기록한 시험 · unrecorded = 아직 없는 시험(기록 창의
+        # LOT 고르기) · all. 잘못된 값은 422(배합 기록 test 필터와 같은 방식).
+        state: str = Query(default="recorded", pattern="^(recorded|unrecorded|all)$"),
         limit: int = 20,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """시험 탭 목록 — 완료된 시험 배합 기록 전부(반제품 선택과 무관), 최신순."""
+        """시험 점도 탭 목록 — 완료된 시험 배합 기록(반제품 선택과 무관)."""
         return viscosity_service.list_test_records(
-            connection, q=q, unregistered=unregistered == "1", limit=limit
+            connection, state=state, q=q, limit=limit
         )
 
     @op_router.post("/viscosity/test-records/{record_id}")

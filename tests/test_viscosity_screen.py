@@ -24,11 +24,19 @@ def test_screen_is_split_into_three_tabs():
     assert '<button class="mgmt-tab active" data-tab="register"' in TEMPLATE
 
 
-def test_toolbar_and_cards_stay_outside_the_tabs():
-    """툴바·카드는 어느 탭에서나 같은 조회 조건을 말하므로 탭 밖 공통이다."""
+def test_toolbar_and_cards_form_one_product_scope_below_the_tabs():
+    """탭 줄이 맨 위이고(2026-09-18), 반제품 조회 조건·요약·경보는 반제품 탭 세 개가 함께 쓰는
+    한 벌(#visc-product-scope)이다. 탭 패널마다 복제하지 않는다 — 패널보다 앞, 탭 줄보다 뒤."""
     tabs_at = TEMPLATE.index('<nav class="mgmt-tabs visc-tabs"')
-    for marker in ('id="visc-product-select"', 'id="visc-card-anomaly"'):
-        assert TEMPLATE.index(marker) < tabs_at, f"{marker} 는 탭 위에 있어야 한다"
+    scope_at = TEMPLATE.index('id="visc-product-scope"')
+    first_panel_at = TEMPLATE.index('<div class="tab-panel')
+    assert tabs_at < scope_at < first_panel_at
+    for marker in ('id="visc-product-select"', 'id="visc-card-anomaly"', 'id="visc-trend-banner"'):
+        assert TEMPLATE.count(marker) == 1, f"{marker} 가 둘 이상이다"
+        assert scope_at < TEMPLATE.index(marker) < first_panel_at, f"{marker} 는 반제품 범위 안에 있어야 한다"
+    # 반제품 탭일 때만 보인다(이상 관리·시험 점도에서는 hidden).
+    assert 'const PRODUCT_TABS = ["register", "trend", "pb"];' in CONTROLLER
+    assert "scope.hidden = !PRODUCT_TABS.includes(name)" in CONTROLLER
 
 
 def test_existing_features_survive_the_redesign():

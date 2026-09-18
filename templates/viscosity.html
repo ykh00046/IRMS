@@ -3,14 +3,30 @@
 {% block title %}점도 등록 및 조회{% endblock %}
 {% block eyebrow %}현장 작업{% endblock %}
 {% block heading %}점도 등록 및 조회{% endblock %}
-{# 활성 탭을 main 의 data-visc-tab 으로 알린다 · '시험' 탭에서 반제품 요약 줄을 CSS 로 감추는 고리. #}
-{% block main_class %}visc-page{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260918b" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260918c" />
 {% endblock %}
 
 {% block content %}
+        {# 탭이 맨 위다(2026-09-18). 반제품 선택은 앞의 세 탭(측정 등록·추세·분석·PB 연계)만
+           쓰고, 구분선 뒤 두 탭(이상 관리·시험 점도)은 반제품과 무관하다. 그 차이가 탭 줄에서
+           먼저 보이게 반제품 조회 조건을 탭 아래로 내리고 두 묶음 사이에 선을 둔다.
+           규약은 레시피 관리·자재 관리와 동일: .mgmt-tab[data-tab] ↔ .tab-panel#tab-{name}. #}
+        <nav class="mgmt-tabs visc-tabs" aria-label="점도 화면 탭">
+          <button class="mgmt-tab active" data-tab="register" type="button">측정 등록</button>
+          <button class="mgmt-tab" data-tab="trend" type="button">추세·분석</button>
+          <button class="mgmt-tab" data-tab="pb" type="button">PB 연계</button>
+          <span class="visc-tab-divider" aria-hidden="true"></span>
+          <button class="mgmt-tab" data-tab="anomaly" type="button">이상 관리</button>
+          <button class="mgmt-tab" data-tab="test" type="button">시험 점도</button>
+        </nav>
+
+        {# 반제품 범위 · 조회 조건·요약 줄·추세 경보는 반제품 탭 세 개가 함께 쓰는 한 벌이다
+           (탭마다 복제하지 않는다). 반제품 탭일 때만 보이고 이상 관리·시험 점도에서는 hidden
+           이다(JS activateTab). 데이터는 반제품 하나를 고를 때 한 번에 받아 두므로 세 탭 사이
+           전환은 표시만 바꾼다. #}
+        <div class="visc-product-scope" id="visc-product-scope">
         <section class="panel visc-toolbar-panel">
           <div class="visc-toolbar">
             <!-- 왼쪽 = 조회 조건(고르는 순서대로: 분류 → 반제품 → 연도 → 반응기),
@@ -63,18 +79,7 @@
         <section id="visc-period-alert" class="visc-trend-banner visc-period-alert" hidden>
           <span id="visc-period-alert-text"></span>
         </section>
-
-        {# 탭 · 한 페이지 세로 8,857px(필터→카드→등록→차트→60행표→76행표)를 셋으로 나눈다
-           (2026-08-13 현장 검토 1번). 툴바·카드는 어느 탭에서나 같은 조회 조건을 말하므로
-           탭 밖 공통. 데이터는 이미 한 번에 받아 두므로 전환은 표시만 바꾼다(재요청 없음).
-           규약은 레시피 관리·자재 관리와 동일: .mgmt-tab[data-tab] ↔ .tab-panel#tab-{name}. #}
-        <nav class="mgmt-tabs visc-tabs" aria-label="점도 화면 탭">
-          <button class="mgmt-tab active" data-tab="register" type="button">측정 등록</button>
-          <button class="mgmt-tab" data-tab="trend" type="button">추세·분석</button>
-          <button class="mgmt-tab" data-tab="anomaly" type="button">이상 관리</button>
-          <button class="mgmt-tab" data-tab="pb" type="button">PB 연계</button>
-          <button class="mgmt-tab" data-tab="test" type="button">시험</button>
-        </nav>
+        </div>
 
         <div class="tab-panel active" id="tab-register">
         <section class="panel visc-register-panel">
@@ -311,72 +316,48 @@
         </section>
         </div>
 
-        {# 시험 · 시험 배합 LOT 의 점도(2026-09-18 2차 결정, docs/test-blend-design.md §9).
-           반제품 선택과 무관하게 모든 시험 LOT 을 보여 준다(새 레시피 시험 포함). 비교할
-           반제품 기준이 없을 수 있어 요약 숫자·판정·그래프·규격선은 두지 않는다 — 이 탭에서는
-           위 요약 줄·추세 경보도 CSS 가 감춘다(.visc-page[data-visc-tab="test"]).
-           등록·정정·삭제 규칙은 정식 측정과 같다(정정 10분 현장·이후 책임자, 삭제 책임자). #}
+        {# 시험 점도 · 시험 배합 LOT 의 점도(docs/test-blend-design.md §9). 시험은 필요할 때만
+           점도를 잰다 — 그래서 표에는 기록한 것만 싣고(최근 측정 먼저), 새 기록은 [점도 기록]
+           창에서 아직 기록이 없는 시험 LOT 을 골라 남긴다. 반제품과 무관하며 비교할 기준이
+           없을 수 있어 요약 숫자·판정·그래프·규격선은 두지 않는다. 정정·삭제 규칙은 정식
+           측정과 같다(정정 10분 현장·이후 책임자, 삭제 책임자, 관리 열은 책임자 화면에만). #}
         <div class="tab-panel" id="tab-test">
-        <section class="panel visc-register-panel">
-          <div class="visc-register-head">
+        <section class="panel">
+          <div class="visc-panel-head visc-test-head">
             <div>
-              <h3 class="panel-title">시험 LOT 점도</h3>
-              <p class="muted small">표에서 시험 LOT을 고르고 점도값을 입력하세요.</p>
+              <h3 class="panel-title">시험 점도</h3>
+              <p class="muted small">점도를 잰 시험만 [점도 기록]으로 남기세요.</p>
             </div>
+            <button class="btn accent" id="visc-test-add" type="button">점도 기록</button>
           </div>
-
-          <div class="visc-register-grid visc-test-grid">
-            <div class="visc-record-column">
-              <div class="visc-record-topline">
-                <div class="visc-record-filters">
-                  <label class="filter-label" for="visc-test-filter">시험 기록</label>
-                  <input class="input" id="visc-test-filter" placeholder="LOT · 시험명 · 작업자 검색" />
-                  <label class="visc-checkbox visc-inline-check">
-                    <input id="visc-test-open-only" type="checkbox" /> 미등록만
-                  </label>
-                </div>
-                <span class="muted small" id="visc-test-count">-</span>
-              </div>
-              <div class="table-wrap visc-blend-table-wrap">
-                <table class="visc-table visc-blend-table visc-test-table">
-                  <thead>
-                    <tr>
-                      <th>작업일</th>
-                      <th>시험명</th>
-                      <th>제품 LOT</th>
-                      <th>기준 레시피</th>
-                      <th class="num">점도</th>
-                      <th>메모</th>
-                      <th>등록</th>
-                      {% if can_manage %}<th>관리</th>{% endif %}
-                    </tr>
-                  </thead>
-                  <tbody id="visc-test-body"></tbody>
-                </table>
-              </div>
-              <div class="visc-more-row">
-                <button id="visc-test-more" class="btn btn-sm" type="button" hidden>더보기</button>
-              </div>
+          <p class="panel-notice" id="visc-test-notice" hidden></p>
+          <p class="visc-form-result" id="visc-test-result" hidden></p>
+          <div class="visc-record-topline">
+            <div class="visc-record-filters">
+              <label class="filter-label" for="visc-test-filter">검색</label>
+              <input class="input" id="visc-test-filter" placeholder="시험명 · LOT · 작업자" />
             </div>
-
-            <form id="visc-test-form" class="visc-form visc-register-form" autocomplete="off">
-              <div>
-                <label class="filter-label" for="visc-test-value">점도값</label>
-                <input class="input visc-value-input" id="visc-test-value" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
-              </div>
-              <p class="visc-selected-row" id="visc-test-selected">시험 기록 표에서 미등록 행을 선택하세요.</p>
-              <div>
-                <label class="filter-label" for="visc-test-date">측정일</label>
-                <input class="input" id="visc-test-date" type="date" required />
-              </div>
-              <div>
-                <label class="filter-label" for="visc-test-memo">메모</label>
-                <textarea class="input" id="visc-test-memo" rows="3" placeholder="온도, 교반, 측정 특이사항"></textarea>
-              </div>
-              <p class="login-error" id="visc-test-error" hidden></p>
-              <p class="visc-form-result" id="visc-test-result" hidden></p>
-              <button class="btn accent visc-submit" id="visc-test-submit" type="submit">등록</button>
-            </form>
+            <span class="muted small" id="visc-test-count">-</span>
+          </div>
+          <div class="table-wrap">
+            <table class="visc-table visc-blend-table visc-test-table">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>시험명</th>
+                  <th>제품 LOT</th>
+                  <th>기준 레시피</th>
+                  <th class="num">점도</th>
+                  <th>메모</th>
+                  <th>등록</th>
+                  {% if can_manage %}<th>관리</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody id="visc-test-body"></tbody>
+            </table>
+          </div>
+          <div class="visc-more-row">
+            <button id="visc-test-more" class="btn btn-sm" type="button" hidden>더보기</button>
           </div>
         </section>
         </div>
@@ -525,6 +506,48 @@
           </div>
         </div>
 
+        {# 시험 점도 기록 · 누구나 쓴다(현장 등록). 아직 점도가 없는 최근 시험 LOT 을 찾아
+           고르고 값을 넣는다. 기록 조회에서 넘어오면(?tab=test&lot=…) 그 LOT 이 골라진 채 열린다.
+           hidden 속성으로만 여닫는다. #}
+        <div id="visc-test-modal" class="ss-modal-overlay" hidden>
+          <div class="ss-modal visc-test-modal" role="dialog" aria-modal="true" aria-labelledby="visc-test-modal-title" tabindex="-1">
+            <div class="ss-modal-header">
+              <h3 id="visc-test-modal-title">시험 점도 기록</h3>
+            </div>
+            <div class="ss-modal-body">
+              <form id="visc-test-form" class="visc-form" autocomplete="off">
+                <label class="filter-label" for="visc-test-lot-q">시험 LOT</label>
+                <input class="input" id="visc-test-lot-q" placeholder="시험명 · LOT · 작업자" />
+                <div class="table-wrap visc-test-pick-wrap">
+                  <table class="visc-table visc-blend-table visc-test-pick">
+                    <thead>
+                      <tr>
+                        <th>작업일</th>
+                        <th>시험명</th>
+                        <th>제품 LOT</th>
+                        <th>기준 레시피</th>
+                      </tr>
+                    </thead>
+                    <tbody id="visc-test-pick-body"></tbody>
+                  </table>
+                </div>
+                <p class="visc-selected-row" id="visc-test-picked">위 목록에서 시험 LOT을 고르세요.</p>
+                <label class="filter-label" for="visc-test-value">점도값</label>
+                <input class="input visc-value-input" id="visc-test-value" type="number" step="0.1" min="0" required placeholder="예: 49.2" />
+                <label class="filter-label" for="visc-test-date">측정일</label>
+                <input class="input" id="visc-test-date" type="date" required />
+                <label class="filter-label" for="visc-test-memo">메모</label>
+                <textarea class="input" id="visc-test-memo" rows="2" placeholder="온도, 교반, 측정 특이사항"></textarea>
+                <p class="login-error" id="visc-test-error" hidden></p>
+                <div class="button-row">
+                  <button class="btn" id="visc-test-cancel" type="button">취소</button>
+                  <button class="btn accent" id="visc-test-submit" type="submit">등록</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
         {% if can_manage %}
         <!-- 통계 제외 모달 · 책임자가 규격 이탈/이상 측정을 삭제하지 않고 통계(평균·σ·추세)
              에서만 빼둘 때. 사유 필수. hidden 속성으로만 여닫는다(CSS 충돌 방지, 저장소 관례). -->
@@ -552,6 +575,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260910a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260918b"></script>
-    <script src="/static/js/viscosity.js?v=20260918b"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260918c"></script>
+    <script src="/static/js/viscosity.js?v=20260918c"></script>
 {% endblock %}
