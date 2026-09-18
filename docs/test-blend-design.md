@@ -21,14 +21,18 @@
 | 기록 조회(/status) | 목록·상세에 '시험' 칩 + 시험만/시험 제외 필터 |
 | 대시보드·배합 분석·LOT 이력·다음 LOT·트레이 알림 | **제외** |
 | 레시피 초안 승격 | 만들지 않음(사람이 관리 화면에서 직접) |
+| 시험 자재 (2차 결정) | **등록된 원재료만**. 품목마다 품목코드로 대조한다. 이름만으로 추가 금지(이름이 여러 개 생겨 맞지 않고 누락된다). 시험 제품 자체는 코드 대조 불필요 |
+| 시험 점도 (2차 결정) | 반제품(PB 등)과 무관하게 **시험 LOT 단위로 기록**. 새 레시피 시험도 등록된다. 요약 숫자·통계·규격선은 보여 주지 않는다(비교 대상이 없을 수 있다) |
+| 전체 Excel (2차 결정) | 화면 조건(시험 필터 포함)을 그대로 따른다. 기존 R-12 규칙과 같다 |
 
 ## 2. 데이터
 
 - `blend_records.is_test INTEGER NOT NULL DEFAULT 0` (+ partial index `WHERE is_test = 1`)
 - `blend_records.base_recipe_id INTEGER` (nullable, 불러온 레시피. FK 강제 없음 — 레시피가 개정·삭제돼도 기록은 남는다)
-- `viscosity_readings.is_test INTEGER NOT NULL DEFAULT 0`
-- `blend_details`는 그대로. 시험 행은 `material_id`·`material_code`가 **NULL 일 수 있다**
-  (마스터에 없는 새 원재료 — 현장에서 책임자 로그인 없이 추가). 이름은 필수.
+- `test_viscosity_readings` (시험 점도 전용, §9): `blend_record_id` UNIQUE, 시험 LOT 하나에 값 하나.
+  정식 `viscosity_readings` 에는 시험 값이 들어가지 않는다(등록 시 거부). 따라서 정식 점도 통계는 시험을 몰라도 된다.
+- `blend_details`는 그대로. 시험 행도 **등록된 자재만**: `material_id` 필수, `material_code`·`material_name` 은
+  서버가 자재 마스터 값으로 채운다.
 
 ## 3. LOT 규칙
 
@@ -45,9 +49,9 @@
 `is_test=true` 일 때:
 
 1. `recipe_id`는 서버가 **NULL 로 강제**(보내와도 무시). `base_recipe_id`는 있으면 recipes 에 존재해야 한다(없으면 400).
-2. `details[*].theory_amount`가 **목표량**이다. 각 행 `theory_amount > 0` 필수. `material_name` 필수.
-   `material_id`/`material_code`는 있으면 마스터와 대조해 저장(불일치는 400), 없으면 NULL 허용.
-   같은 이름이 여러 행이어도 된다(분할 계량).
+2. `details[*].theory_amount`가 **목표량**이다. 각 행 `theory_amount > 0` 필수. `material_id` 필수이고 자재 마스터에
+   있고 사용 중이어야 한다(아니면 400). `material_code`·`material_name` 은 서버가 마스터 값으로 덮어쓴다.
+   같은 자재가 여러 행이어도 된다(분할 계량).
 3. `total_amount` = 서버가 `sum(theory_amount)` 로 산출(클라이언트 값 무시). `ratio` = `theory/total*100`
    (정식 경로와 같은 반올림 자릿수).
 4. **건너뜀**: 반응기 필수 검사, `enforce_carry_over`, `resolve_chain_tip` 409, `derive_details_from_recipe`,
@@ -67,7 +71,7 @@
 - `GET /api/blend/records/{id}` 에 `is_test`, `base_recipe_id`, `base_recipe_name`(없으면 null).
 - `GET /api/blend/recent-product-lots` : 기본 `is_test = 0` 만. `test=1` 이면 `is_test = 1` 만
   (시험 모드 2차 배합의 원료 LOT 제안은 시험 LOT 끼리).
-- `GET /api/blend/records/export-all` (전체 Excel 백업): 포함하되 `시험` 열 추가.
+- `GET /api/blend/records/export-all` (전체 Excel 백업): `시험` 열 추가, 목록과 같은 `test` 조건을 받는다(화면과 파일 일치).
 - DHR Excel/PDF/zip/batch: 시험 기록도 그대로 출력. **표식 없음**. ratio 칸은 저장된 ratio.
 
 ## 6. 격리(is_test = 0 만) — 패키지 A
@@ -103,8 +107,8 @@
 3. 레시피 선택은 **선택사항**. 고르면 그 레시피의 자재·이론량(기준 배합량 첫 값 기준, 기준 자재 레시피는
    value_weight 로 산출)을 목표량으로 채운 표가 된다. 안 고르면 빈 표. 두 경우 모두 표 편집 가능.
    레시피를 불러왔으면 `base_recipe_id` 를 기억한다.
-4. 표 편집: **행 추가**(자재 검색 — `GET /api/materials` 의 code/name/aliases 로 찾기, 없으면 이름만으로
-   추가 가능·"마스터에 없는 자재" 표시), **행 삭제**, 이론량 칸이 **목표량 입력칸**. 총 배합량 칸은
+4. 표 편집: **행 추가**(자재 검색 — `GET /api/materials` 의 code/name/aliases 로 찾기. **등록된 자재만** 추가된다.
+   못 찾으면 "찾는 자재가 없으면 자재 관리에서 먼저 등록하세요." 안내), **행 삭제**, 이론량 칸이 **목표량 입력칸**. 총 배합량 칸은
    읽기 전용으로 목표량 합 표시. 비율 칸은 목표량/합 으로 실시간 표시.
 5. 끔: 기준 자재 파생, 반응기 필드·이월 컨트롤, 기본량 버튼, 레시피 개정 409 처리. 분류 초기값 무관.
 6. 유지: 저울 PRINT 입력·저울 대상 지정·나눠담기·추가 계량·LOT 검사(ERP·등록 여부)·편차·증량·폐기·수기
@@ -134,20 +138,19 @@
 3. 시험 기록의 '점도 미입력' 칩은 서버가 `missing` 을 안 주므로 자연히 안 뜬다 — 클라이언트 추가 조건 불필요.
 4. 출력(단건·선택·zip·Excel)은 손대지 않는다.
 
-점도(/viscosity):
+점도(/viscosity) — 2차 결정으로 재설계:
 
-1. `add_reading`: `lot_no` 가 `is_test=1` 인 blend_records.product_lot 과 일치하면 `is_test=1` 로 저장
-   (blend_record_id 연결도 기존 규칙대로). 그 외 0.
-2. 등록 패널 대기열 `viscosity_blend_records`: 기본은 `is_test=0` 만. `test=1` 이면 시험 기록만 —
-   조건은 `br.is_test = 1 AND br.base_recipe_id IN (SELECT id FROM recipes WHERE product_name IN names OR product_code IN names)`
-   (시험명은 제품명과 다르므로 base_recipe 로 잇는다). 화면에 "시험 배합 LOT" 전환(체크박스 또는 탭)을 둔다.
-3. **제외**(is_test=0 만): `_fetch_readings` 가 통계·관리한계·분류·추세·이상(`analyze_product`, `_control_limits`,
-   `list_anomalies`, `overview`, `summarize_periods`)에 쓰는 표본, `daily_reading_reminders` 의 pending
-   집계·pending_lots(트레이), 등록 대기열 기본 목록·미등록 카운트.
-4. **포함**: LOT 단건 조회(`product_lot_alert`, `list_readings_for_blend`, 배합 화면 LOT 행 안내).
-5. 점도 화면에 '시험' 보기(필터 또는 탭): 시험 읽기만 목록·점그래프로 보여 주고 스펙선(target/limit)은
-   참고선으로 그린다. 판정 칩은 붙이지 않는다.
-6. 시험 읽기의 정정 유예·측정 불가·삭제 규칙은 정식과 동일.
+1. 시험 점도는 `test_viscosity_readings` 에만 저장한다. 시험 LOT 하나에 값 하나(정식과 같은 규칙).
+   반제품(PB·SBCT·SCRA) 선택과 무관하다. 기준 레시피가 없는 새 레시피 시험도 등록된다.
+2. 정식 `add_reading` 은 시험 배합 기록의 LOT 이면 400 으로 거부한다. 정식 점도 통계·관리한계·이상·추세·
+   알림·대시 카드는 시험 값을 볼 일이 없으므로 측정값 단위의 시험 필터가 필요 없다.
+3. 배합 기록 단위의 제외는 유지한다: 정식 등록 대기열과 `daily_reading_reminders`(트레이)는 `blend_records.is_test = 1` 을 뺀다.
+4. 점도 화면 '시험' 탭은 반제품 선택과 무관하게 모든 시험 LOT 을 보여 준다(완료 기록, 최신순, 검색·미등록만).
+   열: 작업일·시험명·제품 LOT·기준 레시피·점도·메모·등록. 행을 골라 점도값·측정일·메모를 등록한다.
+   이 탭에서는 요약 줄(측정·평균·이상 등)·관리 기준 상자·판정·그래프·규격선을 보여 주지 않는다.
+5. 정정·삭제 권한은 정식과 같다(등록 후 10분은 현장 정정·사유 필수, 이후는 책임자). 측정 불가 기록은 없다(시험에는 알림이 없다).
+6. 기록 조회 상세의 '점도 측정' 칸은 시험 기록이면 시험 점도를 같은 모양으로 보여 준다(`list_readings_for_blend`).
+7. 감사 로그를 남기고 `static/js/admin_users.js` AUDIT_GROUPS 에 한글 라벨을 단다.
 
 ## 10. 순서와 검증
 
