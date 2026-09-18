@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260915a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260918a" />
     <style>
       /* status(배합 기록) 전용 소량 스타일 · 페이지 자립 CSS가 없어 여기 인라인.
          공용 토큰만 사용하고, 색·모양 하드코딩을 두지 않는다. */
@@ -96,6 +96,16 @@
       .status-chip.status-done { background: var(--status-success-bg); color: var(--status-success); }
       .status-chip.status-visc-missing { background: var(--status-warning-bg); color: var(--status-warning); }
 
+      /* 시험 기록 · 중립 표식이다(취소 칩과 같은 급, 경보 아님). 정보 토큰만 쓴다 —
+         시험은 잘못된 상태가 아니라 '어떤 종류의 기록인가'이므로 빨강·주황을 쓰지 않는다. */
+      .status-chip.status-test {
+        background: var(--status-info-bg);
+        color: var(--status-info);
+        border: 1px solid color-mix(in srgb, var(--status-info) 22%, transparent);
+      }
+      /* 상세 헤더의 기준 레시피 한 줄 · 값 칸(.dhr-head)에 맞춘 보조 글자. */
+      .status-base-recipe { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--fs-xs); }
+
       /* 취소된 행 · 본문은 눈게(tertiary), LOT 에만 취소선 — 내용은 여전히 읽힌다. */
       .blend-row.is-canceled td { color: var(--text-tertiary); }
       .blend-row.is-canceled .status-lot { text-decoration: line-through; }
@@ -152,6 +162,16 @@
             <div class="blend-field">
               <label class="filter-label" for="status-rec-product">제품</label>
               <select class="input" id="status-rec-product"><option value="">전체</option></select>
+            </div>
+            {# 시험 배합 필터 · 시험 기록은 정식과 같은 목록에 섞여 있고 칩으로 구분된다.
+               기본은 전체 — 현장이 "내 기록이 안 보인다"를 겪지 않게. #}
+            <div class="blend-field">
+              <label class="filter-label" for="status-rec-test">시험</label>
+              <select class="input" id="status-rec-test">
+                <option value="all">전체</option>
+                <option value="only">시험만</option>
+                <option value="exclude">시험 제외</option>
+              </select>
             </div>
             <div class="blend-field blend-field-grow">
               <label class="filter-label" for="status-rec-search">검색</label>
@@ -263,5 +283,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260915a"></script>
+    <script src="/static/js/status.js?v=20260918b"></script>
 {% endblock %}

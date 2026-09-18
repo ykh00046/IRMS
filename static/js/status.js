@@ -241,6 +241,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const isUnackedOnly = () => Boolean($("status-rec-unacked") && $("status-rec-unacked").checked);
 
+  // 시험 필터 — all(기본)/only/exclude 를 그대로 서버 test 파라미터로 넘긴다.
+  // 잘못된 값은 서버가 422 로 거절하므로 화면에서도 세 값만 인정한다.
+  const TEST_MODES = ["all", "only", "exclude"];
+  function testMode() {
+    const sel = $("status-rec-test");
+    const value = sel ? sel.value : "all";
+    return TEST_MODES.includes(value) ? value : "all";
+  }
+
   async function loadRecords(opts) {
     const keepPage = Boolean(opts && opts.keepPage);
     const body = $("status-rec-body");
@@ -256,6 +265,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // '미확인만' 은 서버가 전체 테이블에서 거른다 — 클라이언트 필터는 500건 절단 뒤라
       // 상한 밖(오래된) 미확인 건이 영영 보이지 않았다(2026-08-14 검토 1번).
       unacked: isUnackedOnly() ? 1 : undefined,
+      // 시험 기록 범위 — 기본 all 은 보내지 않는다(서버 기본값과 같다).
+      test: testMode() === "all" ? undefined : testMode(),
     };
     try {
       const data = await request("/blend/records", { query });
@@ -377,6 +388,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     chips += bulkBadge(r);
     if (!chips.trim()) chips = ' <span class="status-chip status-done">완료</span>';
+    // 시험 기록 표식 — 상태 칩을 **대신하지 않고** 그 앞에 붙는다. 시험 기록도
+    // 정상이면 '완료'가 보여야 한다(시험은 상태가 아니라 기록의 종류다). 중립 색.
+    if (r.is_test) {
+      chips = ' <span class="status-chip status-test" title="시험 배합 기록 · 정식 생산 통계·알림에서 빠집니다">시험</span>'
+        + chips;
+    }
     // 수동 입력 ⚠ — 서버가 책임자에게만 플래그를 내려주므로(비책임자는 False 마스킹)
     // 목록에 표시해도 책임자 로그인 시에만 보인다.
     const manualTag = r.manual_entry ? ' <span class="manual-entry-dot" title="수동 입력">⚠</span>' : "";
@@ -489,6 +506,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (product) parts.push(`제품 ${product}`);
     const search = $("status-rec-search").value.trim();
     if (search) parts.push(`검색 "${search}"`);
+    // 시험 필터는 목록 모집단을 바꾼다 — 조건 줄이 말하지 않으면 건수가 왜 다른지 모른다.
+    const mode = testMode();
+    if (mode === "only") parts.push("시험만");
+    else if (mode === "exclude") parts.push("시험 제외");
     // '미확인만' 은 서버 필터라 shown·total 이 모두 미확인 기준이다 — 두 숫자가 같은
     // 모집단을 가리키도록 표현도 맞춘다("미확인 N건 (조건 전체 M건)").
     const unacked = isUnackedOnly();
@@ -609,10 +630,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const reactorCell = rec.reactor
       ? `<div><span class="dhr-k">반응기</span><b>${esc(rec.reactor)}</b></div>`
       : "";
+    // 시험 기록 · 제품명 옆 중립 칩 + 불러온 기준 레시피 한 줄(있을 때만).
+    // 출력물(DHR PDF/Excel)은 외부 제출용이라 표식을 넣지 않는다 — 이 화면만.
+    const testBadge = rec.is_test
+      ? ' <span class="status-chip status-test" title="시험 배합 기록">시험</span>'
+      : "";
+    const baseRecipeLine = rec.is_test && rec.base_recipe_name
+      ? `<p class="status-base-recipe">기준 레시피: ${esc(rec.base_recipe_name)}</p>`
+      : "";
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
-        <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}</b></div>
+        <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}${testBadge}</b></div>
         <div><span class="dhr-k">품목코드</span><b>${esc(rec.product_code || "-")}</b></div>
         ${detailName}
         <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}${manualBadge}</b></div>
@@ -621,6 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div><span class="dhr-k">저울</span><b>${esc(rec.scale || "-")}</b></div>
         ${reactorCell}
       </div>
+      ${baseRecipeLine}
       ${bulkLine}
       ${cancelBlock(rec)}
       ${rescaleBlock(rec)}
@@ -875,6 +905,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if ($("status-rec-unacked")) $("status-rec-unacked").addEventListener("change", () => loadRecords());
   const canceledChk = $("status-rec-canceled");
   if (canceledChk) canceledChk.addEventListener("change", () => loadRecords());
+  // 시험 필터도 서버 조건이라 바꾸는 즉시 다시 조회한다('취소 포함'과 같은 규약).
+  const testSel = $("status-rec-test");
+  if (testSel) testSel.addEventListener("change", () => loadRecords());
 
   // 전체 선택 — 지금 보이는 쪽의 행에만 적용된다(다른 쪽의 선택은 건드리지 않는다).
   $("status-rec-all").addEventListener("change", (e) => {
@@ -1139,6 +1172,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const urlUnacked = String(urlParams.get("unacked") || "").toLowerCase();
   if (["1", "true", "yes", "on"].includes(urlUnacked) && $("status-rec-unacked")) {
     $("status-rec-unacked").checked = true;
+  }
+  // ?test=only|exclude : 시험 기록만(또는 제외) 열기.
+  const urlTest = String(urlParams.get("test") || "").toLowerCase();
+  if (TEST_MODES.includes(urlTest) && $("status-rec-test")) {
+    $("status-rec-test").value = urlTest;
   }
 
   loadWorkers();

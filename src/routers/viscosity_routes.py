@@ -15,6 +15,7 @@ Endpoints:
     GET    /viscosity/overview                  (개방)
     GET    /viscosity/products                  (개방)
     GET    /viscosity/products/{id}             분석 포함 (개방)
+    GET    /viscosity/products/{id}/test-readings  시험 LOT 측정 (개방)
     POST   /viscosity/readings                  (개방 — 현장 등록)
     POST   /viscosity/products                  (책임자)
     PATCH  /viscosity/products/{id}             (책임자)
@@ -127,12 +128,23 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
 
+    @op_router.get("/viscosity/products/{product_id}/test-readings")
+    def viscosity_test_readings(
+        product_id: int,
+        year: int | None = None,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """시험 배합 LOT 의 점도 측정 — 값과 제품 기준선만(판정·σ 없음, 계약 §9-5)."""
+        product = _require_product(connection, product_id)
+        return viscosity_service.test_readings(connection, product, year=year)
+
     @op_router.get("/viscosity/products/{product_id}/blend-records")
     def viscosity_blend_records(
         product_id: int,
         unregistered: str | None = None,
         q: str | None = None,
         reactor: str | None = None,
+        test: str | None = None,
         limit: int = 20,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
@@ -142,17 +154,39 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         '미등록만' 필터는 잘라온 20건에만 적용돼 더 오래된 미등록 LOT 이 있어도
         빈 목록이 나왔다(2026-08-13 검토 4·10번). 여기서는 서버가 점도 등록 여부를
         LEFT JOIN 으로 함께 계산해 필터·집계까지 끝낸다.
+
+        기본 목록은 정식 배합만이다. test=1 이면 시험 배합만 — 시험 기록의 제품명은
+        자유 시험명이라 반제품 이름과 맞지 않으므로 **기준 레시피**로 잇는다
+        (계약 §9-2). 건수(total·unregistered_total)도 같은 모드를 따른다.
         """
+        from ..services import blend_service
+
         product = _require_product(connection, product_id)
         limit = max(1, min(int(limit or 20), 200))
         names = {product["name"], product["code"]}
         placeholders = ",".join("?" for _n in names)
+        test_mode = str(test or "").strip() == "1"
         params: list[Any] = list(names)
-        where = [
-            f"br.product_name IN ({placeholders})",
-            "br.status = 'completed'",
-            "COALESCE(br.is_bulk_regenerated, 0) = 0",
-        ]
+        if test_mode:
+            scope = (
+                f"br.base_recipe_id IN (SELECT id FROM recipes "
+                f"WHERE product_name IN ({placeholders}) "
+                f"OR product_code IN ({placeholders}))"
+            )
+            params = [*names, *names]
+            where = [
+                blend_service.test_filter_clause(connection, "only", "br"),
+                scope,
+                "br.status = 'completed'",
+                "COALESCE(br.is_bulk_regenerated, 0) = 0",
+            ]
+        else:
+            where = [
+                f"br.product_name IN ({placeholders})",
+                blend_service.not_test_clause(connection, "br"),
+                "br.status = 'completed'",
+                "COALESCE(br.is_bulk_regenerated, 0) = 0",
+            ]
         query = (q or "").strip()
         if query:
             like = f"%{query}%"
@@ -221,12 +255,15 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         if r["reading_value"] is not None
                         else None
                     ),
+                    # 목록 자체가 한 모드만 담으므로 행 플래그는 모드와 같다.
+                    "is_test": test_mode,
                 }
                 for r in rows
             ],
             "total": int(total),
             "unregistered_total": int(unregistered_total),
             "limit": limit,
+            "test": test_mode,
         }
 
     @op_router.post("/viscosity/blend-records/{record_id}/skip")

@@ -930,3 +930,16 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
+
+/* ── 시험 탭(2026-09-18) ────────────────────────────────────────────────
+   시험 배합 LOT 의 점도만 본다. 판정색을 쓰지 않으므로 새 색 토큰이 없고,
+   빈 자리 안내는 기간 추세와 같은 방식(.visc-chart-empty 겹치기)이다. */
+.visc-test-chart {
+  position: relative;
+  height: 240px;
+}
+.visc-test-chart canvas { max-height: 240px; }
+
+@media (max-width: 900px) {
+  .visc-test-chart { height: 200px; }
+}

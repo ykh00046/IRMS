@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260915c" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260918a" />
 {% endblock %}
 
 {% block content %}
@@ -71,6 +71,7 @@
           <button class="mgmt-tab" data-tab="trend" type="button">추세·분석</button>
           <button class="mgmt-tab" data-tab="anomaly" type="button">이상 관리</button>
           <button class="mgmt-tab" data-tab="pb" type="button">PB 연계</button>
+          <button class="mgmt-tab" data-tab="test" type="button">시험</button>
         </nav>
 
         <div class="tab-panel active" id="tab-register">
@@ -92,6 +93,12 @@
                   <input class="input" id="visc-blend-filter" placeholder="LOT · 작업자 검색" />
                   <label class="visc-checkbox visc-inline-check">
                     <input id="visc-open-only" type="checkbox" /> 미등록만
+                  </label>
+                  {# 시험 배합 LOT · 기본 목록은 정식 배합만이다. 켜면 이 반제품을 기준
+                     레시피로 삼은 시험 배합 LOT 만 나온다(시험명은 반제품명과 다르다). #}
+                  <label class="visc-checkbox visc-inline-check"
+                         title="이 반제품을 기준 레시피로 만든 시험 배합 LOT만 표시합니다">
+                    <input id="visc-test-only" type="checkbox" /> 시험 배합 LOT
                   </label>
                 </div>
                 <span class="muted small" id="visc-record-count">-</span>
@@ -308,6 +315,38 @@
         </section>
         </div>
 
+        {# 시험 · 시험 배합 LOT 의 점도만 본다. 판정 칩도 σ 도 없다. 기준선(목표·관리
+           한계·경고 문턱)은 참고선으로만 그린다(계약 §9-5). 통계·알림에는 안 들어간다. #}
+        <div class="tab-panel" id="tab-test">
+        <section class="panel">
+          <div class="visc-panel-head">
+            <h3 class="panel-title">시험 배합 점도</h3>
+            <span class="muted small" id="visc-test-note"></span>
+          </div>
+          <p class="panel-notice">시험 값은 평균·관리한계·이상 판정에 들어가지 않습니다.</p>
+          <div class="chart-wrap visc-test-chart">
+            <canvas id="visc-test-chart"></canvas>
+            <p class="visc-chart-empty" id="visc-test-chart-empty">
+              이 반제품의 시험 배합 점도가 없습니다.
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table class="visc-table">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>LOT</th>
+                  <th class="num">점도</th>
+                  <th>메모</th>
+                  <th>등록자</th>
+                </tr>
+              </thead>
+              <tbody id="visc-test-body"></tbody>
+            </table>
+          </div>
+        </section>
+        </div>
+
         <div id="visc-settings-modal" class="ss-modal-overlay" hidden>
           <div class="ss-modal" role="dialog" aria-modal="true" aria-labelledby="visc-settings-title" tabindex="-1">
             <div class="ss-modal-header">
@@ -479,6 +518,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260910a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260915c"></script>
-    <script src="/static/js/viscosity.js?v=20260915c"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260918a"></script>
+    <script src="/static/js/viscosity.js?v=20260918a"></script>
 {% endblock %}
