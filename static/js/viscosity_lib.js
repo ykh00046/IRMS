@@ -730,7 +730,9 @@
 
   // 연계 사유 한 줄(2026-09-21). 숫자만으로는 "왜 안 붙었나"를 알 수 없었다 — 운영 실측에서
   // APB 363건 중 99건만 연계됐고 263건은 그 PB LOT 의 점도 기록 자체가 없었다.
-  // 첫 문장은 얼마나 붙었는지, 둘째 문장은 가장 큰 사유 하나만 말한다(0 은 말하지 않는다).
+  // 첫 문장은 얼마나 붙었는지, 다음 문장들은 큰 사유부터 말한다(0 은 말하지 않는다).
+  // 사유를 하나만 말하면 나머지 건수가 설명되지 않은 채 남는다 — 두 개까지 적고,
+  // 그래도 남으면 남은 건수를 '다른 사유'로 묶어 합이 맞게 한다.
   const PB_REASON_TEXT = {
     pb_missing: (n) => `${n}건은 그 PB LOT의 점도 기록이 없습니다.`,
     no_lot: (n) => `${n}건은 사용한 PB LOT이 없습니다.`,
@@ -749,7 +751,11 @@
       .filter((item) => item.count > 0)
       .sort((a, b) => b.count - a.count);
     if (!reasons.length) return first;
-    return `${first} ${PB_REASON_TEXT[reasons[0].key](reasons[0].count)}`;
+    const shown = reasons.slice(0, 2);
+    const parts = shown.map((item) => PB_REASON_TEXT[item.key](item.count));
+    const rest = reasons.slice(2).reduce((sum, item) => sum + item.count, 0);
+    if (rest > 0) parts.push(`${rest}건은 다른 사유입니다.`);
+    return `${first} ${parts.join(" ")}`;
   }
 
   // ── PB 점도 구간표 ────────────────────────────────────────────────────────

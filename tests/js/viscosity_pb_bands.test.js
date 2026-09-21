@@ -95,7 +95,7 @@ test("빈 구간도 0건으로 남는다(구간 모양이 흔들리지 않게)",
   assert.equal(rows[1].mean, null);
 });
 
-test("연계 사유 문장은 붙은 건수와 가장 큰 사유 하나만 말한다", () => {
+test("연계 사유 문장은 붙은 건수와 큰 사유부터 말하고 합이 맞는다", () => {
   const text = pbLinkReasonText({
     total: 363, matched: 99, pb_missing: 263, no_lot: 0, lot_unreadable: 0, pb_excluded: 1,
   });
@@ -112,6 +112,15 @@ test("연계 사유 문장은 붙은 건수와 가장 큰 사유 하나만 말�
     pbLinkReasonText({ total: 5, matched: 1, pb_excluded: 3, pb_missing: 1 }),
     /3건은 그 PB 점도가 통계에서 빠졌습니다\./,
   );
+  // 사유가 셋 이상이면 둘까지 적고 나머지는 묶는다 — 설명 안 된 건수가 남지 않는다.
+  const many = pbLinkReasonText({
+    total: 15, matched: 8, pb_missing: 4, pb_excluded: 1, no_lot: 1, lot_unreadable: 1,
+  });
+  assert.match(many, /4건은 그 PB LOT의 점도 기록이 없습니다\./);
+  assert.match(many, /2건은 다른 사유입니다\./);
+  const counted = [...many.matchAll(/(\d+)건은/g)].reduce((sum, m) => sum + Number(m[1]), 0);
+  assert.equal(counted, 7, "사유 건수 합은 붙지 않은 건수와 같다");
+
   // 측정이 없거나 응답이 옛 서버여도 터지지 않는다.
   assert.equal(pbLinkReasonText({ total: 0, matched: 0 }), "");
   assert.equal(pbLinkReasonText(null), "");
