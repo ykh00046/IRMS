@@ -381,6 +381,82 @@ test_warn_band_collapses_when_sigma_k_le_warn_sigma`.
 
 ---
 
+## 9. PB 연계 탭 (2026-09-21)
+
+배합 화면에서 "사용한 PB"를 적기 때문에, 바인더(APB·CSPB 등) 측정에는 그 원료 PB LOT 이
+붙는다. 이 탭은 그 연결을 양방향으로 읽는다.
+
+### 9.1 왜 안 붙었는지 (`pb_link` 사유 건수)
+
+`analyze_product`(`viscosity_service.py`)가 돌려주는 `pb_link` 에 사유 네 가지를 넣는다.
+건수만 보여 주던 종전에는 "연결이 적다"가 **PB LOT 을 안 적어서**인지 **그 PB 의 점도 기록이
+없어서**인지 구별할 수 없었다.
+
+| 키 | 뜻 |
+|---|---|
+| `matched` | 사용한 PB LOT 으로 PB 점도를 찾았다 |
+| `no_lot` | 사용한 PB LOT 칸이 비어 있다 |
+| `lot_unreadable` | LOT 에서 숫자 8자리(`_lot_digits`)를 못 뽑았다 |
+| `pb_missing` | 그 PB LOT 의 점도 기록이 아예 없다 |
+| `pb_excluded` | 점도 기록은 있으나 통계에서 제외됐다 |
+
+- 다섯 값의 합은 이 화면이 보고 있는 측정 수(`total`)와 같다.
+- `pb_excluded` 는 제외 측정까지 포함한 두 번째 PB 지도를 만들어 가른다
+  (`_pb_viscosity_map(connection, include_excluded=True)`).
+- PB 반제품 자신(`is_source=True`)은 위 단계 PB 가 없으므로 사유를 모두 0 으로 둔다.
+- 화면은 한 문장으로 붙은 건수를, 다음 문장으로 0 이 아닌 사유 중 가장 큰 하나만 말한다
+  (`pbLinkReasonText` `static/js/viscosity_lib.js`).
+- 2026-09-21 운영 실측: APB 363건 중 99건 연결, 못 붙은 264건 중 263건이 `pb_missing`.
+
+### 9.2 PB LOT 으로 찾기 (역방향)
+
+| 엔드포인트 | 내용 |
+|---|---|
+| `GET /api/viscosity/pb-lots?q=&limit=20` | PB 측정 목록. `items[]` 는 `lot_no`·`viscosity`·`measured_date`·`excluded`·`linked_count`. 최근 측정 먼저, `limit` 상한 100 |
+| `GET /api/viscosity/pb-lots/{lot_no}` | 그 LOT 하나. `pb`(PB 자신의 측정)·`items`(그 LOT 을 쓴 반제품 측정, 최대 50건, 각 행에 `classify_value` 판정)·`tests`(시험 배합 점도) |
+
+- 매칭 키는 연계와 같은 LOT 숫자 8자리다(`_lot_digits`). 상세는 LOT 정확 일치를 먼저 보고
+  없으면 숫자로 찾는다.
+- 모르는 LOT 은 404 가 아니라 `pb: null` + 빈 목록이다. 현장이 LOT 을 잘못 쳤을 뿐인데
+  오류 창이 뜨면 안 된다.
+- `tests` 는 `blend_details` → `blend_records`(`is_test=1`) → `test_viscosity_readings`
+  를 타고 모은다. 시험 배합은 비교 기준이 없어 **판정을 붙이지 않고 참고로만** 보여 준다.
+- 두 엔드포인트는 열람이라 `op_router`(로그인 불필요)다.
+
+### 9.3 PB 반제품을 보고 있을 때
+
+PB 에는 위 단계 PB 가 없다. 이때 산점도 패널은 "PB는 사용한 PB가 없습니다. 위에서 PB
+LOT을 고르세요." 한 줄로 접히고(`#visc-pb-source-line`), 위의 PB LOT 목록이 탭의 본문이
+된다(목록을 더 길게 편다).
+
+### 9.4 PB 점도 구간표
+
+산점도 아래에 `구간 · 건수 · 이 반제품 평균 · 이상 건수` 표를 둔다.
+
+- 경계는 PB 반제품의 기준선(`lower_limit`·`warn_low`·`warn_high`·`upper_limit`) 중 설정된
+  값 최대 3개, 하나도 없으면 연계된 PB 점도 범위를 3등분한 값(0.1 단위 반올림)이다.
+- 경계는 아래 구간에 포함한다(`48.0 이하` / `48.0~53.0` / `53.0 초과`).
+- 연계 측정이 5건(`PB_BAND_MIN_READINGS`) 미만이면 표를 내지 않는다. 한두 건으로 구간
+  평균을 말하면 읽는 사람이 없는 경향을 본다.
+- 계산은 순수 함수 `pbBandCuts`/`pbBandRows`(`static/js/viscosity_lib.js`)에 있고 단위
+  테스트는 `tests/js/viscosity_pb_bands.test.js` 다.
+
+### 9.5 배합 화면의 조용한 안내 (`managed`)
+
+`product_lot_alert` 가 `managed` 를 함께 준다(`viscosity_service.py`).
+
+| `managed` | `found` | 배합 화면 |
+|---|---|---|
+| `False` | `False` | 점도와 무관한 일반 원료 · 아무것도 띄우지 않는다 |
+| `True` | `False` | 점도를 재는 반제품인데 이 LOT 만 기록이 없다 · 회색 한 줄 "이 LOT은 점도 기록이 없습니다." |
+| `True` | `True` | 종전과 같다 · 경고/사용 금지면 ⚠ 한 줄, 정상이면 아무것도 없다 |
+
+조용한 안내는 저장을 막지 않고 행 높이도 바꾸지 않는다
+(`setLotViscNote` `static/js/blend.js`, `.lot-visc-note--quiet` `static/css/blend.css`).
+`/blend` 와 `/blend/test` 가 같은 `blend.html` 을 쓰므로 두 화면 모두에 적용된다.
+
+---
+
 ## 검증하지 못한 항목 (unverifiable)
 - `viscosity_products` / `viscosity_readings`의 실제 스키마·마이그레이션(예: UNIQUE 인덱스,
   `blend_record_id`·`reactor` 컬럼 정의)은 마이그레이션 파일을 직접 열지 않아 코드 사용처로만

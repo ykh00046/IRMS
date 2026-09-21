@@ -732,18 +732,25 @@ def _lot_digits(lot: Any) -> str:
     return digits[-8:] if len(digits) >= 8 else digits
 
 
-def _pb_viscosity_map(connection: sqlite3.Connection) -> dict[str, float]:
+def _pb_viscosity_map(
+    connection: sqlite3.Connection, *, include_excluded: bool = False
+) -> dict[str, float]:
     """PB 반제품의 {LOT 숫자(8자리) → 최신 점도} 맵. 바인더의 사용한PB 연계에 쓴다.
 
     같은 PB LOT 에 점도가 여러 번이면 가장 최근(measured_date, id) 것을 쓴다.
     PB 반제품이 없으면 빈 맵.
+
+    기본은 통계 제외된 PB 측정을 뺀다(연계 그림·평균이 제외값을 쓰면 안 된다).
+    include_excluded=True 는 "그 LOT 에 측정이 있긴 한가"를 가리는 용도 — 연계 실패 사유를
+    '점도 기록 없음'과 '통계 제외'로 나눠 말하려면 두 맵의 차이가 필요하다(analyze_product).
     """
     pb = get_product_by_code(connection, SOURCE_PB_CODE)
     if not pb:
         return {}
+    excluded_clause = "" if include_excluded else "AND excluded = 0 "
     rows = connection.execute(
         "SELECT lot_no, viscosity FROM viscosity_readings WHERE product_id = ? "
-        "AND excluded = 0 "
+        f"{excluded_clause}"
         "ORDER BY measured_date ASC, id ASC",
         (pb["id"],),
     ).fetchall()
@@ -765,11 +772,15 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
 
     측정은 lot_no 정확 일치 우선, 없으면 숫자 8자리(_lot_digits) 일치. 통계 제외된 측정도
     본다 — 제외는 통계용이고, 작업자에게는 "그 LOT 이 실제로 잰 값"이 중요하다.
+
+    managed 는 "이 자재가 점도를 재는 반제품인가"다(2026-09-21). found=False 가 종전에는
+    '일반 원료'와 '점도 반제품인데 이 LOT 만 기록이 없음'을 구별하지 못해, 배합 화면이
+    후자에게 조용할 수밖에 없었다. 경고 판정·문구는 그대로다.
     """
     name = str(product_name or "").strip()
     lot = str(lot or "").strip()
-    none = {"found": False, "product": None, "viscosity": None, "level": None,
-            "reason": None, "threshold": None, "message": None}
+    none = {"found": False, "managed": False, "product": None, "viscosity": None,
+            "level": None, "reason": None, "threshold": None, "message": None}
     if not name or not lot:
         return none
     product = get_product_by_code(connection, name)
@@ -790,7 +801,8 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
             ).fetchall()
             row = next((r for r in rows if _lot_digits(r["lot_no"]) == digits), None)
     if row is None:
-        return dict(none, product=product["code"])
+        # 점도를 재는 반제품인데 이 LOT 만 기록이 없다 — 배합 화면이 조용한 안내를 낸다.
+        return dict(none, product=product["code"], managed=True)
     value = float(row["viscosity"])
     level = reason = None
     threshold = None
@@ -813,9 +825,214 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
             "관리 상한 이상", f"사용 금지 (관리 상한 {thr} 이상)")
         message = f"{product['code']} 점도 {value:g} · {word}"
     return {
-        "found": True, "product": product["code"], "viscosity": value,
+        "found": True, "managed": True, "product": product["code"], "viscosity": value,
         "level": level, "reason": reason, "threshold": threshold, "message": message,
     }
+
+
+# ── PB LOT 역방향 조회(2026-09-21) ───────────────────────────────────────────
+# 연계 화면은 "이 반제품이 쓴 PB" 방향만 있었다. 현장은 반대로도 묻는다 — "이 PB LOT 으로
+# 무엇을 만들었고 그 점도는 어땠나". PB LOT 하나를 잡고 그것을 쓴 모든 반제품 측정과
+# 시험 배합 점도를 모아 준다. 매칭 키는 연계와 같은 LOT 숫자 8자리(_lot_digits).
+PB_LOT_LIMIT_MAX = 100        # 고르기 목록 상한
+PB_LOT_DETAIL_MAX = 50        # 상세의 반제품 측정 상한
+
+
+def _pb_linked_counts(connection: sqlite3.Connection, pb_id: int) -> dict[str, int]:
+    """{PB LOT 숫자 → 그 LOT 을 사용한PB 로 적은 다른 반제품 측정 수}."""
+    rows = connection.execute(
+        "SELECT material_lot FROM viscosity_readings "
+        "WHERE product_id != ? AND material_lot IS NOT NULL AND material_lot != ''",
+        (pb_id,),
+    ).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = _lot_digits(row["material_lot"])
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def list_pb_lots(
+    connection: sqlite3.Connection, *, q: str | None = None, limit: int = 20
+) -> dict[str, Any]:
+    """최근 PB LOT 목록(고르기용) — 최신 측정 먼저, q 는 LOT 부분 일치.
+
+    각 항목에 그 LOT 을 쓴 다른 반제품 측정 수(linked_count)를 실어, 고르기 전에 볼 것이
+    있는 LOT 인지 알 수 있게 한다. PB 반제품이 없으면 빈 목록.
+    """
+    limit = max(1, min(int(limit or 20), PB_LOT_LIMIT_MAX))
+    empty = {"items": [], "total": 0, "limit": limit, "source_code": SOURCE_PB_CODE}
+    pb = get_product_by_code(connection, SOURCE_PB_CODE)
+    if not pb:
+        return empty
+    where = ["product_id = ?"]
+    params: list[Any] = [pb["id"]]
+    query = (q or "").strip()
+    if query:
+        where.append("lot_no LIKE ?")
+        params.append(f"%{query}%")
+    where_sql = " AND ".join(where)
+    total = connection.execute(
+        f"SELECT COUNT(*) FROM viscosity_readings WHERE {where_sql}", params
+    ).fetchone()[0]
+    rows = connection.execute(
+        f"""
+        SELECT id, lot_no, viscosity, measured_date, COALESCE(excluded, 0) AS excluded
+        FROM viscosity_readings
+        WHERE {where_sql}
+        ORDER BY
+            CASE WHEN measured_date IS NULL THEN 1 ELSE 0 END,
+            measured_date DESC,
+            id DESC
+        LIMIT ?
+        """,
+        [*params, limit],
+    ).fetchall()
+    counts = _pb_linked_counts(connection, int(pb["id"]))
+    items = [
+        {
+            "lot_no": r["lot_no"],
+            "viscosity": float(r["viscosity"]),
+            "measured_date": r["measured_date"],
+            "excluded": bool(r["excluded"]),
+            "linked_count": counts.get(_lot_digits(r["lot_no"]), 0),
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": int(total), "limit": limit, "source_code": SOURCE_PB_CODE}
+
+
+def _pb_lot_test_blends(
+    connection: sqlite3.Connection, digits: str
+) -> list[dict[str, Any]]:
+    """이 PB LOT 을 자재로 쓴 시험 배합 중 시험 점도가 있는 것(참고용, 판정 없음)."""
+    if not digits:
+        return []
+    for table in ("blend_details", "blend_records", "test_viscosity_readings"):
+        if not _has_table(connection, table):
+            return []
+    if not _has_column(connection, "blend_records", "is_test"):
+        return []
+    rows = connection.execute(
+        """
+        SELECT br.id AS blend_record_id, br.product_lot, br.product_name, br.work_date,
+               bd.material_lot, tv.viscosity, tv.measured_date, tv.memo
+        FROM blend_details bd
+        JOIN blend_records br
+          ON br.id = bd.blend_record_id AND COALESCE(br.is_test, 0) = 1
+        JOIN test_viscosity_readings tv ON tv.blend_record_id = br.id
+        WHERE bd.material_lot IS NOT NULL AND bd.material_lot != ''
+        ORDER BY br.work_date DESC, br.id DESC
+        """
+    ).fetchall()
+    seen: set[int] = set()
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        if _lot_digits(r["material_lot"]) != digits:
+            continue
+        record_id = int(r["blend_record_id"])
+        if record_id in seen:      # 같은 PB 를 여러 행에 나눠 담은 시험은 한 번만
+            continue
+        seen.add(record_id)
+        items.append({
+            "blend_record_id": record_id,
+            "product_lot": r["product_lot"],
+            "product_name": r["product_name"],
+            "work_date": r["work_date"],
+            "viscosity": float(r["viscosity"]),
+            "measured_date": r["measured_date"],
+            "memo": r["memo"],
+        })
+    return items
+
+
+def pb_lot_detail(connection: sqlite3.Connection, lot_no: str) -> dict[str, Any]:
+    """PB LOT 하나로 만든 것 전부 — 그 PB 의 점도, 반제품 측정(판정 포함), 시험 배합 점도.
+
+    판정은 화면과 같은 규칙(classify_value, 그 측정의 연도 표본 기준)이다. 모르는 LOT 은
+    404 가 아니라 빈 목록으로 답한다 — 검색 중간 입력에 오류창을 띄우지 않는다.
+    """
+    lot = str(lot_no or "").strip()
+    digits = _lot_digits(lot)
+    result: dict[str, Any] = {
+        "lot_no": lot,
+        "digits": digits,
+        "pb": None,
+        "items": [],
+        "tests": [],
+        "limit": PB_LOT_DETAIL_MAX,
+    }
+    pb = get_product_by_code(connection, SOURCE_PB_CODE)
+    if not pb:
+        return result
+    row = connection.execute(
+        "SELECT lot_no, viscosity, measured_date, COALESCE(excluded, 0) AS excluded "
+        "FROM viscosity_readings WHERE product_id = ? AND lot_no = ? "
+        "ORDER BY measured_date DESC, id DESC LIMIT 1",
+        (pb["id"], lot),
+    ).fetchone()
+    if row is None and digits:
+        # 표기가 다른 같은 LOT(PB26091801 ↔ 26091801)도 같은 것으로 본다.
+        candidates = connection.execute(
+            "SELECT lot_no, viscosity, measured_date, COALESCE(excluded, 0) AS excluded "
+            "FROM viscosity_readings WHERE product_id = ? "
+            "ORDER BY measured_date DESC, id DESC",
+            (pb["id"],),
+        ).fetchall()
+        row = next((r for r in candidates if _lot_digits(r["lot_no"]) == digits), None)
+    if row is not None:
+        result["pb"] = {
+            "lot_no": row["lot_no"],
+            "viscosity": float(row["viscosity"]),
+            "measured_date": row["measured_date"],
+            "excluded": bool(row["excluded"]),
+        }
+    if not digits:
+        return result
+    linked = connection.execute(
+        """
+        SELECT r.id, r.product_id, r.lot_no, r.viscosity, r.measured_date, r.material_lot,
+               p.code AS product_code, p.name AS product_name
+        FROM viscosity_readings r
+        JOIN viscosity_products p ON p.id = r.product_id
+        WHERE r.product_id != ? AND r.material_lot IS NOT NULL AND r.material_lot != ''
+        ORDER BY
+            CASE WHEN r.measured_date IS NULL THEN 1 ELSE 0 END,
+            r.measured_date DESC,
+            r.id DESC
+        """,
+        (pb["id"],),
+    ).fetchall()
+    products: dict[int, dict[str, Any] | None] = {}
+    for r in linked:
+        if _lot_digits(r["material_lot"]) != digits:
+            continue
+        if len(result["items"]) >= PB_LOT_DETAIL_MAX:
+            break
+        product_id = int(r["product_id"])
+        if product_id not in products:
+            products[product_id] = get_product(connection, product_id)
+        target = products[product_id]
+        value = float(r["viscosity"])
+        verdict = {"status": None, "side": None, "reasons": []}
+        if target is not None:
+            date_text = str(r["measured_date"] or "")
+            year = int(date_text[:4]) if date_text[:4].isdigit() else None
+            verdict = classify_value(connection, target, value, year=year)
+        result["items"].append({
+            "id": int(r["id"]),
+            "product_code": r["product_code"],
+            "product_name": r["product_name"],
+            "lot_no": r["lot_no"],
+            "measured_date": r["measured_date"],
+            "viscosity": value,
+            "status": verdict["status"],
+            "side": verdict["side"],
+            "reasons": verdict["reasons"],
+        })
+    result["tests"] = _pb_lot_test_blends(connection, digits)
+    return result
 
 
 def analyze_product(
@@ -842,11 +1059,13 @@ def analyze_product(
     # 사용한 PB 연계 — 바인더(APB/CSPB 등)의 material_lot(사용한PB) 을 PB 반제품의
     # 점도(lot_no) 와 맞춰, "이 PB(48cp)로 만든 바인더는 80" 상관을 보여준다. 두 LOT
     # 은 같은 8자리 형식이라 직접 매칭. PB 자신을 볼 때나 매칭이 없으면 그냥 빈 값.
-    pb_map = (
-        _pb_viscosity_map(connection)
-        if product.get("code") != SOURCE_PB_CODE
-        else {}
-    )
+    is_source = product.get("code") == SOURCE_PB_CODE
+    pb_map = {} if is_source else _pb_viscosity_map(connection)
+    # 연계 실패 사유를 나누려면 '제외된 PB 측정까지 포함한 맵'이 하나 더 필요하다.
+    # 둘의 차이가 곧 "그 PB LOT 은 쟀지만 통계에서 뺐다"(pb_excluded)이다.
+    pb_any_map = {} if is_source else _pb_viscosity_map(connection, include_excluded=True)
+    # 연계 사유 집계(계약: 합이 이 조회 범위의 측정 건수와 같다).
+    link_counts = {"no_lot": 0, "lot_unreadable": 0, "pb_missing": 0, "pb_excluded": 0}
 
     readings: list[dict[str, Any]] = []
     valid_readings: list[dict[str, Any]] = []
@@ -856,6 +1075,18 @@ def analyze_product(
         value = float(r["viscosity"])
         excluded = _is_excluded(r)
         source_lot = _lot_digits(r["material_lot"])
+        if not is_source:
+            # 왜 PB 점도가 안 붙었는지 한 번에 가른다 — 화면이 숫자 대신 이유를 말한다.
+            if not str(r["material_lot"] or "").strip():
+                link_counts["no_lot"] += 1
+            elif not source_lot:
+                link_counts["lot_unreadable"] += 1   # 숫자가 하나도 없는 LOT 표기
+            elif source_lot in pb_map:
+                pass                                  # matched — 아래에서 따로 센다
+            elif source_lot in pb_any_map:
+                link_counts["pb_excluded"] += 1
+            else:
+                link_counts["pb_missing"] += 1
         item = {
             "id": int(r["id"]),
             "lot_no": r["lot_no"],
@@ -908,17 +1139,29 @@ def analyze_product(
     periods = summarize_periods(valid_readings, granularity)
     control["excluded_n"] = excluded_count
 
-    # PB 연계 요약 — 화면이 "왜 연계가 안 보이는지"를 말할 수 있게 한다.
-    # 종전에는 매칭 0건이면 패널이 조용히 숨겨져 실패가 무증상이었다(2026-08-13 검토).
+    # PB 연계 요약 — 화면이 "왜 연계가 안 보이는지"를 **이유로** 말할 수 있게 한다.
+    # 종전에는 매칭 0건이면 패널이 조용히 숨겨져 실패가 무증상이었고(2026-08-13 검토),
+    # 건수만 있던 뒤로도 "왜 263건이 안 붙었나"를 화면이 답하지 못했다(2026-09-21 실측:
+    # APB 363건 중 99건 연계, 263건은 그 PB LOT 의 점도 기록 자체가 없음).
+    # no_lot·lot_unreadable·pb_missing·pb_excluded·matched 의 합 = total(이 조회 범위의 측정 수).
     with_lot = sum(1 for x in readings if (x.get("material_lot") or "").strip())
     matched = sum(1 for x in readings if x.get("source_pb_viscosity") is not None)
+    source_product = get_product_by_code(connection, SOURCE_PB_CODE)
     pb_link = {
         "source_code": SOURCE_PB_CODE,
-        "source_exists": bool(pb_map) or bool(
-            get_product_by_code(connection, SOURCE_PB_CODE)
-        ),
+        "source_exists": source_product is not None,
+        # PB 자신을 보고 있는가 — 위 단계 PB 가 없으므로 사유 집계도 하지 않는다(모두 0).
+        "is_source": is_source,
+        "total": len(readings),
         "readings_with_lot": with_lot,
         "matched": matched,
+        **link_counts,
+        # 구간표(PB 점도 대역별 이 반제품 평균)의 경계로 쓸 PB 기준선. 없으면 화면이
+        # 연계된 PB 점도 범위를 3등분한다.
+        "source_limits": {
+            key: source_product.get(key) if source_product else None
+            for key in ("lower_limit", "warn_low", "warn_high", "upper_limit")
+        },
     }
 
     return {

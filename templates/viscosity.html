@@ -5,7 +5,7 @@
 {% block heading %}점도 등록 및 조회{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260918c" />
+    <link rel="stylesheet" href="/static/css/viscosity.css?v=20260921b" />
 {% endblock %}
 
 {% block content %}
@@ -277,6 +277,73 @@
         </div>
 
         <div class="tab-panel" id="tab-pb">
+        {# PB LOT 으로 찾기(2026-09-21) · 연계 화면은 "이 반제품이 쓴 PB" 방향만 있었다.
+           현장은 반대로도 묻는다 — "이 PB LOT 으로 무엇을 만들었나". LOT 하나를 고르면 그
+           LOT 으로 만든 반제품 측정과 시험 배합 점도를 모아 보여 준다. PB 반제품을 보고
+           있을 때는 이 목록이 이 탭의 본문이다(PB 에는 위 단계 PB 가 없다). #}
+        <section class="panel" id="visc-pb-lookup-panel">
+          <div class="visc-panel-head">
+            <div>
+              <h3 class="panel-title">PB LOT으로 찾기</h3>
+              <p class="muted small">PB LOT을 고르면 그 LOT으로 만든 반제품이 나옵니다.</p>
+            </div>
+            <span class="muted small" id="visc-pb-lot-note"></span>
+          </div>
+          <div class="visc-record-filters">
+            <label class="filter-label" for="visc-pb-lot-q">PB LOT</label>
+            <input class="input" id="visc-pb-lot-q" placeholder="LOT 검색" />
+          </div>
+          <div class="table-wrap visc-pb-pick-wrap" id="visc-pb-pick-wrap">
+            <table class="visc-table visc-blend-table visc-pb-pick">
+              <thead>
+                <tr>
+                  <th>측정일</th>
+                  <th>PB LOT</th>
+                  <th class="num">점도</th>
+                  <th class="num">연계</th>
+                </tr>
+              </thead>
+              <tbody id="visc-pb-pick-body"></tbody>
+            </table>
+          </div>
+          <div id="visc-pb-lot-detail" hidden>
+            <p class="visc-selected-row" id="visc-pb-lot-head"></p>
+            <div class="table-wrap">
+              <table class="visc-table visc-blend-table">
+                <thead>
+                  <tr>
+                    <th>측정일</th>
+                    <th>반제품</th>
+                    <th>LOT</th>
+                    <th class="num">점도</th>
+                    <th>판정</th>
+                  </tr>
+                </thead>
+                <tbody id="visc-pb-lot-body"></tbody>
+              </table>
+            </div>
+            {# 시험 배합 점도는 비교 기준이 없다(계약 §9) — 판정 없이 참고로만 붙인다. #}
+            <div id="visc-pb-lot-tests" hidden>
+              <p class="muted small visc-pb-tests-note">시험 배합 점도는 참고만 합니다.</p>
+              <div class="table-wrap">
+                <table class="visc-table visc-blend-table">
+                  <thead>
+                    <tr>
+                      <th>작업일</th>
+                      <th>시험명</th>
+                      <th>제품 LOT</th>
+                      <th class="num">점도</th>
+                      <th>측정일</th>
+                      <th>메모</th>
+                    </tr>
+                  </thead>
+                  <tbody id="visc-pb-lot-tests-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- 사용한 PB 연계 · 바인더(APB/CSPB 등)처럼 '사용한 PB'가 있는 반제품에서
              그 원료 PB의 점도와 나란히 본다. 관계는 표가 아니라 그림이 말한다:
              위 산점도(x=PB 점도, y=이 반제품 점도)가 '48cp PB로 만들면 80' 을 한눈에
@@ -286,7 +353,12 @@
             <h3 class="panel-title">사용한 PB 연계 측정</h3>
             <span class="muted small" id="visc-source-pb-note"></span>
           </div>
+          {# PB 자신을 보고 있을 때 · 산점도 대신 한 줄. 위 목록이 이 탭의 본문이다. #}
+          <p class="panel-notice" id="visc-pb-source-line" hidden>PB는 사용한 PB가 없습니다. 위에서 PB LOT을 고르세요.</p>
+          {# 연계 사유 · 몇 건이 붙었고 못 붙은 건 왜인지 한 줄로(2026-09-21 실측 반영). #}
+          <p class="muted small visc-pb-reason" id="visc-pb-reason" hidden></p>
           <p class="panel-notice" id="visc-pb-empty" hidden></p>
+          <div id="visc-pb-content">
           {# 한 줄 결론 · 점만 뿌려서는 관계가 한눈에 안 들어온다(2026-08-13 현장 지적).
              추세선·기준선과 함께, 상관 세기와 기울기를 문장으로 먼저 말한다. #}
           <p class="visc-pb-summary" id="visc-pb-summary" hidden></p>
@@ -295,6 +367,23 @@
             <p class="visc-chart-empty" id="visc-pb-chart-empty">
               사용한 PB의 점도가 연결된 측정이 없습니다.
             </p>
+          </div>
+          {# 구간표 · 그림을 숫자로도 읽게 한다. 경계는 PB 기준선, 없으면 범위 3등분. #}
+          <div class="visc-pb-band" id="visc-pb-band" hidden>
+            <p class="muted small" id="visc-pb-band-note"></p>
+            <div class="table-wrap">
+              <table class="visc-table visc-blend-table">
+                <thead>
+                  <tr>
+                    <th>PB 점도 구간</th>
+                    <th class="num">건수</th>
+                    <th class="num">이 반제품 평균</th>
+                    <th class="num">이상</th>
+                  </tr>
+                </thead>
+                <tbody id="visc-pb-band-body"></tbody>
+              </table>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="visc-table">
@@ -312,6 +401,7 @@
           </div>
           <div class="visc-more-row">
             <button id="visc-pb-more" class="btn btn-sm" type="button" hidden>더보기</button>
+          </div>
           </div>
         </section>
         </div>
@@ -575,6 +665,6 @@
 
 {% block scripts %}
     <script src="/static/vendor/chartjs/chart.umd.min.js?v=20260910a"></script>
-    <script src="/static/js/viscosity_lib.js?v=20260918c"></script>
-    <script src="/static/js/viscosity.js?v=20260918c"></script>
+    <script src="/static/js/viscosity_lib.js?v=20260921b"></script>
+    <script src="/static/js/viscosity.js?v=20260921b"></script>
 {% endblock %}

@@ -1059,6 +1059,14 @@ body.dhr-open { overflow: hidden; }
   color: var(--status-error);
   border: 1px solid color-mix(in srgb, var(--status-error) 30%, transparent);
 }
+/* 점도를 재는 반제품인데 이 LOT 만 기록이 없을 때(2026-09-21) — 경고가 아니라 사실
+   한 줄이다. 바탕·테두리 없이 회색으로만 두어 경고 두 종과 무게를 확실히 가른다. */
+.lot-visc-note--quiet {
+  padding-left: 0;
+  padding-right: 0;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
 
 /* 계량 완료 저장 확인 창(save-confirm-modal) 본문 — 제품명·작업자·총 배합량 확인.
    저장 버튼을 눌렀을 때와 계량 완료 자동 제안이 함께 쓴다(2026-09-12 미저장 사고). */

@@ -15,7 +15,7 @@
  *   controlSummaryRows, controlSummaryHtml,
  *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
  *   readingOverlayDatasets, sourcePbLinkedReadings, sourcePbScatterDatasets,
- *   pbLinkNotice
+ *   pbLinkNotice, pbLinkReasonText, pbBandCuts, pbBandRows
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -728,7 +728,96 @@
     return `${linkedCount}건 · 사용한 PB의 점도와 나란히`;
   }
 
+  // 연계 사유 한 줄(2026-09-21). 숫자만으로는 "왜 안 붙었나"를 알 수 없었다 — 운영 실측에서
+  // APB 363건 중 99건만 연계됐고 263건은 그 PB LOT 의 점도 기록 자체가 없었다.
+  // 첫 문장은 얼마나 붙었는지, 둘째 문장은 가장 큰 사유 하나만 말한다(0 은 말하지 않는다).
+  const PB_REASON_TEXT = {
+    pb_missing: (n) => `${n}건은 그 PB LOT의 점도 기록이 없습니다.`,
+    no_lot: (n) => `${n}건은 사용한 PB LOT이 없습니다.`,
+    pb_excluded: (n) => `${n}건은 그 PB 점도가 통계에서 빠졌습니다.`,
+    lot_unreadable: (n) => `${n}건은 PB LOT을 읽을 수 없습니다.`,
+  };
+
+  function pbLinkReasonText(pbLink) {
+    const link = pbLink || {};
+    const total = Number(link.total || 0);
+    const matched = Number(link.matched || 0);
+    if (!total) return "";
+    const first = `측정 ${total}건 중 ${matched}건에 PB 점도가 붙었습니다.`;
+    const reasons = Object.keys(PB_REASON_TEXT)
+      .map((key) => ({ key, count: Number(link[key] || 0) }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
+    if (!reasons.length) return first;
+    return `${first} ${PB_REASON_TEXT[reasons[0].key](reasons[0].count)}`;
+  }
+
+  // ── PB 점도 구간표 ────────────────────────────────────────────────────────
+  // "낮은 PB 로 만들면 이 반제품이 어땠나"를 그림 대신 숫자로도 읽게 한다.
+  // 경계는 PB 반제품의 기준선(사용 금지·경고 문턱)을 쓰고, 기준이 없으면 연계된 PB 점도
+  // 범위를 3등분한다. 표본이 너무 적으면 구간 평균이 한두 건짜리라 아예 만들지 않는다.
+  const PB_BAND_MIN_READINGS = 5;
+  const PB_BAND_LIMIT_KEYS = ["lower_limit", "warn_low", "warn_high", "upper_limit"];
+
+  function pbBandCuts(values, limits) {
+    // ⚠ 설정하지 않은 기준선은 null 로 온다. Number(null) === 0 이고 0 은 유한수라,
+    // 그냥 Number() 를 태우면 '0.0 이하' 라는 빈 구간이 생긴다(브라우저 확인에서 발견).
+    const given = PB_BAND_LIMIT_KEYS
+      .map((key) => (limits ? limits[key] : null))
+      .filter((value) => value !== null && value !== undefined && value !== "")
+      .map(Number)
+      .filter((value) => Number.isFinite(value));
+    const unique = Array.from(new Set(given)).sort((a, b) => a - b).slice(0, 3);
+    if (unique.length) return { cuts: unique, source: "limits" };
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (!(max > min)) return { cuts: [], source: "range" };
+    const step = (max - min) / 3;
+    const round = (value) => Math.round(value * 10) / 10;
+    return { cuts: [round(min + step), round(min + 2 * step)], source: "range" };
+  }
+
+  function pbBandRows(linked, limits) {
+    // ⚠ Number(null) === 0 이고 0 은 유한수다 — 빈 값을 먼저 걸러야 'PB 점도 0' 인
+    // 가짜 측정이 첫 구간에 쌓인다(periodChartDatasets 과 같은 이유).
+    const rows = (linked || []).filter((r) => {
+      if (!r) return false;
+      const pb = r.source_pb_viscosity;
+      if (pb === null || pb === undefined || pb === "") return false;
+      return Number.isFinite(Number(pb));
+    });
+    if (rows.length < PB_BAND_MIN_READINGS) return { rows: [], source: null };
+    const { cuts, source } = pbBandCuts(rows.map((r) => Number(r.source_pb_viscosity)), limits);
+    if (!cuts.length) return { rows: [], source: null };
+    const bands = cuts.map((cut, index) => ({
+      label: index === 0 ? `${fmt(cut)} 이하` : `${fmt(cuts[index - 1])}~${fmt(cut)}`,
+      items: [],
+    }));
+    bands.push({ label: `${fmt(cuts[cuts.length - 1])} 초과`, items: [] });
+    rows.forEach((r) => {
+      const pb = Number(r.source_pb_viscosity);
+      const index = cuts.findIndex((cut) => pb <= cut);
+      bands[index === -1 ? bands.length - 1 : index].items.push(r);
+    });
+    return {
+      source,
+      rows: bands.map((band) => {
+        const values = band.items.map((r) => Number(r.viscosity)).filter(Number.isFinite);
+        const mean = values.length
+          ? values.reduce((sum, value) => sum + value, 0) / values.length
+          : null;
+        return {
+          label: band.label,
+          count: band.items.length,
+          mean,
+          anomaly: band.items.filter((r) => r.status === "anomaly").length,
+        };
+      }),
+    };
+  }
+
   IRMS.viscLib = {
+    PB_BAND_MIN_READINGS,
     STATUS_LABEL,
     REASON_LABEL,
     TREND_LABEL,
@@ -752,6 +841,9 @@
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,
+    pbLinkReasonText,
+    pbBandCuts,
+    pbBandRows,
     pbLinearFit,
     pbScatterSummary,
     withAlpha,

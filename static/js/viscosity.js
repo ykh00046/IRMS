@@ -26,6 +26,8 @@
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,
+    pbLinkReasonText,
+    pbBandRows,
     pbLinearFit,
     pbScatterSummary,
   } = window.IRMS.viscLib;
@@ -94,6 +96,9 @@
     pbChart: null,
     periodRows: PERIOD_TABLE_ROWS,
     pbRows: PB_TABLE_ROWS,
+    // PB LOT 으로 찾기(2026-09-21) · 반제품 선택과 무관한 역방향 조회.
+    pbLots: [],
+    pbLotSelected: null,
     tab: "register",
     granularity: "day",
     year: null,
@@ -137,6 +142,8 @@
     if (name === "anomaly") loadAnomalies();
     // 시험 점도 탭도 반제품과 무관한 목록이다. 반제품을 고르지 않았어도 열 때마다 받는다.
     if (name === "test") loadTestRecords();
+    // PB LOT 으로 찾기도 반제품과 무관하다 — 반제품을 고르기 전에도 쓸 수 있어야 한다.
+    if (name === "pb") loadPbLots();
     if (!state.analysis) return;
     if (name === "trend") renderPeriods();
     if (name === "pb") renderSourcePb();
@@ -231,6 +238,18 @@
     if (pbNote) pbNote.textContent = "";
     const pbEmpty = $("visc-pb-empty");
     if (pbEmpty) { pbEmpty.hidden = false; pbEmpty.textContent = "반제품을 선택하면 PB 연계 측정이 표시됩니다."; }
+    // PB 연계 사유 줄·구간표·PB 전용 안내는 앞 반제품의 것이 남지 않게 되돌린다.
+    // ('PB LOT 으로 찾기'는 반제품과 무관하므로 건드리지 않는다.)
+    const pbReason = $("visc-pb-reason");
+    if (pbReason) { pbReason.textContent = ""; pbReason.hidden = true; }
+    const pbBand = $("visc-pb-band");
+    if (pbBand) pbBand.hidden = true;
+    const pbBandBody = $("visc-pb-band-body");
+    if (pbBandBody) pbBandBody.innerHTML = "";
+    const pbContent = $("visc-pb-content");
+    if (pbContent) pbContent.hidden = false;
+    const pbSourceLine = $("visc-pb-source-line");
+    if (pbSourceLine) pbSourceLine.hidden = true;
     setAnomalyCardClickable(0);
   }
 
@@ -797,6 +816,30 @@
     const readings = (state.analysis && state.analysis.readings) || [];
     const linked = sourcePbLinkedReadings(readings);
     const pbLink = (state.analysis && state.analysis.pb_link) || null;
+    // PB 자신을 보고 있으면 위 단계 PB 가 없다 — 산점도 자리에 한 줄만 두고, 위의
+    // 'PB LOT 으로 찾기'가 이 탭의 본문이 된다(2026-09-21).
+    const isSource = Boolean(pbLink && pbLink.is_source);
+    const content = $("visc-pb-content");
+    const sourceLine = $("visc-pb-source-line");
+    const reason = $("visc-pb-reason");
+    const pickWrap = $("visc-pb-pick-wrap");
+    if (pickWrap) pickWrap.classList.toggle("is-source", isSource);
+    if (content) content.hidden = isSource;
+    if (sourceLine) sourceLine.hidden = !isSource;
+    if (isSource) {
+      if (note) note.textContent = "";
+      if (empty) empty.hidden = true;
+      if (reason) reason.hidden = true;
+      renderPbChart([]);
+      renderPbBand([]);
+      return;
+    }
+    // 왜 안 붙었는지 한 줄 — 건수만으로는 "PB 점도가 아예 없어서"인지 알 수 없었다.
+    if (reason) {
+      const reasonText = pbLinkReasonText(pbLink);
+      reason.textContent = reasonText;
+      reason.hidden = !reasonText;
+    }
     const notice = pbLinkNotice(pbLink, linked.length);
     if (!linked.length) {
       body.innerHTML = "";
@@ -805,6 +848,7 @@
       if (empty) { empty.hidden = false; empty.textContent = notice; }
       if (more) more.hidden = true;
       renderPbChart([]);
+      renderPbBand([]);
       return;
     }
     if (empty) empty.hidden = true;
@@ -832,6 +876,190 @@
       more.textContent = `더보기 (${shown.length}/${linked.length}건)`;
     }
     renderPbChart(linked);
+    renderPbBand(linked);
+  }
+
+  // PB 점도 구간표 — 그림을 숫자로도 읽는다. 경계는 PB 반제품의 기준선(사용 금지·경고
+  // 문턱)이고, 기준이 없으면 연계된 PB 점도 범위를 셋으로 나눈다(계산은 viscLib 순수 함수).
+  function renderPbBand(linked) {
+    const wrap = $("visc-pb-band");
+    const body = $("visc-pb-band-body");
+    if (!wrap || !body) return;
+    const pbLink = (state.analysis && state.analysis.pb_link) || null;
+    const { rows, source } = pbBandRows(linked, pbLink && pbLink.source_limits);
+    body.innerHTML = "";
+    wrap.hidden = !rows.length;
+    if (!rows.length) return;
+    const bandNote = $("visc-pb-band-note");
+    if (bandNote) {
+      bandNote.textContent = source === "limits"
+        ? "PB 기준선으로 나눈 구간입니다."
+        : "PB 점도 범위를 셋으로 나눈 구간입니다.";
+    }
+    rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      appendTextCell(tr, row.label);
+      appendTextCell(tr, String(row.count), "num");
+      appendTextCell(tr, row.mean === null ? "-" : fmt(row.mean), "num");
+      appendTextCell(tr, row.count ? String(row.anomaly) : "-", "num");
+      body.appendChild(tr);
+    });
+  }
+
+  // ── PB LOT 으로 찾기(2026-09-21) ────────────────────────────────────────
+  // 연계의 반대 방향 — PB LOT 하나를 고르면 그 LOT 으로 만든 반제품 측정과 시험 배합
+  // 점도를 모아 본다. 반제품 선택과 무관하며, PB 반제품을 볼 때는 이 목록이 탭의 본문이다.
+  const PB_LOT_LIMIT = 20;
+  let pbLotSeq = 0;
+  let pbDetailSeq = 0;
+
+  async function loadPbLots() {
+    const input = $("visc-pb-lot-q");
+    if (!input) return;
+    const q = input.value.trim();
+    const seq = ++pbLotSeq;
+    let data;
+    try {
+      data = await request("/viscosity/pb-lots", { query: { q, limit: PB_LOT_LIMIT } });
+    } catch (error) {
+      if (seq !== pbLotSeq) return;
+      state.pbLots = [];
+      renderPbLots();
+      notify(`PB LOT 목록을 불러오지 못했습니다: ${error.message || error}`, "error");
+      return;
+    }
+    if (seq !== pbLotSeq) return;
+    state.pbLots = data.items || [];
+    renderPbLots();
+  }
+
+  function renderPbLots() {
+    const body = $("visc-pb-pick-body");
+    const note = $("visc-pb-lot-note");
+    if (!body) return;
+    const items = state.pbLots || [];
+    if (note) note.textContent = items.length ? `최근 ${items.length}건` : "";
+    body.innerHTML = "";
+    if (!items.length) {
+      body.appendChild(emptyRow(
+        4,
+        $("visc-pb-lot-q").value.trim()
+          ? "검색에 맞는 PB LOT이 없습니다."
+          : "PB 점도 기록이 없습니다.",
+      ));
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("tr");
+      row.tabIndex = 0;
+      row.classList.toggle("is-selected", item.lot_no === state.pbLotSelected);
+      const open = () => selectPbLot(item.lot_no);
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+      appendTextCell(row, item.measured_date || "-");
+      appendPbLotCell(row, item);
+      appendTextCell(row, fmt(item.viscosity), "num");
+      appendTextCell(row, String(item.linked_count || 0), "num");
+      body.appendChild(row);
+    });
+  }
+
+  function appendPbLotCell(row, item) {
+    const cell = document.createElement("td");
+    cell.appendChild(document.createTextNode(item.lot_no || "-"));
+    if (item.excluded) {
+      const mark = document.createElement("span");
+      mark.className = "visc-pb-mark";
+      mark.textContent = " · 제외";
+      mark.title = "이 PB 측정은 통계에서 빠져 있습니다.";
+      cell.appendChild(mark);
+    }
+    row.appendChild(cell);
+  }
+
+  async function selectPbLot(lotNo) {
+    state.pbLotSelected = lotNo;
+    renderPbLots();
+    const seq = ++pbDetailSeq;
+    let data;
+    try {
+      data = await request(`/viscosity/pb-lots/${encodeURIComponent(lotNo)}`);
+    } catch (error) {
+      if (seq !== pbDetailSeq) return;
+      notify(`PB LOT을 불러오지 못했습니다: ${error.message || error}`, "error");
+      return;
+    }
+    if (seq !== pbDetailSeq) return;
+    renderPbLotDetail(data);
+  }
+
+  function renderPbLotDetail(data) {
+    const panel = $("visc-pb-lot-detail");
+    const head = $("visc-pb-lot-head");
+    const body = $("visc-pb-lot-body");
+    if (!panel || !head || !body) return;
+    panel.hidden = false;
+    const pb = data.pb;
+    head.textContent = pb
+      ? `PB LOT ${pb.lot_no} · 점도 ${fmt(pb.viscosity)} · 측정일 ${pb.measured_date || "-"}`
+        + `${pb.excluded ? " · 통계 제외" : ""}`
+      : `PB LOT ${data.lot_no} · 점도 기록 없음`;
+    const items = data.items || [];
+    body.innerHTML = "";
+    if (!items.length) {
+      body.appendChild(emptyRow(5, "이 PB LOT으로 만든 측정이 없습니다."));
+    } else {
+      items.forEach((item) => {
+        const row = document.createElement("tr");
+        if (item.status === "anomaly") row.className = "row-anomaly";
+        appendTextCell(row, item.measured_date || "-");
+        appendClipCell(row, item.product_name || item.product_code);
+        appendTextCell(row, item.lot_no || "-");
+        appendTextCell(row, fmt(item.viscosity), "num");
+        appendVerdictCell(row, item.status);
+        body.appendChild(row);
+      });
+    }
+    renderPbLotTests(data.tests || []);
+  }
+
+  // 판정 칸 · 정상은 흐린 글자로(초록 배지가 줄줄이 이어지면 이상이 묻힌다, 현장 검토 6번).
+  function appendVerdictCell(row, status) {
+    const cell = document.createElement("td");
+    const label = STATUS_KO[status] || "";
+    const badge = document.createElement("span");
+    if (status === "warn" || status === "anomaly") {
+      badge.className = `visc-status ${status}`;
+      badge.textContent = label;
+    } else {
+      badge.className = "muted";
+      badge.textContent = label || "-";
+    }
+    cell.appendChild(badge);
+    row.appendChild(cell);
+  }
+
+  function renderPbLotTests(tests) {
+    const wrap = $("visc-pb-lot-tests");
+    const body = $("visc-pb-lot-tests-body");
+    if (!wrap || !body) return;
+    wrap.hidden = !tests.length;
+    body.innerHTML = "";
+    tests.forEach((item) => {
+      const row = document.createElement("tr");
+      appendTextCell(row, item.work_date || "-");
+      appendClipCell(row, item.product_name);
+      appendTextCell(row, item.product_lot || "-");
+      appendTextCell(row, fmt(item.viscosity), "num");
+      appendTextCell(row, item.measured_date || "-");
+      appendClipCell(row, item.memo);
+      body.appendChild(row);
+    });
   }
 
   // PB 점도(x) ↔ 이 반제품 점도(y) 산점도. 표만으로는 관계가 안 보인다.
@@ -2425,6 +2653,28 @@
       state.pbRows += PB_TABLE_ROWS;
       renderSourcePb();
     });
+    // PB LOT 으로 찾기 · 검색은 300ms 디바운스(서버가 거른다), Enter 는 바로 고른다
+    // (바코드 스캐너가 LOT 뒤에 Enter 를 보낸다 · 시험 점도 창과 같은 규칙).
+    const pbLotQ = $("visc-pb-lot-q");
+    if (pbLotQ) {
+      let pbLotTimer = null;
+      pbLotQ.addEventListener("input", () => {
+        if (pbLotTimer) clearTimeout(pbLotTimer);
+        pbLotTimer = setTimeout(() => { loadPbLots(); }, 300);
+      });
+      pbLotQ.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (pbLotTimer) { clearTimeout(pbLotTimer); pbLotTimer = null; }
+        await loadPbLots();
+        const typed = pbLotQ.value.trim();
+        const items = state.pbLots || [];
+        const exact = items.find((item) => item.lot_no === typed);
+        const only = items.length === 1 ? items[0] : null;
+        const picked = exact || only;
+        if (picked) selectPbLot(picked.lot_no);
+      });
+    }
     $("visc-year").addEventListener("change", () => {
       const value = $("visc-year").value;
       state.year = value === "" ? null : Number(value);

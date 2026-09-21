@@ -25,6 +25,8 @@ Endpoints:
     POST   /viscosity/readings/{id}/review      확인 처리 (배합 작업자 또는 로그인 사용자)
     POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
+    GET    /viscosity/pb-lots                   최근 PB LOT 목록 (개방, q·limit)
+    GET    /viscosity/pb-lots/{lot_no}          PB LOT 하나로 만든 반제품·시험 (개방)
     GET    /viscosity/test-records              시험 점도 목록 (개방, 반제품 무관, state=recorded|unrecorded|all)
     POST   /viscosity/test-records/{record_id}  시험 점도 등록 (개방 — 현장 등록)
     PUT    /viscosity/test-records/{record_id}  시험 점도 정정 (10분 유예 현장, 이후 책임자)
@@ -149,6 +151,28 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         return viscosity_service.analyze_product(
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
+
+    # ---- PB LOT 역방향 조회(2026-09-21) ----------------------------------
+    # "이 PB LOT 으로 무엇을 만들었나" — 연계 화면의 반대 방향. 둘 다 열람이라 개방.
+    @op_router.get("/viscosity/pb-lots")
+    def viscosity_pb_lots(
+        q: str | None = None,
+        limit: int = 20,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """최근 PB LOT 목록(고르기용) — 최신 측정 먼저, q 는 LOT 부분 일치."""
+        return viscosity_service.list_pb_lots(connection, q=q, limit=limit)
+
+    @op_router.get("/viscosity/pb-lots/{lot_no}")
+    def viscosity_pb_lot_detail(
+        lot_no: str,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """PB LOT 하나의 점도와 그 LOT 으로 만든 반제품 측정·시험 배합 점도.
+
+        모르는 LOT 도 404 가 아니라 빈 목록이다(검색 중간 입력에 오류창을 띄우지 않는다).
+        """
+        return viscosity_service.pb_lot_detail(connection, lot_no)
 
     @op_router.get("/viscosity/products/{product_id}/blend-records")
     def viscosity_blend_records(

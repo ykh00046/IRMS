@@ -2206,17 +2206,28 @@
   // 없는 일반 원료엔 found=false 를 바로 돌려주므로 자재 종류를 가리지 않고 물어본다.
   // 저장을 막지 않는 안내이며, 실패는 조용히 무시한다(fail-open — 현장 입력을 막지 않는다).
   const lotViscCache = {};
+  const LOT_VISC_NONE_TEXT = "이 LOT은 점도 기록이 없습니다.";
   function setLotViscNote(input, data) {
     if (!input) return;
     let note = input._viscNote;
-    const on = !!(data && data.level && data.message);
-    if (!on) { if (note) note.hidden = true; return; }
+    const warn = !!(data && data.level && data.message);
+    // 점도를 재는 반제품인데 이 LOT 만 기록이 없을 때는 조용한 회색 한 줄만 둔다
+    // (2026-09-21). 일반 원료(managed=false)는 아무것도 띄우지 않는다 — 저장도 막지 않는다.
+    const quiet = !warn && !!(data && data.managed && !data.found);
+    if (!warn && !quiet) { if (note) note.hidden = true; return; }
     if (!note) {
       note = document.createElement("div");
       note.className = "lot-visc-note";
       const anchor = input.closest(".cont-lot-wrap") || input.parentElement;
       (anchor || document.body).appendChild(note);
       input._viscNote = note;
+    }
+    if (quiet) {
+      note.className = "lot-visc-note lot-visc-note--quiet";
+      note.textContent = LOT_VISC_NONE_TEXT;
+      note.title = "점도를 재는 반제품입니다. 측정 기록이 아직 없습니다.";
+      note.hidden = false;
+      return;
     }
     note.className = `lot-visc-note lot-visc-note--${data.level}`;
     note.textContent = `⚠ ${data.message}`;
