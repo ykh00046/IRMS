@@ -119,7 +119,7 @@ def test_rename_propagates_to_past_records_and_keeps_code():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"AC{base[:4]}"
+    code = f"AC{base}"
     old_name = f"PMA{base}"
     mid = _new_material(client, headers, old_name, code)
 
@@ -174,7 +174,7 @@ def test_rename_to_own_alias_absorbs_it():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"구명{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"구명{base}", f"AC{base}")
     alias = f"신명{base}"
     assert client.post(
         f"/api/materials/{mid}/aliases", json={"alias_name": alias}, headers=headers
@@ -218,7 +218,7 @@ def test_absorb_name_rewrites_records_and_removes_alias():
     base = _uid()
     canonical = f"MP{base}"
     variant = f"MEHQ{base}"
-    mid = _new_material(client, headers, canonical, f"AC{base[:4]}")
+    mid = _new_material(client, headers, canonical, f"AC{base}")
     # 옛 동의어 + 그 표기의 기록 2행.
     assert client.post(
         f"/api/materials/{mid}/aliases", json={"alias_name": variant}, headers=headers
@@ -257,7 +257,7 @@ def test_absorb_canonical_spelling_relinks_broken_fk():
     headers = _login(client)
     base = _uid()
     canonical = f"PMA{base}"
-    mid = _new_material(client, headers, canonical, f"AC{base[:4]}")
+    mid = _new_material(client, headers, canonical, f"AC{base}")
     with get_connection() as conn:
         rid = _insert_legacy_detail(conn, name=canonical)
         conn.commit()
@@ -279,9 +279,9 @@ def test_absorb_rejects_name_owned_elsewhere():
     client = _client()
     headers = _login(client)
     base = _uid()
-    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base[:4]}")
+    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base}")
     b_name = f"BBB{base}"
-    b_id = _new_material(client, headers, b_name, f"AS{base[:4]}")
+    b_id = _new_material(client, headers, b_name, f"AS{base}")
     shared = f"별칭{base}"
     assert client.post(
         f"/api/materials/{b_id}/aliases", json={"alias_name": shared}, headers=headers
@@ -299,7 +299,7 @@ def test_absorb_requires_manager_and_valid_input():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"자재A{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"자재A{base}", f"AC{base}")
     assert client.post(
         f"/api/materials/{mid}/absorb-name", json={"name": "  "}, headers=headers
     ).status_code == 400
@@ -319,7 +319,7 @@ def test_delete_blocked_by_unknown_referencing_table_returns_409():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"잔존참조{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"잔존참조{base}", f"AC{base}")
     table = f"legacy_ref_{base.lower()}"
     with get_connection() as conn:
         conn.execute(
@@ -351,7 +351,7 @@ def test_deactivate_hides_from_list_and_reactivate_restores():
     headers = _login(client)
     base = _uid()
     name = f"블루안료{base}"
-    mid = _new_material(client, headers, name, f"AC{base[:4]}")
+    mid = _new_material(client, headers, name, f"AC{base}")
 
     res = client.put(
         f"/api/materials/{mid}/active", json={"is_active": 0}, headers=headers
@@ -376,7 +376,7 @@ def test_set_active_validates_and_requires_manager():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"자재{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"자재{base}", f"AC{base}")
     assert client.put(
         f"/api/materials/{mid}/active", json={"is_active": "yes"}, headers=headers
     ).status_code == 400
@@ -390,9 +390,9 @@ def test_rename_rejects_duplicate_name():
     client = _client()
     headers = _login(client)
     base = _uid()
-    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base[:4]}")
+    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base}")
     taken = f"BBB{base}"
-    _new_material(client, headers, taken, f"AS{base[:4]}")
+    _new_material(client, headers, taken, f"AS{base}")
 
     res = client.put(
         f"/api/materials/{a_id}/name", json={"name": taken}, headers=headers
@@ -405,8 +405,8 @@ def test_rename_rejects_name_owned_as_another_materials_alias():
     client = _client()
     headers = _login(client)
     base = _uid()
-    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base[:4]}")
-    b_id = _new_material(client, headers, f"BBB{base}", f"AS{base[:4]}")
+    a_id = _new_material(client, headers, f"AAA{base}", f"AC{base}")
+    b_id = _new_material(client, headers, f"BBB{base}", f"AS{base}")
     shared = f"공용{base}"
     assert client.post(
         f"/api/materials/{b_id}/aliases", json={"alias_name": shared}, headers=headers
@@ -423,7 +423,7 @@ def test_rename_rejects_blank_or_symbol_only(bad):
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
     res = client.put(f"/api/materials/{mid}/name", json={"name": bad}, headers=headers)
     assert res.status_code == 400, res.text
 
@@ -432,7 +432,7 @@ def test_rename_requires_manager():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
 
     anon = _client()
     res = anon.put(f"/api/materials/{mid}/name", json={"name": f"X{base}"})

@@ -78,7 +78,7 @@ def test_alias_add_shows_in_list_and_bumps_count():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
 
     long_name = f"Propylene glycol monomethyl etheracetate {base}"
     res = client.post(
@@ -103,7 +103,7 @@ def test_alias_makes_recorded_name_resolve_to_item_code():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"AC{base[:4]}"
+    code = f"AC{base}"
     mid = _new_material(client, headers, f"PMA{base}", code)
     recorded_name = f"Propylene glycol monomethyl etheracetate {base}"
 
@@ -161,9 +161,9 @@ def test_alias_conflicting_with_another_material_name_is_rejected():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
     other_name = f"NVP{base}"
-    _new_material(client, headers, other_name, f"AS{base[:4]}")
+    _new_material(client, headers, other_name, f"AS{base}")
 
     res = client.post(
         f"/api/materials/{mid}/aliases", json={"alias_name": other_name}, headers=headers
@@ -185,8 +185,8 @@ def test_alias_duplicates_are_rejected():
     client = _client()
     headers = _login(client)
     base = _uid()
-    a_id = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
-    b_id = _new_material(client, headers, f"NVP{base}", f"AS{base[:4]}")
+    a_id = _new_material(client, headers, f"PMA{base}", f"AC{base}")
+    b_id = _new_material(client, headers, f"NVP{base}", f"AS{base}")
     alias = f"동의어{base}"
 
     assert client.post(
@@ -214,7 +214,7 @@ def test_alias_same_as_own_name_is_rejected():
     headers = _login(client)
     base = _uid()
     name = f"PMA{base}"
-    mid = _new_material(client, headers, name, f"AC{base[:4]}")
+    mid = _new_material(client, headers, name, f"AC{base}")
 
     res = client.post(
         f"/api/materials/{mid}/aliases", json={"alias_name": name}, headers=headers
@@ -230,7 +230,7 @@ def test_alias_blank_or_symbol_only_is_rejected(bad):
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
 
     res = client.post(
         f"/api/materials/{mid}/aliases", json={"alias_name": bad}, headers=headers
@@ -243,7 +243,7 @@ def test_alias_delete_removes_mapping():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
     alias = f"동의어{base}"
 
     add = client.post(
@@ -266,8 +266,8 @@ def test_alias_delete_scoped_to_owning_material():
     client = _client()
     headers = _login(client)
     base = _uid()
-    a_id = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
-    b_id = _new_material(client, headers, f"NVP{base}", f"AS{base[:4]}")
+    a_id = _new_material(client, headers, f"PMA{base}", f"AC{base}")
+    b_id = _new_material(client, headers, f"NVP{base}", f"AS{base}")
     add = client.post(
         f"/api/materials/{a_id}/aliases",
         json={"alias_name": f"동의어{base}"},
@@ -287,7 +287,7 @@ def test_alias_requires_manager():
     client = _client()
     headers = _login(client)
     base = _uid()
-    mid = _new_material(client, headers, f"PMA{base}", f"AC{base[:4]}")
+    mid = _new_material(client, headers, f"PMA{base}", f"AC{base}")
 
     anon = _client()
     res = anon.post(f"/api/materials/{mid}/aliases", json={"alias_name": f"X{base}"})
@@ -304,7 +304,7 @@ def test_material_search_finds_by_code_and_alias():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"AC{base[:4]}"
+    code = f"AC{base}"
     name = f"PMA{base}"
     mid = _new_material(client, headers, name, code)
     alias = f"Propylene {base}"
@@ -330,7 +330,7 @@ def test_material_search_combines_with_uncoded_filter():
     client = _client()
     headers = _login(client)
     base = _uid()
-    coded = _new_material(client, headers, f"코드있음{base}", f"AC{base[:4]}")
+    coded = _new_material(client, headers, f"코드있음{base}", f"AC{base}")
     plain = _new_material(client, headers, f"코드없음{base}")
 
     res = client.get(

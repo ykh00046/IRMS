@@ -82,7 +82,7 @@ def test_intermediate_material_inherits_stage1_product_code():
     base = _uid()
     one = f"K{base}-1"
     two = f"K{base}"
-    code = f"KC{base[:4]}"  # 영문 2자 + 영숫자 4자 = 형식 통과
+    code = f"KC{base}"  # 영문 2자 + 영숫자 4자 = 형식 통과
 
     _ensure_materials(client, headers, f"원료{base}A", f"원료{base}B", f"원료{base}C")
     # 1차 등록(product_code 지정).
@@ -177,7 +177,7 @@ def test_material_code_reassign_same_is_ok():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"SC{base[:4]}"
+    code = f"SC{base}"
     res = client.post("/api/materials", json={"name": f"자재{base}", "code": code}, headers=headers)
     assert res.status_code == 200, res.text
     mid = res.json()["id"]
@@ -192,7 +192,7 @@ def test_material_code_conflict_names_holder():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"HC{base[:4]}"
+    code = f"HC{base}"
     holder = f"보유{base}"
     res = client.post("/api/materials", json={"name": holder, "code": code}, headers=headers)
     assert res.status_code == 200, res.text
@@ -208,7 +208,7 @@ def test_material_code_force_move():
     client = _client()
     headers = _login(client)
     base = _uid()
-    code = f"FC{base[:4]}"
+    code = f"FC{base}"
     holder = f"원보유{base}"
     r1 = client.post("/api/materials", json={"name": holder, "code": code}, headers=headers)
     assert r1.status_code == 200, r1.text

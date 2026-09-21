@@ -101,8 +101,8 @@ def test_same_product_name_may_share_a_code_but_other_products_may_not():
     client = _client()
     headers = _mgr(client)
     product = "CODE" + _uid()
-    code_mine = "Z" + _uid()[:4]
-    code_other = "Y" + _uid()[:4]
+    code_mine = "Z" + _uid()
+    code_other = "Y" + _uid()
 
     from src.db import get_connection
 
