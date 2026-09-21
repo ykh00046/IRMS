@@ -98,13 +98,19 @@ def test_viscosity_export_all_returns_flat_sheet_with_seed_data():
     headers_row = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
     assert headers_row[0] == "반제품 코드"
     assert headers_row[6] == "판정"
+    # 통계 제외는 전용 열로 나간다(2026-09-21) — 이 파일로 평균을 다시 내는 사람이
+    # 제외된 행을 걸러낼 수 있어야 한다. 판정 칸도 '제외' 라벨을 갖는다.
+    assert headers_row[7] == "통계 제외"
+    assert headers_row[8] == "제외 사유"
 
     codes = set()
     verdict_values = set()
     for row in ws.iter_rows(min_row=2, values_only=True):
         codes.add(row[0])
         verdict_values.add(row[6])
+        # 제외 열과 판정 라벨은 늘 같은 이야기를 한다.
+        assert (row[7] == "제외") == (row[6] == "제외"), row
     assert code1 in codes, (code1, codes)
     assert code2 in codes, (code2, codes)
-    allowed = {"정상", "경고", "이상", "", None}
+    allowed = {"정상", "경고", "이상", "제외", "", None}
     assert verdict_values <= allowed, verdict_values

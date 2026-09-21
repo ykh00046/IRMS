@@ -23,6 +23,7 @@
     periodChartDatasets,
     periodChartYBounds,
     readingOverlayDatasets,
+    isExcludedReading,
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,
@@ -398,7 +399,11 @@
       return;
     }
     const stats = analysis.stats;
-    const last = analysis.readings.length ? analysis.readings[analysis.readings.length - 1] : null;
+    // '최근'은 요약 카드의 통계 숫자다 — 측정 건수·평균이 이미 통계 제외를 뺀 표본이라,
+    // 제외된 값을 최근값으로 띄우면 한 줄 안에서 서로 다른 표본을 말하게 된다. 관리 밴드
+    // 마커도 이 값을 쓰므로 제외된 측정이 밴드 위에 찍히던 것까지 함께 잡힌다(2026-09-21).
+    const valid = analysis.readings.filter((r) => !isExcludedReading(r));
+    const last = valid.length ? valid[valid.length - 1] : null;
     // 측정 건수 = 통계에 반영된(유효) 건수. 제외 건수는 아래 '통계 제외' 카드로 따로
     // 드러내, 표본에서 몇 건이 빠졌는지 조용히 묻히지 않게 한다.
     const excludedN = (analysis.counts && analysis.counts.excluded) || stats.excluded_n || 0;
@@ -814,7 +819,12 @@
     // 것'과 '원래 없는 것'을 구별할 수 없었다(현장 검토 6번).
     panel.hidden = false;
     const readings = (state.analysis && state.analysis.readings) || [];
-    const linked = sourcePbLinkedReadings(readings);
+    // 두 목록이 다르다(2026-09-21). rows 는 **기록**이라 통계 제외도 제외 표식과 함께
+    // 싣고, plotted 는 **통계**라 제외를 뺀다 — 그림·추세선·상관 문장·구간표가 전부
+    // plotted 를 쓴다. 폐기한 배합 하나가 기울기를 끌고 가던 현장 지적(APB 2026-08-10).
+    const rows = sourcePbLinkedReadings(readings, { includeExcluded: true });
+    const plotted = sourcePbLinkedReadings(readings);
+    const droppedN = rows.length - plotted.length;
     const pbLink = (state.analysis && state.analysis.pb_link) || null;
     // PB 자신을 보고 있으면 위 단계 PB 가 없다 — 산점도 자리에 한 줄만 두고, 위의
     // 'PB LOT 으로 찾기'가 이 탭의 본문이 된다(2026-09-21).
@@ -840,8 +850,8 @@
       reason.textContent = reasonText;
       reason.hidden = !reasonText;
     }
-    const notice = pbLinkNotice(pbLink, linked.length);
-    if (!linked.length) {
+    const notice = pbLinkNotice(pbLink, plotted.length, droppedN);
+    if (!rows.length) {
       body.innerHTML = "";
       body.appendChild(emptyRow(5, "표시할 PB 연계 측정이 없습니다."));
       if (note) note.textContent = "";
@@ -853,7 +863,7 @@
     }
     if (empty) empty.hidden = true;
     if (note) note.textContent = notice;
-    const shown = linked.slice(0, state.pbRows);
+    const shown = rows.slice(0, state.pbRows);
     body.innerHTML = shown
       .map((r) => {
         const st = STATUS_KO[r.status] || "";
@@ -872,11 +882,11 @@
       })
       .join("");
     if (more) {
-      more.hidden = linked.length <= shown.length;
-      more.textContent = `더보기 (${shown.length}/${linked.length}건)`;
+      more.hidden = rows.length <= shown.length;
+      more.textContent = `더보기 (${shown.length}/${rows.length}건)`;
     }
-    renderPbChart(linked);
-    renderPbBand(linked);
+    renderPbChart(plotted);
+    renderPbBand(plotted);
   }
 
   // PB 점도 구간표 — 그림을 숫자로도 읽는다. 경계는 PB 반제품의 기준선(사용 금지·경고
@@ -1017,11 +1027,12 @@
       items.forEach((item) => {
         const row = document.createElement("tr");
         if (item.status === "anomaly") row.className = "row-anomaly";
+        else if (isExcludedReading(item)) row.className = "row-excluded";
         appendTextCell(row, item.measured_date || "-");
         appendClipCell(row, item.product_name || item.product_code);
         appendTextCell(row, item.lot_no || "-");
         appendTextCell(row, fmt(item.viscosity), "num");
-        appendVerdictCell(row, item.status);
+        appendVerdictCell(row, item.status, item.exclude_reason);
         body.appendChild(row);
       });
     }
@@ -1029,13 +1040,18 @@
   }
 
   // 판정 칸 · 정상은 흐린 글자로(초록 배지가 줄줄이 이어지면 이상이 묻힌다, 현장 검토 6번).
-  function appendVerdictCell(row, status) {
+  // 통계 제외는 판정이 아니라 '통계에서 뺐다'는 표식이다 — 회색 배지 + 사유 툴팁.
+  function appendVerdictCell(row, status, excludeReason) {
     const cell = document.createElement("td");
     const label = STATUS_KO[status] || "";
     const badge = document.createElement("span");
     if (status === "warn" || status === "anomaly") {
       badge.className = `visc-status ${status}`;
       badge.textContent = label;
+    } else if (status === "excluded") {
+      badge.className = "visc-status excluded";
+      badge.textContent = label;
+      badge.title = excludeReason ? `통계 제외 · 사유: ${excludeReason}` : "통계 제외";
     } else {
       badge.className = "muted";
       badge.textContent = label || "-";
@@ -1071,8 +1087,10 @@
     const summaryEl = $("visc-pb-summary");
     if (!canvas) return;
     // 적합은 이상 판정 점을 뺀 표본으로 — 이상 하나가 기울기를 끌고 가면 안 된다.
+    // 통계 제외도 같은 이유로 뺀다. 호출부가 이미 걸러 주지만 여기서도 막는다 —
+    // 이 함수는 추세선·상관 문장을 만드는 통계 경로다(2026-09-21).
     const fitPoints = linked
-      .filter((r) => r.status !== "anomaly")
+      .filter((r) => r.status !== "anomaly" && !isExcludedReading(r))
       .map((r) => ({ x: Number(r.source_pb_viscosity), y: Number(r.viscosity) }));
     const fit = pbLinearFit(fitPoints);
     if (summaryEl) {

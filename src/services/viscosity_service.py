@@ -771,7 +771,9 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
     (관리 한계 → 이상, 경고 문턱 → 경고). σ 는 표본 따라 움직여 현장 안내로는 부적합.
 
     측정은 lot_no 정확 일치 우선, 없으면 숫자 8자리(_lot_digits) 일치. 통계 제외된 측정도
-    본다 — 제외는 통계용이고, 작업자에게는 "그 LOT 이 실제로 잰 값"이 중요하다.
+    본다 — 제외는 통계용이고, 작업자에게는 "그 LOT 이 실제로 잰 값"이 중요하다. 다만 그
+    값이 통계에서 빠져 있다는 사실은 함께 알린다(excluded·exclude_reason, 2026-09-21):
+    표식 없이 숫자만 보이면 현장이 그 값을 지금도 살아 있는 기준으로 읽는다.
 
     managed 는 "이 자재가 점도를 재는 반제품인가"다(2026-09-21). found=False 가 종전에는
     '일반 원료'와 '점도 반제품인데 이 LOT 만 기록이 없음'을 구별하지 못해, 배합 화면이
@@ -780,14 +782,22 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
     name = str(product_name or "").strip()
     lot = str(lot or "").strip()
     none = {"found": False, "managed": False, "product": None, "viscosity": None,
-            "level": None, "reason": None, "threshold": None, "message": None}
+            "level": None, "reason": None, "threshold": None, "message": None,
+            "excluded": False, "exclude_reason": None}
     if not name or not lot:
         return none
     product = get_product_by_code(connection, name)
     if not product:
         return none
+    # 제외 열이 없는 구 스키마/단위테스트 DB 도 같은 키로 읽게 NULL 로 채운다.
+    excluded_select = (
+        "COALESCE(excluded, 0) AS excluded, exclude_reason"
+        if _has_column(connection, "viscosity_readings", "excluded")
+        else "0 AS excluded, NULL AS exclude_reason"
+    )
     row = connection.execute(
-        "SELECT viscosity, lot_no FROM viscosity_readings WHERE product_id = ? AND lot_no = ? "
+        f"SELECT viscosity, lot_no, {excluded_select} FROM viscosity_readings "
+        "WHERE product_id = ? AND lot_no = ? "
         "ORDER BY measured_date DESC, id DESC LIMIT 1",
         (product["id"], lot),
     ).fetchone()
@@ -795,7 +805,8 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
         digits = _lot_digits(lot)
         if digits:
             rows = connection.execute(
-                "SELECT viscosity, lot_no FROM viscosity_readings WHERE product_id = ? "
+                f"SELECT viscosity, lot_no, {excluded_select} FROM viscosity_readings "
+                "WHERE product_id = ? "
                 "ORDER BY measured_date DESC, id DESC",
                 (product["id"],),
             ).fetchall()
@@ -827,6 +838,7 @@ def product_lot_alert(connection: sqlite3.Connection, product_name: str, lot: st
     return {
         "found": True, "managed": True, "product": product["code"], "viscosity": value,
         "level": level, "reason": reason, "threshold": threshold, "message": message,
+        "excluded": bool(row["excluded"]), "exclude_reason": row["exclude_reason"],
     }
 
 
@@ -990,9 +1002,17 @@ def pb_lot_detail(connection: sqlite3.Connection, lot_no: str) -> dict[str, Any]
         }
     if not digits:
         return result
+    # 제외 열이 없는 구 스키마/단위테스트 DB 도 같은 키로 읽게 NULL 로 채운다.
+    has_excluded = _has_column(connection, "viscosity_readings", "excluded")
+    excluded_select = (
+        "COALESCE(r.excluded, 0) AS excluded, r.exclude_reason AS exclude_reason"
+        if has_excluded
+        else "0 AS excluded, NULL AS exclude_reason"
+    )
     linked = connection.execute(
-        """
+        f"""
         SELECT r.id, r.product_id, r.lot_no, r.viscosity, r.measured_date, r.material_lot,
+               {excluded_select},
                p.code AS product_code, p.name AS product_name
         FROM viscosity_readings r
         JOIN viscosity_products p ON p.id = r.product_id
@@ -1015,8 +1035,13 @@ def pb_lot_detail(connection: sqlite3.Connection, lot_no: str) -> dict[str, Any]
             products[product_id] = get_product(connection, product_id)
         target = products[product_id]
         value = float(r["viscosity"])
+        excluded = bool(r["excluded"])
         verdict = {"status": None, "side": None, "reasons": []}
-        if target is not None:
+        if excluded:
+            # 통계 제외된 측정에는 판정을 붙이지 않는다 — analyze_product 와 같은 규칙.
+            # 값은 기록이므로 그대로 보여 주되, 제외 표식·사유를 함께 싣는다.
+            verdict = {"status": "excluded", "side": None, "reasons": []}
+        elif target is not None:
             date_text = str(r["measured_date"] or "")
             year = int(date_text[:4]) if date_text[:4].isdigit() else None
             verdict = classify_value(connection, target, value, year=year)
@@ -1030,6 +1055,8 @@ def pb_lot_detail(connection: sqlite3.Connection, lot_no: str) -> dict[str, Any]
             "status": verdict["status"],
             "side": verdict["side"],
             "reasons": verdict["reasons"],
+            "excluded": excluded,
+            "exclude_reason": r["exclude_reason"],
         })
     result["tests"] = _pb_lot_test_blends(connection, digits)
     return result
@@ -1144,6 +1171,14 @@ def analyze_product(
     # 건수만 있던 뒤로도 "왜 263건이 안 붙었나"를 화면이 답하지 못했다(2026-09-21 실측:
     # APB 363건 중 99건 연계, 263건은 그 PB LOT 의 점도 기록 자체가 없음).
     # no_lot·lot_unreadable·pb_missing·pb_excluded·matched 의 합 = total(이 조회 범위의 측정 수).
+    #
+    # 통계 제외된 이 반제품 측정도 여기에 **그대로 센다**(2026-09-21 의도적 결정).
+    # pb_link 는 "기록이 얼마나 이어져 있나"를 말하는 커버리지 수치이지 통계값이 아니다 —
+    # 제외된 행도 그림 아래 표에 남아 있으므로, 빼면 표 행수와 합이 어긋나 읽는 사람이
+    # 어느 쪽이 맞는지 알 수 없게 된다. 반대로 상대편인 PB 측정은 _pb_viscosity_map 이
+    # 이미 제외를 뺀다(제외된 PB 점도로 연계를 만들면 그 값이 상관·구간 평균에 들어간다).
+    # 그림·추세선·상관·구간표에 들어가는 표본은 클라이언트가 따로 거른다
+    # (sourcePbLinkedReadings 기본값 = 통계 제외 제거).
     with_lot = sum(1 for x in readings if (x.get("material_lot") or "").strip())
     matched = sum(1 for x in readings if x.get("source_pb_viscosity") is not None)
     source_product = get_product_by_code(connection, SOURCE_PB_CODE)
@@ -1196,8 +1231,11 @@ def overview(connection: sqlite3.Connection) -> dict[str, Any]:
         years = available_years(connection, product["id"])
         latest_year = years[0] if years else None
         analysis = analyze_product(connection, product, year=latest_year)
-        readings = analysis["readings"]
-        last = readings[-1] if readings else None
+        # 카드의 '최근값'은 통계 숫자다(건수·평균이 이미 유효 표본이다) — 통계 제외된
+        # 측정을 최근값으로 띄우면 한 카드 안에서 서로 다른 표본을 말하게 된다.
+        # 제외된 측정 자체는 점도 화면의 표와 '이상 관리' 탭에 제외 표식과 함께 남는다.
+        valid = [r for r in analysis["readings"] if r["status"] != "excluded"]
+        last = valid[-1] if valid else None
         anomaly_count = analysis["counts"]["anomaly"]
         anomaly_unreviewed_count = analysis["counts"]["anomaly_unreviewed"]
         total_anomaly += anomaly_count
@@ -1321,6 +1359,15 @@ def daily_reading_reminders(
         )
     lot_condition = " AND ".join(lot_where)
 
+    # 트레이가 보여 주는 '마지막 측정'은 통계 제외된 값을 쓰지 않는다(2026-09-21).
+    # 폐기한 배합의 점도를 "이 반제품 최근값"으로 알리면 현장이 그 숫자를 기준으로
+    # 다음 배합을 판단한다. pending 판정(위 NOT EXISTS)은 반대로 제외 여부를 보지 않는다
+    # — 거기서는 '쟀는가'만 묻기 때문이다.
+    latest_valid_clause = (
+        "AND COALESCE(excluded, 0) = 0"
+        if _has_column(connection, "viscosity_readings", "excluded")
+        else ""
+    )
     # 한 번의 조인으로 제품별 pending LOT 을 모두 가져와 파이썬에서 묶는다.
     # 정렬(p.code ASC, work_date ASC, id ASC)이 곧 항목 순서·LOT 순서(오래된 것부터
     # 최대 10건)를 결정한다.
@@ -1344,7 +1391,7 @@ def daily_reading_reminders(
             JOIN (
                 SELECT product_id, MAX(measured_date || ':' || printf('%012d', id)) AS max_key
                 FROM viscosity_readings
-                WHERE measured_date IS NOT NULL
+                WHERE measured_date IS NOT NULL {latest_valid_clause}
                 GROUP BY product_id
             ) pick
               ON pick.product_id = r.product_id
@@ -1740,10 +1787,20 @@ def list_readings_for_blend(
     시험 배합 기록이면 시험 점도(test_viscosity_readings)를 **같은 모양**으로 앞에 싣는다
     (계약 §9-6). 반제품이 없으므로 product_code 자리에 '시험' 을 둔다 — 기록 조회 상세의
     '점도 측정' 칸이 정식과 같은 줄로 그린다. 정식 기록에는 시험 행이 없으니 그대로다.
+
+    기록 화면이므로 통계 제외된 측정도 그대로 싣되 excluded·exclude_reason 을 함께 준다
+    (2026-09-21). 표식 없이 값만 보이면 폐기한 배합의 점도가 정상 기록처럼 읽힌다.
     """
+    has_excluded = _has_column(connection, "viscosity_readings", "excluded")
+    excluded_select = (
+        "COALESCE(r.excluded, 0) AS excluded, r.exclude_reason AS exclude_reason"
+        if has_excluded
+        else "0 AS excluded, NULL AS exclude_reason"
+    )
     rows = connection.execute(
-        """
+        f"""
         SELECT r.id, r.viscosity, r.measured_date, r.memo, r.lot_no, r.reactor, r.created_by,
+               {excluded_select},
                p.code AS product_code, p.name AS product_name, p.id AS product_id
         FROM viscosity_readings r
         JOIN viscosity_products p ON p.id = r.product_id
@@ -1764,6 +1821,8 @@ def list_readings_for_blend(
             "product_code": r["product_code"],
             "product_name": r["product_name"],
             "created_by": r["created_by"],
+            "excluded": bool(r["excluded"]),
+            "exclude_reason": r["exclude_reason"],
         }
         for r in rows
     ]
@@ -1852,6 +1911,9 @@ def _test_readings_for_blend(
             "product_code": TEST_VISCOSITY_LABEL,
             "product_name": TEST_VISCOSITY_LABEL,
             "created_by": reading["created_by"],
+            # 시험 점도에는 통계가 없으니 제외 개념도 없다 — 키 모양만 맞춘다.
+            "excluded": False,
+            "exclude_reason": None,
         }
     ]
 

@@ -14,8 +14,8 @@
  *   appendTextCell, emptyRow, appendDeltaCell, option, controlSummary,
  *   controlSummaryRows, controlSummaryHtml,
  *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
- *   readingOverlayDatasets, sourcePbLinkedReadings, sourcePbScatterDatasets,
- *   pbLinkNotice, pbLinkReasonText, pbBandCuts, pbBandRows
+ *   readingOverlayDatasets, isExcludedReading, sourcePbLinkedReadings,
+ *   sourcePbScatterDatasets, pbLinkNotice, pbLinkReasonText, pbBandCuts, pbBandRows
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -530,13 +530,28 @@
   }
 
   // ── PB 연계 ────────────────────────────────────────────────────────────
-  // '사용한 PB' 점도가 매칭된 측정만, 최신순으로. 표와 산점도가 같은 목록을 쓰도록
-  // 한 곳에서 만든다(표는 20건씩 잘라 쓰고 그림은 전부 쓴다).
-  function sourcePbLinkedReadings(readings) {
+  // '사용한 PB' 점도가 매칭된 측정만, 최신순으로.
+  //
+  // ⚠ 통계 제외(폐기 등)된 측정은 **기본으로 빠진다**(2026-09-21). 종전에는 표·산점도·
+  // 추세선·상관 문장·구간표가 모두 이 목록 하나를 그대로 썼고, 제외 여부를 아무도 보지
+  // 않아 폐기한 배합 한 건이 기울기와 r 을 끌고 갔다(운영 APB 2026: 기울기 -0.09/r -0.009
+  // → 제외 반영 시 -0.26/-0.029). 통계 제외는 '평균·σ·판정·상관 어디에도 안 들어간다'는
+  // 뜻이므로, 이 함수의 기본값이 통계 표본이어야 안전하다.
+  // 기록으로 보여 주는 쪽(그림 아래 표)만 includeExcluded 로 다시 불러 제외 표식과 함께 싣는다.
+  function sourcePbLinkedReadings(readings, options) {
+    const includeExcluded = Boolean(options && options.includeExcluded);
     return (readings || [])
       .filter((r) => r && r.source_pb_viscosity != null && String(r.material_lot || "").trim())
+      .filter((r) => includeExcluded || !isExcludedReading(r))
       .slice()
       .sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
+  }
+
+  // 측정 한 건이 '통계 제외'인가 — 서버는 excluded(불린)와 status='excluded' 를 함께 준다.
+  // 둘 중 하나만 보는 코드가 갈리지 않게 한 곳에서 판단한다.
+  function isExcludedReading(reading) {
+    if (!reading) return false;
+    return Boolean(reading.excluded) || reading.status === "excluded";
   }
 
   // hex(#rrggbb) → rgba — 오래된 점을 흐리게 그릴 때 쓴다. hex 가 아니면 원본 유지.
@@ -715,9 +730,13 @@
 
   // PB 연계 탭 안내문. 종전에는 매칭이 0 이면 패널을 통째로 숨겨서, 연계가 안 된
   // 것인지 원래 없는 것인지 화면이 말해 주지 않았다(2026-08-13 검토 6번).
-  function pbLinkNotice(pbLink, linkedCount) {
+  // plottedCount 는 그림·추세선·구간표에 실제로 들어간 건수다(통계 제외 제외).
+  // excludedCount 가 있으면 그 건수가 표에만 남아 있다고 밝힌다 — 그러지 않으면 표는
+  // 9행인데 머리말은 8건이라 읽는 사람이 어느 쪽이 맞는지 알 수 없다.
+  function pbLinkNotice(pbLink, plottedCount, excludedCount) {
     const withLot = Number((pbLink && pbLink.readings_with_lot) || 0);
     const matched = Number((pbLink && pbLink.matched) || 0);
+    const dropped = Number(excludedCount || 0);
     if (withLot === 0) {
       return "이 반제품은 PB 연계 기록이 없습니다. 배합에 사용한 PB LOT이 기록되면 여기에 표시됩니다.";
     }
@@ -725,7 +744,8 @@
       return `사용한 PB LOT이 ${withLot}건 기록됐지만, 그 PB의 점도를 찾지 못했습니다`
         + " (PB 반제품 측정 미등록이거나 LOT 표기가 다릅니다).";
     }
-    return `${linkedCount}건 · 사용한 PB의 점도와 나란히`;
+    const base = `${plottedCount}건 · 사용한 PB의 점도와 나란히`;
+    return dropped > 0 ? `${base} · 제외 ${dropped}건은 표에만` : base;
   }
 
   // 연계 사유 한 줄(2026-09-21). 숫자만으로는 "왜 안 붙었나"를 알 수 없었다 — 운영 실측에서
@@ -786,8 +806,10 @@
   function pbBandRows(linked, limits) {
     // ⚠ Number(null) === 0 이고 0 은 유한수다 — 빈 값을 먼저 걸러야 'PB 점도 0' 인
     // 가짜 측정이 첫 구간에 쌓인다(periodChartDatasets 과 같은 이유).
+    // 통계 제외도 여기서 한 번 더 막는다 — 구간 평균은 통계이므로, 호출부가 무엇을
+    // 넘기든 제외된 측정이 평균·이상 건수에 섞이면 안 된다(2026-09-21).
     const rows = (linked || []).filter((r) => {
-      if (!r) return false;
+      if (!r || isExcludedReading(r)) return false;
       const pb = r.source_pb_viscosity;
       if (pb === null || pb === undefined || pb === "") return false;
       return Number.isFinite(Number(pb));
@@ -844,6 +866,7 @@
     periodChartYBounds,
     periodKeyForDate,
     readingOverlayDatasets,
+    isExcludedReading,
     sourcePbLinkedReadings,
     sourcePbScatterDatasets,
     pbLinkNotice,

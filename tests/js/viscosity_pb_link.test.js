@@ -14,8 +14,8 @@ function loadViscLib() {
 }
 
 const {
-  sourcePbLinkedReadings, sourcePbScatterDatasets, pbLinkNotice,
-  pbLinearFit, pbScatterSummary, withAlpha,
+  isExcludedReading, sourcePbLinkedReadings, sourcePbScatterDatasets, pbLinkNotice,
+  pbLinearFit, pbScatterSummary, withAlpha, pbBandRows,
 } = loadViscLib();
 const resolveCss = (name) => name;
 
@@ -157,4 +157,86 @@ test("규격이 없으면(null) 기준선을 긋지 않는다 — 0 위치의 �
 test("withAlpha 는 hex 만 변환하고 그 외는 원본 유지", () => {
   assert.equal(withAlpha("#3355aa", 0.3), "rgba(51, 85, 170, 0.3)");
   assert.equal(withAlpha("--brand-mid", 0.3), "--brand-mid");
+});
+
+// ── 통계 제외는 그림·추세선·상관·구간표 어디에도 들어가지 않는다(2026-09-21) ──
+// 운영 APB 2026-08-10(439.5, 폐기)이 산점도에 찍히고 적합에도 들어가 기울기를
+// -0.26 → -0.09 로 눌렀다. 표에는 남고 통계에는 안 들어가는 것이 규칙이다.
+const EXCLUDED_CASE = [
+  { measured_date: "2026-08-01", viscosity: 300, material_lot: "26073101", source_pb_viscosity: 45, status: "normal" },
+  { measured_date: "2026-08-02", viscosity: 320, material_lot: "26073102", source_pb_viscosity: 49, status: "normal" },
+  { measured_date: "2026-08-03", viscosity: 340, material_lot: "26073103", source_pb_viscosity: 53, status: "normal" },
+  { measured_date: "2026-08-04", viscosity: 360, material_lot: "26073104", source_pb_viscosity: 57, status: "normal" },
+  { measured_date: "2026-08-05", viscosity: 380, material_lot: "26073105", source_pb_viscosity: 61, status: "normal" },
+  // 폐기한 배합 — 값은 남지만 통계에서 빠졌다. status 와 excluded 둘 다 들어온다.
+  { measured_date: "2026-08-10", viscosity: 439.5, material_lot: "26080502", source_pb_viscosity: 49.3, status: "excluded", excluded: true, exclude_reason: "폐기" },
+];
+
+test("isExcludedReading 은 excluded 플래그와 status 둘 다 본다", () => {
+  assert.equal(isExcludedReading({ excluded: true }), true);
+  assert.equal(isExcludedReading({ status: "excluded" }), true);
+  assert.equal(isExcludedReading({ status: "normal" }), false);
+  assert.equal(isExcludedReading(null), false);
+});
+
+test("표에는 남고 그림에는 빠진다 — 같은 함수의 두 모드", () => {
+  const rows = sourcePbLinkedReadings(EXCLUDED_CASE, { includeExcluded: true });
+  const plotted = sourcePbLinkedReadings(EXCLUDED_CASE);
+  assert.equal(Array.from(rows).length, 6, "표는 제외 측정까지 모두 싣는다");
+  assert.equal(Array.from(plotted).length, 5, "그림 표본에서는 제외 측정이 빠진다");
+  assert.ok(
+    Array.from(rows).some((r) => r.measured_date === "2026-08-10"),
+    "제외 측정이 표에는 있어야 한다",
+  );
+  assert.ok(
+    !Array.from(plotted).some((r) => r.measured_date === "2026-08-10"),
+    "제외 측정이 그림 표본에 있으면 안 된다",
+  );
+});
+
+test("산점도 데이터셋에 제외 측정의 좌표가 없다", () => {
+  const datasets = sourcePbScatterDatasets(EXCLUDED_CASE, resolveCss);
+  const points = [];
+  Array.from(datasets).forEach((d) => {
+    if (d.type === "scatter") Array.from(d.data).forEach((p) => points.push([p.x, p.y]));
+  });
+  assert.equal(points.length, 5);
+  assert.ok(
+    !points.some(([, y]) => y === 439.5),
+    "폐기한 측정이 점으로 찍히면 안 된다",
+  );
+});
+
+test("적합·상관은 제외 측정을 뺀 표본으로만 계산된다", () => {
+  const toPoints = (list) => Array.from(list, (r) => ({
+    x: Number(r.source_pb_viscosity), y: Number(r.viscosity),
+  }));
+  const withExcluded = pbLinearFit(toPoints(
+    sourcePbLinkedReadings(EXCLUDED_CASE, { includeExcluded: true }),
+  ));
+  const plotted = pbLinearFit(toPoints(sourcePbLinkedReadings(EXCLUDED_CASE)));
+  assert.equal(plotted.n, 5);
+  // 다섯 점은 완전한 직선(기울기 5) — 제외 한 건이 섞이면 기울기와 r 이 무너진다.
+  assert.ok(Math.abs(plotted.slope - 5) < 1e-9);
+  assert.ok(Math.abs(plotted.r - 1) < 1e-9);
+  assert.ok(Math.abs(withExcluded.slope - 5) > 0.1, "제외를 넣으면 기울기가 달라진다(회귀 재현)");
+});
+
+test("구간표도 제외 측정을 세지 않는다", () => {
+  const { rows } = pbBandRows(
+    sourcePbLinkedReadings(EXCLUDED_CASE, { includeExcluded: true }),
+    { warn_low: 48, warn_high: 53 },
+  );
+  assert.equal(Array.from(rows).reduce((sum, r) => sum + r.count, 0), 5);
+});
+
+test("머리말 건수는 그림에 들어간 표본을 말하고, 제외는 따로 밝힌다", () => {
+  const notice = pbLinkNotice({ readings_with_lot: 6, matched: 6 }, 5, 1);
+  assert.match(notice, /5건/);
+  assert.match(notice, /제외 1건은 표에만/);
+  // 제외가 없으면 종전 문장 그대로.
+  assert.equal(
+    pbLinkNotice({ readings_with_lot: 6, matched: 6 }, 6, 0),
+    "6건 · 사용한 PB의 점도와 나란히",
+  );
 });

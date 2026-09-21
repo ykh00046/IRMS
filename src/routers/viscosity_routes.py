@@ -43,7 +43,9 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 
 # 판정 라벨(화면 STATUS_LABEL 과 동일) — Excel '측정 원본' 판정 열에 쓴다.
-_STATUS_LABEL = {"normal": "정상", "warn": "경고", "anomaly": "이상"}
+# 판정 라벨. 'excluded' 가 빠져 있어 전체 Excel 의 판정 칸이 빈칸으로 나갔고, 통계 제외된
+# 측정이 정상 기록과 섞여 나중 분석에 다시 들어갔다(2026-09-21). 라벨 + 전용 열 두 가지로 막는다.
+_STATUS_LABEL = {"normal": "정상", "warn": "경고", "anomaly": "이상", "excluded": "제외"}
 _ALLOWED_GRANULARITY = ("day", "week", "month", "quarter", "year")
 
 
@@ -989,8 +991,11 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         # 시트 1) 측정 원본 — 화면 배합 기록 표와 같은 필드(한글 헤더).
         ws_readings = workbook.active
         ws_readings.title = "측정 원본"
+        # '통계 제외'는 전용 열로 — 판정 칸만으로는 나중에 이 파일로 평균·상관을 다시
+        # 내는 사람이 제외된 행을 걸러내지 못한다(2026-09-21). 사유도 함께 싣는다.
         ws_readings.append(
-            ["LOT", "측정일", "점도", "판정", "반응기", "메모", "배합 원료", "원료 LOT", "작성자"]
+            ["LOT", "측정일", "점도", "판정", "통계 제외", "제외 사유",
+             "반응기", "메모", "배합 원료", "원료 LOT", "작성자"]
         )
         for it in analysis["readings"]:
             ws_readings.append([
@@ -998,6 +1003,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 it["measured_date"],
                 it["viscosity"],
                 _STATUS_LABEL.get(it["status"], it["status"]),
+                "제외" if it.get("excluded") else "",
+                _xlsx_safe(it.get("exclude_reason") or ""),
                 it["reactor"],
                 _xlsx_safe(it["memo"] or ""),
                 _xlsx_safe(it["recipe_material"] or ""),
@@ -1047,7 +1054,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         ws.title = "전체 측정"
         ws.append([
             "반제품 코드", "반제품명", "연도", "LOT", "측정일",
-            "점도", "판정", "반응기", "메모", "등록자", "등록일시",
+            "점도", "판정", "통계 제외", "제외 사유",
+            "반응기", "메모", "등록자", "등록일시",
         ])
         products = viscosity_service.list_products(connection)
         row_count = 0
@@ -1077,6 +1085,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         r["measured_date"],
                         r["viscosity"],
                         _STATUS_LABEL.get(r["status"], ""),
+                        "제외" if r.get("excluded") else "",
+                        _xlsx_safe(r.get("exclude_reason") or ""),
                         r["reactor"],
                         _xlsx_safe(r["memo"] or ""),
                         _xlsx_safe(r["created_by"] or ""),

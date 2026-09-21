@@ -702,6 +702,12 @@
 .blend-visc-block { margin-top: 1.2rem; border-top: 1px solid var(--border); padding-top: 0.8rem; }
 .blend-visc-list { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; }
 .blend-visc-list li { margin: 0.15rem 0; }
+/* 통계 제외 표식 — 값을 지우지 않고 '통계에서 빠졌다'만 조용히 붙인다(2026-09-21).
+   점도 화면 이상 관리 탭의 제외 칩과 같은 무게(회색 바탕). */
+.status-chip.visc-excluded-chip {
+  background: var(--bg-surface-300);
+  color: var(--text-secondary);
+}
 
 /* 상세 모달이 열려 있는 동안 뒤 페이지 스크롤을 잠근다 — 목록이 길어 모달 위에서
    휠을 돌리면 뒤가 밀려, 닫았을 때 보던 자리를 잃었다. body.dhr-open 은 status.js 가

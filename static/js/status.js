@@ -614,12 +614,18 @@ document.addEventListener("DOMContentLoaded", () => {
           + `<a class="status-visc-link" href="/viscosity?tab=test&amp;lot=${esc(encodeURIComponent(rec.product_lot || ""))}">점도 기록</a>`
           + "으로 남기세요.</p>";
     }
+    // 통계 제외된 측정은 값을 지우지 않고 '제외' 표식과 사유를 붙인다(2026-09-21).
+    // 표식이 없으면 폐기한 배합의 점도가 정상 기록처럼 읽힌다.
     const linkedVisc = (rec.viscosity || []).length
       ? `<ul class="blend-visc-list">${rec.viscosity
-          .map(
-            (x) =>
-              `<li><b>${esc(x.product_code)}</b> ${fmt(x.viscosity)} <span class="muted small">${esc(x.measured_date || "")}${x.created_by ? " · " + esc(x.created_by) : ""}</span></li>`,
-          )
+          .map((x) => {
+            const meta = `${esc(x.measured_date || "")}${x.created_by ? " · " + esc(x.created_by) : ""}`;
+            const mark = x.excluded
+              ? ` <span class="status-chip visc-excluded-chip"${x.exclude_reason ? ` title="사유: ${esc(x.exclude_reason)}"` : ""}>통계 제외</span>`
+              : "";
+            return `<li><b>${esc(x.product_code)}</b> ${fmt(x.viscosity)}${mark}`
+              + ` <span class="muted small">${meta}</span></li>`;
+          })
           .join("")}</ul>`
       : emptyVisc;
     // 점도 등록은 '점도 관리' 화면 한 곳으로 통일 — 여기선 측정값을 읽기전용으로만 표시.

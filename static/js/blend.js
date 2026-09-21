@@ -2207,14 +2207,18 @@
   // 저장을 막지 않는 안내이며, 실패는 조용히 무시한다(fail-open — 현장 입력을 막지 않는다).
   const lotViscCache = {};
   const LOT_VISC_NONE_TEXT = "이 LOT은 점도 기록이 없습니다.";
+  const LOT_VISC_EXCLUDED_TEXT = "이 LOT 점도는 통계에서 빠졌습니다.";
   function setLotViscNote(input, data) {
     if (!input) return;
     let note = input._viscNote;
     const warn = !!(data && data.level && data.message);
     // 점도를 재는 반제품인데 이 LOT 만 기록이 없을 때는 조용한 회색 한 줄만 둔다
     // (2026-09-21). 일반 원료(managed=false)는 아무것도 띄우지 않는다 — 저장도 막지 않는다.
-    const quiet = !warn && !!(data && data.managed && !data.found);
-    if (!warn && !quiet) { if (note) note.hidden = true; return; }
+    const missing = !warn && !!(data && data.managed && !data.found);
+    // 통계 제외된 측정 — 값은 실제로 잰 것이라 경고는 그대로 내되, 그 값이 통계에서
+    // 빠져 있다는 사실을 함께 알린다. 경고가 아니면 조용한 한 줄로만.
+    const excluded = !!(data && data.found && data.excluded);
+    if (!warn && !missing && !excluded) { if (note) note.hidden = true; return; }
     if (!note) {
       note = document.createElement("div");
       note.className = "lot-visc-note";
@@ -2222,16 +2226,22 @@
       (anchor || document.body).appendChild(note);
       input._viscNote = note;
     }
-    if (quiet) {
+    const excludedTail = data && data.exclude_reason
+      ? ` 사유: ${data.exclude_reason}`
+      : "";
+    if (!warn) {
       note.className = "lot-visc-note lot-visc-note--quiet";
-      note.textContent = LOT_VISC_NONE_TEXT;
-      note.title = "점도를 재는 반제품입니다. 측정 기록이 아직 없습니다.";
+      note.textContent = missing ? LOT_VISC_NONE_TEXT : LOT_VISC_EXCLUDED_TEXT;
+      note.title = missing
+        ? "점도를 재는 반제품입니다. 측정 기록이 아직 없습니다."
+        : `실제로 잰 값은 남아 있지만 통계에서는 빠져 있습니다.${excludedTail}`;
       note.hidden = false;
       return;
     }
     note.className = `lot-visc-note lot-visc-note--${data.level}`;
-    note.textContent = `⚠ ${data.message}`;
-    note.title = data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다. 이 LOT은 사용 금지, 책임자에게 알리세요." : "경고 구간의 점도입니다. 확인 후 진행하세요.";
+    note.textContent = `⚠ ${data.message}${excluded ? " · 통계 제외" : ""}`;
+    note.title = (data.level === "anomaly" ? "관리 범위를 벗어난 점도입니다. 이 LOT은 사용 금지, 책임자에게 알리세요." : "경고 구간의 점도입니다. 확인 후 진행하세요.")
+      + (excluded ? ` 이 측정은 통계에서 빠져 있습니다.${excludedTail}` : "");
     note.hidden = false;
   }
   async function refreshLotViscNote(input, name, lot) {

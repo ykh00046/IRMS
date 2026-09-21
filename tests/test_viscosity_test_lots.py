@@ -1058,6 +1058,8 @@ def test_service_functions_round_trip_on_minimal_schema():
         "id": saved["id"], "viscosity": 10.5, "measured_date": "2026-01-11", "memo": "메모",
         "lot_no": "T-X26011001", "reactor": None, "product_id": None,
         "product_code": "시험", "product_name": "시험", "created_by": "현장",
+        # 시험 점도에는 통계가 없어 제외 개념도 없다 — 정식과 키 모양만 맞춘다(2026-09-21).
+        "excluded": False, "exclude_reason": None,
     }]
     assert vs.list_readings_for_blend(conn, real) == []
 
