@@ -221,8 +221,12 @@
     const highAnom = [upper, ucl].filter((v) => v != null).reduce((a, b) => Math.min(a, b), Infinity);
     const lowLine = Number.isFinite(lowAnom) ? lowAnom : null;
     const highLine = Number.isFinite(highAnom) ? highAnom : null;
-    const known = [lower, upper, lcl, ucl, lwl, uwl, center].filter((v) => v != null);
-    if (!known.length) return "";
+    // 기준선이 하나도 없으면 그릴 것이 없다. 중심만 가지고 트랙을 칠하면 전체가
+    // '사용 금지'(빨강) 한 덩어리로 보인다 — 측정이 몇 건뿐이라 σ 도 아직 없는 새 반제품이
+    // 정확히 그 상태였다(2026-09-21). 기준이 생기면 그때부터 그린다.
+    const limitLines = [lower, upper, lcl, ucl, lwl, uwl].filter((v) => v != null);
+    if (!limitLines.length) return "";
+    const known = center != null ? limitLines.concat([center]) : limitLines;
     // 트랙 범위: 한계가 있는 쪽은 그 한계, 없는 쪽은 알려진 값 중 끝에 여유(범위의 15%)를 둔다.
     let tLo = Math.min(...known);
     let tHi = Math.max(...known);

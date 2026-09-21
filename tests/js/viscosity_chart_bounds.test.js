@@ -81,9 +81,12 @@ const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib
   assert.ok(html.includes("visc-band-center"), "중심 파선이 있어야 한다");
   assert.ok(html.includes("visc-band-marker"), "최근 측정값 마커가 있어야 한다");
   assert.ok(html.includes("5050"), "최근 측정값 라벨(5050)이 있어야 한다");
-  // 트랙은 규격(4800~5200) 기준 — 좌우 끝 라벨이 규격값(fmt 1자리)이어야 한다.
-  assert.ok(html.includes(">4800.0<"), "트랙 왼쪽 끝은 규격 하한(4800.0)");
-  assert.ok(html.includes(">5200.0<"), "트랙 오른쪽 끝은 규격 상한(5200.0)");
+  // 눈금은 트랙 끝이 아니라 **실제 이상 경계**(규격과 σ 중 안쪽)에 붙는다 — 어느 값을
+  // 넘으면 이상인지가 읽혀야 하기 때문이다. 여기서는 σ 관리 한계(4850·5150)가 안쪽이다.
+  const ticks = [...html.matchAll(/visc-band-tick[^>]*>([0-9.]+)</g)].map((m) => Number(m[1]));
+  assert.deepEqual(ticks, [4850, 5150], "눈금은 안쪽 경계인 σ 관리 한계");
+  // 트랙은 규격(4800~5200)을 품는다 — 규격선이 그림 밖으로 밀려나면 안 된다.
+  assert.ok(html.includes("visc-band-zone spec"), "규격 밖 구간이 트랙 안에 보여야 한다");
   // 인라인 hex 색이 없어야 한다(CSS 클래스만 쓴다).
   assert.ok(!/#([0-9a-fA-F]{3,6})/.test(html), "인라인 hex 색이 있으면 안 된다 — CSS 클래스로");
 }
