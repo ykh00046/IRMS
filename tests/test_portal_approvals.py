@@ -438,3 +438,24 @@ def test_collect_window_uses_the_completion_date_filter():
     payload = listing[2]["data"]
     assert payload["searchStartDate"] == "2026.08.23"
     assert payload["searchEndDate"] == "2026.09.23"
+
+
+def test_header_fields_skip_the_instruction_text_and_keep_the_drafter_department():
+    """머리글은 안내문이 아니라 '문서번호' 뒤에서 읽는다(2026-09-23 실제 문서 확인).
+
+    본문 앞쪽 안내문에 "문서 제목 작성시 ➡ …" 이 먼저 나와, 글 전체에서 라벨을 찾으면
+    문서제목이 '작성시' 가 됐다. 기안자는 '박용재/ 원료생산팀' 처럼 슬래시 뒤 부서까지가
+    한 값이라 \S+ 로 끊으면 '박용재/' 만 남는다. 둘 다 저장값은 아니지만 진단을 흐린다.
+    """
+    from src.services.portal_approvals import parser as parser_mod
+
+    html = (
+        "<div>문서 제목 작성시 ➡ 부서 / 성명 / 사용일자 / 구분(연차,반차,반반차 등등)</div>"
+        "<div>문서번호 20260805P227-0040   기안일자 2026-08-05   "
+        "기안자 박용재/ 원료생산팀   문서 제목 근태허가원/원료생산팀/박용재/반차/26.08.07</div>"
+    )
+    found = parser_mod.parse_header_fields(html)
+    assert found["문서번호"] == "20260805P227-0040"
+    assert found["기안일자"] == "2026-08-05"
+    assert found["기안자"] == "박용재/ 원료생산팀", "슬래시 뒤 부서까지 한 값이다"
+    assert found["문서제목"].startswith("근태허가원/"), "안내문의 '작성시' 가 아니다"

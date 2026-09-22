@@ -406,13 +406,26 @@ _HEADER_LABELS = ("문서번호", "기안일자", "기안자", "문서제목", "
 
 
 def parse_header_fields(html: str) -> dict[str, str]:
-    """머리글에 그려진 문서번호·기안일자·기안자를 글자에서 읽는다(JSON 밖)."""
+    """머리글에 그려진 문서번호·기안일자·기안자를 글자에서 읽는다(JSON 밖).
+
+    본문 앞쪽에는 작성 요령 안내문이 먼저 나온다("문서 제목 작성시 ➡ 부서 / 성명 / …").
+    글 전체에서 라벨을 찾으면 그 안내문이 먼저 걸려 문서제목이 '작성시' 가 된다
+    (2026-09-23 실제 문서로 확인). 그래서 **머리글 표가 시작되는 '문서번호' 뒤**에서만 찾는다.
+    기안자는 '박용재/ 원료생산팀' 처럼 슬래시와 공백을 포함하므로 줄 끝까지 읽는다.
+    """
     plain = text_of(html)
+    start = plain.find("문서번호")
+    region = plain[start:] if start >= 0 else plain
     found: dict[str, str] = {}
     for label in _HEADER_LABELS:
-        match = re.search(rf"{re.escape(label)}\s*[:：]?\s*(\S+)", plain)
+        pattern = rf"{re.escape(label)}\s*[:：]?\s*(\S+)"
+        if label == "기안자":
+            # '박용재/ 원료생산팀' 처럼 이름 뒤에 부서가 붙는다. 평문은 칸이 하나로 눌리므로
+            # 칸 수로는 끝을 못 찾는다. 슬래시 뒤 한 덩어리까지만 더 읽는다.
+            pattern = re.escape(label) + r"\s*[:：]?\s*([^\s/]+(?:\s*/\s*\S+)?)"
+        match = re.search(pattern, region)
         if match:
-            found.setdefault(label.replace(" ", ""), match.group(1))
+            found.setdefault(label.replace(" ", ""), match.group(1).strip())
     return found
 
 
