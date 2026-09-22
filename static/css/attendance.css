@@ -929,6 +929,150 @@
   min-width: 3rem;
 }
 
+/* 결재 대조 패널(근태허가원, 2026-09-22) — 이상 목록 패널과 같은 틀, 중립 톤.
+   이상(경고 앰버)과 뜻이 달라 테두리·제목색을 정보 톤으로 갈라 둔다. */
+.att-approval-panel {
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
+  padding: 0.9rem 1.1rem 1rem;
+}
+
+.att-approval-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.55rem;
+}
+
+.att-approval-head h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 수집 상태 한 줄 — 오래되면(2일) 눈에 띄게 바뀐다. */
+.att-approval-status {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.att-approval-status.is-stale {
+  color: var(--status-warning);
+  background: var(--status-warning-bg);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
+  border-radius: var(--radius-full);
+  padding: 0.1rem 0.5rem;
+}
+
+.att-approval-body {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.att-approval-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+
+.att-approval-group-head h4 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.att-approval-count {
+  font-weight: 700;
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.att-approval-note {
+  font-size: var(--fs-2xs);
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.att-approval-empty {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.att-approval-rows {
+  display: grid;
+  gap: 0.2rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.att-approval-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-200);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.att-approval-row.is-gap {
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+}
+
+.att-approval-date {
+  font-weight: 700;
+  min-width: 5.5rem;
+  color: var(--text-primary);
+}
+
+.att-approval-row.is-gap .att-approval-date {
+  color: var(--status-warning);
+}
+
+.att-approval-who {
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 4rem;
+}
+
+.att-approval-row.is-gap .att-approval-who {
+  color: var(--status-warning);
+}
+
+.att-approval-kind {
+  font-weight: 600;
+}
+
+.att-approval-half {
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.att-approval-state {
+  color: var(--text-tertiary);
+}
+
+.att-approval-doc {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
 /* 월 파일 없음 안내 — 있는 달로 건너뛸 버튼을 함께 둔다. */
 .att-month-missing {
   display: flex;

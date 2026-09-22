@@ -16,6 +16,7 @@ from . import (
     lot_history_routes,
     material_lot_routes,
     public_attendance_alert_routes,
+    public_attendance_approval_routes,
     public_rescale_alert_routes,
     public_material_usage_routes,
     public_viscosity_reminder_routes,
@@ -34,6 +35,7 @@ def build_router() -> APIRouter:
     public_router, auth_me_router = auth_routes.build_router()
     admin_router = admin_routes.build_router()
     public_attendance_alert_router = public_attendance_alert_routes.build_router()
+    public_attendance_approval_router = public_attendance_approval_routes.build_router()
     public_material_usage_router = public_material_usage_routes.build_router()
     public_viscosity_reminder_router = public_viscosity_reminder_routes.build_router()
     attendance_router = attendance_routes.build_router()
@@ -55,6 +57,7 @@ def build_router() -> APIRouter:
 
     router.include_router(public_router)
     router.include_router(public_attendance_alert_router)
+    router.include_router(public_attendance_approval_router)  # 근태허가원 수집 수신(포털 수집기)
     router.include_router(public_material_usage_router)     # 재고 대시보드 연동(자재 불출량)
     router.include_router(public_viscosity_reminder_router)
     router.include_router(attendance_router)

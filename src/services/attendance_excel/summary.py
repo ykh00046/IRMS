@@ -97,6 +97,45 @@ def employee_list(year_month: str) -> list[dict[str, str]]:
     return sorted(seen.values(), key=lambda x: (x["department"], x["name"], x["emp_id"]))
 
 
+def month_employee_rows(year_month: str) -> list[dict[str, Any]]:
+    """그 달의 (직원 × 근무일자) 행을 납작하게 펼쳐 돌려준다 — 읽기 전용 얇은 헬퍼.
+
+    근태허가원 대조(services/attendance_approvals)가 "그 달 ERP 엑셀에 휴가 표시가
+    있는가"를 물어야 하는데, 기존 조회 헬퍼는 전부 **한 사람**(``load_month_for_employee``)
+    또는 **명단만**(``employee_list``) 이었다. 판정 키워드는 호출자 몫으로 남기고
+    여기서는 파싱 결과의 사실만 넘긴다 — 엑셀 파싱은 계속 이 패키지가 소유한다.
+
+    같은 (사번, 날짜) 가 여러 소스 파일에 중복돼도 행은 그대로 둔다(호출자가 합친다).
+    """
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for path in files._month_file_paths_or_raise(year_month):
+        for rec in parser._records_from_path(path):
+            if not rec:
+                continue
+            row = rec["row"]
+            key = (
+                normalize_emp_id(rec["emp_id"]),
+                str(row.date or ""),
+                f"{row.day_type}|{row.attendance_code}|{row.note}",
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                {
+                    "emp_id": normalize_emp_id(rec["emp_id"]),
+                    "name": rec["name"],
+                    "department": rec["department"],
+                    "date": row.date,
+                    "day_type": row.day_type,
+                    "attendance_code": row.attendance_code,
+                    "note": row.note,
+                }
+            )
+    return items
+
+
 def employee_exists_in_any_month(emp_id: str) -> bool:
     """Used during first login: accept any month that has this sa-beon.
 

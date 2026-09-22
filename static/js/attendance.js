@@ -26,6 +26,10 @@
   const anomalyPanel = document.getElementById("att-anomaly-panel");
   const anomalyTitle = document.getElementById("att-anomaly-title");
   const anomalyBody = document.getElementById("att-anomaly-body");
+  const approvalPanel = document.getElementById("att-approval-panel");
+  const approvalTitle = document.getElementById("att-approval-title");
+  const approvalStatus = document.getElementById("att-approval-status");
+  const approvalBody = document.getElementById("att-approval-body");
 
   const state = {
     month: currentMonthString(),
@@ -700,6 +704,203 @@
     anomalyPanel.hidden = false;
   }
 
+  // ── 결재 대조(근태허가원) — 책임자 전용, docs/attendance-approvals.md §5 ────
+  // 판정의 근거는 계속 ERP 월 엑셀이다. 이 구역은 엑셀과 결재가 어긋난 자리만
+  // 짚는다(1단계는 적재·대조까지). 종류·오전/오후는 이 화면에서만 보인다.
+  function shortDate(value) {
+    const text = String(value || "").trim();
+    return text.length === 10 ? text.slice(5) : text;
+  }
+
+  function dateRangeText(start, end) {
+    const from = shortDate(start);
+    const to = shortDate(end);
+    if (!to || to === from) return from;
+    return `${from}~${to}`;
+  }
+
+  function stampText(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    // 서버 시각은 UTC(…Z)다. 표시대만 붙지 않은 값이 와도 UTC 로 읽어 서버의
+    // 판정(_parse_stamp)과 같은 기준을 쓴다 — 로컬시로 오해하면 두 시간이 어긋난다.
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(text);
+    const parsed = new Date(hasZone ? text : `${text}Z`);
+    if (isNaN(parsed.getTime())) return text;
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const hour = String(parsed.getHours()).padStart(2, "0");
+    const minute = String(parsed.getMinutes()).padStart(2, "0");
+    return `${month}-${day} ${hour}:${minute}`;
+  }
+
+  function collectionStatusText(collection) {
+    const total = Number(collection?.total || 0);
+    const when = stampText(collection?.last_collected_at);
+    if (!when) return "수집 기록 없음";
+    if (collection?.stale) return `수집 멈춤 · 마지막 ${when} · ${total}건`;
+    return `마지막 수집 ${when} · ${total}건`;
+  }
+
+  function approvalGroupHtml(title, note, count, rowsHtml, emptyText) {
+    return `
+      <section class="att-approval-group">
+        <div class="att-approval-group-head">
+          <h4>${escapeHtml(title)} <span class="att-approval-count">${count}건</span></h4>
+          <span class="att-approval-note">${escapeHtml(note)}</span>
+        </div>
+        ${
+          count
+            ? `<div class="att-approval-rows">${rowsHtml}</div>`
+            : `<p class="att-approval-empty">${escapeHtml(emptyText)}</p>`
+        }
+      </section>`;
+  }
+
+  function approvalListHtml(items) {
+    return items
+      .map((item) => {
+        const half = item.half ? ` <span class="att-approval-half">${escapeHtml(item.half)}</span>` : "";
+        return `
+          <div class="att-approval-row">
+            <span class="att-approval-date att-num">${escapeHtml(
+              dateRangeText(item.start_date, item.end_date)
+            )}</span>
+            <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
+            <span class="att-approval-kind">${escapeHtml(item.kind || "-")}</span>${half}
+            <span class="att-approval-state">${escapeHtml(item.status || "-")}</span>
+            <span class="att-approval-doc att-num">${escapeHtml(item.doc_no || "")}</span>
+          </div>`;
+      })
+      .join("");
+  }
+
+  function approvalGapHtml(items) {
+    return items
+      .map((item) => {
+        const dates = Array.isArray(item.dates) ? item.dates : [];
+        const half = item.half ? ` ${item.half}` : "";
+        return `
+          <div class="att-approval-row is-gap">
+            <span class="att-approval-date att-num">${escapeHtml(
+              dates.map(shortDate).join(" ")
+            )}</span>
+            <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
+            <span class="att-approval-kind">${escapeHtml(
+              `${item.kind || "-"}${half}`
+            )}</span>
+            <span class="att-approval-doc att-num">${escapeHtml(item.doc_no || "")}</span>
+          </div>`;
+      })
+      .join("");
+  }
+
+  function approvalErpOnlyHtml(items) {
+    return items
+      .map(
+        (item) => `
+          <div class="att-approval-row is-gap">
+            <span class="att-approval-date att-num">${escapeHtml(shortDate(item.date))}</span>
+            <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
+            <span class="att-approval-kind">${escapeHtml(item.leave_text || "휴가")}</span>
+            <span class="att-approval-doc att-num">${escapeHtml(item.emp_id || "")}</span>
+          </div>`
+      )
+      .join("");
+  }
+
+  function approvalUnmatchedHtml(items) {
+    return items
+      .map(
+        (item) => `
+          <div class="att-approval-row is-gap">
+            <span class="att-approval-date att-num">${escapeHtml(
+              dateRangeText(item.start_date, item.end_date)
+            )}</span>
+            <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
+            <span class="att-approval-kind">${escapeHtml(item.reason || "-")}</span>
+            <span class="att-approval-doc att-num">${escapeHtml(item.doc_no || "")}</span>
+          </div>`
+      )
+      .join("");
+  }
+
+  function renderApprovalPanel(payload) {
+    if (!approvalPanel || !approvalBody) return;
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const missingInErp = Array.isArray(payload?.missing_in_erp)
+      ? payload.missing_in_erp
+      : [];
+    const missingApproval = Array.isArray(payload?.missing_approval)
+      ? payload.missing_approval
+      : [];
+    const unmatched = Array.isArray(payload?.unmatched) ? payload.unmatched : [];
+    const month = payload?.month || state.month;
+
+    if (approvalTitle) approvalTitle.textContent = `${month} 결재 대조`;
+    if (approvalStatus) {
+      approvalStatus.textContent = collectionStatusText(payload?.collection);
+      approvalStatus.classList.toggle("is-stale", Boolean(payload?.collection?.stale));
+    }
+
+    const erpNote =
+      payload?.erp_available === false
+        ? '<p class="att-approval-empty">엑셀을 읽지 못해 대조를 건너뜁니다.</p>'
+        : "";
+
+    approvalBody.innerHTML =
+      approvalGroupHtml(
+        "이 달 허가원",
+        "날짜 · 이름 · 종류 · 상태 · 문서번호",
+        items.length,
+        approvalListHtml(items),
+        "이 달 허가원이 없습니다."
+      ) +
+      erpNote +
+      approvalGroupHtml(
+        "허가원만 있음",
+        "엑셀에 휴가 표시가 없습니다",
+        missingInErp.length,
+        approvalGapHtml(missingInErp),
+        "어긋난 건 없음"
+      ) +
+      approvalGroupHtml(
+        "엑셀만 있음",
+        "휴가인데 허가원이 없습니다",
+        missingApproval.length,
+        approvalErpOnlyHtml(missingApproval),
+        "어긋난 건 없음"
+      ) +
+      approvalGroupHtml(
+        "미매칭",
+        "사람을 맞추지 못한 결재입니다",
+        unmatched.length,
+        approvalUnmatchedHtml(unmatched),
+        "미매칭 없음"
+      );
+
+    approvalPanel.hidden = false;
+  }
+
+  async function loadApprovalPanel() {
+    if (!approvalPanel || !approvalBody) return;
+    try {
+      const payload = await apiGet("/api/attendance/admin/approvals", {
+        month: state.month,
+      });
+      if (!payload) return;
+      renderApprovalPanel(payload);
+    } catch (error) {
+      // 수집이 멈춰도 근태는 종전대로 동작한다(fail-open) — 사실만 적고 넘어간다.
+      approvalBody.innerHTML = `<p class="att-approval-empty">결재 대조를 불러오지 못했습니다 (${escapeHtml(
+        String(error.message || error)
+      )}).</p>`;
+      if (approvalTitle) approvalTitle.textContent = "결재 대조";
+      if (approvalStatus) approvalStatus.textContent = "";
+      approvalPanel.hidden = false;
+    }
+  }
+
   function selectEmployeeFromPanel(empId) {
     const value = String(empId || "").trim();
     if (!value) return;
@@ -901,6 +1102,7 @@
       await loadEmployeesForAdmin();
       checkHeaderMapping();   // 조회를 기다리게 하지 않는다
       loadAnomalyPanel();     // 이상 목록도 개인 조회를 막지 않는다
+      loadApprovalPanel();    // 결재 대조도 마찬가지(수집이 멈춰도 근태는 돈다)
     }
     await loadView();
   }
@@ -1068,6 +1270,9 @@
     issueListHtml,
     renderPending,
     renderAnomalyPanel,
+    renderApprovalPanel,
+    collectionStatusText,
+    dateRangeText,
     showMonthMissing,
     nearestMonth,
     renderEmpOptions,

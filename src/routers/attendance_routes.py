@@ -17,9 +17,10 @@ All attendance endpoints share a single router under ``/api/attendance``:
 # @limiter.limit(slowapi) 로 감싼 엔드포인트에서 타입힌트가 문자열로 남으면
 # FastAPI 가 본문 모델(LoginRequest 등)을 못 풀어 본문을 쿼리로 오인 → 로그인/
 # 비번변경이 무조건 422 로 거부된다(auth_routes 는 이 import 가 없어 정상이었음).
+import sqlite3
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import attendance_auth
@@ -34,8 +35,9 @@ from ..attendance_auth import (
     require_view_context,
     touch_session,
 )
-from ..db import get_connection, write_audit_log
+from ..db import get_connection, get_db, write_audit_log
 from ..security import refresh_csrf_cookie
+from ..services import attendance_approvals as approvals_service
 from ..services import attendance_excel as excel_service
 
 
@@ -56,10 +58,17 @@ class ResetPasswordRequest(BaseModel):
 
 
 def _resolve_month(month: str | None) -> str:
+    """`YYYY-MM` 만 통과시키고 그 밖은 현재월로 — 형식 검사가 모양만 보면 500 이 난다.
+
+    종전 검사는 길이 7 · 5번째 글자가 `-` 만 봤다. `abcd-ef` 같은 값이 그대로 통과해
+    뒤에서 `int(year_month[:4])`(연 집계·월 경계 계산)에 들어가며 500 으로 터졌다.
+    """
     if month:
         value = month.strip()
         if len(value) == 7 and value[4] == "-":
-            return value
+            year, _, mon = value.partition("-")
+            if year.isdigit() and mon.isdigit() and 1 <= int(mon) <= 12:
+                return value
     return excel_service.current_year_month()
 
 
@@ -197,6 +206,37 @@ def build_router() -> APIRouter:
             "detail_total": sum(len(i.get("details") or []) for i in items),
             "available_months": excel_service.available_months(),
         }
+
+    @router.get("/admin/approvals")
+    def admin_approvals(
+        request: Request,
+        month: str | None = Query(default=None, max_length=7),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """그 달 근태허가원과 ERP 엑셀의 대조 — 책임자 전용(결재 대조 구역).
+
+        개인 사정(종류·오전/오후·사유)이 실리는 유일한 응답이다. 공용 화면·트레이는
+        "결재 있음" 수준까지만 본다(docs/attendance-approvals.md §1.3).
+
+        엑셀을 못 읽은 달(월초·파일 잠김)에도 허가원 목록은 그대로 보여준다 —
+        수집이 멈추든 엑셀이 없든 한쪽이 없다고 화면이 통째로 비면 안 된다.
+        """
+        require_irms_manager(request)
+        year_month = _resolve_month(month)
+        try:
+            roster = excel_service.employee_list(year_month)
+            erp_rows = excel_service.month_employee_rows(year_month)
+        except (
+            excel_service.MonthFileNotFound,
+            excel_service.FileLocked,
+            excel_service.FileFormatInvalid,
+        ):
+            roster, erp_rows = [], []
+        payload = approvals_service.build_month_view(
+            connection, year_month, roster=roster, erp_rows=erp_rows
+        )
+        payload["available_months"] = excel_service.available_months()
+        return payload
 
     @router.get("/admin/employees")
     def admin_employees(

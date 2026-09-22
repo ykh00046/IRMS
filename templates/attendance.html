@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260910a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260910a" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260922a" />
   </head>
   <body
     class="att-page"
@@ -135,6 +135,20 @@
           <span class="att-anomaly-hint">행을 누르면 그 직원의 근태로 이동합니다</span>
         </div>
         <div class="att-anomaly-body" id="att-anomaly-body"></div>
+      </section>
+      {% endif %}
+
+      {# 결재 대조(docs/attendance-approvals.md §5) · 책임자 전용.
+         근태 판정의 근거는 계속 ERP 월 엑셀이고, 허가원은 보강 자료다. 그래서 여기는
+         '고쳐 주는 화면'이 아니라 '엑셀과 결재가 어긋난 자리'만 짚는 화면이다.
+         종류·오전/오후 같은 개인 사정은 이 구역에서만 보인다(공용 화면·트레이 제외). #}
+      {% if admin_mode %}
+      <section class="att-approval-panel" id="att-approval-panel" hidden>
+        <div class="att-approval-head">
+          <h3 id="att-approval-title">결재 대조</h3>
+          <span class="att-approval-status" id="att-approval-status"></span>
+        </div>
+        <div class="att-approval-body" id="att-approval-body"></div>
       </section>
       {% endif %}
 
@@ -370,7 +384,7 @@
     <script src="/static/js/common/ui.js?v=20260910a"></script>
     <script src="/static/js/common/audio.js?v=20260910a"></script>
     <script src="/static/js/common.js?v=20260910a"></script>
-    <script src="/static/js/attendance.js?v=20260910a"></script>
+    <script src="/static/js/attendance.js?v=20260922a"></script>
     <script src="/static/js/attendance_session.js?v=20260910a"></script>
   </body>
 </html>

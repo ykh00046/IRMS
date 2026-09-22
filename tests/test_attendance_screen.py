@@ -98,6 +98,24 @@ def test_admin_anomaly_panel_uses_the_new_api():
     assert "{% if admin_mode %}" in ATTENDANCE_PAGE
 
 
+# ── ②-1 결재 대조 구역(근태허가원, docs/attendance-approvals.md §5) ─────────
+def test_approval_section_shows_the_three_lists_and_collection_status():
+    assert 'id="att-approval-panel"' in ATTENDANCE_PAGE
+    assert 'id="att-approval-status"' in ATTENDANCE_PAGE
+    assert "/api/attendance/admin/approvals" in ATTENDANCE_JS
+    # 목록 + 대조 두 갈래 + 미매칭.
+    for key in ("items", "missing_in_erp", "missing_approval", "unmatched"):
+        assert key in ATTENDANCE_JS, f"결재 대조 목록 {key} 을 화면이 안 쓴다"
+    # 수집 상태 한 줄은 오래되면(2일) 눈에 띄어야 한다.
+    assert "collectionStatusText" in ATTENDANCE_JS
+    assert "수집 멈춤" in ATTENDANCE_JS
+    assert ".att-approval-status.is-stale" in ATTENDANCE_CSS
+    # 개인 사정은 책임자 화면 전용 — 구역 자체가 책임자에게만 렌더된다.
+    panel = ATTENDANCE_PAGE.index('id="att-approval-panel"')
+    assert ATTENDANCE_PAGE.rindex("{% if admin_mode %}", 0, panel) < panel
+    assert panel < ATTENDANCE_PAGE.index("{% endif %}", panel)
+
+
 # ── ③ 월초 막다른 골목 ──────────────────────────────────────────────────────
 def test_month_file_missing_offers_a_way_out():
     assert 'id="att-month-missing"' in ATTENDANCE_PAGE

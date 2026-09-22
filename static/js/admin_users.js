@@ -128,6 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ]],
     ["설정·백업", [
       ["attendance_viewed_by_admin", "근태 조회"],
+      ["attendance_approvals_collected", "근태허가원 수집"],
       ["setting_scale_only_set", "저울 전용 입력 설정"],
       ["setting_viscosity_reminder_since_set", "점도 알림 정리 기준일 갱신"],
       ["setting_scale_since_set", "저울 도입일 설정"],

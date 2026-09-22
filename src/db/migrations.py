@@ -32,6 +32,7 @@ _ALLOWED_TABLES = frozenset({
     "recipe_steps",
     "manual_material_lots",
     "test_viscosity_readings",
+    "attendance_approvals",
 })
 
 
@@ -880,6 +881,45 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_lot_acks_pair "
         "ON blend_lot_acks(material_name, material_lot)"
+    )
+
+    # 근태허가원 수집 적재(docs/attendance-approvals.md §4). 포털 수집기가 내부망
+    # API 로 밀어 넣는 결재 문서를 그대로 보관한다. 근태 판정의 근거는 계속 ERP 월
+    # 엑셀이고 이 표는 **보강 자료**다 — 수집이 멈춰도 근태는 종전대로 동작한다.
+    #   doc_no  : 결재 문서번호. 멱등 키(UNIQUE)
+    #   kind_raw: 문서의 종류 문자열 원문 / kind: 정규화 5종
+    #   doc_hash: 수집기의 수정본 감지 해시. 값이 바뀌면 갱신한다
+    # 추가 전용(additive) 테이블 — 기존 데이터·컬럼에 영향 없음.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attendance_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_no TEXT NOT NULL UNIQUE,
+            emp_name TEXT NOT NULL,
+            emp_id TEXT,
+            kind_raw TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            half TEXT,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            status TEXT,
+            drafted_at TEXT,
+            title_raw TEXT,
+            doc_hash TEXT,
+            source TEXT NOT NULL,
+            collected_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    # 월 조회축(그 달에 걸치는 문서) + 사람 맞추기 축(이름 + 날짜).
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_attendance_approvals_start "
+        "ON attendance_approvals(start_date)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_attendance_approvals_name_start "
+        "ON attendance_approvals(emp_name, start_date)"
     )
 
 
