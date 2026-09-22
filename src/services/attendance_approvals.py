@@ -1,8 +1,14 @@
 """근태허가원(결재 문서) 적재·대조 서비스.
 
-계약: ``docs/attendance-approvals.md``. 포털 수집기가 내부망 API 로 밀어 넣은 결재
-문서를 ``attendance_approvals`` 표에 멱등 적재하고(§3·§4), 책임자 월 화면이 쓰는
-대조 세 목록(§5)을 만든다.
+계약: ``docs/attendance-approvals.md``. 포털 수집기가 남긴 결재 문서를
+``attendance_approvals`` 표에 멱등 적재하고(§3·§4), 책임자 월 화면이 쓰는 대조
+세 목록(§5)을 만든다.
+
+전달 경로는 둘이고 적재 규칙은 하나다(``upsert_batch``):
+  - **파일(기본)**: 수집기가 근태 엑셀과 같은 폴더에 ``attendance_approvals.json``
+    을 떨군다. 책임자가 월 화면을 열 때 파일이 바뀌었으면 그때 읽는다
+    (``ingest_snapshot``). URL 도 토큰도 필요 없다.
+  - **HTTP(선택)**: ``POST /api/public/attendance-approvals`` 로 밀어 넣는다.
 
 원칙(같은 문서 §1):
   1. 근태 판정의 근거는 계속 ERP 월 엑셀이다. 허가원은 보강이라 수집이 멈추면
@@ -14,22 +20,50 @@
      응답에 싣지 않는다.
 """
 
+import json
+import logging
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from ..db.time_utils import utc_now_text
 from . import settings_service
+from .attendance_excel import files as excel_files
 # 사번 비교축은 하나뿐이다 — 엑셀 셀이 숫자형(171013.0)으로 나오는 문제를 이미
 # 이 헬퍼가 흡수한다(BUG-2). 여기서 다시 손으로 깎으면 축이 둘로 갈린다.
 from .attendance_excel.models import normalize_emp_id
 
-# 배치 상한(§3). 초과는 라우터가 422 로 거절한다.
+logger = logging.getLogger(__name__)
+
+# HTTP 배치 상한(§3). 초과는 라우터가 422 로 거절한다.
 MAX_BATCH_ITEMS = 200
+
+# 파일 스냅샷 상한. 사람이 손으로 만든 몇 백 건이 정상이라, 이보다 큰 파일은 사고
+# (잘못된 파일을 떨궜거나 수집기가 폭주)로 보고 아예 읽지 않는다. 읽고 나서 막으면
+# 통째로 메모리에 올린 뒤라 늦다.
+MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
+MAX_SNAPSHOT_ITEMS = 5000
 
 # 마지막 수집 실행 시각. 새로 적재된 건이 0 이어도 "수집은 돌았다"를 남겨야 하므로
 # 표의 MAX(collected_at) 대신 실행 마커를 따로 둔다(app_settings 키-값).
 LAST_RUN_SETTING_KEY = "attendance_approvals_last_run_at"
+
+# 파일 스냅샷의 마지막 상태(`<mtime_ns>:<size>`)와 그때의 결과 요약(JSON).
+# 같은 파일을 다시 읽지 않기 위한 표식이라 파일 내용 해시까지는 보지 않는다 —
+# 수집기가 원자적으로 교체하므로 mtime 과 크기면 충분하다.
+SNAPSHOT_STATE_KEY = "attendance_approvals_file_state"
+LAST_INGEST_KEY = "attendance_approvals_last_ingest"
+
+# 파일 읽기 결과 코드. 한글 문구는 화면(attendance.js)이 소유한다.
+INGEST_OK = "ok"
+INGEST_UNCHANGED = "unchanged"
+INGEST_MISSING = "missing"
+INGEST_UNREADABLE = "unreadable"
+INGEST_TOO_LARGE = "too_large"
+INGEST_TOO_MANY = "too_many"
+
+# 화면에 실어 보내는 거절 목록의 상한. 전체 건수는 따로 센다.
+_MAX_REPORTED_REJECTS = 20
 
 # 수집 상태 한 줄이 "오래됨"으로 바뀌는 문턱(§5.4). 수집기는 하루 1회 도는 전제다.
 STALE_AFTER_DAYS = 2
@@ -337,6 +371,141 @@ def upsert_batch(
     }
 
 
+# ── 파일 스냅샷 읽기(§3, 기본 경로) ─────────────────────────────────────────
+
+
+def _store_last_ingest(connection: sqlite3.Connection, result: dict[str, Any]) -> None:
+    """마지막 읽기 결과를 남긴다. 같은 값이면 쓰지 않는다(파일이 잠긴 채로 남아도 쓰기 폭주 방지)."""
+    encoded = json.dumps(result, ensure_ascii=False)
+    if settings_service.get_setting(connection, LAST_INGEST_KEY) == encoded:
+        return
+    settings_service.set_setting(connection, LAST_INGEST_KEY, encoded)
+
+
+def last_ingest(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    """저장된 마지막 읽기 결과. 없거나 깨졌으면 None."""
+    raw = settings_service.get_setting(connection, LAST_INGEST_KEY)
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def ingest_snapshot(connection: sqlite3.Connection) -> dict[str, Any]:
+    """수집 파일을 한 번 읽어 적재한다 — 파일이 바뀌었을 때만.
+
+    스냅샷 규약(§3): 파일은 **수집기의 현재 창(window) 전체**이지 변경분이 아니다.
+    그래서 파일에서 사라진 문서를 지우지 않는다 — 창은 시간이 지나면 좁아지고,
+    지우기 시작하면 과거 기록이 함께 사라진다.
+
+    파일을 못 읽은 경우(형식 깨짐·너무 큼·너무 많음)에는 **저장된 행을 건드리지
+    않는다**. 판정의 근거는 계속 ERP 엑셀이라, 수집이 실패해도 근태는 종전대로 돈다.
+
+    커밋은 호출자 책임. 반환값은 화면이 그대로 쓰는 요약이다.
+    """
+    path = excel_files.approvals_snapshot_path()
+    started = utc_now_text()
+
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return {"status": INGEST_MISSING, "path": str(path)}
+    except OSError as exc:  # 잠김·권한 — 일시적일 수 있으니 표식은 남기지 않는다
+        result = {
+            "status": INGEST_UNREADABLE,
+            "path": str(path),
+            "at": started,
+            "detail": type(exc).__name__,
+        }
+        _store_last_ingest(connection, result)
+        return result
+
+    state = f"{stat.st_mtime_ns}:{stat.st_size}"
+    if settings_service.get_setting(connection, SNAPSHOT_STATE_KEY) == state:
+        # 같은 파일이면 아무 일도 하지 않는다(읽기도 쓰기도 없음).
+        return {"status": INGEST_UNCHANGED, "path": str(path)}
+
+    if stat.st_size > MAX_SNAPSHOT_BYTES:
+        result = {
+            "status": INGEST_TOO_LARGE,
+            "path": str(path),
+            "at": started,
+            "size": stat.st_size,
+            "limit": MAX_SNAPSHOT_BYTES,
+        }
+        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
+        _store_last_ingest(connection, result)
+        return result
+
+    try:
+        # utf-8-sig — 윈도우 도구가 BOM 을 붙여 저장해도 그대로 읽힌다.
+        payload = json.loads(path.read_bytes().decode("utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        # 원자적 교체(임시 파일 → replace) 전제라 드물지만, 반쯤 쓰인 파일을 읽어도
+        # 저장된 행은 손대지 않는다.
+        logger.warning("근태허가원 수집 파일을 읽지 못했습니다: %s (%s)", path, exc)
+        result = {
+            "status": INGEST_UNREADABLE,
+            "path": str(path),
+            "at": started,
+            "detail": type(exc).__name__,
+        }
+        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
+        _store_last_ingest(connection, result)
+        return result
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        result = {
+            "status": INGEST_UNREADABLE,
+            "path": str(path),
+            "at": started,
+            "detail": "items",
+        }
+        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
+        _store_last_ingest(connection, result)
+        return result
+
+    if len(items) > MAX_SNAPSHOT_ITEMS:
+        result = {
+            "status": INGEST_TOO_MANY,
+            "path": str(path),
+            "at": started,
+            "count": len(items),
+            "limit": MAX_SNAPSHOT_ITEMS,
+        }
+        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
+        _store_last_ingest(connection, result)
+        return result
+
+    outcome = upsert_batch(
+        connection,
+        items=items,
+        source=_text(payload.get("source")) or "portal",
+        collected_at=_text(payload.get("collected_at")),
+    )
+    rejected = outcome["rejected"]
+    result = {
+        "status": INGEST_OK,
+        "path": str(path),
+        "at": started,
+        "collected_at": _text(payload.get("collected_at")) or None,
+        "collector_version": _text(payload.get("collector_version")) or None,
+        "received": outcome["received"],
+        "created": outcome["created"],
+        "updated": outcome["updated"],
+        "unchanged": outcome["unchanged"],
+        "rejected_total": len(rejected),
+        "rejected": rejected[:_MAX_REPORTED_REJECTS],
+    }
+    settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
+    _store_last_ingest(connection, result)
+    return result
+
+
 # ── 조회·대조(§5) ────────────────────────────────────────────────────────────
 
 
@@ -407,11 +576,20 @@ def collection_status(
     ).fetchone()
     total = int(row["n"] or 0)
     last_collected = last_run or _text(row["newest"])
+    path = excel_files.approvals_snapshot_path()
+    try:
+        file_exists = path.exists()
+    except OSError:
+        file_exists = False
     return {
         "last_collected_at": last_collected or None,
         "total": total,
         "stale": _is_stale(last_collected, now=now),
         "stale_after_days": STALE_AFTER_DAYS,
+        # 수집 파일의 자리 — 파일이 없으면 화면이 여기에 두라고 알려 준다.
+        "file_path": str(path),
+        "file_exists": file_exists,
+        "last_ingest": last_ingest(connection),
     }
 
 

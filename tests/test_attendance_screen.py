@@ -116,6 +116,20 @@ def test_approval_section_shows_the_three_lists_and_collection_status():
     assert panel < ATTENDANCE_PAGE.index("{% endif %}", panel)
 
 
+def test_failed_or_rejected_collection_is_spelled_out():
+    """수집 파일을 못 읽었거나 거절이 있었으면 그 사실이 화면에 남아야 한다."""
+    assert "approvalAlertHtml" in ATTENDANCE_JS
+    assert ".att-approval-alert" in ATTENDANCE_CSS
+    # 서버는 코드만 주고 문구는 화면이 가진다 — 세 실패 코드 전부에 문구가 있어야 한다.
+    for code in ("unreadable", "too_large", "too_many"):
+        assert f"{code}:" in ATTENDANCE_JS, f"수집 실패 코드 {code} 의 문구가 없다"
+    assert "거절 ${rejectTotal}건" in ATTENDANCE_JS
+    assert "last_ingest" in ATTENDANCE_JS
+    # 파일이 없고 적재된 것도 없으면 어디에 두라고 알려 준다.
+    assert "attendance_approvals.json을 이 폴더에 두세요" in ATTENDANCE_JS
+    assert "file_path" in ATTENDANCE_JS and "file_exists" in ATTENDANCE_JS
+
+
 # ── ③ 월초 막다른 골목 ──────────────────────────────────────────────────────
 def test_month_file_missing_offers_a_way_out():
     assert 'id="att-month-missing"' in ATTENDANCE_PAGE

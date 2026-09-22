@@ -976,6 +976,33 @@
   gap: 0.6rem;
 }
 
+/* 수집 파일을 못 읽었거나 거절이 있었을 때만 뜨는 줄. */
+.att-approval-alert {
+  border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
+  background: var(--status-warning-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem 0.5rem;
+}
+
+.att-approval-alert h4 {
+  color: var(--status-warning);
+}
+
+.att-approval-path {
+  margin: 0 0 0.3rem;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.att-approval-doc-lead {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  min-width: 9rem;
+  color: var(--status-warning);
+}
+
 .att-approval-group-head {
   display: flex;
   align-items: baseline;

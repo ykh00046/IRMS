@@ -742,6 +742,67 @@
     return `마지막 수집 ${when} · ${total}건`;
   }
 
+  // 수집 파일 읽기 결과 — 서버는 코드만 주고(services/attendance_approvals.py),
+  // 사람이 읽을 문구는 화면이 가진다.
+  const INGEST_HEADLINES = {
+    unreadable: ["읽지 못함", "수집 파일 형식이 깨졌습니다"],
+    too_large: ["읽지 않음", "수집 파일이 5MB를 넘습니다"],
+    too_many: ["읽지 않음", "수집 파일이 5,000건을 넘습니다"],
+  };
+
+  function approvalAlertHtml(collection) {
+    const ingest = collection?.last_ingest || null;
+    const status = String(ingest?.status || "");
+    const rejects = Array.isArray(ingest?.rejected) ? ingest.rejected : [];
+    const rejectTotal = Number(ingest?.rejected_total || rejects.length || 0);
+    const fileMissing = collection?.file_exists === false;
+    const nothingStored = Number(collection?.total || 0) === 0;
+
+    let headline = "";
+    let note = "";
+    let pathText = "";
+
+    if (INGEST_HEADLINES[status]) {
+      [headline, note] = INGEST_HEADLINES[status];
+      pathText = String(ingest?.path || "");
+    } else if (rejectTotal) {
+      headline = `거절 ${rejectTotal}건`;
+      note = "나머지는 적재했습니다";
+    } else if (fileMissing && nothingStored) {
+      headline = "수집 파일 없음";
+      note = "attendance_approvals.json을 이 폴더에 두세요";
+      pathText = String(collection?.file_path || "");
+    } else {
+      return "";
+    }
+
+    const rows = rejects
+      .map(
+        (row) => `
+          <div class="att-approval-row is-gap">
+            <span class="att-approval-doc-lead att-num">${escapeHtml(
+              row.doc_no || "(번호 없음)"
+            )}</span>
+            <span class="att-approval-kind">${escapeHtml(row.reason || "")}</span>
+          </div>`
+      )
+      .join("");
+
+    return `
+      <section class="att-approval-alert">
+        <div class="att-approval-group-head">
+          <h4>${escapeHtml(headline)}</h4>
+          <span class="att-approval-note">${escapeHtml(note)}</span>
+        </div>
+        ${
+          pathText
+            ? `<p class="att-approval-path att-num">${escapeHtml(pathText)}</p>`
+            : ""
+        }
+        ${rows ? `<div class="att-approval-rows">${rows}</div>` : ""}
+      </section>`;
+  }
+
   function approvalGroupHtml(title, note, count, rowsHtml, emptyText) {
     return `
       <section class="att-approval-group">
@@ -849,6 +910,7 @@
         : "";
 
     approvalBody.innerHTML =
+      approvalAlertHtml(payload?.collection) +
       approvalGroupHtml(
         "이 달 허가원",
         "날짜 · 이름 · 종류 · 상태 · 문서번호",
@@ -1271,6 +1333,7 @@
     renderPending,
     renderAnomalyPanel,
     renderApprovalPanel,
+    approvalAlertHtml,
     collectionStatusText,
     dateRangeText,
     showMonthMissing,

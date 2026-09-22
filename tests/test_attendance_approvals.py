@@ -4,6 +4,8 @@
   2. 경계: 비사설 IP 403 · 운영 모드에서 토큰 없으면 403
   3. 대조 세 목록의 계산 · 동명이인 미매칭
   4. 개인정보: 공개(트레이) 응답에 종류·사유가 실리지 않는다
+  5. 파일 스냅샷(기본 경로): 첫 읽기·무변경·변경·깨진 JSON·상한 초과·거절 표면화·
+     스냅샷에서 빠진 문서가 지워지지 않는지
 
 엑셀은 저장소에 없으므로 명단/월 행은 attendance_excel 헬퍼를 patch 해 주입한다
 (파싱 자체는 test_attendance_excel_* 가 지킨다). 이 파일은 적재·대조·경계만 본다.
@@ -12,10 +14,13 @@
 from __future__ import annotations
 
 import importlib
+import json
 import uuid
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.services import attendance_approvals as service
@@ -487,7 +492,272 @@ def test_manager_endpoint_serves_the_month_view():
     assert payload["items"][0]["kind"]
 
 
-# ── 4. 개인정보(§6) ─────────────────────────────────────────────────────────
+# ── 4. 파일 스냅샷(§3.2, 기본 전달 경로) ────────────────────────────────────
+
+# 같은 테스트 안에서 파일을 두 번 쓰면 NTFS 시각 갱신 간격(~15ms) 탓에 수정시각이
+# 그대로일 수 있다. 그러면 '변경됨'을 확인해야 할 테스트가 무작위로 죽는다.
+# 쓸 때마다 수정시각을 명시적으로 밀어 준다(운영에서는 하루 1회라 문제되지 않는다).
+_MTIME_TICK = [1_600_000_000_000_000_000]
+
+
+def _write_snapshot(folder: Path, items, *, collected_at="2026-09-22T03:00:00+09:00",
+                    raw: str | None = None, **extra) -> Path:
+    import os
+
+    path = folder / "attendance_approvals.json"
+    if raw is None:
+        payload = {
+            "source": "portal",
+            "collected_at": collected_at,
+            "collector_version": "1.0",
+            "items": items,
+        }
+        payload.update(extra)
+        raw = json.dumps(payload, ensure_ascii=False)
+    path.write_text(raw, encoding="utf-8")
+    _MTIME_TICK[0] += 10_000_000_000
+    os.utime(path, ns=(_MTIME_TICK[0], _MTIME_TICK[0]))
+    return path
+
+
+def _ingest() -> dict[str, Any]:
+    from src.db import get_connection
+
+    with get_connection() as connection:
+        result = service.ingest_snapshot(connection)
+        connection.commit()
+    return result
+
+
+def _status() -> dict[str, Any]:
+    from src.db import get_connection
+
+    with get_connection() as connection:
+        return service.collection_status(connection)
+
+
+@pytest.fixture(autouse=True)
+def snapshot_dir(tmp_path, monkeypatch):
+    """수집 파일 폴더를 임시 폴더로 — 실제 C:\\ErpExcel 을 건드리지 않는다.
+
+    autouse 인 이유: 책임자 조회 경로가 이제 수집 파일을 **읽는다**. 격리하지 않으면
+    운영 PC 에서 테스트를 돌릴 때 진짜 수집 파일이 테스트 DB 로 적재된다.
+    """
+    from src.services.attendance_excel import files as excel_files
+
+    monkeypatch.setattr(excel_files, "ATTENDANCE_DIR", tmp_path)
+    return tmp_path
+
+
+def test_snapshot_path_follows_the_attendance_folder(snapshot_dir):
+    from src.services import attendance_excel as excel_service
+
+    assert excel_service.APPROVALS_SNAPSHOT_FILENAME == "attendance_approvals.json"
+    assert excel_service.approvals_snapshot_path() == (
+        snapshot_dir / "attendance_approvals.json"
+    )
+
+
+def test_missing_file_does_nothing(snapshot_dir):
+    _reload_app()
+    result = _ingest()
+    assert result["status"] == service.INGEST_MISSING
+    assert _status()["file_exists"] is False
+
+
+def test_first_read_creates_rows_and_unchanged_file_does_no_work(snapshot_dir):
+    _reload_app()
+    tag = _tag()
+    _write_snapshot(snapshot_dir, [_item(f"F1-{tag}"), _item(f"F2-{tag}")])
+
+    first = _ingest()
+    assert first["status"] == service.INGEST_OK
+    assert (first["created"], first["updated"], first["unchanged"]) == (2, 0, 0)
+    assert first["collected_at"] == "2026-09-22T03:00:00+09:00"
+    assert first["collector_version"] == "1.0"
+    assert _fetch(f"F1-{tag}") is not None
+
+    # 같은 파일 — 파일을 다시 열지도, 표에 쓰지도 않는다.
+    with patch.object(service, "upsert_batch") as never:
+        second = _ingest()
+    assert second["status"] == service.INGEST_UNCHANGED
+    never.assert_not_called()
+
+    # 수집 상태 한 줄은 파일의 collected_at 을 쓴다.
+    status = _status()
+    assert status["last_collected_at"] == "2026-09-22T03:00:00+09:00"
+    assert status["file_exists"] is True
+    assert status["last_ingest"]["status"] == service.INGEST_OK
+    assert status["last_ingest"]["created"] == 2
+
+
+def test_changed_file_updates_the_row(snapshot_dir):
+    _reload_app()
+    tag = _tag()
+    doc_no = f"FU-{tag}"
+    _write_snapshot(snapshot_dir, [_item(doc_no)])
+    assert _ingest()["created"] == 1
+
+    _write_snapshot(
+        snapshot_dir,
+        [_item(doc_no, doc_hash="sha256:zzz", half="오후", status="반송")],
+        collected_at="2026-09-23T03:00:00+09:00",
+    )
+    second = _ingest()
+    assert second["status"] == service.INGEST_OK
+    assert (second["created"], second["updated"], second["unchanged"]) == (0, 1, 0)
+    stored = _fetch(doc_no)
+    assert stored["half"] == "오후"
+    assert stored["status"] == "반송"
+    assert _status()["last_collected_at"] == "2026-09-23T03:00:00+09:00"
+
+
+def test_snapshot_missing_a_doc_no_never_deletes_it(snapshot_dir):
+    """창(window)은 시간이 지나면 좁아진다 — 빠진 문서를 지우면 과거가 사라진다."""
+    _reload_app()
+    tag = _tag()
+    keep, drop = f"K-{tag}", f"D-{tag}"
+    _write_snapshot(snapshot_dir, [_item(keep), _item(drop)])
+    assert _ingest()["created"] == 2
+
+    _write_snapshot(snapshot_dir, [_item(keep)])   # drop 이 창에서 빠졌다
+    result = _ingest()
+    assert result["received"] == 1
+    assert _fetch(drop) is not None, "스냅샷에서 빠진 문서를 지웠다"
+    assert _fetch(keep) is not None
+
+
+def test_malformed_json_leaves_rows_untouched_and_is_reported(snapshot_dir):
+    _reload_app()
+    tag = _tag()
+    doc_no = f"FB-{tag}"
+    _write_snapshot(snapshot_dir, [_item(doc_no)])
+    assert _ingest()["created"] == 1
+    before = _fetch(doc_no)
+
+    _write_snapshot(snapshot_dir, [], raw='{"source": "portal", "items": [{"doc_')
+    result = _ingest()
+    assert result["status"] == service.INGEST_UNREADABLE
+    assert _fetch(doc_no) == before, "읽기 실패가 저장된 행을 건드렸다"
+    assert _status()["last_ingest"]["status"] == service.INGEST_UNREADABLE
+
+    # items 가 배열이 아닌 것도 같은 취급(조용히 0건으로 넘어가면 안 된다).
+    _write_snapshot(snapshot_dir, [], raw='{"source": "portal", "items": "없음"}')
+    assert _ingest()["status"] == service.INGEST_UNREADABLE
+    assert _fetch(doc_no) == before
+
+
+def test_oversize_file_is_refused_without_reading(snapshot_dir, monkeypatch):
+    _reload_app()
+    tag = _tag()
+    _write_snapshot(snapshot_dir, [_item(f"FL-{tag}")])
+    monkeypatch.setattr(service, "MAX_SNAPSHOT_BYTES", 10)
+    result = _ingest()
+    assert result["status"] == service.INGEST_TOO_LARGE
+    assert result["limit"] == 10
+    assert _fetch(f"FL-{tag}") is None, "상한을 넘은 파일을 적재했다"
+
+
+def test_too_many_items_is_refused(snapshot_dir, monkeypatch):
+    _reload_app()
+    tag = _tag()
+    _write_snapshot(
+        snapshot_dir, [_item(f"FM-{tag}-{index}") for index in range(3)]
+    )
+    monkeypatch.setattr(service, "MAX_SNAPSHOT_ITEMS", 2)
+    result = _ingest()
+    assert result["status"] == service.INGEST_TOO_MANY
+    assert result["count"] == 3
+    assert _fetch(f"FM-{tag}-0") is None
+
+
+def test_rejects_from_the_file_reach_the_manager_screen(snapshot_dir):
+    mainmod = _reload_app()
+    client = TestClient(mainmod.app)
+    _login_admin(client)
+
+    tag = _tag()
+    good = f"FR-{tag}"
+    _write_snapshot(snapshot_dir, [_item(good), _item("", emp_name="누락")])
+
+    from src.routers import attendance_routes
+
+    with (
+        patch.object(attendance_routes.excel_service, "employee_list", return_value=[]),
+        patch.object(
+            attendance_routes.excel_service, "month_employee_rows", return_value=[]
+        ),
+        patch.object(
+            attendance_routes.excel_service, "available_months", return_value=["2026-09"]
+        ),
+    ):
+        res = client.get(ADMIN_URL, params={"month": "2026-09"})
+
+    assert res.status_code == 200, res.text
+    collection = res.json()["collection"]
+    assert collection["last_ingest"]["status"] == service.INGEST_OK
+    assert collection["last_ingest"]["rejected_total"] == 1
+    assert collection["last_ingest"]["rejected"] == [
+        {"doc_no": "", "reason": "문서번호 없음"}
+    ]
+    assert collection["file_exists"] is True
+    assert collection["file_path"].endswith("attendance_approvals.json")
+    assert _fetch(good) is not None, "거절 한 건이 나머지 적재를 막았다"
+
+
+def test_manager_read_ingests_the_file_and_writes_one_audit_row(snapshot_dir):
+    from src.db import get_connection
+
+    mainmod = _reload_app()
+    client = TestClient(mainmod.app)
+    _login_admin(client)
+
+    def _audit_count() -> int:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS n FROM audit_logs "
+                "WHERE action = 'attendance_approvals_collected'"
+            ).fetchone()
+        return int(row["n"])
+
+    tag = _tag()
+    _write_snapshot(snapshot_dir, [_item(f"FA-{tag}", emp_name="김철수", emp_id="900044")])
+    before = _audit_count()
+
+    from src.routers import attendance_routes
+
+    with (
+        patch.object(
+            attendance_routes.excel_service, "employee_list", return_value=_ROSTER
+        ),
+        patch.object(
+            attendance_routes.excel_service, "month_employee_rows", return_value=[]
+        ),
+        patch.object(
+            attendance_routes.excel_service, "available_months", return_value=["2026-09"]
+        ),
+    ):
+        first = client.get(ADMIN_URL, params={"month": "2026-09"})
+        second = client.get(ADMIN_URL, params={"month": "2026-09"})
+
+    assert first.status_code == second.status_code == 200
+    assert {row["doc_no"] for row in first.json()["items"]} >= {f"FA-{tag}"}
+    # 두 번 열었지만 파일을 실제로 읽은 것은 한 번 — 감사도 한 줄만 는다.
+    assert _audit_count() == before + 1
+
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT details_json FROM audit_logs "
+            "WHERE action = 'attendance_approvals_collected' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    details = json.loads(row["details_json"])
+    assert details["via"] == "file", "파일 경로가 감사에 남지 않았다"
+    assert details["created"] == 1
+    assert "emp_name" not in details and "kind" not in details
+
+
+# ── 5. 개인정보(§6) ─────────────────────────────────────────────────────────
 
 
 def _keys_deep(value: Any) -> set[str]:
