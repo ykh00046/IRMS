@@ -136,15 +136,18 @@ def test_kind_is_normalized_and_raw_wording_is_kept():
         _item(f"K2-{tag}", kind="오전 반차"),
         _item(f"K3-{tag}", kind="연차(하루)"),
         _item(f"K4-{tag}", kind="예비군 훈련"),
+        # 실제 포털 문서의 종류 칸은 '훈련' 한 단어다(2026-09-22 실측).
+        _item(f"K6-{tag}", kind="훈련"),
         _item(f"K5-{tag}", kind="포상휴가"),
     ]
-    assert _post(client, items).json()["created"] == 5
+    assert _post(client, items).json()["created"] == 6
 
     assert _fetch(f"K1-{tag}")["kind"] == "반반차"
     # "반반차"가 "반차"의 부분문자열 — 반반차를 먼저 봐야 한다.
     assert _fetch(f"K2-{tag}")["kind"] == "반차"
     assert _fetch(f"K3-{tag}")["kind"] == "연차"
     assert _fetch(f"K4-{tag}")["kind"] == "예비군"
+    assert _fetch(f"K6-{tag}")["kind"] == "예비군", "종류 칸의 '훈련'도 예비군으로 접는다"
     other = _fetch(f"K5-{tag}")
     assert other["kind"] == "기타"
     assert other["kind_raw"] == "포상휴가", "모르는 표현도 원문은 남아야 한다"
