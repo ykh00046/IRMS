@@ -54,6 +54,22 @@ ASSISTANT_FAKE = _env_flag("IRMS_ASSISTANT_FAKE", False)
 ASSISTANT_HEARTBEAT_SEC = max(1.0, float(os.getenv("IRMS_ASSISTANT_HEARTBEAT_SEC", "15")))
 ASSISTANT_TIMEOUT_SEC = max(5.0, float(os.getenv("IRMS_ASSISTANT_TIMEOUT_SEC", "60")))
 
+# === 포털 근태허가원 수집(docs/attendance-approvals.md) ===
+# 자격증명은 **환경변수(.env)로만** 준다. 값은 로그·감사·응답 어디에도 싣지 않는다.
+# 비워 두면 기능이 그냥 꺼지고, 책임자 화면이 "수집 설정 안 됨"이라고 알린다.
+# 비밀번호는 strip 하지 않는다 — 앞뒤 공백도 비밀번호의 일부일 수 있다.
+PORTAL_BASE_URL = os.getenv("IRMS_PORTAL_BASE_URL", "https://portal.interojo.com").strip().rstrip("/")
+PORTAL_USERNAME = os.getenv("IRMS_PORTAL_USERNAME", "").strip()
+PORTAL_PASSWORD = os.getenv("IRMS_PORTAL_PASSWORD", "")
+# 완료일 기준 조회 창(일). 기본 60 — 지난 두 달을 매번 다시 훑어 수정본도 잡는다.
+PORTAL_WINDOW_DAYS = max(1, int(os.getenv("IRMS_PORTAL_WINDOW_DAYS", "60")))
+PORTAL_TIMEOUT_SEC = max(5.0, float(os.getenv("IRMS_PORTAL_TIMEOUT_SEC", "20")))
+
+
+def portal_configured() -> bool:
+    """수집에 필요한 값이 다 있는가. 호출 시점에 읽어 테스트가 갈아끼울 수 있다."""
+    return bool(PORTAL_BASE_URL and PORTAL_USERNAME and PORTAL_PASSWORD)
+
 if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     raise RuntimeError(
         "IRMS_SESSION_SECRET must be set when IRMS_REQUIRE_SESSION_SECRET is enabled."

@@ -30,6 +30,7 @@
   const approvalTitle = document.getElementById("att-approval-title");
   const approvalStatus = document.getElementById("att-approval-status");
   const approvalBody = document.getElementById("att-approval-body");
+  const collectBtn = document.getElementById("att-approval-collect");
 
   const state = {
     month: currentMonthString(),
@@ -735,6 +736,7 @@
   }
 
   function collectionStatusText(collection) {
+    if (collection && collection.configured === false) return "수집 설정 안 됨";
     const total = Number(collection?.total || 0);
     const when = stampText(collection?.last_collected_at);
     if (!when) return "수집 기록 없음";
@@ -742,41 +744,52 @@
     return `마지막 수집 ${when} · ${total}건`;
   }
 
-  // 수집 파일 읽기 결과 — 서버는 코드만 주고(services/attendance_approvals.py),
+  // 수집 회차 결과 — 서버는 코드만 주고(services/attendance_approvals.py),
   // 사람이 읽을 문구는 화면이 가진다.
-  const INGEST_HEADLINES = {
-    unreadable: ["읽지 못함", "수집 파일 형식이 깨졌습니다"],
-    too_large: ["읽지 않음", "수집 파일이 5MB를 넘습니다"],
-    too_many: ["읽지 않음", "수집 파일이 5,000건을 넘습니다"],
+  const RUN_HEADLINES = {
+    not_configured: ["수집 설정 안 됨", "운영 PC의 포털 계정 설정이 필요합니다"],
+    login_failed: ["로그인 실패", "포털 아이디·비밀번호를 확인하세요"],
+    error: ["수집 실패", "포털에 닿지 못했습니다"],
+    busy: ["수집 진행 중", "잠시 뒤에 다시 눌러 주세요"],
   };
 
   function approvalAlertHtml(collection) {
-    const ingest = collection?.last_ingest || null;
-    const status = String(ingest?.status || "");
-    const rejects = Array.isArray(ingest?.rejected) ? ingest.rejected : [];
-    const rejectTotal = Number(ingest?.rejected_total || rejects.length || 0);
-    const fileMissing = collection?.file_exists === false;
-    const nothingStored = Number(collection?.total || 0) === 0;
+    const run = collection?.last_run || null;
+    const status = String(run?.status || "");
+    const notConfigured = collection?.configured === false;
+    const rejects = Array.isArray(run?.rejected) ? run.rejected : [];
+    const incomplete = Array.isArray(run?.incomplete) ? run.incomplete : [];
+    const forbidden = Number(run?.forbidden || 0);
+    const incompleteTotal = Number(run?.incomplete_total || incomplete.length || 0);
+    const rejectTotal = Number(run?.rejected_total || rejects.length || 0);
+    // 저장은 됐지만 일부 칸을 못 읽은 문서. 목록에는 이미 있으니 건수만 알린다.
+    const unresolvedTotal = Number(run?.unresolved_total || 0);
 
     let headline = "";
     let note = "";
-    let pathText = "";
 
-    if (INGEST_HEADLINES[status]) {
-      [headline, note] = INGEST_HEADLINES[status];
-      pathText = String(ingest?.path || "");
-    } else if (rejectTotal) {
-      headline = `거절 ${rejectTotal}건`;
-      note = "나머지는 적재했습니다";
-    } else if (fileMissing && nothingStored) {
-      headline = "수집 파일 없음";
-      note = "attendance_approvals.json을 이 폴더에 두세요";
-      pathText = String(collection?.file_path || "");
+    if (notConfigured || RUN_HEADLINES[status]) {
+      [headline, note] = RUN_HEADLINES[notConfigured ? "not_configured" : status];
+    } else if (incompleteTotal || rejectTotal || forbidden || unresolvedTotal) {
+      const parts = [];
+      if (forbidden) parts.push(`읽을 수 없음 ${forbidden}건`);
+      if (incompleteTotal) parts.push(`값 부족 ${incompleteTotal}건`);
+      if (rejectTotal) parts.push(`거절 ${rejectTotal}건`);
+      if (unresolvedTotal) parts.push(`일부 미상 ${unresolvedTotal}건`);
+      headline = parts.join(" · ");
+      note = "나머지는 저장했습니다";
     } else {
       return "";
     }
 
-    const rows = rejects
+    // 못 읽은 건은 문서번호와 사유를 그대로 적는다 — 추측한 값을 넣지 않았다는 뜻.
+    const rows = [
+      ...incomplete.map((row) => ({
+        doc_no: row.doc_no,
+        reason: `값 부족: ${(row.missing || []).join(", ")}`,
+      })),
+      ...rejects,
+    ]
       .map(
         (row) => `
           <div class="att-approval-row is-gap">
@@ -794,13 +807,44 @@
           <h4>${escapeHtml(headline)}</h4>
           <span class="att-approval-note">${escapeHtml(note)}</span>
         </div>
-        ${
-          pathText
-            ? `<p class="att-approval-path att-num">${escapeHtml(pathText)}</p>`
-            : ""
-        }
         ${rows ? `<div class="att-approval-rows">${rows}</div>` : ""}
       </section>`;
+  }
+
+  // '지금 가져오기' — 누르는 동안 잠그고, 끝나면 결과 한 줄을 알린 뒤 화면을 새로 그린다.
+  const COLLECT_RESULT_TEXT = {
+    not_configured: "수집 설정이 없습니다.",
+    login_failed: "포털 로그인에 실패했습니다.",
+    error: "포털에 닿지 못했습니다.",
+    busy: "이미 수집이 진행 중입니다.",
+  };
+
+  async function runCollect() {
+    if (!collectBtn || collectBtn.disabled) return;
+    const label = collectBtn.textContent;
+    collectBtn.disabled = true;
+    collectBtn.textContent = "가져오는 중";
+    try {
+      const result = await apiPost("/api/attendance/admin/approvals/collect", {});
+      const status = String(result?.status || "");
+      if (status === "ok") {
+        window.IRMS?.notify?.(
+          `문서 ${result.rows || 0}건 확인 · 신규 ${result.created || 0} · 갱신 ${result.updated || 0}`,
+          "success"
+        );
+      } else {
+        window.IRMS?.notify?.(
+          COLLECT_RESULT_TEXT[status] || "수집하지 못했습니다.",
+          "warn"
+        );
+      }
+    } catch (error) {
+      window.IRMS?.notify?.(String(error.message || error), "error");
+    } finally {
+      collectBtn.disabled = false;
+      collectBtn.textContent = label;
+      await loadApprovalPanel();
+    }
   }
 
   function approvalGroupHtml(title, note, count, rowsHtml, emptyText) {
@@ -1191,6 +1235,8 @@
       : null;
   }
 
+  collectBtn?.addEventListener("click", runCollect);
+
   anomalyBody?.addEventListener("click", (event) => {
     const row = anomalyRowFrom(event.target);
     if (row) selectEmployeeFromPanel(row.dataset.empId);
@@ -1335,6 +1381,7 @@
     renderApprovalPanel,
     approvalAlertHtml,
     collectionStatusText,
+    runCollect,
     dateRangeText,
     showMonthMissing,
     nearestMonth,

@@ -1,14 +1,11 @@
-"""근태허가원(결재 문서) 적재·대조 서비스.
+"""근태허가원(결재 문서) 수집·적재·대조 서비스.
 
-계약: ``docs/attendance-approvals.md``. 포털 수집기가 남긴 결재 문서를
-``attendance_approvals`` 표에 멱등 적재하고(§3·§4), 책임자 월 화면이 쓰는 대조
-세 목록(§5)을 만든다.
+계약: ``docs/attendance-approvals.md``. BRM 이 **직접** 포털에 로그인해 부서공개함의
+근태허가원을 읽어(``services/portal_approvals``) ``attendance_approvals`` 표에 멱등
+적재하고(§3·§4), 책임자 월 화면이 쓰는 대조 세 목록(§5)을 만든다.
 
-전달 경로는 둘이고 적재 규칙은 하나다(``upsert_batch``):
-  - **파일(기본)**: 수집기가 근태 엑셀과 같은 폴더에 ``attendance_approvals.json``
-    을 떨군다. 책임자가 월 화면을 열 때 파일이 바뀌었으면 그때 읽는다
-    (``ingest_snapshot``). URL 도 토큰도 필요 없다.
-  - **HTTP(선택)**: ``POST /api/public/attendance-approvals`` 로 밀어 넣는다.
+수집 경로는 하나뿐이다. 별도 수집기 앱이 파일이나 HTTP 로 넘기던 길은 2026-09-22 에
+걷어냈다 — 그 앱이 BRM 운영 서버와 다른 PC 에서 돌아 넘길 방법이 없었기 때문이다(§1.2).
 
 원칙(같은 문서 §1):
   1. 근태 판정의 근거는 계속 ERP 월 엑셀이다. 허가원은 보강이라 수집이 멈추면
@@ -17,7 +14,7 @@
      읽기 전용으로 받아(명단 = ``employee_list``, 월 행 = ``month_employee_rows``)
      맞추기와 대조만 한다.
   3. 개인 사정(종류·사유)은 책임자 화면 전용이다. 이 모듈의 반환값을 공개(트레이)
-     응답에 싣지 않는다.
+     응답에 싣지 않는다. **포털 자격증명은 반환값·감사·로그 어디에도 넣지 않는다.**
 """
 
 import json
@@ -28,41 +25,30 @@ from typing import Any
 
 from ..db.time_utils import utc_now_text
 from . import settings_service
-from .attendance_excel import files as excel_files
 # 사번 비교축은 하나뿐이다 — 엑셀 셀이 숫자형(171013.0)으로 나오는 문제를 이미
 # 이 헬퍼가 흡수한다(BUG-2). 여기서 다시 손으로 깎으면 축이 둘로 갈린다.
 from .attendance_excel.models import normalize_emp_id
 
 logger = logging.getLogger(__name__)
 
-# HTTP 배치 상한(§3). 초과는 라우터가 422 로 거절한다.
-MAX_BATCH_ITEMS = 200
-
-# 파일 스냅샷 상한. 사람이 손으로 만든 몇 백 건이 정상이라, 이보다 큰 파일은 사고
-# (잘못된 파일을 떨궜거나 수집기가 폭주)로 보고 아예 읽지 않는다. 읽고 나서 막으면
-# 통째로 메모리에 올린 뒤라 늦다.
-MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
-MAX_SNAPSHOT_ITEMS = 5000
-
 # 마지막 수집 실행 시각. 새로 적재된 건이 0 이어도 "수집은 돌았다"를 남겨야 하므로
 # 표의 MAX(collected_at) 대신 실행 마커를 따로 둔다(app_settings 키-값).
 LAST_RUN_SETTING_KEY = "attendance_approvals_last_run_at"
 
-# 파일 스냅샷의 마지막 상태(`<mtime_ns>:<size>`)와 그때의 결과 요약(JSON).
-# 같은 파일을 다시 읽지 않기 위한 표식이라 파일 내용 해시까지는 보지 않는다 —
-# 수집기가 원자적으로 교체하므로 mtime 과 크기면 충분하다.
-SNAPSHOT_STATE_KEY = "attendance_approvals_file_state"
-LAST_INGEST_KEY = "attendance_approvals_last_ingest"
+# 마지막 회차의 결과 요약(JSON)과, 동시 실행을 막는 잠금(시작 시각).
+LAST_RUN_RESULT_KEY = "attendance_approvals_last_run"
+RUN_LOCK_KEY = "attendance_approvals_run_lock"
+# 잠금이 이보다 오래되면 죽은 회차로 보고 무시한다(프로세스가 중간에 꺼진 경우).
+RUN_LOCK_STALE_MINUTES = 10
 
-# 파일 읽기 결과 코드. 한글 문구는 화면(attendance.js)이 소유한다.
-INGEST_OK = "ok"
-INGEST_UNCHANGED = "unchanged"
-INGEST_MISSING = "missing"
-INGEST_UNREADABLE = "unreadable"
-INGEST_TOO_LARGE = "too_large"
-INGEST_TOO_MANY = "too_many"
+# 수집 회차 결과 코드. 한글 문구는 화면(attendance.js)이 소유한다.
+RUN_OK = "ok"
+RUN_NOT_CONFIGURED = "not_configured"
+RUN_LOGIN_FAILED = "login_failed"
+RUN_ERROR = "error"
+RUN_BUSY = "busy"
 
-# 화면에 실어 보내는 거절 목록의 상한. 전체 건수는 따로 센다.
+# 화면에 실어 보내는 목록 상한. 전체 건수는 따로 센다.
 _MAX_REPORTED_REJECTS = 20
 
 # 수집 상태 한 줄이 "오래됨"으로 바뀌는 문턱(§5.4). 수집기는 하루 1회 도는 전제다.
@@ -371,20 +357,20 @@ def upsert_batch(
     }
 
 
-# ── 파일 스냅샷 읽기(§3, 기본 경로) ─────────────────────────────────────────
+# ── 포털 수집 한 회차(§3) ────────────────────────────────────────────────────
 
 
-def _store_last_ingest(connection: sqlite3.Connection, result: dict[str, Any]) -> None:
-    """마지막 읽기 결과를 남긴다. 같은 값이면 쓰지 않는다(파일이 잠긴 채로 남아도 쓰기 폭주 방지)."""
+def _store_last_run(connection: sqlite3.Connection, result: dict[str, Any]) -> None:
+    """마지막 회차 결과를 남긴다. 같은 값이면 쓰지 않는다."""
     encoded = json.dumps(result, ensure_ascii=False)
-    if settings_service.get_setting(connection, LAST_INGEST_KEY) == encoded:
+    if settings_service.get_setting(connection, LAST_RUN_RESULT_KEY) == encoded:
         return
-    settings_service.set_setting(connection, LAST_INGEST_KEY, encoded)
+    settings_service.set_setting(connection, LAST_RUN_RESULT_KEY, encoded)
 
 
-def last_ingest(connection: sqlite3.Connection) -> dict[str, Any] | None:
-    """저장된 마지막 읽기 결과. 없거나 깨졌으면 None."""
-    raw = settings_service.get_setting(connection, LAST_INGEST_KEY)
+def last_run(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    """저장된 마지막 회차 결과. 없거나 깨졌으면 None."""
+    raw = settings_service.get_setting(connection, LAST_RUN_RESULT_KEY)
     if not raw:
         return None
     try:
@@ -394,115 +380,109 @@ def last_ingest(connection: sqlite3.Connection) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def ingest_snapshot(connection: sqlite3.Connection) -> dict[str, Any]:
-    """수집 파일을 한 번 읽어 적재한다 — 파일이 바뀌었을 때만.
+def _acquire_run_lock(connection: sqlite3.Connection, *, now: str) -> bool:
+    """회차 잠금. 이미 도는 회차가 있으면 False.
 
-    스냅샷 규약(§3): 파일은 **수집기의 현재 창(window) 전체**이지 변경분이 아니다.
-    그래서 파일에서 사라진 문서를 지우지 않는다 — 창은 시간이 지나면 좁아지고,
-    지우기 시작하면 과거 기록이 함께 사라진다.
-
-    파일을 못 읽은 경우(형식 깨짐·너무 큼·너무 많음)에는 **저장된 행을 건드리지
-    않는다**. 판정의 근거는 계속 ERP 엑셀이라, 수집이 실패해도 근태는 종전대로 돈다.
-
-    커밋은 호출자 책임. 반환값은 화면이 그대로 쓰는 요약이다.
+    화면 버튼과 하루 1회 자동 실행이 겹칠 수 있어, 포털을 두 번 두드리지 않게 막는다.
+    프로세스가 중간에 꺼지면 잠금이 남으므로 10분이 지난 잠금은 무시한다.
     """
-    path = excel_files.approvals_snapshot_path()
+    current = _parse_stamp(_text(settings_service.get_setting(connection, RUN_LOCK_KEY)))
+    if current is not None:
+        age = datetime.now(timezone.utc) - current
+        if age < timedelta(minutes=RUN_LOCK_STALE_MINUTES):
+            return False
+    settings_service.set_setting(connection, RUN_LOCK_KEY, now)
+    connection.commit()
+    return True
+
+
+def _release_run_lock(connection: sqlite3.Connection) -> None:
+    settings_service.set_setting(connection, RUN_LOCK_KEY, "")
+
+
+def collect_from_portal(
+    connection: sqlite3.Connection,
+    *,
+    client: Any | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """포털에서 한 회차 수집해 적재하고 결과를 남긴다.
+
+    실패해도 예외를 밖으로 내보내지 않는다 — 결재 대조는 보강 자료라, 수집이
+    무너져도 근태 화면과 나머지 BRM 은 그대로 돌아야 한다(§1.1 fail-open).
+    반환값과 저장되는 결과 요약에는 **자격증명이 들어가지 않는다**(§1.3).
+
+    커밋은 이 함수가 직접 한다(잠금을 쥐고 도는 구간이라 호출자에게 미루지 않는다).
+    """
+    from .. import config
+    from . import portal_approvals
+
     started = utc_now_text()
+    if not config.portal_configured():
+        result = {"status": RUN_NOT_CONFIGURED, "at": started}
+        _store_last_run(connection, result)
+        connection.commit()
+        return result
+
+    if not _acquire_run_lock(connection, now=started):
+        # 이미 도는 회차가 있다 — 지난 결과는 그대로 두고 지금 것만 알린다.
+        return {"status": RUN_BUSY, "at": started}
 
     try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return {"status": INGEST_MISSING, "path": str(path)}
-    except OSError as exc:  # 잠김·권한 — 일시적일 수 있으니 표식은 남기지 않는다
-        result = {
-            "status": INGEST_UNREADABLE,
-            "path": str(path),
-            "at": started,
-            "detail": type(exc).__name__,
-        }
-        _store_last_ingest(connection, result)
+        portal_client = client or portal_approvals.PortalClient(
+            config.PORTAL_BASE_URL,
+            config.PORTAL_USERNAME,
+            config.PORTAL_PASSWORD,
+            timeout=config.PORTAL_TIMEOUT_SEC,
+        )
+        harvest = portal_approvals.collect(
+            client=portal_client,
+            window_days=config.PORTAL_WINDOW_DAYS,
+            today=today,
+        )
+    except portal_approvals.PortalLoginFailed as exc:
+        result = {"status": RUN_LOGIN_FAILED, "at": started, "detail": str(exc)}
+        _store_last_run(connection, result)
+        _release_run_lock(connection)
+        connection.commit()
         return result
-
-    state = f"{stat.st_mtime_ns}:{stat.st_size}"
-    if settings_service.get_setting(connection, SNAPSHOT_STATE_KEY) == state:
-        # 같은 파일이면 아무 일도 하지 않는다(읽기도 쓰기도 없음).
-        return {"status": INGEST_UNCHANGED, "path": str(path)}
-
-    if stat.st_size > MAX_SNAPSHOT_BYTES:
-        result = {
-            "status": INGEST_TOO_LARGE,
-            "path": str(path),
-            "at": started,
-            "size": stat.st_size,
-            "limit": MAX_SNAPSHOT_BYTES,
-        }
-        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
-        _store_last_ingest(connection, result)
-        return result
-
-    try:
-        # utf-8-sig — 윈도우 도구가 BOM 을 붙여 저장해도 그대로 읽힌다.
-        payload = json.loads(path.read_bytes().decode("utf-8-sig"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        # 원자적 교체(임시 파일 → replace) 전제라 드물지만, 반쯤 쓰인 파일을 읽어도
-        # 저장된 행은 손대지 않는다.
-        logger.warning("근태허가원 수집 파일을 읽지 못했습니다: %s (%s)", path, exc)
-        result = {
-            "status": INGEST_UNREADABLE,
-            "path": str(path),
-            "at": started,
-            "detail": type(exc).__name__,
-        }
-        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
-        _store_last_ingest(connection, result)
-        return result
-
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        result = {
-            "status": INGEST_UNREADABLE,
-            "path": str(path),
-            "at": started,
-            "detail": "items",
-        }
-        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
-        _store_last_ingest(connection, result)
-        return result
-
-    if len(items) > MAX_SNAPSHOT_ITEMS:
-        result = {
-            "status": INGEST_TOO_MANY,
-            "path": str(path),
-            "at": started,
-            "count": len(items),
-            "limit": MAX_SNAPSHOT_ITEMS,
-        }
-        settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
-        _store_last_ingest(connection, result)
+    except Exception as exc:  # noqa: BLE001 — 수집 실패가 화면을 깨면 안 된다
+        logger.warning("근태허가원 수집이 실패했습니다: %s", type(exc).__name__)
+        result = {"status": RUN_ERROR, "at": started, "detail": type(exc).__name__}
+        _store_last_run(connection, result)
+        _release_run_lock(connection)
+        connection.commit()
         return result
 
     outcome = upsert_batch(
-        connection,
-        items=items,
-        source=_text(payload.get("source")) or "portal",
-        collected_at=_text(payload.get("collected_at")),
+        connection, items=harvest["items"], source="portal", collected_at=started
     )
     rejected = outcome["rejected"]
     result = {
-        "status": INGEST_OK,
-        "path": str(path),
+        "status": RUN_OK,
         "at": started,
-        "collected_at": _text(payload.get("collected_at")) or None,
-        "collector_version": _text(payload.get("collector_version")) or None,
+        "rows": harvest["rows"],
+        "pages": harvest["pages"],
         "received": outcome["received"],
         "created": outcome["created"],
         "updated": outcome["updated"],
         "unchanged": outcome["unchanged"],
-        "rejected_total": len(rejected),
+        # 포털 권한이 없어 본문을 못 연 문서 — 제목만 보고 값을 지어내지 않는다.
+        "forbidden": harvest["forbidden"],
+        # 필수 항목을 못 읽어 저장하지 않은 문서.
+        "incomplete": harvest["incomplete"][:_MAX_REPORTED_REJECTS],
+        "incomplete_total": len(harvest["incomplete"]),
+        # 일부만 못 읽은 문서(저장은 됐다).
+        "unresolved": harvest["unresolved"][:_MAX_REPORTED_REJECTS],
+        "unresolved_total": len(harvest["unresolved"]),
         "rejected": rejected[:_MAX_REPORTED_REJECTS],
+        "rejected_total": len(rejected),
+        "errors": sorted(set(harvest["errors"]))[:5],
+        "window_days": harvest["window_days"],
     }
-    settings_service.set_setting(connection, SNAPSHOT_STATE_KEY, state)
-    _store_last_ingest(connection, result)
+    _store_last_run(connection, result)
+    _release_run_lock(connection)
+    connection.commit()
     return result
 
 
@@ -569,27 +549,27 @@ def match_person(
 def collection_status(
     connection: sqlite3.Connection, *, now: str | None = None
 ) -> dict[str, Any]:
-    """수집 상태 한 줄(§5.4) — 마지막 수집 시각·총 건수·오래됐는지."""
-    last_run = _text(settings_service.get_setting(connection, LAST_RUN_SETTING_KEY))
+    """수집 상태 한 줄(§5.4) — 마지막 수집 시각·총 건수·오래됐는지 + 지난 회차 결과.
+
+    `configured` 는 포털 자격증명이 설정됐는지만 알린다. **아이디·비밀번호 자체는
+    절대 싣지 않는다**(§1.3).
+    """
+    from .. import config
+
+    last_at = _text(settings_service.get_setting(connection, LAST_RUN_SETTING_KEY))
     row = connection.execute(
         "SELECT COUNT(*) AS n, MAX(collected_at) AS newest FROM attendance_approvals"
     ).fetchone()
     total = int(row["n"] or 0)
-    last_collected = last_run or _text(row["newest"])
-    path = excel_files.approvals_snapshot_path()
-    try:
-        file_exists = path.exists()
-    except OSError:
-        file_exists = False
+    last_collected = last_at or _text(row["newest"])
     return {
         "last_collected_at": last_collected or None,
         "total": total,
         "stale": _is_stale(last_collected, now=now),
         "stale_after_days": STALE_AFTER_DAYS,
-        # 수집 파일의 자리 — 파일이 없으면 화면이 여기에 두라고 알려 준다.
-        "file_path": str(path),
-        "file_exists": file_exists,
-        "last_ingest": last_ingest(connection),
+        "configured": config.portal_configured(),
+        "window_days": config.PORTAL_WINDOW_DAYS,
+        "last_run": last_run(connection),
     }
 
 

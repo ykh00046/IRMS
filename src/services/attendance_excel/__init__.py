@@ -80,8 +80,6 @@ from .models import (
 # --- files.py: path + time helpers + filesystem constants ---
 from .files import (
     ATTENDANCE_DIR,
-    APPROVALS_SNAPSHOT_FILENAME,
-    approvals_snapshot_path,
     FILENAME_PATTERN,
     FILENAME_REGEX,
     DEFAULT_COLUMNS,
@@ -228,8 +226,6 @@ __all__ = [
     "AttendanceAnnualSummary",
     # files
     "ATTENDANCE_DIR",
-    "APPROVALS_SNAPSHOT_FILENAME",
-    "approvals_snapshot_path",
     "header_diagnostics",
     "FILENAME_PATTERN",
     "FILENAME_REGEX",

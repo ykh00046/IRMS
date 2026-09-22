@@ -116,18 +116,44 @@ def test_approval_section_shows_the_three_lists_and_collection_status():
     assert panel < ATTENDANCE_PAGE.index("{% endif %}", panel)
 
 
-def test_failed_or_rejected_collection_is_spelled_out():
-    """수집 파일을 못 읽었거나 거절이 있었으면 그 사실이 화면에 남아야 한다."""
+def test_failed_or_partial_collection_is_spelled_out():
+    """수집이 실패했거나 못 읽은 문서가 있으면 그 사실이 화면에 남아야 한다."""
     assert "approvalAlertHtml" in ATTENDANCE_JS
     assert ".att-approval-alert" in ATTENDANCE_CSS
-    # 서버는 코드만 주고 문구는 화면이 가진다 — 세 실패 코드 전부에 문구가 있어야 한다.
-    for code in ("unreadable", "too_large", "too_many"):
+    # 서버는 코드만 주고 문구는 화면이 가진다 — 실패 코드 전부에 문구가 있어야 한다.
+    for code in ("not_configured", "login_failed", "error", "busy"):
         assert f"{code}:" in ATTENDANCE_JS, f"수집 실패 코드 {code} 의 문구가 없다"
-    assert "거절 ${rejectTotal}건" in ATTENDANCE_JS
-    assert "last_ingest" in ATTENDANCE_JS
-    # 파일이 없고 적재된 것도 없으면 어디에 두라고 알려 준다.
-    assert "attendance_approvals.json을 이 폴더에 두세요" in ATTENDANCE_JS
-    assert "file_path" in ATTENDANCE_JS and "file_exists" in ATTENDANCE_JS
+    assert "last_run" in ATTENDANCE_JS
+    # 못 읽은 건은 문서번호와 사유를 그대로 적는다(추측한 값을 넣지 않았다는 뜻).
+    assert "값 부족" in ATTENDANCE_JS
+    assert "읽을 수 없음" in ATTENDANCE_JS
+    # 서버가 세는 네 가지를 화면이 모두 쓴다.
+    for key in ("forbidden", "incomplete_total", "rejected_total", "unresolved_total"):
+        assert key in ATTENDANCE_JS, f"수집 회차 집계 {key} 을 화면이 안 쓴다"
+
+
+def test_collect_button_is_manager_only_and_locks_while_running():
+    assert 'id="att-approval-collect"' in ATTENDANCE_PAGE
+    assert "지금 가져오기" in ATTENDANCE_PAGE
+    # 버튼은 결재 대조 구역 안에 있고, 그 구역은 책임자에게만 렌더된다.
+    button = ATTENDANCE_PAGE.index('id="att-approval-collect"')
+    panel = ATTENDANCE_PAGE.index('id="att-approval-panel"')
+    assert ATTENDANCE_PAGE.rindex("{% if admin_mode %}", 0, panel) < button
+    assert button < ATTENDANCE_PAGE.index("{% endif %}", button)
+    assert "/api/attendance/admin/approvals/collect" in ATTENDANCE_JS
+    assert "collectBtn.disabled = true" in ATTENDANCE_JS
+    assert "collectBtn.disabled = false" in ATTENDANCE_JS
+
+
+def test_the_screen_says_when_collection_is_not_configured():
+    assert "수집 설정 안 됨" in ATTENDANCE_JS
+    assert "configured" in ATTENDANCE_JS
+
+
+def test_no_dead_file_intake_wording_remains():
+    """파일 투입·공개 수신 경로는 걷어냈다 — 문구나 호출이 남아 있으면 안 된다."""
+    assert "attendance_approvals.json" not in ATTENDANCE_JS
+    assert "/api/public/attendance-approvals" not in ATTENDANCE_JS
 
 
 # ── ③ 월초 막다른 골목 ──────────────────────────────────────────────────────
@@ -286,6 +312,8 @@ def test_edited_assets_got_a_fresh_version_this_round():
         ("js/attendance_login.js", "20260624a"),
         ("js/attendance_change_password.js", "20260624a"),
         ("js/attendance_change_password.js", "20260828a"),
+        ("js/attendance.js", "20260922a"),
+        ("css/attendance.css", "20260922a"),
     ):
         for template in TEMPLATES.rglob("*.html"):
             text = template.read_text(encoding="utf-8")

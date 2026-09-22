@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260910a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260910a" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260922b" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260922d" />
   </head>
   <body
     class="att-page"
@@ -146,7 +146,12 @@
       <section class="att-approval-panel" id="att-approval-panel" hidden>
         <div class="att-approval-head">
           <h3 id="att-approval-title">결재 대조</h3>
-          <span class="att-approval-status" id="att-approval-status"></span>
+          <div class="att-approval-head-right">
+            <span class="att-approval-status" id="att-approval-status"></span>
+            <button id="att-approval-collect" type="button" class="btn compact accent">
+              지금 가져오기
+            </button>
+          </div>
         </div>
         <div class="att-approval-body" id="att-approval-body"></div>
       </section>
@@ -384,7 +389,7 @@
     <script src="/static/js/common/ui.js?v=20260910a"></script>
     <script src="/static/js/common/audio.js?v=20260910a"></script>
     <script src="/static/js/common.js?v=20260910a"></script>
-    <script src="/static/js/attendance.js?v=20260922b"></script>
+    <script src="/static/js/attendance.js?v=20260922d"></script>
     <script src="/static/js/attendance_session.js?v=20260910a"></script>
   </body>
 </html>

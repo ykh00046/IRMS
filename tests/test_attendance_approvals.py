@@ -1,14 +1,13 @@
-"""근태허가원 수집 연계 — docs/attendance-approvals.md §6 (BRM 몫) 검증.
+"""근태허가원 적재·대조 — docs/attendance-approvals.md §6 (BRM 몫) 검증.
 
   1. 적재 멱등(같은 배치 두 번 = 갱신 0) · 수정본(doc_hash) 갱신 · 필수 누락 거절 목록
-  2. 경계: 비사설 IP 403 · 운영 모드에서 토큰 없으면 403
-  3. 대조 세 목록의 계산 · 동명이인 미매칭
-  4. 개인정보: 공개(트레이) 응답에 종류·사유가 실리지 않는다
-  5. 파일 스냅샷(기본 경로): 첫 읽기·무변경·변경·깨진 JSON·상한 초과·거절 표면화·
-     스냅샷에서 빠진 문서가 지워지지 않는지
+  2. 대조 세 목록의 계산 · 동명이인 미매칭
+  3. 수집 회차: 설정 없음 · 성공 · 로그인 실패 · 수집 실패 · 겹침 잠금 · 감사 한 줄
+  4. 개인정보: 공개(트레이) 응답에 종류·사유가 실리지 않는다. 자격증명은 어디에도 없다
 
-엑셀은 저장소에 없으므로 명단/월 행은 attendance_excel 헬퍼를 patch 해 주입한다
-(파싱 자체는 test_attendance_excel_* 가 지킨다). 이 파일은 적재·대조·경계만 본다.
+포털 자체는 부르지 않는다 — 가짜 클라이언트를 넣는다(HTTP 세 단계의 모양은
+tests/test_portal_approvals.py 가 지킨다). 엑셀도 저장소에 없으므로 명단/월 행은
+attendance_excel 헬퍼를 patch 해 주입한다.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from __future__ import annotations
 import importlib
 import json
 import uuid
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -25,8 +23,8 @@ from fastapi.testclient import TestClient
 
 from src.services import attendance_approvals as service
 
-APPROVALS_URL = "/api/public/attendance-approvals"
 ADMIN_URL = "/api/attendance/admin/approvals"
+COLLECT_URL = "/api/attendance/admin/approvals/collect"
 
 
 def _reload_app():
@@ -36,11 +34,6 @@ def _reload_app():
     importlib.reload(cfg)
     importlib.reload(mainmod)
     return mainmod
-
-
-def _internal_client(mainmod) -> TestClient:
-    # 사설 IP 위장 클라이언트 — InternalNetworkOnlyMiddleware 통과.
-    return TestClient(mainmod.app, client=("192.168.11.108", 50000))
 
 
 def _tag() -> str:
@@ -65,11 +58,16 @@ def _item(doc_no: str, **over: Any) -> dict[str, Any]:
     return payload
 
 
-def _post(client, items, *, source="portal", collected_at="2026-09-22T01:05:00Z"):
-    return client.post(
-        APPROVALS_URL,
-        json={"source": source, "collected_at": collected_at, "items": items},
-    )
+def _store(items, *, collected_at="2026-09-22T01:05:00Z") -> dict[str, Any]:
+    """적재 한 번(수집 경로와 같은 함수). 커밋까지 한다."""
+    from src.db import get_connection
+
+    with get_connection() as connection:
+        result = service.upsert_batch(
+            connection, items=items, collected_at=collected_at
+        )
+        connection.commit()
+    return result
 
 
 def _login_admin(client):
@@ -78,6 +76,11 @@ def _login_admin(client):
         "/api/auth/management-login", json={"username": "admin", "password": "admin"}
     )
     assert res.status_code == 200, res.text
+
+
+def _csrf(client) -> dict[str, str]:
+    token = client.cookies.get("csrftoken")
+    return {"x-csrftoken": token} if token else {}
 
 
 def _fetch(doc_no: str) -> dict[str, Any] | None:
@@ -90,51 +93,63 @@ def _fetch(doc_no: str) -> dict[str, Any] | None:
     return None if row is None else {key: row[key] for key in row.keys()}
 
 
-# ── 1. 적재(§3) ─────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _no_portal_credentials(monkeypatch):
+    """기본은 '설정 안 됨' — 어떤 테스트도 실수로 실제 포털을 부르지 않는다."""
+    import src.config as cfg
+
+    monkeypatch.setattr(cfg, "PORTAL_USERNAME", "", raising=False)
+    monkeypatch.setattr(cfg, "PORTAL_PASSWORD", "", raising=False)
+
+
+def _configure_portal(monkeypatch):
+    import src.config as cfg
+
+    monkeypatch.setattr(cfg, "PORTAL_BASE_URL", "https://portal.example.test")
+    monkeypatch.setattr(cfg, "PORTAL_USERNAME", "collector")
+    monkeypatch.setattr(cfg, "PORTAL_PASSWORD", "secret")
+    monkeypatch.setattr(cfg, "PORTAL_WINDOW_DAYS", 60)
+
+
+def _clear_lock():
+    from src.db import get_connection
+    from src.services import settings_service
+
+    with get_connection() as connection:
+        settings_service.set_setting(connection, service.RUN_LOCK_KEY, "")
+        connection.commit()
+
+
+# ── 1. 적재(§3·§4) ──────────────────────────────────────────────────────────
 
 
 def test_batch_is_idempotent_and_hash_change_updates():
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
+    _reload_app()
     doc_no = f"AP-{_tag()}"
 
-    first = _post(client, [_item(doc_no)])
-    assert first.status_code == 200, first.text
-    assert first.json() == {
-        "received": 1,
-        "created": 1,
-        "updated": 0,
-        "unchanged": 0,
-        "rejected": [],
+    first = _store([_item(doc_no)])
+    assert first == {
+        "received": 1, "created": 1, "updated": 0, "unchanged": 0, "rejected": [],
     }
 
     # 같은 배치 두 번 = 갱신 0.
-    again = _post(client, [_item(doc_no)])
-    assert again.json() == {
-        "received": 1,
-        "created": 0,
-        "updated": 0,
-        "unchanged": 1,
-        "rejected": [],
+    again = _store([_item(doc_no)])
+    assert again == {
+        "received": 1, "created": 0, "updated": 0, "unchanged": 1, "rejected": [],
     }
 
     # 수정본(해시 변경) → 갱신 1, 값도 실제로 바뀐다.
-    revised = _post(
-        client,
-        [_item(doc_no, doc_hash="sha256:bbb", half="오후", status="반송")],
-    )
-    assert revised.json()["updated"] == 1
+    revised = _store([_item(doc_no, doc_hash="sha256:bbb", half="오후", status="반송")])
+    assert revised["updated"] == 1
     stored = _fetch(doc_no)
     assert stored["half"] == "오후"
     assert stored["status"] == "반송"
     assert stored["doc_hash"] == "sha256:bbb"
-    # doc_no 는 멱등 키 — 행이 늘지 않았다.
     assert stored["source"] == "portal"
 
 
 def test_kind_is_normalized_and_raw_wording_is_kept():
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
+    _reload_app()
     tag = _tag()
     items = [
         _item(f"K1-{tag}", kind="반반차"),
@@ -145,7 +160,7 @@ def test_kind_is_normalized_and_raw_wording_is_kept():
         _item(f"K6-{tag}", kind="훈련"),
         _item(f"K5-{tag}", kind="포상휴가"),
     ]
-    assert _post(client, items).json()["created"] == 6
+    assert _store(items)["created"] == 6
 
     assert _fetch(f"K1-{tag}")["kind"] == "반반차"
     # "반반차"가 "반차"의 부분문자열 — 반반차를 먼저 봐야 한다.
@@ -159,8 +174,7 @@ def test_kind_is_normalized_and_raw_wording_is_kept():
 
 
 def test_bad_items_are_rejected_without_failing_the_batch():
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
+    _reload_app()
     tag = _tag()
     good = f"OK-{tag}"
     items = [
@@ -174,9 +188,7 @@ def test_bad_items_are_rejected_without_failing_the_batch():
         "문자열-항목",                                        # 형식 오류
         _item(good),                                          # 같은 배치 중복
     ]
-    res = _post(client, items)
-    assert res.status_code == 200, res.text
-    body = res.json()
+    body = _store(items)
     assert body["received"] == 9
     assert body["created"] == 1
     pairs = [(row["doc_no"], row["reason"]) for row in body["rejected"]]
@@ -191,106 +203,19 @@ def test_bad_items_are_rejected_without_failing_the_batch():
     assert reasons[f"B5-{tag}"] == "종료일이 시작일보다 앞섬"
     assert reasons[good] == "같은 배치에 문서번호 중복"
     assert len(body["rejected"]) == 8
-    # 좋은 건은 실제로 들어갔다.
     assert _fetch(good) is not None
 
 
 def test_end_date_defaults_to_start_and_unknown_half_becomes_null():
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
+    _reload_app()
     doc_no = f"D-{_tag()}"
-    assert _post(
-        client, [_item(doc_no, end_date=None, half="AM")]
-    ).json()["created"] == 1
+    assert _store([_item(doc_no, end_date=None, half="AM")])["created"] == 1
     stored = _fetch(doc_no)
     assert stored["end_date"] == stored["start_date"] == "2026-09-25"
     assert stored["half"] is None
 
 
-def test_over_two_hundred_items_is_422():
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
-    tag = _tag()
-    items = [_item(f"M-{tag}-{index}") for index in range(201)]
-    res = _post(client, items)
-    assert res.status_code == 422, res.text
-    assert "TOO_MANY_ITEMS" in res.text
-    # 한 건도 적재되지 않았다.
-    assert _fetch(f"M-{tag}-0") is None
-    assert len(items) == 201
-    assert service.MAX_BATCH_ITEMS == 200
-
-
-def test_run_writes_one_audit_entry_with_counts():
-    from src.db import get_connection
-
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
-    tag = _tag()
-    res = _post(client, [_item(f"A1-{tag}"), _item(f"A2-{tag}"), _item("")])
-    assert res.status_code == 200, res.text
-
-    with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT target_label, details_json FROM audit_logs "
-            "WHERE action = 'attendance_approvals_collected' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchall()
-    assert len(rows) == 1, "실행마다 한 줄(건마다 X)이어야 한다"
-    import json
-
-    details = json.loads(rows[0]["details_json"])
-    assert details["received"] == 3
-    assert details["created"] == 2
-    assert details["rejected"] == 1
-    # 개인 사정(이름·종류·문서번호)은 감사 상세에 담지 않는다.
-    assert "emp_name" not in details and "kind" not in details
-    assert details["reasons"] == ["문서번호 없음"]
-
-
-# ── 2. 경계(§3) ─────────────────────────────────────────────────────────────
-
-
-def test_non_private_ip_is_forbidden():
-    mainmod = _reload_app()
-    # TestClient 기본 호스트("testclient")는 유효한 IP 가 아니다 → 사설 아님.
-    res = TestClient(mainmod.app).post(APPROVALS_URL, json={"items": []})
-    assert res.status_code == 403
-    assert res.json() == {"detail": "INTERNAL_NETWORK_ONLY"}
-
-
-def test_production_requires_the_tray_token_even_from_loopback(monkeypatch):
-    monkeypatch.setenv("IRMS_ENV", "production")
-    monkeypatch.setenv("IRMS_REQUIRE_SESSION_SECRET", "false")
-    monkeypatch.setenv("IRMS_SESSION_SECRET", "0" * 64)
-    monkeypatch.setenv("IRMS_SEED_DEMO_DATA", "false")
-    monkeypatch.setenv("IRMS_REQUIRE_TRAY_API_TOKEN", "true")
-    monkeypatch.setenv("IRMS_TRAY_API_TOKEN", "test-tray-token")
-    mainmod = _reload_app()
-
-    client = TestClient(mainmod.app, client=("127.0.0.1", 50000))
-    denied = client.post(APPROVALS_URL, json={"items": []})
-    assert denied.status_code == 403
-    assert denied.json() == {"detail": "TRAY_TOKEN_REQUIRED"}
-
-    doc_no = f"P-{_tag()}"
-    allowed = client.post(
-        APPROVALS_URL,
-        json={"source": "portal", "collected_at": "", "items": [_item(doc_no)]},
-        headers={"X-IRMS-Tray-Token": "test-tray-token"},
-    )
-    assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["created"] == 1
-
-
-def test_manager_read_endpoint_requires_a_manager():
-    mainmod = _reload_app()
-    client = TestClient(mainmod.app)
-    denied = client.get(ADMIN_URL, params={"month": "2026-09"})
-    assert denied.status_code in (401, 403), denied.text
-
-
-# ── 3. 대조 세 목록 + 동명이인(§4·§5) ───────────────────────────────────────
+# ── 2. 대조 세 목록 + 동명이인(§4·§5) ───────────────────────────────────────
 
 _ROSTER = [
     {"emp_id": "900033", "name": "홍길동", "department": "합성부", "factory": "1공장"},
@@ -434,7 +359,6 @@ def test_month_employee_rows_is_a_thin_read_only_helper():
         rows = summary.month_employee_rows("2026-09")
 
     assert len(rows) == 2, "같은 (사번·날짜·내용) 중복은 한 번만"
-    # 숫자형 사번도 조회축(normalize_emp_id)으로 맞춰 나온다.
     assert rows[0]["emp_id"] == "120206"
     assert rows[0]["attendance_code"] == "연차"
     assert rows[1]["emp_id"] == "120209"
@@ -447,20 +371,25 @@ def test_stale_collection_is_flagged_after_two_days():
     assert service.STALE_AFTER_DAYS == 2
 
 
+def test_manager_read_endpoint_requires_a_manager():
+    mainmod = _reload_app()
+    client = TestClient(mainmod.app)
+    denied = client.get(ADMIN_URL, params={"month": "2026-09"})
+    assert denied.status_code in (401, 403), denied.text
+
+
 def test_manager_endpoint_serves_the_month_view():
     mainmod = _reload_app()
     client = TestClient(mainmod.app)
     _login_admin(client)
 
     tag = _tag()
-    internal = _internal_client(mainmod)
-    assert _post(
-        internal,
+    _store(
         [
             _item(f"V1-{tag}", emp_name="김철수", emp_id="900044", kind="연차",
                   half=None, start_date="2026-09-08", end_date="2026-09-08")
-        ],
-    ).status_code == 200
+        ]
+    )
 
     from src.routers import attendance_routes
 
@@ -488,229 +417,192 @@ def test_manager_endpoint_serves_the_month_view():
     assert {row["doc_no"] for row in payload["items"]} >= {f"V1-{tag}"}
     assert {row["doc_no"] for row in payload["missing_in_erp"]} >= {f"V1-{tag}"}
     assert payload["collection"]["total"] >= 1
+    assert payload["collection"]["configured"] is False
     # 개인 사정은 여기서만 보인다.
     assert payload["items"][0]["kind"]
 
 
-# ── 4. 파일 스냅샷(§3.2, 기본 전달 경로) ────────────────────────────────────
-
-# 같은 테스트 안에서 파일을 두 번 쓰면 NTFS 시각 갱신 간격(~15ms) 탓에 수정시각이
-# 그대로일 수 있다. 그러면 '변경됨'을 확인해야 할 테스트가 무작위로 죽는다.
-# 쓸 때마다 수정시각을 명시적으로 밀어 준다(운영에서는 하루 1회라 문제되지 않는다).
-_MTIME_TICK = [1_600_000_000_000_000_000]
+# ── 3. 수집 회차(§3) ────────────────────────────────────────────────────────
 
 
-def _write_snapshot(folder: Path, items, *, collected_at="2026-09-22T03:00:00+09:00",
-                    raw: str | None = None, **extra) -> Path:
-    import os
+class _StubPortal:
+    """포털 대신 미리 만든 HTML 을 돌려주는 가짜 클라이언트."""
 
-    path = folder / "attendance_approvals.json"
-    if raw is None:
-        payload = {
-            "source": "portal",
-            "collected_at": collected_at,
-            "collector_version": "1.0",
-            "items": items,
-        }
-        payload.update(extra)
-        raw = json.dumps(payload, ensure_ascii=False)
-    path.write_text(raw, encoding="utf-8")
-    _MTIME_TICK[0] += 10_000_000_000
-    os.utime(path, ns=(_MTIME_TICK[0], _MTIME_TICK[0]))
-    return path
+    def __init__(self, list_html: str, bodies: dict[str, str]):
+        self.list_html = list_html
+        self.bodies = bodies
+        self.list_calls = 0
 
+    def fetch_list_page(self, *, start_date, end_date, page_index):
+        self.list_calls += 1
+        return self.list_html if page_index == 1 else ""
 
-def _ingest() -> dict[str, Any]:
-    from src.db import get_connection
+    def fetch_body(self, appr_id):
+        from src.services.portal_approvals.client import PortalPermissionDenied
 
-    with get_connection() as connection:
-        result = service.ingest_snapshot(connection)
-        connection.commit()
-    return result
+        if appr_id not in self.bodies:
+            raise PortalPermissionDenied("PORTAL_DOC_FORBIDDEN")
+        return self.bodies[appr_id]
 
 
-def _status() -> dict[str, Any]:
-    from src.db import get_connection
+def _stub_portal(tag: str) -> _StubPortal:
+    from tests.test_portal_approvals import _body_html, _list_html, _page_rows
 
-    with get_connection() as connection:
-        return service.collection_status(connection)
-
-
-@pytest.fixture(autouse=True)
-def snapshot_dir(tmp_path, monkeypatch):
-    """수집 파일 폴더를 임시 폴더로 — 실제 C:\\ErpExcel 을 건드리지 않는다.
-
-    autouse 인 이유: 책임자 조회 경로가 이제 수집 파일을 **읽는다**. 격리하지 않으면
-    운영 PC 에서 테스트를 돌릴 때 진짜 수집 파일이 테스트 DB 로 적재된다.
-    """
-    from src.services.attendance_excel import files as excel_files
-
-    monkeypatch.setattr(excel_files, "ATTENDANCE_DIR", tmp_path)
-    return tmp_path
-
-
-def test_snapshot_path_follows_the_attendance_folder(snapshot_dir):
-    from src.services import attendance_excel as excel_service
-
-    assert excel_service.APPROVALS_SNAPSHOT_FILENAME == "attendance_approvals.json"
-    assert excel_service.approvals_snapshot_path() == (
-        snapshot_dir / "attendance_approvals.json"
+    rows = _page_rows(
+        ("A1", f"20260907P{tag[:3]}-0040", "근태허가원/원료생산팀/박용재/반차/26.09.07"),
+        ("AX", f"20260908P{tag[:3]}-0001", "근태허가원/다른팀/홍길동/연차/26.09.08"),
+    )
+    return _StubPortal(
+        _list_html(rows),
+        {
+            "A1": _body_html(
+                doc_no=f"20260907P{tag[:3]}-0040",
+                drafted_at="2026-09-05",
+                emp_name="박용재",
+                emp_id="171013",
+                period="26년09월07일 13시부터 ~ 26년09월07일17시30분까지(0.5일간)",
+            )
+        },
     )
 
 
-def test_missing_file_does_nothing(snapshot_dir):
+def test_collect_is_off_when_credentials_are_missing():
+    from src.db import get_connection
+
     _reload_app()
-    result = _ingest()
-    assert result["status"] == service.INGEST_MISSING
-    assert _status()["file_exists"] is False
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection)
+    assert result["status"] == service.RUN_NOT_CONFIGURED
+    with get_connection() as connection:
+        assert service.collection_status(connection)["configured"] is False
 
 
-def test_first_read_creates_rows_and_unchanged_file_does_no_work(snapshot_dir):
+def test_collect_stores_what_it_read_and_reports_what_it_could_not(monkeypatch):
+    from src.db import get_connection
+
     _reload_app()
+    _configure_portal(monkeypatch)
+    _clear_lock()
     tag = _tag()
-    _write_snapshot(snapshot_dir, [_item(f"F1-{tag}"), _item(f"F2-{tag}")])
+    portal = _stub_portal(tag)
 
-    first = _ingest()
-    assert first["status"] == service.INGEST_OK
-    assert (first["created"], first["updated"], first["unchanged"]) == (2, 0, 0)
-    assert first["collected_at"] == "2026-09-22T03:00:00+09:00"
-    assert first["collector_version"] == "1.0"
-    assert _fetch(f"F1-{tag}") is not None
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=portal)
 
-    # 같은 파일 — 파일을 다시 열지도, 표에 쓰지도 않는다.
-    with patch.object(service, "upsert_batch") as never:
-        second = _ingest()
-    assert second["status"] == service.INGEST_UNCHANGED
-    never.assert_not_called()
-
-    # 수집 상태 한 줄은 파일의 collected_at 을 쓴다.
-    status = _status()
-    assert status["last_collected_at"] == "2026-09-22T03:00:00+09:00"
-    assert status["file_exists"] is True
-    assert status["last_ingest"]["status"] == service.INGEST_OK
-    assert status["last_ingest"]["created"] == 2
-
-
-def test_changed_file_updates_the_row(snapshot_dir):
-    _reload_app()
-    tag = _tag()
-    doc_no = f"FU-{tag}"
-    _write_snapshot(snapshot_dir, [_item(doc_no)])
-    assert _ingest()["created"] == 1
-
-    _write_snapshot(
-        snapshot_dir,
-        [_item(doc_no, doc_hash="sha256:zzz", half="오후", status="반송")],
-        collected_at="2026-09-23T03:00:00+09:00",
-    )
-    second = _ingest()
-    assert second["status"] == service.INGEST_OK
-    assert (second["created"], second["updated"], second["unchanged"]) == (0, 1, 0)
-    stored = _fetch(doc_no)
+    assert result["status"] == service.RUN_OK, result
+    assert result["rows"] == 2
+    assert result["created"] == 1
+    assert result["forbidden"] == 1, "남의 부서 문서는 건너뛰고 센다"
+    stored = _fetch(f"20260907P{tag[:3]}-0040")
+    assert stored is not None
+    assert stored["emp_name"] == "박용재"
+    assert stored["emp_id"] == "171013"
+    assert stored["kind"] == "반차"
     assert stored["half"] == "오후"
-    assert stored["status"] == "반송"
-    assert _status()["last_collected_at"] == "2026-09-23T03:00:00+09:00"
+    assert stored["start_date"] == "2026-09-07"
+    # 권한이 없던 문서는 제목에 이름·종류가 있어도 저장하지 않는다.
+    assert _fetch(f"20260908P{tag[:3]}-0001") is None
 
 
-def test_snapshot_missing_a_doc_no_never_deletes_it(snapshot_dir):
-    """창(window)은 시간이 지나면 좁아진다 — 빠진 문서를 지우면 과거가 사라진다."""
+def test_collect_twice_is_idempotent(monkeypatch):
+    from src.db import get_connection
+
     _reload_app()
+    _configure_portal(monkeypatch)
     tag = _tag()
-    keep, drop = f"K-{tag}", f"D-{tag}"
-    _write_snapshot(snapshot_dir, [_item(keep), _item(drop)])
-    assert _ingest()["created"] == 2
 
-    _write_snapshot(snapshot_dir, [_item(keep)])   # drop 이 창에서 빠졌다
-    result = _ingest()
-    assert result["received"] == 1
-    assert _fetch(drop) is not None, "스냅샷에서 빠진 문서를 지웠다"
-    assert _fetch(keep) is not None
+    for expected_created, expected_unchanged in ((1, 0), (0, 1)):
+        _clear_lock()
+        with get_connection() as connection:
+            result = service.collect_from_portal(connection, client=_stub_portal(tag))
+        assert result["created"] == expected_created
+        assert result["unchanged"] == expected_unchanged
 
 
-def test_malformed_json_leaves_rows_untouched_and_is_reported(snapshot_dir):
+def test_login_failure_is_reported_and_leaves_rows_alone(monkeypatch):
+    from src.db import get_connection
+    from src.services.portal_approvals.client import PortalLoginFailed
+
     _reload_app()
+    _configure_portal(monkeypatch)
+    _clear_lock()
     tag = _tag()
-    doc_no = f"FB-{tag}"
-    _write_snapshot(snapshot_dir, [_item(doc_no)])
-    assert _ingest()["created"] == 1
-    before = _fetch(doc_no)
+    doc_no = f"LF-{tag}"
+    _store([_item(doc_no)])
 
-    _write_snapshot(snapshot_dir, [], raw='{"source": "portal", "items": [{"doc_')
-    result = _ingest()
-    assert result["status"] == service.INGEST_UNREADABLE
-    assert _fetch(doc_no) == before, "읽기 실패가 저장된 행을 건드렸다"
-    assert _status()["last_ingest"]["status"] == service.INGEST_UNREADABLE
+    class _Dead:
+        def fetch_list_page(self, **_kwargs):
+            raise PortalLoginFailed("PORTAL_LOGIN_REJECTED")
 
-    # items 가 배열이 아닌 것도 같은 취급(조용히 0건으로 넘어가면 안 된다).
-    _write_snapshot(snapshot_dir, [], raw='{"source": "portal", "items": "없음"}')
-    assert _ingest()["status"] == service.INGEST_UNREADABLE
-    assert _fetch(doc_no) == before
+        def fetch_body(self, _appr_id):
+            raise AssertionError("본문까지 가면 안 된다")
+
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=_Dead())
+    assert result["status"] == service.RUN_LOGIN_FAILED
+    assert _fetch(doc_no) is not None, "수집 실패가 저장된 행을 건드렸다"
+    with get_connection() as connection:
+        assert service.last_run(connection)["status"] == service.RUN_LOGIN_FAILED
 
 
-def test_oversize_file_is_refused_without_reading(snapshot_dir, monkeypatch):
+def test_any_other_failure_is_swallowed_and_recorded(monkeypatch):
+    from src.db import get_connection
+
     _reload_app()
-    tag = _tag()
-    _write_snapshot(snapshot_dir, [_item(f"FL-{tag}")])
-    monkeypatch.setattr(service, "MAX_SNAPSHOT_BYTES", 10)
-    result = _ingest()
-    assert result["status"] == service.INGEST_TOO_LARGE
-    assert result["limit"] == 10
-    assert _fetch(f"FL-{tag}") is None, "상한을 넘은 파일을 적재했다"
+    _configure_portal(monkeypatch)
+    _clear_lock()
+
+    class _Broken:
+        def fetch_list_page(self, **_kwargs):
+            raise TimeoutError("포털 응답 없음")
+
+        def fetch_body(self, _appr_id):
+            raise AssertionError
+
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=_Broken())
+    assert result["status"] == service.RUN_ERROR
+    assert result["detail"] == "TimeoutError"
 
 
-def test_too_many_items_is_refused(snapshot_dir, monkeypatch):
+def test_a_second_run_while_one_is_going_is_refused(monkeypatch):
+    from src.db import get_connection
+    from src.db.time_utils import utc_now_text
+    from src.services import settings_service
+
     _reload_app()
-    tag = _tag()
-    _write_snapshot(
-        snapshot_dir, [_item(f"FM-{tag}-{index}") for index in range(3)]
-    )
-    monkeypatch.setattr(service, "MAX_SNAPSHOT_ITEMS", 2)
-    result = _ingest()
-    assert result["status"] == service.INGEST_TOO_MANY
-    assert result["count"] == 3
-    assert _fetch(f"FM-{tag}-0") is None
+    _configure_portal(monkeypatch)
+    with get_connection() as connection:
+        settings_service.set_setting(
+            connection, service.RUN_LOCK_KEY, utc_now_text()
+        )
+        connection.commit()
+
+    class _Never:
+        def fetch_list_page(self, **_kwargs):
+            raise AssertionError("잠겨 있는데 포털을 불렀다")
+
+        def fetch_body(self, _appr_id):
+            raise AssertionError
+
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=_Never())
+    assert result["status"] == service.RUN_BUSY
+    _clear_lock()
 
 
-def test_rejects_from_the_file_reach_the_manager_screen(snapshot_dir):
-    mainmod = _reload_app()
-    client = TestClient(mainmod.app)
-    _login_admin(client)
-
-    tag = _tag()
-    good = f"FR-{tag}"
-    _write_snapshot(snapshot_dir, [_item(good), _item("", emp_name="누락")])
-
-    from src.routers import attendance_routes
-
-    with (
-        patch.object(attendance_routes.excel_service, "employee_list", return_value=[]),
-        patch.object(
-            attendance_routes.excel_service, "month_employee_rows", return_value=[]
-        ),
-        patch.object(
-            attendance_routes.excel_service, "available_months", return_value=["2026-09"]
-        ),
-    ):
-        res = client.get(ADMIN_URL, params={"month": "2026-09"})
-
-    assert res.status_code == 200, res.text
-    collection = res.json()["collection"]
-    assert collection["last_ingest"]["status"] == service.INGEST_OK
-    assert collection["last_ingest"]["rejected_total"] == 1
-    assert collection["last_ingest"]["rejected"] == [
-        {"doc_no": "", "reason": "문서번호 없음"}
-    ]
-    assert collection["file_exists"] is True
-    assert collection["file_path"].endswith("attendance_approvals.json")
-    assert _fetch(good) is not None, "거절 한 건이 나머지 적재를 막았다"
-
-
-def test_manager_read_ingests_the_file_and_writes_one_audit_row(snapshot_dir):
+def test_collect_endpoint_requires_a_manager_and_writes_one_audit_row(monkeypatch):
     from src.db import get_connection
 
     mainmod = _reload_app()
     client = TestClient(mainmod.app)
+    denied = client.post(COLLECT_URL, json={})
+    assert denied.status_code in (401, 403), denied.text
+
     _login_admin(client)
+    _configure_portal(monkeypatch)
+    _clear_lock()
+    tag = _tag()
 
     def _audit_count() -> int:
         with get_connection() as connection:
@@ -720,44 +612,40 @@ def test_manager_read_ingests_the_file_and_writes_one_audit_row(snapshot_dir):
             ).fetchone()
         return int(row["n"])
 
-    tag = _tag()
-    _write_snapshot(snapshot_dir, [_item(f"FA-{tag}", emp_name="김철수", emp_id="900044")])
     before = _audit_count()
-
     from src.routers import attendance_routes
 
-    with (
-        patch.object(
-            attendance_routes.excel_service, "employee_list", return_value=_ROSTER
-        ),
-        patch.object(
-            attendance_routes.excel_service, "month_employee_rows", return_value=[]
-        ),
-        patch.object(
-            attendance_routes.excel_service, "available_months", return_value=["2026-09"]
-        ),
+    portal = _stub_portal(tag)
+    real_collect = service.collect_from_portal
+    with patch.object(
+        attendance_routes.approvals_service,
+        "collect_from_portal",
+        side_effect=lambda connection, **_kw: real_collect(connection, client=portal),
     ):
-        first = client.get(ADMIN_URL, params={"month": "2026-09"})
-        second = client.get(ADMIN_URL, params={"month": "2026-09"})
+        res = client.post(COLLECT_URL, json={}, headers=_csrf(client))
 
-    assert first.status_code == second.status_code == 200
-    assert {row["doc_no"] for row in first.json()["items"]} >= {f"FA-{tag}"}
-    # 두 번 열었지만 파일을 실제로 읽은 것은 한 번 — 감사도 한 줄만 는다.
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload["status"] == service.RUN_OK
+    assert payload["created"] == 1
     assert _audit_count() == before + 1
 
     with get_connection() as connection:
         row = connection.execute(
-            "SELECT details_json FROM audit_logs "
-            "WHERE action = 'attendance_approvals_collected' "
-            "ORDER BY id DESC LIMIT 1"
+            "SELECT details_json, target_label FROM audit_logs "
+            "WHERE action = 'attendance_approvals_collected' ORDER BY id DESC LIMIT 1"
         ).fetchone()
     details = json.loads(row["details_json"])
-    assert details["via"] == "file", "파일 경로가 감사에 남지 않았다"
+    assert details["via"] == "portal"
+    assert details["trigger"] == "manual"
     assert details["created"] == 1
-    assert "emp_name" not in details and "kind" not in details
+    # 자격증명·개인 사정은 감사에 남기지 않는다.
+    leaked = {"username", "password", "emp_name", "kind", "title_raw"} & set(details)
+    assert not leaked, leaked
+    assert "collector" not in row["target_label"]
 
 
-# ── 5. 개인정보(§6) ─────────────────────────────────────────────────────────
+# ── 4. 개인정보(§6) ─────────────────────────────────────────────────────────
 
 
 def _keys_deep(value: Any) -> set[str]:
@@ -772,29 +660,11 @@ def _keys_deep(value: Any) -> set[str]:
     return found
 
 
-def test_public_responses_never_carry_kind_or_reason_of_leave():
-    """공개(트레이) 응답에 종류·사유가 실리지 않는다 — 공용 PC 배려(§1.3)."""
-    mainmod = _reload_app()
-    client = _internal_client(mainmod)
-
-    # ① 수집 응답: 집계 + 거절 목록(문서번호 + 고정 사유)뿐이다.
-    body = _post(client, [_item(f"PV-{_tag()}", kind="반차", half="오전")]).json()
-    assert set(body) == {"received", "created", "updated", "unchanged", "rejected"}
-    leaked = _keys_deep(body) & {
-        "kind", "kind_raw", "half", "emp_name", "title_raw", "items", "status"
-    }
-    assert not leaked, f"공개 응답에 개인 사정이 실렸습니다: {sorted(leaked)}"
-    # 거절 항목은 문서번호 + 고정 사유 두 칸뿐이다(이름·종류를 되돌려 싣지 않는다).
-    rejected = _post(client, [_item("", emp_name="홍길동")]).json()["rejected"]
-    assert [set(row) for row in rejected] == [{"doc_no", "reason"}]
-    assert rejected[0]["reason"] == "문서번호 없음"
-
-
 def test_tray_alert_payload_has_no_approval_fields():
     from src.routers import public_attendance_alert_routes as alerts
 
     mainmod = _reload_app()
-    client = _internal_client(mainmod)
+    client = TestClient(mainmod.app, client=("192.168.11.108", 50000))
     fake_items = [
         {
             "emp_id": "900033",
@@ -816,3 +686,45 @@ def test_tray_alert_payload_has_no_approval_fields():
     # 라우터가 결재 서비스를 아예 부르지 않는다(구조 계약).
     source = __import__("pathlib").Path(alerts.__file__).read_text(encoding="utf-8")
     assert "attendance_approvals" not in source
+
+
+def test_no_public_intake_endpoint_remains():
+    """수집 경로는 하나뿐이다 — 공개 수신 엔드포인트는 걷어냈다."""
+    mainmod = _reload_app()
+    paths = {getattr(route, "path", "") for route in mainmod.app.routes}
+    assert "/api/public/attendance-approvals" not in paths
+    client = TestClient(mainmod.app, client=("192.168.11.108", 50000))
+    # GET 은 CSRF 검사를 거치지 않으므로 라우팅 결과(404)가 그대로 보인다.
+    assert client.get("/api/public/attendance-approvals").status_code == 404
+    # 접두 보호 목록에서도 빠졌다 — 이제 그냥 없는 경로다.
+    from pathlib import Path
+
+    import src.main as mainsrc
+
+    assert "attendance-approvals" not in Path(mainsrc.__file__).read_text(encoding="utf-8")
+
+
+def test_manager_payload_never_carries_credentials(monkeypatch):
+    mainmod = _reload_app()
+    client = TestClient(mainmod.app)
+    _login_admin(client)
+    _configure_portal(monkeypatch)
+
+    from src.routers import attendance_routes
+
+    with (
+        patch.object(attendance_routes.excel_service, "employee_list", return_value=[]),
+        patch.object(
+            attendance_routes.excel_service, "month_employee_rows", return_value=[]
+        ),
+        patch.object(
+            attendance_routes.excel_service, "available_months", return_value=["2026-09"]
+        ),
+    ):
+        res = client.get(ADMIN_URL, params={"month": "2026-09"})
+    assert res.status_code == 200, res.text
+    body = res.text
+    assert "collector" not in body and "secret" not in body
+    collection = res.json()["collection"]
+    assert collection["configured"] is True
+    assert not ({"username", "password", "base_url"} & set(collection))

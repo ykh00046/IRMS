@@ -206,10 +206,6 @@ def create_app() -> FastAPI:
             # so a forced-logout CSRF attack causes only minor inconvenience.
             re.compile(r"^/api/attendance/logout$"),
             re.compile(r"^/api/blend/session/logout$"),
-            # 근태허가원 수집(포털 수집기 → BRM). 브라우저가 아닌 사내망 배치
-            # 스크립트가 부르므로 CSRF 쿠키를 가질 수 없다. 경계는 아래
-            # InternalNetworkOnlyMiddleware(사설 IP + 운영은 트레이 토큰 필수)가 맡는다.
-            re.compile(r"^/api/public/attendance-approvals/?$"),
         ],
     )
     # CSRF 면제로 뚫린 로그인 경로를 Origin 검사로 막는다 (감사 F-10).
@@ -218,7 +214,6 @@ def create_app() -> FastAPI:
         InternalNetworkOnlyMiddleware,
         protected_prefixes=(
             "/api/public/attendance-alerts",
-            "/api/public/attendance-approvals",
             "/api/public/material-usage",
             "/api/public/viscosity-reminders",
             "/api/public/rescale-alerts",

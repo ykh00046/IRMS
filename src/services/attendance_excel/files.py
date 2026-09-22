@@ -36,19 +36,6 @@ ATTENDANCE_DIR = _attendance_dir()
 FILENAME_PATTERN = "monthly_attendance_{year_month}.xlsx"
 FILENAME_REGEX = re.compile(r"^monthly_attendance(?:_.+)?_(\d{4}-\d{2})\.xlsx$")
 
-# 근태허가원 수집 스냅샷(docs/attendance-approvals.md §3). 수집기가 월 엑셀과 같은
-# 폴더에 떨궈 두면 BRM 이 읽는다 — URL 도 토큰도 필요 없다.
-APPROVALS_SNAPSHOT_FILENAME = "attendance_approvals.json"
-
-
-def approvals_snapshot_path() -> Path:
-    """수집 스냅샷 파일의 경로. 폴더는 근태 엑셀과 같은 규칙으로 찾는다.
-
-    ``ATTENDANCE_DIR`` 을 함수 안에서 읽는다 — 테스트가 모듈 속성을 갈아끼우면
-    (patch.object(files, "ATTENDANCE_DIR", ...)) 그 값이 그대로 반영돼야 한다.
-    """
-    return ATTENDANCE_DIR / APPROVALS_SNAPSHOT_FILENAME
-
 # 위 COL_* 상수는 2026-05 까지의 ERP 내보내기 열 순서를 기준으로 한다.
 # 2026-06 부터 ERP가 신원/근무정보 블록(성명·근무타임·부서명 등)의 열 순서를
 # 바꿔 내보내기 시작했다. 고정 인덱스로 읽으면 이름이 '근무공장' 값으로,

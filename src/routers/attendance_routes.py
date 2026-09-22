@@ -221,47 +221,11 @@ def build_router() -> APIRouter:
         엑셀을 못 읽은 달(월초·파일 잠김)에도 허가원 목록은 그대로 보여준다 —
         수집이 멈추든 엑셀이 없든 한쪽이 없다고 화면이 통째로 비면 안 된다.
 
-        수집 파일(근태 엑셀과 같은 폴더의 attendance_approvals.json)을 **여기서**
-        읽는다. 별도 스케줄러를 두지 않는 이유는 이 화면이 그 데이터를 보는 유일한
-        곳이기 때문이다 — 볼 때 최신이면 충분하다. 파일이 그대로면 아무 일도 하지
-        않고, 못 읽어도 저장된 행은 손대지 않는다(읽기 실패는 화면에 알린다).
+        이 조회는 포털을 부르지 않는다(읽기만). 수집은 '지금 가져오기' 버튼
+        (POST /admin/approvals/collect)과 하루 1회 자동 실행이 맡는다.
         """
         require_irms_manager(request)
         year_month = _resolve_month(month)
-        ingest = approvals_service.ingest_snapshot(connection)
-        if ingest.get("status") == approvals_service.INGEST_OK:
-            # 실행당 한 줄(건마다 X). HTTP 수집과 같은 액션으로 남겨 감사 화면이
-            # 두 경로를 한 항목으로 본다 — via 로 어느 쪽인지 구분한다.
-            write_audit_log(
-                connection,
-                action="attendance_approvals_collected",
-                target_type="attendance_approvals",
-                target_id=ingest.get("received"),
-                target_label=(
-                    f"파일 수집 {ingest.get('received', 0)}건 · "
-                    f"신규 {ingest.get('created', 0)} · 갱신 {ingest.get('updated', 0)} · "
-                    f"그대로 {ingest.get('unchanged', 0)} · 거절 {ingest.get('rejected_total', 0)}"
-                ),
-                details={
-                    "via": "file",
-                    "collected_at": ingest.get("collected_at"),
-                    "collector_version": ingest.get("collector_version"),
-                    "received": ingest.get("received"),
-                    "created": ingest.get("created"),
-                    "updated": ingest.get("updated"),
-                    "unchanged": ingest.get("unchanged"),
-                    "rejected": ingest.get("rejected_total"),
-                    # 사유만 센다 — 문서번호·이름은 감사 화면에 필요하지 않다.
-                    "reasons": sorted(
-                        {row["reason"] for row in ingest.get("rejected") or []}
-                    ),
-                },
-            )
-        if ingest.get("status") not in (
-            approvals_service.INGEST_UNCHANGED,
-            approvals_service.INGEST_MISSING,
-        ):
-            connection.commit()
         try:
             roster = excel_service.employee_list(year_month)
             erp_rows = excel_service.month_employee_rows(year_month)
@@ -276,6 +240,49 @@ def build_router() -> APIRouter:
         )
         payload["available_months"] = excel_service.available_months()
         return payload
+
+    @router.post("/admin/approvals/collect")
+    def admin_collect_approvals(
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """지금 포털에서 근태허가원을 가져온다 — 책임자 전용.
+
+        수집이 실패해도 예외를 내보내지 않는다(서비스가 결과 코드로 돌려준다).
+        화면은 그 코드를 한글 한 줄로 바꿔 보여주고, 근태 조회는 계속 된다.
+        """
+        user = require_irms_manager(request)
+        result = approvals_service.collect_from_portal(connection)
+        if result.get("status") == approvals_service.RUN_OK:
+            # 실행당 한 줄(문서마다 X). 자격증명은 어디에도 싣지 않는다.
+            write_audit_log(
+                connection,
+                action="attendance_approvals_collected",
+                actor=user,
+                target_type="attendance_approvals",
+                target_id=result.get("received"),
+                target_label=(
+                    f"포털 수집 {result.get('received', 0)}건 · "
+                    f"신규 {result.get('created', 0)} · 갱신 {result.get('updated', 0)} · "
+                    f"그대로 {result.get('unchanged', 0)} · "
+                    f"읽을 수 없음 {result.get('forbidden', 0)}"
+                ),
+                details={
+                    "via": "portal",
+                    "trigger": "manual",
+                    "rows": result.get("rows"),
+                    "received": result.get("received"),
+                    "created": result.get("created"),
+                    "updated": result.get("updated"),
+                    "unchanged": result.get("unchanged"),
+                    "forbidden": result.get("forbidden"),
+                    "incomplete": result.get("incomplete_total"),
+                    "unresolved": result.get("unresolved_total"),
+                    "rejected": result.get("rejected_total"),
+                },
+            )
+            connection.commit()
+        return result
 
     @router.get("/admin/employees")
     def admin_employees(

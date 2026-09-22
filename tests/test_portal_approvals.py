@@ -1,0 +1,440 @@
+"""포털 근태허가원 수집 — 로그인·목록·본문 세 단계를 가짜 응답으로 검증.
+
+**실제 포털을 부르지 않는다.** requests.Session 자리에 가짜를 끼워 넣어, 조사로
+확인된 응답 모양(2026-09-22)만 재현한다:
+
+  - 로그인 성공/실패(최종 URL 이 loginForm.do)
+  - 유휴 만료 → 200 인데 본문이 로그인 폼 → 다시 로그인하고 이어간다
+  - 목록 HTML(`<table id="listTable">`, onclick="getApprDetail('apprId',…)")
+  - pageIndex 가 끝을 넘으면 마지막 쪽으로 붙들린다(같은 행 반복)
+  - 같은 문서번호가 여러 행으로 나온다
+  - 본문 HTML 에 HTML 이스케이프된 서식/값 JSON 두 덩이
+  - 남의 부서 문서는 500 + '접근 권한이 없습니다'
+"""
+
+from __future__ import annotations
+
+import html as html_mod
+import json
+from typing import Any
+
+import pytest
+
+from src.services import portal_approvals
+from src.services.portal_approvals import client as client_mod
+from src.services.portal_approvals import parser
+
+BASE = "https://portal.example.test"
+
+LOGIN_FORM_HTML = (
+    '<html><body><form id="loginForm" action="/login.do">'
+    '<input name="j_username"><input name="j_password"></form></body></html>'
+)
+PORTAL_MAIN_HTML = "<html><body><div id='portalMain'>메인</div></body></html>"
+FORBIDDEN_HTML = "<html><body><h1>오류</h1><p>접근 권한이 없습니다.</p></body></html>"
+
+
+# ── 가짜 응답·세션 ──────────────────────────────────────────────────────────
+
+
+class _Response:
+    def __init__(self, text: str = "", *, status_code: int = 200, url: str = BASE):
+        self.text = text
+        self.status_code = status_code
+        self.url = url
+
+
+class _FakeSession:
+    """요청을 기록하고 준비된 응답을 돌려준다(경로별 핸들러)."""
+
+    def __init__(self, handlers: dict[str, Any]):
+        self.handlers = handlers
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _Response:
+        self.calls.append((method.upper(), url, kwargs))
+        for path, handler in self.handlers.items():
+            if url.endswith(path) or path in url:
+                return handler(self, kwargs) if callable(handler) else handler
+        return _Response("", status_code=404, url=url)
+
+    def get(self, url: str, **kwargs: Any) -> _Response:
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> _Response:
+        return self.request("POST", url, **kwargs)
+
+
+def _list_html(rows: list[dict[str, str]]) -> str:
+    """목록 HTML 한 쪽. 실제 열 순서를 그대로 흉내 낸다."""
+    body = [
+        '<table id="listTable"><thead><tr><th>No.</th><th>문서번호</th><th>유형</th>'
+        "<th>분류</th><th>그룹사 여부</th><th>문서 제목</th><th>기안자</th>"
+        "<th>기안부서</th><th>완료일</th></tr></thead><tbody>"
+    ]
+    for row in rows:
+        body.append(
+            f"<tr onclick=\"getApprDetail('{row['appr_id']}','listApprDeptOpen');\">"
+            f"<td>{row.get('no', '1')}</td><td>{row['doc_no']}</td><td>근태</td>"
+            f"<td>일반</td><td>N</td><td>{row['title']}</td>"
+            f"<td>{row.get('drafter', '박용재')}</td><td>원료생산팀</td>"
+            f"<td>{row.get('end_date', '2026-08-05')}</td></tr>"
+        )
+    body.append("</tbody></table>")
+    return "<html><body>" + "".join(body) + "</body></html>"
+
+
+def _body_html(
+    *,
+    doc_no: str = "20260805P227-0040",
+    drafted_at: str = "2026-08-05",
+    drafter: str = "박용재",
+    emp_name: str = "김민솔",
+    emp_id: str = "221023",
+    period: str = "26년08월07일 13시부터 ~ 26년08월07일17시30분까지(0.5일간)",
+    reason: str = "개인 사정",
+) -> str:
+    """본문 HTML — 서식/값 JSON 두 덩이가 HTML 이스케이프되어 들어 있다."""
+    schema = [
+        {"type": "text", "name": "text1", "title": "소속"},
+        {"type": "text", "name": "text2", "title": "사번"},
+        {"type": "text", "name": "text3", "title": "직위"},
+        {"type": "text", "name": "text4", "title": "성명"},
+        {"type": "text", "name": "text6", "title": "기간"},
+        {"type": "text", "name": "text7", "title": "사유"},
+    ]
+    values = [
+        {"type": "text", "name": "text1", "value": "원료생산팀"},
+        {"type": "text", "name": "text2", "value": emp_id},
+        {"type": "text", "name": "text3", "value": "사원"},
+        {"type": "text", "name": "text4", "value": emp_name},
+        {"type": "text", "name": "text6", "value": period},
+        {"type": "text", "name": "text7", "value": reason},
+    ]
+    return (
+        "<html><body>"
+        f"<div class='doc-head'>문서번호 {doc_no} 기안일자 {drafted_at} 기안자 {drafter}</div>"
+        f'<input type="hidden" id="formSchema" value="{html_mod.escape(json.dumps(schema, ensure_ascii=False))}">'
+        f'<input type="hidden" id="formValue" value="{html_mod.escape(json.dumps(values, ensure_ascii=False))}">'
+        "</body></html>"
+    )
+
+
+def _client(handlers: dict[str, Any], **over: Any) -> client_mod.PortalClient:
+    session = _FakeSession(handlers)
+    return client_mod.PortalClient(
+        BASE, over.pop("username", "collector"), over.pop("password", "pw"),
+        session=session, **over,
+    )
+
+
+def _ok_handlers(list_pages: dict[int, str], bodies: dict[str, Any]) -> dict[str, Any]:
+    def login(_session, kwargs):
+        data = kwargs.get("data") or {}
+        if data.get("j_username") == "collector" and data.get("j_password") == "pw":
+            return _Response(PORTAL_MAIN_HTML, url=f"{BASE}/portal/main/portalMain.do")
+        return _Response(LOGIN_FORM_HTML, url=f"{BASE}/loginForm.do?error=1")
+
+    def listing(_session, kwargs):
+        index = int((kwargs.get("data") or {}).get("pageIndex", 1))
+        # pageIndex 가 끝을 넘으면 포털이 마지막 쪽으로 붙들어 같은 행을 다시 준다.
+        last = max(list_pages)
+        return _Response(list_pages.get(index, list_pages[last]))
+
+    def body(_session, kwargs):
+        appr_id = (kwargs.get("params") or {}).get("apprId", "")
+        prepared = bodies.get(appr_id)
+        if prepared is None:
+            return _Response(FORBIDDEN_HTML, status_code=500)
+        return prepared if isinstance(prepared, _Response) else _Response(prepared)
+
+    return {
+        client_mod.LOGIN_PATH: login,
+        client_mod.LOGIN_PAGE_PATH: _Response(LOGIN_FORM_HTML),
+        client_mod.LIST_PATH: listing,
+        client_mod.BODY_PATH: body,
+    }
+
+
+# ── 1. 순수 파서 ────────────────────────────────────────────────────────────
+
+
+def test_list_rows_read_doc_no_title_and_appr_id():
+    html = _list_html(
+        [
+            {
+                "appr_id": "A1",
+                "doc_no": "20260805P227-0040",
+                "title": "근태허가원/원료생산팀/박용재/반차/26.08.07",
+                "no": "2",
+            }
+        ]
+    )
+    rows = parser.parse_list_rows(html)
+    assert len(rows) == 1, "머리글 행까지 세면 안 된다"
+    row = rows[0]
+    assert row["doc_no"] == "20260805P227-0040"
+    assert row["appr_id"] == "A1", "본문 조회 키는 문서번호가 아니라 apprId 다"
+    assert row["title"].endswith("26.08.07")
+    assert row["drafter"] == "박용재"
+    assert row["end_date"] == "2026-08-05"
+
+
+def test_list_rows_survive_a_shifted_column():
+    """포털이 열을 하나 끼워 넣어도 문서번호를 생김새로 다시 찾는다."""
+    html = (
+        '<table id="listTable"><tr onclick="getApprDetail(\'A9\',\'x\');">'
+        "<td>1</td><td>추가된칸</td><td>20260805P227-0041</td>"
+        "<td>근태허가원/원료생산팀/김민솔/연차/26.07.09</td></tr></table>"
+    )
+    rows = parser.parse_list_rows(html)
+    assert rows and rows[0]["doc_no"] == "20260805P227-0041"
+
+
+def test_body_json_blobs_join_on_name():
+    body = parser.parse_body(_body_html())
+    assert body["emp_name"] == "김민솔"
+    assert body["emp_id"] == "221023"
+    assert body["dept"] == "원료생산팀"
+    assert body["period_start_date"] == "2026-08-07"
+    assert body["period_start_hour"] == 13
+    assert body["drafted_at"] == "2026-08-05"
+
+
+def test_period_ignores_the_empty_second_row():
+    """서식에는 늘 빈 '00년 00월 00일' 칸이 붙는다 — 0 값은 버린다."""
+    period = parser.parse_period(
+        "26년08월07일 13시부터 ~ 26년08월07일17시30분까지(0.5일간) "
+        "00년 00월 00일 00시부터 ~ 00년 00월 00일 00시까지"
+    )
+    assert period["start_date"] == "2026-08-07"
+    assert period["end_date"] == "2026-08-07"
+    assert period["days"] == 0.5
+
+
+def test_title_parsing_does_not_trust_position():
+    """관측된 7가지 제목 형식 — 위치가 아니라 토큰의 생김새로 찾는다."""
+    cases = {
+        "근태허가원/원료생산팀/박용재/반차/26.08.07": ("박용재", "반차", "2026-08-07"),
+        "원료생산팀/임현규/26.03.12/근태허가원/훈련": ("임현규", "훈련", "2026-03-12"),
+        "원료생산팀/근태허가원/송보란/25.12.19~26.01.03/병가": (
+            "송보란", "병가", "2025-12-19",
+        ),
+        "원료생산팀/근태허가원/박용재/2025.12.31/반차": ("박용재", "반차", "2025-12-31"),
+    }
+    for title, (name, kind, start) in cases.items():
+        parsed = parser.parse_title(title)
+        assert parsed["emp_name"] == name, title
+        assert kind in (parsed["kind_raw"] or ""), title
+        assert parsed["start_date"] == start, title
+
+
+def test_unreadable_title_is_reported_not_guessed():
+    parsed = parser.parse_title("원료생산팀/강도윤/근태허가원")
+    assert parsed["emp_name"] == "강도윤"
+    assert parsed["kind_raw"] is None
+    assert parsed["start_date"] is None
+    assert set(parsed["unresolved"]) == {"kind", "start_date"}
+
+
+def test_reason_boilerplate_is_stripped_before_kind_detection():
+    """서식 안내문('구분(연차,반차,…)')을 두면 철야 건이 반반차로 잡힌다."""
+    reason = parser.strip_boilerplate(
+        "철야 근무 구분(연차,반차,반반차 등등) 사이에 근태 종류를 적으세요"
+    )
+    assert reason == "철야 근무"
+    assert parser.detect_kind_token(reason) == "철야"
+
+
+def test_half_comes_from_the_period_hour_not_a_guess():
+    assert parser.half_from_hour("반차", 13) == "오후"
+    assert parser.half_from_hour("반차", 9) == "오전"
+    # 하루 단위 종류에는 시각을 적용하지 않는다.
+    assert parser.half_from_hour("연차", 13) is None
+    assert parser.half_from_hour("반차", None) is None
+
+
+# ── 2. 클라이언트 ───────────────────────────────────────────────────────────
+
+
+def test_login_rejects_a_wrong_password():
+    portal = _client(_ok_handlers({1: _list_html([])}, {}), password="틀린비번")
+    with pytest.raises(client_mod.PortalLoginFailed):
+        portal.login()
+
+
+def test_missing_credentials_never_hit_the_network():
+    portal = _client({}, username="", password="")
+    with pytest.raises(client_mod.PortalLoginFailed):
+        portal.login()
+    assert portal.session.calls == []
+
+
+def test_dead_session_triggers_one_re_login():
+    """유휴 만료는 200 + 로그인 폼이다 — 다시 로그인하고 같은 요청을 이어간다."""
+    state = {"listing": 0}
+    handlers = _ok_handlers({1: _list_html([])}, {})
+
+    def listing(_session, _kwargs):
+        state["listing"] += 1
+        if state["listing"] == 1:
+            return _Response(LOGIN_FORM_HTML)   # 세션이 끊겼다
+        return _Response(_list_html([]))
+
+    handlers[client_mod.LIST_PATH] = listing
+    portal = _client(handlers)
+    html = portal.fetch_list_page(
+        start_date="2026.07.01", end_date="2026.09.01", page_index=1
+    )
+    assert 'id="listTable"' in html
+    assert state["listing"] == 2, "같은 요청을 한 번만 다시 보내야 한다"
+    logins = [c for c in portal.session.calls if c[1].endswith(client_mod.LOGIN_PATH)]
+    assert len(logins) == 2
+
+
+def test_forbidden_document_raises_permission_denied():
+    portal = _client(_ok_handlers({1: _list_html([])}, {}))
+    with pytest.raises(client_mod.PortalPermissionDenied):
+        portal.fetch_body("남의부서")
+
+
+def test_list_query_keeps_the_department_default():
+    """조회를 회사 전체로 넓히지 않는다 — searchGroupId 를 보내지 않는다(사용자 결정)."""
+    portal = _client(_ok_handlers({1: _list_html([])}, {}))
+    portal.fetch_list_page(start_date="2026.07.01", end_date="2026.09.01", page_index=1)
+    listing = [c for c in portal.session.calls if c[1].endswith(client_mod.LIST_PATH)][0]
+    payload = listing[2]["data"]
+    assert "searchGroupId" not in payload
+    assert payload["searchApprTitle"] == "근태허가원"
+    assert payload["searchUserName"] == ""
+    assert payload["sortColumn"] == "apprEndDate"
+
+
+# ── 3. 한 회차 ──────────────────────────────────────────────────────────────
+
+
+def _page_rows(*specs: tuple[str, str, str]) -> list[dict[str, str]]:
+    return [
+        {"appr_id": appr_id, "doc_no": doc_no, "title": title}
+        for appr_id, doc_no, title in specs
+    ]
+
+
+def test_collect_reads_bodies_and_dedupes_by_doc_no():
+    rows = _page_rows(
+        ("A1", "20260805P227-0040", "근태허가원/원료생산팀/박용재/반차/26.08.07"),
+        # 같은 문서가 두 행으로 나오는 일이 있다.
+        ("A2", "20260805P227-0040", "근태허가원/원료생산팀/박용재/반차/26.08.07"),
+        ("A3", "20260709P227-0011", "근태허가원/원료생산팀/김민솔/연차/26.07.09"),
+    )
+    bodies = {
+        "A1": _body_html(emp_name="박용재", emp_id="171013"),
+        "A3": _body_html(
+            doc_no="20260709P227-0011",
+            emp_name="김민솔",
+            emp_id="221023",
+            period="26년07월09일 09시부터 ~ 26년07월09일18시까지(1일간)",
+        ),
+    }
+    portal = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    result = portal_approvals.collect(client=portal, window_days=60)
+
+    assert result["rows"] == 2, "문서번호로 합쳐야 한다"
+    by_doc = {item["doc_no"]: item for item in result["items"]}
+    assert set(by_doc) == {"20260805P227-0040", "20260709P227-0011"}
+    half_day = by_doc["20260805P227-0040"]
+    assert half_day["emp_name"] == "박용재"
+    assert half_day["emp_id"] == "171013"
+    assert half_day["kind"] == "반차"
+    assert half_day["half"] == "오후", "13시 시작이면 오후다(추측이 아니라 문서의 사실)"
+    assert half_day["start_date"] == "2026-08-07"
+    assert half_day["status"] == "완료"
+    assert half_day["drafted_at"] == "2026-08-05"
+    assert half_day["doc_hash"].startswith("sha256:")
+    assert "unresolved" not in half_day, "진단 키는 저장 항목에 남지 않는다"
+
+
+def test_collect_skips_a_forbidden_document_without_guessing():
+    rows = _page_rows(
+        ("A1", "20260805P227-0040", "근태허가원/원료생산팀/박용재/반차/26.08.07"),
+        ("AX", "20260805P999-0001", "근태허가원/다른팀/홍길동/연차/26.08.08"),
+    )
+    portal = _client(
+        _ok_handlers({1: _list_html(rows)}, {"A1": _body_html(emp_name="박용재")})
+    )
+    result = portal_approvals.collect(client=portal, window_days=60)
+
+    assert result["forbidden"] == 1
+    assert [item["doc_no"] for item in result["items"]] == ["20260805P227-0040"]
+    # 제목에 이름·종류가 있어도 본문을 못 읽었으면 값을 지어내지 않는다.
+    assert "20260805P999-0001" not in {item["doc_no"] for item in result["items"]}
+
+
+def _full_page(prefix: str) -> str:
+    """가득 찬 한 쪽(50행) — 다음 쪽을 더 봐야 하는 상태를 만든다."""
+    return _list_html(
+        _page_rows(
+            *[
+                (
+                    f"{prefix}{index}",
+                    f"202608{index % 28 + 1:02d}{prefix}227-{index:04d}",
+                    f"근태허가원/원료생산팀/김민솔/연차/26.08.{index % 28 + 1:02d}",
+                )
+                for index in range(client_mod.PAGE_SIZE)
+            ]
+        )
+    )
+
+
+def test_collect_stops_when_paging_clamps_to_the_last_page():
+    portal = _client(_ok_handlers({1: _full_page("A"), 2: _full_page("B")}, {}))
+    result = portal_approvals.collect(client=portal, window_days=60)
+    # 3쪽을 요청하면 포털이 2쪽으로 붙들어 같은 행이 다시 온다 → 거기서 멈춘다.
+    assert result["pages"] == 3
+    assert result["rows"] == client_mod.PAGE_SIZE * 2
+
+
+def test_collect_stops_on_a_short_page_without_asking_again():
+    portal = _client(
+        _ok_handlers(
+            {
+                1: _full_page("A"),
+                2: _list_html(
+                    _page_rows(
+                        ("B1", "20260810P227-0099", "근태허가원/원료생산팀/박용재/연차/26.08.10")
+                    )
+                ),
+            },
+            {},
+        )
+    )
+    result = portal_approvals.collect(client=portal, window_days=60)
+    assert result["pages"] == 2
+    assert result["rows"] == client_mod.PAGE_SIZE + 1
+
+
+def test_collect_reports_unreadable_titles_instead_of_storing_them():
+    rows = _page_rows(("A1", "20260805P227-0040", "원료생산팀/강도윤/근태허가원"))
+    portal = _client(_ok_handlers({1: _list_html(rows)}, {"A1": _body_html(
+        emp_name="강도윤", period="00년 00월 00일 00시부터 ~ 00년 00월 00일 00시까지",
+        reason="",
+    )}))
+    result = portal_approvals.collect(client=portal, window_days=60)
+    assert result["items"] == [], "시작일을 모르는 문서를 지어내 저장하면 안 된다"
+    assert result["incomplete"] == [
+        {"doc_no": "20260805P227-0040", "missing": ["start_date"]}
+    ]
+    assert result["unresolved"][0]["fields"] == ["kind", "start_date"]
+
+
+def test_collect_window_uses_the_completion_date_filter():
+    import datetime as dt
+
+    portal = _client(_ok_handlers({1: _list_html([])}, {}))
+    portal_approvals.collect(
+        client=portal, window_days=30, today=dt.date(2026, 9, 22)
+    )
+    listing = [c for c in portal.session.calls if c[1].endswith(client_mod.LIST_PATH)][0]
+    payload = listing[2]["data"]
+    assert payload["searchStartDate"] == "2026.08.23"
+    assert payload["searchEndDate"] == "2026.09.23"

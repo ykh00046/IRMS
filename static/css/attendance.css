@@ -955,6 +955,13 @@
   color: var(--text-primary);
 }
 
+.att-approval-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 /* 수집 상태 한 줄 — 오래되면(2일) 눈에 띄게 바뀐다. */
 .att-approval-status {
   font-size: var(--fs-xs);
@@ -988,13 +995,6 @@
   color: var(--status-warning);
 }
 
-.att-approval-path {
-  margin: 0 0 0.3rem;
-  font-size: var(--fs-2xs);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-}
 
 .att-approval-doc-lead {
   font-weight: 700;

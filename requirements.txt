@@ -13,5 +13,8 @@ pymupdf>=1.24.0
 pywin32>=306; platform_system == "Windows"
 python-multipart>=0.0.9
 httpx>=0.27.0
+# 포털 근태허가원 수집(services/portal_approvals). 종전에는 google-genai 를 통해
+# 딸려 들어오던 것을 직접 쓰게 되어 명시한다 — lock 의 핀(2.34.2)은 그대로다.
+requests>=2.32.0
 google-genai>=1.0.0
 groq>=0.11.0

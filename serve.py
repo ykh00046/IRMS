@@ -710,6 +710,20 @@ def _watch_once(w: _Watch) -> None:
             except Exception as exc:  # noqa: BLE001 — 정리 실패가 감시를 멈추면 안 된다
                 log(f"취소 기록 정리 실패(무시): {exc}")
 
+            # 근태허가원 포털 수집 — 같은 '오늘 한 번' 슬롯. --daily 가 DB 의 마지막
+            # 성공 회차를 보고 건너뛰므로, serve.py 가 재시작돼 이 슬롯이 다시 열려도
+            # 포털을 두 번 두드리지 않는다. 설정이 없으면 스스로 '설정 안 됨'으로 끝난다.
+            try:
+                out = subprocess.run(
+                    [PYTHON, "tools/collect_attendance_approvals.py", "--daily"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=600,
+                )
+                msg = (out.stdout or out.stderr or "").strip().splitlines()
+                if msg:
+                    log(msg[-1])
+            except Exception as exc:  # noqa: BLE001 — 수집 실패가 감시를 멈추면 안 된다
+                log(f"근태허가원 수집 실패(무시): {exc}")
+
     if not (AUTO and has_update()):
         return
 
