@@ -39,7 +39,7 @@ from typing import Any, Optional
 
 # 해석 규칙 판 번호. doc_hash 에 섞여 들어가므로, 제목·본문 해석을 고쳤을 때 이 값을
 # 올리면 이미 적재된 문서도 수정본으로 보여 다시 읽고 다시 저장한다.
-PARSER_VERSION = "3"
+PARSER_VERSION = "4"
 
 # 제목에서 지우고 보는 말머리(양식 이름 자체).
 _FORM_WORDS = ("근태허가원", "근태 허가원", "허가원")
@@ -64,6 +64,11 @@ _DATE_RE = re.compile(
 # 26년08월07일 13시30분 / 26년 06월08일 09시
 _KOREAN_DT_RE = re.compile(
     r"(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일"
+    r"(?:\s*(\d{1,2})\s*시)?(?:\s*(\d{1,2})\s*분)?"
+)
+# 연도 없이 적은 기간 — '09월23일13시부터~09월23일18시까지'
+_KOREAN_MD_RE = re.compile(
+    r"(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일"
     r"(?:\s*(\d{1,2})\s*시)?(?:\s*(\d{1,2})\s*분)?"
 )
 _HANGUL_NAME_RE = re.compile(r"^[가-힣]{2,4}$")
@@ -242,10 +247,21 @@ def parse_title(title: str) -> dict[str, Any]:
     for idx, part in enumerate(parts):
         if idx == date_idx:
             continue
-        if any(word in part for word in _FORM_WORDS):
+        # 양식 이름이 낀 토막이라도 그 말만 지우고 나머지에서 종류를 찾는다.
+        # '반반차 허가원 - 원료생산 김**' 처럼 구분자 없이 한 토막인 제목이 실제로
+        # 있고(2026-09-23 실측), 통째로 건너뛰면 바로 옆의 '반반차'를 놓친다.
+        cleaned = part
+        for word in _FORM_WORDS:
+            cleaned = cleaned.replace(word, " ")
+        cleaned = cleaned.strip()
+        if not cleaned:
             continue
-        if detect_kind_token(part):
-            kind_idx, kind_raw = idx, part
+        found = detect_kind_token(cleaned)
+        if found:
+            # 토막이 원래 모양 그대로면 그 토막을 원문으로 둔다('오후반차' 처럼 앞뒤가
+            # 뜻을 갖는다). 양식 이름을 걷어낸 토막은 찌꺼기가 남으므로 찾은 낱말만 쓴다.
+            kind_idx = idx
+            kind_raw = part if cleaned == part else found
             break
 
     if kind_raw is None and date_idx is not None:
@@ -452,6 +468,15 @@ def parse_period(period_text: str) -> dict[str, Any]:
         if not date:
             continue
         stamps.append((date, int(hour) if hour else None))
+
+    if not stamps:
+        # 연도를 안 적은 기간도 있다 — '09월23일13시부터~09월23일18시까지(0.5일간)'
+        # (2026-09-23 실측). 날짜는 제목에서 채우므로 여기서는 **시각만** 건진다.
+        # 시각이 있어야 반차의 오전/오후를 사실로 읽을 수 있다.
+        for month, day, hour, _minute in _KOREAN_MD_RE.findall(text):
+            if int(month) == 0 or int(day) == 0:
+                continue
+            stamps.append((None, int(hour) if hour else None))
 
     days = None
     days_match = re.search(r"\(\s*(\d+(?:\.\d+)?)\s*일간\s*\)", text)

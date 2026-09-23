@@ -675,3 +675,35 @@ def test_header_fields_skip_the_instruction_text_and_keep_the_drafter_department
     assert found["기안일자"] == "2026-08-05"
     assert found["기안자"] == "박용재/ 원료생산팀", "슬래시 뒤 부서까지 한 값이다"
     assert found["문서제목"].startswith("근태허가원/"), "안내문의 '작성시' 가 아니다"
+
+
+def test_kind_is_read_even_when_the_form_word_sits_in_the_same_token():
+    """'반반차 허가원 - 원료생산 김철수' 처럼 구분자 없는 제목(2026-09-23 실측).
+
+    양식 이름이 낀 토막을 통째로 건너뛰면 바로 옆의 종류를 놓쳐 전부 '기타'가 된다.
+    """
+    from src.services.portal_approvals import parser as parser_mod
+
+    parsed = parser_mod.parse_title("반반차 허가원 - 원료생산 김철수")
+    assert parsed["kind_raw"] == "반반차", "양식 이름만 걷어내고 종류를 읽는다"
+    assert "kind" not in parsed["unresolved"]
+    # 기존 형식은 그대로 — 토막이 온전하면 토막 전체가 원문이다(오후반차의 '오후'를 살린다).
+    assert parser_mod.parse_title("원/백지훈/26.09.23/오후반차")["kind_raw"] == "오후반차"
+
+
+def test_period_without_a_year_still_gives_the_hour():
+    """'09월23일13시부터~09월23일18시까지(0.5일간)' — 연도를 안 적은 기간(실측).
+
+    날짜는 제목에서 채우므로 여기서는 시각만 건지면 된다. 시각이 없으면 반차의
+    오전·오후를 사실로 말할 수 없어 미확정으로 남는다.
+    """
+    from src.services.portal_approvals import parser as parser_mod
+
+    period = parser_mod.parse_period("09월23일13시부터~09월23일18시까지(0.5일간)")
+    assert period["start_hour"] == 13
+    assert period["start_date"] is None, "연도가 없으면 날짜는 만들지 않는다"
+    assert period["days"] == 0.5
+    assert parser_mod.half_from_hour("반차", period["start_hour"]) == "오후"
+    # 서식의 빈 칸('00년 00월 00일')은 여전히 아무것도 만들지 않는다.
+    empty = parser_mod.parse_period("00년 00월 00일 00시부터 ~ 00년 00월 00일 00시까지")
+    assert empty["start_hour"] is None and empty["start_date"] is None
