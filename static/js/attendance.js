@@ -764,12 +764,17 @@
     const rejectTotal = Number(run?.rejected_total || rejects.length || 0);
     // 저장은 됐지만 일부 칸을 못 읽은 문서. 목록에는 이미 있으니 건수만 알린다.
     const unresolvedTotal = Number(run?.unresolved_total || 0);
+    // 한 회차 상한에 걸려 아직 못 연 문서. 다시 누르면 이어서 받는다.
+    const remaining = Number(run?.remaining || 0);
 
     let headline = "";
     let note = "";
 
     if (notConfigured || RUN_HEADLINES[status]) {
       [headline, note] = RUN_HEADLINES[notConfigured ? "not_configured" : status];
+    } else if (remaining) {
+      headline = `아직 ${remaining}건 남음`;
+      note = "다시 누르면 이어서 가져옵니다";
     } else if (incompleteTotal || rejectTotal || forbidden || unresolvedTotal) {
       const parts = [];
       if (forbidden) parts.push(`읽을 수 없음 ${forbidden}건`);
@@ -822,12 +827,29 @@
   async function runCollect() {
     if (!collectBtn || collectBtn.disabled) return;
     const label = collectBtn.textContent;
+    // 첫 회차는 문서를 수십 건 여느라 1분 가까이 걸린다. 버튼만 잠그면 멈춘 것처럼
+    // 보이므로 지난 시간을 세어 보여주고, 상태 줄에도 진행 중임을 적는다.
+    const startedAt = Date.now();
     collectBtn.disabled = true;
     collectBtn.textContent = "가져오는 중";
+    const ticking = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - startedAt) / 1000);
+      collectBtn.textContent = `가져오는 중 ${seconds}초`;
+    }, 1000);
+    if (approvalStatus) {
+      approvalStatus.textContent = "수집 진행 중";
+      approvalStatus.classList.remove("is-stale");
+    }
     try {
       const result = await apiPost("/api/attendance/admin/approvals/collect", {});
       const status = String(result?.status || "");
-      if (status === "ok") {
+      const remaining = Number(result?.remaining || 0);
+      if (status === "ok" && remaining) {
+        window.IRMS?.notify?.(
+          `신규 ${result.created || 0}건 저장 · 아직 ${remaining}건 남음`,
+          "warn"
+        );
+      } else if (status === "ok") {
         window.IRMS?.notify?.(
           `문서 ${result.rows || 0}건 확인 · 신규 ${result.created || 0} · 갱신 ${result.updated || 0}`,
           "success"
@@ -841,6 +863,7 @@
     } catch (error) {
       window.IRMS?.notify?.(String(error.message || error), "error");
     } finally {
+      window.clearInterval(ticking);
       collectBtn.disabled = false;
       collectBtn.textContent = label;
       await loadApprovalPanel();

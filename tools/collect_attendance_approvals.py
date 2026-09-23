@@ -8,10 +8,11 @@
     때마다 타이머가 초기화된다. 더 복잡한데 더 자주 어긋난다.
   - 그래도 같은 날 두 번 돌 수는 있으므로(serve.py 재시작) `--daily` 는 DB 의 마지막
     성공 회차를 보고 오늘 이미 성공했으면 건너뛴다. 동시 실행은 서비스 쪽 잠금이 막는다.
+    단 한 회차 상한에 걸려 **남은 문서가 있으면 건너뛰지 않는다** — 밀린 것을 이어 받는다.
 
 사용:
     python tools/collect_attendance_approvals.py          지금 한 번(강제)
-    python tools/collect_attendance_approvals.py --daily  오늘 성공한 적 있으면 건너뜀
+    python tools/collect_attendance_approvals.py --daily  오늘 끝냈으면 건너뜀
 
 포털 자격증명은 환경변수(.env)로만 온다. 이 스크립트는 값을 출력하지 않는다.
 """
@@ -26,11 +27,17 @@ from src.services import attendance_approvals as service  # noqa: E402
 
 
 def _already_ran_today(connection) -> bool:
-    """오늘(로컬 날짜) 성공한 회차가 있으면 True."""
+    """오늘(로컬 날짜) 성공했고 **남은 문서도 없으면** True.
+
+    한 회차 상한에 걸려 남은 문서가 있으면 오늘 또 돌아야 한다 — "오늘 이미 수집했다"는
+    말은 200건이 밀려 있는 상황에서 사실이 아니다.
+    """
     from src.db.time_utils import local_today_text
 
     last = service.last_run(connection)
     if not last or last.get("status") != service.RUN_OK:
+        return False
+    if int(last.get("remaining") or 0) > 0:
         return False
     stamp = str(last.get("at") or "")
     # 저장은 UTC ISO 다. 날짜만 비교하면 자정 근처에 하루 두 번 돌 수 있지만,
@@ -66,6 +73,8 @@ def main(argv: list[str]) -> int:
                     "created": result.get("created"),
                     "updated": result.get("updated"),
                     "unchanged": result.get("unchanged"),
+                    "fetched": result.get("fetched"),
+                    "remaining": result.get("remaining"),
                     "forbidden": result.get("forbidden"),
                     "incomplete": result.get("incomplete_total"),
                     "unresolved": result.get("unresolved_total"),
@@ -76,11 +85,15 @@ def main(argv: list[str]) -> int:
 
     status = result.get("status")
     if status == service.RUN_OK:
+        tail = ""
+        if result.get("remaining"):
+            # 상한에 걸려 남은 건수. 다음 날(또는 화면 버튼)에 이어서 받는다.
+            tail = f" · 남음 {result['remaining']}"
         print(
             f"근태허가원 수집: 문서 {result.get('rows', 0)}건 · "
+            f"본문 {result.get('fetched', 0)} · 그대로 {result.get('unchanged', 0)} · "
             f"신규 {result.get('created', 0)} · 갱신 {result.get('updated', 0)} · "
-            f"읽을 수 없음 {result.get('forbidden', 0)} · "
-            f"못 읽은 값 {result.get('unresolved_total', 0)}"
+            f"읽을 수 없음 {result.get('forbidden', 0)}{tail}"
         )
         return 0
     if status == service.RUN_NOT_CONFIGURED:

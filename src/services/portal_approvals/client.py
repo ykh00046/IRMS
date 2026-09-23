@@ -33,7 +33,11 @@ LIST_PATH = "/approval/work/apprlist/listApprDeptOpen.do"
 BODY_PATH = "/approval/work/apprWorkDoc/viewApprDoc.do"
 
 LIST_TYPE = "listApprDeptOpen"
-SEARCH_TITLE = "근태허가원"
+# 양식명 기본 검색어. **문서제목이 아니라 양식명으로 찾는다** — 실측(2026-09-23,
+# 270일 같은 부서): 문서제목=근태허가원 10건 / 양식명=근태허가원 328건 / 양식명=근태 344건.
+# 제목으로 찾으면 344건 중 334건을 놓친다(제목에 '근태허가원'이라는 말이 없는 평범한
+# 휴가 결재들). 양식명은 부분일치(LIKE)다.
+DEFAULT_FORM_NAME = "근태허가원"
 PAGE_SIZE = 50
 
 DEFAULT_TIMEOUT = 20.0
@@ -134,18 +138,24 @@ class PortalClient:
 
     # ── 공개 ────────────────────────────────────────────────────────────
     def fetch_list_page(
-        self, *, start_date: str, end_date: str, page_index: int
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+        page_index: int,
+        form_name: str = DEFAULT_FORM_NAME,
     ) -> str:
         """부서공개함 목록 한 쪽(HTML). 날짜 형식은 포털 그대로 `YYYY.MM.DD`.
 
+        **양식명으로 찾고 문서제목은 비운다**(위 DEFAULT_FORM_NAME 주석의 실측).
         **날짜 필터는 완료일 기준**이다(기안일이 아니다).
         `searchGroupId` 는 보내지 않는다 — 비워 보내면 회사 전체로 넓어진다.
         """
         payload = {
             "listType": LIST_TYPE,
-            "searchApprTitle": SEARCH_TITLE,
+            "searchApprTitle": "",
             "searchUserName": "",
-            "searchFormName": "",
+            "searchFormName": form_name,
             "searchStartDate": start_date,
             "searchEndDate": end_date,
             "searchApprDocType": "",

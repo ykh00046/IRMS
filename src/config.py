@@ -61,7 +61,13 @@ ASSISTANT_TIMEOUT_SEC = max(5.0, float(os.getenv("IRMS_ASSISTANT_TIMEOUT_SEC", "
 PORTAL_BASE_URL = os.getenv("IRMS_PORTAL_BASE_URL", "https://portal.interojo.com").strip().rstrip("/")
 PORTAL_USERNAME = os.getenv("IRMS_PORTAL_USERNAME", "").strip()
 PORTAL_PASSWORD = os.getenv("IRMS_PORTAL_PASSWORD", "")
+# **양식명** 부분일치 검색어(문서제목이 아니다). 실측 2026-09-23, 270일 같은 부서:
+# 문서제목=근태허가원 10건 / 양식명=근태허가원 328건 / 양식명=근태 344건.
+# 기본값 `근태허가원` 은 우리 문서를 정확히 집는다. `근태` 로 넓히면 16건이 더 잡히지만
+# 그것들은 본문 칸이 다른 별개 양식이라 '값 부족'으로만 쌓인다.
+PORTAL_FORM_NAME = os.getenv("IRMS_PORTAL_FORM_NAME", "근태허가원").strip() or "근태허가원"
 # 완료일 기준 조회 창(일). 기본 60 — 지난 두 달을 매번 다시 훑어 수정본도 잡는다.
+# 실측 건수: 30일 67 · 60일 96 · 90일 131 · 270일 344(양식명 `근태` 기준).
 PORTAL_WINDOW_DAYS = max(1, int(os.getenv("IRMS_PORTAL_WINDOW_DAYS", "60")))
 PORTAL_TIMEOUT_SEC = max(5.0, float(os.getenv("IRMS_PORTAL_TIMEOUT_SEC", "20")))
 

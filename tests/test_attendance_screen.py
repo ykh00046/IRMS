@@ -150,6 +150,25 @@ def test_the_screen_says_when_collection_is_not_configured():
     assert "configured" in ATTENDANCE_JS
 
 
+def test_a_capped_run_says_how_many_are_left():
+    """첫 회차는 상한에 걸릴 수 있다 — 남은 수를 알려야 다시 누를 이유가 생긴다."""
+    assert "아직 ${remaining}건 남음" in ATTENDANCE_JS
+    assert "다시 누르면 이어서 가져옵니다" in ATTENDANCE_JS
+    assert "result?.remaining" in ATTENDANCE_JS, "버튼 결과에도 남은 수를 써야 한다"
+
+
+def test_a_long_first_run_does_not_look_frozen():
+    """문서 수십 건을 여는 첫 회차는 1분 가까이 걸린다 — 멈춘 것처럼 보이면 안 된다."""
+    handler = ATTENDANCE_JS[ATTENDANCE_JS.index("async function runCollect()"):]
+    handler = handler[: handler.index("function approvalGroupHtml")]
+    assert "collectBtn.disabled = true" in handler
+    assert "가져오는 중 ${seconds}초" in handler, "지난 시간이 안 보이면 멈춘 줄 안다"
+    assert "수집 진행 중" in handler, "상태 줄도 진행 중임을 적는다"
+    # 타이머는 끝나면 반드시 멈춘다.
+    assert "window.clearInterval(ticking)" in handler
+    assert handler.index("finally") < handler.index("window.clearInterval(ticking)")
+
+
 def test_no_dead_file_intake_wording_remains():
     """파일 투입·공개 수신 경로는 걷어냈다 — 문구나 호출이 남아 있으면 안 된다."""
     assert "attendance_approvals.json" not in ATTENDANCE_JS
@@ -313,6 +332,7 @@ def test_edited_assets_got_a_fresh_version_this_round():
         ("js/attendance_change_password.js", "20260624a"),
         ("js/attendance_change_password.js", "20260828a"),
         ("js/attendance.js", "20260922a"),
+        ("js/attendance.js", "20260922d"),
         ("css/attendance.css", "20260922a"),
     ):
         for template in TEMPLATES.rglob("*.html"):

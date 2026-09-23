@@ -38,6 +38,9 @@ LAST_RUN_SETTING_KEY = "attendance_approvals_last_run_at"
 # 마지막 회차의 결과 요약(JSON)과, 동시 실행을 막는 잠금(시작 시각).
 LAST_RUN_RESULT_KEY = "attendance_approvals_last_run"
 RUN_LOCK_KEY = "attendance_approvals_run_lock"
+# 열어 봤지만 저장할 수 없던 문서의 기억(권한 없음·값 부족). 표에 남지 않는 문서라
+# 이것이 없으면 회차마다 다시 열려 상한을 먹고, 밀린 문서가 영영 안 들어온다.
+SKIP_MEMO_KEY = "attendance_approvals_skip_memo"
 # 잠금이 이보다 오래되면 죽은 회차로 보고 무시한다(프로세스가 중간에 꺼진 경우).
 RUN_LOCK_STALE_MINUTES = 10
 
@@ -380,6 +383,31 @@ def last_run(connection: sqlite3.Connection) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def stored_hashes(connection: sqlite3.Connection) -> dict[str, str]:
+    """이미 저장된 `{문서번호: doc_hash}`.
+
+    수집기가 목록 행 지문과 견줘 **본문을 다시 열지 말지**를 정한다. 기본 창 60일이
+    실측 96건이라, 이 건너뛰기가 없으면 매 회차 96번 문서를 연다(첫 회차 말고는 전부
+    헛수고다). 상한은 몇 천 건짜리 표가 아니므로 통째로 읽는다.
+    """
+    rows = connection.execute(
+        "SELECT doc_no, doc_hash FROM attendance_approvals WHERE doc_hash IS NOT NULL"
+    ).fetchall()
+    return {str(row["doc_no"]): str(row["doc_hash"]) for row in rows}
+
+
+def skip_memo(connection: sqlite3.Connection) -> dict[str, Any]:
+    """지난 회차의 '못 읽은 문서' 기억. 없거나 깨졌으면 빈 dict."""
+    raw = settings_service.get_setting(connection, SKIP_MEMO_KEY)
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _acquire_run_lock(connection: sqlite3.Connection, *, now: str) -> bool:
     """회차 잠금. 이미 도는 회차가 있으면 False.
 
@@ -438,6 +466,9 @@ def collect_from_portal(
         harvest = portal_approvals.collect(
             client=portal_client,
             window_days=config.PORTAL_WINDOW_DAYS,
+            form_name=config.PORTAL_FORM_NAME,
+            known=stored_hashes(connection),
+            skipped_before=skip_memo(connection),
             today=today,
         )
     except portal_approvals.PortalLoginFailed as exc:
@@ -466,7 +497,14 @@ def collect_from_portal(
         "received": outcome["received"],
         "created": outcome["created"],
         "updated": outcome["updated"],
-        "unchanged": outcome["unchanged"],
+        # 본문을 안 연 문서도 '그대로'다 — 읽는 사람에게는 같은 뜻이라 한 숫자로 합친다.
+        "unchanged": outcome["unchanged"] + harvest["skipped_unchanged"],
+        "fetched": harvest["fetched"],
+        "skipped_unchanged": harvest["skipped_unchanged"],
+        "skipped_unreadable": harvest["skipped_unreadable"],
+        # 상한에 걸려 이번에 못 연 문서. 0 이 아니면 다시 눌러 이어 받으면 된다.
+        "remaining": harvest["remaining"],
+        "form_name": harvest["form_name"],
         # 포털 권한이 없어 본문을 못 연 문서 — 제목만 보고 값을 지어내지 않는다.
         "forbidden": harvest["forbidden"],
         # 필수 항목을 못 읽어 저장하지 않은 문서.
@@ -480,6 +518,9 @@ def collect_from_portal(
         "errors": sorted(set(harvest["errors"]))[:5],
         "window_days": harvest["window_days"],
     }
+    settings_service.set_setting(
+        connection, SKIP_MEMO_KEY, json.dumps(harvest["skip_memo"], ensure_ascii=False)
+    )
     _store_last_run(connection, result)
     _release_run_lock(connection)
     connection.commit()

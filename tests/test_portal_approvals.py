@@ -229,6 +229,23 @@ def test_title_parsing_does_not_trust_position():
         assert parsed["start_date"] == start, title
 
 
+def test_a_kind_inside_the_date_token_is_still_read():
+    """`원료생산팀/김**/2026.09.23(반차)` — 날짜 칸 안에 종류가 같이 적힌 형식.
+
+    양식명으로 찾기 시작하면서(2026-09-23) 이 모양이 다수가 됐다. 날짜 칸을 통째로
+    건너뛰면 그 문서들이 전부 '기타'로 접힌다(실연에서 확인).
+    """
+    parsed = parser.parse_title("원료생산팀/김철수/2026.09.08(연차)")
+    assert parsed["emp_name"] == "김철수"
+    assert parsed["start_date"] == "2026-09-08"
+    assert parsed["kind_raw"] == "연차", "종류 원문에 날짜까지 넣지 않는다"
+    assert "kind" not in parsed["unresolved"]
+
+    # 날짜 밖에 종류가 따로 있으면 그쪽이 먼저다(기존 형식 불변).
+    other = parser.parse_title("근태허가원/원료생산팀/박용재/반차/26.08.07")
+    assert other["kind_raw"] == "반차"
+
+
 def test_unreadable_title_is_reported_not_guessed():
     parsed = parser.parse_title("원료생산팀/강도윤/근태허가원")
     assert parsed["emp_name"] == "강도윤"
@@ -305,9 +322,32 @@ def test_list_query_keeps_the_department_default():
     listing = [c for c in portal.session.calls if c[1].endswith(client_mod.LIST_PATH)][0]
     payload = listing[2]["data"]
     assert "searchGroupId" not in payload
-    assert payload["searchApprTitle"] == "근태허가원"
     assert payload["searchUserName"] == ""
     assert payload["sortColumn"] == "apprEndDate"
+
+
+def test_list_query_searches_by_form_name_not_by_title():
+    """실측(2026-09-23, 270일 같은 부서): 문서제목=근태허가원 10건 / 양식명=근태허가원 328건.
+
+    제목으로 찾으면 344건 중 334건을 놓친다 — 제목에 '근태허가원'이라는 말이 아예 없는
+    평범한 휴가 결재가 대부분이기 때문이다. 양식명 칸으로 찾고 제목은 비운다.
+    """
+    portal = _client(_ok_handlers({1: _list_html([])}, {}))
+    portal.fetch_list_page(start_date="2026.07.01", end_date="2026.09.01", page_index=1)
+    payload = [
+        c for c in portal.session.calls if c[1].endswith(client_mod.LIST_PATH)
+    ][0][2]["data"]
+    assert payload["searchApprTitle"] == "", "제목으로 찾으면 대부분을 놓친다"
+    assert payload["searchFormName"] == client_mod.DEFAULT_FORM_NAME == "근태허가원"
+
+    # 양식명은 부분일치라 '근태' 로 넓힐 수 있다(운영자 선택).
+    portal.fetch_list_page(
+        start_date="2026.07.01", end_date="2026.09.01", page_index=1, form_name="근태"
+    )
+    wider = [
+        c for c in portal.session.calls if c[1].endswith(client_mod.LIST_PATH)
+    ][-1][2]["data"]
+    assert wider["searchFormName"] == "근태"
 
 
 # ── 3. 한 회차 ──────────────────────────────────────────────────────────────
@@ -318,6 +358,9 @@ def _page_rows(*specs: tuple[str, str, str]) -> list[dict[str, str]]:
         {"appr_id": appr_id, "doc_no": doc_no, "title": title}
         for appr_id, doc_no, title in specs
     ]
+
+
+# 목록 열 순서 그대로 쓰는 헬퍼들은 _list_html 이 기본값을 채운다(완료일 2026-08-05).
 
 
 def test_collect_reads_bodies_and_dedupes_by_doc_no():
@@ -440,8 +483,181 @@ def test_collect_window_uses_the_completion_date_filter():
     assert payload["searchEndDate"] == "2026.09.23"
 
 
+def _body_fetch_ids(portal) -> list[str]:
+    """이 회차에 실제로 연 문서(apprId) 목록."""
+    return [
+        (call[2].get("params") or {}).get("apprId", "")
+        for call in portal.session.calls
+        if call[1].endswith(client_mod.BODY_PATH)
+    ]
+
+
+def test_already_stored_rows_are_not_fetched_again():
+    """목록 행이 그대로면 본문을 열지 않는다 — 회차 비용은 본문 왕복이 전부다."""
+    rows = _page_rows(
+        ("A1", "20260805P227-0040", "근태허가원/원료생산팀/박용재/반차/26.08.07"),
+        ("A2", "20260806P227-0041", "근태허가원/원료생산팀/김민솔/연차/26.08.08"),
+    )
+    bodies = {"A1": _body_html(emp_name="박용재"), "A2": _body_html(emp_name="김민솔")}
+
+    first = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    seeded = portal_approvals.collect(client=first, window_days=60)
+    assert seeded["fetched"] == 2
+    assert seeded["skipped_unchanged"] == 0
+    known = {item["doc_no"]: item["doc_hash"] for item in seeded["items"]}
+
+    again = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    second = portal_approvals.collect(client=again, window_days=60, known=known)
+    assert second["skipped_unchanged"] == 2
+    assert second["fetched"] == 0
+    assert second["items"] == []
+    assert _body_fetch_ids(again) == [], "저장된 문서를 다시 열었다"
+
+
+def test_a_changed_completion_date_forces_a_fresh_fetch():
+    """결재가 다시 완료되면 완료일이 바뀐다 — 그 문서만 다시 연다."""
+    base = [
+        {
+            "appr_id": "A1",
+            "doc_no": "20260805P227-0040",
+            "title": "근태허가원/원료생산팀/박용재/반차/26.08.07",
+        },
+        {
+            "appr_id": "A2",
+            "doc_no": "20260806P227-0041",
+            "title": "근태허가원/원료생산팀/김민솔/연차/26.08.08",
+        },
+    ]
+    bodies = {"A1": _body_html(emp_name="박용재"), "A2": _body_html(emp_name="김민솔")}
+    first = _client(_ok_handlers({1: _list_html(base)}, bodies))
+    seeded = portal_approvals.collect(client=first, window_days=60)
+    known = {item["doc_no"]: item["doc_hash"] for item in seeded["items"]}
+
+    changed = [dict(base[0], end_date="2026-08-20"), base[1]]
+    again = _client(_ok_handlers({1: _list_html(changed)}, bodies))
+    second = portal_approvals.collect(client=again, window_days=60, known=known)
+    assert second["fetched"] == 1
+    assert second["skipped_unchanged"] == 1
+    assert _body_fetch_ids(again) == ["A1"]
+    assert [item["doc_no"] for item in second["items"]] == ["20260805P227-0040"]
+
+
+def test_the_run_cap_reports_how_many_are_left():
+    """상한에 걸리면 남은 수를 알린다 — 다시 부르면 이어서 받는다."""
+    rows = _page_rows(
+        *[
+            (
+                f"A{index}",
+                f"2026080{index}P227-000{index}",
+                f"근태허가원/원료생산팀/김민솔/연차/26.08.0{index}",
+            )
+            for index in range(1, 6)
+        ]
+    )
+    bodies = {f"A{index}": _body_html(emp_name="김민솔") for index in range(1, 6)}
+
+    portal = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    first = portal_approvals.collect(client=portal, window_days=60, max_bodies=2)
+    assert first["fetched"] == 2
+    assert first["remaining"] == 3
+    assert len(first["items"]) == 2
+    # 최신 문서부터 연다 — 회차가 나뉘어도 오늘 것이 먼저 들어온다.
+    assert _body_fetch_ids(portal) == ["A5", "A4"]
+
+    known = {item["doc_no"]: item["doc_hash"] for item in first["items"]}
+    rest = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    second = portal_approvals.collect(
+        client=rest, window_days=60, known=known, max_bodies=2
+    )
+    assert second["fetched"] == 2
+    assert second["skipped_unchanged"] == 2
+    assert second["remaining"] == 1
+
+
+def test_unreadable_documents_do_not_eat_the_budget_every_run():
+    """못 읽은 문서(권한 없음·값 부족)를 기억하지 않으면 밀린 문서가 영영 안 들어온다.
+
+    2026-09-23 브라우저 실연에서 실제로 막혔다: 상한 2인데 최신 두 건이 매번
+    '권한 없음'과 '값 부족'이라, 몇 번을 눌러도 남은 수가 줄지 않았다.
+    """
+    rows = _page_rows(
+        # 최신순으로 먼저 걸리는 두 건이 저장 불가다.
+        ("AX", "20260909P227-0099", "근태허가원/다른팀/홍길동/연차/26.09.09"),
+        ("A5", "20260908P227-0098", "원료생산팀/강도윤/근태허가원"),
+        ("A1", "20260907P227-0097", "근태허가원/원료생산팀/박용재/반차/26.09.07"),
+    )
+    bodies = {
+        "A5": _body_html(emp_name="강도윤", period="", reason=""),
+        "A1": _body_html(emp_name="박용재"),
+    }
+
+    first = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    one = portal_approvals.collect(client=first, window_days=60, max_bodies=2)
+    assert one["fetched"] == 2
+    assert one["items"] == [], "이번 회차에 저장할 수 있는 문서는 없다"
+    assert one["remaining"] == 1
+    assert set(one["skip_memo"]) == {"20260909P227-0099", "20260908P227-0098"}
+
+    second = _client(_ok_handlers({1: _list_html(rows)}, bodies))
+    two = portal_approvals.collect(
+        client=second,
+        window_days=60,
+        max_bodies=2,
+        skipped_before=one["skip_memo"],
+    )
+    assert two["skipped_unreadable"] == 2
+    assert two["fetched"] == 1, "이번에는 남아 있던 문서를 연다"
+    assert two["remaining"] == 0
+    assert [item["doc_no"] for item in two["items"]] == ["20260907P227-0097"]
+    # 건너뛰어도 건수는 그대로 알린다 — 사라진 것처럼 보이면 안 된다.
+    assert two["forbidden"] == 1
+    assert [row["doc_no"] for row in two["incomplete"]] == ["20260908P227-0098"]
+
+
+def test_a_changed_row_reopens_a_previously_unreadable_document():
+    """완료일이 바뀌면 기억을 무시하고 다시 연다 — 결재가 다시 돌았을 수 있다."""
+    base = [
+        {
+            "appr_id": "A5",
+            "doc_no": "20260908P227-0098",
+            "title": "원료생산팀/강도윤/근태허가원",
+        }
+    ]
+    bodies = {"A5": _body_html(emp_name="강도윤", period="", reason="")}
+    first = _client(_ok_handlers({1: _list_html(base)}, bodies))
+    one = portal_approvals.collect(client=first, window_days=60)
+
+    changed = [dict(base[0], end_date="2026-09-30")]
+    again = _client(_ok_handlers({1: _list_html(changed)}, bodies))
+    two = portal_approvals.collect(
+        client=again, window_days=60, skipped_before=one["skip_memo"]
+    )
+    assert two["fetched"] == 1, "행이 바뀌었으면 기억을 믿지 않는다"
+    assert two["skipped_unreadable"] == 0
+
+
+def test_a_period_without_a_clock_time_stores_half_unresolved():
+    """기간에 시각이 없으면 오전/오후를 추측하지 않는다(2026-09-23 실제 문서 2건)."""
+    rows = _page_rows(
+        ("A1", "20260921P227-0050", "원료생산팀/26.09.21/정민수/반반차")
+    )
+    portal = _client(
+        _ok_handlers(
+            {1: _list_html(rows)},
+            {"A1": _body_html(emp_name="정민수", period="26년09월21일부터 ~ 26년09월21일까지")},
+        )
+    )
+    result = portal_approvals.collect(client=portal, window_days=60)
+    assert len(result["items"]) == 1, "시각이 없다고 문서를 버리지는 않는다"
+    item = result["items"][0]
+    assert item["kind"] == "반반차"
+    assert item["start_date"] == "2026-09-21"
+    assert item["half"] is None, "시각이 없으면 오전/오후를 지어내지 않는다"
+    assert result["unresolved"][0]["fields"] == ["half"]
+
+
 def test_header_fields_skip_the_instruction_text_and_keep_the_drafter_department():
-    """머리글은 안내문이 아니라 '문서번호' 뒤에서 읽는다(2026-09-23 실제 문서 확인).
+    r"""머리글은 안내문이 아니라 '문서번호' 뒤에서 읽는다(2026-09-23 실제 문서 확인).
 
     본문 앞쪽 안내문에 "문서 제목 작성시 ➡ …" 이 먼저 나와, 글 전체에서 라벨을 찾으면
     문서제목이 '작성시' 가 됐다. 기안자는 '박용재/ 원료생산팀' 처럼 슬래시 뒤 부서까지가

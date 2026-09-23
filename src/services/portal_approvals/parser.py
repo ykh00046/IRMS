@@ -248,6 +248,15 @@ def parse_title(title: str) -> dict[str, Any]:
             kind_idx, kind_raw = idx, part
             break
 
+    if kind_raw is None and date_idx is not None:
+        # 날짜 칸 안에 종류가 함께 적힌 형식 — `원료생산팀/김**/2026.09.23(반차)`.
+        # 양식명으로 찾기 시작하면서(2026-09-23) 이 모양이 다수가 됐다. 날짜 칸을
+        # 통째로 건너뛰면 그 전부가 '기타'로 접힌다. 여기서는 토큰 전체가 아니라
+        # **찾은 낱말만** 원문으로 삼는다(날짜까지 종류 원문에 넣으면 읽기 나쁘다).
+        found = detect_kind_token(parts[date_idx])
+        if found:
+            kind_raw = found
+
     emp_name = None
     for idx, part in enumerate(parts):
         if idx in (date_idx, kind_idx):

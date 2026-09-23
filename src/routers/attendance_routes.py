@@ -275,6 +275,8 @@ def build_router() -> APIRouter:
                     "created": result.get("created"),
                     "updated": result.get("updated"),
                     "unchanged": result.get("unchanged"),
+                    "fetched": result.get("fetched"),
+                    "remaining": result.get("remaining"),
                     "forbidden": result.get("forbidden"),
                     "incomplete": result.get("incomplete_total"),
                     "unresolved": result.get("unresolved_total"),

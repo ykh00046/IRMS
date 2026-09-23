@@ -432,14 +432,18 @@ class _StubPortal:
         self.list_html = list_html
         self.bodies = bodies
         self.list_calls = 0
+        self.form_names: list[str] = []
+        self.opened: list[str] = []
 
-    def fetch_list_page(self, *, start_date, end_date, page_index):
+    def fetch_list_page(self, *, start_date, end_date, page_index, form_name="근태허가원"):
         self.list_calls += 1
+        self.form_names.append(form_name)
         return self.list_html if page_index == 1 else ""
 
     def fetch_body(self, appr_id):
         from src.services.portal_approvals.client import PortalPermissionDenied
 
+        self.opened.append(appr_id)
         if appr_id not in self.bodies:
             raise PortalPermissionDenied("PORTAL_DOC_FORBIDDEN")
         return self.bodies[appr_id]
@@ -504,19 +508,101 @@ def test_collect_stores_what_it_read_and_reports_what_it_could_not(monkeypatch):
     assert _fetch(f"20260908P{tag[:3]}-0001") is None
 
 
-def test_collect_twice_is_idempotent(monkeypatch):
+def test_collect_twice_is_idempotent_and_skips_the_second_body_fetch(monkeypatch):
+    """두 번째 회차는 목록만 보고 끝난다 — 본문 왕복이 회차 비용의 전부다."""
     from src.db import get_connection
 
     _reload_app()
     _configure_portal(monkeypatch)
     tag = _tag()
 
-    for expected_created, expected_unchanged in ((1, 0), (0, 1)):
-        _clear_lock()
-        with get_connection() as connection:
-            result = service.collect_from_portal(connection, client=_stub_portal(tag))
-        assert result["created"] == expected_created
-        assert result["unchanged"] == expected_unchanged
+    _clear_lock()
+    first = _stub_portal(tag)
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=first)
+    assert (result["created"], result["unchanged"]) == (1, 0)
+    assert result["fetched"] == 2, "첫 회차는 두 건 모두 연다(하나는 권한 없음)"
+    assert result["skipped_unchanged"] == 0
+    assert first.form_names == ["근태허가원"], "양식명으로 찾는다"
+
+    _clear_lock()
+    second = _stub_portal(tag)
+    with get_connection() as connection:
+        again = service.collect_from_portal(connection, client=second)
+    assert again["created"] == 0
+    assert again["unchanged"] == 1, "저장된 문서는 '그대로'로 센다"
+    assert again["skipped_unchanged"] == 1
+    # 권한이 없던 문서는 표에 남지 않는다 — 기억해 두지 않으면 회차마다 다시 열려
+    # 상한을 먹고 밀린 문서가 영영 안 들어온다(2026-09-23 실연에서 실제로 막혔다).
+    assert again["fetched"] == 0, "못 읽은 문서를 또 열었다"
+    assert again["skipped_unreadable"] == 1
+    assert again["forbidden"] == 1, "건너뛰어도 건수는 그대로 알린다"
+    assert second.opened == [], "두 번째 회차는 본문을 한 건도 열지 않는다"
+
+
+def test_stored_hashes_feeds_the_skip_rule(monkeypatch):
+    from src.db import get_connection
+
+    _reload_app()
+    doc_no = f"SH-{_tag()}"
+    _store([_item(doc_no, doc_hash="sha256:zzz")])
+    with get_connection() as connection:
+        known = service.stored_hashes(connection)
+    assert known[doc_no] == "sha256:zzz"
+
+
+def test_the_form_name_default_and_override(monkeypatch):
+    """기본 양식명은 `근태허가원`, 환경변수로 `근태` 처럼 넓힐 수 있다."""
+    import importlib
+
+    import src.config as cfg
+
+    importlib.reload(cfg)
+    assert cfg.PORTAL_FORM_NAME == "근태허가원"
+
+    monkeypatch.setenv("IRMS_PORTAL_FORM_NAME", "근태")
+    importlib.reload(cfg)
+    assert cfg.PORTAL_FORM_NAME == "근태"
+
+    # 빈 값이면 기본값으로 돌아간다(검색어 없이 전사 조회가 되면 안 된다).
+    monkeypatch.setenv("IRMS_PORTAL_FORM_NAME", "   ")
+    importlib.reload(cfg)
+    assert cfg.PORTAL_FORM_NAME == "근태허가원"
+    monkeypatch.delenv("IRMS_PORTAL_FORM_NAME")
+    importlib.reload(cfg)
+
+
+def test_the_run_reports_what_is_still_waiting(monkeypatch):
+    """한 회차 상한에 걸리면 남은 수를 알린다 — 버튼을 다시 누르면 이어 받는다."""
+    from src.db import get_connection
+    from tests.test_portal_approvals import _body_html, _list_html, _page_rows
+
+    _reload_app()
+    _configure_portal(monkeypatch)
+    _clear_lock()
+    tag = _tag()
+    rows = _page_rows(
+        *[
+            (
+                f"R{index}",
+                f"2026091{index}P{tag[:3]}-000{index}",
+                f"근태허가원/원료생산팀/박용재/연차/26.09.1{index}",
+            )
+            for index in range(1, 4)
+        ]
+    )
+    portal = _StubPortal(
+        _list_html(rows),
+        {f"R{index}": _body_html(emp_name="박용재", emp_id="171013") for index in range(1, 4)},
+    )
+    monkeypatch.setattr(
+        "src.services.portal_approvals.collector.MAX_BODIES", 1, raising=False
+    )
+    with get_connection() as connection:
+        result = service.collect_from_portal(connection, client=portal)
+    assert result["fetched"] == 1
+    assert result["remaining"] == 2
+    assert result["created"] == 1
 
 
 def test_login_failure_is_reported_and_leaves_rows_alone(monkeypatch):
