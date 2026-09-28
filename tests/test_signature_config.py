@@ -37,3 +37,17 @@ def test_value_clamped_to_range(tmp_path, monkeypatch):
     sc = _fresh(tmp_path, monkeypatch)
     sc.save({"rotation_angle": 999})  # max 30
     assert sc.load()["rotation_angle"] == 30.0
+
+
+def test_old_default_noise_follows_the_new_default(tmp_path, monkeypatch):
+    """옛 기본값 그대로 저장된 값은 사람이 고른 값이 아니다(2026-09-28).
+
+    기본 잡티를 12 에서 8 로 낮췄는데, 화면에서 한 번이라도 저장한 곳은 12 가 파일에
+    적혀 있어 새 기본값이 닿지 않는다. 옛 기본값과 똑같은 값만 새 기본값을 따른다.
+    """
+    sc = _fresh(tmp_path, monkeypatch)
+    sc.save({"scan_noise_range": sc.LEGACY_DEFAULTS["scan_noise_range"]})
+    assert sc.load()["scan_noise_range"] == sc.DEFAULTS["scan_noise_range"]
+
+    sc.save({"scan_noise_range": 20})
+    assert sc.load()["scan_noise_range"] == 20.0, "사람이 고른 값은 그대로 둔다"

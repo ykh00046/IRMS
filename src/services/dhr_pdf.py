@@ -36,8 +36,10 @@ except ImportError:
 _log = logging.getLogger(__name__)
 _SIGN_FAILED_MARK = "(서명 합성 실패)"
 _excel_lock = threading.Lock()
-_RENDER_DPI = 250  # Excel→이미지 렌더 해상도. 200→300(06-25) 뒤 250 으로 — 구 프로그램과 동일, 용량 절반(2026-08-27).
-_PDF_JPEG_QUALITY = 60  # PDF 안 JPEG 품질. Pillow 기본 75 → 60: 스캔 효과 이미지라 눈에 안 띄고 −39%(2026-08-27).
+_RENDER_DPI = 200  # Excel→이미지 렌더 해상도. 300(06-25)→250(08-27)→200(09-28).
+# 200 은 한 장 −34%. 실측 비교에서 품목명·LOT·수치가 250 과 똑같이 읽힌다(2026-09-28).
+_PDF_JPEG_QUALITY = 55  # PDF 안 JPEG 품질. 75(기본)→60(08-27)→55(09-28).
+# 스캔 효과 이미지라 55 까지는 글자가 그대로다. 45 아래로 내리면 숫자 획이 뭉친다.
 # JPEG 허프만 표 최적화 — 무손실로 −21%. 이게 빠져 있으면 zip/7z 가 뒤늦게 그 여유를 줄이는데(zip 85%·7z 77%),
 # 켜고 나면 어느 압축이든 93% 언저리라 압축 형식 논쟁이 의미 없어진다(2026-08-27).
 _PDF_JPEG_OPTS = {"quality": _PDF_JPEG_QUALITY, "optimize": True}

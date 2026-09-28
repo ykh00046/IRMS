@@ -21,7 +21,8 @@ _CACHE_DIR = config.DATA_DIR / "dhr_cache"
 # 4: 통제 표식(증량·수기 부재·일괄 재생성) 제거 — 취소 표식만 남김 (2026-08-27)
 # 5: 250dpi + JPEG 품질 60 — 용량 절감 (2026-08-27)
 # 6: JPEG 허프만 최적화(optimize) — 무손실 −21% (2026-08-27)
-RENDERER_VERSION = 6
+# 7: 200dpi + 품질 55 + 스캔 잡티 8 — 한 장 190→75KB (2026-09-28)
+RENDERER_VERSION = 7
 
 
 def _marker(record: dict[str, Any]) -> str:

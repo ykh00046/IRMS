@@ -20,7 +20,9 @@ DEFAULTS: dict[str, float] = {
     "scale_min": 0.85,
     "scale_max": 0.95,
     # 스캔 효과 (원본 운영값 — 복사/스캔 느낌)
-    "scan_noise_range": 12.0,
+    # 종이 잡티. 12 → 8(2026-09-28): 한 장 190KB 중 93KB 가 잡티였다. 8 이면 −38%
+    # 이고 종이 느낌은 남는다.
+    "scan_noise_range": 8.0,
     "scan_blur_radius": 1.1,
     "scan_contrast": 1.4,
     "scan_brightness": 1.0,
@@ -49,6 +51,11 @@ def _path():
     return config.DATA_DIR / "signature_config.json"
 
 
+# 기본값을 낮췄을 때, 저장된 값이 '옛 기본값 그대로'면 사람이 고른 값이 아니다 —
+# 새 기본값을 따른다. 화면에서 다른 값을 넣었다면 그 값을 그대로 존중한다.
+LEGACY_DEFAULTS: dict[str, float] = {"scan_noise_range": 12.0}
+
+
 def load() -> dict[str, float]:
     cfg = dict(DEFAULTS)
     p = _path()
@@ -56,8 +63,12 @@ def load() -> dict[str, float]:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
             for k, v in data.items():
-                if k in DEFAULTS:
-                    cfg[k] = float(v)
+                if k not in DEFAULTS:
+                    continue
+                value = float(v)
+                if k in LEGACY_DEFAULTS and value == LEGACY_DEFAULTS[k]:
+                    continue
+                cfg[k] = value
         except (ValueError, OSError):
             pass
     return cfg
