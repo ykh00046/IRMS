@@ -734,6 +734,12 @@ def build_month_view(
         }
         items.append(item)
 
+        # 그 달 명단에 없는 사람의 문서는 아예 보여주지 않는다(2026-09-28 사용자 결정).
+        # 우리 근태 대장에 없는 사람이면 대조할 것도, 사람이 고칠 것도 없다 —
+        # 경고로 띄우면 손댈 수 없는 줄만 쌓인다. 적재는 그대로 두고 화면에서만 뺀다.
+        if person is None:
+            continue
+
         # 못 읽은 칸이 있는 문서는 '어긋난 건'이 아니다. 종류를 못 읽었으면 휴가인지도
         # 모르고, 기간이 띄엄띄엄하면 어느 날인지 모른다 — 대조 목록에 섞으면 사람이
         # 고칠 수 없는 줄만 늘어난다. 따로 모아 "문서를 열어 보라"고만 한다.
@@ -750,9 +756,6 @@ def build_month_view(
                     "reason": " · ".join(reasons),
                 }
             )
-
-        if person is None:
-            continue
 
         matched_id = normalize_emp_id(person.get("emp_id"))
         # 종류를 못 읽었어도 '그 사람의 그 날에 결재가 있다'는 사실은 맞다 —

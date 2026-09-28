@@ -885,3 +885,28 @@ def test_manager_payload_never_carries_credentials(monkeypatch):
     collection = res.json()["collection"]
     assert collection["configured"] is True
     assert not ({"username", "password", "base_url"} & set(collection))
+
+
+def test_people_outside_the_month_roster_are_not_shown_at_all():
+    """그 달 명단에 없는 사람의 허가원은 화면에 올리지 않는다(2026-09-28 사용자 결정).
+
+    우리 근태 대장에 없는 사람이면 대조할 것도 사람이 고칠 것도 없다. 경고로 띄우면
+    손댈 수 없는 줄만 쌓인다. 적재는 그대로 두고 화면에서만 뺀다.
+    """
+    _reload_app()
+    tag = _tag()
+    outsider = _item(
+        f"OUT-{tag}",
+        emp_name=f"정인철{tag}",
+        emp_id=f"99{tag[:4]}",
+        kind="알수없는말",              # 종류 미확인 → 명단에 있었다면 확인 목록에 오른다
+        start_date="2026-09-10",
+        end_date="2026-09-10",
+    )
+    view = _month_view([outsider], [])
+
+    assert all(
+        row["doc_no"] != f"OUT-{tag}" for row in view["needs_review"]
+    ), "명단에 없는 사람은 확인 목록에도 올리지 않는다"
+    for key in ("missing_in_erp", "missing_approval"):
+        assert all(row.get("doc_no") != f"OUT-{tag}" for row in view[key]), key
