@@ -75,26 +75,15 @@ _KIND_PATTERNS = (
 
 HALVES = ("오전", "오후")
 
-# ERP 엑셀에서 "휴가 표시"로 읽을 키워드. 허가원이 뒷받침하는 종류만 넣는다 —
-# 휴직(장기 부재)·결근은 허가원 대상이 아니고, 교육은 결재 종류가 따로 있다.
-ERP_LEAVE_KEYWORDS = (
+# 허가원을 따로 쓰는 휴가 — 이것만 '엑셀만 있음'으로 묻는다. 출산휴가·육아휴직·경조·
+# 공가·예비군처럼 ERP 표기 자체가 사정을 말하는 것은 묻지 않는다(2026-09-28 사용자 지적:
+# "모든 걸 매칭할 순 없다, 글자 매칭이 아니라 맥락이다"). 낱말을 하나씩 쫓다 보면
+# 출산휴가↔경조휴가처럼 표기가 갈릴 때마다 없는 어긋남이 생긴다.
+ERP_DAY_LEAVE_KEYWORDS = (
     "연차",
     "월차",
-    "휴가",
     "반차",
     "반반차",
-    "유급",
-    "공가",
-    "예비군",
-    "훈련",
-)
-
-# 이미 설명이 끝난 부재. 휴가 표시는 아니지만 그날 무슨 일이 있었는지 ERP 가 이미
-# 말하고 있으므로 '허가원만 있음'으로 올리지 않는다(2026-09-28 사용자 지적:
-# "결근으로 근태코드가 들어간 건은 결재건에 대조될 게 없다, 결근인 걸로 충분하다").
-ERP_ACCOUNTED_KEYWORDS = (
-    "결근",
-    "휴직",
 )
 
 # 대조는 평일 근무일만 본다. 주휴·무휴·유휴에는 휴가 표시가 없는 것이 정상이라
@@ -215,20 +204,24 @@ def covered_dates(start_date: str, end_date: str) -> list[str]:
     ]
 
 
-def has_erp_leave(day_type: str, attendance_code: str, note: str) -> bool:
-    """ERP 행에 휴가 표시가 있는가 — 구분·근태코드·비고를 합쳐 본다."""
-    text = f"{day_type or ''} {attendance_code or ''} {note or ''}"
-    return any(keyword in text for keyword in ERP_LEAVE_KEYWORDS)
+def has_erp_day_leave(day_type: str, attendance_code: str, note: str) -> bool:
+    """그날이 **허가원을 쓰는 휴가**(연차·월차·반차·반반차)로 찍혀 있는가.
 
-
-def is_erp_accounted(day_type: str, attendance_code: str, note: str) -> bool:
-    """그날이 ERP 에서 이미 설명된 부재인가(결근·휴직).
-
-    휴가 표시는 아니지만 '왜 안 나왔는지'가 이미 적혀 있으므로, 허가원이 있어도
-    '엑셀에 휴가 표시가 없다'고 올리지 않는다. 결근인 걸로 충분하다.
+    이 값이 참인 날만 '엑셀만 있음'으로 묻는다. 출산휴가·육아휴직·경조·공가처럼
+    표기가 곧 사정인 휴가는 허가원을 따로 대조하지 않는다.
     """
     text = f"{day_type or ''} {attendance_code or ''} {note or ''}"
-    return any(keyword in text for keyword in ERP_ACCOUNTED_KEYWORDS)
+    return any(keyword in text for keyword in ERP_DAY_LEAVE_KEYWORDS)
+
+
+def is_erp_marked(attendance_code: str, note: str) -> bool:
+    """ERP 가 그날에 대해 **무엇이든 적어 두었는가**.
+
+    적혀 있으면 그날은 이미 설명된 날이다 — 허가원이 있어도 '엑셀에 표시가 없다'고
+    올리지 않는다. 낱말 목록을 늘려 가며 쫓지 않는다(결근·출산휴가·교육·출장 …).
+    빈칸인 평일만 '허가원만 있음'으로 센다.
+    """
+    return bool(_text(attendance_code) or _text(note))
 
 
 # ── 적재(§3·§4) ──────────────────────────────────────────────────────────────
@@ -697,7 +690,7 @@ def build_month_view(
     # 날짜는 하나라도 휴가면 휴가로 본다.
     erp_leave: dict[tuple[str, str], bool] = {}
     erp_leave_text: dict[tuple[str, str], str] = {}
-    # 이미 설명이 끝난 부재(결근·휴직)가 찍힌 날 — 허가원이 있어도 어긋남으로 세지 않는다.
+    # ERP 가 무엇이든 적어 둔 날 — 이미 설명된 날이므로 허가원이 있어도 어긋남으로 세지 않는다.
     erp_accounted: set[tuple[str, str]] = set()
     erp_people: dict[str, dict[str, Any]] = {}
     for row in erp_rows:
@@ -708,17 +701,13 @@ def build_month_view(
         if not emp_id or not row_date:
             continue
         key = (emp_id, row_date)
-        leave = has_erp_leave(
+        leave = has_erp_day_leave(
             _text(row.get("day_type")),
             _text(row.get("attendance_code")),
             _text(row.get("note")),
         )
         erp_leave[key] = erp_leave.get(key, False) or leave
-        if is_erp_accounted(
-            _text(row.get("day_type")),
-            _text(row.get("attendance_code")),
-            _text(row.get("note")),
-        ):
+        if is_erp_marked(_text(row.get("attendance_code")), _text(row.get("note"))):
             erp_accounted.add(key)
         if leave and key not in erp_leave_text:
             erp_leave_text[key] = " ".join(

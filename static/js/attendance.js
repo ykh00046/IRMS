@@ -969,14 +969,14 @@
       erpNote +
       approvalGroupHtml(
         "허가원만 있음",
-        "엑셀에 휴가 표시가 없습니다",
+        "엑셀에 아무 표시도 없습니다",
         missingInErp.length,
         approvalGapHtml(missingInErp),
         "어긋난 건 없음"
       ) +
       approvalGroupHtml(
         "엑셀만 있음",
-        "휴가인데 허가원이 없습니다",
+        "연차·반차인데 허가원이 없습니다",
         missingApproval.length,
         approvalErpOnlyHtml(missingApproval),
         "어긋난 건 없음"

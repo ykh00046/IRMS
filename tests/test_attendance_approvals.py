@@ -940,3 +940,34 @@ def test_an_absence_already_written_in_the_sheet_is_not_a_mismatch():
     plain_row = _erp_row(_ROSTER[0]["emp_id"], _ROSTER[0]["name"], "2026-09-11", "")
     plain = _month_view([approval], [plain_row])
     assert any(row["doc_no"] == f"ABS-{tag}" for row in plain["missing_in_erp"])
+
+
+def test_context_not_wording_decides_the_two_lists():
+    """낱말을 맞추지 않는다 — 맥락으로 본다(2026-09-28 사용자 지적).
+
+    ① '엑셀만 있음'은 허가원을 따로 쓰는 휴가(연차·반차·반반차)만 묻는다. 출산휴가·
+       육아휴직·경조처럼 표기가 곧 사정인 휴가는 묻지 않는다 — 표기가 갈릴 때마다
+       (출산휴가 ↔ 경조휴가) 없는 어긋남이 생긴다.
+    ② '허가원만 있음'은 ERP 가 그날에 아무것도 적지 않았을 때만 센다. 무엇이든 적혀
+       있으면 이미 설명된 날이다.
+    """
+    _reload_app()
+    emp_id, name = _ROSTER[0]["emp_id"], _ROSTER[0]["name"]
+
+    # ① 출산휴가만 찍힌 날 — 허가원이 없어도 묻지 않는다.
+    maternity = _month_view([], [_erp_row(emp_id, name, "2026-09-07", "출산휴가")])
+    assert maternity["missing_approval"] == []
+    # 연차가 찍힌 날은 종전대로 허가원을 묻는다.
+    annual = _month_view([], [_erp_row(emp_id, name, "2026-09-08", "연차")])
+    assert [row["date"] for row in annual["missing_approval"]] == ["2026-09-08"]
+
+    # ② 근태코드가 무엇이든 적혀 있으면 '허가원만 있음'이 아니다.
+    tag = _tag()
+    approval = _item(
+        f"CTX-{tag}", emp_name=name, emp_id=emp_id, kind="연차",
+        start_date="2026-09-09", end_date="2026-09-09",
+    )
+    marked = _month_view([approval], [_erp_row(emp_id, name, "2026-09-09", "교육")])
+    assert marked["missing_in_erp"] == []
+    blank = _month_view([approval], [_erp_row(emp_id, name, "2026-09-09", "")])
+    assert [row["doc_no"] for row in blank["missing_in_erp"]] == [f"CTX-{tag}"]
