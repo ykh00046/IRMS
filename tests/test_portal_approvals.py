@@ -812,3 +812,42 @@ def test_period_without_a_year_still_gives_the_hour():
     # 서식의 빈 칸('00년 00월 00일')은 여전히 아무것도 만들지 않는다.
     empty = parser_mod.parse_period("00년 00월 00일 00시부터 ~ 00년 00월 00일 00시까지")
     assert empty["start_hour"] is None and empty["start_date"] is None
+
+
+def test_half_day_plus_full_day_keeps_its_two_dates():
+    """'1.25일간'·'1.5일간' 은 띄엄띄엄이 아니라 이어진 휴가다(2026-09-28 실측 2건).
+
+    간격이 적힌 일수보다 조금 넓다고 첫날로 접으면 이틀 휴가가 하루가 된다.
+    띄엄띄엄한 문서는 간격이 하루 이상 넓다('9월 2일, 9월 5일 … 총 2일간' = 간격 4).
+    """
+    from src.services.portal_approvals import parser as parser_mod
+
+    combo = parser_mod.parse_period("26년9월16일16시부터~26년9월17일18시까지(1.25일간)")
+    assert (combo["start_date"], combo["end_date"]) == ("2026-09-16", "2026-09-17")
+    half_and_day = parser_mod.parse_period(
+        "2026년 08월 18일 13시부터 ~ 2026년 08월 19일 18시까지(1.5일간)"
+    )
+    assert (half_and_day["start_date"], half_and_day["end_date"]) == (
+        "2026-08-18",
+        "2026-08-19",
+    )
+    # 띄엄띄엄한 문서는 그대로 첫날만 남는다.
+    apart = parser_mod.parse_period(
+        "26년 9월 2일 07시부터 19시, 26년 9월 5일 19시부터 31시까지 (총 2일간)"
+    )
+    assert (apart["start_date"], apart["end_date"]) == ("2026-09-02", "2026-09-02")
+
+
+def test_a_year_typo_that_reverses_the_range_does_not_store_it_backwards():
+    """'26년9월23일 ~ 23년9월25일' 처럼 연도 오타로 끝날이 앞서는 문서(실측에 1건 있었다).
+
+    범위를 만들 수 없으니 첫날 하루로 접고 사람이 보도록 올린다.
+    """
+    from src.services.portal_approvals import parser as parser_mod
+
+    reversed_range = parser_mod.parse_period(
+        "26년9월23일 07시부터~23년9월25일 19시까지(3일간)"
+    )
+    assert reversed_range["start_date"] == "2026-09-23"
+    assert reversed_range["end_date"] == "2026-09-23"
+    assert reversed_range["end_date"] >= reversed_range["start_date"]

@@ -503,9 +503,14 @@ def resolve_period_range(
 
     - 적힌 일수가 1 이하인데 이틀에 걸쳐 있으면 **야간 근무**다
       ('19시부터 ~ 익일 07시까지(1일간)') — 첫날 하루로 본다.
-    - 적힌 일수보다 첫날~마지막날 간격이 넓으면 날짜가 띄엄띄엄한 것이다
-      ('9월 2일, 9월 5일 … (총 2일간)') — **첫날만** 남기고 확인 대상으로 올린다.
-      가운데 날을 채우면 신청하지도 않은 휴가를 만들어 낸다.
+    - 적힌 일수보다 첫날~마지막날 간격이 **하루 이상** 넓으면 날짜가 띄엄띄엄한 것이다
+      ('9월 2일, 9월 5일 … (총 2일간)' — 간격 4, 일수 2) — **첫날만** 남기고 확인 대상으로
+      올린다. 가운데 날을 채우면 신청하지도 않은 휴가를 만들어 낸다.
+    - 반나절이 섞인 연속 휴가는 간격이 일수보다 조금 넓다('1.5일간' 이 이틀에 걸침,
+      차이 0.5). 이건 띄엄띄엄이 아니라 **이어진 휴가**이므로 범위를 그대로 둔다
+      (2026-09-28 실측: 1.25일간·1.5일간 두 건이 하루로 줄던 것을 여기서 살린다).
+    - 연도 오타로 마지막날이 첫날보다 앞서면('26년…~23년…') 범위를 만들 수 없다 —
+      첫날 하루로 접고 확인 대상으로 올린다.
     """
     known = [date for date in dates if date]
     if not known:
@@ -513,6 +518,8 @@ def resolve_period_range(
     first, last = known[0], known[-1]
     if first == last:
         return first, last, False
+    if last < first:
+        return first, first, True
     span = (
         _dt.date.fromisoformat(last) - _dt.date.fromisoformat(first)
     ).days + 1
@@ -520,7 +527,7 @@ def resolve_period_range(
         return first, last, False
     if days <= 1:
         return first, first, False
-    if span > days:
+    if span - days >= 1:
         return first, first, True
     return first, last, False
 
