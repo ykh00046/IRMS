@@ -753,6 +753,23 @@
     busy: ["수집 진행 중", "잠시 뒤에 다시 눌러 주세요"],
   };
 
+  // 서버는 못 읽은 칸을 필드 이름으로만 준다. 사람이 읽을 말은 화면이 가진다.
+  const FIELD_LABELS = {
+    doc_no: "문서번호",
+    emp_name: "대상자",
+    emp_id: "사번",
+    kind: "종류",
+    half: "오전·오후",
+    start_date: "시작일",
+    end_date: "종료일",
+    period: "기간",
+  };
+
+  function fieldNames(fields) {
+    const list = Array.isArray(fields) ? fields : [];
+    return list.map((field) => FIELD_LABELS[field] || field).join("·");
+  }
+
   function approvalAlertHtml(collection) {
     const run = collection?.last_run || null;
     const status = String(run?.status || "");
@@ -762,8 +779,10 @@
     const forbidden = Number(run?.forbidden || 0);
     const incompleteTotal = Number(run?.incomplete_total || incomplete.length || 0);
     const rejectTotal = Number(run?.rejected_total || rejects.length || 0);
-    // 저장은 됐지만 일부 칸을 못 읽은 문서. 목록에는 이미 있으니 건수만 알린다.
-    const unresolvedTotal = Number(run?.unresolved_total || 0);
+    // 저장은 됐지만 일부 칸을 못 읽은 문서. 어느 문서인지까지 보여준다 — 숫자만
+    // 있으면 오전·오후를 못 읽은 건은 화면 어디에서도 찾을 수 없다.
+    const unresolved = Array.isArray(run?.unresolved) ? run.unresolved : [];
+    const unresolvedTotal = Number(run?.unresolved_total || unresolved.length || 0);
     // 한 회차 상한에 걸려 아직 못 연 문서. 다시 누르면 이어서 받는다.
     const remaining = Number(run?.remaining || 0);
 
@@ -782,7 +801,11 @@
       if (rejectTotal) parts.push(`거절 ${rejectTotal}건`);
       if (unresolvedTotal) parts.push(`일부 미상 ${unresolvedTotal}건`);
       headline = parts.join(" · ");
-      note = "나머지는 저장했습니다";
+      // 미상만 있을 때는 빠진 문서가 없다. '나머지는'이라고 하면 뭔가 빠진 것처럼 읽힌다.
+      note =
+        unresolvedTotal && !(forbidden || incompleteTotal || rejectTotal)
+          ? "저장은 했고 일부 칸만 비었습니다"
+          : "나머지는 저장했습니다";
     } else {
       return "";
     }
@@ -791,9 +814,14 @@
     const rows = [
       ...incomplete.map((row) => ({
         doc_no: row.doc_no,
-        reason: `값 부족: ${(row.missing || []).join(", ")}`,
+        reason: `값 부족: ${fieldNames(row.missing)}`,
       })),
       ...rejects,
+      ...unresolved.map((row) => ({
+        doc_no: row.doc_no,
+        reason: `일부 미상: ${fieldNames(row.fields)}`,
+        title_raw: row.title_raw,
+      })),
     ]
       .map(
         (row) => `
@@ -802,6 +830,11 @@
               row.doc_no || "(번호 없음)"
             )}</span>
             <span class="att-approval-kind">${escapeHtml(row.reason || "")}</span>
+            ${
+              row.title_raw
+                ? `<span class="att-approval-title">${escapeHtml(row.title_raw)}</span>`
+                : ""
+            }
           </div>`
       )
       .join("");

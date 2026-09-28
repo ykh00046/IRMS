@@ -246,11 +246,50 @@ async function testAnnualSummaryRendersLeaveBreakdown() {
   );
 }
 
+async function testPartlyUnreadableDocumentsAreListed() {
+  const { hooks } = await loadAttendanceJs();
+  const html = hooks.approvalAlertHtml({
+    configured: true,
+    last_run: {
+      status: "ok",
+      unresolved_total: 1,
+      unresolved: [
+        {
+          doc_no: "20260911P227-0001",
+          fields: ["half"],
+          title_raw: "<원료생산팀/김철수/반차>",
+        },
+      ],
+    },
+  });
+  // 숫자만 있으면 어느 문서인지 찾을 길이 없다. 문서번호·빠진 칸·제목을 함께 적는다.
+  assert.match(html, /20260911P227-0001/);
+  assert.match(html, /오전·오후/);
+  assert.match(html, /원료생산팀/);
+  assert.doesNotMatch(html, /half/, "필드 이름을 그대로 보여주지 않는다");
+  assert.doesNotMatch(html, /<원료/, "제목 원문은 그대로 넣지 않는다");
+  assert.match(html, /저장은 했고/);
+  assert.doesNotMatch(html, /나머지는/);
+
+  const incomplete = hooks.approvalAlertHtml({
+    configured: true,
+    last_run: {
+      status: "ok",
+      incomplete_total: 1,
+      incomplete: [{ doc_no: "D-2", missing: ["emp_name", "start_date"] }],
+    },
+  });
+  assert.match(incomplete, /대상자·시작일/);
+  assert.doesNotMatch(incomplete, /emp_name/);
+  assert.match(incomplete, /나머지는/);
+}
+
 (async () => {
   await testFormatsAttendanceNumbersWithoutRounding();
   await testWeekdayAndRestDayClassesAreDistinct();
   await testAttendanceCodeAndIssueMarkerAreRenderable();
   await testAnnualSummaryRendersLeaveBreakdown();
+  await testPartlyUnreadableDocumentsAreListed();
   console.log("attendance_view.test.js passed");
 })().catch((error) => {
   console.error(error);
