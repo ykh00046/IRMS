@@ -887,7 +887,7 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # API 로 밀어 넣는 결재 문서를 그대로 보관한다. 근태 판정의 근거는 계속 ERP 월
     # 엑셀이고 이 표는 **보강 자료**다 — 수집이 멈춰도 근태는 종전대로 동작한다.
     #   doc_no  : 결재 문서번호. 멱등 키(UNIQUE)
-    #   kind_raw: 문서의 종류 문자열 원문 / kind: 정규화 5종
+    #   kind_raw: 문서의 종류 문자열 원문 / kind: 판정용 넷은 접고 나머지는 원문 그대로
     #   doc_hash: 수집기의 수정본 감지 해시. 값이 바뀌면 갱신한다
     # 추가 전용(additive) 테이블 — 기존 데이터·컬럼에 영향 없음.
     connection.execute(

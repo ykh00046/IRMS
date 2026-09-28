@@ -28,6 +28,9 @@ from . import settings_service
 # 사번 비교축은 하나뿐이다 — 엑셀 셀이 숫자형(171013.0)으로 나오는 문제를 이미
 # 이 헬퍼가 흡수한다(BUG-2). 여기서 다시 손으로 깎으면 축이 둘로 갈린다.
 from .attendance_excel.models import normalize_emp_id
+# 종류 낱말 사전은 파서가 소유한다(제목에서 종류를 찾을 때 쓰는 그 목록). 저장 쪽에서
+# 목록을 따로 들면 두 곳이 갈린다.
+from .portal_approvals.parser import detect_kind_token
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +60,10 @@ _MAX_REPORTED_REJECTS = 20
 # 수집 상태 한 줄이 "오래됨"으로 바뀌는 문턱(§5.4). 수집기는 하루 1회 도는 전제다.
 STALE_AFTER_DAYS = 2
 
-# 정규화된 종류 5종(§4). 표기 순서는 화면 정렬용이 아니라 문서의 나열 순서다.
-KINDS = ("연차", "반차", "반반차", "예비군", "기타")
+# 판정에 쓰는 종류는 표기를 하나로 접는다. 그 밖의 종류(결근·병가·경조·출장 …)는
+# 문서에 적힌 낱말을 그대로 쓴다 — 다섯 종류만 인정하면 문서가 분명히 말하고 있는
+# 종류까지 "종류 미확인"이 된다(2026-09-28 사용자 지적).
+FOLDED_KINDS = ("연차", "반차", "반반차", "예비군")
 OTHER_KIND = "기타"
 
 # 원문 → 정규화. "반반차"가 "반차"의 부분문자열이므로 **반드시 반반차를 먼저** 본다
@@ -147,12 +152,20 @@ _COMPARE_FIELDS = (
 
 
 def normalize_kind(kind_raw: str) -> str:
-    """문서 종류 원문을 5종으로 접는다. 모르는 표현은 `기타`(원문은 kind_raw 에 남는다)."""
+    """문서 종류를 읽는다. **아는 낱말만 추려 나머지를 버리지 않는다.**
+
+    반차·반반차·연차·예비군은 오전/오후 판정과 대조에 쓰므로 표기를 하나로 접고,
+    그 밖의 종류(결근·병가·경조·공가·출장 …)는 문서에 적힌 낱말을 그대로 쓴다.
+    `기타` 는 **정말로 못 읽었을 때**만 나온다 — 그래야 확인 목록이 "우리가 못 읽은
+    문서"만 담는다(2026-09-28 사용자 지적: 제목에 `결근`이라 적힌 문서가 계속
+    '종류 미확인'으로 떴다).
+    """
     text = str(kind_raw or "")
     for needle, kind in _KIND_PATTERNS:
         if needle in text:
             return kind
-    return OTHER_KIND
+    # 접지 않는 종류는 **문서가 적은 그대로** 둔다('포상휴가'를 '휴가'로 깎지 않는다).
+    return text.strip() if detect_kind_token(text) else OTHER_KIND
 
 
 def normalize_half(half: Any) -> str | None:
@@ -562,7 +575,15 @@ def month_approvals(
         """,
         (last, first),
     ).fetchall()
-    return [{key: row[key] for key in row.keys()} for row in rows]
+    items = [{key: row[key] for key in row.keys()} for row in rows]
+    # 저장된 `kind` 는 적재하던 날의 규칙이 남긴 값이다. 규칙을 고쳤다고 문서를 다시
+    # 받아 오는 것은 본문 왕복 낭비라(사용자 지적) 원문(`kind_raw`)이 그대로 있는 만큼
+    # 읽을 때 다시 접는다. 새 규칙이 곧바로 화면에 반영된다.
+    for item in items:
+        raw = _text(item.get("kind_raw"))
+        if raw:
+            item["kind"] = normalize_kind(raw)
+    return items
 
 
 def _roster_indexes(

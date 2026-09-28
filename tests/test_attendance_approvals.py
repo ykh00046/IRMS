@@ -158,9 +158,12 @@ def test_kind_is_normalized_and_raw_wording_is_kept():
         _item(f"K4-{tag}", kind="예비군 훈련"),
         # 실제 포털 문서의 종류 칸은 '훈련' 한 단어다(2026-09-22 실측).
         _item(f"K6-{tag}", kind="훈련"),
+        # 접지 않는 종류는 문서가 적은 그대로 남는다.
         _item(f"K5-{tag}", kind="포상휴가"),
+        # 종류 낱말이 아예 없는 문서만 `기타` 다.
+        _item(f"K7-{tag}", kind="사유 미기재"),
     ]
-    assert _store(items)["created"] == 6
+    assert _store(items)["created"] == 7
 
     assert _fetch(f"K1-{tag}")["kind"] == "반반차"
     # "반반차"가 "반차"의 부분문자열 — 반반차를 먼저 봐야 한다.
@@ -169,8 +172,9 @@ def test_kind_is_normalized_and_raw_wording_is_kept():
     assert _fetch(f"K4-{tag}")["kind"] == "예비군"
     assert _fetch(f"K6-{tag}")["kind"] == "예비군", "종류 칸의 '훈련'도 예비군으로 접는다"
     other = _fetch(f"K5-{tag}")
-    assert other["kind"] == "기타"
-    assert other["kind_raw"] == "포상휴가", "모르는 표현도 원문은 남아야 한다"
+    assert other["kind"] == "포상휴가", "문서가 말하는 종류는 깎지 않는다"
+    assert other["kind_raw"] == "포상휴가"
+    assert _fetch(f"K7-{tag}")["kind"] == "기타", "종류 낱말이 없을 때만 기타다"
 
 
 def test_bad_items_are_rejected_without_failing_the_batch():
@@ -361,8 +365,9 @@ def test_unreadable_documents_leave_the_mismatch_lists_for_a_review_line():
     _reload_app()
     tag = _tag()
     items = [
-        # 종류를 못 읽은 문서. 엑셀엔 휴가 표시가 없지만 '허가원만 있음'이 아니다.
-        _item(f"U1-{tag}", emp_name="김철수", emp_id="900044", kind="포상휴가",
+        # 종류를 못 읽은 문서(제목에 종류 낱말이 없어 파서가 `기타` 로 준다).
+        # 엑셀엔 휴가 표시가 없지만 '허가원만 있음'이 아니다.
+        _item(f"U1-{tag}", emp_name="김철수", emp_id="900044", kind="기타",
               half=None, start_date="2026-09-08", end_date="2026-09-08",
               title_raw="원료생산팀/김철수/근태허가원"),
         # 기간이 띄엄띄엄해 첫날만 저장한 문서.
@@ -971,3 +976,55 @@ def test_context_not_wording_decides_the_two_lists():
     assert marked["missing_in_erp"] == []
     blank = _month_view([approval], [_erp_row(emp_id, name, "2026-09-09", "")])
     assert [row["doc_no"] for row in blank["missing_in_erp"]] == [f"CTX-{tag}"]
+
+
+def test_a_kind_written_in_the_title_is_not_called_unreadable():
+    """제목에 적힌 종류는 그대로 인정한다(2026-09-28 사용자 신고).
+
+    `원료생산팀/권효성/26.09.11~26.09.14/결근` 이 '종류 미확인'으로 계속 떴다.
+    다섯 종류만 인정하던 탓인데, 읽은 문서를 못 읽었다고 말하는 셈이었다.
+    """
+    _reload_app()
+    emp_id, name = _ROSTER[0]["emp_id"], _ROSTER[0]["name"]
+    tag = _tag()
+    approval = _item(
+        f"KIND-{tag}", emp_name=name, emp_id=emp_id, kind="결근", half=None,
+        start_date="2026-09-11", end_date="2026-09-14",
+        title_raw=f"원료생산팀/{name}/26.09.11~26.09.14/결근",
+    )
+    erp_rows = [
+        _erp_row(emp_id, name, day, "결근")
+        for day in ("2026-09-11", "2026-09-14")
+    ]
+    view = _month_view([approval], erp_rows)
+
+    mine = f"KIND-{tag}"
+    assert mine not in {row["doc_no"] for row in view["needs_review"]}, (
+        "제목이 말하는 종류를 '확인 필요'로 올리지 않는다"
+    )
+    assert mine not in {row["doc_no"] for row in view["missing_in_erp"]}
+    days = {(row["emp_id"], row["date"]) for row in view["missing_approval"]}
+    assert (emp_id, "2026-09-11") not in days
+
+
+def test_a_stored_kind_is_read_again_by_the_current_rule():
+    """규칙을 고쳤다고 이미 들어온 문서를 다시 받지 않는다 — 읽을 때 다시 접는다."""
+    _reload_app()
+    from src.db import get_connection
+
+    tag = _tag()
+    doc_no = f"OLD-{tag}"
+    _store([_item(doc_no, kind="결근", half=None,
+                  start_date="2026-09-11", end_date="2026-09-11")])
+    # 옛 규칙이 남긴 값을 흉내 낸다(원문은 그대로 '결근').
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE attendance_approvals SET kind = ? WHERE doc_no = ?",
+            ("기타", doc_no),
+        )
+        connection.commit()
+        rows = service.month_approvals(connection, "2026-09")
+
+    stored = {row["doc_no"]: row for row in rows}
+    assert stored[doc_no]["kind"] == "결근"
+    assert stored[doc_no]["kind_raw"] == "결근"
