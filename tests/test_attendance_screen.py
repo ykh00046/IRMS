@@ -103,8 +103,8 @@ def test_approval_section_shows_the_three_lists_and_collection_status():
     assert 'id="att-approval-panel"' in ATTENDANCE_PAGE
     assert 'id="att-approval-status"' in ATTENDANCE_PAGE
     assert "/api/attendance/admin/approvals" in ATTENDANCE_JS
-    # 목록 + 대조 두 갈래 + 미매칭.
-    for key in ("items", "missing_in_erp", "missing_approval", "unmatched"):
+    # 대조 두 갈래 + 확인 필요.
+    for key in ("missing_in_erp", "missing_approval", "needs_review"):
         assert key in ATTENDANCE_JS, f"결재 대조 목록 {key} 을 화면이 안 쓴다"
     # 수집 상태 한 줄은 오래되면(2일) 눈에 띄어야 한다.
     assert "collectionStatusText" in ATTENDANCE_JS
@@ -167,6 +167,29 @@ def test_a_long_first_run_does_not_look_frozen():
     # 타이머는 끝나면 반드시 멈춘다.
     assert "window.clearInterval(ticking)" in handler
     assert handler.index("finally") < handler.index("window.clearInterval(ticking)")
+
+
+def test_the_section_shows_only_what_is_wrong():
+    """이 화면은 '문제를 보는 곳'이다(2026-09-28 사용자 결정).
+
+    허가원 전체 목록은 포털에서 본다. 미매칭 목록은 통째로 걷어냈다.
+    """
+    assert "이 달 허가원" not in ATTENDANCE_JS, "전체 목록이 화면에 남아 있다"
+    assert "미매칭" not in ATTENDANCE_JS, "미매칭 목록이 화면에 남아 있다"
+    assert "approvalListHtml" not in ATTENDANCE_JS
+    assert "approvalUnmatchedHtml" not in ATTENDANCE_JS
+    # 남는 것: 대조 두 갈래 · 수집 상태 · 가져오기 버튼.
+    assert "허가원만 있음" in ATTENDANCE_JS
+    assert "엑셀만 있음" in ATTENDANCE_JS
+
+
+def test_unreadable_documents_get_their_own_line_with_the_raw_title():
+    """`기타` 는 어긋남이 아니라 '우리가 못 읽은 것'이다 — 따로 모아 원문을 보여준다."""
+    assert "확인 필요" in ATTENDANCE_JS
+    assert "문서를 열어 확인하세요" in ATTENDANCE_JS
+    assert "approvalReviewHtml" in ATTENDANCE_JS
+    assert "item.title_raw" in ATTENDANCE_JS, "문서를 찾아갈 단서가 없다"
+    assert ".att-approval-title" in ATTENDANCE_CSS
 
 
 def test_no_dead_file_intake_wording_remains():
@@ -333,6 +356,8 @@ def test_edited_assets_got_a_fresh_version_this_round():
         ("js/attendance_change_password.js", "20260828a"),
         ("js/attendance.js", "20260922a"),
         ("js/attendance.js", "20260922d"),
+        ("js/attendance.js", "20260923a"),
+        ("css/attendance.css", "20260922d"),
         ("css/attendance.css", "20260922a"),
     ):
         for template in TEMPLATES.rglob("*.html"):

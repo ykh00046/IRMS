@@ -306,16 +306,87 @@ def test_same_name_twice_stays_unmatched():
               start_date="2026-09-09", end_date="2026-09-09"),
     ]
     view = _month_view(items, [])
-    unmatched = {row["doc_no"]: row["reason"] for row in view["unmatched"]}
-    assert unmatched[f"N1-{tag}"] == "동명이인"
-    assert unmatched[f"N2-{tag}"] == "명단에 없음"
-    assert f"N3-{tag}" not in unmatched
-
+    # 미매칭 목록은 화면에서 걷어냈다(2026-09-28) — 맞추기 규칙 자체는 그대로다.
+    assert "unmatched" not in view
     matched = {row["doc_no"]: row for row in view["items"]}
-    assert matched[f"N1-{tag}"]["matched_emp_id"] is None
+    assert matched[f"N1-{tag}"]["matched_emp_id"] is None, "동명이인은 아무에게도 안 붙인다"
+    assert matched[f"N1-{tag}"]["unmatched_reason"] == "동명이인"
+    assert matched[f"N2-{tag}"]["unmatched_reason"] == "명단에 없음"
     assert matched[f"N3-{tag}"]["matched_emp_id"] == "900044"
     assert matched[f"N3-{tag}"]["match_by"] == "이름"
-    assert matched[f"N2-{tag}"]["unmatched_reason"] == "명단에 없음"
+
+
+def test_a_two_day_leave_matching_two_erp_days_shows_no_mismatch():
+    """사용자 사례(2026-09-28): 이틀 휴가가 하루로 저장돼 양쪽에 어긋남이 떴다.
+
+    허가원만 있음에 09-04, 엑셀만 있음에 09-03 — 같은 휴가 하나가 두 줄로 보였다.
+    기간을 제대로 읽으면 둘 다 사라진다.
+    """
+    _reload_app()
+    tag = _tag()
+    items = [
+        _item(f"T2-{tag}", emp_name="김철수", emp_id="900044", kind="연차", half=None,
+              start_date="2026-09-03", end_date="2026-09-04"),
+    ]
+    erp_rows = [
+        _erp_row("900044", "김철수", "2026-09-03", code="연차"),
+        _erp_row("900044", "김철수", "2026-09-04", code="연차"),
+    ]
+    view = _month_view(items, erp_rows)
+    assert f"T2-{tag}" not in {row["doc_no"] for row in view["missing_in_erp"]}, (
+        "허가원만 있음에 남으면 안 된다"
+    )
+    only_erp = {(row["emp_id"], row["date"]) for row in view["missing_approval"]}
+    assert ("900044", "2026-09-03") not in only_erp, "엑셀만 있음에 남으면 안 된다"
+    assert ("900044", "2026-09-04") not in only_erp
+
+    # 하루로 저장됐을 때가 바로 사용자가 본 화면이다 — 덮지 못한 날이 엑셀 쪽에 뜬다.
+    squashed = _month_view(
+        [
+            _item(f"T1-{tag}", emp_name="홍길동", emp_id="900033", kind="연차",
+                  half=None, start_date="2026-09-18", end_date="2026-09-18")
+        ],
+        [
+            _erp_row("900033", "홍길동", "2026-09-17", code="연차"),
+            _erp_row("900033", "홍길동", "2026-09-18", code="연차"),
+        ],
+    )
+    gaps = {(row["emp_id"], row["date"]) for row in squashed["missing_approval"]}
+    assert ("900033", "2026-09-17") in gaps, "접힌 첫날이 어긋남으로 떠야 한다"
+    assert ("900033", "2026-09-18") not in gaps
+
+
+def test_unreadable_documents_leave_the_mismatch_lists_for_a_review_line():
+    """`기타` 는 '종류를 못 읽었다'는 뜻이다 — 어긋남의 증거가 아니다."""
+    _reload_app()
+    tag = _tag()
+    items = [
+        # 종류를 못 읽은 문서. 엑셀엔 휴가 표시가 없지만 '허가원만 있음'이 아니다.
+        _item(f"U1-{tag}", emp_name="김철수", emp_id="900044", kind="포상휴가",
+              half=None, start_date="2026-09-08", end_date="2026-09-08",
+              title_raw="원료생산팀/김철수/근태허가원"),
+        # 기간이 띄엄띄엄해 첫날만 저장한 문서.
+        _item(f"U2-{tag}", emp_name="홍길동", emp_id="900033", kind="연차", half=None,
+              start_date="2026-09-02", end_date="2026-09-02",
+              unresolved="period"),
+    ]
+    erp_rows = [
+        _erp_row("900044", "김철수", "2026-09-08"),
+        _erp_row("900033", "홍길동", "2026-09-02"),
+    ]
+    view = _month_view(items, erp_rows)
+
+    mismatched = {row["doc_no"] for row in view["missing_in_erp"]}
+    assert not ({f"U1-{tag}", f"U2-{tag}"} & mismatched), (
+        "확인 필요 문서는 대조 목록에 섞지 않는다"
+    )
+    review = {row["doc_no"]: row for row in view["needs_review"]}
+    assert review[f"U1-{tag}"]["reason"] == "종류 미확인"
+    assert review[f"U1-{tag}"]["title_raw"] == "원료생산팀/김철수/근태허가원"
+    assert review[f"U2-{tag}"]["reason"] == "기간 확인 필요"
+    # 그래도 '그 사람의 그 날에 결재가 있다'는 사실은 맞다 — 엑셀 쪽을 덮는다.
+    only_erp = {(row["emp_id"], row["date"]) for row in view["missing_approval"]}
+    assert ("900033", "2026-09-02") not in only_erp
 
 
 def test_missing_excel_keeps_the_list_and_skips_the_comparison():

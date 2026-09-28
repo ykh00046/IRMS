@@ -1085,13 +1085,14 @@
   font-weight: 600;
 }
 
-.att-approval-half {
-  font-weight: 600;
-  color: var(--accent-primary);
-}
-
-.att-approval-state {
-  color: var(--text-tertiary);
+/* 확인 필요 줄의 제목 원문 — 문서를 찾아가는 단서라 길면 줄여 보여준다. */
+.att-approval-title {
+  color: var(--text-secondary);
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .att-approval-doc {

@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import html as html_mod
 import json
@@ -39,7 +40,7 @@ from typing import Any, Optional
 
 # 해석 규칙 판 번호. doc_hash 에 섞여 들어가므로, 제목·본문 해석을 고쳤을 때 이 값을
 # 올리면 이미 적재된 문서도 수정본으로 보여 다시 읽고 다시 저장한다.
-PARSER_VERSION = "4"
+PARSER_VERSION = "5"
 
 # 제목에서 지우고 보는 말머리(양식 이름 자체).
 _FORM_WORDS = ("근태허가원", "근태 허가원", "허가원")
@@ -66,9 +67,11 @@ _KOREAN_DT_RE = re.compile(
     r"(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일"
     r"(?:\s*(\d{1,2})\s*시)?(?:\s*(\d{1,2})\s*분)?"
 )
-# 연도 없이 적은 기간 — '09월23일13시부터~09월23일18시까지'
+# 기간 칸의 시각 하나 — 연도는 있을 수도 없을 수도 있다. 한 문서 안에서 섞여 나온다:
+# '09월03일09시부터~26년09월04일18시까지'(2026-09-28 실측). 연도 있는 것만 읽으면
+# 앞쪽 날짜가 통째로 사라져 이틀 휴가가 하루로 저장된다.
 _KOREAN_MD_RE = re.compile(
-    r"(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일"
+    r"(?:(?<!\d)(\d{2,4})\s*년\s*)?(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일"
     r"(?:\s*(\d{1,2})\s*시)?(?:\s*(\d{1,2})\s*분)?"
 )
 _HANGUL_NAME_RE = re.compile(r"^[가-힣]{2,4}$")
@@ -454,44 +457,123 @@ def parse_header_fields(html: str) -> dict[str, str]:
     return found
 
 
+# '(0.5일간)' · '(2일간)' · '(총 2일간)' — 괄호 안 말머리가 붙는 문서가 있다.
+_DAYS_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*일\s*간")
+
+
+def _fill_years(stamps: list[tuple[int | None, int, int, int | None]]) -> list[str | None]:
+    """연도를 안 적은 시각에 가까운 연도를 채운다. 없으면 날짜를 비운 채 둔다.
+
+    한 문서가 두 해에 걸치는 경우는 연말뿐이다. 채우고 나서 순서가 거꾸로 가면,
+    **연도를 직접 적지 않은 쪽만** 한 해 밀어 바로잡는다 — 문서에 적힌 연도는
+    건드리지 않는다.
+    """
+    years = [index for index, stamp in enumerate(stamps) if stamp[0] is not None]
+    if not years:
+        # 문서 어디에도 연도가 없다 — 지어내지 않는다(날짜는 제목에서 채운다).
+        return [None] * len(stamps)
+
+    filled: list[tuple[int, int, int, bool]] = []
+    for index, (year, month, day, _hour) in enumerate(stamps):
+        if year is not None:
+            filled.append((year, month, day, True))
+            continue
+        nearest = min(years, key=lambda other: (abs(other - index), other < index))
+        filled.append((stamps[nearest][0] or 0, month, day, False))
+
+    for index in range(1, len(filled)):
+        before = filled[index - 1]
+        current = filled[index]
+        if (current[0], current[1], current[2]) >= (before[0], before[1], before[2]):
+            continue
+        if not current[3]:      # 12월 → 1월: 뒤쪽이 연도를 안 적었으면 한 해 뒤로
+            filled[index] = (current[0] + 1, current[1], current[2], False)
+        elif not before[3]:     # 앞쪽이 연도를 안 적었으면 한 해 앞으로
+            filled[index - 1] = (before[0] - 1, before[1], before[2], False)
+
+    return [_fmt(year, month, day) for year, month, day, _written in filled]
+
+
+def resolve_period_range(
+    dates: list[str], days: float | None
+) -> tuple[str | None, str | None, bool]:
+    """기간의 첫날·마지막날을 정한다. 신청하지 않은 날을 만들지 않는다.
+
+    반환 `(시작일, 종료일, 확인필요)`.
+
+    - 적힌 일수가 1 이하인데 이틀에 걸쳐 있으면 **야간 근무**다
+      ('19시부터 ~ 익일 07시까지(1일간)') — 첫날 하루로 본다.
+    - 적힌 일수보다 첫날~마지막날 간격이 넓으면 날짜가 띄엄띄엄한 것이다
+      ('9월 2일, 9월 5일 … (총 2일간)') — **첫날만** 남기고 확인 대상으로 올린다.
+      가운데 날을 채우면 신청하지도 않은 휴가를 만들어 낸다.
+    """
+    known = [date for date in dates if date]
+    if not known:
+        return None, None, False
+    first, last = known[0], known[-1]
+    if first == last:
+        return first, last, False
+    span = (
+        _dt.date.fromisoformat(last) - _dt.date.fromisoformat(first)
+    ).days + 1
+    if days is None:
+        return first, last, False
+    if days <= 1:
+        return first, first, False
+    if span > days:
+        return first, first, True
+    return first, last, False
+
+
 def parse_period(period_text: str) -> dict[str, Any]:
     """'26년08월07일 13시부터 ~ 26년08월07일17시30분까지(0.5일간)' 를 읽는다.
+
+    연도를 적은 시각과 안 적은 시각이 한 문서에 섞여 나온다 — **둘 다 순서대로**
+    읽는다. 연도 있는 것만 읽으면 앞쪽 날짜가 사라져 이틀 휴가가 하루가 된다
+    (2026-09-28 실측 88건 중 7건). 시작 시각은 **첫 시각**이다 — 마지막 시각을
+    쓰면 반차의 오전/오후가 뒤집힌다.
 
     서식에는 늘 빈 두 번째 칸('00년 00월 00일 …')이 붙어 있어 0 값은 버린다.
     """
     text = period_text or ""
-    stamps = []
-    for year, month, day, hour, _minute in _KOREAN_DT_RE.findall(text):
-        if int(month) == 0 or int(day) == 0 or int(year) == 0:
+    raw: list[tuple[int | None, int, int, int | None]] = []
+    for year, month, day, hour, _minute in _KOREAN_MD_RE.findall(text):
+        if int(month) == 0 or int(day) == 0:
             continue
-        date = _fmt(expand_year(year), int(month), int(day))
-        if not date:
+        if year and int(year) == 0:
             continue
-        stamps.append((date, int(hour) if hour else None))
-
-    if not stamps:
-        # 연도를 안 적은 기간도 있다 — '09월23일13시부터~09월23일18시까지(0.5일간)'
-        # (2026-09-23 실측). 날짜는 제목에서 채우므로 여기서는 **시각만** 건진다.
-        # 시각이 있어야 반차의 오전/오후를 사실로 읽을 수 있다.
-        for month, day, hour, _minute in _KOREAN_MD_RE.findall(text):
-            if int(month) == 0 or int(day) == 0:
-                continue
-            stamps.append((None, int(hour) if hour else None))
+        raw.append(
+            (
+                expand_year(year) if year else None,
+                int(month),
+                int(day),
+                int(hour) if hour else None,
+            )
+        )
 
     days = None
-    days_match = re.search(r"\(\s*(\d+(?:\.\d+)?)\s*일간\s*\)", text)
+    days_match = _DAYS_RE.search(text)
     if days_match and float(days_match.group(1)) > 0:
         days = float(days_match.group(1))
 
-    if not stamps:
-        return {"start_date": None, "end_date": None,
-                "start_hour": None, "end_hour": None, "days": days}
+    if not raw:
+        return {"start_date": None, "end_date": None, "start_hour": None,
+                "end_hour": None, "days": days, "dates": [], "needs_review": False}
+
+    stamp_dates = _fill_years(raw)
+    ordered: list[str] = []
+    for value in stamp_dates:
+        if value and value not in ordered:
+            ordered.append(value)
+    start_date, end_date, needs_review = resolve_period_range(ordered, days)
     return {
-        "start_date": stamps[0][0],
-        "end_date": stamps[-1][0],
-        "start_hour": stamps[0][1],
-        "end_hour": stamps[-1][1],
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_hour": raw[0][3],
+        "end_hour": raw[-1][3],
         "days": days,
+        "dates": ordered,
+        "needs_review": needs_review,
     }
 
 
@@ -574,6 +656,22 @@ def build_item(
         or parsed_title["end_date"]
         or start_date
     )
+    period_review = bool(body.get("period_needs_review"))
+    # 본문이 하루로 읽혔는데 제목이 범위를 말하고 적힌 일수도 2일 이상이면 제목을
+    # 믿는다 — 본문 기간 칸의 앞쪽 시각이 지워진 문서가 실제로 있었다(2026-09-28).
+    # 확인 대상으로 올린 기간(띄엄띄엄한 날짜)은 넓히지 않는다.
+    stated_days = body.get("period_days")
+    if (
+        not period_review
+        and start_date
+        and start_date == end_date
+        and parsed_title["start_date"]
+        and parsed_title["end_date"]
+        and parsed_title["end_date"] > parsed_title["start_date"]
+        and (stated_days or 0) >= 2
+    ):
+        start_date = parsed_title["start_date"]
+        end_date = parsed_title["end_date"]
 
     kind_from_title = parsed_title["kind_raw"]
     # 제목에 종류가 없으면 사유에서 낱말을 찾는다(원문 보존). 찾아 쓰더라도
@@ -594,6 +692,9 @@ def build_item(
         unresolved.append("start_date")
     if normalize_kind(kind_out, body.get("reason") or "") in ("반차", "반반차") and not half:
         unresolved.append("half")
+    if period_review:
+        # 날짜가 띄엄띄엄해 가운데 날을 알 수 없다 — 첫날만 저장하고 사람이 본다.
+        unresolved.append("period")
 
     return {
         "doc_no": doc_no,
@@ -625,5 +726,13 @@ def missing_required(item: dict[str, Any]) -> list[str]:
 
 
 def strip_diagnostics(item: dict[str, Any]) -> dict[str, Any]:
-    """진단용 키(unresolved)를 떼고 저장 필드만 남긴다."""
-    return {key: value for key, value in item.items() if key != "unresolved"}
+    """저장 항목으로 접는다 — `unresolved` 목록을 한 줄 문자열로 바꾼다.
+
+    못 읽은 칸이 무엇인지는 **저장해 둬야** 책임자 화면이 '확인 필요'로 띄울 수 있다
+    (종류 미확인·기간 확인 필요). 수집 회차 요약에만 남기면 그 회차에 들어온 문서만
+    보이고, 어제 들어온 문서는 화면에서 사라진다.
+    """
+    stored = dict(item)
+    fields = stored.get("unresolved") or []
+    stored["unresolved"] = ",".join(fields) if fields else None
+    return stored

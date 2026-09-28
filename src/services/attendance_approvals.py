@@ -108,6 +108,7 @@ _TRUNCATED_CAPS = {
     "title_raw": 500,
     "doc_hash": 200,
     "source": 40,
+    "unresolved": 100,
 }
 
 _FIELDS = (
@@ -124,6 +125,8 @@ _FIELDS = (
     "title_raw",
     "doc_hash",
     "source",
+    # 문서에서 못 읽은 칸(kind·period 등). 화면의 '확인 필요' 줄이 읽는다.
+    "unresolved",
 )
 
 # 수정본 판정용 비교 대상. doc_hash 가 비었을 때(수집기가 해시를 못 준 경우)
@@ -139,6 +142,7 @@ _COMPARE_FIELDS = (
     "status",
     "drafted_at",
     "title_raw",
+    "unresolved",
 )
 
 
@@ -259,6 +263,7 @@ def validate_item(raw: Any, *, source: str) -> tuple[dict[str, Any] | None, str,
         "title_raw": _text(raw.get("title_raw")) or None,
         "doc_hash": _text(raw.get("doc_hash")) or None,
         "source": source,
+        "unresolved": _text(raw.get("unresolved")) or None,
     }
 
     for field, cap in _TEXT_CAPS.items():
@@ -539,7 +544,7 @@ def month_approvals(
         """
         SELECT doc_no, emp_name, emp_id, kind_raw, kind, half,
                start_date, end_date, status, drafted_at, title_raw,
-               source, collected_at, updated_at
+               unresolved, source, collected_at, updated_at
         FROM attendance_approvals
         WHERE start_date <= ? AND end_date >= ?
         ORDER BY start_date ASC, emp_name ASC, doc_no ASC
@@ -585,6 +590,20 @@ def match_person(
     if len(candidates) > 1:
         return None, "동명이인"
     return None, "명단에 없음"
+
+
+def _review_reasons(approval: dict[str, Any]) -> list[str]:
+    """이 문서를 사람이 열어 봐야 하는 이유. 없으면 빈 목록.
+
+    `기타` 는 '종류를 못 읽었다'는 뜻이지 휴가라는 뜻이 아니다. 기간이 띄엄띄엄해
+    첫날만 저장한 문서도 마찬가지 — 둘 다 대조 목록이 아니라 확인 목록에 놓는다.
+    """
+    reasons: list[str] = []
+    if _text(approval.get("kind")) == OTHER_KIND:
+        reasons.append("종류 미확인")
+    if "period" in _text(approval.get("unresolved")).split(","):
+        reasons.append("기간 확인 필요")
+    return reasons
 
 
 def collection_status(
@@ -694,7 +713,7 @@ def build_month_view(
         )
 
     items: list[dict[str, Any]] = []
-    unmatched: list[dict[str, Any]] = []
+    needs_review: list[dict[str, Any]] = []
     missing_in_erp: list[dict[str, Any]] = []
     approved_days: set[tuple[str, str]] = set()
 
@@ -715,26 +734,33 @@ def build_month_view(
         }
         items.append(item)
 
-        if person is None:
-            unmatched.append(
+        # 못 읽은 칸이 있는 문서는 '어긋난 건'이 아니다. 종류를 못 읽었으면 휴가인지도
+        # 모르고, 기간이 띄엄띄엄하면 어느 날인지 모른다 — 대조 목록에 섞으면 사람이
+        # 고칠 수 없는 줄만 늘어난다. 따로 모아 "문서를 열어 보라"고만 한다.
+        reasons = _review_reasons(approval)
+        if reasons:
+            needs_review.append(
                 {
                     "doc_no": approval["doc_no"],
                     "emp_name": approval["emp_name"],
-                    "emp_id": approval["emp_id"],
-                    "kind": approval["kind"],
-                    "half": approval["half"],
                     "start_date": approval["start_date"],
                     "end_date": approval["end_date"],
-                    "reason": match_by,
+                    "kind_raw": approval["kind_raw"],
+                    "title_raw": approval["title_raw"],
+                    "reason": " · ".join(reasons),
                 }
             )
+
+        if person is None:
             continue
 
         matched_id = normalize_emp_id(person.get("emp_id"))
+        # 종류를 못 읽었어도 '그 사람의 그 날에 결재가 있다'는 사실은 맞다 —
+        # 엑셀 쪽 대조에서는 덮은 것으로 친다(없는 어긋남을 만들지 않는다).
         for day in month_days:
             approved_days.add((matched_id, day))
 
-        if not has_erp:
+        if not has_erp or reasons:
             continue
         # 엑셀에 행이 아예 없는 날(미래 날짜·비근무일)은 판정하지 않는다 — 대조는
         # '평일 근무일로 찍힌 날에 휴가 표시가 없다'만 센다.
@@ -777,7 +803,7 @@ def build_month_view(
         "items": items,
         "missing_in_erp": missing_in_erp,
         "missing_approval": missing_approval,
-        "unmatched": unmatched,
+        "needs_review": needs_review,
         "erp_available": has_erp,
         "collection": collection_status(connection, now=now),
     }

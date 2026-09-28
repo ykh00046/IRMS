@@ -201,6 +201,110 @@ def test_body_json_blobs_join_on_name():
     assert body["drafted_at"] == "2026-08-05"
 
 
+# 2026-09-28 실측: 최근 60일 88건 중 20건이 실제로 이틀 이상인데 7건이 하루로 접혔다.
+# 원인은 기간 칸에 연도를 **한쪽만** 적는 문서다 — 연도 있는 시각만 읽으면 앞 날짜가
+# 통째로 사라진다. 아래는 그 문서들의 실제 문자열이다(이름만 가림).
+_REAL_PERIODS = [
+    # 문서번호, 제목, 본문 기간, 기대 (시작, 종료, 확인필요)
+    ("20260831P227-0005", "원료생산팀/26.09.03~26.09.04/김철수/연차",
+     "09월03일09시부터~26년09월04일18시까지(2일간)",
+     ("2026-09-03", "2026-09-04", False)),
+    ("20260907P227-0081", "원료생산팀/박용재/26.09.10~26.09.11/연차",
+     "09월10일09시부터~26년09월11일18시까지(2일간)",
+     ("2026-09-10", "2026-09-11", False)),
+    ("20260915P227-0012", "원료생산팀/26.09.17~26.09.18/설영훈/연차",
+     "09월17일07시부터~26년09월18일19시까지(2일간)",
+     ("2026-09-17", "2026-09-18", False)),
+    ("20260823P227-0003", "원료생산팀/26.08.24~26.08.25/김철수/연차",
+     "08월24일09시부터~26년08월25일18시까지(2일간)",
+     ("2026-08-24", "2026-08-25", False)),
+    # 야간 근무 — 이튿날 새벽에 끝나지만 휴가는 하루다.
+    ("20260915P227-0015", "원료생산팀/26.09.23/박용재/연차",
+     "09월23일19시부터~26년09월24일07시까지(1일간)",
+     ("2026-09-23", "2026-09-23", False)),
+    # 양쪽 다 연도가 있던 건 — 종전에도 맞았고 그대로 맞아야 한다.
+    ("20260921P227-0046", "원료생산팀/김철수/2026.09.21 ~ 2026.09.22(연차)",
+     "2026년 09월 21일 09시부터 ~ 2026년 09월 22일 18시까지(2일간)",
+     ("2026-09-21", "2026-09-22", False)),
+    # 띄엄띄엄한 날짜 — 가운데 09-03·09-04 를 만들어 내면 안 된다.
+    ("20260827P227-0094", "원료생산팀/26년 9월 2일, 26년 9월 5일/연차",
+     "26년 9월 2일 07시부터 19시, 26년 9월 5일 19시부터 31시까지 (총 2일간)",
+     ("2026-09-02", "2026-09-02", True)),
+]
+
+
+def _item_from(title: str, period: str, *, emp_name: str = "김철수") -> dict:
+    body = {f"period_{key}": value for key, value in parser.parse_period(period).items()}
+    body["emp_name"] = emp_name
+    return parser.build_item(
+        doc_no="20260831P227-0005", title_raw=title, doc_hash="x", body=body
+    )
+
+
+@pytest.mark.parametrize("doc_no,title,period,expected", _REAL_PERIODS)
+def test_real_multi_day_periods_are_stored_whole(doc_no, title, period, expected):
+    """연도를 한쪽만 적은 기간도 끝까지 읽는다(실측 문자열 그대로)."""
+    start, end, review = expected
+    item = _item_from(title, period)
+    assert (item["start_date"], item["end_date"]) == (start, end), doc_no
+    assert ("period" in item["unresolved"]) is review, doc_no
+
+
+def test_the_overnight_pair_differs_only_by_the_year_and_agrees():
+    """같은 야간 근무가 연도를 적었느냐에 따라 하루/이틀로 갈리면 안 된다."""
+    with_year = parser.parse_period("09월23일19시부터~26년09월24일07시까지(1일간)")
+    assert (with_year["start_date"], with_year["end_date"]) == (
+        "2026-09-23", "2026-09-23",
+    )
+    without_year = parser.parse_period("09월23일19시부터~09월24일07시까지(1일간)")
+    # 연도가 아예 없으면 날짜는 지어내지 않는다 — 제목이 채운다.
+    assert without_year["start_date"] is None
+    assert without_year["days"] == 1.0
+    same = _item_from("원료생산팀/26.09.23/박용재/연차",
+                      "09월23일19시부터~09월24일07시까지(1일간)")
+    assert (same["start_date"], same["end_date"]) == ("2026-09-23", "2026-09-23")
+
+
+def test_the_start_hour_is_the_first_stamp_not_the_last():
+    """마지막 시각을 시작 시각으로 읽으면 반차의 오전/오후가 뒤집힌다."""
+    period = parser.parse_period("09월23일13시부터~26년09월23일18시까지(0.5일간)")
+    assert period["start_hour"] == 13
+    assert period["end_hour"] == 18
+    item = _item_from("원료생산팀/26.09.23/박용재/반차",
+                      "09월23일13시부터~26년09월23일18시까지(0.5일간)")
+    assert item["half"] == "오후", "13시 시작이면 오후다"
+
+    morning = _item_from("원료생산팀/26.09.23/박용재/반차",
+                         "09월23일09시부터~26년09월23일13시까지(0.5일간)")
+    assert morning["half"] == "오전"
+
+
+def test_a_year_boundary_rolls_the_missing_year_the_right_way():
+    """한 문서가 두 해에 걸치는 경우는 연말뿐이다 — 적힌 연도는 건드리지 않는다."""
+    ahead = parser.parse_period("12월31일09시부터~27년01월01일18시까지(2일간)")
+    assert (ahead["start_date"], ahead["end_date"]) == ("2026-12-31", "2027-01-01")
+    behind = parser.parse_period("26년12월31일09시부터~01월01일18시까지(2일간)")
+    assert (behind["start_date"], behind["end_date"]) == ("2026-12-31", "2027-01-01")
+
+
+def test_a_one_day_body_never_narrows_a_two_day_title():
+    """본문이 하루로 읽혀도 제목이 범위를 말하고 2일 이상이면 제목을 믿는다."""
+    item = _item_from("원료생산팀/26.09.03~26.09.04/김철수/연차",
+                      "26년09월04일18시까지(2일간)")
+    assert (item["start_date"], item["end_date"]) == ("2026-09-03", "2026-09-04")
+
+    # 하루짜리 문서는 제목이 범위를 말해도 넓히지 않는다(적힌 일수가 1이다).
+    one_day = _item_from("원료생산팀/26.09.03~26.09.04/김철수/연차",
+                         "26년09월04일09시부터~26년09월04일18시까지(1일간)")
+    assert (one_day["start_date"], one_day["end_date"]) == ("2026-09-04", "2026-09-04")
+
+
+def test_the_days_count_survives_a_word_before_it():
+    """'(총 2일간)' 처럼 말머리가 붙어도 일수를 읽어야 띄엄띄엄한 날짜를 잡는다."""
+    assert parser.parse_period("26년 9월 2일 07시 (총 2일간)")["days"] == 2.0
+    assert parser.parse_period("26년 9월 2일 07시(0.5일간)")["days"] == 0.5
+
+
 def test_period_ignores_the_empty_second_row():
     """서식에는 늘 빈 '00년 00월 00일' 칸이 붙는다 — 0 값은 버린다."""
     period = parser.parse_period(
@@ -394,7 +498,8 @@ def test_collect_reads_bodies_and_dedupes_by_doc_no():
     assert half_day["status"] == "완료"
     assert half_day["drafted_at"] == "2026-08-05"
     assert half_day["doc_hash"].startswith("sha256:")
-    assert "unresolved" not in half_day, "진단 키는 저장 항목에 남지 않는다"
+    # 못 읽은 칸은 한 줄 문자열로 저장한다 — 화면의 '확인 필요'가 이 값을 읽는다.
+    assert half_day["unresolved"] is None, "다 읽은 문서는 비워 둔다"
 
 
 def test_collect_skips_a_forbidden_document_without_guessing():

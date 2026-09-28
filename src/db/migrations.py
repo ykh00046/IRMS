@@ -921,6 +921,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_attendance_approvals_name_start "
         "ON attendance_approvals(emp_name, start_date)"
     )
+    # 문서에서 못 읽은 칸(kind·period 등)을 쉼표로 적어 둔다. 회차 요약에만 남기면
+    # 그 회차에 들어온 문서만 보이고 어제 것은 화면에서 사라진다 — 책임자 화면의
+    # '확인 필요' 줄이 이 값을 읽는다.
+    ensure_column(connection, "attendance_approvals", "unresolved", "TEXT")
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

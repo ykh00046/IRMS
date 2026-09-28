@@ -885,24 +885,6 @@
       </section>`;
   }
 
-  function approvalListHtml(items) {
-    return items
-      .map((item) => {
-        const half = item.half ? ` <span class="att-approval-half">${escapeHtml(item.half)}</span>` : "";
-        return `
-          <div class="att-approval-row">
-            <span class="att-approval-date att-num">${escapeHtml(
-              dateRangeText(item.start_date, item.end_date)
-            )}</span>
-            <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
-            <span class="att-approval-kind">${escapeHtml(item.kind || "-")}</span>${half}
-            <span class="att-approval-state">${escapeHtml(item.status || "-")}</span>
-            <span class="att-approval-doc att-num">${escapeHtml(item.doc_no || "")}</span>
-          </div>`;
-      })
-      .join("");
-  }
-
   function approvalGapHtml(items) {
     return items
       .map((item) => {
@@ -937,7 +919,9 @@
       .join("");
   }
 
-  function approvalUnmatchedHtml(items) {
+  // 확인 필요 — 종류를 못 읽었거나 기간이 띄엄띄엄한 문서. 어긋남이 아니라
+  // '우리가 못 읽은 것'이라, 제목 원문까지 적어 문서를 찾아갈 수 있게 한다.
+  function approvalReviewHtml(items) {
     return items
       .map(
         (item) => `
@@ -947,6 +931,7 @@
             )}</span>
             <span class="att-approval-who">${escapeHtml(item.emp_name || "-")}</span>
             <span class="att-approval-kind">${escapeHtml(item.reason || "-")}</span>
+            <span class="att-approval-title">${escapeHtml(item.title_raw || "")}</span>
             <span class="att-approval-doc att-num">${escapeHtml(item.doc_no || "")}</span>
           </div>`
       )
@@ -955,14 +940,15 @@
 
   function renderApprovalPanel(payload) {
     if (!approvalPanel || !approvalBody) return;
-    const items = Array.isArray(payload?.items) ? payload.items : [];
     const missingInErp = Array.isArray(payload?.missing_in_erp)
       ? payload.missing_in_erp
       : [];
     const missingApproval = Array.isArray(payload?.missing_approval)
       ? payload.missing_approval
       : [];
-    const unmatched = Array.isArray(payload?.unmatched) ? payload.unmatched : [];
+    const needsReview = Array.isArray(payload?.needs_review)
+      ? payload.needs_review
+      : [];
     const month = payload?.month || state.month;
 
     if (approvalTitle) approvalTitle.textContent = `${month} 결재 대조`;
@@ -976,15 +962,10 @@
         ? '<p class="att-approval-empty">엑셀을 읽지 못해 대조를 건너뜁니다.</p>'
         : "";
 
+    // 이 화면은 **어긋난 자리만** 본다(2026-09-28 사용자 결정). 허가원 전체 목록과
+    // 사람을 못 맞춘 목록은 걷어냈다 — 전체 목록은 포털에서 본다.
     approvalBody.innerHTML =
       approvalAlertHtml(payload?.collection) +
-      approvalGroupHtml(
-        "이 달 허가원",
-        "날짜 · 이름 · 종류 · 상태 · 문서번호",
-        items.length,
-        approvalListHtml(items),
-        "이 달 허가원이 없습니다."
-      ) +
       erpNote +
       approvalGroupHtml(
         "허가원만 있음",
@@ -1000,13 +981,15 @@
         approvalErpOnlyHtml(missingApproval),
         "어긋난 건 없음"
       ) +
-      approvalGroupHtml(
-        "미매칭",
-        "사람을 맞추지 못한 결재입니다",
-        unmatched.length,
-        approvalUnmatchedHtml(unmatched),
-        "미매칭 없음"
-      );
+      (needsReview.length
+        ? approvalGroupHtml(
+            "확인 필요",
+            "문서를 열어 확인하세요",
+            needsReview.length,
+            approvalReviewHtml(needsReview),
+            ""
+          )
+        : "");
 
     approvalPanel.hidden = false;
   }
