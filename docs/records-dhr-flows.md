@@ -147,8 +147,11 @@ DHR(원료배합일지) 산출물은 두 형식이다: **공식 양식 Excel** �
 
 `?sign=1` 이면 서명 합성, 기본은 빈 결재칸. 렌더 경로는 두 갈래(`dhr_pdf.py`):
 
-- **정확 경로**(운영 PC): 공식 양식 xlsx → **Excel COM(win32com)** 으로 PDF → **PyMuPDF(fitz)** 로 300dpi
+- **정확 경로**(운영 PC): 공식 양식 xlsx → **Excel COM(win32com)** 으로 PDF → **PyMuPDF(fitz)** 로 200dpi
   이미지 → (선택)서명 합성 → 스캔효과 → PDF(`render_exact_form_image`, `dhr_pdf.py:347`). 공식 양식과 픽셀 일치.
+  용량 설정은 셋이 함께 움직인다: 렌더 200dpi · PDF 안 JPEG 품질 55 · 스캔 잡티 8. 한 장 227→108 KB
+  (2026-09-28 실측, 원료 10종 기준). 셋 중 **잡티가 가장 비싸다** — 예전 227 KB 중 93 KB 가 잡티였다.
+  고치면 `dhr_cache.RENDERER_VERSION` 을 올려 캐시를 새로 만든다.
   Excel 변환은 별도 스레드 + 90초 타임아웃 + `_excel_lock` 으로 서버 멈춤 방지(`dhr_pdf.py:270`).
 - **폴백 경로**(개발/타 환경): win32com·PyMuPDF 없으면 PIL 로 양식을 재현(`render_form_image`, `dhr_pdf.py:92`).
   `exact_available()`(`dhr_pdf.py:213`)가 판정.
