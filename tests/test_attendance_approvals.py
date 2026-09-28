@@ -910,3 +910,33 @@ def test_people_outside_the_month_roster_are_not_shown_at_all():
     ), "명단에 없는 사람은 확인 목록에도 올리지 않는다"
     for key in ("missing_in_erp", "missing_approval"):
         assert all(row.get("doc_no") != f"OUT-{tag}" for row in view[key]), key
+
+
+def test_an_absence_already_written_in_the_sheet_is_not_a_mismatch():
+    """ERP 근태코드가 결근이면 그날은 이미 설명이 끝났다(2026-09-28 사용자 지적).
+
+    휴가 표시는 아니지만 왜 안 나왔는지가 적혀 있으므로, 허가원이 있어도
+    '엑셀에 휴가 표시가 없다'고 올리지 않는다. 결근인 걸로 충분하다.
+    """
+    _reload_app()
+    tag = _tag()
+    approval = _item(
+        f"ABS-{tag}",
+        emp_name=_ROSTER[0]["name"],
+        emp_id=_ROSTER[0]["emp_id"],
+        kind="연차",
+        start_date="2026-09-11",
+        end_date="2026-09-11",
+    )
+    absent_row = _erp_row(
+        _ROSTER[0]["emp_id"], _ROSTER[0]["name"], "2026-09-11", "결근"
+    )
+    view = _month_view([approval], [absent_row])
+    assert all(
+        row["doc_no"] != f"ABS-{tag}" for row in view["missing_in_erp"]
+    ), "결근으로 적힌 날은 어긋난 건이 아니다"
+
+    # 아무 표시도 없는 평일이면 종전대로 어긋난 건으로 올라온다.
+    plain_row = _erp_row(_ROSTER[0]["emp_id"], _ROSTER[0]["name"], "2026-09-11", "")
+    plain = _month_view([approval], [plain_row])
+    assert any(row["doc_no"] == f"ABS-{tag}" for row in plain["missing_in_erp"])

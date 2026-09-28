@@ -89,6 +89,14 @@ ERP_LEAVE_KEYWORDS = (
     "훈련",
 )
 
+# 이미 설명이 끝난 부재. 휴가 표시는 아니지만 그날 무슨 일이 있었는지 ERP 가 이미
+# 말하고 있으므로 '허가원만 있음'으로 올리지 않는다(2026-09-28 사용자 지적:
+# "결근으로 근태코드가 들어간 건은 결재건에 대조될 게 없다, 결근인 걸로 충분하다").
+ERP_ACCOUNTED_KEYWORDS = (
+    "결근",
+    "휴직",
+)
+
 # 대조는 평일 근무일만 본다. 주휴·무휴·유휴에는 휴가 표시가 없는 것이 정상이라
 # 그대로 세면 토·일이 전부 "허가원만 있고 엑셀엔 없음"으로 뜬다.
 RECONCILE_DAY_TYPES = ("평일", "평일2")
@@ -211,6 +219,16 @@ def has_erp_leave(day_type: str, attendance_code: str, note: str) -> bool:
     """ERP 행에 휴가 표시가 있는가 — 구분·근태코드·비고를 합쳐 본다."""
     text = f"{day_type or ''} {attendance_code or ''} {note or ''}"
     return any(keyword in text for keyword in ERP_LEAVE_KEYWORDS)
+
+
+def is_erp_accounted(day_type: str, attendance_code: str, note: str) -> bool:
+    """그날이 ERP 에서 이미 설명된 부재인가(결근·휴직).
+
+    휴가 표시는 아니지만 '왜 안 나왔는지'가 이미 적혀 있으므로, 허가원이 있어도
+    '엑셀에 휴가 표시가 없다'고 올리지 않는다. 결근인 걸로 충분하다.
+    """
+    text = f"{day_type or ''} {attendance_code or ''} {note or ''}"
+    return any(keyword in text for keyword in ERP_ACCOUNTED_KEYWORDS)
 
 
 # ── 적재(§3·§4) ──────────────────────────────────────────────────────────────
@@ -679,6 +697,8 @@ def build_month_view(
     # 날짜는 하나라도 휴가면 휴가로 본다.
     erp_leave: dict[tuple[str, str], bool] = {}
     erp_leave_text: dict[tuple[str, str], str] = {}
+    # 이미 설명이 끝난 부재(결근·휴직)가 찍힌 날 — 허가원이 있어도 어긋남으로 세지 않는다.
+    erp_accounted: set[tuple[str, str]] = set()
     erp_people: dict[str, dict[str, Any]] = {}
     for row in erp_rows:
         if _text(row.get("day_type")) not in RECONCILE_DAY_TYPES:
@@ -694,6 +714,12 @@ def build_month_view(
             _text(row.get("note")),
         )
         erp_leave[key] = erp_leave.get(key, False) or leave
+        if is_erp_accounted(
+            _text(row.get("day_type")),
+            _text(row.get("attendance_code")),
+            _text(row.get("note")),
+        ):
+            erp_accounted.add(key)
         if leave and key not in erp_leave_text:
             erp_leave_text[key] = " ".join(
                 part
@@ -770,7 +796,9 @@ def build_month_view(
         gaps = [
             day
             for day in month_days
-            if (matched_id, day) in erp_leave and not erp_leave[(matched_id, day)]
+            if (matched_id, day) in erp_leave
+            and not erp_leave[(matched_id, day)]
+            and (matched_id, day) not in erp_accounted
         ]
         if gaps:
             missing_in_erp.append(
