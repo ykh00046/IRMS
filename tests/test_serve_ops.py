@@ -158,3 +158,50 @@ def test_ensure_runtime_fails_loud_when_pull_also_fails(monkeypatch):
 
     with pytest.raises(sp.CalledProcessError):
         serve._ensure_runtime_self_healing()
+
+
+def _leave_notice_setup(monkeypatch, *, hour: int, returncode: int):
+    """휴무 공지 슬롯(§7) — 시각을 고정하고 도구 실행을 가짜로 바꾼다."""
+    from datetime import date, datetime
+    from types import SimpleNamespace
+
+    serve = _load_serve()
+    calls: list[list[str]] = []
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 30, hour, 10)
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=returncode, stdout="휴무 공지: 큐 등록 id=1", stderr="")
+
+    monkeypatch.setattr(serve, "datetime", _Clock)
+    monkeypatch.setattr(serve.subprocess, "run", fake_run)
+    monkeypatch.setattr(serve, "LEAVE_NOTICE_HOUR", 8)
+    monkeypatch.setattr(serve, "log", lambda _msg: None)
+    w = SimpleNamespace(last_leave_notice=None)
+    return serve, w, calls, date(2026, 9, 30)
+
+
+def test_leave_notice_is_not_called_before_the_hour(monkeypatch):
+    serve, w, calls, today = _leave_notice_setup(monkeypatch, hour=7, returncode=0)
+    serve._leave_notice(w, today)
+    assert calls == [] and w.last_leave_notice is None
+
+
+def test_leave_notice_done_marks_the_day(monkeypatch):
+    serve, w, calls, today = _leave_notice_setup(monkeypatch, hour=8, returncode=0)
+    serve._leave_notice(w, today)
+    serve._leave_notice(w, today)
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["tools/notify_today_leave.py", "--window"]
+    assert w.last_leave_notice == today
+
+
+def test_leave_notice_failure_retries_next_cycle(monkeypatch):
+    serve, w, calls, today = _leave_notice_setup(monkeypatch, hour=8, returncode=1)
+    serve._leave_notice(w, today)
+    serve._leave_notice(w, today)
+    assert len(calls) == 2 and w.last_leave_notice is None

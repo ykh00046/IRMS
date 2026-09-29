@@ -70,6 +70,8 @@ BACKUP_KEEP_DAYS = max(1, int(os.environ.get("IRMS_BACKUP_KEEP_DAYS", "30")))
 BACKUP_KEEP_MIN = 5  # 보존일수와 무관하게 항상 남길 최근 백업 수
 BACKUP_MIRROR = os.environ.get("IRMS_BACKUP_MIRROR", "").strip()
 PIP_TIMEOUT = max(60, int(os.environ.get("IRMS_PIP_TIMEOUT", "900")))  # 의존성 설치 상한(초)
+# 오늘 휴무 카톡 공지 시(時)대 — src/config.py 의 같은 변수와 같은 값을 읽는다.
+LEAVE_NOTICE_HOUR = int(os.environ.get("IRMS_LEAVE_NOTICE_HOUR", "8"))
 
 _VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
@@ -665,6 +667,7 @@ class _Watch:
     def __init__(self, proc: subprocess.Popen) -> None:
         self.proc = proc
         self.last_daily_backup: date | None = None
+        self.last_leave_notice: date | None = None
         self.consecutive_restarts = 0
 
 
@@ -686,8 +689,32 @@ def _restart_after_death(w: _Watch) -> None:
         write_update_status(False, f"crash_loop:{w.consecutive_restarts}")
 
 
+def _leave_notice(w: _Watch, today: date) -> None:
+    """오늘 휴무 카톡 공지(docs/attendance-approvals.md §7) — 평일 지정 시대, 하루 한 번.
+
+    도구가 종료 코드로 답한다: 0 = 오늘 몫 끝(보냄·쉬는 사람 없음·주말·설정 없음),
+    3 = 아직 시각 아님, 그 밖 = 실패(다음 주기에 다시). 끝낸 날짜는 도구가 DB 에도 남겨
+    serve.py 가 재시작돼도 두 번 나가지 않는다. 시각 전에는 부르지도 않는다(밤새 헛기동 방지).
+    """
+    if w.last_leave_notice == today or datetime.now().hour < LEAVE_NOTICE_HOUR:
+        return
+    try:
+        out = subprocess.run(
+            [PYTHON, "tools/notify_today_leave.py", "--window"],
+            cwd=ROOT, capture_output=True, text=True, timeout=600,
+        )
+    except Exception as exc:  # noqa: BLE001 — 공지 실패가 감시를 멈추면 안 된다
+        log(f"휴무 공지 실패(다음 주기 재시도): {exc}")
+        return
+    msg = (out.stdout or out.stderr or "").strip().splitlines()
+    if msg:
+        log(msg[-1])
+    if out.returncode == 0:
+        w.last_leave_notice = today
+
+
 def _watch_once(w: _Watch) -> None:
-    """감시 한 주기: 생존 확인 → 일일 백업 → 업데이트 반영."""
+    """감시 한 주기: 생존 확인 → 일일 백업 → 휴무 공지 → 업데이트 반영."""
     if w.proc.poll() is not None:
         _restart_after_death(w)
         return
@@ -723,6 +750,8 @@ def _watch_once(w: _Watch) -> None:
                     log(msg[-1])
             except Exception as exc:  # noqa: BLE001 — 수집 실패가 감시를 멈추면 안 된다
                 log(f"근태허가원 수집 실패(무시): {exc}")
+
+    _leave_notice(w, today)
 
     if not (AUTO and has_update()):
         return
