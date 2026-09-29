@@ -75,6 +75,15 @@ def enqueue(message: str, day: date) -> tuple[bool, str]:
     return True, f"큐 등록 id={body.get('id')}"
 
 
+def _console_safe(text: str) -> str:
+    """콘솔이 못 쓰는 문자(운영 PC CP949 의 🌴 등)를 ? 로 바꾼다 — 출력하다 죽지 않게.
+
+    카톡으로 가는 문구는 그대로다. 화면에 찍을 때만 깎는다.
+    """
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
 def _collect(connection) -> str:
     try:
         result = attendance_approvals.collect_from_portal(connection)
@@ -115,10 +124,10 @@ def run(argv: list[str], *, now: datetime | None = None) -> int:
         message = leave_notice.message_for_day(connection, today)
 
         if message is None:
-            print("휴무 공지: 오늘 쉬는 사람 없음 — 보내지 않음")
+            print("휴무 공지: 오늘 쉬는 사람 없음 - 보내지 않음")
             outcome = EXIT_DONE
         elif dry_run:
-            print(message)
+            print(_console_safe(message))
             return EXIT_DONE
         else:
             ok, detail = enqueue(message, today)
