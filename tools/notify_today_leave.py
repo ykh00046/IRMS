@@ -43,7 +43,8 @@ EXIT_NOT_YET = 3
 
 
 def dedup_key(day: date) -> str:
-    return f"{SOURCE}-{day.isoformat()}"
+    # 다른 생산자와 같은 모양(source_날짜) — raw_material_inventory_2026-09-30 처럼.
+    return f"{SOURCE}_{day.isoformat()}"
 
 
 def enqueue(message: str, day: date) -> tuple[bool, str]:
@@ -112,7 +113,7 @@ def run(argv: list[str], *, now: datetime | None = None) -> int:
             print(f"휴무 공지: {config.LEAVE_NOTICE_HOUR}시대를 지나 오늘은 건너뜀")
             return EXIT_DONE
     if not dry_run and not config.relay_configured():
-        print("휴무 공지: 설정 안 됨(IRMS_RELAY_URL·IRMS_RELAY_TOKEN)")
+        print("휴무 공지: 설정 안 됨(RELAY_TOKEN)")
         return EXIT_DONE
 
     with get_connection() as connection:

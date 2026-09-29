@@ -135,4 +135,4 @@ def test_collection_crash_still_sends(env, monkeypatch):
 
 
 def test_dedup_key_is_one_per_day():
-    assert tool.dedup_key(WED_8.date()) == "irms_leave_notice-2026-09-30"
+    assert tool.dedup_key(WED_8.date()) == "irms_leave_notice_2026-09-30"

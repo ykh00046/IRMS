@@ -335,17 +335,20 @@
 
 - 끝낸 날짜를 `app_settings.leave_notice_done_date` 에 남긴다 — serve.py 가 재시작돼도
   다시 수집·발송하지 않는다. 쉬는 사람이 없던 날도 '끝냄'이다.
-- 릴레이 `dedup_key` = `irms_leave_notice-YYYY-MM-DD` 가 한 번 더 막는다.
+- 릴레이 `dedup_key` = `irms_leave_notice_YYYY-MM-DD` 가 한 번 더 막는다(다른 생산자와 같은 `source_날짜` 모양).
 - 종료 코드: 0 끝남 · 1 실패(다음 주기 재시도, 표식 안 남김) · 3 아직 시각 아님.
 
 ### 7.4 운영 PC 환경변수
 
 | 변수 | 뜻 |
 |---|---|
-| `IRMS_RELAY_URL` | 카카오 릴레이 주소. 없으면 공지 꺼짐 |
-| `IRMS_RELAY_TOKEN` | 릴레이 토큰(`X-Relay-Token`). 없으면 공지 꺼짐. 로그에 싣지 않는다 |
+| `RELAY_URL` | 카카오 릴레이 주소. 기본 `http://127.0.0.1:8601` |
+| `RELAY_TOKEN` | 릴레이 토큰(`X-Relay-Token`). 없으면 공지 꺼짐. 로그에 싣지 않는다 |
 | `IRMS_LEAVE_NOTICE_ROOM` | 보낼 방. 기본 `원료생산팀 반,조장방` |
 | `IRMS_LEAVE_NOTICE_HOUR` | 보낼 시(時)대. 기본 8. serve.py 와 앱이 같은 값을 읽는다 |
+
+릴레이 두 변수는 **다른 생산자(Dashboard-Raw_material·Dashboard-flowmeter)와 같은 이름·기본값**이다 —
+그래서 이 둘만 `IRMS_` 접두가 없다(2026-09-29 사용자 지시: "기존에 있던 거 쓰면 돼").
 
 `source` 는 `irms_leave_notice`, 방은 요청에 **명시**한다(폰 라우팅 표에 줄을 더할 필요 없음).
 폰에 그 방의 답장 세션이 살아 있어야 한다 — 없으면 릴레이 이력에 실패 reason 이 남는다.

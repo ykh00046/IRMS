@@ -78,10 +78,12 @@ def portal_configured() -> bool:
 
 
 # === 오늘 휴무 카톡 공지(docs/attendance-approvals.md §7) ===
-# 사내 카카오 릴레이 큐에 넣는다. URL·토큰 중 하나라도 비면 공지 기능이 꺼진다.
+# 사내 카카오 릴레이 큐에 넣는다. 변수 이름·기본 주소는 다른 생산자(Dashboard-Raw_material·
+# Dashboard-flowmeter)와 같게 둔다 — 같은 릴레이에 프로젝트마다 다른 이름을 쓰지 않는다.
+# 여기만 예외로 IRMS_ 접두를 붙이지 않는다. 토큰이 비면 공지 기능이 꺼진다.
 # 토큰은 로그·감사·응답 어디에도 싣지 않는다.
-RELAY_URL = os.getenv("IRMS_RELAY_URL", "").strip().rstrip("/")
-RELAY_TOKEN = os.getenv("IRMS_RELAY_TOKEN", "").strip()
+RELAY_URL = (os.getenv("RELAY_URL", "").strip() or "http://127.0.0.1:8601").rstrip("/")
+RELAY_TOKEN = os.getenv("RELAY_TOKEN", "").strip()
 LEAVE_NOTICE_ROOM = os.getenv("IRMS_LEAVE_NOTICE_ROOM", "원료생산팀 반,조장방").strip()
 # 평일 이 시(時)대 안에서 보낸다. serve.py 감시 주기마다 부르고 하루 한 번만 나간다.
 LEAVE_NOTICE_HOUR = int(os.getenv("IRMS_LEAVE_NOTICE_HOUR", "8"))
