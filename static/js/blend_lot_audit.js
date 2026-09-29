@@ -3,7 +3,10 @@
  *
  * 데이터(둘 다 조회 전용, 책임자 전용):
  *   GET /api/blend/lot-audit/unresolved       미해소 LOT (경과 일수 + 확인 여부)
- *   GET /api/blend/lot-audit/total-anomalies  총량 이상(25kg 초과 / 증량 우회 의심)
+ *   GET /api/blend/lot-audit/total-anomalies  증량으로 넘긴 상한 초과 · 증량 우회 의심
+ *
+ * 배치 폐기 기록은 2026-09-29 에 자재 관리(/materials)로 옮겼다 — 사후 점검이 아니라
+ * '자재가 나갔는데 제품이 안 된 양'이라 자재 화면이 제자리다.
  *
  * 이 화면에는 쓰기 동작이 없다. 대사는 "1차 completed 기록이 생겼는가"로 자기
  * 치유되므로 '해소 처리' 버튼을 두지 않는다 — 버튼을 두면 기록이 없는데도 눌러서
@@ -116,7 +119,7 @@
       const items = (data && data.items) || [];
       $("lau-card-anomaly").textContent = String(data.total || 0);
       $("lau-card-anomaly-note").textContent =
-        `상한 초과 ${data.oversize || 0} · 우회 의심 ${data.bypass_suspect || 0}`;
+        `증량 초과 ${data.oversize || 0} · 우회 의심 ${data.bypass_suspect || 0}`;
       if (data.limit_g != null) $("lau-limit").textContent = fmtG(data.limit_g);
       $("lau-anomaly-loading").hidden = true;
       if (!items.length) {
@@ -151,42 +154,6 @@
         .join("");
     }
 
-    // 배치 폐기 출처 라벨 — 서버 source 값의 표시 이름(데이터 값은 영문 유지).
-    const DISCARD_SOURCE_LABEL = {
-      overweight: "과중량",
-      rescale_limit: "3회 증량 차단",
-      manual: "직접 기록",
-    };
-
-    function renderBatchDiscards(data) {
-      const items = (data && data.items) || [];
-      $("lau-discard-loading").hidden = true;
-      if (!items.length) {
-        $("lau-discard-wrap").hidden = true;
-        $("lau-discard-empty").hidden = false;
-        return;
-      }
-      $("lau-discard-empty").hidden = true;
-      $("lau-discard-wrap").hidden = false;
-      $("lau-discard-body").innerHTML = items
-        .map((it) => {
-          const mats = (it.details || [])
-            .map((d) => `${esc(d.material_name)} ${fmtG(d.actual_amount)} g`)
-            .join(", ");
-          return (
-            "<tr>" +
-            `<td>${esc(it.work_date)}<br /><span class="lau-reason">${esc(it.worker)}</span></td>` +
-            `<td>${esc(it.product_name)}</td>` +
-            `<td class="lau-reason">${esc(it.reason)}</td>` +
-            `<td>${esc(DISCARD_SOURCE_LABEL[it.source] || it.source)}</td>` +
-            `<td class="lau-reason">${mats || "-"}</td>` +
-            `<td class="num lau-num">${fmtG(it.discarded_g)}</td>` +
-            "</tr>"
-          );
-        })
-        .join("");
-    }
-
     async function load() {
       if (!request) return;
       try {
@@ -206,15 +173,6 @@
         $("lau-anomaly-empty").hidden = false;
         $("lau-anomaly-empty").textContent = "총량 이상 목록을 불러오지 못했습니다.";
         notify("총량 이상 목록을 불러오지 못했습니다.", "error");
-      }
-      try {
-        const data = await request("/blend/lot-audit/batch-discards");
-        renderBatchDiscards(data || {});
-      } catch (err) {
-        $("lau-discard-loading").hidden = true;
-        $("lau-discard-empty").hidden = false;
-        $("lau-discard-empty").textContent = "배치 폐기 목록을 불러오지 못했습니다.";
-        notify("배치 폐기 목록을 불러오지 못했습니다.", "error");
       }
     }
 

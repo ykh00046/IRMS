@@ -74,7 +74,7 @@
                  값(ACCESS_LEVEL_RANK 상 책임자와 동급)을 놓친다. 통제 화면이라
                  "책임자인데 입구가 안 보이는" 경우를 만들지 않는다. -->
             <a href="/lot-audit" class="side-link{{ ' active' if request.url.path == '/lot-audit' else '' }}">
-              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.3"/><path d="m21 21-4.9-4.9"/><path d="m7.9 10.9 2 2 3.9-4.2"/></svg></span><span>LOT 대사</span>
+              <span class="side-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.3"/><path d="m21 21-4.9-4.9"/><path d="m7.9 10.9 2 2 3.9-4.2"/></svg></span><span>LOT 대사</span><span class="side-badge" id="nav-lot-audit-count" hidden></span>
             </a>
             {% endif %}
           </div>
@@ -156,7 +156,7 @@
     <script src="/static/js/common/ui.js?v=20260910a"></script>
     <script src="/static/js/common/auto-refresh.js?v=20260910a"></script>
     <script src="/static/js/common/audio.js?v=20260910a"></script>
-    <script src="/static/js/common.js?v=20260910a"></script>
+    <script src="/static/js/common.js?v=20260929a"></script>
     <script src="/static/js/assistant.js?v=20260910b"></script>
     {% block scripts %}{% endblock %}
   </body>

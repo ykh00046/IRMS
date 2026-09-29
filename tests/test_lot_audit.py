@@ -653,3 +653,116 @@ def test_migration_is_additive_on_old_schema_db_with_data(tmp_path):
         assert conn.execute(
             "SELECT COUNT(*) AS n FROM blend_records"
         ).fetchone()["n"] == 1
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# D. 표기 차이·배지·화면 이동 (2026-09-29 검토)
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize(
+    "name, lot, expected",
+    [
+        ("PB", "PB26080502", "26080502"),
+        ("PB", "26080502", "26080502"),      # 접두사를 안 붙여 적은 같은 로트
+        ("PB", "pb-2608 0502", "26080502"),  # 대소문자·구분자·공백
+        ("PB", "PB26080302", "26080302"),    # 숫자가 다르면 여전히 다른 로트
+        ("PB", "", ""),
+    ],
+)
+def test_lot_key_strips_only_the_way_it_is_written(name, lot, expected):
+    from src.services import blend_service
+
+    assert blend_service.normalize_lot_key(name, lot) == expected
+
+
+def test_same_lot_written_without_the_product_prefix_is_not_a_gap():
+    """'PB26080502' 를 '26080502' 로 적은 건은 어긋남이 아니다(2026-09-29 사용자 검토).
+
+    운영 실측 4건 중 2건이 이 모양이었다. 글자 그대로 비교하면 같은 로트인데도
+    영영 미해소로 남아 목록이 0 으로 돌아오지 않는다.
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    semi = _prod()
+    host = _prod()
+    made_lot = f"{semi}26080502"
+
+    with get_connection() as conn:
+        _seed_record(conn, product=semi, lot=made_lot)
+        host_id = _seed_record(conn, product=host, lot=f"{host}26080401")
+        ack_id = _seed_ack(
+            conn, record_id=host_id, material_name=semi, material_lot="26080502",
+        )
+        conn.commit()
+
+    body = client.get("/api/blend/lot-audit/unresolved", headers=headers).json()
+    assert all(it["ack_id"] != ack_id for it in body["items"]),         "접두사만 빠진 같은 로트를 미해소로 세면 안 된다"
+    assert body["resolved"] >= 1
+
+
+def test_a_big_recipe_over_the_limit_without_a_raise_is_not_an_anomaly():
+    """증량 없이 25 kg 을 넘는 배치는 이상이 아니다(2026-09-29 실측 7건 전부).
+
+    2액 코팅처럼 레시피 기준 총량이 원래 큰 제품은 폐기 권고를 본 적이 없다.
+    예전 규칙(총량 > 25 kg 이면 무조건)은 그 정상 배치로 목록을 덮었다.
+    """
+    client = _client()
+    headers = _login(client)
+    worker = _worker_session(client, headers)
+    product = _prod()
+    recipe_id = _import_recipe(client, headers, product, base_totals=[48000])
+
+    res = _save_blend(
+        client, headers, recipe_id=recipe_id, product=product, worker=worker,
+        total=48000,
+    )
+    assert res.status_code == 200, res.text
+    rid = res.json()["id"]
+    flags = _flags(rid)
+    assert flags["oversize_total"] == 1      # 플래그 자체는 그대로 남는다
+    assert flags["rescale_count"] == 0
+
+    body = client.get("/api/blend/lot-audit/total-anomalies", headers=headers).json()
+    assert all(it["id"] != rid for it in body["items"]),         "증량 이력이 없는 큰 레시피 배치는 목록에 없어야 한다"
+
+
+def test_count_endpoint_feeds_the_menu_badge():
+    """메뉴 배지는 목록이 아니라 숫자만 받는다 — 화면마다 1,000행을 나르지 않는다."""
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    semi = _prod()
+    host = _prod()
+    with get_connection() as conn:
+        _seed_record(conn, product=semi, lot=f"{semi}26070101")
+        host_id = _seed_record(conn, product=host, lot=f"{host}26080401")
+        _seed_ack(
+            conn, record_id=host_id, material_name=semi,
+            material_lot=f"{semi}26089999",
+        )
+        conn.commit()
+
+    res = client.get("/api/blend/lot-audit/count", headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["unresolved"] >= 1
+    assert "items" not in body, "배지는 숫자만 받는다"
+    # 배지도 책임자 전용이다 — 로그인 없는 창에서는 숫자조차 나가지 않는다.
+    assert _client().get("/api/blend/lot-audit/count").status_code in (401, 403)
+
+
+def test_batch_discards_moved_from_the_audit_page_to_materials():
+    """배치 폐기 기록은 자재 관리로 옮겼다 — 자재가 나갔는데 제품이 안 된 양이다."""
+    from pathlib import Path
+
+    audit = Path("templates/blend_lot_audit.html").read_text(encoding="utf-8")
+    materials = Path("templates/materials.html").read_text(encoding="utf-8")
+    assert "배치 폐기 기록" not in audit
+    assert "배치 폐기 기록" in materials
+    assert 'id="mlot-discard-body"' in materials

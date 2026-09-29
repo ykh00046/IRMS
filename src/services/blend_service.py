@@ -1988,6 +1988,80 @@ def record_lot_acks(
     return len(acks)
 
 
+# ── 미해소 LOT 대사(A) ───────────────────────────────────────────────────────
+
+# LOT 열쇠에서 걷어낼 구분자. 사람이 손으로 적는 칸이라 공백·하이픈이 섞인다.
+_LOT_SEPARATORS = re.compile(r"[\s\-_/.]")
+
+
+def normalize_lot_key(product_name: Any, lot: Any) -> str:
+    """LOT 비교용 열쇠 — 표기 차이를 걷어낸 형태.
+
+    작업자가 `PB26080502` 를 `26080502` 로 적는 일이 실제로 있다(2026-08 운영 실측
+    4건 중 2건). 글자 그대로 비교하면 같은 로트인데도 영영 미해소로 남아 목록이
+    0 으로 돌아오지 않고, 그러면 아무도 그 화면을 보지 않는다.
+
+    걷어내는 것은 **표기뿐**이다: 앞뒤 공백·구분자·대소문자와 제품명 접두사.
+    숫자가 다르면 여전히 다른 로트다 — 오타를 덮지 않는다.
+    """
+    text = _LOT_SEPARATORS.sub("", str(lot or "")).upper()
+    name = _LOT_SEPARATORS.sub("", str(product_name or "")).upper()
+    if name and text.startswith(name):
+        text = text[len(name):]
+    return text
+
+
+def unresolved_lot_acks(
+    connection: sqlite3.Connection, *, limit: int = 2000
+) -> dict[str, Any]:
+    """미해소 LOT 대사 — 그 반제품의 완료 기록에 아직 없는 LOT 진행 건.
+
+    자기 치유된다: 1차 기록이 나중에 저장되면 그 순간부터 목록에서 빠진다. 그래서
+    '해소 처리' 버튼이 없다. 취소·임시 기록에 딸린 건은 대상이 아니다(그 배합 자체가
+    없던 일이 됐다).
+
+    맞추기는 `normalize_lot_key` 로 한다 — 접두사만 다른 같은 로트를 어긋남으로
+    세지 않기 위해서다(2026-09-29).
+    """
+    rows = connection.execute(
+        """
+        SELECT a.id AS ack_id, a.record_id, a.material_name, a.material_lot,
+               a.reason, a.acknowledged, a.created_at,
+               br.product_name, br.product_lot, br.work_date, br.worker
+        FROM blend_lot_acks a
+        JOIN blend_records br ON br.id = a.record_id
+        WHERE br.status = 'completed'
+        ORDER BY a.created_at ASC, a.id ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    if not rows:
+        return {"items": [], "resolved": 0}
+
+    made: dict[str, set[str]] = {}
+    for name in {str(r["material_name"] or "") for r in rows}:
+        made[name] = {
+            normalize_lot_key(name, made_row["product_lot"])
+            for made_row in connection.execute(
+                "SELECT product_lot FROM blend_records "
+                "WHERE product_name = ? AND status = 'completed'",
+                (name,),
+            )
+        }
+
+    items: list[dict[str, Any]] = []
+    resolved = 0
+    for row in rows:
+        name = str(row["material_name"] or "")
+        key = normalize_lot_key(name, row["material_lot"])
+        if key and key in made.get(name, set()):
+            resolved += 1
+            continue
+        items.append({key_name: row[key_name] for key_name in row.keys()})
+    return {"items": items, "resolved": resolved}
+
+
 # ── 총 배합량 플래그(B) · 증량 승인 우회 감지(C) ──────────────────────────────
 
 

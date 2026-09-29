@@ -35,6 +35,16 @@ from ..db import get_db, local_today_text
 from ..services import blend_service
 
 
+# 총량 이상으로 볼 조건. 목록과 배지가 같은 규칙을 쓰도록 한 곳에 둔다.
+#   · 25kg 을 **증량해서** 넘긴 건(폐기 권고를 무시하고 진행) — 증량 이력이 없는
+#     25kg 초과는 레시피 기준 총량이 원래 큰 제품이라 이상이 아니다(2026-09-29).
+#   · 증량 이력 없이 총량만 키운 우회 의심.
+_TOTAL_ANOMALY_WHERE = (
+    "(COALESCE(oversize_total, 0) = 1 AND COALESCE(rescale_count, 0) > 0)"
+    " OR COALESCE(total_bypass_suspect, 0) = 1"
+)
+
+
 def _age_days(created_at: Any, today: str) -> int | None:
     """created_at(ISO8601 'YYYY-MM-DDTHH:MM:SSZ') → 오늘까지의 경과 일수.
 
@@ -64,48 +74,11 @@ def build_router() -> APIRouter:
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
-        # NOT EXISTS 가 대사의 전부다 — 1차 completed 기록이 나중에 생기면 그 순간부터
-        # 이 목록에서 빠진다(해소). ack 를 지우거나 표시를 바꾸는 쓰기 동작은 없다.
-        #
-        # 취소된 배합의 ack 는 제외한다: br.status = 'completed'. 취소(canceled)나
-        # 임시(draft) 기록에 딸린 ack 는 더 이상 통제 대상이 아니다(그 배합 자체가
-        # 없던 일이 됐다).
-        rows = connection.execute(
-            """
-            SELECT a.id AS ack_id, a.record_id, a.material_name, a.material_lot,
-                   a.reason, a.acknowledged, a.created_at,
-                   br.product_name, br.product_lot, br.work_date, br.worker
-            FROM blend_lot_acks a
-            JOIN blend_records br ON br.id = a.record_id
-            WHERE br.status = 'completed'
-              AND NOT EXISTS (
-                  SELECT 1 FROM blend_records r2
-                  WHERE r2.product_name = a.material_name
-                    AND r2.product_lot = a.material_lot
-                    AND r2.status = 'completed'
-              )
-            ORDER BY a.created_at ASC, a.id ASC
-            LIMIT 1000
-            """
-        ).fetchall()
-
-        # 해소된 건수 — "대사가 살아서 돌고 있다"를 화면에 보여주기 위한 참고 수치.
-        # (해소된 건은 목록에 넣지 않는다. 오래된 정상 건이 화면을 덮으면 봐야 할
-        #  대상이 묻힌다.)
-        resolved_row = connection.execute(
-            """
-            SELECT COUNT(*) AS n
-            FROM blend_lot_acks a
-            JOIN blend_records br ON br.id = a.record_id
-            WHERE br.status = 'completed'
-              AND EXISTS (
-                  SELECT 1 FROM blend_records r2
-                  WHERE r2.product_name = a.material_name
-                    AND r2.product_lot = a.material_lot
-                    AND r2.status = 'completed'
-              )
-            """
-        ).fetchone()
+        # 맞추기는 blend_service 가 한다 — 표기만 다른 같은 LOT(PB26080502 ↔ 26080502)을
+        # 어긋남으로 세지 않기 위해 글자 그대로 비교하지 않는다(2026-09-29).
+        # ack 를 지우거나 표시를 바꾸는 쓰기 동작은 이 화면에 없다.
+        audit = blend_service.unresolved_lot_acks(connection)
+        rows = audit["items"]
 
         today = local_today_text()
         items = []
@@ -130,7 +103,8 @@ def build_router() -> APIRouter:
             "items": items,
             "total": len(items),
             "unacknowledged": sum(1 for it in items if not it["acknowledged"]),
-            "resolved": int(resolved_row["n"] or 0) if resolved_row else 0,
+            # 해소된 건수 — "대사가 살아서 돌고 있다"를 보여주는 참고 수치.
+            "resolved": int(audit["resolved"]),
         }
 
     # ------------------------------------------------------------------
@@ -160,7 +134,7 @@ def build_router() -> APIRouter:
             FROM blend_records
             WHERE status = 'completed'
               AND work_date >= ?
-              AND (COALESCE(oversize_total, 0) = 1 OR COALESCE(total_bypass_suspect, 0) = 1)
+              AND (""" + _TOTAL_ANOMALY_WHERE + """)
             ORDER BY work_date DESC, id DESC
             LIMIT 1000
             """,
@@ -227,6 +201,37 @@ def build_router() -> APIRouter:
             "total": len(items),
             "discarded_g": round(sum(it["discarded_g"] for it in items), 2),
             "range": {"from": from_date, "to": today.isoformat()},
+        }
+
+    # ------------------------------------------------------------------
+    # 4. GET /blend/lot-audit/count — 메뉴 배지용 숫자(책임자 전용)
+    # ------------------------------------------------------------------
+    @router.get("/blend/lot-audit/count")
+    def lot_audit_count(
+        days: int = Query(default=180, ge=1, le=3650),
+        connection: sqlite3.Connection = Depends(get_db),
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """사이드바 메뉴 옆 배지가 읽는 값 — 목록 대신 숫자만.
+
+        이 화면은 들어와야만 보이는 자리라 아무도 열지 않았다(2026-09-29 검토).
+        메뉴에 숫자가 붙으면 열어야 할 때를 메뉴가 먼저 말해 준다. 목록을 통째로
+        받아 길이만 세면 매 화면마다 1,000행을 나르므로 숫자만 돌려준다.
+        """
+        audit = blend_service.unresolved_lot_acks(connection)
+        today = date.fromisoformat(local_today_text())
+        from_date = date.fromordinal(max(1, today.toordinal() - int(days))).isoformat()
+        row = connection.execute(
+            "SELECT COUNT(*) AS n FROM blend_records "
+            "WHERE status = 'completed' AND work_date >= ? AND ("
+            + _TOTAL_ANOMALY_WHERE + ")",
+            (from_date,),
+        ).fetchone()
+        unresolved = audit["items"]
+        return {
+            "unresolved": len(unresolved),
+            "unacknowledged": sum(1 for r in unresolved if not r["acknowledged"]),
+            "anomalies": int(row["n"] or 0) if row else 0,
         }
 
     return router

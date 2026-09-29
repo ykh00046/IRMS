@@ -68,6 +68,60 @@
       itemCodes.refresh();
     }
 
+    // 배치 폐기 기록 — 마크업이 있을 때(책임자)만 부른다. 자재가 실물로 나갔는데
+    // 제품이 되지 못한 양이라, 사용량 집계에서 빠진 자리를 여기서 메운다.
+    const discardBody = document.getElementById("mlot-discard-body");
+    if (canManage && discardBody) {
+      const SOURCE_LABEL = {
+        overweight: "과중량",
+        rescale_limit: "3회 증량 차단",
+        manual: "직접 기록",
+      };
+      const esc = (value) =>
+        String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        }[c]));
+      const gram = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n.toLocaleString("ko-KR", { maximumFractionDigits: 2 }) : "-";
+      };
+      const request = IRMS._core && IRMS._core.request;
+      const empty = document.getElementById("mlot-discard-empty");
+      if (request) {
+        request("/blend/lot-audit/batch-discards")
+          .then((data) => {
+            const items = (data && data.items) || [];
+            if (!items.length) {
+              if (empty) empty.hidden = false;
+              return;
+            }
+            discardBody.innerHTML = items
+              .map((it) => {
+                const mats = (it.details || [])
+                  .map((d) => `${esc(d.material_name)} ${gram(d.actual_amount)} g`)
+                  .join(", ");
+                return (
+                  "<tr>" +
+                  `<td>${esc(it.work_date)}<br /><span class="muted small">${esc(it.worker)}</span></td>` +
+                  `<td>${esc(it.product_name)}</td>` +
+                  `<td class="muted small">${esc(it.reason)}</td>` +
+                  `<td>${esc(SOURCE_LABEL[it.source] || it.source)}</td>` +
+                  `<td class="muted small">${mats || "-"}</td>` +
+                  `<td class="num">${gram(it.discarded_g)}</td>` +
+                  "</tr>"
+                );
+              })
+              .join("");
+          })
+          .catch(() => {
+            if (empty) {
+              empty.hidden = false;
+              empty.textContent = "배치 폐기 기록을 불러오지 못했습니다.";
+            }
+          });
+      }
+    }
+
     // 탭 딥링크 — /materials?tab=lots(대시보드 '자재 LOT 기준 파일' 카드 등)가 지정한
     // 탭을 연다. 위 탭 버튼의 click 핸들러를 그대로 태운다(다른 동작은 건드리지 않는다).
     const requestedTab = new URLSearchParams(window.location.search).get("tab");

@@ -189,6 +189,33 @@
             <button class="btn btn-sm" id="mlot-page-next" type="button">다음</button>
           </div>
         </section>
+
+        {% if can_manage %}
+        {# 배치 폐기 기록 — 2026-09-29 에 LOT 대사 화면에서 옮겨 왔다. 성격이 '사후 점검'이
+           아니라 '자재가 실물로 나갔는데 제품이 안 된 양'이라 자재 화면이 제자리다.
+           배합 기록 화면(/status)은 로그인 없이 열리는데 이 값은 책임자 전용이라 그쪽으로
+           옮길 수 없었다. #}
+        <section class="panel" id="mlot-discard-panel">
+          <h3 class="panel-title">배치 폐기 기록</h3>
+          <p class="muted small">배치 전체를 폐기한 기록입니다. 자재 사용량 집계에는 들어가지 않습니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>작업일 · 작업자</th>
+                  <th>제품</th>
+                  <th>사유</th>
+                  <th>구분</th>
+                  <th>폐기 자재</th>
+                  <th class="num">폐기량(g)</th>
+                </tr>
+              </thead>
+              <tbody id="mlot-discard-body"></tbody>
+            </table>
+          </div>
+          <p class="mlot-empty" id="mlot-discard-empty" hidden>최근 180일에 배치 폐기 기록이 없습니다.</p>
+        </section>
+        {% endif %}
         </div>
 
 {% endblock %}
@@ -196,5 +223,5 @@
 {% block scripts %}
     <script src="/static/js/management/item-codes.js?v=20260910a"></script>
     <script src="/static/js/material_lots.js?v=20260910a"></script>
-    <script src="/static/js/materials.js?v=20260910a"></script>
+    <script src="/static/js/materials.js?v=20260929a"></script>
 {% endblock %}

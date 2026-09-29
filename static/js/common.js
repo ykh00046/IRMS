@@ -60,3 +60,25 @@
     fetch("/api/blend/session/me", { credentials: "same-origin" }).catch(() => {});
   }, 120000);
 })();
+
+
+// ── LOT 대사 배지(책임자 메뉴에만 존재) ───────────────────────────────────
+// 이 화면은 들어와야만 숫자가 보이는 자리라 아무도 열지 않았다(2026-09-29 검토).
+// 메뉴에 숫자를 붙여 "지금 볼 것이 있는가"를 사이드바가 먼저 말하게 한다.
+// 배지 자리는 책임자에게만 렌더되므로 담당자 화면에서는 요청 자체가 없다.
+(function () {
+  "use strict";
+  const badge = document.getElementById("nav-lot-audit-count");
+  if (!badge) return;
+  fetch("/api/blend/lot-audit/count", { credentials: "same-origin" })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (!data) return;
+      const n = Number(data.unresolved || 0);
+      if (!n) return;                 // 0 이면 배지를 띄우지 않는다 — 조용한 것이 정상이다.
+      badge.textContent = String(n);
+      badge.title = `미해소 LOT ${n}건`;
+      badge.hidden = false;
+    })
+    .catch(() => {});
+})();
