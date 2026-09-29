@@ -13,7 +13,7 @@
           <div class="metric-card">
             <div class="metric-label">미해소 LOT</div>
             <div class="metric-value lau-num" id="lau-card-unresolved">-</div>
-            <div class="metric-unit">1차 기록이 아직 없음</div>
+            <div class="metric-unit" id="lau-card-unresolved-note">1차 기록이 아직 없음</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">확인 절차 없음</div>
@@ -42,6 +42,7 @@
               끝내 생기지 않으면 오타이거나 실제로 없는 반제품일 가능성이 높습니다.
               제품 이름을 앞에 붙였는지 같은 표기 차이는 같은 LOT으로 봅니다.
               경과 일수가 큰 건부터 확인합니다. 취소된 배합은 표시하지 않습니다.
+              최근 180일만 목록에 둡니다. 그보다 오래된 미해소는 카드에 건수만 적습니다.
             </p>
           </details>
           <div class="lau-loading" id="lau-unresolved-loading"><span class="spinner"></span> 불러오는 중…</div>

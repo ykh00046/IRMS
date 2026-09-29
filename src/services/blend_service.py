@@ -2012,7 +2012,7 @@ def normalize_lot_key(product_name: Any, lot: Any) -> str:
 
 
 def unresolved_lot_acks(
-    connection: sqlite3.Connection, *, limit: int = 2000
+    connection: sqlite3.Connection, *, limit: int = 2000, since: str | None = None
 ) -> dict[str, Any]:
     """미해소 LOT 대사 — 그 반제품의 완료 기록에 아직 없는 LOT 진행 건.
 
@@ -2022,6 +2022,11 @@ def unresolved_lot_acks(
 
     맞추기는 `normalize_lot_key` 로 한다 — 접두사만 다른 같은 로트를 어긋남으로
     세지 않기 위해서다(2026-09-29).
+
+    `since` 를 주면 그날 이후에 생긴 건만 `items` 에 담고, 그보다 오래된 미해소는
+    `older` 로 **세기만** 한다. 끝내 1차 기록이 안 생기는 건은 영영 해소되지 않아
+    목록이 한없이 길어지는데, 반년이 지나면 고칠 수 있는 것도 없다. 숫자로 남겨
+    조용히 사라지지는 않게 한다(2026-09-29 사용자 지적).
     """
     rows = connection.execute(
         """
@@ -2052,14 +2057,18 @@ def unresolved_lot_acks(
 
     items: list[dict[str, Any]] = []
     resolved = 0
+    older = 0
     for row in rows:
         name = str(row["material_name"] or "")
         key = normalize_lot_key(name, row["material_lot"])
         if key and key in made.get(name, set()):
             resolved += 1
             continue
+        if since and str(row["created_at"] or "")[:10] < since:
+            older += 1
+            continue
         items.append({key_name: row[key_name] for key_name in row.keys()})
-    return {"items": items, "resolved": resolved}
+    return {"items": items, "resolved": resolved, "older": older}
 
 
 # ── 총 배합량 플래그(B) · 증량 승인 우회 감지(C) ──────────────────────────────

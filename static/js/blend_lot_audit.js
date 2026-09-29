@@ -83,6 +83,15 @@
       $("lau-card-unresolved").textContent = String(data.total || 0);
       $("lau-card-unack").textContent = String(data.unacknowledged || 0);
       $("lau-card-resolved").textContent = String(data.resolved || 0);
+      // 창(기본 180일) 밖에서 아직 미해소인 건은 목록에 없다 — 조용히 사라지지
+      // 않도록 카드 밑줄에 건수만 적는다.
+      const older = Number(data.older || 0);
+      const note = $("lau-card-unresolved-note");
+      if (note) {
+        note.textContent = older
+          ? `1차 기록이 아직 없음 · ${data.window_days || 180}일 지난 건 ${older}`
+          : "1차 기록이 아직 없음";
+      }
       $("lau-unresolved-loading").hidden = true;
       if (!items.length) {
         $("lau-unresolved-wrap").hidden = true;

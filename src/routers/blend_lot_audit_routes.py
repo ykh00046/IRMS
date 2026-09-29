@@ -35,14 +35,33 @@ from ..db import get_db, local_today_text
 from ..services import blend_service
 
 
+# 1회 배합 상한이 적용되지 않는 분류. 물은 유량계·부피로 재고 배치가 통째로 커서
+# 25,000 g 기준이 뜻을 갖지 않는다 — 저울 전용 잠금을 용수에서 푼 것과 같은 결이다
+# (사용자 결정 2026-09-29: S+코팅·베타 등 용수 레시피 전부). 실측으로 걸리던 7건이
+# 모두 이 분류였다.
+TOTAL_LIMIT_EXEMPT_CATEGORY = "용수"
+
 # 총량 이상으로 볼 조건. 목록과 배지가 같은 규칙을 쓰도록 한 곳에 둔다.
 #   · 25kg 을 **증량해서** 넘긴 건(폐기 권고를 무시하고 진행) — 증량 이력이 없는
 #     25kg 초과는 레시피 기준 총량이 원래 큰 제품이라 이상이 아니다(2026-09-29).
 #   · 증량 이력 없이 총량만 키운 우회 의심.
+#   · 용수 분류 레시피는 어느 쪽으로도 세지 않는다.
 _TOTAL_ANOMALY_WHERE = (
-    "(COALESCE(oversize_total, 0) = 1 AND COALESCE(rescale_count, 0) > 0)"
-    " OR COALESCE(total_bypass_suspect, 0) = 1"
+    "((COALESCE(br.oversize_total, 0) = 1 AND COALESCE(br.rescale_count, 0) > 0)"
+    " OR COALESCE(br.total_bypass_suspect, 0) = 1)"
+    " AND COALESCE(rc.category, '') <> :exempt_category"
 )
+
+# 목록·배지가 함께 쓰는 조인. 레시피가 없는 기록(수기 입력)은 분류가 없어 제외되지 않는다.
+_TOTAL_ANOMALY_FROM = (
+    "FROM blend_records br LEFT JOIN recipes rc ON rc.id = br.recipe_id"
+)
+
+
+def _window_start(days: int) -> str:
+    """오늘에서 `days` 일 앞선 날짜(YYYY-MM-DD) — 목록·배지가 같은 창을 쓴다."""
+    today = date.fromisoformat(local_today_text())
+    return date.fromordinal(max(1, today.toordinal() - int(days))).isoformat()
 
 
 def _age_days(created_at: Any, today: str) -> int | None:
@@ -71,13 +90,16 @@ def build_router() -> APIRouter:
     # ------------------------------------------------------------------
     @router.get("/blend/lot-audit/unresolved")
     def list_unresolved_lot_acks(
+        days: int = Query(default=180, ge=1, le=3650),
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
         # 맞추기는 blend_service 가 한다 — 표기만 다른 같은 LOT(PB26080502 ↔ 26080502)을
         # 어긋남으로 세지 않기 위해 글자 그대로 비교하지 않는다(2026-09-29).
         # ack 를 지우거나 표시를 바꾸는 쓰기 동작은 이 화면에 없다.
-        audit = blend_service.unresolved_lot_acks(connection)
+        # 총량 이상과 같은 180일 창. 끝내 해소되지 않는 건이 쌓여 목록이 한없이
+        # 길어지지 않게 한다 — 창 밖 건은 `older` 로 세기만 한다(2026-09-29).
+        audit = blend_service.unresolved_lot_acks(connection, since=_window_start(days))
         rows = audit["items"]
 
         today = local_today_text()
@@ -105,6 +127,9 @@ def build_router() -> APIRouter:
             "unacknowledged": sum(1 for it in items if not it["acknowledged"]),
             # 해소된 건수 — "대사가 살아서 돌고 있다"를 보여주는 참고 수치.
             "resolved": int(audit["resolved"]),
+            # 창 밖(기본 180일)에서 아직 미해소인 건. 목록에는 없지만 숫자로 남긴다.
+            "older": int(audit.get("older") or 0),
+            "window_days": int(days),
         }
 
     # ------------------------------------------------------------------
@@ -126,19 +151,19 @@ def build_router() -> APIRouter:
         from_date = date.fromordinal(max(1, today.toordinal() - int(days))).isoformat()
         rows = connection.execute(
             """
-            SELECT id, product_lot, product_name, work_date, worker, total_amount,
-                   recipe_id, rescale_count,
-                   COALESCE(oversize_total, 0) AS oversize_total,
-                   COALESCE(total_bypass_suspect, 0) AS total_bypass_suspect,
-                   total_bypass_base, created_at
-            FROM blend_records
-            WHERE status = 'completed'
-              AND work_date >= ?
+            SELECT br.id, br.product_lot, br.product_name, br.work_date, br.worker,
+                   br.total_amount, br.recipe_id, br.rescale_count,
+                   COALESCE(br.oversize_total, 0) AS oversize_total,
+                   COALESCE(br.total_bypass_suspect, 0) AS total_bypass_suspect,
+                   br.total_bypass_base, br.created_at
+            """ + _TOTAL_ANOMALY_FROM + """
+            WHERE br.status = 'completed'
+              AND br.work_date >= :from_date
               AND (""" + _TOTAL_ANOMALY_WHERE + """)
-            ORDER BY work_date DESC, id DESC
+            ORDER BY br.work_date DESC, br.id DESC
             LIMIT 1000
             """,
-            (from_date,),
+            {"from_date": from_date, "exempt_category": TOTAL_LIMIT_EXEMPT_CATEGORY},
         ).fetchall()
 
         items = []
@@ -218,14 +243,13 @@ def build_router() -> APIRouter:
         메뉴에 숫자가 붙으면 열어야 할 때를 메뉴가 먼저 말해 준다. 목록을 통째로
         받아 길이만 세면 매 화면마다 1,000행을 나르므로 숫자만 돌려준다.
         """
-        audit = blend_service.unresolved_lot_acks(connection)
-        today = date.fromisoformat(local_today_text())
-        from_date = date.fromordinal(max(1, today.toordinal() - int(days))).isoformat()
+        from_date = _window_start(days)
+        audit = blend_service.unresolved_lot_acks(connection, since=from_date)
         row = connection.execute(
-            "SELECT COUNT(*) AS n FROM blend_records "
-            "WHERE status = 'completed' AND work_date >= ? AND ("
+            "SELECT COUNT(*) AS n " + _TOTAL_ANOMALY_FROM
+            + " WHERE br.status = 'completed' AND br.work_date >= :from_date AND ("
             + _TOTAL_ANOMALY_WHERE + ")",
-            (from_date,),
+            {"from_date": from_date, "exempt_category": TOTAL_LIMIT_EXEMPT_CATEGORY},
         ).fetchone()
         unresolved = audit["items"]
         return {

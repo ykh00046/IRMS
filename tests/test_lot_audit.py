@@ -766,3 +766,81 @@ def test_batch_discards_moved_from_the_audit_page_to_materials():
     assert "배치 폐기 기록" not in audit
     assert "배치 폐기 기록" in materials
     assert 'id="mlot-discard-body"' in materials
+
+
+def test_water_part_recipes_are_outside_the_total_limit():
+    """용수 분류는 1회 상한 대상이 아니다(2026-09-29 사용자 결정).
+
+    물은 유량계·부피로 재고 배치가 통째로 커서 25,000 g 이 뜻을 갖지 않는다.
+    저울 전용 잠금을 용수에서 푼 것과 같은 결이다. 실측으로 걸리던 7건이 전부
+    S+코팅·베타 같은 용수 레시피였다.
+    """
+    client = _client()
+    headers = _login(client)
+    worker = _worker_session(client, headers)
+    product = _prod()
+    recipe_id = _import_recipe(client, headers, product, base_totals=[20000])
+
+    res = client.put(
+        f"/api/recipes/{recipe_id}/category",
+        json={"category": "용수"},
+        headers=headers,
+    )
+    assert res.status_code == 200, res.text
+
+    saved = _save_blend(
+        client, headers, recipe_id=recipe_id, product=product, worker=worker,
+        total=30000,
+        rescale_events=[{
+            "before_total": 20000, "after_total": 30000,
+            "absence_reason": "책임자 부재 — 야간",
+        }],
+    )
+    assert saved.status_code == 200, saved.text
+    rid = saved.json()["id"]
+    assert _flags(rid)["oversize_total"] == 1      # 플래그는 그대로 남는다
+
+    body = client.get("/api/blend/lot-audit/total-anomalies", headers=headers).json()
+    assert all(it["id"] != rid for it in body["items"]),         "용수 레시피는 총량 이상 목록에 없어야 한다"
+    count = client.get("/api/blend/lot-audit/count", headers=headers).json()
+    assert isinstance(count["anomalies"], int)
+
+
+def test_unresolved_list_does_not_grow_forever():
+    """끝내 해소되지 않는 건은 창(기본 180일) 밖으로 나가고 숫자만 남는다.
+
+    해소가 자기 치유뿐이라 오타는 영영 안 풀린다 — 창이 없으면 목록이 한없이
+    길어지고 배지 숫자도 0 으로 돌아오지 않는다(2026-09-29 사용자 지적).
+    """
+    client = _client()
+    headers = _login(client)
+
+    from src.db import get_connection
+
+    semi = _prod()
+    host = _prod()
+    with get_connection() as conn:
+        _seed_record(conn, product=semi, lot=f"{semi}26070101")
+        host_id = _seed_record(conn, product=host, lot=f"{host}26080401")
+        old_ack = _seed_ack(
+            conn, record_id=host_id, material_name=semi,
+            material_lot=f"{semi}19990101", created_at="2020-01-01T00:00:00Z",
+        )
+        fresh_ack = _seed_ack(
+            conn, record_id=host_id, material_name=semi,
+            material_lot=f"{semi}26089999",
+        )
+        conn.commit()
+
+    body = client.get("/api/blend/lot-audit/unresolved", headers=headers).json()
+    shown = {it["ack_id"] for it in body["items"]}
+    assert fresh_ack in shown
+    assert old_ack not in shown, "창 밖 건은 목록에 없다"
+    assert body["older"] >= 1, "창 밖 건은 숫자로 남는다"
+    assert body["window_days"] == 180
+
+    # 창을 넓히면 다시 보인다 — 사라진 것이 아니라 접어 둔 것이다.
+    wide = client.get(
+        "/api/blend/lot-audit/unresolved", params={"days": 3650}, headers=headers
+    ).json()
+    assert old_ack in {it["ack_id"] for it in wide["items"]}
