@@ -97,7 +97,7 @@
 }
 
 .att-shell {
-  width: min(1200px, 100%);
+  width: min(1440px, 100%);
   margin: 0 auto;
   padding: 1.2rem 1.4rem 3rem;
   display: grid;
@@ -121,7 +121,7 @@
 /* 헤더 아래 페이지 폭 배너 — 헤더 안 flex 항목으로 두면 버튼들 사이에 눌려
    한 줄로 잘렸다(2026-08-14 검토 8번). */
 .att-page-banner {
-  width: min(1200px, 100%);
+  width: min(1440px, 100%);
   margin: 1rem auto -0.2rem;
   padding-left: 1.4rem;
   padding-right: 1.4rem;
@@ -235,7 +235,9 @@
 
 .att-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  /* 카드 다섯 장(넓은 카드 둘 포함 여섯 칸)이 한 줄에 들어가는 최소 폭.
+     좁은 창에서는 그대로 접힌다(2026-09-29). */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 0.9rem;
 }
 
@@ -412,37 +414,48 @@
 }
 
 
-.att-work-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+/* 평일·휴일 근무시간 한 표. 열은 정상·연장·야근·조출, 줄은 평일·휴일. */
+.att-work-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 }
 
-.att-work-grid li {
-  min-width: 0;
-  border-bottom: 1px solid var(--line);
-  padding: 0.45rem 0 0.5rem;
+.att-work-table th,
+.att-work-table td {
+  padding: 0.4rem 0.35rem;
+  text-align: right;
+  white-space: nowrap;
 }
 
-.att-work-grid span {
-  display: block;
-  color: var(--text-tertiary);
+.att-work-table thead th {
   font-size: var(--fs-2xs);
   font-weight: 700;
-  margin-bottom: 0.18rem;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--line);
 }
 
-.att-work-grid strong {
-  display: block;
+.att-work-table thead th:first-child,
+.att-work-table tbody th {
+  text-align: left;
+}
+
+.att-work-table tbody th {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.att-work-table tbody td {
   font-family: var(--font-sans);
   font-size: var(--fs-lg);
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
+}
+
+.att-work-table tbody tr + tr th,
+.att-work-table tbody tr + tr td {
+  border-top: 1px solid var(--line);
 }
 
 .att-table-wrap {
@@ -1195,6 +1208,12 @@
 
   .att-admin-direct-row {
     align-items: stretch;
+  }
+
+  /* 좁은 화면은 한 줄에 한 장. 두 칸으로 두면 카드가 200px 아래로 내려가
+     근무시간 표가 카드를 밀어낸다(2026-09-29 브라우저 실측). */
+  .att-summary {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .att-summary-card-wide {

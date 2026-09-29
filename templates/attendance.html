@@ -6,7 +6,7 @@
     <title>BRM · 근태 조회</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260910a" />
     <link rel="stylesheet" href="/static/css/common.css?v=20260910a" />
-    <link rel="stylesheet" href="/static/css/attendance.css?v=20260928a" />
+    <link rel="stylesheet" href="/static/css/attendance.css?v=20260929a" />
   </head>
   <body
     class="att-page"
@@ -229,24 +229,38 @@
           </p>
         </div>
 
-        <div class="att-summary-card att-work-card">
-          <h3>평일 근무시간</h3>
-          <ul class="att-work-grid">
-            <li><span>정상</span><strong id="att-wd-normal">0.00h</strong></li>
-            <li><span>연장</span><strong id="att-wd-overtime">0.00h</strong></li>
-            <li><span>야근</span><strong id="att-wd-night">0.00h</strong></li>
-            <li><span>조출</span><strong id="att-wd-early">0.00h</strong></li>
-          </ul>
-        </div>
-
-        <div class="att-summary-card att-work-card att-work-card-holiday">
-          <h3>휴일 근무시간</h3>
-          <ul class="att-work-grid">
-            <li><span>정상</span><strong id="att-hd-normal">0.00h</strong></li>
-            <li><span>연장</span><strong id="att-hd-overtime">0.00h</strong></li>
-            <li><span>야근</span><strong id="att-hd-night">0.00h</strong></li>
-            <li><span>조출</span><strong id="att-hd-early">0.00h</strong></li>
-          </ul>
+        {# 평일·휴일은 항목이 똑같은 한 쌍이라 카드를 둘로 나누면 같은 값을 두 번
+           찾아 견줘야 했다. 한 표에 두 줄로 두면 세로로 바로 비교된다. 카드 수가
+           줄어 요약 줄도 한 줄에 들어간다(2026-09-29 사용자 지적). #}
+        <div class="att-summary-card att-work-card att-summary-card-wide">
+          <h3>근무시간 <span class="att-h3-sub">평일 · 휴일</span></h3>
+          <table class="att-work-table">
+            <thead>
+              <tr>
+                <th scope="col">구분</th>
+                <th scope="col">정상</th>
+                <th scope="col">연장</th>
+                <th scope="col">야근</th>
+                <th scope="col">조출</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">평일</th>
+                <td id="att-wd-normal">0.00h</td>
+                <td id="att-wd-overtime">0.00h</td>
+                <td id="att-wd-night">0.00h</td>
+                <td id="att-wd-early">0.00h</td>
+              </tr>
+              <tr>
+                <th scope="row">휴일</th>
+                <td id="att-hd-normal">0.00h</td>
+                <td id="att-hd-overtime">0.00h</td>
+                <td id="att-hd-night">0.00h</td>
+                <td id="att-hd-early">0.00h</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 

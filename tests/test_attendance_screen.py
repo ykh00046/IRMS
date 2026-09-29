@@ -317,8 +317,13 @@ def test_existing_features_are_not_removed():
         'id="att-emp-direct"',
         "올해 지각 누적",
         "연차 사용 합계",
-        "평일 근무시간",
-        "휴일 근무시간",
+        # 평일·휴일 근무시간은 카드 둘에서 표 한 장으로 합쳤다(2026-09-29). 제목 문구가
+        # 아니라 값이 놓이는 자리를 계약으로 삼는다 — 배치는 또 바뀔 수 있다.
+        "근무시간",
+        'id="att-wd-normal"',
+        'id="att-wd-overtime"',
+        'id="att-hd-normal"',
+        'id="att-hd-overtime"',
     ):
         assert marker in ATTENDANCE_PAGE, f"기존 요소가 사라졌습니다: {marker}"
 
