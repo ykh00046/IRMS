@@ -76,6 +76,21 @@ def portal_configured() -> bool:
     """수집에 필요한 값이 다 있는가. 호출 시점에 읽어 테스트가 갈아끼울 수 있다."""
     return bool(PORTAL_BASE_URL and PORTAL_USERNAME and PORTAL_PASSWORD)
 
+
+# === 오늘 휴무 카톡 공지(docs/attendance-approvals.md §7) ===
+# 사내 카카오 릴레이 큐에 넣는다. URL·토큰 중 하나라도 비면 공지 기능이 꺼진다.
+# 토큰은 로그·감사·응답 어디에도 싣지 않는다.
+RELAY_URL = os.getenv("IRMS_RELAY_URL", "").strip().rstrip("/")
+RELAY_TOKEN = os.getenv("IRMS_RELAY_TOKEN", "").strip()
+LEAVE_NOTICE_ROOM = os.getenv("IRMS_LEAVE_NOTICE_ROOM", "원료생산팀 반,조장방").strip()
+# 평일 이 시(時)대 안에서 보낸다. serve.py 감시 주기마다 부르고 하루 한 번만 나간다.
+LEAVE_NOTICE_HOUR = int(os.getenv("IRMS_LEAVE_NOTICE_HOUR", "8"))
+
+
+def relay_configured() -> bool:
+    """공지 발송에 필요한 값이 다 있는가. 호출 시점에 읽어 테스트가 갈아끼울 수 있다."""
+    return bool(RELAY_URL and RELAY_TOKEN)
+
 if REQUIRE_SESSION_SECRET and not SESSION_SECRET:
     raise RuntimeError(
         "IRMS_SESSION_SECRET must be set when IRMS_REQUIRE_SESSION_SECRET is enabled."
