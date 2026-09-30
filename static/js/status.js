@@ -390,6 +390,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!chips.trim()) chips = ' <span class="status-chip status-done">완료</span>';
     // 시험 기록 표식 — 상태 칩을 **대신하지 않고** 그 앞에 붙는다. 시험 기록도
     // 정상이면 '완료'가 보여야 한다(시험은 상태가 아니라 기록의 종류다). 중립 색.
+    if (r.no_weighing) {
+      // 계량 없이 기록한 시험 — 실제량 칸이 빈 이유를 목록에서 바로 말한다.
+      chips += ' <span class="status-chip status-noweigh" title="책임자 승인으로 계량값 없이 기록했습니다 · 자재 사용량 집계에서 빠집니다">계량 없음</span>';
+    }
     if (r.is_test) {
       chips = ' <span class="status-chip status-test" title="시험 배합 기록 · 정식 생산 통계·알림에서 빠집니다">시험</span>'
         + chips;
@@ -649,9 +653,12 @@ document.addEventListener("DOMContentLoaded", () => {
       : "";
     // 시험 기록 · 제품명 옆 중립 칩 + 불러온 기준 레시피 한 줄(있을 때만).
     // 출력물(DHR PDF/Excel)은 외부 제출용이라 표식을 넣지 않는다 — 이 화면만.
-    const testBadge = rec.is_test
+    const testBadge = (rec.is_test
       ? ' <span class="status-chip status-test" title="시험 배합 기록">시험</span>'
-      : "";
+      : "")
+      + (rec.no_weighing
+        ? ' <span class="status-chip status-noweigh" title="책임자 승인으로 계량값 없이 기록했습니다">계량 없음</span>'
+        : "");
     const baseRecipeLine = rec.is_test && rec.base_recipe_name
       ? `<p class="status-base-recipe">기준 레시피: ${esc(rec.base_recipe_name)}</p>`
       : "";

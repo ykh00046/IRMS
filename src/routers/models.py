@@ -281,6 +281,10 @@ class BlendCreateBody(BaseModel):
     # 정식과 동일하다. False(기본) 경로의 동작은 한 줄도 바뀌지 않는다.
     is_test: bool = False
     base_recipe_id: int | None = Field(default=None, gt=0)
+    # 계량값 없이 기록(2026-09-30 사용자 요청) — 책임자 인증으로 받은 승인 번호.
+    # 시험 배합에서만 쓰이고, 서버가 그 토큰을 소비해야 실제량 없는 저장이 통과한다.
+    # 값이 없으면 종전과 같이 모든 자재의 실제량이 필수다.
+    no_weighing_approval_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendCreateBody":

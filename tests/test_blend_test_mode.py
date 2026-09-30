@@ -847,3 +847,144 @@ def test_production_path_unchanged_smoke():
     assert body["total_amount"] == 200.0
     assert not body["product_lot"].startswith("T-")
     assert [d["theory_amount"] for d in body["details"]] == [120.0, 80.0]
+
+
+# ── 계량 없이 기록(2026-09-30 사용자 요청) ─────────────────────────────────
+
+
+def _noweigh_approval(client, csrf, username="admin", password="admin"):
+    """책임자 인증 → 계량 없이 기록 승인 번호."""
+    res = client.post(
+        "/api/blend/manager-verify",
+        json={"username": username, "password": password, "purpose": "test_noweigh"},
+        headers=csrf(),
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["approval_id"]
+
+
+def test_no_weighing_saves_with_lots_only():
+    """책임자 승인이 있으면 계량값 없이 자재와 LOT 만으로 기록된다.
+
+    목표량은 그대로 남아 총량·비율의 근거가 되고, 실제량은 지어내지 않고 비운다.
+    """
+    client, csrf = _mgmt_client()
+    _worker_session(client, csrf, "시험작업" + _uid())
+    product = "무계량시험" + _uid()
+    approval_id = _noweigh_approval(client, csrf)
+
+    res = _save_test(
+        client, csrf, product,
+        rows=[("원료A", 600, None, "LOT-A"), ("원료B", 400, None, "LOT-B")],
+        no_weighing_approval_id=approval_id,
+    )
+    assert res.status_code == 200, res.text
+    record = res.json()
+    assert record["total_amount"] == 1000          # 목표량 합은 그대로 선다
+    assert record["no_weighing"] is True
+    assert all(d["actual_amount"] is None for d in record["details"])
+    assert [d["material_lot"] for d in record["details"]] == ["LOT-A", "LOT-B"]
+
+
+def test_no_weighing_still_requires_every_lot():
+    """계량값이 없으면 LOT 이 유일한 추적 단서다 — 하나라도 비면 저장하지 않는다."""
+    client, csrf = _mgmt_client()
+    _worker_session(client, csrf, "시험작업" + _uid())
+    product = "무계량시험" + _uid()
+    approval_id = _noweigh_approval(client, csrf)
+
+    res = _save_test(
+        client, csrf, product,
+        rows=[("원료A", 600, None, "LOT-A"), ("원료B", 400, None, None)],
+        no_weighing_approval_id=approval_id,
+    )
+    assert res.status_code == 400
+    assert "LOT" in res.json()["detail"]
+
+
+def test_no_weighing_needs_a_manager_approval():
+    """승인 없이는 종전대로 실제량이 필수다 — 화면 값만으로는 열리지 않는다."""
+    client, csrf = _mgmt_client()
+    _worker_session(client, csrf, "시험작업" + _uid())
+    product = "무계량시험" + _uid()
+
+    res = _save_test(
+        client, csrf, product,
+        rows=[("원료A", 600, None, "LOT-A")],
+    )
+    assert res.status_code == 400
+    assert "실제량" in res.json()["detail"]
+
+
+def test_a_no_weighing_approval_is_used_once():
+    """같은 승인으로 두 건을 기록하지 못한다(증량 승인과 같은 규칙)."""
+    client, csrf = _mgmt_client()
+    _worker_session(client, csrf, "시험작업" + _uid())
+    approval_id = _noweigh_approval(client, csrf)
+
+    first = _save_test(
+        client, csrf, "무계량시험" + _uid(),
+        rows=[("원료A", 600, None, "LOT-A")],
+        no_weighing_approval_id=approval_id,
+    )
+    assert first.status_code == 200, first.text
+
+    second = _save_test(
+        client, csrf, "무계량시험" + _uid(),
+        rows=[("원료A", 600, None, "LOT-A")],
+        no_weighing_approval_id=approval_id,
+    )
+    assert second.status_code == 400
+    assert "승인" in second.json()["detail"]
+
+
+def test_a_manual_entry_approval_cannot_open_the_no_weighing_path():
+    """목적이 다른 승인(수기 입력)으로는 열리지 않는다."""
+    client, csrf = _mgmt_client()
+    _worker_session(client, csrf, "시험작업" + _uid())
+    manual = client.post(
+        "/api/blend/manager-verify",
+        json={"username": "admin", "password": "admin", "purpose": "manual"},
+        headers=csrf(),
+    )
+    assert manual.status_code == 200, manual.text
+
+    res = _save_test(
+        client, csrf, "무계량시험" + _uid(),
+        rows=[("원료A", 600, None, "LOT-A")],
+        no_weighing_approval_id=manual.json()["approval_id"],
+    )
+    assert res.status_code == 400
+
+
+def test_no_weighing_is_test_only():
+    """정식 배합에는 이 경로가 없다 — 계량이 곧 실적이다."""
+    client, csrf = _mgmt_client()
+    worker = _worker_session(client, csrf, "시험작업" + _uid())
+    product = "정식제품" + _uid()
+    recipe_id = _import_recipe(client, csrf, product, [("원료A", 60), ("원료B", 40)])
+    approval_id = _noweigh_approval(client, csrf)
+
+    blend = client.get(f"/api/blend/recipes/{recipe_id}", params={"total": 1000}).json()
+    details = [
+        {
+            "material_id": it["material_id"],
+            "material_name": it["material_name"],
+            "ratio": it["ratio"],
+            "theory_amount": it["theory_amount"],
+            "actual_amount": it["theory_amount"],
+            "material_lot": "LOT-" + it["material_name"],
+        }
+        for it in blend["items"]
+    ]
+    res = client.post("/api/blend/records", json={
+        "recipe_id": recipe_id,
+        "product_name": product,
+        "worker": worker,
+        "work_date": _WORK_DATE,
+        "total_amount": 1000,
+        "details": details,
+        "no_weighing_approval_id": approval_id,
+    }, headers=csrf())
+    assert res.status_code == 400
+    assert "시험" in res.json()["detail"]

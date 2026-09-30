@@ -5,7 +5,7 @@
 {% block heading %}배합 기록 · DHR 관리{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260921b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260930a" />
     <style>
       /* status(배합 기록) 전용 소량 스타일 · 페이지 자립 CSS가 없어 여기 인라인.
          공용 토큰만 사용하고, 색·모양 하드코딩을 두지 않는다. */
@@ -102,6 +102,12 @@
         background: var(--status-info-bg);
         color: var(--status-info);
         border: 1px solid color-mix(in srgb, var(--status-info) 22%, transparent);
+      }
+      /* 계량 없이 기록한 시험 — 경고색으로 '값이 없다'는 사실만 말한다. */
+      .status-chip.status-noweigh {
+        background: var(--status-warning-bg);
+        color: var(--status-warning);
+        border: 1px solid color-mix(in srgb, var(--status-warning) 22%, transparent);
       }
       /* 상세 헤더의 기준 레시피 한 줄 · 값 칸(.dhr-head)에 맞춘 보조 글자. */
       .status-base-recipe { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--fs-xs); }
@@ -286,5 +292,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/status.js?v=20260921b"></script>
+    <script src="/static/js/status.js?v=20260930a"></script>
 {% endblock %}

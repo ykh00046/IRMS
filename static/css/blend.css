@@ -1098,7 +1098,21 @@ body.dhr-open { overflow: hidden; }
 .blend-test-banner { max-width: none; margin-bottom: 0; }
 
 /* 자재 추가 줄 + 검색 창 */
-.blend-test-add { position: relative; margin-top: var(--space-3); }
+.blend-test-add {
+  position: relative;
+  margin-top: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* 계량 없이 기록 중임을 버튼 옆에서 조용히 알린다(경고가 아니라 상태다). */
+.blend-noweigh-state {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--status-warning);
+}
 .blend-mat-picker {
   position: absolute;
   z-index: 40;

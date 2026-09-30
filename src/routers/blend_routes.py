@@ -1416,11 +1416,33 @@ def build_router() -> APIRouter:
                 except blend_service.RecipeMismatchError as exc:
                     raise HTTPException(status_code=400, detail=exc.detail) from exc
 
+        # 계량값 없이 기록(2026-09-30) — 시험 배합에서 책임자 승인을 받아 자재와 LOT 만
+        # 남긴다. 승인 토큰을 여기서 소비해야 통과한다(화면 값만으로는 열리지 않는다).
+        # 정식 배합에는 이 경로가 없다 — 계량이 곧 실적이다.
+        no_weighing = False
+        noweigh_approver = None
+        if body.no_weighing_approval_id is not None:
+            if not is_test:
+                raise HTTPException(
+                    status_code=400,
+                    detail="계량값 없이 기록은 시험 배합에서만 됩니다.",
+                )
+            try:
+                noweigh_approver = blend_service.consume_noweigh_approval(
+                    connection, body.no_weighing_approval_id
+                )
+            except blend_service.RescaleApprovalError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail) from exc
+            no_weighing = True
+            # 실제량은 지어내지 않는다 — 비운 채로 저장한다(목표량은 그대로 남는다).
+            for d in details:
+                d["actual_amount"] = None
+
         # 전 자재 계량 완료 — 실제량이 빈 자재가 하나라도 있으면 저장 거부.
         # 편차 검사는 이 결손을 못 잡는다(actual is None 이면 건너뛴다). 그대로 저장되면
         # 자재 사용량 SUM 이 그 자재를 빼고 집계하고 DHR 에 빈 줄이 남는다.
         # enforce_carry_over 이후라 반응기 이월 행은 이미 1차 총량으로 채워져 있다.
-        missing_actuals = blend_service.missing_actual_names(details)
+        missing_actuals = [] if no_weighing else blend_service.missing_actual_names(details)
         if missing_actuals:
             shown = missing_actuals[:5]
             suffix = " …" if len(missing_actuals) > 5 else ""
@@ -1494,8 +1516,25 @@ def build_router() -> APIRouter:
             manual_entry=body.manual_entry,
             is_test=is_test,
             base_recipe_id=base_recipe_id,
+            no_weighing=no_weighing,
         )
         record = blend_service.get_blend_record(connection, record_id)
+        # 누가 계량 없이 기록하도록 승인했는지 남긴다 — 기록에는 표식만 있고 사람 이름은
+        # 감사에만 둔다(기록 화면은 책임자 전용이 아니다).
+        if no_weighing:
+            write_audit_log(
+                connection,
+                action="blend_test_no_weighing",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record.get("product_lot") if record else None,
+                details={
+                    "approver": noweigh_approver,
+                    "materials": len(details),
+                    "total_amount": total_amount,
+                },
+            )
         # 증량 이벤트가 있으면 컬럼 기록 + 감사. 없으면(rescale=None) 기존 동작 유지(컬럼 기본값 0).
         if rescale is not None:
             blend_service.apply_rescale_to_record(connection, record_id, rescale)

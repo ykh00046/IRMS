@@ -2683,6 +2683,7 @@ def create_blend_record(
     is_test: bool = False,
     base_recipe_id: int | None = None,
     lot_name: str | None = None,
+    no_weighing: bool = False,
 ) -> int:
     """배합 실적 1건 저장 (헤더 + 상세). product_lot 자동 생성.
 
@@ -2727,6 +2728,11 @@ def create_blend_record(
         if has_test_cols
         else ()
     )
+    # 계량값 없이 기록한 시험(책임자 승인) — 컬럼이 없는 구스키마는 생략(폴백).
+    has_noweigh = _table_has_column(connection, "blend_records", "no_weighing")
+    noweigh_col = ", no_weighing" if has_noweigh else ""
+    noweigh_val = ", ?" if has_noweigh else ""
+    noweigh_params: tuple[Any, ...] = ((1 if no_weighing else 0,) if has_noweigh else ())
     # 채번용 이름 — 시험은 "T-" + 시험명(정식 순번과 분리). 저장되는 product_name 은 불변.
     lot_base = lot_name or (test_lot_base_name(product_name) if is_test else product_name)
     for _attempt in range(3):
@@ -2738,8 +2744,8 @@ def create_blend_record(
                     (product_lot, recipe_id, product_name, ink_name, position, worker,
                      work_date, work_time, total_amount, scale, status, note,
                      worker_sign, reactor, manual_entry, is_bulk_regenerated,
-                     created_by, created_at, updated_at{code_col}{test_col})
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?{code_val}{test_val})
+                     created_by, created_at, updated_at{code_col}{test_col}{noweigh_col})
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?{code_val}{test_val}{noweigh_val})
                 """,
                 (
                     product_lot, recipe_id, product_name.strip(), ink_name, position, worker.strip(),
@@ -2751,6 +2757,7 @@ def create_blend_record(
                     created_by, created_at, created_at,
                     *((product_code,) if has_product_code else ()),
                     *test_params,
+                    *noweigh_params,
                 ),
             )
             break
@@ -3061,6 +3068,12 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         if _table_has_column(connection, "blend_records", "is_test")
         else ""
     )
+    # 계량 없이 기록한 시험 — 화면이 빈 실제량의 이유를 말할 수 있게 함께 싣는다.
+    noweigh_col = (
+        ", COALESCE(no_weighing, 0) AS no_weighing"
+        if _table_has_column(connection, "blend_records", "no_weighing")
+        else ""
+    )
     row = connection.execute(
         f"""
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
@@ -3070,7 +3083,7 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
                reviewed_by, reviewed_at, approved_by, approved_at,
                worker_sign, reviewed_sign, approved_sign,
                created_by, created_at, updated_at,
-               {code_expr}{test_cols}
+               {code_expr}{test_cols}{noweigh_col}
         FROM blend_records WHERE id = ?
         """,
         (record_id,),
@@ -3275,6 +3288,12 @@ def list_blend_records(
         if _table_has_column(connection, "blend_records", "is_test")
         else ""
     )
+    # 계량 없이 기록한 시험 — 목록 칩에서 바로 구분한다.
+    noweigh_col = (
+        ", COALESCE(no_weighing, 0) AS no_weighing"
+        if _table_has_column(connection, "blend_records", "no_weighing")
+        else ""
+    )
     # 점도 등록 상태(na/done/skipped/missing) — 점도 테이블 없는 스키마는 'na' 상수 폴백.
     viscosity_state_expr = _viscosity_state_select_expr(connection)
     rows = connection.execute(
@@ -3282,7 +3301,7 @@ def list_blend_records(
         SELECT id, product_lot, recipe_id, product_name, ink_name, position, worker,
                work_date, work_time, total_amount, scale, status, note, created_at,
                manual_entry, is_bulk_regenerated,
-               {code_expr}{badge_cols}{reactor_col}{test_cols},
+               {code_expr}{badge_cols}{reactor_col}{test_cols}{noweigh_col},
                {viscosity_state_expr}
         FROM blend_records
         WHERE {where}
@@ -3378,6 +3397,8 @@ def _serialize_record(row: sqlite3.Row) -> dict[str, Any]:
         "is_bulk_regenerated": bool(row["is_bulk_regenerated"]) if "is_bulk_regenerated" in keys else False,
         # 시험 배합 표식 — 컬럼이 없는 구버전/단위테스트 스키마는 항상 False(정식).
         "is_test": bool(row["is_test"]) if "is_test" in keys else False,
+        # 계량 없이 기록(책임자 승인) — 실제량이 빈 이유를 화면이 말할 수 있게 함께 낸다.
+        "no_weighing": bool(row["no_weighing"]) if "no_weighing" in keys else False,
     }
     # 증량 미확인 배지 플래그 — 목록 SELECT 가 실었을 때만(구버전 DB 폴백 없음).
     # manual_unacked 는 아래 공통 루프가 싣는다(상세 응답과 같은 키).
@@ -3512,15 +3533,21 @@ _RESCALE_APPROVAL_TTL_MINUTES = 30  # 승인 유효 시간(분) — 30분 내 �
 
 RESCALE_PURPOSE = "rescale"     # 초과 계량 증량 승인 — 저장 시 approval_id 로 소비된다.
 MANUAL_PURPOSE = "manual"       # 저울 전용 모드의 수기 입력 허용 승인 — 발급이 곧 승인.
+# 시험 배합을 계량값 없이(로트만) 기록하는 승인 — 저장 시 소비된다(2026-09-30 사용자 요청).
+# 증량과 같이 '저장 한 건에 한 번'이어야 하므로 발급 때 닫지 않고 소비 지점을 둔다.
+NOWEIGH_PURPOSE = "test_noweigh"
+
+_APPROVAL_PURPOSES = (RESCALE_PURPOSE, MANUAL_PURPOSE, NOWEIGH_PURPOSE)
 
 
 def normalize_approval_purpose(purpose: Any) -> str:
-    """승인 목적을 알려진 두 값으로 좁힌다(클라이언트 문자열 신뢰 금지).
+    """승인 목적을 알려진 값으로 좁힌다(클라이언트 문자열 신뢰 금지).
 
-    'manual' 외의 모든 값은 기존 동작 그대로 증량('rescale')으로 본다 — 옛 라우터가
+    아는 목적이 아니면 기존 동작 그대로 증량('rescale')으로 본다 — 옛 라우터가
     `purpose == "manual"` 여부만 보고 나머지를 증량으로 취급했던 것과 동일하다.
     """
-    return MANUAL_PURPOSE if str(purpose or "").strip() == MANUAL_PURPOSE else RESCALE_PURPOSE
+    text = str(purpose or "").strip()
+    return text if text in _APPROVAL_PURPOSES else RESCALE_PURPOSE
 
 
 def create_rescale_approval(
@@ -3541,6 +3568,7 @@ def create_rescale_approval(
     from ..db.time_utils import utc_now_text
 
     purpose = normalize_approval_purpose(purpose)
+    # 소비 지점이 있는 목적(증량·시험 무계량)만 열어 둔다. 수기입력은 발급이 곧 승인이다.
     used = 1 if purpose == MANUAL_PURPOSE else 0
     try:
         cursor = connection.execute(
@@ -3606,6 +3634,41 @@ def _sanitize_rescale_drivers(raw: Any) -> list[dict[str, Any]]:
             entry[key] = round(value, 2)
         out.append(entry)
     return out
+
+
+def consume_noweigh_approval(
+    connection: sqlite3.Connection, approval_id: Any
+) -> str:
+    """시험 무계량 승인 토큰을 소비하고 승인자 이름을 돌려준다.
+
+    증량 토큰과 같은 검사를 목적만 바꿔 쓴다 — 미사용(used=0)·30분 이내·목적 일치.
+    통과하면 used=1 로 닫아 같은 승인으로 두 건을 기록하지 못하게 한다. 화면이 보내는
+    값만 믿으면 책임자 한정이 말뿐이 되므로, 저장 경로에서 이 함수가 유일한 관문이다.
+    """
+    try:
+        ident = int(approval_id)
+    except (TypeError, ValueError):
+        raise RescaleApprovalError(
+            "책임자 승인이 유효하지 않습니다 — 다시 인증하세요."
+        ) from None
+    row = connection.execute(
+        "SELECT * FROM blend_rescale_approvals WHERE id = ?", (ident,)
+    ).fetchone()
+    if not row or row["used"]:
+        raise RescaleApprovalError("책임자 승인이 유효하지 않습니다 — 다시 인증하세요.")
+    row_purpose = row["purpose"] if "purpose" in row.keys() else None
+    if (row_purpose or RESCALE_PURPOSE) != NOWEIGH_PURPOSE:
+        raise RescaleApprovalError("책임자 승인이 유효하지 않습니다 — 다시 인증하세요.")
+    created_dt = _iso_to_dt(row["created_at"])
+    now_dt = datetime.now(timezone.utc)
+    if created_dt is None or (
+        now_dt - created_dt
+    ).total_seconds() > _RESCALE_APPROVAL_TTL_MINUTES * 60:
+        raise RescaleApprovalError("책임자 승인이 유효하지 않습니다 — 다시 인증하세요.")
+    connection.execute(
+        "UPDATE blend_rescale_approvals SET used = 1 WHERE id = ?", (ident,)
+    )
+    return str(row["approver"] or "책임자")
 
 
 def validate_rescale_events(

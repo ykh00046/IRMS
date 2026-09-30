@@ -72,6 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ]],
     ["승인·예외", [
       ["blend_manual_entry_approved", "수기 입력 승인"],
+      ["blend_test_no_weighing", "시험 배합 계량 없이 기록"],
       ["blend_manual_absence_saved", "수기 입력(책임자 부재)"],
       ["blend_rescale_saved", "증량 배합 저장"],
       ["blend_discard_saved", "계량 중 자재 폐기"],

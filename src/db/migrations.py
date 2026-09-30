@@ -829,6 +829,11 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     if not has_migration(connection, "recipes_stage1_recipe_id"):
         record_migration(connection, "recipes_stage1_recipe_id")
 
+    # 계량값 없이 기록한 시험 배합(2026-09-30 사용자 요청). 책임자 승인을 받아
+    # 자재와 LOT 만 남기고 실제량을 비운 기록이다 — 목표량은 있고 계량값만 없다.
+    # 정식 배합에는 이 경로가 없다(시험 전용). 기본 0 이라 기존 기록은 영향 없음.
+    ensure_column(connection, "blend_records", "no_weighing", "INTEGER NOT NULL DEFAULT 0")
+
     # 용수 레시피에 붙어 있던 1회 상한 표식 정리(2026-09-30 사용자 결정).
     # 물은 유량계·부피로 재고 배치가 통째로 커서 25,000 g 기준이 성립하지 않는다 —
     # 저장 쪽은 blend_service.total_limit_applies 로 더 이상 표식을 남기지 않지만,

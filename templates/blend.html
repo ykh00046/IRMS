@@ -5,7 +5,7 @@
 {% block heading %}{{ '시험 배합' if test_mode else '배합 · 반제품 제조 (DHR)' }}{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260921b" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20260930a" />
 {% endblock %}
 
 {% block content %}
@@ -166,6 +166,10 @@
                키보드만으로 끝낼 수 있게 위/아래·Enter·Esc 를 받는다(blend.js 가 배선). #}
             <div class="blend-test-add">
               <button class="btn btn-sm" id="blend-add-row" type="button">자재 추가</button>
+              {# 계량 없이 기록(2026-09-30) — 책임자 승인을 받아 실제량 없이 자재·LOT 만 남긴다.
+                 시험 화면에만 있고, 승인은 이 기록 한 건에만 쓰인다. #}
+              <button class="btn btn-sm" id="blend-noweigh-btn" type="button">계량 없이 기록</button>
+              <span class="blend-noweigh-state" id="blend-noweigh-state" hidden></span>
               <div class="blend-mat-picker" id="blend-mat-picker" hidden>
                 <input class="input" id="blend-mat-search" placeholder="자재명 또는 품목코드" autocomplete="off" aria-label="자재 검색" />
                 <div class="blend-mat-picker-list" id="blend-mat-picker-list" role="listbox"></div>
@@ -378,6 +382,29 @@
         <!-- 수기 입력 책임자 승인 모달 · 저울 전용 모드에서 '수기 입력 승인 요청' 클릭 시 뜬다.
              책임자 이름+비밀번호로 /api/blend/manager-verify(purpose=manual) 검증 후 이 배합에 한해
              손입력을 허용한다. 부재 경로 없음(승인만). hidden 토글 전용. -->
+        {# 계량 없이 기록 · 책임자 승인(시험 전용). 부재 경로는 두지 않는다 —
+           책임자만 쓰는 기능이라 '부재로 진행'이 성립하지 않는다. #}
+        <div class="ss-modal-overlay" id="noweigh-modal" hidden>
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="noweigh-title">
+            <div class="ss-modal-header"><h3 id="noweigh-title">계량 없이 기록</h3></div>
+            <div class="ss-modal-body">
+              <p class="rescale-approve-lead">자재와 LOT만 남기고 계량값 없이 기록합니다. 책임자 승인이 필요하고 <strong>이 기록 한 건에만</strong> 적용됩니다.</p>
+              <div class="blend-field">
+                <label class="filter-label" for="noweigh-name">책임자 이름</label>
+                <input class="input" id="noweigh-name" autocomplete="off" />
+              </div>
+              <div class="blend-field">
+                <label class="filter-label" for="noweigh-pw">비밀번호</label>
+                <input class="input" id="noweigh-pw" type="password" autocomplete="off" />
+              </div>
+              <p class="login-error" id="noweigh-error" hidden></p>
+              <button class="btn accent rescale-approve-btn" id="noweigh-submit" type="button">승인</button>
+              <button class="btn rescale-approve-btn" id="noweigh-cancel" type="button">닫기</button>
+              <p class="rescale-absence-warn">계량값이 없는 기록은 <strong>자재 사용량 집계에 들어가지 않습니다</strong>. 목표량과 LOT은 그대로 남습니다.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="ss-modal-overlay" id="manual-approve-modal" hidden>
           <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="manual-approve-title">
             <div class="ss-modal-header"><h3 id="manual-approve-title">수기 입력 책임자 승인</h3></div>
@@ -533,7 +560,7 @@
     <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend.js?v=20260930a"></script>
+    <script src="/static/js/blend.js?v=20260930b"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->

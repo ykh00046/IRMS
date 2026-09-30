@@ -146,6 +146,10 @@
     testAutoName: "",
     // 자재 검색 목록 캐시(GET /materials). 행 추가 창을 열 때 1회 로드.
     materialsCache: null,
+    // 계량 없이 기록(2026-09-30) — 책임자 승인을 받으면 {approval_id, approver}.
+    // 실제량 칸을 비워 잠그고, 저장 payload 에 승인 번호를 실어 서버가 소비한다.
+    // 저장 성공·초기화·레시피 변경 때 해제한다(승인은 기록 한 건에만 쓰인다).
+    noWeighing: null,
   };
 
   // 시험 모드 판정 — 템플릿 속성 하나만 본다(계약 §7).
@@ -317,6 +321,106 @@
         toggleReasonTag(input, btn.dataset.tag);
       });
     });
+  }
+
+  // ── 계량 없이 기록(시험 전용) 책임자 승인 ──────────────────────
+  // 자재와 LOT 만 남기고 실제량 없이 기록한다. 시험 배합에서만 열리고, 승인은 저장
+  // 한 건에만 쓰인다(서버가 토큰을 소비한다). 정식 배합에는 이 경로가 없다.
+  function noWeighOn() {
+    return Boolean(state.testMode && state.noWeighing);
+  }
+
+  function updateNoWeighControl() {
+    const btn = $("blend-noweigh-btn");
+    const label = $("blend-noweigh-state");
+    if (!btn) return;
+    btn.hidden = !state.testMode;
+    if (label) {
+      const on = noWeighOn();
+      label.hidden = !on;
+      if (on) {
+        label.textContent = `계량 없이 기록 · 승인 ${state.noWeighing.approver}`;
+      }
+    }
+    btn.textContent = noWeighOn() ? "계량 입력으로" : "계량 없이 기록";
+  }
+
+  // 실제량 칸을 비우고 잠근다(모드 해제 시 잠금만 푼다 — 지운 값은 되돌리지 않는다).
+  function applyNoWeighToRows() {
+    const on = noWeighOn();
+    if (on) {
+      state.items.forEach((it) => { it.actual_amount = ""; it.manual = false; });
+    }
+    document.querySelectorAll("#blend-mat-body .blend-actual").forEach((el) => {
+      el.readOnly = on;
+      el.value = on ? "" : el.value;
+      if (on) el.title = "계량 없이 기록 중입니다"; else el.removeAttribute("title");
+    });
+    updateTotals();
+  }
+
+  function openNoWeighModal() {
+    const modal = $("noweigh-modal");
+    if (!modal) return;
+    const nameEl = $("noweigh-name");
+    const pwEl = $("noweigh-pw");
+    if (nameEl) nameEl.value = "";
+    if (pwEl) pwEl.value = "";
+    const err = $("noweigh-error");
+    if (err) { err.hidden = true; err.textContent = ""; }
+    modal.hidden = false;
+    if (nameEl) nameEl.focus();
+  }
+
+  function closeNoWeighModal() {
+    const modal = $("noweigh-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  function showNoWeighError(msg) {
+    const err = $("noweigh-error");
+    if (err) { err.textContent = msg; err.hidden = false; }
+  }
+
+  async function submitNoWeighApproval() {
+    const nameEl = $("noweigh-name");
+    const pwEl = $("noweigh-pw");
+    const name = nameEl ? nameEl.value.trim() : "";
+    const pw = pwEl ? pwEl.value : "";
+    if (!name) { showNoWeighError("책임자 이름을 입력하세요."); if (nameEl) nameEl.focus(); return; }
+    if (!pw) { showNoWeighError("비밀번호를 입력하세요."); if (pwEl) pwEl.focus(); return; }
+    const btn = $("noweigh-submit");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/blend/manager-verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "x-csrftoken": csrfToken() },
+        body: JSON.stringify({ username: name, password: pw, purpose: "test_noweigh" }),
+      });
+      if (res.status === 401) { showNoWeighError("비밀번호가 올바르지 않습니다."); return; }
+      if (res.status === 403) { showNoWeighError("책임자 권한이 없습니다."); return; }
+      if (!res.ok) { showNoWeighError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요."); return; }
+      const data = await res.json().catch(() => ({}));
+      state.noWeighing = {
+        approval_id: data.approval_id,
+        approver: data.approver || name,
+      };
+      closeNoWeighModal();
+      applyNoWeighToRows();
+      updateNoWeighControl();
+      notify(`계량 없이 기록합니다 (승인 ${state.noWeighing.approver}) · 자재 LOT만 넣고 저장하세요.`, "success");
+    } catch (_e) {
+      showNoWeighError("승인 확인 중 오류가 발생했습니다. 다시 시도하세요.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function clearNoWeighing() {
+    state.noWeighing = null;
+    applyNoWeighToRows();
+    updateNoWeighControl();
   }
 
   // ── 저울 전용 모드 수기 입력 승인 게이트 ───────────────────────
@@ -943,6 +1047,7 @@
     state.discardEvents = [];  // 레시피 변경 → 폐기 이력도 새 배합 기준으로 초기화
     state.lotOverrides = {};
     state.manualApproved = null;  // 레시피 변경 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
+    clearNoWeighing();            // 레시피 변경 → 계량 없이 기록 승인도 해제
     // 레시피가 바뀌면 '같은 저장의 재시도'가 아니다 — 실패한 저장의 멱등 키를 버린다.
     // (그대로 두면 옛 키로 저장돼, 앞 요청이 사실 커밋돼 있었을 때 새 배합 대신 옛
     //  기록이 되돌아온다.)
@@ -1982,6 +2087,8 @@
     updateTotals();
     // 저울 전용 모드가 켜져 있으면 새로 렌더된 행의 실제량 칸도 readonly 로 잠근다.
     applyScaleOnlyToRows();
+    // 계량 없이 기록 중이면 새 행의 실제량 칸도 비우고 잠근다.
+    if (noWeighOn()) applyNoWeighToRows();
     // 기준 자재 행의 LOT 가 이미 1차 LOT 이면 이월 컨트롤을 노출(수정 등록 프리필 등).
     refreshCarryOverControl();
     // 저울 대상 행 표시 갱신(행 재렌더 후).
@@ -3986,7 +4093,7 @@
     }
     // 실제량이 하나도 없으면 저장하지 않는다. 저장 성공 후 화면은 레시피·총량을 유지하므로,
     // 습관적으로 Enter/저장을 한 번 더 누르면 '전부 빈' 기록이 새 LOT 을 받아 저장됐다.
-    if (state.items.every((it) => it.actual_amount === "" || it.actual_amount == null)) {
+    if (!noWeighOn() && state.items.every((it) => it.actual_amount === "" || it.actual_amount == null)) {
       err.textContent = "계량한 실제량이 없습니다. 자재를 계량한 뒤 저장하세요.";
       err.hidden = false;
       notify("계량값이 없어 저장하지 않았습니다.", "error");
@@ -3996,7 +4103,9 @@
     // 빈 실제량은 rowVariance 가 편차 0 으로 돌려주기 때문에 위의 편차 차단을 그냥
     // 통과했고, 서버도 예전에는 NULL 로 저장해 그 자재가 '투입 안 됨'으로 집계됐다.
     // 반응기 이월 행은 이월 적용 시 실제량이 채워지므로 여기서 자연히 만족된다.
-    const unweighed = state.items
+    // 계량 없이 기록 중에는 실제량이 비어 있는 것이 정상이다 — 대신 아래에서 모든 행의
+    // LOT 를 요구한다(추적성은 LOT 하나로 선다).
+    const unweighed = noWeighOn() ? [] : state.items
       .filter((it) => it.actual_amount === "" || it.actual_amount == null)
       .map((it) => it.material_name);
     if (unweighed.length) {
@@ -4021,7 +4130,7 @@
     // (이론=실측이므로 편차가 무의미).
     const ai = state.anchorIndex;
     const tol = state.toleranceG;
-    const bad = state.items.filter((it, i) =>
+    const bad = noWeighOn() ? [] : state.items.filter((it, i) =>
       i !== ai && !varianceVerdict(Number(it.actual_amount), it.theory_amount, tol).within
     );
     if (bad.length) {
@@ -4032,7 +4141,13 @@
     }
     // 자재 LOT 필수 — 실제량을 넣은 행은 LOT 도 반드시 입력. 앞 단계 기록에 없는 LOT 를
     // '확인하고 진행' 한 행도 material_lot 가 채워져 있어 여기서 만족된다(분기 불필요).
-    const lotMissing = missingLotNames(state.items);
+    // 계량 없이 기록은 실제량이 없어 missingLotNames(실제량 있는 행만 본다)가 아무것도
+    // 잡지 못한다. 그 경로에서는 모든 행의 LOT 를 요구한다 — 서버도 같은 규칙이다.
+    const lotMissing = noWeighOn()
+      ? state.items
+          .filter((it) => String(it.material_lot || "").trim() === "")
+          .map((it) => String(it.material_name || "").trim() || "(이름 없음)")
+      : missingLotNames(state.items);
     if (lotMissing.length) {
       const msg = missingLotBlockMessage(lotMissing);
       err.textContent = msg; err.hidden = false;
@@ -4110,6 +4225,9 @@
       discard_events: (state.discardEvents && state.discardEvents.length) ? state.discardEvents : null,
       manual_absence_reason: (state.manualApproved && state.manualApproved.absence_reason) || null,
       manual_entry: state.items.some((it) => it.manual === true),
+      // 계량 없이 기록 — 책임자 승인 번호. 서버가 이 토큰을 소비해야 실제량 없는 저장이
+      // 통과한다(화면이 값을 보내는 것만으로는 열리지 않는다).
+      no_weighing_approval_id: (state.noWeighing && state.noWeighing.approval_id) || null,
       request_id: _saveRequestId,
       details: state.items.map((it, idx) => {
         const d = {
@@ -4214,6 +4332,7 @@
       // 있고, 다음 배합이 그걸 곧바로 원료로 쓴다(B-1: 시킨 대로 해도 계속 막히던 원인).
       lotCheckCache.clear();
       state.manualApproved = null;  // 저장 완료 → 수기 입력 승인 해제(다음 배합은 다시 잠금)
+      clearNoWeighing();            // 저장 완료 → 계량 없이 기록도 해제(승인은 한 건에만)
       clearRescaleSummary();
       // 저장 성공 직후 LOT 미리보기가 방금 저장한 LOT 을 그대로 보여주던 문제(F5) —
       // 다음 순번을 즉시 재조회해 갱신한다(다음 입력 때에야 바뀌던 것을 고친다).
@@ -4407,6 +4526,26 @@
       if (e.key === "Escape" && approveModal && !approveModal.hidden) dismissApproveWithReweigh();
     });
     // 저울 전용 모드 수기 입력 승인 — 요청 버튼/모달 [승인]·[취소]·Enter·Esc.
+    // 계량 없이 기록 — 시험 화면에만 있는 버튼(정식 화면에는 마크업 자체가 없다).
+    const noWeighBtn = $("blend-noweigh-btn");
+    if (noWeighBtn) {
+      noWeighBtn.addEventListener("click", () => {
+        if (noWeighOn()) clearNoWeighing();
+        else openNoWeighModal();
+      });
+    }
+    const noWeighSubmit = $("noweigh-submit");
+    if (noWeighSubmit) noWeighSubmit.addEventListener("click", () => submitNoWeighApproval());
+    const noWeighCancel = $("noweigh-cancel");
+    if (noWeighCancel) noWeighCancel.addEventListener("click", closeNoWeighModal);
+    const noWeighPw = $("noweigh-pw");
+    if (noWeighPw) noWeighPw.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      submitNoWeighApproval();
+    });
+    updateNoWeighControl();
+
     const manualReq = $("manual-entry-request-btn");
     if (manualReq) manualReq.addEventListener("click", openManualApproveModal);
     const manualSubmit = $("manual-approve-submit");
