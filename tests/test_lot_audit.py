@@ -130,13 +130,23 @@ def _seed_record(conn, *, product, lot, status="completed", work_date="2026-07-0
     return cur.lastrowid
 
 
+def _today_stamp():
+    """오늘 0시(UTC) 도장. 목록 창이 짧아져도 씨앗이 밖으로 밀리지 않게 한다."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+
+
 def _seed_ack(conn, *, record_id, material_name, material_lot,
-              acknowledged=1, reason="", created_at="2026-07-01T00:00:00Z"):
+              acknowledged=1, reason="", created_at=None):
     cur = conn.execute(
         "INSERT INTO blend_lot_acks "
         "(record_id, material_name, material_lot, reason, acknowledged, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (record_id, material_name, material_lot, reason, acknowledged, created_at),
+        (
+            record_id, material_name, material_lot, reason, acknowledged,
+            created_at or _today_stamp(),
+        ),
     )
     return cur.lastrowid
 
@@ -807,7 +817,7 @@ def test_water_part_recipes_are_outside_the_total_limit():
 
 
 def test_unresolved_list_does_not_grow_forever():
-    """끝내 해소되지 않는 건은 창(기본 180일) 밖으로 나가고 숫자만 남는다.
+    """끝내 해소되지 않는 건은 창(기본 30일) 밖으로 나가고 숫자만 남는다.
 
     해소가 자기 치유뿐이라 오타는 영영 안 풀린다 — 창이 없으면 목록이 한없이
     길어지고 배지 숫자도 0 으로 돌아오지 않는다(2026-09-29 사용자 지적).
@@ -822,7 +832,7 @@ def test_unresolved_list_does_not_grow_forever():
     with get_connection() as conn:
         _seed_record(conn, product=semi, lot=f"{semi}26070101")
         host_id = _seed_record(conn, product=host, lot=f"{host}26080401")
-        old_ack = _seed_ack(
+        old_ack = _seed_ack(                       # 창(30일) 밖
             conn, record_id=host_id, material_name=semi,
             material_lot=f"{semi}19990101", created_at="2020-01-01T00:00:00Z",
         )
@@ -837,10 +847,27 @@ def test_unresolved_list_does_not_grow_forever():
     assert fresh_ack in shown
     assert old_ack not in shown, "창 밖 건은 목록에 없다"
     assert body["older"] >= 1, "창 밖 건은 숫자로 남는다"
-    assert body["window_days"] == 180
+    assert body["window_days"] == 30
 
     # 창을 넓히면 다시 보인다 — 사라진 것이 아니라 접어 둔 것이다.
     wide = client.get(
         "/api/blend/lot-audit/unresolved", params={"days": 3650}, headers=headers
     ).json()
     assert old_ack in {it["ack_id"] for it in wide["items"]}
+
+
+def test_the_two_lists_keep_their_own_window():
+    """미해소는 30일, 총량 이상은 180일 — 배지도 각자의 창으로 센다(2026-09-30)."""
+    from src.routers import blend_lot_audit_routes as routes
+
+    assert routes.UNRESOLVED_WINDOW_DAYS == 30
+    assert routes.ANOMALY_WINDOW_DAYS == 180
+
+    client = _client()
+    headers = _login(client)
+    body = client.get("/api/blend/lot-audit/unresolved", headers=headers).json()
+    assert body["window_days"] == 30
+    from datetime import date, timedelta
+
+    anomalies = client.get("/api/blend/lot-audit/total-anomalies", headers=headers).json()
+    assert anomalies["range"]["from"] < (date.today() - timedelta(days=30)).isoformat(),         "총량 이상 창이 미해소 창보다 넓어야 한다"

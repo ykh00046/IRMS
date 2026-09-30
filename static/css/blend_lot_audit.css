@@ -51,3 +51,12 @@
   line-height: 1.6;
   max-width: 70ch;
 }
+
+/* 패널 제목 + 오른쪽 버튼 한 줄. 다른 화면(admin_users·material_lots)의 같은 이름과
+   같은 모양이지만, 그 파일들은 이 화면에서 읽히지 않아 여기에도 둔다. */
+.panel-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}

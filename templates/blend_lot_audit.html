@@ -5,7 +5,7 @@
 {% block heading %}미해소 LOT 대사 · 총 배합량 이상{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend_lot_audit.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/blend_lot_audit.css?v=20260930a" />
 {% endblock %}
 
 {% block content %}
@@ -33,7 +33,12 @@
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">미해소 LOT 대사</h3>
+          {# 기본은 최근 30일이다. 지난 건이 남아 있을 때만 버튼이 나타나 창을 넓힌다 —
+             목록에서 내린 것이지 지운 것이 아니라는 뜻이 버튼 하나로 보인다. #}
+          <div class="panel-head-row">
+            <h3 class="panel-title">미해소 LOT 대사</h3>
+            <button class="btn btn-sm" id="lau-unresolved-range" type="button" hidden>모두 보기</button>
+          </div>
           <p class="panel-subtitle">1차 기록에 없는 반제품 LOT으로 진행한 건입니다.</p>
           <details class="panel-help">
             <summary>도움말</summary>
@@ -42,7 +47,8 @@
               끝내 생기지 않으면 오타이거나 실제로 없는 반제품일 가능성이 높습니다.
               제품 이름을 앞에 붙였는지 같은 표기 차이는 같은 LOT으로 봅니다.
               경과 일수가 큰 건부터 확인합니다. 취소된 배합은 표시하지 않습니다.
-              최근 180일만 목록에 둡니다. 그보다 오래된 미해소는 카드에 건수만 적습니다.
+              최근 30일만 목록에 둡니다. 그보다 오래된 건은 카드에 건수로 적고,
+              '모두 보기'를 누르면 함께 봅니다.
             </p>
           </details>
           <div class="lau-loading" id="lau-unresolved-loading"><span class="spinner"></span> 불러오는 중…</div>
@@ -102,5 +108,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/blend_lot_audit.js?v=20260929a"></script>
+    <script src="/static/js/blend_lot_audit.js?v=20260930a"></script>
 {% endblock %}

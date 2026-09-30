@@ -88,9 +88,20 @@
       const older = Number(data.older || 0);
       const note = $("lau-card-unresolved-note");
       if (note) {
-        note.textContent = older
-          ? `1차 기록이 아직 없음 · ${data.window_days || 180}일 지난 건 ${older}`
-          : "1차 기록이 아직 없음";
+        note.textContent = wideRange
+          ? "1차 기록이 아직 없음 · 전체 기간"
+          : older
+            ? `1차 기록이 아직 없음 · ${data.window_days || 30}일 지난 건 ${older}`
+            : "1차 기록이 아직 없음";
+      }
+      // 지난 건이 남아 있을 때만 창을 넓히는 버튼을 낸다.
+      const rangeBtn = $("lau-unresolved-range");
+      if (rangeBtn) {
+        rangeBtn.hidden = !(older || wideRange);
+        rangeBtn.textContent = wideRange ? "최근만" : "모두 보기";
+        rangeBtn.title = wideRange
+          ? `최근 ${WINDOW_DAYS}일만 봅니다`
+          : `${WINDOW_DAYS}일이 지난 미해소 건까지 봅니다`;
       }
       $("lau-unresolved-loading").hidden = true;
       if (!items.length) {
@@ -163,11 +174,23 @@
         .join("");
     }
 
+    // 기본 창(일). 서버 기본값과 같아야 한다 — 화면 문구가 이 값을 말한다.
+    const WINDOW_DAYS = 30;
+    const ALL_DAYS = 3650;
+    let wideRange = false;
+
+    async function loadUnresolved() {
+      const path = wideRange
+        ? `/blend/lot-audit/unresolved?days=${ALL_DAYS}`
+        : "/blend/lot-audit/unresolved";
+      const data = await request(path);
+      renderUnresolved(data || {});
+    }
+
     async function load() {
       if (!request) return;
       try {
-        const data = await request("/blend/lot-audit/unresolved");
-        renderUnresolved(data || {});
+        await loadUnresolved();
       } catch (err) {
         $("lau-unresolved-loading").hidden = true;
         $("lau-unresolved-empty").hidden = false;
@@ -183,6 +206,22 @@
         $("lau-anomaly-empty").textContent = "총량 이상 목록을 불러오지 못했습니다.";
         notify("총량 이상 목록을 불러오지 못했습니다.", "error");
       }
+    }
+
+    const rangeBtn = $("lau-unresolved-range");
+    if (rangeBtn) {
+      rangeBtn.addEventListener("click", async () => {
+        wideRange = !wideRange;
+        rangeBtn.disabled = true;
+        $("lau-unresolved-loading").hidden = false;
+        try {
+          await loadUnresolved();
+        } catch (err) {
+          notify("미해소 LOT 목록을 불러오지 못했습니다.", "error");
+        } finally {
+          rangeBtn.disabled = false;
+        }
+      });
     }
 
     load();

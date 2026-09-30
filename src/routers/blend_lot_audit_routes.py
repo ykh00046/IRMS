@@ -39,6 +39,14 @@ from ..services import blend_service
 # 25,000 g 기준이 뜻을 갖지 않는다 — 저울 전용 잠금을 용수에서 푼 것과 같은 결이다
 # (사용자 결정 2026-09-29: S+코팅·베타 등 용수 레시피 전부). 실측으로 걸리던 7건이
 # 모두 이 분류였다.
+# 목록 기본 창(일). 미해소는 짧게 본다 — 끝내 안 풀리는 건이 쌓여 이번 주 건을 덮지
+# 않게 한다(사용자 결정 2026-09-30: "굳이 그렇게 길게 안 해도 된다"). 지난 건은 화면의
+# '모두 보기'가 창을 넓혀 다시 꺼낸다 — 사라지는 것이 아니라 접어 두는 것이다.
+UNRESOLVED_WINDOW_DAYS = 30
+ANOMALY_WINDOW_DAYS = 180
+# 전체 보기 — 창을 사실상 없앤다(조회 상한과 같은 값).
+MAX_WINDOW_DAYS = 3650
+
 TOTAL_LIMIT_EXEMPT_CATEGORY = "용수"
 
 # 총량 이상으로 볼 조건. 목록과 배지가 같은 규칙을 쓰도록 한 곳에 둔다.
@@ -90,7 +98,7 @@ def build_router() -> APIRouter:
     # ------------------------------------------------------------------
     @router.get("/blend/lot-audit/unresolved")
     def list_unresolved_lot_acks(
-        days: int = Query(default=180, ge=1, le=3650),
+        days: int = Query(default=UNRESOLVED_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
@@ -137,7 +145,7 @@ def build_router() -> APIRouter:
     # ------------------------------------------------------------------
     @router.get("/blend/lot-audit/total-anomalies")
     def list_total_anomalies(
-        days: int = Query(default=180, ge=1, le=3650),
+        days: int = Query(default=ANOMALY_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
@@ -207,7 +215,7 @@ def build_router() -> APIRouter:
     # ------------------------------------------------------------------
     @router.get("/blend/lot-audit/batch-discards")
     def list_batch_discards(
-        days: int = Query(default=180, ge=1, le=3650),
+        days: int = Query(default=ANOMALY_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
@@ -233,7 +241,6 @@ def build_router() -> APIRouter:
     # ------------------------------------------------------------------
     @router.get("/blend/lot-audit/count")
     def lot_audit_count(
-        days: int = Query(default=180, ge=1, le=3650),
         connection: sqlite3.Connection = Depends(get_db),
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
     ) -> dict[str, Any]:
@@ -243,8 +250,11 @@ def build_router() -> APIRouter:
         메뉴에 숫자가 붙으면 열어야 할 때를 메뉴가 먼저 말해 준다. 목록을 통째로
         받아 길이만 세면 매 화면마다 1,000행을 나르므로 숫자만 돌려준다.
         """
-        from_date = _window_start(days)
-        audit = blend_service.unresolved_lot_acks(connection, since=from_date)
+        # 두 목록의 창이 다르다 — 배지도 각자의 기본 창으로 센다.
+        audit = blend_service.unresolved_lot_acks(
+            connection, since=_window_start(UNRESOLVED_WINDOW_DAYS)
+        )
+        from_date = _window_start(ANOMALY_WINDOW_DAYS)
         row = connection.execute(
             "SELECT COUNT(*) AS n " + _TOTAL_ANOMALY_FROM
             + " WHERE br.status = 'completed' AND br.work_date >= :from_date AND ("
