@@ -808,7 +808,8 @@ def test_water_part_recipes_are_outside_the_total_limit():
     )
     assert saved.status_code == 200, saved.text
     rid = saved.json()["id"]
-    assert _flags(rid)["oversize_total"] == 1      # 플래그는 그대로 남는다
+    # 저장 때부터 표식을 남기지 않는다 — 목록·지표·감사 로그가 한 판정을 함께 쓴다.
+    assert _flags(rid)["oversize_total"] == 0
 
     body = client.get("/api/blend/lot-audit/total-anomalies", headers=headers).json()
     assert all(it["id"] != rid for it in body["items"]),         "용수 레시피는 총량 이상 목록에 없어야 한다"
@@ -871,3 +872,56 @@ def test_the_two_lists_keep_their_own_window():
 
     anomalies = client.get("/api/blend/lot-audit/total-anomalies", headers=headers).json()
     assert anomalies["range"]["from"] < (date.today() - timedelta(days=30)).isoformat(),         "총량 이상 창이 미해소 창보다 넓어야 한다"
+
+
+def test_water_recipes_get_no_oversize_mark_anywhere():
+    """용수는 저장 때부터 상한 표식이 없다 — 지표·감사도 함께 조용해진다(2026-09-30).
+
+    표식 하나가 배합 분석의 '1회 상한 초과' 카드와 감사 로그까지 끌고 다녀서,
+    목록에서만 걸러내면 같은 배치가 다른 화면에서 계속 이상으로 보였다.
+    """
+    client = _client()
+    headers = _login(client)
+    worker = _worker_session(client, headers)
+    product = _prod()
+    recipe_id = _import_recipe(client, headers, product, base_totals=[40000])
+    assert client.put(
+        f"/api/recipes/{recipe_id}/category", json={"category": "용수"}, headers=headers
+    ).status_code == 200
+
+    res = _save_blend(
+        client, headers, recipe_id=recipe_id, product=product, worker=worker,
+        total=40000,
+    )
+    assert res.status_code == 200, res.text
+    rid = res.json()["id"]
+    assert _flags(rid)["oversize_total"] == 0
+
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        marks = conn.execute(
+            "SELECT COUNT(*) FROM audit_logs "
+            "WHERE action = 'blend_total_oversize' AND target_id = ?",
+            (str(rid),),
+        ).fetchone()[0]
+    assert marks == 0, "감사 로그에도 상한 초과로 남기지 않는다"
+
+
+def test_other_categories_keep_the_limit():
+    """예외는 용수뿐이다 — 합성·잉크는 종전대로 표식이 붙는다."""
+    client = _client()
+    headers = _login(client)
+    worker = _worker_session(client, headers)
+    product = _prod()
+    recipe_id = _import_recipe(client, headers, product, base_totals=[40000])
+    assert client.put(
+        f"/api/recipes/{recipe_id}/category", json={"category": "합성"}, headers=headers
+    ).status_code == 200
+
+    res = _save_blend(
+        client, headers, recipe_id=recipe_id, product=product, worker=worker,
+        total=40000,
+    )
+    assert res.status_code == 200, res.text
+    assert _flags(res.json()["id"])["oversize_total"] == 1

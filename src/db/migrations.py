@@ -829,6 +829,23 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     if not has_migration(connection, "recipes_stage1_recipe_id"):
         record_migration(connection, "recipes_stage1_recipe_id")
 
+    # 용수 레시피에 붙어 있던 1회 상한 표식 정리(2026-09-30 사용자 결정).
+    # 물은 유량계·부피로 재고 배치가 통째로 커서 25,000 g 기준이 성립하지 않는다 —
+    # 저장 쪽은 blend_service.total_limit_applies 로 더 이상 표식을 남기지 않지만,
+    # 이미 남은 표식이 '1회 상한 초과' 지표·감사 목록에 계속 잡혀 정상 배치가 이상으로
+    # 보였다(실측: S+코팅·베타 7건). 표식은 총량에서 다시 계산되는 파생값이라 지워도
+    # 원본 데이터가 사라지지 않는다. 한 번만 돈다.
+    if not has_migration(connection, "clear_oversize_flag_for_water_recipes"):
+        connection.execute(
+            """
+            UPDATE blend_records
+            SET oversize_total = 0
+            WHERE COALESCE(oversize_total, 0) = 1
+              AND recipe_id IN (SELECT id FROM recipes WHERE category = '용수')
+            """
+        )
+        record_migration(connection, "clear_oversize_flag_for_water_recipes")
+
     # 반응기 현황판(reactor_slots)은 도입 후 제거됨(현장 요청) — 이미 만들어진 DB 는 정리한다.
     # 파생 이월·반응기 번호 저장 등 나머지 기능은 그대로. 고아 테이블 DROP 패턴.
     if not has_migration(connection, "drop_reactor_slots"):

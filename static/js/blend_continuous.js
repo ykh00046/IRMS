@@ -2010,7 +2010,8 @@
     const plan = rescalePlan(items, currentTotal, state.toleranceG);
     if (!plan.changed) return;
     state.pendingContRescale = { j, plan };
-    if (exceedsBatchLimit(plan.newTotal)) {
+    // 용수는 1회 상한이 없다(배합 화면과 같은 정책, 2026-09-30).
+    if (exceedsBatchLimit(plan.newTotal) && !isWaterCategoryRecipe()) {
       openContDiscardModal(j, plan);
     } else {
       openContRescaleModal(j, plan);

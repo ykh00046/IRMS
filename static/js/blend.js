@@ -2660,7 +2660,7 @@
 
   // ── 초과 계량 증량(rescale) 통합 ─────────────────────────
   // 자재를 이론량 초과해 넣었으면 배합 전체를 그 값에 맞춰 증량한다.
-  // rescalePlan(순수) 으로 newTotal 계산 → 25,000g 초과면 #discard-modal,
+  // rescalePlan(순수) 으로 newTotal 계산 → 25,000g 초과면 #discard-modal(용수 제외),
   // 아니면 #rescale-modal. [증량 적용]/[그래도 증량] 선택 시 applyRescale.
   // 반복 초과 시 같은 모달이 다시 뜨고 max 규칙으로 더 커진다.
   function offerRescale() {
@@ -2679,7 +2679,9 @@
       return;
     }
     state.pendingRescale = plan;
-    if (exceedsBatchLimit(plan.newTotal)) {
+    // 용수는 1회 상한이 없다 — 물은 유량계·부피로 배치가 통째로 커서 25,000 g 이
+    // 뜻을 갖지 않는다(저울 전용 예외와 같은 결, 2026-09-30). 폐기 권장 창을 건너뛴다.
+    if (exceedsBatchLimit(plan.newTotal) && !isWaterCategoryRecipe()) {
       openDiscardModal(plan);
     } else {
       openRescaleModal(plan);

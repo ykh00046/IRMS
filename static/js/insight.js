@@ -146,7 +146,7 @@
       metricCard("증량 적용 배합", num(s.rescale_records), "건",
         '<span class="muted small">책임자 승인 필요 건</span>'),
       metricCard("1회 상한 초과", num(s.oversize_records), "건",
-        '<span class="muted small">저장은 되되 기록에 남음</span>'),
+        '<span class="muted small">용수 제외 · 저장은 되되 기록에 남음</span>'),
     ].join("");
   }
 

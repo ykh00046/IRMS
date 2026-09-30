@@ -2074,12 +2074,35 @@ def unresolved_lot_acks(
 # ── 총 배합량 플래그(B) · 증량 승인 우회 감지(C) ──────────────────────────────
 
 
+# 1회 배합 상한이 뜻을 갖지 않는 분류. 물은 유량계·부피로 재고 배치가 통째로 커서
+# 25,000 g 기준이 성립하지 않는다 — 저울 전용 잠금을 용수에서 푼 것과 같은 결이다
+# (사용자 결정 2026-09-29~30: S+코팅·베타 등 용수 레시피 전부).
+TOTAL_LIMIT_EXEMPT_CATEGORY = "용수"
+
+
 def is_oversize_total(total_amount: Any) -> bool:
     """현장 1회 배합 상한(25,000 g)을 넘긴 총량인가 — 저장 차단이 아니라 표시용 판정."""
     try:
         return float(total_amount) > BLEND_OVERSIZE_FLAG_G
     except (TypeError, ValueError):
         return False
+
+
+def total_limit_applies(
+    connection: sqlite3.Connection, recipe_id: int | None
+) -> bool:
+    """이 레시피에 1회 배합 상한이 적용되는가 — 용수 분류만 예외다.
+
+    레시피를 모르는 기록(수기 입력)은 적용으로 본다 — 예외는 분류가 분명할 때만이다.
+    """
+    if not recipe_id:
+        return True
+    row = connection.execute(
+        "SELECT category FROM recipes WHERE id = ?", (int(recipe_id),)
+    ).fetchone()
+    if row is None:
+        return True
+    return str(row["category"] or "") != TOTAL_LIMIT_EXEMPT_CATEGORY
 
 
 def recipe_base_totals(connection: sqlite3.Connection, recipe_id: int | None) -> list[float]:
@@ -2209,7 +2232,11 @@ def apply_total_flags(
     수정(PUT) 경로에서도 같은 함수를 부르면 총량이 정정될 때 플래그가 함께 갱신된다
     (0 으로 되돌아가는 것도 정상 — 잘못 친 총량을 고쳤다는 뜻).
     """
-    oversize = is_oversize_total(total_amount)
+    # 용수는 상한 자체가 없으므로 표식도 남기지 않는다 — 목록·지표·감사 로그가
+    # 한 판정을 함께 쓴다(2026-09-30).
+    oversize = is_oversize_total(total_amount) and total_limit_applies(
+        connection, recipe_id
+    )
     base = detect_total_bypass(
         connection, recipe_id, total_amount, rescale_count=rescale_count
     )
