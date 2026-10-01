@@ -136,3 +136,14 @@ def test_collection_crash_still_sends(env, monkeypatch):
 
 def test_dedup_key_is_one_per_day():
     assert tool.dedup_key(WED_8.date()) == "irms_leave_notice_2026-09-30"
+
+
+def test_payload_leaves_the_room_to_the_relay_rule_by_default(monkeypatch):
+    monkeypatch.setattr(config, "LEAVE_NOTICE_ROOM", "")
+    body = tool.build_payload("msg", WED_8.date())
+    assert body == {"source": "irms_leave_notice", "message": "msg", "dedup_key": "irms_leave_notice_2026-09-30"}
+
+
+def test_payload_names_the_room_when_configured(monkeypatch):
+    monkeypatch.setattr(config, "LEAVE_NOTICE_ROOM", "원료생산팀 반,조장방")
+    assert tool.build_payload("msg", WED_8.date())["room"] == "원료생산팀 반,조장방"

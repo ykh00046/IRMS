@@ -84,7 +84,10 @@ def portal_configured() -> bool:
 # 토큰은 로그·감사·응답 어디에도 싣지 않는다.
 RELAY_URL = (os.getenv("RELAY_URL", "").strip() or "http://127.0.0.1:8601").rstrip("/")
 RELAY_TOKEN = os.getenv("RELAY_TOKEN", "").strip()
-LEAVE_NOTICE_ROOM = os.getenv("IRMS_LEAVE_NOTICE_ROOM", "원료생산팀 반,조장방").strip()
+# 보낼 방은 기본으로 비워 둔다 — 릴레이의 라우팅 규칙(source `irms_leave_notice`, 릴레이 화면
+# "규칙·방" 탭)이 방을 정한다. 방을 바꾸거나 늘리는 일을 IRMS 배포 없이 릴레이에서 한다
+# (2026-10-01). 값을 주면 그 방으로 직접 보낸다(릴레이 규칙보다 우선).
+LEAVE_NOTICE_ROOM = os.getenv("IRMS_LEAVE_NOTICE_ROOM", "").strip()
 # 평일 이 시(時)대 안에서 보낸다. serve.py 감시 주기마다 부르고 하루 한 번만 나간다.
 LEAVE_NOTICE_HOUR = int(os.getenv("IRMS_LEAVE_NOTICE_HOUR", "8"))
 

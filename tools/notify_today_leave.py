@@ -47,15 +47,16 @@ def dedup_key(day: date) -> str:
     return f"{SOURCE}_{day.isoformat()}"
 
 
+def build_payload(message: str, day: date) -> dict:
+    """릴레이 /enqueue 본문. 방을 설정하지 않았으면 room 을 빼 릴레이 라우팅 규칙에 맡긴다."""
+    payload = {"source": SOURCE, "message": message, "dedup_key": dedup_key(day)}
+    if config.LEAVE_NOTICE_ROOM:
+        payload["room"] = config.LEAVE_NOTICE_ROOM
+    return payload
+
+
 def enqueue(message: str, day: date) -> tuple[bool, str]:
-    payload = json.dumps(
-        {
-            "source": SOURCE,
-            "room": config.LEAVE_NOTICE_ROOM,
-            "message": message,
-            "dedup_key": dedup_key(day),
-        }
-    ).encode("utf-8")
+    payload = json.dumps(build_payload(message, day)).encode("utf-8")
     request = urllib.request.Request(
         config.RELAY_URL + "/enqueue",
         data=payload,
