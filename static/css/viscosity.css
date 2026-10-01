@@ -904,6 +904,13 @@ body {
   }
 }
 /* LOT 링크 · 브라우저 기본 파랑 밑줄 대신 LOT 이력 화면(.lh-lot-link)과 같은 모양. */
+/* 일괄 확인 · 체크 열은 좁게, 버튼은 필터 줄 오른쪽 끝. */
+.visc-anom-chk { width: 2.4rem; text-align: center; }
+.visc-anom-bulk { margin-left: auto; }
+.visc-anom-bulk[hidden] { display: none; }
+@media (max-width: 720px) {
+  .visc-anom-bulk { margin-left: 0; }
+}
 .visc-anom-lot {
   color: var(--accent-primary);
   text-decoration: none;

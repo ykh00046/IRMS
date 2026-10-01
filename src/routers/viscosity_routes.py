@@ -23,6 +23,7 @@ Endpoints:
     POST   /viscosity/readings/{id}/include     제외 해제 (책임자)
     GET    /viscosity/anomalies                 전 제품 이상 목록 (개방)
     POST   /viscosity/readings/{id}/review      확인 처리 (배합 작업자 또는 로그인 사용자)
+    POST   /viscosity/readings/review-batch     일괄 확인 처리 (위와 같은 사람)
     POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
     GET    /viscosity/pb-lots                   최근 PB LOT 목록 (개방, q·limit)
@@ -106,9 +107,31 @@ from .models import (
     ViscosityProductCreateBody,
     ViscosityProductUpdateBody,
     ViscosityReadingBody,
+    ViscosityReviewBatchBody,
     ViscosityReviewBody,
     actor_name,
 )
+
+
+def _resolve_reviewer(
+    request: Request, connection: sqlite3.Connection, reviewer: str | None
+) -> tuple[str, dict[str, Any] | None]:
+    """확인한 사람 — 로그인 사용자 → 배합 작업자 세션 → 본문 reviewer(명단에 있는 이름) 순.
+    점도 화면은 로그인 없이 쓰므로 이름 오류는 401 이 아니라 400 으로 모달 안에 알린다."""
+    from ..services import worker_service
+
+    current_user = get_current_user(request, required=False)
+    if current_user:
+        return actor_name(current_user), current_user
+    by_name = current_blend_worker(request)
+    if by_name:
+        return by_name, None
+    name = (reviewer or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="확인한 사람 이름을 적어 주세요.")
+    if not worker_service.exists(connection, name):
+        raise HTTPException(status_code=400, detail="명단에 없는 이름입니다. 이름을 확인해 주세요.")
+    return name, None
 
 
 def _require_product(connection: sqlite3.Connection, product_id: int) -> dict[str, Any]:
@@ -757,24 +780,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         배합 작업자 세션 → 본문 reviewer(명단에 있는 이름) 순으로 정한다.
         점도 화면은 로그인 없이 쓰는 화면이라 세션을 요구하면 401 이 공용 request() 의
         로그인 화면 이동을 부르고 적던 조치 내용이 사라졌다(2026-09-15 E2E). 그래서 401 대신 400."""
-        from ..services import worker_service
-
-        current_user = get_current_user(request, required=False)
-        actor = None
-        if current_user:
-            by_name = actor_name(current_user)
-            actor = current_user
-        else:
-            by_name = current_blend_worker(request)
-            if not by_name:
-                reviewer = (body.reviewer or "").strip()
-                if not reviewer:
-                    raise HTTPException(status_code=400, detail="확인한 사람 이름을 적어 주세요.")
-                if not worker_service.exists(connection, reviewer):
-                    raise HTTPException(
-                        status_code=400, detail="명단에 없는 이름입니다. 이름을 확인해 주세요."
-                    )
-                by_name = reviewer
+        by_name, actor = _resolve_reviewer(request, connection, body.reviewer)
         try:
             result = viscosity_service.review_reading(
                 connection,
@@ -790,6 +796,30 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             raise HTTPException(status_code=404, detail="측정 기록을 찾을 수 없습니다.")
         connection.commit()
         return {"ok": True, "id": reading_id}
+
+    @op_router.post("/viscosity/readings/review-batch")
+    def viscosity_review_readings_batch(
+        body: ViscosityReviewBatchBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """고른 이상 측정 여러 건을 같은 조치 내용으로 한 번에 '확인 처리'.
+        이미 확인됐거나 통계 제외된 측정, 없는 id 는 건너뛴다(덮어쓰지 않는다)."""
+        by_name, actor = _resolve_reviewer(request, connection, body.reviewer)
+        try:
+            reviewed = viscosity_service.review_readings(
+                connection,
+                body.ids,
+                body.note,
+                by_name=by_name,
+                now=utc_now_text(),
+                actor=actor,
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="조치 내용을 2자 이상 적어 주세요.")
+        connection.commit()
+        unique_count = len(set(body.ids))
+        return {"ok": True, "reviewed": len(reviewed), "skipped": unique_count - len(reviewed)}
 
     @mgr_router.post("/viscosity/readings/{reading_id}/unreview")
     def viscosity_unreview_reading(

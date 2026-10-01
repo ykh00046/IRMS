@@ -166,6 +166,11 @@ class ViscosityReviewBody(BaseModel):
     reviewer: str | None = Field(default=None, max_length=100)
 
 
+class ViscosityReviewBatchBody(ViscosityReviewBody):
+    # 일괄 확인 처리 — 고른 이상 측정 여러 건에 같은 조치 내용을 남긴다.
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
 class BlendDetailBody(BaseModel):
     material_id: int | None = None
     material_code: str | None = Field(default=None, max_length=100)

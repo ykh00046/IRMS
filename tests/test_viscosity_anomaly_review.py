@@ -499,3 +499,71 @@ def test_dashboard_summary_counts_unreviewed_anomalies():
         expected = vs.overview(conn)["total_anomaly_unreviewed"]
     assert r.json()["viscosity_anomaly"] == expected
     assert expected >= 1
+
+
+# ── 일괄 확인 처리(2026-10-01) ─────────────────────────────────────
+def test_review_readings_batch_skips_reviewed_excluded_unknown():
+    conn = _make_db()
+    p, a_old, a_new = _seed_scope(conn)
+    a_ex = _add(conn, p["id"], "26090005", 80.0, "2026-09-05")
+    vs.review_reading(conn, a_old, "먼저 조치", by_name="갑", now=_NOW)
+    vs.exclude_reading(conn, a_ex, "측정 실수", by=_MANAGER, now=_NOW)
+
+    done = vs.review_readings(
+        conn, [a_new, a_old, a_ex, 999999, a_new], "일괄 조치", by_name="을", now=_NOW
+    )
+    assert done == [a_new]
+    rows = {
+        r["id"]: r
+        for r in conn.execute("SELECT id, reviewed_by, review_note FROM viscosity_readings")
+    }
+    assert rows[a_new]["reviewed_by"] == "을" and rows[a_new]["review_note"] == "일괄 조치"
+    assert rows[a_old]["review_note"] == "먼저 조치"  # 앞선 기록을 덮지 않는다
+    assert rows[a_ex]["reviewed_by"] is None
+    assert vs.list_anomalies(conn, state="unreviewed")["counts"]["unreviewed"] == 0
+
+    with pytest.raises(ValueError):
+        vs.review_readings(conn, [a_new], " 가 ", by_name="을", now=_NOW)
+
+
+def test_review_batch_route_records_worker_and_counts():
+    from src.db import get_connection
+
+    client, headers, worker = _worker_client()
+    _, rid1 = _seed_anomaly_direct()
+    _, rid2 = _seed_anomaly_direct()
+    r = client.post(
+        "/api/viscosity/readings/review-batch",
+        json={"ids": [rid1, rid2, 999999], "note": "재측정 후 정상"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True, "reviewed": 2, "skipped": 1}
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT reviewed_by FROM viscosity_readings WHERE id IN (?, ?)", (rid1, rid2)
+        ).fetchall()
+    assert [row["reviewed_by"] for row in rows] == [worker, worker]
+
+    again = client.post(
+        "/api/viscosity/readings/review-batch",
+        json={"ids": [rid1], "note": "다시"},
+        headers=headers,
+    )
+    assert again.json() == {"ok": True, "reviewed": 0, "skipped": 1}
+    empty = client.post(
+        "/api/viscosity/readings/review-batch", json={"ids": [], "note": "조치함"}, headers=headers
+    )
+    assert empty.status_code == 422, empty.text
+
+
+def test_review_batch_route_anonymous_needs_reviewer_not_401():
+    client = _client()
+    client.get("/viscosity")
+    _, rid = _seed_anomaly_direct()
+    r = client.post(
+        "/api/viscosity/readings/review-batch",
+        json={"ids": [rid], "note": "조치함"},
+        headers=_csrf(client),
+    )
+    assert r.status_code == 400, r.text

@@ -490,10 +490,10 @@
     excluded: "통계에서 제외한 측정이 없습니다",
     all: "이상 측정이 없습니다",
   };
-  const ANOMALY_COLS = 7;
+  const ANOMALY_COLS = 8;
   let anomalySeq = 0;       // 필터를 빠르게 바꿀 때 늦게 도착한 앞 응답이 표를 덮지 않게
   let reviewModal = null;
-  let reviewTarget = null;  // {id, lot}
+  let reviewTarget = null;  // {id, lot} 한 건 · {ids} 일괄
 
   function renderAnomalyProductSelect() {
     const sel = $("visc-anom-product");
@@ -550,15 +550,49 @@
     }
     if (seq !== anomalySeq) return;
     const counts = data.counts || {};
+    $("visc-anom-all").checked = false;
     $("visc-anom-counts").textContent =
       `미확인 ${counts.unreviewed || 0} · 확인됨 ${counts.reviewed || 0} · 제외됨 ${counts.excluded || 0}`;
     const items = data.items || [];
     body.innerHTML = "";
     if (!items.length) {
       body.appendChild(emptyRow(ANOMALY_COLS, ANOMALY_EMPTY[anomalyState]));
+      syncAnomalyBulk();
       return;
     }
     items.forEach((item) => body.appendChild(anomalyRow(item)));
+    syncAnomalyBulk();
+  }
+
+  // 일괄 확인 · 미확인 행에만 체크칸이 있다. 고른 건수를 버튼에 보이고, 머리 체크는 전부/일부를 따른다.
+  function anomalyChecks() {
+    return Array.from(document.querySelectorAll("#visc-anom-body .visc-anom-pick"));
+  }
+
+  function syncAnomalyBulk() {
+    const btn = $("visc-anom-bulk");
+    const all = $("visc-anom-all");
+    if (!btn || !all) return;
+    const checks = anomalyChecks();
+    const picked = checks.filter((c) => c.checked).length;
+    btn.hidden = !checks.length;
+    btn.disabled = !picked;
+    btn.textContent = picked ? `일괄 확인 ${picked}건` : "일괄 확인";
+    all.disabled = !checks.length;
+    all.checked = checks.length > 0 && picked === checks.length;
+    all.indeterminate = picked > 0 && picked < checks.length;
+  }
+
+  function openBulkReviewModal() {
+    const ids = anomalyChecks().filter((c) => c.checked).map((c) => Number(c.value));
+    if (!ids.length || !$("visc-review-modal")) return;
+    reviewTarget = { ids };
+    $("visc-review-title").textContent = `이상 일괄 확인 처리 · ${ids.length}건`;
+    $("visc-review-note").value = "";
+    $("visc-review-error").hidden = true;
+    $("visc-review-submit").disabled = false;
+    if (reviewModal) reviewModal.open($("visc-review-note"));
+    prepareReviewer();
   }
 
   function anomalyVerdict(item, excluded) {
@@ -582,6 +616,19 @@
     const excluded = Boolean(item.excluded || item.status === "excluded");
     const reviewed = !excluded && Boolean(item.reviewed);
     const lot = item.lot_no || "";
+
+    const pickCell = document.createElement("td");
+    pickCell.className = "visc-anom-chk";
+    if (!excluded && !reviewed) {
+      const pick = document.createElement("input");
+      pick.type = "checkbox";
+      pick.className = "visc-anom-pick";
+      pick.value = String(item.reading_id);
+      pick.setAttribute("aria-label", `${lot} 선택`);
+      pick.addEventListener("change", syncAnomalyBulk);
+      pickCell.appendChild(pick);
+    }
+    row.appendChild(pickCell);
 
     appendTextCell(row, item.measured_date || "-");
 
@@ -709,14 +756,20 @@
     const submit = $("visc-review-submit");
     error.hidden = true;
     submit.disabled = true;
+    const payload = {
+      note: $("visc-review-note").value.trim(),
+      reviewer: ($("visc-review-reviewer") && $("visc-review-reviewer").value.trim()) || null,
+    };
+    let result = null;
     try {
-      await request(`/viscosity/readings/${target.id}/review`, {
-        method: "POST",
-        body: {
-          note: $("visc-review-note").value.trim(),
-          reviewer: ($("visc-review-reviewer") && $("visc-review-reviewer").value.trim()) || null,
-        },
-      });
+      if (target.ids) {
+        result = await request("/viscosity/readings/review-batch", {
+          method: "POST",
+          body: { ...payload, ids: target.ids },
+        });
+      } else {
+        await request(`/viscosity/readings/${target.id}/review`, { method: "POST", body: payload });
+      }
     } catch (error_) {
       // request() 는 서버 detail 을 메시지로 던진다(이름·조치 내용 400 은 그대로 보인다).
       error.textContent = String((error_ && error_.message) || error_);
@@ -726,7 +779,12 @@
     }
     submit.disabled = false;
     if (reviewModal) reviewModal.close();
-    notify("이상을 확인 처리했습니다.", "success");
+    if (result) {
+      const skipped = result.skipped ? ` · ${result.skipped}건은 이미 처리됨` : "";
+      notify(`이상 ${result.reviewed}건을 확인 처리했습니다${skipped}.`, "success");
+    } else {
+      notify("이상을 확인 처리했습니다.", "success");
+    }
     await loadAnomalies();
     if (state.currentId) await reloadProduct(state.currentId);
   }
@@ -2754,6 +2812,11 @@
         onClose: () => { reviewTarget = null; },
       });
       reviewForm.addEventListener("submit", submitReview);
+      $("visc-anom-bulk").addEventListener("click", openBulkReviewModal);
+      $("visc-anom-all").addEventListener("change", (e) => {
+        anomalyChecks().forEach((c) => { c.checked = e.target.checked; });
+        syncAnomalyBulk();
+      });
       $("visc-review-cancel").addEventListener("click", () => reviewModal.close());
     }
   }

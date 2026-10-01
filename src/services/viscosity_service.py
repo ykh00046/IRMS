@@ -1660,6 +1660,35 @@ def review_reading(
     return {"id": int(row["id"]), "product_id": int(row["product_id"]), "lot_no": row["lot_no"]}
 
 
+def review_readings(
+    connection: sqlite3.Connection,
+    reading_ids: list[int],
+    note: str,
+    by_name: str,
+    now: str,
+    actor: dict[str, Any] | None = None,
+) -> list[int]:
+    """여러 이상 측정을 같은 조치 내용으로 '확인 처리'(일괄). 확인 처리한 id 목록을 돌려준다.
+
+    없는 id, 이미 확인된 측정, 통계 제외된 측정은 건너뛴다 — 앞선 조치 기록을 덮지 않는다.
+    note 규칙과 감사 로그는 review_reading 과 같다(건마다 한 줄). 커밋은 호출자 책임.
+    """
+    note = (note or "").strip()
+    if len(note) < 2:
+        raise ValueError("review note must be at least 2 characters")
+    done: list[int] = []
+    for reading_id in dict.fromkeys(int(i) for i in reading_ids):
+        row = connection.execute(
+            "SELECT reviewed_at, excluded FROM viscosity_readings WHERE id = ?",
+            (reading_id,),
+        ).fetchone()
+        if not row or row["reviewed_at"] or row["excluded"]:
+            continue
+        if review_reading(connection, reading_id, note, by_name=by_name, now=now, actor=actor):
+            done.append(reading_id)
+    return done
+
+
 def unreview_reading(
     connection: sqlite3.Connection,
     reading_id: int,
