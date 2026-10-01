@@ -4068,14 +4068,22 @@
     err.hidden = true;
     if (state.testMode) {
       // 시험은 레시피가 없어도 저장한다 — 대신 시험명과 자재 행이 반드시 있어야 한다.
+      // 시험명 칸은 화면 맨 위라 포커스가 화면을 끌어올리면 저장 버튼 옆 문구가 밀려나
+      // 아무 반응 없는 것처럼 보였다(2026-10-01 현장). 알림과 칸 강조를 함께 띄운다.
       if (!testName()) {
         err.textContent = "시험명을 입력하세요."; err.hidden = false;
+        notify("시험명이 없어 저장하지 않았습니다. 시험명을 입력하세요.", "error");
         const el = $("blend-test-name");
-        if (el) el.focus();
+        if (el) {
+          el.classList.add("needs-input");
+          el.scrollIntoView({ block: "center" });
+          el.focus({ preventScroll: true });
+        }
         return;
       }
       if (!state.items.length) {
         err.textContent = "자재를 추가하세요."; err.hidden = false;
+        notify("자재가 없어 저장하지 않았습니다.", "error");
         return;
       }
       const noTarget = state.items
@@ -4123,8 +4131,16 @@
     }
     const worker = lockedWorkerName();
     const total = Number($("blend-total").value);
-    if (!worker) { err.textContent = "작업자를 입력하세요."; err.hidden = false; return; }
-    if (!(total > 0)) { err.textContent = "총 배합량을 입력하세요."; err.hidden = false; return; }
+    if (!worker) {
+      err.textContent = "작업자를 입력하세요."; err.hidden = false;
+      notify("작업자를 입력하세요.", "error");
+      return;
+    }
+    if (!(total > 0)) {
+      err.textContent = "총 배합량을 입력하세요."; err.hidden = false;
+      notify("총 배합량을 입력하세요.", "error");
+      return;
+    }
     // 자재별 허용 편차 — 초과 자재가 있으면 저장 차단(합계 편차는 제한 없음).
     // 편차는 레시피에서 결정(state.toleranceG). 기준 자재는 편차 검사에서 제외
     // (이론=실측이므로 편차가 무의미).
