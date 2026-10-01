@@ -166,7 +166,7 @@ def render_form_image(record: dict[str, Any]) -> tuple[Image.Image, dict[str, li
                 str(dd.get("material_lot") or ""),
                 _num(dd.get("ratio")),
                 _num(dd.get("theory_amount")),
-                _num(dd.get("actual_amount")),
+                _num(dhr_excel.paper_actual_amount(record, dd)),
             ]
             for c, val in enumerate(cells):
                 if not val:

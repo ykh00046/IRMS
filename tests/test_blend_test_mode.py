@@ -866,7 +866,8 @@ def _noweigh_approval(client, csrf, username="admin", password="admin"):
 def test_no_weighing_saves_with_lots_only():
     """책임자 승인이 있으면 계량값 없이 자재와 LOT 만으로 기록된다.
 
-    목표량은 그대로 남아 총량·비율의 근거가 되고, 실제량은 지어내지 않고 비운다.
+    실제량은 목표량과 같은 값으로 저장된다(2026-10-01 사용자 결정) · 자재 사용량
+    집계에 잡히고 배합일지 칸도 채워진다. 계량값이 아니라는 건 no_weighing 표식이 말한다.
     """
     client, csrf = _mgmt_client()
     _worker_session(client, csrf, "시험작업" + _uid())
@@ -882,7 +883,7 @@ def test_no_weighing_saves_with_lots_only():
     record = res.json()
     assert record["total_amount"] == 1000          # 목표량 합은 그대로 선다
     assert record["no_weighing"] is True
-    assert all(d["actual_amount"] is None for d in record["details"])
+    assert [d["actual_amount"] for d in record["details"]] == [600, 400]
     assert [d["material_lot"] for d in record["details"]] == ["LOT-A", "LOT-B"]
 
 

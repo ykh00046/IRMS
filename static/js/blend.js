@@ -1530,7 +1530,9 @@
     state.draftSlotId = draft.id || null;
     state.saveOfferDismissed = false;
     const nameEl = $("blend-test-name");
-    if (nameEl) nameEl.value = draft.test_name || draft.product_name || "";
+    // test_name 만 믿는다. product_name 은 목록 표시용이라 시험명이 비면 '(시험명 없음)'이
+    // 들어 있고, 그걸 되살리면 그 문구가 시험명으로 저장됐다(2026-10-01 운영 T-(시험명없음)).
+    if (nameEl) nameEl.value = typeof draft.test_name === "string" ? draft.test_name : "";
     state.testAutoName = "";  // 복구한 이름은 자동값이 아니다 — 레시피 선택이 덮지 않게
     state.baseRecipeId = draft.base_recipe_id == null ? null : draft.base_recipe_id;
     state.toleranceG = Number(draft.toleranceG) > 0 ? Number(draft.toleranceG) : TOLERANCE_G;

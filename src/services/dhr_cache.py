@@ -22,7 +22,8 @@ _CACHE_DIR = config.DATA_DIR / "dhr_cache"
 # 5: 250dpi + JPEG 품질 60 — 용량 절감 (2026-08-27)
 # 6: JPEG 허프만 최적화(optimize) — 무손실 −21% (2026-08-27)
 # 7: 200dpi + 품질 55 + 스캔 잡티 8 — 한 장 190→75KB (2026-09-28)
-RENDERER_VERSION = 7
+# 8: 계량 없이 기록한 시험 배합의 실제배합량 칸을 배합량으로 채움 (2026-10-01)
+RENDERER_VERSION = 8
 
 
 def _marker(record: dict[str, Any]) -> str:

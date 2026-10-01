@@ -173,3 +173,21 @@ def test_dhr_loss_comp_included_in_theory_no_extra_column():
     for row in range(6, 8):
         val = ws[f"H{row}"].value
         assert val != 1.0, "보정량이 별도 열로 출력되면 안 된다 — theory_amount 에 포함돼야"
+
+
+def test_no_weighing_record_prints_target_as_actual():
+    # 계량 없이 기록한 시험 배합 — 실제량은 NULL 로 저장되지만 종이에는 배합량과 같은 값.
+    rec = _sample_record()
+    rec["no_weighing"] = True
+    for d in rec["details"]:
+        d["actual_amount"] = None
+    ws = openpyxl.load_workbook(io.BytesIO(dhr_excel.build_official_dhr_xlsx(rec))).active
+    assert ws["G6"].value == 714.3
+    assert ws["G7"].value == 285.7
+    assert rec["details"][0]["actual_amount"] is None  # 기록 dict 는 건드리지 않는다
+
+
+def test_weighed_record_keeps_empty_actual_empty():
+    rec = _sample_record()
+    rec["details"][1]["actual_amount"] = None
+    assert dhr_excel.paper_actual_amount(rec, rec["details"][1]) is None

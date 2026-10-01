@@ -40,6 +40,19 @@ _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
 
+def paper_actual_amount(record: dict[str, Any], detail: dict[str, Any]) -> Any:
+    """배합일지(종이)에 찍을 실제배합량.
+
+    계량 없이 기록한 시험 배합은 실제량이 NULL 로 저장된다(집계에서는 '모른다').
+    그래도 배합일지는 만일을 대비한 제출용이라 칸이 비면 안 된다 — 배합량(g)과 같은 값을
+    찍는다(2026-10-01 사용자 결정). 기록·집계 데이터는 그대로 두고 출력에서만 채운다.
+    """
+    actual = detail.get("actual_amount")
+    if actual is None and record.get("no_weighing"):
+        return detail.get("theory_amount")
+    return actual
+
+
 def build_official_dhr_xlsx(
     record: dict[str, Any],
     *,
@@ -84,7 +97,7 @@ def build_official_dhr_xlsx(
         ws[f"{m['material_lot_col']}{row}"] = d.get("material_lot") or ""
         ws[f"{m['ratio_col']}{row}"] = d.get("ratio")
         ws[f"{m['theory_amount_col']}{row}"] = d.get("theory_amount")
-        ws[f"{m['actual_amount_col']}{row}"] = d.get("actual_amount")
+        ws[f"{m['actual_amount_col']}{row}"] = paper_actual_amount(record, d)
 
     end_row = start + max(len(details), 1) - 1
 

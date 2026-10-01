@@ -1434,9 +1434,11 @@ def build_router() -> APIRouter:
             except blend_service.RescaleApprovalError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
             no_weighing = True
-            # 실제량은 지어내지 않는다 — 비운 채로 저장한다(목표량은 그대로 남는다).
+            # 실제량은 목표량과 같은 값으로 저장한다(2026-10-01 사용자 결정). 시험이라도 넣은
+            # 자재는 자재 사용량 집계에 잡혀야 하고 배합일지 칸도 비면 안 된다. 계량값이
+            # 아니라는 사실은 no_weighing 표식과 감사 로그가 말한다.
             for d in details:
-                d["actual_amount"] = None
+                d["actual_amount"] = d.get("theory_amount")
 
         # 전 자재 계량 완료 — 실제량이 빈 자재가 하나라도 있으면 저장 거부.
         # 편차 검사는 이 결손을 못 잡는다(actual is None 이면 건너뛴다). 그대로 저장되면
