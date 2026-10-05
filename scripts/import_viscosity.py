@@ -33,7 +33,8 @@ from src.services import viscosity_service  # noqa: E402
 WIDE_DEFAULT_YEAR = 2026
 
 _DATE_KO = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
-_CODE_ALIAS = {"6-1-TOP": "6-1TOP"}
+# 코드는 레시피 product_name 과 안쪽 공백까지 글자 그대로 같아야 한다(2026-10-05, 6-1 TOP).
+_CODE_ALIAS = {"6-1-TOP": "6-1 TOP", "6-1TOP": "6-1 TOP"}
 
 
 def _as_text(value) -> str | None:

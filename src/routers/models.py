@@ -121,6 +121,11 @@ class ViscosityProductCreateBody(BaseModel):
         return self
 
 
+class ViscosityProductCodeBody(BaseModel):
+    # 반제품 코드 교정 — 레시피 제품명과 글자 그대로(안쪽 공백 포함) 같아야 한다.
+    code: str = Field(min_length=1, max_length=100)
+
+
 class ViscosityProductUpdateBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     target: float | None = Field(default=None, gt=0, le=100000)

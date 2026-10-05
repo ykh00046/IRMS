@@ -115,6 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["viscosity_skip_removed", "점도 측정 불가 취소"],
       ["viscosity_product_create", "점도 품목 추가"],
       ["viscosity_product_update", "점도 품목 수정"],
+      ["viscosity_product_rename", "점도 품목 코드 변경"],
       ["blend_viscosity_link", "점도 등록(배합 연계)"],
       ["viscosity_exported_all", "점도 전체 내보내기"],
       // 시험 배합 LOT 점도(2026-09-18) — 정식 표본과 따로 남는다(점도 화면 '시험' 탭).

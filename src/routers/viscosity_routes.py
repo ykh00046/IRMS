@@ -104,6 +104,7 @@ from ..blend_session import current_blend_worker
 from .models import (
     TestViscosityBody,
     ViscosityExcludeBody,
+    ViscosityProductCodeBody,
     ViscosityProductCreateBody,
     ViscosityProductUpdateBody,
     ViscosityReadingBody,
@@ -605,6 +606,60 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 # use_reactor 는 이제 recipes 소유 — 여기서 받아도 기록하지 않는다(무시).
                 "is_active": body.is_active,
             },
+        )
+        connection.commit()
+        return viscosity_service.get_product(connection, product_id)
+
+    @mgr_router.put("/viscosity/products/{product_id}/code")
+    def viscosity_rename_product_code(
+        product_id: int,
+        body: ViscosityProductCodeBody,
+        request: Request,
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """반제품 코드를 레시피 제품명과 같게 고친다(책임자 전용).
+
+        배경(2026-10-05): 배합 기록과 점도 제품은 product_name = name 또는 code 의
+        글자 그대로 일치로 묶인다. 레시피 제품명은 '6-1 TOP'(공백 있음)인데 점도 Excel
+        임포트가 공백을 모두 지워 코드가 '6-1TOP' 으로 만들어졌고, 그 결과 배합 기록
+        67건이 점도 화면과 트레이 알림에서 보이지 않았다. 이 경로로 DB 를 직접 만지지
+        않고 코드를 바로잡는다. 측정은 product_id 로 묶여 있어 그대로 따라온다.
+        """
+        current_user = get_current_user(request, required=False)
+        product = _require_product(connection, product_id)
+        new_code = body.code.strip()
+        old_code = product["code"]
+        if new_code == old_code:
+            return product
+        recipe_exists = connection.execute(
+            "SELECT 1 FROM recipes WHERE product_name = ? LIMIT 1",
+            (new_code,),
+        ).fetchone()
+        if not recipe_exists:
+            raise HTTPException(
+                status_code=400,
+                detail=f"레시피에 없는 제품입니다: {new_code}. 레시피를 먼저 등록하세요.",
+            )
+        clash = connection.execute(
+            "SELECT 1 FROM viscosity_products WHERE upper(code) = upper(?) AND id != ? LIMIT 1",
+            (new_code, product_id),
+        ).fetchone()
+        if clash:
+            raise HTTPException(status_code=409, detail=f"이미 존재하는 코드입니다: {new_code}")
+        # 이름이 코드를 그대로 베낀 것이면 함께 고친다. 따로 지은 이름은 건드리지 않는다.
+        new_name = new_code if product["name"] == old_code else product["name"]
+        connection.execute(
+            "UPDATE viscosity_products SET code = ?, name = ? WHERE id = ?",
+            (new_code, new_name, product_id),
+        )
+        write_audit_log(
+            connection,
+            action="viscosity_product_rename",
+            actor=current_user,
+            target_type="viscosity_product",
+            target_id=str(product_id),
+            target_label=new_code,
+            details={"old_code": old_code, "new_code": new_code, "name": new_name},
         )
         connection.commit()
         return viscosity_service.get_product(connection, product_id)
