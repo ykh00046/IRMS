@@ -251,10 +251,15 @@
       ? `<span class="visc-band-center" style="left:${fmt(centerP, 2)}%"></span>`
       : "";
 
+    // 양 끝 가까이 놓이는 라벨은 가운데 정렬(translateX(-50%))이 트랙 밖으로 반을 내보낸다
+    // (2026-10-05, PB 51.9·6-1 TOP 110.0/150.0 이 상자 밖으로 삐져나옴). 끝 10% 안이면
+    // 라벨을 안쪽으로 붙이는 클래스를 달고 CSS 가 정렬 기준을 바꾼다. 위치 자체는 그대로다.
+    const edgeClass = (p) => (p < 10 ? " at-start" : p > 90 ? " at-end" : "");
+
     // 최근 측정값 마커(아래꼭짓점 삼각형) + 값 라벨. null 이면 그리지 않는다.
     const valueP = pct(num(lastValue));
     const marker = valueP != null
-      ? `<span class="visc-band-marker" style="left:${fmt(valueP, 2)}%">`
+      ? `<span class="visc-band-marker${edgeClass(valueP)}" style="left:${fmt(valueP, 2)}%">`
         + `<span class="visc-band-marker-tri"></span>`
         + `<span class="visc-band-marker-label">${fmt(lastValue)}</span>`
         + `</span>`
@@ -267,7 +272,7 @@
     const tick = (v, label) => {
       const p = pct(v);
       if (p == null) return;
-      ticks.push(`<span class="visc-band-tick" style="left:${fmt(p, 2)}%" title="${label}">${fmt(v)}</span>`);
+      ticks.push(`<span class="visc-band-tick${edgeClass(p)}" style="left:${fmt(p, 2)}%" title="${label}">${fmt(v)}</span>`);
     };
     if (lowLine != null) tick(lowLine, lowLine === lower ? "사용 금지 하한" : "σ 관리 하한");
     else if (lwl != null) tick(lwl, "경고 하한");

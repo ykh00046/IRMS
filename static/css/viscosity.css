@@ -772,7 +772,9 @@ body {
 
 .visc-band {
   position: relative;
-  padding-top: 2px;
+  /* 최근값 라벨+삼각형이 트랙 위에 앉는 자리(라벨 17px + 틈 + 삼각형 8px). 종전에는
+     마커가 트랙 안에 겹쳐 라벨이 눈금 줄까지 내려와 숫자끼리 부딪혔다(2026-10-05). */
+  padding-top: var(--space-7);
 }
 
 .visc-band-track {
@@ -827,14 +829,47 @@ body {
   white-space: nowrap;
 }
 
-/* 최근 측정값 마커 — 트랙 위 아래꼭짓점 삼각형 + 값 라벨. left:% 는 JS 가 산술로 정한다. */
+/* 트랙 양 끝 10% 안의 눈금은 가운데 정렬 대신 안쪽으로 붙인다. 가운데 정렬이면 라벨
+   반쪽이 트랙 밖으로 나가 상자를 넘었다(2026-10-05). 선 위치는 JS 의 left:% 그대로다. */
+.visc-band-tick.at-start {
+  transform: none;
+}
+
+.visc-band-tick.at-end {
+  transform: translateX(-100%);
+}
+
+/* 최근 측정값 마커 — 트랙 바로 위에 값 라벨, 그 아래 아래꼭짓점 삼각형이 트랙을 가리킨다.
+   left:% 는 JS 가 산술로 정한다. column-reverse 라 HTML 순서(삼각형, 라벨)를 바꾸지 않고
+   삼각형이 아래에 온다. */
 .visc-band-marker {
   position: absolute;
   top: 0;
+  height: var(--space-7);
   transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
   align-items: center;
+}
+
+/* 양 끝 10% 안이면 라벨을 안쪽으로 붙이고 삼각형만 제자리(가리키는 값 위)에 둔다. */
+.visc-band-marker.at-start {
+  transform: none;
+  align-items: flex-start;
+}
+
+.visc-band-marker.at-start .visc-band-marker-tri {
+  margin-left: -6px;
+}
+
+.visc-band-marker.at-end {
+  transform: translateX(-100%);
+  align-items: flex-end;
+}
+
+.visc-band-marker.at-end .visc-band-marker-tri {
+  margin-right: -6px;
 }
 
 .visc-band-marker-tri {
@@ -847,7 +882,7 @@ body {
 }
 
 .visc-band-marker-label {
-  margin-top: 1px;
+  margin-bottom: 1px;
   padding: 0 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--text-primary) 12%, var(--bg-base));

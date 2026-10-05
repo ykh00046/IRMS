@@ -119,6 +119,29 @@ const { periodChartYBounds, controlBandHtml, periodChartDatasets } = loadViscLib
   assert.ok(html.includes(">90.0<"), "규격이 없으면 트랙 왼쪽 끝은 관리 하한(90.0)");
   assert.ok(html.includes(">110.0<"), "규격이 없으면 트랙 오른쪽 끝은 관리 상한(110.0)");
   assert.ok(html.includes("105.0"), "최근 측정값(105.0) 라벨이 있어야 한다");
+  // 양 끝(0%·100%)에 놓인 눈금은 안쪽 정렬 클래스를 단다 — 가운데 정렬이면 라벨 반쪽이
+  // 트랙 밖으로 나가 상자를 넘는다(2026-10-05). 가운데(75%) 마커는 클래스가 없다.
+  assert.ok(/visc-band-tick at-start"[^>]*>90\.0</.test(html), "왼쪽 끝 눈금은 at-start");
+  assert.ok(/visc-band-tick at-end"[^>]*>110\.0</.test(html), "오른쪽 끝 눈금은 at-end");
+  assert.ok(/class="visc-band-marker"/.test(html), "가운데 마커에는 끝 정렬 클래스가 없다");
+}
+
+// 최근값이 트랙 끝에 붙으면(상한 110 = 100%) 마커 라벨도 안쪽으로 붙인다.
+{
+  const html = controlBandHtml(
+    {
+      stats: { center: 100, lcl: 90, ucl: 110, lwl: null, uwl: null },
+      product: { lower_limit: null, upper_limit: null },
+    },
+    110,
+  );
+  assert.ok(/class="visc-band-marker at-end"/.test(html), "끝에 붙은 마커는 at-end");
+  const low = controlBandHtml(
+    { stats: { center: 100, lcl: 90, ucl: 110, lwl: null, uwl: null },
+      product: { lower_limit: null, upper_limit: null } },
+    91,
+  );
+  assert.ok(/class="visc-band-marker at-start"/.test(low), "왼쪽 끝 가까운 마커는 at-start");
 }
 
 // 데이터 없음: analysis 가 없거나 규격·관리한계 모두 없으면 빈 문자열.
