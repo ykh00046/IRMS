@@ -224,6 +224,13 @@ def test_dashboard_attention_is_independent_of_the_period_filter():
     assert "unacked_count" not in body
     assert "today" not in body
     assert isinstance(body["viscosity_due_today"], list)
+    # 반제품 이름을 누르면 그 반제품이 골라진 점도 화면으로 가야 하므로 id 가 함께 실린다
+    # (2026-10-05). 코드 목록과 같은 순서·같은 길이다.
+    assert isinstance(body["viscosity_due_items"], list)
+    assert [i["code"] for i in body["viscosity_due_items"]] == body["viscosity_due_today"]
+    for item in body["viscosity_due_items"]:
+        assert isinstance(item["product_id"], int) and item["product_id"] > 0
+        assert isinstance(item["pending_count"], int)
     assert isinstance(body["material_lot_file"], dict)
     for key in ("file_name", "file_date", "found", "stale_days"):
         assert key in body["material_lot_file"], key

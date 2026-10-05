@@ -169,6 +169,18 @@
     renderProductSelect();
     renderAnomalyProductSelect();
     const sel = $("visc-product-select");
+    // 딥링크 ?product=<id> · 대시보드 '오늘 점도 미입력' 카드의 반제품 이름이 실어 보낸다
+    // (2026-10-05). 첫 로드 한 번만 쓰고, 분류 필터에 가려 목록에 없으면 분류를 '전체'로
+    // 되돌려 그 반제품이 보이게 한 뒤 고른다. 모르는 id 면 평소대로 첫 옵션이다.
+    const wantedId = consumeDeepLinkProduct();
+    if (wantedId && sel && state.products.some((p) => String(p.id) === wantedId)) {
+      if (!Array.from(sel.options).some((o) => o.value === wantedId)) {
+        const cat = $("visc-cat-select");
+        if (cat) cat.value = "";
+        renderProductSelect();
+      }
+      sel.value = wantedId;
+    }
     const chosen =
       sel && sel.value
         ? state.products.find((item) => String(item.id) === sel.value)
@@ -799,6 +811,20 @@
     notify("확인 처리를 취소했습니다.", "success");
     await loadAnomalies();
     if (state.currentId) await reloadProduct(state.currentId);
+  }
+
+  // 딥링크 ?product=<id> 를 한 번만 읽는다. 새로고침 버튼으로 다시 loadOverview 가 돌 때
+  // 사용자가 바꾼 선택을 주소의 값이 도로 덮어쓰지 않게 한다.
+  let deepLinkProductRead = false;
+  function consumeDeepLinkProduct() {
+    if (deepLinkProductRead) return null;
+    deepLinkProductRead = true;
+    try {
+      const raw = new URLSearchParams(window.location.search).get("product");
+      return raw && /^\d+$/.test(raw.trim()) ? raw.trim() : null;
+    } catch (_e) {
+      return null;
+    }
   }
 
   // 딥링크 · ?tab=anomaly 면 이상 관리 탭을 열고, ?state= 로 상태 필터를 미리 고른다.

@@ -157,6 +157,18 @@
 .dash-act-value { font-size: var(--fs-hero); font-weight: 700; letter-spacing: -0.03em; }
 .dash-act-note { font-size: var(--fs-2xs); color: var(--text-tertiary); word-break: break-all; }
 
+/* 카드 안의 반제품 이름 · 누르면 그 반제품이 골라진 점도 화면으로 간다(2026-10-05).
+   카드가 <a> 라 중첩 링크 대신 role=link 로 두고 dashboard.js 가 이동한다. */
+.dash-act-chip {
+  color: var(--accent-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dash-act-chip:hover,
+.dash-act-chip:focus-visible { color: var(--accent-primary-hover); outline: none; }
+
 /* 손을 대야 하는 상태만 색이 붙는다 — 평상시엔 조용해야 눈에 띌 때 눈에 띈다. */
 .dash-act.needs-action { border-color: var(--status-warning); }
 .dash-act.needs-action .dash-act-value { color: var(--status-warning); }

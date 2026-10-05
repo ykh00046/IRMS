@@ -64,3 +64,35 @@ test("템플릿: 두 칸과 각 항목의 순서·종류 훅이 있다", () => {
   assert.match(html, /class="panel dash-act is-error" id="act-visc-anomaly"/,
     "점도 이상은 이상 색(is-error)이어야 한다");
 });
+
+// 2026-10-05 · '오늘 점도 미입력' 카드의 반제품 이름을 누르면 그 반제품이 골라진 점도
+// 화면(/viscosity?product=<id>)으로 간다. 카드가 <a> 라 중첩 링크 대신 role=link 칩을 쓰고,
+// 칩 클릭은 카드의 기본 이동을 막아야 한다.
+test("오늘 점도 미입력 카드: 반제품 칩은 그 반제품 딥링크로 가고 카드 이동을 막는다", () => {
+  const href = bodyOf(js, "viscosityProductHref");
+  assert.match(href, /\/viscosity\?product=\$\{id\}/, "반제품 id 로 딥링크를 만들어야 한다");
+  assert.match(href, /return .*"\/viscosity"/, "id 가 없으면 점도 화면 기본 주소로 간다");
+  const chip = bodyOf(js, "dueChipHtml");
+  assert.match(chip, /role="link"/, "칩은 role=link 여야 한다(중첩 <a> 금지)");
+  assert.match(chip, /tabindex="0"/, "칩은 키보드로도 닿아야 한다");
+  assert.match(chip, /textContent\s*=/, "코드는 서버 값이라 글자로 넣어야 한다");
+  const bind = bodyOf(js, "bindDueChips");
+  assert.match(bind, /preventDefault\(\)/, "카드(<a>)의 기본 이동을 막아야 한다");
+  assert.match(bind, /stopPropagation\(\)/, "카드 클릭으로 번지지 않아야 한다");
+  assert.match(bind, /location\.assign\(/, "칩의 data-href 로 이동해야 한다");
+  const render = bodyOf(js, "renderAttention");
+  assert.match(render, /viscosity_due_items/, "id 가 실린 목록(viscosity_due_items)을 읽어야 한다");
+  assert.match(render, /act-visc-due.*setAttribute\("href"/s, "카드 자체도 첫 반제품으로 가야 한다");
+  const main = js.indexOf("DOMContentLoaded");
+  assert.ok(js.indexOf("bindDueChips();", main) > main, "초기화 때 칩 클릭을 한 번 걸어야 한다");
+});
+
+test("점도 화면: ?product=<id> 딥링크를 첫 로드에서 한 번만 읽어 그 반제품을 고른다", () => {
+  const visc = fs.readFileSync(path.join(ROOT, "static", "js", "viscosity.js"), "utf8");
+  const consume = bodyOf(visc, "consumeDeepLinkProduct");
+  assert.match(consume, /get\("product"\)/, "product 파라미터를 읽어야 한다");
+  assert.match(consume, /deepLinkProductRead/, "한 번만 읽어야 한다(새로고침 때 선택을 덮지 않게)");
+  const overview = bodyOf(visc, "loadOverview");
+  assert.match(overview, /consumeDeepLinkProduct\(\)/, "loadOverview 가 목록을 그린 뒤 딥링크를 적용해야 한다");
+  assert.match(overview, /visc-cat-select/, "분류 필터에 가려 있으면 분류를 전체로 되돌려야 한다");
+});

@@ -58,6 +58,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // 최근 배합 기록 표에 보여 줄 줄 수. 표 안쪽 스크롤을 없앴으므로 이 값이 곧 높이다.
   const RECENT_LIMIT = 7;
 
+  // '오늘 점도 미입력' 카드 안의 반제품 이름 클릭 — 한 번만 걸고 renderAttention 이
+  // innerHTML 을 갈아 끼워도 위임이라 그대로 산다.
+  bindDueChips();
+
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
@@ -233,6 +237,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── 지금 조치 ────────────────────────────────────────────────
   // 기간 필터를 30일로 바꿔도 여기 숫자는 변하지 않는다 — 그래서 기간 카드와 줄을 나눴다.
+  function viscosityProductHref(item) {
+    const id = item && item.product_id != null ? Number(item.product_id) : null;
+    return Number.isInteger(id) && id > 0 ? `/viscosity?product=${id}` : "/viscosity";
+  }
+
+  // 카드 안의 반제품 이름 하나. 카드가 이미 <a> 라 안에 링크를 또 둘 수 없어 role=link 로
+  // 두고 클릭·Enter 를 bindDueChips 가 받아 이동한다. 코드는 서버 값이라 글자로 넣는다.
+  function dueChipHtml(item) {
+    const text = document.createElement("span");
+    text.textContent = String(item.code || "");
+    return `<span class="dash-act-chip" role="link" tabindex="0"`
+      + ` data-href="${viscosityProductHref(item)}">${text.innerHTML}</span>`;
+  }
+
+  function bindDueChips() {
+    const codesEl = document.getElementById("card-visc-due-codes");
+    if (!codesEl) return;
+    const go = (event) => {
+      const chip = event.target.closest(".dash-act-chip");
+      if (!chip) return;
+      if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+      // 카드(<a>)의 기본 이동을 막고 이 반제품으로 간다.
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.assign(chip.dataset.href || "/viscosity");
+    };
+    codesEl.addEventListener("click", go);
+    codesEl.addEventListener("keydown", go);
+  }
+
   function markAct(id, on) {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("needs-action", !!on);
@@ -267,18 +301,27 @@ document.addEventListener("DOMContentLoaded", () => {
       markAct("act-visc-anomaly", Number(anomaly) > 0);
     }
 
-    const due = data.viscosity_due_today || [];
+    // 반제품마다 id 가 있는 목록(viscosity_due_items)을 우선 쓴다 — 이름을 누르면 그 반제품이
+    // 골라진 점도 화면으로 간다(2026-10-05). id 가 없는 옛 응답(코드만)은 글자로만 보인다.
+    const dueItems = Array.isArray(data.viscosity_due_items)
+      ? data.viscosity_due_items
+      : (data.viscosity_due_today || []).map((code) => ({ code, product_id: null }));
+    const due = dueItems.map((item) => item.code);
     const dueEl = document.getElementById("card-visc-due");
     if (dueEl) dueEl.textContent = `${fmtNumber(due.length)}건`;
+    // 카드 자체는 첫 반제품으로 간다. 하나뿐일 때 가장 흔한 한 번 누르기가 바로 닿는다.
+    const dueCard = document.getElementById("act-visc-due");
+    if (dueCard) dueCard.setAttribute("href", viscosityProductHref(dueItems[0]));
     // 대상 코드는 3개까지 + '외 N건' — 길어지면 카드 높이가 들쭉날쭉해진다.
     const codesEl = document.getElementById("card-visc-due-codes");
     if (codesEl) {
       if (!due.length) {
         codesEl.textContent = "알림 대상 모두 입력됨";
       } else {
-        const shown = due.slice(0, 3);
-        const extra = due.length - shown.length;
-        codesEl.textContent = extra > 0 ? `${shown.join(", ")} 외 ${extra}건` : shown.join(", ");
+        const shown = dueItems.slice(0, 3);
+        const extra = dueItems.length - shown.length;
+        codesEl.innerHTML = shown.map(dueChipHtml).join(", ")
+          + (extra > 0 ? ` 외 ${extra}건` : "");
       }
     }
     markAct("act-visc-due", due.length > 0);

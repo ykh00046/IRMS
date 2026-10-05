@@ -174,6 +174,16 @@ def build_router() -> APIRouter:
             "today_blend_count": int(today_row["cnt"] or 0),
             "last_blend_at": (row["last_at"] or "").strip() or None,
             "viscosity_due_today": [item["code"] for item in due],
+            # 카드의 반제품 이름을 누르면 그 반제품이 골라진 점도 화면으로 가게(2026-10-05).
+            # 코드 목록(viscosity_due_today)만으로는 화면이 반제품 id 를 알 수 없었다.
+            "viscosity_due_items": [
+                {
+                    "product_id": int(item["id"]),
+                    "code": item["code"],
+                    "pending_count": int(item["pending_count"]),
+                }
+                for item in due
+            ],
             "material_lot_file": {
                 "file_name": erp.get("file_name"),
                 "file_date": erp.get("file_date"),
