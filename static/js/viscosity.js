@@ -31,6 +31,8 @@
     pbBandRows,
     pbLinearFit,
     pbScatterSummary,
+    sourceLabel,
+    sourceLinkLine,
   } = window.IRMS.viscLib;
 
   const $ = (id) => document.getElementById(id);
@@ -76,7 +78,7 @@
   // 기간 표는 상위 12행만 먼저 보여준다(차트는 60구간 그대로). 60행이 한 번에
   // 펼쳐져 있으면 화면이 길어지기만 하고 정작 최근 구간을 보려고 스크롤하게 된다.
   const PERIOD_TABLE_ROWS = 12;
-  // PB 연계 표도 같은 이유로 20행씩. 76행 전건 나열이 화면 절반을 먹었다.
+  // 원료 연계 표도 같은 이유로 20행씩. 76행 전건 나열이 화면 절반을 먹었다.
   const PB_TABLE_ROWS = 20;
   // 배합 기록 목록 [더보기] 단계 — 서버 limit 을 올려 다시 받는다(최대 200).
   const BLEND_LIMIT_STEPS = [20, 50, 100, 200];
@@ -92,14 +94,16 @@
     blendReturned: 0,
     selectedBlendId: null,
     selectedBlendDetail: null,
-    usedPb: null,          // {lot, method, pb_viscosity} · 선택 기록의 '사용한 PB'
+    usedPb: null,          // {source_code, lot, method, source_viscosity} · 선택 기록의 '사용한 원료'
     periodChart: null,
     pbChart: null,
     periodRows: PERIOD_TABLE_ROWS,
     pbRows: PB_TABLE_ROWS,
-    // PB LOT 으로 찾기(2026-09-21) · 반제품 선택과 무관한 역방향 조회.
+    // 원료 LOT으로 찾기(2026-09-21, 2026-10-06 원료 일반화) · 반제품 선택과 무관한 역방향 조회.
     pbLots: [],
     pbLotSelected: null,
+    sources: [],           // GET /viscosity/sources · 원료로 쓰이는 반제품 목록
+    lookupSource: null,    // LOT 찾기에서 고른 원료 코드(PB·SBCT 등)
     tab: "register",
     granularity: "day",
     year: null,
@@ -143,7 +147,7 @@
     if (name === "anomaly") loadAnomalies();
     // 시험 점도 탭도 반제품과 무관한 목록이다. 반제품을 고르지 않았어도 열 때마다 받는다.
     if (name === "test") loadTestRecords();
-    // PB LOT 으로 찾기도 반제품과 무관하다 — 반제품을 고르기 전에도 쓸 수 있어야 한다.
+    // 원료 LOT으로 찾기도 반제품과 무관하다 — 반제품을 고르기 전에도 쓸 수 있어야 한다.
     if (name === "pb") loadPbLots();
     if (!state.analysis) return;
     if (name === "trend") renderPeriods();
@@ -250,9 +254,10 @@
     const pbNote = $("visc-source-pb-note");
     if (pbNote) pbNote.textContent = "";
     const pbEmpty = $("visc-pb-empty");
-    if (pbEmpty) { pbEmpty.hidden = false; pbEmpty.textContent = "반제품을 선택하면 PB 연계 측정이 표시됩니다."; }
-    // PB 연계 사유 줄·구간표·PB 전용 안내는 앞 반제품의 것이 남지 않게 되돌린다.
-    // ('PB LOT 으로 찾기'는 반제품과 무관하므로 건드리지 않는다.)
+    if (pbEmpty) { pbEmpty.hidden = false; pbEmpty.textContent = "반제품을 선택하면 원료 연계 측정이 표시됩니다."; }
+    // 원료 연계 사유 줄·구간표·원료 안내 줄은 앞 반제품의 것이 남지 않게 되돌린다.
+    // ('원료 LOT으로 찾기'는 반제품과 무관하므로 건드리지 않는다.)
+    setSrcText("product", null);
     const pbReason = $("visc-pb-reason");
     if (pbReason) { pbReason.textContent = ""; pbReason.hidden = true; }
     const pbBand = $("visc-pb-band");
@@ -337,6 +342,7 @@
     renderPeriods();
     renderAnomalies();
     renderSourcePb();
+    syncLookupSourceToProduct();
     renderCondition();
     await loadBlendRecords({ reset: true });
   }
@@ -888,9 +894,24 @@
     banner.hidden = false;
   }
 
-  // 사용한 PB 연계 측정 — 바인더처럼 material_lot(사용한PB)에 PB 점도가 매칭되는
-  // 측정이 하나라도 있을 때만 표를 띄운다. 각 바인더 점도 옆에 원료 PB 점도를 놓아
-  // "이 PB(48cp)로 만든 바인더는 80" 상관을 바로 읽게 한다.
+  // 사용한 원료 연계 측정 — 바인더처럼 material_lot(사용한 원료 LOT)에 원료 점도가
+  // 매칭되는 측정을 표·그림으로 낸다. 각 반제품 점도 옆에 원료 점도를 놓아
+  // "이 PB(48cp)로 만든 바인더는 80" 상관을 바로 읽게 한다. 원료는 레시피에서 정해진다
+  // (APB=PB, S-TOP=SBCT · 2026-10-06 일반화). 화면 문구는 source_link.source_code 를 쓴다.
+  //
+  // 원료 이름이 들어가는 고정 문구 자리(<span data-src="...">)를 채운다.
+  //   product = 원료 연계 패널(고른 반제품의 원료) · lookup = 원료 LOT으로 찾기
+  //   used    = 측정 등록 폼의 '사용한 원료' 블록
+  function setSrcText(kind, code) {
+    const text = sourceLabel(code);
+    document.querySelectorAll(`[data-src="${kind}"]`).forEach((el) => { el.textContent = text; });
+  }
+
+  function currentSourceCode() {
+    const link = state.analysis && state.analysis.source_link;
+    return (link && link.source_code) || null;
+  }
+
   const STATUS_KO = { normal: "정상", warn: "경고", anomaly: "이상", excluded: "제외" };
   function renderSourcePb() {
     const panel = $("visc-source-pb-panel");
@@ -909,18 +930,25 @@
     const rows = sourcePbLinkedReadings(readings, { includeExcluded: true });
     const plotted = sourcePbLinkedReadings(readings);
     const droppedN = rows.length - plotted.length;
-    const pbLink = (state.analysis && state.analysis.pb_link) || null;
-    // PB 자신을 보고 있으면 위 단계 PB 가 없다 — 산점도 자리에 한 줄만 두고, 위의
-    // 'PB LOT 으로 찾기'가 이 탭의 본문이 된다(2026-09-21).
-    const isSource = Boolean(pbLink && pbLink.is_source);
+    const sourceLink = (state.analysis && state.analysis.source_link) || null;
+    const src = currentSourceCode();
+    setSrcText("product", src);
+    // 원료 반제품을 쓰지 않으면 연계 그림이 없다 — 그림·표 자리에 한 줄만 둔다.
+    // 자신이 원료(PB·SBCT)면 위의 '원료 LOT으로 찾기'가 이 탭의 본문이 된다(2026-09-21).
+    const isSource = Boolean(sourceLink && sourceLink.is_source);
+    const product = (state.analysis && state.analysis.product) || {};
+    const lineText = sourceLinkLine(sourceLink, product.code);
     const content = $("visc-pb-content");
     const sourceLine = $("visc-pb-source-line");
     const reason = $("visc-pb-reason");
     const pickWrap = $("visc-pb-pick-wrap");
-    if (pickWrap) pickWrap.classList.toggle("is-source", isSource);
-    if (content) content.hidden = isSource;
-    if (sourceLine) sourceLine.hidden = !isSource;
-    if (isSource) {
+    if (pickWrap) pickWrap.classList.toggle("is-source", !src && isSource);
+    if (content) content.hidden = Boolean(lineText);
+    if (sourceLine) {
+      sourceLine.hidden = !lineText;
+      sourceLine.textContent = lineText;
+    }
+    if (lineText) {
       if (note) note.textContent = "";
       if (empty) empty.hidden = true;
       if (reason) reason.hidden = true;
@@ -928,16 +956,16 @@
       renderPbBand([]);
       return;
     }
-    // 왜 안 붙었는지 한 줄 — 건수만으로는 "PB 점도가 아예 없어서"인지 알 수 없었다.
+    // 왜 안 붙었는지 한 줄 — 건수만으로는 "원료 점도가 아예 없어서"인지 알 수 없었다.
     if (reason) {
-      const reasonText = pbLinkReasonText(pbLink);
+      const reasonText = pbLinkReasonText(sourceLink, src);
       reason.textContent = reasonText;
       reason.hidden = !reasonText;
     }
-    const notice = pbLinkNotice(pbLink, plotted.length, droppedN);
+    const notice = pbLinkNotice(sourceLink, plotted.length, droppedN, src);
     if (!rows.length) {
       body.innerHTML = "";
-      body.appendChild(emptyRow(5, "표시할 PB 연계 측정이 없습니다."));
+      body.appendChild(emptyRow(5, `표시할 ${sourceLabel(src)} 연계 측정이 없습니다.`));
       if (note) note.textContent = "";
       if (empty) { empty.hidden = false; empty.textContent = notice; }
       if (more) more.hidden = true;
@@ -959,7 +987,7 @@
         return `<tr${r.status === "anomaly" ? ' class="row-anomaly"' : ""}>`
           + `<td>${IRMS.escapeHtml(r.measured_date || "-")}</td>`
           + `<td>${IRMS.escapeHtml(r.material_lot)}</td>`
-          + `<td class="num">${fmt(r.source_pb_viscosity)}</td>`
+          + `<td class="num">${fmt(r.source_viscosity)}</td>`
           + `<td class="num">${fmt(r.viscosity)}</td>`
           + `<td>${verdict}</td>`
           + "</tr>";
@@ -973,22 +1001,23 @@
     renderPbBand(plotted);
   }
 
-  // PB 점도 구간표 — 그림을 숫자로도 읽는다. 경계는 PB 반제품의 기준선(사용 금지·경고
-  // 문턱)이고, 기준이 없으면 연계된 PB 점도 범위를 셋으로 나눈다(계산은 viscLib 순수 함수).
+  // 원료 점도 구간표 — 그림을 숫자로도 읽는다. 경계는 원료 반제품의 기준선(사용 금지·경고
+  // 문턱)이고, 기준이 없으면 연계된 원료 점도 범위를 셋으로 나눈다(계산은 viscLib 순수 함수).
   function renderPbBand(linked) {
     const wrap = $("visc-pb-band");
     const body = $("visc-pb-band-body");
     if (!wrap || !body) return;
-    const pbLink = (state.analysis && state.analysis.pb_link) || null;
-    const { rows, source } = pbBandRows(linked, pbLink && pbLink.source_limits);
+    const sourceLink = (state.analysis && state.analysis.source_link) || null;
+    const { rows, source } = pbBandRows(linked, sourceLink && sourceLink.source_limits);
     body.innerHTML = "";
     wrap.hidden = !rows.length;
     if (!rows.length) return;
     const bandNote = $("visc-pb-band-note");
     if (bandNote) {
+      const src = sourceLabel(currentSourceCode());
       bandNote.textContent = source === "limits"
-        ? "PB 기준선으로 나눈 구간입니다."
-        : "PB 점도 범위를 셋으로 나눈 구간입니다.";
+        ? `${src} 기준선으로 나눈 구간입니다.`
+        : `${src} 점도 범위를 셋으로 나눈 구간입니다.`;
     }
     rows.forEach((row) => {
       const tr = document.createElement("tr");
@@ -1000,26 +1029,85 @@
     });
   }
 
-  // ── PB LOT 으로 찾기(2026-09-21) ────────────────────────────────────────
-  // 연계의 반대 방향 — PB LOT 하나를 고르면 그 LOT 으로 만든 반제품 측정과 시험 배합
-  // 점도를 모아 본다. 반제품 선택과 무관하며, PB 반제품을 볼 때는 이 목록이 탭의 본문이다.
+  // ── 원료 LOT으로 찾기(2026-09-21, 2026-10-06 원료 일반화) ──────────────
+  // 연계의 반대 방향 — 원료(PB·SBCT 등) LOT 하나를 고르면 그 LOT 으로 만든 반제품 측정과
+  // 시험 배합 점도를 모아 본다. 반제품 선택과 무관하며, 원료 반제품 자신을 볼 때는 이 목록이
+  // 탭의 본문이다. 어느 원료의 LOT 인지는 위 셀렉트(#visc-source-select)가 정한다.
   const PB_LOT_LIMIT = 20;
   let pbLotSeq = 0;
   let pbDetailSeq = 0;
+
+  // 원료 목록 · 레시피에서 한 번이라도 원료로 쓰인 반제품. 화면을 열 때 한 번 받는다.
+  async function loadSources() {
+    let data;
+    try {
+      data = await request("/viscosity/sources");
+    } catch (_error) {
+      data = { items: [] };                    // 보조 목록 · 실패해도 화면은 연다
+    }
+    state.sources = (data && data.items) || [];
+    renderSourceSelect();
+    if (state.tab === "pb") loadPbLots();
+  }
+
+  function renderSourceSelect() {
+    const select = $("visc-source-select");
+    if (!select) return;
+    const items = state.sources.slice();
+    // 반제품이 가리키는 원료가 목록에 없더라도(목록이 늦게 왔거나 실패) 고를 수 있게 둔다.
+    if (state.lookupSource && !items.some((item) => item.code === state.lookupSource)) {
+      items.push({ code: state.lookupSource, name: state.lookupSource });
+    }
+    if (!state.lookupSource && items.length) state.lookupSource = items[0].code;
+    select.innerHTML = "";
+    items.forEach((item) => select.appendChild(option(item.code, productLabel(item))));
+    select.value = state.lookupSource || "";
+    select.disabled = !items.length;
+    setSrcText("lookup", state.lookupSource);
+  }
+
+  // 고른 원료를 바꾼다 · 고른 LOT·상세는 앞 원료의 것이라 비우고 목록을 다시 받는다.
+  function setLookupSource(code) {
+    const next = code || null;
+    if (next === state.lookupSource) return false;
+    state.lookupSource = next;
+    state.pbLotSelected = null;
+    state.pbLots = [];
+    const detail = $("visc-pb-lot-detail");
+    if (detail) detail.hidden = true;
+    renderSourceSelect();
+    return true;
+  }
+
+  // 반제품을 고르면 그 반제품의 원료(없으면 자신이 원료일 때 자신)로 맞춘다.
+  // 둘 다 아니면 지금 고른 원료를 그대로 둔다.
+  function syncLookupSourceToProduct() {
+    const link = (state.analysis && state.analysis.source_link) || {};
+    const product = (state.analysis && state.analysis.product) || {};
+    const code = link.source_code || (link.is_source ? product.code : null);
+    if (!code) return;
+    if (setLookupSource(code)) loadPbLots();
+  }
 
   async function loadPbLots() {
     const input = $("visc-pb-lot-q");
     if (!input) return;
     const q = input.value.trim();
+    const source = state.lookupSource;
     const seq = ++pbLotSeq;
+    if (!source) {
+      state.pbLots = [];
+      renderPbLots();
+      return;
+    }
     let data;
     try {
-      data = await request("/viscosity/pb-lots", { query: { q, limit: PB_LOT_LIMIT } });
+      data = await request("/viscosity/source-lots", { query: { source, q, limit: PB_LOT_LIMIT } });
     } catch (error) {
       if (seq !== pbLotSeq) return;
       state.pbLots = [];
       renderPbLots();
-      notify(`PB LOT 목록을 불러오지 못했습니다: ${error.message || error}`, "error");
+      notify(`${source} LOT 목록을 불러오지 못했습니다: ${error.message || error}`, "error");
       return;
     }
     if (seq !== pbLotSeq) return;
@@ -1035,12 +1123,14 @@
     if (note) note.textContent = items.length ? `최근 ${items.length}건` : "";
     body.innerHTML = "";
     if (!items.length) {
-      body.appendChild(emptyRow(
-        4,
-        $("visc-pb-lot-q").value.trim()
-          ? "검색에 맞는 PB LOT이 없습니다."
-          : "PB 점도 기록이 없습니다.",
-      ));
+      const src = state.lookupSource;
+      let message = "원료 반제품이 없습니다.";
+      if (src) {
+        message = $("visc-pb-lot-q").value.trim()
+          ? `검색에 맞는 ${src} LOT이 없습니다.`
+          : `${src} 점도 기록이 없습니다.`;
+      }
+      body.appendChild(emptyRow(4, message));
       return;
     }
     items.forEach((item) => {
@@ -1070,7 +1160,7 @@
       const mark = document.createElement("span");
       mark.className = "visc-pb-mark";
       mark.textContent = " · 제외";
-      mark.title = "이 PB 측정은 통계에서 빠져 있습니다.";
+      mark.title = `이 ${sourceLabel(state.lookupSource)} 측정은 통계에서 빠져 있습니다.`;
       cell.appendChild(mark);
     }
     row.appendChild(cell);
@@ -1080,12 +1170,13 @@
     state.pbLotSelected = lotNo;
     renderPbLots();
     const seq = ++pbDetailSeq;
+    const source = state.lookupSource;
     let data;
     try {
-      data = await request(`/viscosity/pb-lots/${encodeURIComponent(lotNo)}`);
+      data = await request(`/viscosity/source-lots/${encodeURIComponent(lotNo)}`, { query: { source } });
     } catch (error) {
       if (seq !== pbDetailSeq) return;
-      notify(`PB LOT을 불러오지 못했습니다: ${error.message || error}`, "error");
+      notify(`${sourceLabel(source)} LOT을 불러오지 못했습니다: ${error.message || error}`, "error");
       return;
     }
     if (seq !== pbDetailSeq) return;
@@ -1098,15 +1189,16 @@
     const body = $("visc-pb-lot-body");
     if (!panel || !head || !body) return;
     panel.hidden = false;
-    const pb = data.pb;
-    head.textContent = pb
-      ? `PB LOT ${pb.lot_no} · 점도 ${fmt(pb.viscosity)} · 측정일 ${pb.measured_date || "-"}`
-        + `${pb.excluded ? " · 통계 제외" : ""}`
-      : `PB LOT ${data.lot_no} · 점도 기록 없음`;
+    const src = sourceLabel(data.source_code || state.lookupSource);
+    const source = data.source;
+    head.textContent = source
+      ? `${src} LOT ${source.lot_no} · 점도 ${fmt(source.viscosity)} · 측정일 ${source.measured_date || "-"}`
+        + `${source.excluded ? " · 통계 제외" : ""}`
+      : `${src} LOT ${data.lot_no} · 점도 기록 없음`;
     const items = data.items || [];
     body.innerHTML = "";
     if (!items.length) {
-      body.appendChild(emptyRow(5, "이 PB LOT으로 만든 측정이 없습니다."));
+      body.appendChild(emptyRow(5, `이 ${src} LOT으로 만든 측정이 없습니다.`));
     } else {
       items.forEach((item) => {
         const row = document.createElement("tr");
@@ -1162,7 +1254,7 @@
     });
   }
 
-  // PB 점도(x) ↔ 이 반제품 점도(y) 산점도. 표만으로는 관계가 안 보인다.
+  // 원료 점도(x) ↔ 이 반제품 점도(y) 산점도. 표만으로는 관계가 안 보인다.
   // 점만 뿌려서는 여전히 한눈에 안 들어온다는 현장 지적(2026-08-13)에 따라
   // 추세선 + 한 줄 결론 + 규격 기준선 + 최근/과거 명암을 함께 그린다.
   function renderPbChart(linked) {
@@ -1175,11 +1267,12 @@
     // 이 함수는 추세선·상관 문장을 만드는 통계 경로다(2026-09-21).
     const fitPoints = linked
       .filter((r) => r.status !== "anomaly" && !isExcludedReading(r))
-      .map((r) => ({ x: Number(r.source_pb_viscosity), y: Number(r.viscosity) }));
+      .map((r) => ({ x: Number(r.source_viscosity), y: Number(r.viscosity) }));
     const fit = pbLinearFit(fitPoints);
+    const src = sourceLabel(currentSourceCode());
     if (summaryEl) {
       summaryEl.hidden = !linked.length;
-      summaryEl.textContent = linked.length ? pbScatterSummary(fit) : "";
+      summaryEl.textContent = linked.length ? pbScatterSummary(fit, src) : "";
     }
     const product = (state.analysis && state.analysis.product) || {};
     const stats = (state.analysis && state.analysis.stats) || {};
@@ -1207,17 +1300,17 @@
             callbacks: {
               label: (item) => {
                 const point = item.raw || {};
-                return `PB ${fmt(point.x)} → 점도 ${fmt(point.y)}`;
+                return `${src} ${fmt(point.x)} → 점도 ${fmt(point.y)}`;
               },
               afterLabel: (item) => {
                 const point = item.raw || {};
-                return [`측정일 ${point.date || "-"}`, `사용한 PB LOT ${point.lot || "-"}`];
+                return [`측정일 ${point.date || "-"}`, `사용한 ${src} LOT ${point.lot || "-"}`];
               },
             },
           },
         },
         scales: {
-          x: { type: "linear", title: { display: true, text: "사용한 PB 점도" } },
+          x: { type: "linear", title: { display: true, text: `사용한 ${src} 점도` } },
           y: { type: "linear", title: { display: true, text: "이 반제품 점도" } },
         },
       },
@@ -1749,9 +1842,9 @@
     return state.blendRecords.find((record) => record.id === state.selectedBlendId) || null;
   }
 
-  // ── 사용한 PB ────────────────────────────────────────────────────────
-  // 등록 전에 서버가 무엇을 PB 로 감지했는지 보여준다 — 단 **레시피에 PB 자재가
-  // 있는 배합에만**. PB 를 안 쓰는 품목(대부분)과 PB 자신에게는 블록 자체가 뜨지
+  // ── 사용한 원료(PB·SBCT 등) ───────────────────────────────────────────
+  // 등록 전에 서버가 무엇을 원료 LOT 으로 감지했는지 보여준다 — 단 **레시피에 원료
+  // 반제품 자재가 있는 배합에만**. 원료를 안 쓰는 품목(대부분)과 원료 자신에게는 블록 자체가 뜨지
   // 않는다(2026-08-14 현장 지적: 추정 경고가 전 품목에 떠 소음이었다).
   // 종전에는 이 감지가 화면 밖에서 조용히 저장돼, 엉뚱한 자재 LOT 이 '사용한 PB'
   // 로 박혀도 아무도 몰랐다(현장 검토 2번).
@@ -1763,6 +1856,7 @@
     if (fix) fix.hidden = true;
     const input = $("visc-usedpb-lot");
     if (input) input.value = "";
+    setSrcText("used", currentSourceCode());
   }
 
   async function loadUsedPb(recordId) {
@@ -1772,7 +1866,7 @@
     if (record && record.registered) return;   // 이미 등록된 기록에는 물어볼 게 없다
     let data;
     try {
-      data = await request(`/viscosity/blend-records/${recordId}/used-pb`);
+      data = await request(`/viscosity/blend-records/${recordId}/used-source`);
     } catch (_error) {
       return;                                   // 보조 정보 · 실패해도 등록은 막지 않는다
     }
@@ -1788,14 +1882,15 @@
     const input = $("visc-usedpb-lot");
     if (!box || !text) return;
     const info = state.usedPb;
-    // PB 자재가 없는 레시피(method !== 'matched')는 블록을 아예 내지 않는다 —
-    // 연계 대상이 아닌 품목에 추정·안내를 띄우는 것 자체가 소음이다.
-    if (!info || info.method !== "matched") { clearUsedPb(); return; }
+    // 원료 자재가 없는 레시피(method !== 'matched' 또는 source_code 없음)는 블록을 아예
+    // 내지 않는다 — 연계 대상이 아닌 품목에 추정·안내를 띄우는 것 자체가 소음이다.
+    if (!info || info.method !== "matched" || !info.source_code) { clearUsedPb(); return; }
     box.hidden = false;
     const lot = info.lot || "";
     box.className = "visc-usedpb";
-    const visc = info.pb_viscosity != null ? ` · 점도 ${fmt(info.pb_viscosity)}` : " · 점도 미등록";
-    text.textContent = `사용한 PB: ${lot}${visc}`;
+    setSrcText("used", info.source_code);
+    const visc = info.source_viscosity != null ? ` · 점도 ${fmt(info.source_viscosity)}` : " · 점도 미등록";
+    text.textContent = `사용한 ${info.source_code}: ${lot}${visc}`;
     if (fix) fix.hidden = true;
     if (input) input.value = "";
   }
@@ -1838,7 +1933,7 @@
       memo: $("visc-memo").value.trim() || null,
       product_id: state.currentId,
     };
-    // 화면이 고친 '사용한 PB' LOT — 자동 감지가 불확실할 때만 입력칸이 열린다.
+    // 화면이 고친 '사용한 원료' LOT — 자동 감지가 불확실할 때만 입력칸이 열린다.
     // 값이 있으면 서버가 감지 대신 이 값을 쓴다(method=manual).
     const fixInput = $("visc-usedpb-lot");
     const fixed = fixInput && !$("visc-usedpb-fix").hidden ? fixInput.value.trim() : "";
@@ -1859,7 +1954,7 @@
       await loadProduct(state.currentId);
       if (selectedId) await selectBlendRecord(selectedId, { focus: false });
       // 판정은 제출 버튼 바로 위에 남긴다 — 정상이어도 무엇으로 판정됐는지 보이게.
-      showVerdict(value, lotNo, saved && saved.used_pb);
+      showVerdict(value, lotNo, saved && saved.used_source);
     } catch (error_) {
       showFormError(error_.message);
     }
@@ -1867,12 +1962,13 @@
 
   // 등록 직후 판정(정상/경고/이상)을 폼 안에 표시한다. 종전에는 정상일 때 토스트
   // 하나로 끝나 "그래서 이 값이 괜찮다는 건가"를 화면이 말해 주지 않았다.
-  function showVerdict(value, lotNo, usedPb) {
+  function showVerdict(value, lotNo, usedSource) {
     const reading = findReadingByLot(lotNo);
     const status = reading ? reading.status : null;
     const result = $("visc-form-result");
-    const pbTail = usedPb && usedPb.lot
-      ? ` · 사용한 PB ${usedPb.lot}${usedPb.method === "manual" ? "(직접 입력)" : ""}`
+    const pbTail = usedSource && usedSource.lot
+      ? ` · 사용한 ${sourceLabel(usedSource.source_code)} ${usedSource.lot}`
+        + `${usedSource.method === "manual" ? "(직접 입력)" : ""}`
       : "";
     const reasons = reading
       ? (reading.reasons || []).map((item) => REASON_LABEL[item] || item).join(", ")
@@ -2755,7 +2851,14 @@
       state.pbRows += PB_TABLE_ROWS;
       renderSourcePb();
     });
-    // PB LOT 으로 찾기 · 검색은 300ms 디바운스(서버가 거른다), Enter 는 바로 고른다
+    // 원료 LOT으로 찾기 · 원료를 바꾸면 목록을 다시 받는다.
+    const sourceSelect = $("visc-source-select");
+    if (sourceSelect) {
+      sourceSelect.addEventListener("change", () => {
+        if (setLookupSource(sourceSelect.value)) loadPbLots();
+      });
+    }
+    // 검색은 300ms 디바운스(서버가 거른다), Enter 는 바로 고른다
     // (바코드 스캐너가 LOT 뒤에 Enter 를 보낸다 · 시험 점도 창과 같은 규칙).
     const pbLotQ = $("visc-pb-lot-q");
     if (pbLotQ) {
@@ -2857,6 +2960,8 @@
       return;
     }
     bind();
+    renderSourceSelect();
+    loadSources();
     applyDeepLink();
     loadOverview().catch((error) => notify(`불러오기 실패: ${error.message}`, "error"));
   });

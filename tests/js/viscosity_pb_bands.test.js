@@ -15,19 +15,19 @@ function loadViscLib() {
 
 const { pbBandCuts, pbBandRows, pbLinkReasonText, PB_BAND_MIN_READINGS } = loadViscLib();
 
-// PB 점도(source_pb_viscosity) ↔ 이 반제품 점도(viscosity) 연계 측정 6건.
+// 원료 점도(source_viscosity) ↔ 이 반제품 점도(viscosity) 연계 측정 6건.
 const LINKED = [
-  { source_pb_viscosity: 44, viscosity: 70, status: "normal" },
-  { source_pb_viscosity: 47, viscosity: 76, status: "normal" },
-  { source_pb_viscosity: 48, viscosity: 80, status: "anomaly" },
-  { source_pb_viscosity: 50, viscosity: 84, status: "normal" },
-  { source_pb_viscosity: 53, viscosity: 90, status: "warn" },
-  { source_pb_viscosity: 56, viscosity: 96, status: "anomaly" },
+  { source_viscosity: 44, viscosity: 70, status: "normal" },
+  { source_viscosity: 47, viscosity: 76, status: "normal" },
+  { source_viscosity: 48, viscosity: 80, status: "anomaly" },
+  { source_viscosity: 50, viscosity: 84, status: "normal" },
+  { source_viscosity: 53, viscosity: 90, status: "warn" },
+  { source_viscosity: 56, viscosity: 96, status: "anomaly" },
 ];
 
 test("기준선이 있으면 그 값이 구간 경계다(최대 3개 · 구간 4개)", () => {
   const limits = { lower_limit: 45, warn_low: 48, warn_high: 53, upper_limit: 58 };
-  const { cuts, source } = pbBandCuts(LINKED.map((r) => r.source_pb_viscosity), limits);
+  const { cuts, source } = pbBandCuts(LINKED.map((r) => r.source_viscosity), limits);
   assert.equal(source, "limits");
   assert.deepEqual(Array.from(cuts), [45, 48, 53]);
 });
@@ -79,7 +79,7 @@ test("표본이 적으면(5건 미만) 구간표를 만들지 않는다", () => 
 
 test("PB 점도가 없는 측정은 구간표에 들어가지 않는다", () => {
   const withNulls = LINKED.concat([
-    { source_pb_viscosity: null, viscosity: 88, status: "normal" },
+    { source_viscosity: null, viscosity: 88, status: "normal" },
     { viscosity: 89, status: "normal" },
   ]);
   const { rows } = pbBandRows(withNulls, { warn_low: 48 });
@@ -88,7 +88,7 @@ test("PB 점도가 없는 측정은 구간표에 들어가지 않는다", () => 
 
 test("빈 구간도 0건으로 남는다(구간 모양이 흔들리지 않게)", () => {
   const onlyLow = [44, 45, 46, 47, 44].map((pb) => ({
-    source_pb_viscosity: pb, viscosity: 70, status: "normal",
+    source_viscosity: pb, viscosity: 70, status: "normal",
   }));
   const { rows } = pbBandRows(onlyLow, { warn_low: 48, warn_high: 53 });
   assert.deepEqual(Array.from(rows, (r) => r.count), [5, 0, 0]);
@@ -97,24 +97,24 @@ test("빈 구간도 0건으로 남는다(구간 모양이 흔들리지 않게)",
 
 test("연계 사유 문장은 붙은 건수와 큰 사유부터 말하고 합이 맞는다", () => {
   const text = pbLinkReasonText({
-    total: 363, matched: 99, pb_missing: 263, no_lot: 0, lot_unreadable: 0, pb_excluded: 1,
+    source_code: "PB", total: 363, matched: 99, source_missing: 263, no_lot: 0, lot_unreadable: 0, source_excluded: 1,
   });
   assert.match(text, /측정 363건 중 99건에 PB 점도가 붙었습니다\./);
   assert.match(text, /263건은 그 PB LOT의 점도 기록이 없습니다\./);
   assert.ok(!text.includes("0건은"), "0 인 사유는 말하지 않는다");
   // 전부 붙었으면 사유를 말할 것이 없다.
   assert.equal(
-    pbLinkReasonText({ total: 4, matched: 4 }),
+    pbLinkReasonText({ source_code: "PB", total: 4, matched: 4 }),
     "측정 4건 중 4건에 PB 점도가 붙었습니다.",
   );
   // 가장 큰 사유가 '통계 제외'일 수도 있다.
   assert.match(
-    pbLinkReasonText({ total: 5, matched: 1, pb_excluded: 3, pb_missing: 1 }),
+    pbLinkReasonText({ source_code: "PB", total: 5, matched: 1, source_excluded: 3, source_missing: 1 }),
     /3건은 그 PB 점도가 통계에서 빠졌습니다\./,
   );
   // 사유가 셋 이상이면 둘까지 적고 나머지는 묶는다 — 설명 안 된 건수가 남지 않는다.
   const many = pbLinkReasonText({
-    total: 15, matched: 8, pb_missing: 4, pb_excluded: 1, no_lot: 1, lot_unreadable: 1,
+    source_code: "PB", total: 15, matched: 8, source_missing: 4, source_excluded: 1, no_lot: 1, lot_unreadable: 1,
   });
   assert.match(many, /4건은 그 PB LOT의 점도 기록이 없습니다\./);
   assert.match(many, /2건은 다른 사유입니다\./);
@@ -124,4 +124,23 @@ test("연계 사유 문장은 붙은 건수와 큰 사유부터 말하고 합이
   // 측정이 없거나 응답이 옛 서버여도 터지지 않는다.
   assert.equal(pbLinkReasonText({ total: 0, matched: 0 }), "");
   assert.equal(pbLinkReasonText(null), "");
+});
+
+test("원료가 SBCT 면 연계 사유 문장이 SBCT 를 말하고 PB 는 말하지 않는다", () => {
+  const link = {
+    source_code: "SBCT", total: 20, matched: 12, source_missing: 5, no_lot: 2, source_excluded: 1,
+  };
+  const text = pbLinkReasonText(link);
+  assert.match(text, /측정 20건 중 12건에 SBCT 점도가 붙었습니다\./);
+  assert.match(text, /5건은 그 SBCT LOT의 점도 기록이 없습니다\./);
+  assert.match(text, /2건은 사용한 SBCT LOT이 없습니다\./);
+  assert.match(text, /1건은 다른 사유입니다\./);
+  assert.ok(!/PB/.test(text), text);
+  // 인자로 준 원료 코드가 링크의 코드보다 앞선다.
+  assert.match(pbLinkReasonText({ total: 2, matched: 2 }, "SBCT"), /SBCT 점도가 붙었습니다/);
+  // 옛 키(pb_missing)는 더 읽지 않는다.
+  assert.equal(
+    pbLinkReasonText({ source_code: "PB", total: 3, matched: 3, pb_missing: 9 }),
+    "측정 3건 중 3건에 PB 점도가 붙었습니다.",
+  );
 });

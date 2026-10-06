@@ -55,7 +55,8 @@ def test_binder_links_to_matching_blend_record(tmp_path):
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT r.lot_no, r.viscosity, r.material_lot, r.blend_record_id, b.product_lot "
+            "SELECT r.lot_no, r.viscosity, r.material_lot, r.source_code, r.blend_record_id, "
+            "b.product_lot "
             "FROM viscosity_readings r JOIN blend_records b ON b.id = r.blend_record_id "
             "WHERE b.product_lot = 'APB26060101'"
         ).fetchone()
@@ -63,6 +64,7 @@ def test_binder_links_to_matching_blend_record(tmp_path):
         assert row["lot_no"] == "APB26060101"       # 배합 product_lot
         assert row["viscosity"] == 385.5
         assert row["material_lot"] == "26060101"    # 사용한PB(PB 연계 키)
+        assert row["source_code"] == "PB"           # 원료 표기
         assert row["blend_record_id"] is not None
 
 
@@ -177,12 +179,13 @@ def test_binder_without_record_is_archived(tmp_path):
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT lot_no, viscosity, material_lot, blend_record_id, measured_date "
+            "SELECT lot_no, viscosity, material_lot, source_code, blend_record_id, measured_date "
             "FROM viscosity_readings WHERE lot_no = 'APB24082902'"
         ).fetchone()
         assert row is not None
         assert row["viscosity"] == 373.8
         assert row["material_lot"] == "24082902"       # PB 상관 키 유지
+        assert row["source_code"] == "PB"
         assert row["blend_record_id"] is None          # 배합 미연계
         assert row["measured_date"] == "2024-08-29"    # 시트 연도 + 엑셀 월일
 

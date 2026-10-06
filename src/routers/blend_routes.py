@@ -1155,15 +1155,17 @@ def build_router() -> APIRouter:
             )
             if not product:
                 raise HTTPException(status_code=400, detail="제품명이 없어 점도를 등록할 수 없습니다.")
-        # '사용한 PB' — 화면이 보정한 값(body.material_lot)이 있으면 그것을, 없으면
-        # 배합 상세에서 자재명이 PB 인 행을 찾아 감지한다(detect_source_pb_lot).
-        # 종전의 "무조건 첫 행" 가정은 PB 가 첫 계량 자재가 아닌 레시피에서 엉뚱한
-        # 자재 LOT 을 박았다(2026-08-13 검토).
+        # 원료 LOT — 화면이 보정한 값(body.material_lot)이 있으면 그것을(원료는 이 반제품
+        # 레시피가 말하는 원료), 없으면 배합 상세에서 자재명/코드가 점도 반제품인 행을 찾아
+        # 감지한다(detect_source_lot: APB→PB, 6-1 TOP→SBCT). 종전의 "무조건 첫 행" 가정은
+        # 원료가 첫 계량 자재가 아닌 레시피에서 엉뚱한 자재 LOT 을 박았다(2026-08-13 검토).
         if body.material_lot is not None and body.material_lot.strip():
-            source_pb_lot, pb_method = body.material_lot.strip(), "manual"
+            source = viscosity_service.source_product_for(connection, product)
+            source_code = source["code"] if source else None
+            source_lot, source_method = body.material_lot.strip(), "manual"
         else:
-            source_pb_lot, pb_method = viscosity_service.detect_source_pb_lot(
-                record.get("details") or []
+            source_code, source_lot, source_method = viscosity_service.detect_source_lot(
+                connection, record.get("details") or [], product_name=record["product_name"]
             )
         try:
             viscosity_service.add_reading(
@@ -1174,11 +1176,12 @@ def build_router() -> APIRouter:
                 measured_date=record["work_date"],
                 memo=body.memo,
                 recipe_material=record["product_name"],
-                material_lot=source_pb_lot,
+                material_lot=source_lot,
                 created_by=actor,
                 created_at=now,
                 blend_record_id=record_id,
                 reactor=record.get("reactor"),
+                source_code=source_code if source_lot else None,
             )
         except viscosity_service.TestLotError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -1207,15 +1210,20 @@ def build_router() -> APIRouter:
             details={
                 "product_code": product["code"],
                 "viscosity": body.viscosity,
-                "used_pb_lot": source_pb_lot,
-                "used_pb_method": pb_method,
+                "used_source_code": source_code,
+                "used_source_lot": source_lot,
+                "used_source_method": source_method,
                 **({"skip_cleared": True} if skip_cleared else {}),
             },
         )
         connection.commit()
         record["viscosity"] = viscosity_service.list_readings_for_blend(connection, record_id)
-        # 화면이 등록 직후 "사용한 PB: xxx (감지/수동)" 을 보여줄 수 있게 싣는다.
-        record["used_pb"] = {"lot": source_pb_lot, "method": pb_method}
+        # 화면이 등록 직후 "원료 LOT: SBCT xxx (감지/수동)" 을 보여줄 수 있게 싣는다.
+        record["used_source"] = {
+            "source_code": source_code,
+            "lot": source_lot,
+            "method": source_method,
+        }
         return _mask_manual_entry(request, record)
 
     # ── 증량(rescale) 책임자 현장 인증 — 세션 생성 없이 자격 증명만 확인 ──

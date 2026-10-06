@@ -26,8 +26,10 @@ Endpoints:
     POST   /viscosity/readings/review-batch     일괄 확인 처리 (위와 같은 사람)
     POST   /viscosity/readings/{id}/unreview    확인 취소 (책임자)
     GET    /viscosity/products/{id}/export      Excel (책임자)
-    GET    /viscosity/pb-lots                   최근 PB LOT 목록 (개방, q·limit)
-    GET    /viscosity/pb-lots/{lot_no}          PB LOT 하나로 만든 반제품·시험 (개방)
+    GET    /viscosity/sources                   원료 반제품 목록 (개방, 레시피에서 도출)
+    GET    /viscosity/source-lots               원료 반제품의 최근 LOT 목록 (개방, source·q·limit)
+    GET    /viscosity/source-lots/{lot_no}      원료 LOT 하나로 만든 반제품·시험 (개방, source)
+    GET    /viscosity/blend-records/{id}/used-source  배합 기록의 원료 LOT 감지 미리보기 (개방)
     GET    /viscosity/test-records              시험 점도 목록 (개방, 반제품 무관, state=recorded|unrecorded|all)
     POST   /viscosity/test-records/{record_id}  시험 점도 등록 (개방 — 현장 등록)
     PUT    /viscosity/test-records/{record_id}  시험 점도 정정 (10분 유예 현장, 이후 책임자)
@@ -178,27 +180,44 @@ def build_router() -> tuple[APIRouter, APIRouter]:
             connection, product, granularity=granularity, year=year, reactor=reactor
         )
 
-    # ---- PB LOT 역방향 조회(2026-09-21) ----------------------------------
-    # "이 PB LOT 으로 무엇을 만들었나" — 연계 화면의 반대 방향. 둘 다 열람이라 개방.
-    @op_router.get("/viscosity/pb-lots")
-    def viscosity_pb_lots(
+    # ---- 원료 LOT 역방향 조회(2026-09-21 PB → 2026-10-06 원료 반제품 일반화) ----
+    # "이 원료 LOT 으로 무엇을 만들었나" — 연계 화면의 반대 방향. 모두 열람이라 개방.
+    # 원료 반제품은 레시피에서 정해진다(APB→PB, 6-1 TOP→SBCT).
+    @op_router.get("/viscosity/sources")
+    def viscosity_sources(
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        """다른 반제품의 원료로 쓰이는 반제품 목록(used_by = 그것을 쓰는 반제품 코드)."""
+        return {"items": viscosity_service.list_source_products(connection)}
+
+    @op_router.get("/viscosity/source-lots")
+    def viscosity_source_lots(
+        source: str | None = None,
         q: str | None = None,
         limit: int = 20,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """최근 PB LOT 목록(고르기용) — 최신 측정 먼저, q 는 LOT 부분 일치."""
-        return viscosity_service.list_pb_lots(connection, q=q, limit=limit)
+        """원료 반제품의 최근 LOT 목록(고르기용) — 최신 측정 먼저, q 는 LOT 부분 일치.
 
-    @op_router.get("/viscosity/pb-lots/{lot_no}")
-    def viscosity_pb_lot_detail(
+        모르는 원료(또는 미지정)는 빈 목록이다.
+        """
+        return viscosity_service.list_source_lots(
+            connection, source_code=source, q=q, limit=limit
+        )
+
+    @op_router.get("/viscosity/source-lots/{lot_no}")
+    def viscosity_source_lot_detail(
         lot_no: str,
+        source: str | None = None,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """PB LOT 하나의 점도와 그 LOT 으로 만든 반제품 측정·시험 배합 점도.
+        """원료 LOT 하나의 점도와 그 LOT 으로 만든 반제품 측정·시험 배합 점도.
 
-        모르는 LOT 도 404 가 아니라 빈 목록이다(검색 중간 입력에 오류창을 띄우지 않는다).
+        모르는 LOT·원료도 404 가 아니라 빈 목록이다(검색 중간 입력에 오류창을 띄우지 않는다).
         """
-        return viscosity_service.pb_lot_detail(connection, lot_no)
+        return viscosity_service.source_lot_detail(
+            connection, source_code=source, lot_no=lot_no
+        )
 
     @op_router.get("/viscosity/products/{product_id}/blend-records")
     def viscosity_blend_records(
@@ -405,28 +424,38 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         connection.commit()
         return {"status": "ok", "record_id": record_id}
 
-    @op_router.get("/viscosity/blend-records/{record_id}/used-pb")
-    def viscosity_used_pb_preview(
+    @op_router.get("/viscosity/blend-records/{record_id}/used-source")
+    def viscosity_used_source_preview(
         record_id: int,
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        """선택한 배합 기록의 '사용한 PB' 감지 미리보기 — 등록 전에 확인·수정 기회.
+        """선택한 배합 기록의 원료 LOT 감지 미리보기 — 등록 전에 확인·수정 기회.
 
-        종전에는 서버가 상세 첫 행을 몰래 PB 로 저장했고 화면에 보이지 않았다
-        (2026-08-13 검토 2번). method 가 'first_row' 면 화면이 "자동 감지 실패 -
-        확인 필요" 를 표시한다. pb_viscosity 는 그 PB LOT 의 최신 점도(없으면 null).
+        배합 상세에서 자재명/코드가 점도 반제품(이 기록의 제품 자신 제외)인 행을 찾는다.
+        method: 'matched'(LOT 찾음) · 'none'(원료 행이 없거나 LOT 이 빔).
+        source_viscosity 는 그 원료 LOT 의 최신 점도(통계 제외 뺌, 없으면 null).
         """
         from ..services import blend_service
 
         record = blend_service.get_blend_record(connection, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")
-        lot, method = viscosity_service.detect_source_pb_lot(
-            record.get("details") or []
+        source_code, lot, method = viscosity_service.detect_source_lot(
+            connection, record.get("details") or [], product_name=record.get("product_name")
         )
-        pb_map = viscosity_service._pb_viscosity_map(connection)
-        pb_value = pb_map.get(viscosity_service._lot_digits(lot)) if lot else None
-        return {"lot": lot, "method": method, "pb_viscosity": pb_value}
+        value = None
+        if source_code and lot:
+            source = viscosity_service.get_product_by_code(connection, source_code)
+            if source:
+                value = viscosity_service.lookup_source_viscosity(
+                    viscosity_service._source_viscosity_map(connection, source["id"]), lot
+                )
+        return {
+            "source_code": source_code,
+            "lot": lot,
+            "method": method,
+            "source_viscosity": value,
+        }
 
     @op_router.post("/viscosity/readings")
     def viscosity_add_reading(
@@ -450,6 +479,11 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         verdict = viscosity_service.classify_value(
             connection, product, body.viscosity, year=reading_year, reactor=body.reactor
         )
+        # 원료 LOT 을 적었으면 그것이 어느 원료의 LOT 인지 레시피에서 정해 함께 남긴다.
+        direct_source = (
+            viscosity_service.source_product_for(connection, product)
+            if (body.material_lot or "").strip() else None
+        )
         try:
             reading_id = viscosity_service.add_reading(
                 connection,
@@ -466,6 +500,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 created_by=actor_name(current_user) if current_user else "현장",
                 created_at=utc_now_text(),
                 reactor=body.reactor,
+                source_code=direct_source["code"] if direct_source else None,
             )
         except viscosity_service.TestLotError as exc:
             # 시험 LOT 은 정식 표본에 넣지 않는다(계약 §9-2) — 시험 탭으로 안내.
@@ -1080,7 +1115,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         # 내는 사람이 제외된 행을 걸러내지 못한다(2026-09-21). 사유도 함께 싣는다.
         ws_readings.append(
             ["LOT", "측정일", "점도", "판정", "통계 제외", "제외 사유",
-             "반응기", "메모", "배합 원료", "원료 LOT", "작성자"]
+             "반응기", "메모", "배합 원료", "원료", "원료 LOT", "작성자"]
         )
         for it in analysis["readings"]:
             ws_readings.append([
@@ -1093,6 +1128,7 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                 it["reactor"],
                 _xlsx_safe(it["memo"] or ""),
                 _xlsx_safe(it["recipe_material"] or ""),
+                _xlsx_safe(it.get("source_code") or ""),
                 _xlsx_safe(it["material_lot"] or ""),
                 _xlsx_safe(it["created_by"] or ""),
             ])
@@ -1140,15 +1176,16 @@ def build_router() -> tuple[APIRouter, APIRouter]:
         ws.append([
             "반제품 코드", "반제품명", "연도", "LOT", "측정일",
             "점도", "판정", "통계 제외", "제외 사유",
-            "반응기", "메모", "등록자", "등록일시",
+            "반응기", "메모", "원료", "원료 LOT", "등록자", "등록일시",
         ])
         products = viscosity_service.list_products(connection)
+        sources = viscosity_service._derived_sources(connection)
         row_count = 0
         for product in products:
             years = viscosity_service.available_years(connection, product["id"])
             for yr in years:
                 analysis = viscosity_service.analyze_product(
-                    connection, product, year=yr
+                    connection, product, year=yr, sources=sources
                 )
                 # analyze_product 의 item 에는 created_at 이 없다(서비스 공개 키 아님).
                 # 같은 연도 표본의 created_at 만 별도로 모아 매핑한다.
@@ -1174,6 +1211,8 @@ def build_router() -> tuple[APIRouter, APIRouter]:
                         _xlsx_safe(r.get("exclude_reason") or ""),
                         r["reactor"],
                         _xlsx_safe(r["memo"] or ""),
+                        _xlsx_safe(r.get("source_code") or ""),
+                        _xlsx_safe(r.get("material_lot") or ""),
                         _xlsx_safe(r["created_by"] or ""),
                         created_map.get(int(r["id"]), ""),
                     ])

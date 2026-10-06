@@ -132,6 +132,45 @@ def record_migration(connection: sqlite3.Connection, name: str) -> None:
     )
 
 
+def backfill_viscosity_source_code(connection: sqlite3.Connection) -> int:
+    """원료 LOT(material_lot)이 있는데 원료 표기(source_code)가 빈 점도 측정을 채운다.
+
+    원료는 반제품의 현재 레시피가 말하는 것(viscosity_service.source_product_for)이다.
+    원료가 없는 반제품(PB 자신 등)의 행은 그대로 NULL. 이미 채워진 행은 건드리지 않아
+    다시 돌려도 같다. recipes 가 없는 스키마(단위 테스트)에서는 원료가 없으므로 0건이다.
+    반환: 채운 행 수.
+    """
+    from ..services import viscosity_service  # 지연 import — db 패키지 적재 순서와 엮이지 않게
+
+    columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(viscosity_readings)").fetchall()
+    }
+    if "source_code" not in columns or "material_lot" not in columns:
+        return 0
+    try:
+        products = connection.execute(
+            "SELECT id FROM viscosity_products WHERE is_active = 1"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    updated = 0
+    for row in products:
+        product = viscosity_service.get_product(connection, int(row[0]))
+        source = viscosity_service.source_product_for(connection, product)
+        if not source:
+            continue
+        cur = connection.execute(
+            "UPDATE viscosity_readings SET source_code = ? "
+            "WHERE product_id = ? AND material_lot IS NOT NULL AND material_lot != '' "
+            "AND source_code IS NULL",
+            (source["code"], int(row[0])),
+        )
+        updated += cur.rowcount or 0
+    if updated:
+        logger.info("viscosity_readings.source_code backfilled: %d rows", updated)
+    return updated
+
+
 def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "users", "access_level", "TEXT")
     connection.execute(
@@ -481,6 +520,12 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "viscosity_readings", "reviewed_at", "TEXT")
     ensure_column(connection, "viscosity_readings", "reviewed_by", "TEXT")
     ensure_column(connection, "viscosity_readings", "review_note", "TEXT")
+    # 원료 반제품(2026-10-06): material_lot 이 어느 원료 반제품의 LOT 인지(PB·SBCT …).
+    # 종전에는 원료가 PB 로 고정이라 열이 필요 없었다. 원료가 레시피에서 정해지게 되면서
+    # 기록 시점의 원료를 남긴다. 원료 표기가 빈 행(기존 행, 원료를 모르는 경로로 들어온
+    # 행)은 기동마다 지금 레시피가 말하는 원료로 채운다 — 채운 행은 다시 건드리지 않는다.
+    ensure_column(connection, "viscosity_readings", "source_code", "TEXT")
+    backfill_viscosity_source_code(connection)
     # 반응기는 배합 실적을 진행한 위치 → blend_records 에 기록. 점도는 실적에서 물려받아 표시.
     ensure_column(connection, "blend_records", "reactor", "INTEGER")
     # 수동 입력 여부: 저울 연동 중 계량값을 직접 입력했는가(추적성).

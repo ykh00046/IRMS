@@ -58,7 +58,7 @@ def test_used_pb_block_and_manual_lot_input_exist():
     """서버가 감지한 '사용한 PB' 를 등록 전에 보여주고, 불확실하면 고칠 수 있어야 한다."""
     assert 'id="visc-usedpb"' in TEMPLATE
     assert 'id="visc-usedpb-lot"' in TEMPLATE
-    assert "/used-pb" in CONTROLLER, "감지 미리보기 API 를 부르지 않는다"
+    assert "/used-source" in CONTROLLER, "감지 미리보기 API 를 부르지 않는다"
     assert "material_lot" in CONTROLLER, "수동 보정값을 저장 요청에 싣지 않는다"
 
 

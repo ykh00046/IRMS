@@ -131,9 +131,9 @@ def _blend_record(client, product, work_date, details) -> dict:
 
 # ── 1. PB 연계 — 표에는 남고 통계에는 빠진다 ─────────────────────────
 def test_pb_link_counts_records_while_the_pb_side_drops_excluded():
-    """pb_link 는 기록 커버리지라 제외된 이 반제품 측정도 센다(의도적 결정).
+    """source_link 는 기록 커버리지라 제외된 이 반제품 측정도 센다(의도적 결정).
 
-    반대로 상대편 PB 측정이 제외되면 연계 자체가 끊겨 pb_excluded 로 분류된다 —
+    반대로 상대편 PB 측정이 제외되면 연계 자체가 끊겨 source_excluded 로 분류된다 —
     제외된 PB 점도가 상관·구간 평균에 들어가면 안 되기 때문이다.
     """
     client = _client()
@@ -152,23 +152,23 @@ def test_pb_link_counts_records_while_the_pb_side_drops_excluded():
     _exclude(client, rid)  # 이 반제품 쪽 측정 하나를 폐기
 
     detail = client.get(f"/api/viscosity/products/{pid}").json()
-    link = detail["pb_link"]
+    link = detail["source_link"]
     assert link["total"] == 3
     # 제외된 바인더 측정도 matched 로 센다 — 그림 아래 표에 그대로 남기 때문이다.
     assert link["matched"] == 2
-    assert link["pb_excluded"] == 1
+    assert link["source_excluded"] == 1
     assert (
         link["matched"] + link["no_lot"] + link["lot_unreadable"]
-        + link["pb_missing"] + link["pb_excluded"]
+        + link["source_missing"] + link["source_excluded"]
     ) == link["total"]
 
     readings = {r["lot_no"]: r for r in detail["readings"]}
     # 제외된 측정은 판정 대신 status='excluded' 와 사유를 달고 목록에 남는다.
     assert readings[f"{code}-2"]["status"] == "excluded"
     assert readings[f"{code}-2"]["exclude_reason"] == "폐기"
-    assert readings[f"{code}-2"]["source_pb_viscosity"] == 49.0
+    assert readings[f"{code}-2"]["source_viscosity"] == 49.0
     # 제외된 PB 를 쓴 측정은 연계 좌표 자체가 없다.
-    assert readings[f"{code}-3"]["source_pb_viscosity"] is None
+    assert readings[f"{code}-3"]["source_viscosity"] is None
     # 통계는 제외를 뺀 표본이다(300 한 건).
     assert detail["stats"]["n"] == 2
     assert detail["counts"]["excluded"] == 1
@@ -300,7 +300,7 @@ def test_pb_lot_detail_shows_an_excluded_reading_without_a_verdict():
     rid = _add_reading(client, pid, f"{code}-2", 330.0, "2026-09-08", material_lot=digits)
     _exclude(client, rid, "폐기")
 
-    data = client.get(f"/api/viscosity/pb-lots/{pb_lot}").json()
+    data = client.get(f"/api/viscosity/source-lots/{pb_lot}", params={"source": "PB"}).json()
     mine = {it["lot_no"]: it for it in data["items"] if it["product_code"] == code}
     assert set(mine) == {f"{code}-1", f"{code}-2"}, "제외 측정도 목록에는 남는다"
     # 규격 상한을 넘었지만 '이상'이 아니라 '제외'다 — 통계에서 뺀 값에 판정을 붙이지 않는다.

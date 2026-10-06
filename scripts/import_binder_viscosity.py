@@ -11,8 +11,8 @@
 배합 기록이 없으면(구 시스템의 24/25년 등) 배합 미연계로 점도만 보존한다 — 같은
 바인더 반제품에 쌓여 과거~현재가 한 추세로 이어진다(측정일은 엑셀 일자, 사용한PB 유지).
 
-사용한PB 는 material_lot 에도 저장해, 그 PB 의 점도(PB 반제품)와 상관 조회에 쓴다
-(analyze_product 의 source_pb 연계).
+사용한PB 는 material_lot 에도 저장하고 원료 표기(source_code)를 'PB' 로 남겨, 그 PB 의
+점도(PB 반제품)와 상관 조회에 쓴다(analyze_product 의 source_link 원료 연계).
 
 바인더 종류 정규화: APB(17)→APB17 · CSBP→CSPB · 괄호숫자 제거 · PM/PM17/HSPU 유지 ·
 APB(TEST)/점도 결측 제외.
@@ -121,6 +121,8 @@ def _find_blend_record(connection, product_lot: str):
 
 
 CREATED_BY_MARKER = "binder-import"
+# 바인더의 원료 반제품 — 사용한PB 열이 곧 PB LOT 이다(material_lot 의 원료 표기).
+SOURCE_CODE = "PB"
 
 
 def _clean_previous_import(connection) -> int:
@@ -239,6 +241,7 @@ def import_binder(paths: list[str], *, clean: bool = True) -> dict:
                             created_by=CREATED_BY_MARKER,
                             created_at=now,
                             blend_record_id=blend_record_id,
+                            source_code=SOURCE_CODE if pb else None,
                         )
                         stats[bucket] += 1
                         stats["by_product"][binder] = stats["by_product"].get(binder, 0) + 1

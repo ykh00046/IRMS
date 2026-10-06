@@ -16,6 +16,7 @@ function loadViscLib() {
 const {
   isExcludedReading, sourcePbLinkedReadings, sourcePbScatterDatasets, pbLinkNotice,
   pbLinearFit, pbScatterSummary, withAlpha, pbBandRows,
+  sourceLabel, koParticle, sourceLinkLine,
 } = loadViscLib();
 const resolveCss = (name) => name;
 
@@ -26,12 +27,12 @@ function datasetByLabel(datasets) {
 }
 
 const READINGS = [
-  { measured_date: "2026-08-01", viscosity: 80, material_lot: "26073101", source_pb_viscosity: 48, status: "normal" },
-  { measured_date: "2026-08-05", viscosity: 92, material_lot: "26080401", source_pb_viscosity: 52, status: "anomaly" },
+  { measured_date: "2026-08-01", viscosity: 80, material_lot: "26073101", source_viscosity: 48, status: "normal" },
+  { measured_date: "2026-08-05", viscosity: 92, material_lot: "26080401", source_viscosity: 52, status: "anomaly" },
   // 사용한 PB 는 적혔지만 그 PB 의 점도를 못 찾은 측정 — 그림에 올릴 좌표가 없다.
-  { measured_date: "2026-08-06", viscosity: 81, material_lot: "26080501", source_pb_viscosity: null, status: "normal" },
+  { measured_date: "2026-08-06", viscosity: 81, material_lot: "26080501", source_viscosity: null, status: "normal" },
   // LOT 자체가 없는 측정(직접 등록 등).
-  { measured_date: "2026-08-07", viscosity: 79, material_lot: "  ", source_pb_viscosity: 49, status: "normal" },
+  { measured_date: "2026-08-07", viscosity: 79, material_lot: "  ", source_viscosity: 49, status: "normal" },
 ];
 
 test("연계 목록은 PB 점도가 있는 측정만, 최신순", () => {
@@ -67,7 +68,7 @@ test("연계가 하나도 없으면 데이터셋도 없다", () => {
 // 매칭 0 일 때 패널을 조용히 숨기면 '연계가 안 된 것'과 '원래 없는 것'을 구별할 수
 // 없다(2026-08-13 검토 6번). 세 상태를 각각 다른 문장으로 말한다.
 test("pbLinkNotice 는 세 상태를 구별해 말한다", () => {
-  const none = pbLinkNotice({ readings_with_lot: 0, matched: 0 }, 0);
+  const none = pbLinkNotice({ source_code: "PB", readings_with_lot: 0, matched: 0 }, 0);
   assert.match(none, /PB 연계 기록이 없습니다/);
 
   const unmatched = pbLinkNotice({ readings_with_lot: 5, matched: 0 }, 0);
@@ -77,8 +78,8 @@ test("pbLinkNotice 는 세 상태를 구별해 말한다", () => {
   const ok = pbLinkNotice({ readings_with_lot: 5, matched: 4 }, 4);
   assert.match(ok, /4건/);
 
-  // pb_link 자체가 없는 응답(구버전 서버)에서도 터지지 않는다.
-  assert.match(pbLinkNotice(null, 0), /PB 연계 기록이 없습니다/);
+  // source_link 자체가 없는 응답(구버전 서버)에서도 터지지 않는다(원료 이름은 '원료').
+  assert.match(pbLinkNotice(null, 0), /원료 연계 기록이 없습니다/);
 });
 
 // ── 추세선·요약 문장 — 점만으로는 한눈에 안 들어온다(2026-08-13 현장 지적) ──
@@ -114,11 +115,11 @@ test("pbScatterSummary 는 상관 세기를 문장으로 말한다", () => {
 test("옵션으로 추세선·규격 기준선이 붙고 최근/이전이 나뉜다", () => {
   // 최근 2건만 진하게 — 나머지는 '이전 측정'으로 흐리게.
   const readings = [
-    { measured_date: "2026-08-05", viscosity: 90, material_lot: "L5", source_pb_viscosity: 50, status: "normal" },
-    { measured_date: "2026-08-04", viscosity: 88, material_lot: "L4", source_pb_viscosity: 49, status: "normal" },
-    { measured_date: "2026-08-03", viscosity: 86, material_lot: "L3", source_pb_viscosity: 48, status: "normal" },
+    { measured_date: "2026-08-05", viscosity: 90, material_lot: "L5", source_viscosity: 50, status: "normal" },
+    { measured_date: "2026-08-04", viscosity: 88, material_lot: "L4", source_viscosity: 49, status: "normal" },
+    { measured_date: "2026-08-03", viscosity: 86, material_lot: "L3", source_viscosity: 48, status: "normal" },
   ];
-  const fit = pbLinearFit(readings.map((r) => ({ x: r.source_pb_viscosity, y: r.viscosity })));
+  const fit = pbLinearFit(readings.map((r) => ({ x: r.source_viscosity, y: r.viscosity })));
   const byLabel = datasetByLabel(sourcePbScatterDatasets(readings, resolveCss, {
     fit,
     recent: 2,
@@ -143,8 +144,8 @@ test("옵션으로 추세선·규격 기준선이 붙고 최근/이전이 나뉜
 
 test("규격이 없으면(null) 기준선을 긋지 않는다 — 0 위치의 가짜 선 금지", () => {
   const readings = [
-    { measured_date: "2026-08-05", viscosity: 90, material_lot: "L5", source_pb_viscosity: 50, status: "normal" },
-    { measured_date: "2026-08-04", viscosity: 88, material_lot: "L4", source_pb_viscosity: 49, status: "normal" },
+    { measured_date: "2026-08-05", viscosity: 90, material_lot: "L5", source_viscosity: 50, status: "normal" },
+    { measured_date: "2026-08-04", viscosity: 88, material_lot: "L4", source_viscosity: 49, status: "normal" },
   ];
   const byLabel = datasetByLabel(sourcePbScatterDatasets(readings, resolveCss, {
     limits: { lower: null, upper: null, center: null },
@@ -163,13 +164,13 @@ test("withAlpha 는 hex 만 변환하고 그 외는 원본 유지", () => {
 // 운영 APB 2026-08-10(439.5, 폐기)이 산점도에 찍히고 적합에도 들어가 기울기를
 // -0.26 → -0.09 로 눌렀다. 표에는 남고 통계에는 안 들어가는 것이 규칙이다.
 const EXCLUDED_CASE = [
-  { measured_date: "2026-08-01", viscosity: 300, material_lot: "26073101", source_pb_viscosity: 45, status: "normal" },
-  { measured_date: "2026-08-02", viscosity: 320, material_lot: "26073102", source_pb_viscosity: 49, status: "normal" },
-  { measured_date: "2026-08-03", viscosity: 340, material_lot: "26073103", source_pb_viscosity: 53, status: "normal" },
-  { measured_date: "2026-08-04", viscosity: 360, material_lot: "26073104", source_pb_viscosity: 57, status: "normal" },
-  { measured_date: "2026-08-05", viscosity: 380, material_lot: "26073105", source_pb_viscosity: 61, status: "normal" },
+  { measured_date: "2026-08-01", viscosity: 300, material_lot: "26073101", source_viscosity: 45, status: "normal" },
+  { measured_date: "2026-08-02", viscosity: 320, material_lot: "26073102", source_viscosity: 49, status: "normal" },
+  { measured_date: "2026-08-03", viscosity: 340, material_lot: "26073103", source_viscosity: 53, status: "normal" },
+  { measured_date: "2026-08-04", viscosity: 360, material_lot: "26073104", source_viscosity: 57, status: "normal" },
+  { measured_date: "2026-08-05", viscosity: 380, material_lot: "26073105", source_viscosity: 61, status: "normal" },
   // 폐기한 배합 — 값은 남지만 통계에서 빠졌다. status 와 excluded 둘 다 들어온다.
-  { measured_date: "2026-08-10", viscosity: 439.5, material_lot: "26080502", source_pb_viscosity: 49.3, status: "excluded", excluded: true, exclude_reason: "폐기" },
+  { measured_date: "2026-08-10", viscosity: 439.5, material_lot: "26080502", source_viscosity: 49.3, status: "excluded", excluded: true, exclude_reason: "폐기" },
 ];
 
 test("isExcludedReading 은 excluded 플래그와 status 둘 다 본다", () => {
@@ -209,7 +210,7 @@ test("산점도 데이터셋에 제외 측정의 좌표가 없다", () => {
 
 test("적합·상관은 제외 측정을 뺀 표본으로만 계산된다", () => {
   const toPoints = (list) => Array.from(list, (r) => ({
-    x: Number(r.source_pb_viscosity), y: Number(r.viscosity),
+    x: Number(r.source_viscosity), y: Number(r.viscosity),
   }));
   const withExcluded = pbLinearFit(toPoints(
     sourcePbLinkedReadings(EXCLUDED_CASE, { includeExcluded: true }),
@@ -236,7 +237,79 @@ test("머리말 건수는 그림에 들어간 표본을 말하고, 제외는 따
   assert.match(notice, /제외 1건은 표에만/);
   // 제외가 없으면 종전 문장 그대로.
   assert.equal(
-    pbLinkNotice({ readings_with_lot: 6, matched: 6 }, 6, 0),
+    pbLinkNotice({ source_code: "PB", readings_with_lot: 6, matched: 6 }, 6, 0),
     "6건 · 사용한 PB의 점도와 나란히",
   );
+});
+
+// ── 원료 일반화(2026-10-06) · S-TOP·6-1 TOP 은 PB 가 아니라 SBCT 로 만든다 ──
+// 문구는 서버가 준 source_code 를 그대로 말해야 한다. SBCT 연계에 'PB' 가 보이면 거짓이다.
+
+test("원료가 SBCT 면 안내·결론 문장에 SBCT 가 나오고 PB 는 나오지 않는다", () => {
+  const link = { source_code: "SBCT", readings_with_lot: 0, matched: 0 };
+  const texts = [
+    pbLinkNotice(link, 0),
+    pbLinkNotice({ source_code: "SBCT", readings_with_lot: 3, matched: 0 }, 0),
+    pbLinkNotice({ readings_with_lot: 6, matched: 6 }, 6, 0, "SBCT"),
+    pbScatterSummary({ slope: 2, r: 0.95, n: 10 }, "SBCT"),
+    pbScatterSummary({ slope: 0.1, r: 0.05, n: 30 }, "SBCT"),
+  ];
+  texts.forEach((text) => {
+    assert.match(text, /SBCT/, text);
+    assert.ok(!/PB/.test(text), `PB 가 남았다: ${text}`);
+  });
+  assert.equal(
+    pbLinkNotice({ readings_with_lot: 6, matched: 6 }, 6, 0, "SBCT"),
+    "6건 · 사용한 SBCT의 점도와 나란히",
+  );
+});
+
+test("원료 코드가 없으면 '원료'로 말한다", () => {
+  assert.equal(sourceLabel(null), "원료");
+  assert.equal(sourceLabel("  "), "원료");
+  assert.equal(sourceLabel("SBCT"), "SBCT");
+  assert.match(pbLinkNotice(null, 0), /원료 연계 기록이 없습니다/);
+});
+
+test("산점도·구간표는 source_viscosity 를 읽는다", () => {
+  const readings = [
+    { measured_date: "2026-08-02", viscosity: 120, material_lot: "S1", source_viscosity: 30, source_code: "SBCT", status: "normal" },
+    { measured_date: "2026-08-01", viscosity: 110, material_lot: "S0", source_viscosity: 28, source_code: "SBCT", status: "normal" },
+    // 옛 필드만 있는 측정은 연계로 치지 않는다.
+    { measured_date: "2026-08-03", viscosity: 130, material_lot: "S2", source_pb_viscosity: 32, status: "normal" },
+  ];
+  assert.deepEqual(Array.from(sourcePbLinkedReadings(readings), (r) => r.material_lot), ["S1", "S0"]);
+  const points = [];
+  Array.from(sourcePbScatterDatasets(readings, resolveCss)).forEach((d) => {
+    if (d.type === "scatter") Array.from(d.data).forEach((p) => points.push([p.x, p.y]));
+  });
+  assert.deepEqual(points.sort(), [[28, 110], [30, 120]].sort());
+});
+
+test("원료 반제품을 쓰지 않는 반제품의 한 줄 안내", () => {
+  assert.equal(
+    sourceLinkLine({ source_code: null, is_source: false }, "CSPB"),
+    "이 반제품은 원료 반제품을 쓰지 않습니다.",
+  );
+  assert.equal(
+    sourceLinkLine({ source_code: null, is_source: true }, "PB"),
+    "PB는 원료 반제품을 쓰지 않습니다. 위에서 PB LOT을 고르세요.",
+  );
+  assert.equal(
+    sourceLinkLine({ source_code: null, is_source: true }, "SBCT"),
+    "SBCT는 원료 반제품을 쓰지 않습니다. 위에서 SBCT LOT을 고르세요.",
+  );
+  // 원료를 쓰는 반제품이면 한 줄 대신 연계 그림을 그린다.
+  assert.equal(sourceLinkLine({ source_code: "SBCT", is_source: false }, "S-TOP"), "");
+  assert.equal(sourceLinkLine(null, "X"), "이 반제품은 원료 반제품을 쓰지 않습니다.");
+});
+
+test("koParticle 은 읽는 소리의 받침으로 조사를 고른다", () => {
+  assert.equal(koParticle("PB", "은", "는"), "는");
+  assert.equal(koParticle("SBCT", "은", "는"), "는");
+  assert.equal(koParticle("APB17", "은", "는"), "은");
+  assert.equal(koParticle("6-1 TOP", "은", "는"), "는");
+  assert.equal(koParticle("바인더", "은", "는"), "는");
+  assert.equal(koParticle("반제품", "은", "는"), "은");
+  assert.equal(koParticle("CSPM", "을", "를"), "을");
 });

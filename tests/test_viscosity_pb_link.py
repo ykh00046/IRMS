@@ -4,9 +4,10 @@
 구별할 수 없었다(운영 실측: APB 363건 중 264건 미연계, 그 263건이 'PB 점도 기록 없음').
 여기서 세 가지를 못 박는다.
 
-  1. analyze_product 의 pb_link 사유 건수 — matched/no_lot/lot_unreadable/pb_missing/
-     pb_excluded 의 합이 이 조회 범위의 측정 건수와 같다.
-  2. GET /api/viscosity/pb-lots · /pb-lots/{lot_no} — PB LOT 으로 거꾸로 찾기.
+  1. analyze_product 의 source_link 사유 건수 — matched/no_lot/lot_unreadable/
+     source_missing/source_excluded 의 합이 이 조회 범위의 측정 건수와 같다.
+  2. GET /api/viscosity/source-lots · /source-lots/{lot_no} (source=PB) — 원료 LOT 으로
+     거꾸로 찾기. 원료는 레시피에서 정해진다(_seed_recipe 의 PB 자재).
   3. GET /api/blend/product-lot-viscosity 의 managed — 배합 화면이 '일반 원료'와
      '점도 반제품인데 이 LOT 만 기록 없음'을 구별한다.
 """
@@ -75,6 +76,16 @@ def _pb_product_id(client) -> int:
     return _make_product(client, "PB")
 
 
+def _material_id(client, name) -> int:
+    """자재 id — 없으면 품목코드 없이 등록한다."""
+    for item in client.get("/api/materials").json()["items"]:
+        if str(item["name"]).strip().upper() == name.upper():
+            return int(item["id"])
+    res = client.post("/api/materials", json={"name": name}, headers=_csrf(client))
+    assert res.status_code == 200, res.text
+    return int(res.json()["id"])
+
+
 def _add_reading(client, product_id, lot, value, date, *, material_lot=None) -> int:
     body = {
         "product_id": product_id,
@@ -106,7 +117,7 @@ def _analyze(client, product_id) -> dict:
     return res.json()
 
 
-# ── 1. pb_link 사유 건수 ─────────────────────────────────────────────
+# ── 1. source_link 사유 건수 ─────────────────────────────────────────────
 def test_pb_link_counts_every_reason_and_they_sum_to_the_readings_in_view():
     client = _client()
     _login_admin(client)
@@ -129,20 +140,20 @@ def test_pb_link_counts_every_reason_and_they_sum_to_the_readings_in_view():
     # 사용한 PB 칸이 비어 있다.
     _add_reading(client, pid, f"{code}-5", 340.0, "2026-09-07")
 
-    link = _analyze(client, pid)["pb_link"]
+    link = _analyze(client, pid)["source_link"]
     assert link["source_code"] == "PB"
     assert link["source_exists"] is True
     assert link["is_source"] is False
     assert link["total"] == 5
     assert link["matched"] == 1
-    assert link["pb_excluded"] == 1
-    assert link["pb_missing"] == 1
+    assert link["source_excluded"] == 1
+    assert link["source_missing"] == 1
     assert link["lot_unreadable"] == 1
     assert link["no_lot"] == 1
     # 계약: 사유의 합이 이 화면이 보고 있는 측정 건수와 같다.
     total = (
         link["matched"] + link["no_lot"] + link["lot_unreadable"]
-        + link["pb_missing"] + link["pb_excluded"]
+        + link["source_missing"] + link["source_excluded"]
     )
     assert total == link["total"]
     # 구간표는 PB 반제품의 기준선을 쓰므로 함께 내려온다.
@@ -150,16 +161,20 @@ def test_pb_link_counts_every_reason_and_they_sum_to_the_readings_in_view():
 
 
 def test_pb_product_itself_reports_no_upstream_link():
-    """PB 자신에는 위 단계 PB 가 없다 — 사유는 전부 0, is_source 로 화면이 갈린다."""
+    """PB 자신에는 원료가 없다 — 사유는 전부 0, is_source 로 화면이 갈린다."""
     client = _client()
     _login_admin(client)
     pb_id = _pb_product_id(client)
+    # PB 를 원료로 쓰는 반제품이 하나는 있어야 PB 가 '원료'다(레시피에서 도출).
+    _make_product(client, "PBU" + uuid.uuid4().hex[:5].upper())
     _add_reading(client, pb_id, f"PB{_digits8()}", 50.0, "2026-09-08")
 
-    link = _analyze(client, pb_id)["pb_link"]
+    link = _analyze(client, pb_id)["source_link"]
     assert link["is_source"] is True
+    assert link["source_code"] is None
+    assert link["source_exists"] is False
     assert link["matched"] == 0
-    assert (link["no_lot"], link["lot_unreadable"], link["pb_missing"], link["pb_excluded"]) == (0, 0, 0, 0)
+    assert (link["no_lot"], link["lot_unreadable"], link["source_missing"], link["source_excluded"]) == (0, 0, 0, 0)
 
 
 # ── 2. PB LOT 으로 찾기(고르기 목록) ─────────────────────────────────
@@ -180,7 +195,7 @@ def test_pb_lot_picker_filters_by_lot_orders_by_measured_date_and_counts_links()
     _add_reading(client, pid, f"{code}-1", 300.0, "2026-09-14", material_lot=f"{token}1")
     _add_reading(client, pid, f"{code}-2", 305.0, "2026-09-15", material_lot=f"{token}1")
 
-    res = client.get("/api/viscosity/pb-lots", params={"q": token})
+    res = client.get("/api/viscosity/source-lots", params={"source": "PB", "q": token})
     assert res.status_code == 200, res.text
     data = res.json()
     assert data["source_code"] == "PB"
@@ -194,7 +209,7 @@ def test_pb_lot_picker_filters_by_lot_orders_by_measured_date_and_counts_links()
     assert by_lot[lots[0]]["excluded"] is False
 
     # limit — 목록은 자르되 total 은 전체를 말한다.
-    short = client.get("/api/viscosity/pb-lots", params={"q": token, "limit": 1}).json()
+    short = client.get("/api/viscosity/source-lots", params={"source": "PB", "q": token, "limit": 1}).json()
     assert short["total"] == 3
     assert [it["lot_no"] for it in short["items"]] == [lots[1]]
     assert short["limit"] == 1
@@ -208,7 +223,7 @@ def test_pb_lot_picker_marks_excluded_pb_readings():
     reading_id = _add_reading(client, pb_id, lot, 41.0, "2026-09-16")
     _exclude(client, reading_id, "설비 점검 중 측정")
 
-    items = client.get("/api/viscosity/pb-lots", params={"q": lot}).json()["items"]
+    items = client.get("/api/viscosity/source-lots", params={"source": "PB", "q": lot}).json()["items"]
     assert [it["lot_no"] for it in items] == [lot]
     assert items[0]["excluded"] is True
 
@@ -230,13 +245,13 @@ def test_pb_lot_detail_lists_binder_readings_with_verdicts():
     # 다른 PB LOT 을 쓴 측정은 섞이지 않는다.
     _add_reading(client, pid, f"{code}-3", 310.0, "2026-09-19", material_lot=_digits8())
 
-    res = client.get(f"/api/viscosity/pb-lots/{pb_lot}")
+    res = client.get(f"/api/viscosity/source-lots/{pb_lot}", params={"source": "PB"})
     assert res.status_code == 200, res.text
     data = res.json()
-    assert data["pb"]["lot_no"] == pb_lot
-    assert data["pb"]["viscosity"] == 49.5
-    assert data["pb"]["measured_date"] == "2026-09-17"
-    assert data["pb"]["excluded"] is False
+    assert data["source"]["lot_no"] == pb_lot
+    assert data["source"]["viscosity"] == 49.5
+    assert data["source"]["measured_date"] == "2026-09-17"
+    assert data["source"]["excluded"] is False
     assert data["limit"] == 50
 
     mine = [it for it in data["items"] if it["product_code"] == code]
@@ -246,8 +261,8 @@ def test_pb_lot_detail_lists_binder_readings_with_verdicts():
     assert mine[1]["status"] in ("normal", "warn")
 
     # 접두사가 다른 같은 LOT(숫자 8자리)도 같은 것으로 본다.
-    same = client.get(f"/api/viscosity/pb-lots/{digits}").json()
-    assert same["pb"]["lot_no"] == pb_lot
+    same = client.get(f"/api/viscosity/source-lots/{digits}", params={"source": "PB"}).json()
+    assert same["source"]["lot_no"] == pb_lot
     assert {it["lot_no"] for it in same["items"]} >= {f"{code}-1", f"{code}-2"}
 
 
@@ -260,12 +275,12 @@ def test_pb_lot_detail_shows_test_blend_viscosity_as_reference_only():
     _add_reading(client, pb_id, pb_lot, 48.8, "2026-09-17")
 
     # 시험 배합은 등록된 자재만 쓴다(계약 2차 결정) — 품목코드 없이 등록한다.
-    names = ["연계시험A" + uuid.uuid4().hex[:5], "연계시험B" + uuid.uuid4().hex[:5]]
-    mats = []
-    for name in names:
-        res = client.post("/api/materials", json={"name": name}, headers=_csrf(client))
-        assert res.status_code == 200, res.text
-        mats.append((int(res.json()["id"]), name))
+    # 원료 LOT 으로 찾으려면 그 자재 행이 원료(PB) 자재여야 한다(자재명이 원료 코드).
+    mats = [(_material_id(client, "PB"), "PB")]
+    name = "연계시험B" + uuid.uuid4().hex[:5]
+    res = client.post("/api/materials", json={"name": name}, headers=_csrf(client))
+    assert res.status_code == 200, res.text
+    mats.append((int(res.json()["id"]), name))
 
     worker = "연계시험" + uuid.uuid4().hex[:5]
     client.post("/api/workers", json={"name": worker}, headers=_csrf(client))
@@ -297,7 +312,7 @@ def test_pb_lot_detail_shows_test_blend_viscosity_as_reference_only():
     )
     assert reg.status_code == 200, reg.text
 
-    data = client.get(f"/api/viscosity/pb-lots/{pb_lot}").json()
+    data = client.get(f"/api/viscosity/source-lots/{pb_lot}", params={"source": "PB"}).json()
     tests = [t for t in data["tests"] if t["blend_record_id"] == record["id"]]
     assert len(tests) == 1
     assert tests[0]["viscosity"] == 275.0
@@ -316,10 +331,10 @@ def test_unknown_pb_lot_answers_empty_instead_of_404():
     client = _client()
     _login_admin(client)
     _pb_product_id(client)
-    res = client.get(f"/api/viscosity/pb-lots/PB{_digits8()}")
+    res = client.get(f"/api/viscosity/source-lots/PB{_digits8()}", params={"source": "PB"})
     assert res.status_code == 200, res.text
     data = res.json()
-    assert data["pb"] is None
+    assert data["source"] is None
     assert data["items"] == []
     assert data["tests"] == []
 
@@ -340,7 +355,7 @@ def test_pb_lot_detail_caps_the_binder_reading_list():
     pid = _make_product(client, code)
     # 51건은 HTTP 로 넣기엔 느리다 — 같은 서비스가 쓰는 DB 에 직접 적는다.
     with get_connection() as conn:
-        for i in range(vs.PB_LOT_DETAIL_MAX + 1):
+        for i in range(vs.SOURCE_LOT_DETAIL_MAX + 1):
             conn.execute(
                 "INSERT INTO viscosity_readings "
                 "(product_id, lot_no, viscosity, measured_date, material_lot, created_by, created_at) "
@@ -349,8 +364,8 @@ def test_pb_lot_detail_caps_the_binder_reading_list():
             )
         conn.commit()
 
-    data = client.get(f"/api/viscosity/pb-lots/{pb_lot}").json()
-    assert len(data["items"]) == vs.PB_LOT_DETAIL_MAX
+    data = client.get(f"/api/viscosity/source-lots/{pb_lot}", params={"source": "PB"}).json()
+    assert len(data["items"]) == vs.SOURCE_LOT_DETAIL_MAX
 
 
 # ── 4. 배합 화면의 managed 구분 ──────────────────────────────────────

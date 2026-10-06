@@ -15,7 +15,8 @@
  *   controlSummaryRows, controlSummaryHtml,
  *   controlBandHtml, periodChartDatasets, periodChartYBounds, periodKeyForDate,
  *   readingOverlayDatasets, isExcludedReading, sourcePbLinkedReadings,
- *   sourcePbScatterDatasets, pbLinkNotice, pbLinkReasonText, pbBandCuts, pbBandRows
+ *   sourcePbScatterDatasets, pbLinkNotice, pbLinkReasonText, pbBandCuts, pbBandRows,
+ *   sourceLabel, koParticle, sourceLinkLine
  *
  * Side effects: none (attaches to window.IRMS.viscLib only).
  * Dependencies: window.IRMS namespace (initialized by common/core.js).
@@ -538,8 +539,47 @@
     return { suggestedMin: min - pad, suggestedMax: max + pad };
   }
 
-  // ── PB 연계 ────────────────────────────────────────────────────────────
-  // '사용한 PB' 점도가 매칭된 측정만, 최신순으로.
+  // ── 원료 연계 ──────────────────────────────────────────────────────────
+  // 원료 반제품(2026-10-06 일반화) · 예전에는 PB 만 원료였다. S-TOP·6-1 TOP 은 SBCT 로
+  // 만든다. 서버가 레시피에서 원료 반제품(source_code)을 정해 주고, 화면 문구는 그 코드를
+  // 그대로 쓴다. 함수 이름(pb*)은 호출부 변경을 줄이려고 남겼다.
+  //
+  // 문구에 넣을 원료 이름. 코드가 없으면 '원료'로 말한다.
+  function sourceLabel(sourceCode) {
+    const code = String(sourceCode == null ? "" : sourceCode).trim();
+    return code || "원료";
+  }
+
+  // 받침 유무로 조사를 고른다(은/는, 을/를, 이/가). 영문 글자·숫자는 읽는 소리로 본다:
+  // PB(비)·SBCT(티)는 받침이 없고, L(엘)·M(엠)·N(엔)·R(알)·1(일)·3(삼) 등은 받침이 있다.
+  function koParticle(word, withBatchim, withoutBatchim) {
+    const text = String(word == null ? "" : word).trim();
+    const last = text.slice(-1);
+    let batchim = false;
+    if (last) {
+      const code = last.charCodeAt(0);
+      if (code >= 0xac00 && code <= 0xd7a3) batchim = (code - 0xac00) % 28 !== 0;
+      else if (/[lmnr]/i.test(last)) batchim = true;
+      else if (/[013678]/.test(last)) batchim = true;
+    }
+    return batchim ? withBatchim : withoutBatchim;
+  }
+
+  // 원료 연계 탭에 연계 그림 대신 놓는 한 줄. 원료 반제품을 쓰지 않는 반제품에서만 쓴다.
+  //   · 자신이 원료인 반제품(PB·SBCT): 위의 LOT 찾기가 이 탭의 본문이라고 알려 준다.
+  //   · 그 밖: 원료 반제품을 쓰지 않는다고만 말한다.
+  // 원료 반제품을 쓰는 반제품이면 빈 문자열(연계 그림을 그린다).
+  function sourceLinkLine(sourceLink, productCode) {
+    const link = sourceLink || {};
+    if (link.source_code) return "";
+    if (link.is_source) {
+      const code = sourceLabel(productCode);
+      return `${code}${koParticle(code, "은", "는")} 원료 반제품을 쓰지 않습니다. 위에서 ${code} LOT을 고르세요.`;
+    }
+    return "이 반제품은 원료 반제품을 쓰지 않습니다.";
+  }
+
+  // '사용한 원료' 점도(source_viscosity)가 매칭된 측정만, 최신순으로.
   //
   // ⚠ 통계 제외(폐기 등)된 측정은 **기본으로 빠진다**(2026-09-21). 종전에는 표·산점도·
   // 추세선·상관 문장·구간표가 모두 이 목록 하나를 그대로 썼고, 제외 여부를 아무도 보지
@@ -550,7 +590,7 @@
   function sourcePbLinkedReadings(readings, options) {
     const includeExcluded = Boolean(options && options.includeExcluded);
     return (readings || [])
-      .filter((r) => r && r.source_pb_viscosity != null && String(r.material_lot || "").trim())
+      .filter((r) => r && r.source_viscosity != null && String(r.material_lot || "").trim())
       .filter((r) => includeExcluded || !isExcludedReading(r))
       .slice()
       .sort((a, b) => String(b.measured_date || "").localeCompare(String(a.measured_date || "")));
@@ -607,20 +647,21 @@
   }
 
   // 산점도 위 한 줄 결론. 세기 구분은 통상 기준(|r| 0.2/0.4/0.7).
-  function pbScatterSummary(fit) {
+  function pbScatterSummary(fit, sourceCode) {
+    const src = sourceLabel(sourceCode);
     if (!fit) return "표본이 적어 상관을 말하기 어렵습니다.";
     const a = Math.abs(fit.r);
     const rText = `r=${fit.r.toFixed(2)}, ${fit.n}건`;
     if (a < 0.2) {
-      return `뚜렷한 상관 없음 (${rText}) · 이 반제품 점도는 사용한 PB 점도와 무관하게 움직입니다.`;
+      return `뚜렷한 상관 없음 (${rText}) · 이 반제품 점도는 사용한 ${src} 점도와 무관하게 움직입니다.`;
     }
     const strength = a >= 0.7 ? "상관 뚜렷" : a >= 0.4 ? "상관 중간" : "상관 약함";
     const slope = fit.slope;
-    const slopeText = `사용한 PB 점도가 1 높으면 이 반제품은 약 ${slope >= 0 ? "+" : ""}${slope.toFixed(1)}`;
+    const slopeText = `사용한 ${src} 점도가 1 높으면 이 반제품은 약 ${slope >= 0 ? "+" : ""}${slope.toFixed(1)}`;
     return `${strength} (${rText}) · ${slopeText}`;
   }
 
-  // PB 점도(x) ↔ 이 반제품 점도(y) 산점도 데이터셋. 표만으로는 "48cp PB 로 만들면
+  // 원료 점도(x) ↔ 이 반제품 점도(y) 산점도 데이터셋. 표만으로는 "48cp PB 로 만들면
   // 80" 같은 관계가 76행을 눈으로 훑어야 보였다 — 관계는 그림이 말하는 게 맞다.
   // 이상 판정 측정은 붉은 삼각형으로 따로 뽑아 관계에서 벗어난 점이 드러나게 한다.
   //
@@ -638,7 +679,7 @@
     const flagged = [];
     linked.forEach((r, index) => {
       const point = {
-        x: Number(r.source_pb_viscosity),
+        x: Number(r.source_viscosity),
         y: Number(r.viscosity),
         lot: r.material_lot || "",
         date: r.measured_date || "",
@@ -737,23 +778,25 @@
     return datasets;
   }
 
-  // PB 연계 탭 안내문. 종전에는 매칭이 0 이면 패널을 통째로 숨겨서, 연계가 안 된
+  // 원료 연계 탭 안내문. 종전에는 매칭이 0 이면 패널을 통째로 숨겨서, 연계가 안 된
   // 것인지 원래 없는 것인지 화면이 말해 주지 않았다(2026-08-13 검토 6번).
   // plottedCount 는 그림·추세선·구간표에 실제로 들어간 건수다(통계 제외 제외).
   // excludedCount 가 있으면 그 건수가 표에만 남아 있다고 밝힌다 — 그러지 않으면 표는
   // 9행인데 머리말은 8건이라 읽는 사람이 어느 쪽이 맞는지 알 수 없다.
-  function pbLinkNotice(pbLink, plottedCount, excludedCount) {
-    const withLot = Number((pbLink && pbLink.readings_with_lot) || 0);
-    const matched = Number((pbLink && pbLink.matched) || 0);
+  // sourceCode 를 안 주면 sourceLink.source_code 를 쓴다.
+  function pbLinkNotice(sourceLink, plottedCount, excludedCount, sourceCode) {
+    const src = sourceLabel(sourceCode != null ? sourceCode : (sourceLink && sourceLink.source_code));
+    const withLot = Number((sourceLink && sourceLink.readings_with_lot) || 0);
+    const matched = Number((sourceLink && sourceLink.matched) || 0);
     const dropped = Number(excludedCount || 0);
     if (withLot === 0) {
-      return "이 반제품은 PB 연계 기록이 없습니다. 배합에 사용한 PB LOT이 기록되면 여기에 표시됩니다.";
+      return `이 반제품은 ${src} 연계 기록이 없습니다. 배합에 사용한 ${src} LOT이 기록되면 여기에 표시됩니다.`;
     }
     if (matched === 0) {
-      return `사용한 PB LOT이 ${withLot}건 기록됐지만, 그 PB의 점도를 찾지 못했습니다`
-        + " (PB 반제품 측정 미등록이거나 LOT 표기가 다릅니다).";
+      return `사용한 ${src} LOT이 ${withLot}건 기록됐지만, 그 ${src}의 점도를 찾지 못했습니다`
+        + ` (${src} 반제품 측정 미등록이거나 LOT 표기가 다릅니다).`;
     }
-    const base = `${plottedCount}건 · 사용한 PB의 점도와 나란히`;
+    const base = `${plottedCount}건 · 사용한 ${src}의 점도와 나란히`;
     return dropped > 0 ? `${base} · 제외 ${dropped}건은 표에만` : base;
   }
 
@@ -763,33 +806,35 @@
   // 사유를 하나만 말하면 나머지 건수가 설명되지 않은 채 남는다 — 두 개까지 적고,
   // 그래도 남으면 남은 건수를 '다른 사유'로 묶어 합이 맞게 한다.
   const PB_REASON_TEXT = {
-    pb_missing: (n) => `${n}건은 그 PB LOT의 점도 기록이 없습니다.`,
-    no_lot: (n) => `${n}건은 사용한 PB LOT이 없습니다.`,
-    pb_excluded: (n) => `${n}건은 그 PB 점도가 통계에서 빠졌습니다.`,
-    lot_unreadable: (n) => `${n}건은 PB LOT을 읽을 수 없습니다.`,
+    source_missing: (n, src) => `${n}건은 그 ${src} LOT의 점도 기록이 없습니다.`,
+    no_lot: (n, src) => `${n}건은 사용한 ${src} LOT이 없습니다.`,
+    source_excluded: (n, src) => `${n}건은 그 ${src} 점도가 통계에서 빠졌습니다.`,
+    lot_unreadable: (n, src) => `${n}건은 ${src} LOT을 읽을 수 없습니다.`,
   };
 
-  function pbLinkReasonText(pbLink) {
-    const link = pbLink || {};
+  // sourceCode 를 안 주면 sourceLink.source_code 를 쓴다.
+  function pbLinkReasonText(sourceLink, sourceCode) {
+    const link = sourceLink || {};
+    const src = sourceLabel(sourceCode != null ? sourceCode : link.source_code);
     const total = Number(link.total || 0);
     const matched = Number(link.matched || 0);
     if (!total) return "";
-    const first = `측정 ${total}건 중 ${matched}건에 PB 점도가 붙었습니다.`;
+    const first = `측정 ${total}건 중 ${matched}건에 ${src} 점도가 붙었습니다.`;
     const reasons = Object.keys(PB_REASON_TEXT)
       .map((key) => ({ key, count: Number(link[key] || 0) }))
       .filter((item) => item.count > 0)
       .sort((a, b) => b.count - a.count);
     if (!reasons.length) return first;
     const shown = reasons.slice(0, 2);
-    const parts = shown.map((item) => PB_REASON_TEXT[item.key](item.count));
+    const parts = shown.map((item) => PB_REASON_TEXT[item.key](item.count, src));
     const rest = reasons.slice(2).reduce((sum, item) => sum + item.count, 0);
     if (rest > 0) parts.push(`${rest}건은 다른 사유입니다.`);
     return `${first} ${parts.join(" ")}`;
   }
 
-  // ── PB 점도 구간표 ────────────────────────────────────────────────────────
-  // "낮은 PB 로 만들면 이 반제품이 어땠나"를 그림 대신 숫자로도 읽게 한다.
-  // 경계는 PB 반제품의 기준선(사용 금지·경고 문턱)을 쓰고, 기준이 없으면 연계된 PB 점도
+  // ── 원료 점도 구간표 ──────────────────────────────────────────────────────
+  // "낮은 원료(PB·SBCT)로 만들면 이 반제품이 어땠나"를 그림 대신 숫자로도 읽게 한다.
+  // 경계는 원료 반제품의 기준선(사용 금지·경고 문턱)을 쓰고, 기준이 없으면 연계된 원료 점도
   // 범위를 3등분한다. 표본이 너무 적으면 구간 평균이 한두 건짜리라 아예 만들지 않는다.
   const PB_BAND_MIN_READINGS = 5;
   const PB_BAND_LIMIT_KEYS = ["lower_limit", "warn_low", "warn_high", "upper_limit"];
@@ -813,18 +858,18 @@
   }
 
   function pbBandRows(linked, limits) {
-    // ⚠ Number(null) === 0 이고 0 은 유한수다 — 빈 값을 먼저 걸러야 'PB 점도 0' 인
+    // ⚠ Number(null) === 0 이고 0 은 유한수다 — 빈 값을 먼저 걸러야 '원료 점도 0' 인
     // 가짜 측정이 첫 구간에 쌓인다(periodChartDatasets 과 같은 이유).
     // 통계 제외도 여기서 한 번 더 막는다 — 구간 평균은 통계이므로, 호출부가 무엇을
     // 넘기든 제외된 측정이 평균·이상 건수에 섞이면 안 된다(2026-09-21).
     const rows = (linked || []).filter((r) => {
       if (!r || isExcludedReading(r)) return false;
-      const pb = r.source_pb_viscosity;
+      const pb = r.source_viscosity;
       if (pb === null || pb === undefined || pb === "") return false;
       return Number.isFinite(Number(pb));
     });
     if (rows.length < PB_BAND_MIN_READINGS) return { rows: [], source: null };
-    const { cuts, source } = pbBandCuts(rows.map((r) => Number(r.source_pb_viscosity)), limits);
+    const { cuts, source } = pbBandCuts(rows.map((r) => Number(r.source_viscosity)), limits);
     if (!cuts.length) return { rows: [], source: null };
     const bands = cuts.map((cut, index) => ({
       label: index === 0 ? `${fmt(cut)} 이하` : `${fmt(cuts[index - 1])}~${fmt(cut)}`,
@@ -832,7 +877,7 @@
     }));
     bands.push({ label: `${fmt(cuts[cuts.length - 1])} 초과`, items: [] });
     rows.forEach((r) => {
-      const pb = Number(r.source_pb_viscosity);
+      const pb = Number(r.source_viscosity);
       const index = cuts.findIndex((cut) => pb <= cut);
       bands[index === -1 ? bands.length - 1 : index].items.push(r);
     });
@@ -885,5 +930,8 @@
     pbLinearFit,
     pbScatterSummary,
     withAlpha,
+    sourceLabel,
+    koParticle,
+    sourceLinkLine,
   };
 })();

@@ -70,6 +70,37 @@ def _add_product(conn, code="PB", **kw) -> dict:
     return vs.get_product_by_code(conn, code)
 
 
+def _add_recipe(conn, product_name, materials) -> None:
+    """원료 반제품 도출용 최소 레시피(recipes·materials·recipe_items) — 투입 순서대로."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, code TEXT
+        );
+        CREATE TABLE IF NOT EXISTS recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, product_name TEXT NOT NULL,
+            status TEXT NOT NULL, use_reactor INTEGER, category TEXT
+        );
+        CREATE TABLE IF NOT EXISTS recipe_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, recipe_id INTEGER NOT NULL,
+            material_id INTEGER NOT NULL
+        );
+        """
+    )
+    recipe_id = conn.execute(
+        "INSERT INTO recipes (product_name, status) VALUES (?, 'completed')", (product_name,)
+    ).lastrowid
+    for name in materials:
+        row = conn.execute("SELECT id FROM materials WHERE name = ?", (name,)).fetchone()
+        material_id = row["id"] if row else conn.execute(
+            "INSERT INTO materials (name) VALUES (?)", (name,)
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO recipe_items (recipe_id, material_id) VALUES (?, ?)",
+            (recipe_id, material_id),
+        )
+
+
 def _seed(conn, product_id, values, start_seq=1):
     for i, v in enumerate(values):
         vs.add_reading(
@@ -745,12 +776,14 @@ def test_direct_registration_stores_the_date_used_for_judgement(monkeypatch):
     assert row["measured_date"] == "2026-12-31"
 
 
-# ── 사용한 PB 연계 (바인더 ↔ 원료 PB 점도) ──────────────────────
-def test_source_pb_viscosity_links_binder_to_pb():
-    """바인더의 material_lot(사용한PB)이 PB 반제품의 lot_no 와 같으면 그 PB 점도를 붙인다."""
+# ── 원료 반제품 연계 (바인더 ↔ 원료 PB 점도) ──────────────────────
+def test_source_viscosity_links_binder_to_pb():
+    """바인더의 material_lot(사용한PB)이 PB 반제품의 lot_no 와 같으면 그 PB 점도를 붙인다.
+    원료는 레시피에서 정한다(CSPB 레시피에 PB 자재)."""
     conn = _make_db()
     pb = _add_product(conn, code="PB")
     cspb = _add_product(conn, code="CSPB")
+    _add_recipe(conn, "CSPB", ["MEK", "PB"])
     # PB 점도: LOT 26010801 = 48.6cp
     vs.add_reading(conn, product_id=pb["id"], lot_no="26010801", viscosity=48.6,
                    measured_date="2026-01-08", memo=None, recipe_material=None,
@@ -766,16 +799,19 @@ def test_source_pb_viscosity_links_binder_to_pb():
 
     analysis = vs.analyze_product(conn, cspb)
     by_lot = {r["lot_no"]: r for r in analysis["readings"]}
-    assert by_lot["B1"]["source_pb_viscosity"] == 48.6   # 연계됨
-    assert by_lot["B2"]["source_pb_viscosity"] is None   # 매칭 PB 없음
+    assert by_lot["B1"]["source_viscosity"] == 48.6   # 연계됨
+    assert by_lot["B2"]["source_viscosity"] is None   # 매칭 PB 없음
+    assert analysis["source_link"]["source_code"] == "PB"
+    assert analysis["source_link"]["source_missing"] == 1
 
 
-def test_source_pb_matches_across_lot_prefix_forms():
+def test_source_matches_across_lot_prefix_forms():
     """PB 점도 LOT 이 배합 화면 형식(PB26010801, 접두사 포함)이어도 바인더의
     8자리 사용한PB(26010801)와 숫자 기준으로 매칭돼야 한다."""
     conn = _make_db()
     pb = _add_product(conn, code="PB")
     cspb = _add_product(conn, code="CSPB")
+    _add_recipe(conn, "CSPB", ["PB"])
     # 배합 화면 저장 형식 — 제품명 접두사 포함
     vs.add_reading(conn, product_id=pb["id"], lot_no="PB26010801", viscosity=51.6,
                    measured_date="2026-01-08", memo=None, recipe_material=None,
@@ -784,15 +820,44 @@ def test_source_pb_matches_across_lot_prefix_forms():
                    measured_date="2026-01-10", memo=None, recipe_material=None,
                    material_lot="26010801", created_by="t", created_at="2026-01-01T00:00:00Z")
     analysis = vs.analyze_product(conn, cspb)
-    assert analysis["readings"][0]["source_pb_viscosity"] == 51.6
+    assert analysis["readings"][0]["source_viscosity"] == 51.6
 
 
-def test_source_pb_not_attached_when_viewing_pb_itself():
-    """PB 반제품 자신을 볼 때는 연계를 붙이지 않는다(자기 참조 방지)."""
+def test_source_not_attached_when_viewing_pb_itself():
+    """PB 반제품 자신을 볼 때는 연계를 붙이지 않는다(자기 참조 방지) — PB 레시피에 PB 가
+    있어도 자기 자신은 원료가 아니다."""
     conn = _make_db()
     pb = _add_product(conn, code="PB")
+    _add_recipe(conn, "PB", ["PB", "MEK"])
     vs.add_reading(conn, product_id=pb["id"], lot_no="26010801", viscosity=48.6,
                    measured_date="2026-01-08", memo=None, recipe_material=None,
                    material_lot="26010801", created_by="t", created_at="2026-01-01T00:00:00Z")
     analysis = vs.analyze_product(conn, pb)
-    assert all(r.get("source_pb_viscosity") is None for r in analysis["readings"])
+    assert all(r.get("source_viscosity") is None for r in analysis["readings"])
+    assert analysis["source_link"]["source_code"] is None
+
+
+def test_lot_match_keys_and_date_only_lookup():
+    """SBCT 2026 임포트 LOT 은 날짜만(260518), 자재 LOT 은 SBCT26051301 — 날짜로 잇는다.
+    8자리끼리는 날짜만 같아도 다른 배치라 잇지 않는다."""
+    assert vs.lot_match_keys("SBCT26051301") == ("26051301", "260513")
+    assert vs.lot_match_keys("260518") == ("260518", "260518")
+    assert vs.lot_match_keys("2024-03-08-01") == ("24030801", "240308")
+    assert vs.lot_match_keys("확인불가") == ("", "")
+    assert vs.lot_match_keys("1234") == ("1234", "")
+
+    conn = _make_db()
+    sbct = _add_product(conn, code="SBCT")
+    for lot, value, day in (("260513", 200.0, "2026-05-13"),
+                            ("SBCT26060901", 210.0, "2026-06-09"),
+                            ("2024-03-08-01", 190.0, "2024-03-08")):
+        vs.add_reading(conn, product_id=sbct["id"], lot_no=lot, viscosity=value,
+                       measured_date=day, memo=None, recipe_material=None,
+                       material_lot=None, created_by="t", created_at="2026-01-01T00:00:00Z")
+    source_map = vs._source_viscosity_map(conn, sbct["id"])
+    assert vs.lookup_source_viscosity(source_map, "SBCT26051301") == 200.0   # 날짜 LOT
+    assert vs.lookup_source_viscosity(source_map, "SBCT26060901") == 210.0   # 정확
+    assert vs.lookup_source_viscosity(source_map, "SBCT26060902") is None    # 같은 날 다른 배치
+    assert vs.lookup_source_viscosity(source_map, "260609") == 210.0         # 날짜만 적은 자재 LOT
+    assert vs.lookup_source_viscosity(source_map, "SBCT24030801") == 190.0
+    assert vs.lookup_source_viscosity(source_map, "") is None

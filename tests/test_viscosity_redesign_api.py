@@ -3,11 +3,11 @@
   1. GET /viscosity/products/{id}/blend-records — 등록 패널용 일괄 목록.
      등록 여부(registered)를 서버가 계산하고, '미등록만' 필터가 최근 N건 슬라이스가
      아니라 전체에서 걸러진다(종전: 잘라온 20건에만 필터 → 거짓 빈 목록).
-  2. GET /viscosity/blend-records/{id}/used-pb — 사용한 PB 감지 미리보기.
-     PB 가 첫 계량 자재가 아니어도 자재명으로 찾는다(종전: 무조건 첫 행).
+  2. GET /viscosity/blend-records/{id}/used-source — 원료 LOT 감지 미리보기.
+     원료(PB)가 첫 계량 자재가 아니어도 자재명으로 찾는다(종전: 무조건 첫 행).
   3. POST /blend/records/{id}/viscosity — 감지 결과 저장 + material_lot 수동 보정.
   4. summarize_periods — 전기 대비(mean_delta)가 이상 측정을 뺀 평균 기준.
-  5. analyze_product 응답의 pb_link 요약(연계 실패 무증상 방지).
+  5. analyze_product 응답의 source_link 요약(연계 실패 무증상 방지).
 """
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ def test_blend_records_endpoint_filters_by_reactor_serverside():
     assert ids({}) == {plain_id, r2_id}
 
 
-# ── 2·3. 사용한 PB 감지 — 첫 행 가정 제거 + 수동 보정 ──────────────────────
+# ── 2·3. 원료 LOT 감지 — 첫 행 가정 제거 + 수동 보정 ──────────────────────
 
 
 def test_used_pb_detected_by_material_name_not_first_row():
@@ -172,9 +172,11 @@ def test_used_pb_detected_by_material_name_not_first_row():
         client, prod, "2026-08-12", [("MEK", "MK001"), ("PB", "26081201")]
     )
 
-    preview = client.get(f"/api/viscosity/blend-records/{rid}/used-pb").json()
+    preview = client.get(f"/api/viscosity/blend-records/{rid}/used-source").json()
     assert preview["lot"] == "26081201"        # 첫 행(MEK)이 아니라 PB 행
     assert preview["method"] == "matched"
+    assert preview["source_code"] == "PB"
+    assert "source_viscosity" in preview
 
     reg = client.post(
         f"/api/blend/records/{rid}/viscosity",
@@ -182,7 +184,9 @@ def test_used_pb_detected_by_material_name_not_first_row():
         headers=_csrf(client),
     )
     assert reg.status_code == 200, reg.text
-    assert reg.json()["used_pb"] == {"lot": "26081201", "method": "matched"}
+    assert reg.json()["used_source"] == {
+        "source_code": "PB", "lot": "26081201", "method": "matched",
+    }
 
     detail = client.get(f"/api/viscosity/products/{pid}").json()
     reading = next(r for r in detail["readings"] if r["viscosity"] == 390.0)
@@ -200,9 +204,10 @@ def test_used_pb_none_for_recipes_without_pb_and_manual_override():
     pid = _make_product(client, prod)
     rid = _make_blend(client, prod, "2026-08-12", [("MEK", "MK002"), ("TOL", "TL001")])
 
-    preview = client.get(f"/api/viscosity/blend-records/{rid}/used-pb").json()
+    preview = client.get(f"/api/viscosity/blend-records/{rid}/used-source").json()
     assert preview["method"] == "none"
     assert preview["lot"] is None
+    assert preview["source_code"] is None
 
     # 화면이 보정한 값을 보내면 그대로 저장된다(method=manual).
     reg = client.post(
@@ -211,7 +216,10 @@ def test_used_pb_none_for_recipes_without_pb_and_manual_override():
         headers=_csrf(client),
     )
     assert reg.status_code == 200, reg.text
-    assert reg.json()["used_pb"] == {"lot": "26080999", "method": "manual"}
+    # 원료가 없는 반제품이라 원료 표기는 비어 있다(값은 그대로 저장).
+    assert reg.json()["used_source"] == {
+        "source_code": None, "lot": "26080999", "method": "manual",
+    }
     detail = client.get(f"/api/viscosity/products/{pid}").json()
     reading = next(r for r in detail["readings"] if r["viscosity"] == 380.0)
     assert reading["material_lot"] == "26080999"
@@ -239,10 +247,10 @@ def test_period_delta_excludes_anomalies():
     assert by_key["2026-07-27"]["mean_delta"] == -0.6
 
 
-# ── 5. pb_link 요약 ────────────────────────────────────────────────────────
+# ── 5. source_link 요약 ────────────────────────────────────────────────────────
 
 
-def test_analyze_response_carries_pb_link_summary():
+def test_analyze_response_carries_source_link_summary():
     client = _client()
     _login_admin(client)
     # PB 제품 + PB 점도 1건.
@@ -274,7 +282,7 @@ def test_analyze_response_carries_pb_link_summary():
     )
 
     detail = client.get(f"/api/viscosity/products/{pid}").json()
-    link = detail["pb_link"]
+    link = detail["source_link"]
     assert link["source_code"] == "PB"
     assert link["source_exists"] is True
     assert link["readings_with_lot"] >= 1

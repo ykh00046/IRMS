@@ -383,12 +383,25 @@ test_warn_band_collapses_when_sigma_k_le_warn_sigma`.
 
 ## 9. PB 연계 탭 (2026-09-21)
 
-배합 화면에서 "사용한 PB"를 적기 때문에, 바인더(APB·CSPB 등) 측정에는 그 원료 PB LOT 이
-붙는다. 이 탭은 그 연결을 양방향으로 읽는다.
+배합 화면에서 원료 반제품의 LOT 을 적기 때문에, 바인더(APB·CSPB 등) 측정에는 PB LOT 이,
+S-TOP·6-1 TOP 측정에는 SBCT LOT 이 붙는다. 이 탭은 그 연결을 양방향으로 읽는다.
 
-### 9.1 왜 안 붙었는지 (`pb_link` 사유 건수)
+**원료 반제품은 레시피에서 유도한다(2026-10-06, 종전 `SOURCE_PB_CODE = "PB"` 고정 폐기).**
+`source_product_for` 가 그 반제품의 최신 completed 레시피 자재를 투입 순서대로 보며, 자재명
+또는 자재 코드(strip+upper)가 **활성** 점도 반제품의 코드·이름과 같은 첫 자재를 원료로 본다
+(자기 자신 제외). 운영: PB → APB·APB17·CSPB, SBCT → S-TOP·6-1 TOP. 원료가 없는 반제품은
+`source_link.source_code = null` 이고 사유 건수가 전부 0 이다. 등록 때는 `detect_source_lot` 이
+같은 규칙으로 배합 상세에서 원료 행을 찾아 `material_lot` 과 새 열 `source_code` 에 저장한다.
+`GET /api/viscosity/sources` 가 원료로 쓰이는 반제품 목록(`used_by` 포함)을 준다.
 
-`analyze_product`(`viscosity_service.py`)가 돌려주는 `pb_link` 에 사유 네 가지를 넣는다.
+**LOT 매칭은 숫자 8자리 정확 일치가 먼저, 한쪽이 날짜만 있는 6자리면 날짜 일치**(`_lots_match`,
+`lookup_source_viscosity`). SBCT 2026 임포트 LOT 은 `260518`(날짜만)이고 자재 LOT 은
+`SBCT26051301` 이라 종전 8자리 규칙으로는 만나지 못했다. 8자리끼리 날짜만 같은 것은 다른
+배치다. 같은 날 날짜만 있는 원료 측정이 둘이면 늦게 잰 쪽으로 귀결된다.
+
+### 9.1 왜 안 붙었는지 (`source_link` 사유 건수)
+
+`analyze_product`(`viscosity_service.py`)가 돌려주는 `source_link` 에 사유 네 가지를 넣는다.
 건수만 보여 주던 종전에는 "연결이 적다"가 **PB LOT 을 안 적어서**인지 **그 PB 의 점도 기록이
 없어서**인지 구별할 수 없었다.
 
@@ -397,27 +410,27 @@ test_warn_band_collapses_when_sigma_k_le_warn_sigma`.
 | `matched` | 사용한 PB LOT 으로 PB 점도를 찾았다 |
 | `no_lot` | 사용한 PB LOT 칸이 비어 있다 |
 | `lot_unreadable` | LOT 에서 숫자 8자리(`_lot_digits`)를 못 뽑았다 |
-| `pb_missing` | 그 PB LOT 의 점도 기록이 아예 없다 |
-| `pb_excluded` | 점도 기록은 있으나 통계에서 제외됐다 |
+| `source_missing` | 그 PB LOT 의 점도 기록이 아예 없다 |
+| `source_excluded` | 점도 기록은 있으나 통계에서 제외됐다 |
 
 - 다섯 값의 합은 이 화면이 보고 있는 측정 수(`total`)와 같다.
-- `pb_excluded` 는 제외 측정까지 포함한 두 번째 PB 지도를 만들어 가른다
-  (`_pb_viscosity_map(connection, include_excluded=True)`).
+- `source_excluded` 는 제외 측정까지 포함한 두 번째 PB 지도를 만들어 가른다
+  (`_source_viscosity_map(connection, source_id, include_excluded=True)`).
 - PB 반제품 자신(`is_source=True`)은 위 단계 PB 가 없으므로 사유를 모두 0 으로 둔다.
 - 화면은 한 문장으로 붙은 건수를, 다음 문장으로 0 이 아닌 사유 중 가장 큰 하나만 말한다
   (`pbLinkReasonText` `static/js/viscosity_lib.js`).
-- 2026-09-21 운영 실측: APB 363건 중 99건 연결, 못 붙은 264건 중 263건이 `pb_missing`.
+- 2026-09-21 운영 실측: APB 363건 중 99건 연결, 못 붙은 264건 중 263건이 `source_missing`.
 
-### 9.2 PB LOT 으로 찾기 (역방향)
+### 9.2 원료 LOT 으로 찾기 (역방향)
 
 | 엔드포인트 | 내용 |
 |---|---|
-| `GET /api/viscosity/pb-lots?q=&limit=20` | PB 측정 목록. `items[]` 는 `lot_no`·`viscosity`·`measured_date`·`excluded`·`linked_count`. 최근 측정 먼저, `limit` 상한 100 |
-| `GET /api/viscosity/pb-lots/{lot_no}` | 그 LOT 하나. `pb`(PB 자신의 측정)·`items`(그 LOT 을 쓴 반제품 측정, 최대 50건, 각 행에 `classify_value` 판정)·`tests`(시험 배합 점도) |
+| `GET /api/viscosity/source-lots?source=CODE&q=&limit=20` | 원료(PB·SBCT 등) 측정 목록. `items[]` 는 `lot_no`·`viscosity`·`measured_date`·`excluded`·`linked_count`. 최근 측정 먼저, `limit` 상한 100 |
+| `GET /api/viscosity/source-lots/{lot_no}?source=CODE` | 그 LOT 하나. `source`(원료 자신의 측정)·`items`(그 LOT 을 쓴 반제품 측정, 최대 50건, 각 행에 `classify_value` 판정)·`tests`(시험 배합 점도) |
 
-- 매칭 키는 연계와 같은 LOT 숫자 8자리다(`_lot_digits`). 상세는 LOT 정확 일치를 먼저 보고
-  없으면 숫자로 찾는다.
-- 모르는 LOT 은 404 가 아니라 `pb: null` + 빈 목록이다. 현장이 LOT 을 잘못 쳤을 뿐인데
+- 매칭 키는 연계와 같다(숫자 8자리, 한쪽이 6자리면 날짜). 상세는 LOT 정확 일치를 먼저 보고
+  없으면 `_lots_match` 로 찾는다.
+- 모르는 LOT 은 404 가 아니라 `source: null` + 빈 목록이다. 현장이 LOT 을 잘못 쳤을 뿐인데
   오류 창이 뜨면 안 된다.
 - `tests` 는 `blend_details` → `blend_records`(`is_test=1`) → `test_viscosity_readings`
   를 타고 모은다. 시험 배합은 비교 기준이 없어 **판정을 붙이지 않고 참고로만** 보여 준다.
@@ -480,10 +493,10 @@ LOT을 고르세요." 한 줄로 접히고(`#visc-pb-source-line`), 위의 PB LO
   "그 LOT 이 실제로 잰 값"이 중요하기 때문이다. 대신 응답에 `excluded`·`exclude_reason`
   을 실어, 화면이 `⚠ … · 통계 제외`(경고일 때) 또는 `이 LOT 점도는 통계에서 빠졌습니다.`
   (경고가 아닐 때)로 그 사실을 함께 말한다.
-- **`pb_link` 의 커버리지 숫자**(`total`·`matched`·네 가지 사유)는 제외된 *이 반제품*
+- **`source_link` 의 커버리지 숫자**(`total`·`matched`·네 가지 사유)는 제외된 *이 반제품*
   측정도 센다. 이 값들은 "기록이 얼마나 이어져 있나"를 말하는 것이고, 제외된 행도 그림
   아래 표에 남으므로 빼면 표 행수와 합이 어긋난다. 반대로 상대편 PB 측정이 제외되면
-  연계 자체가 끊기고 `pb_excluded` 로 분류된다(`_pb_viscosity_map` 기본값).
+  연계 자체가 끊기고 `source_excluded` 로 분류된다(`_source_viscosity_map` 기본값).
 
 ### 10.3 클라이언트에서 두 목록이 갈리는 지점
 
