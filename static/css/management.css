@@ -1025,6 +1025,14 @@
 .vc-version-label { font-weight: 700; font-size: var(--fs-sm); }
 .vc-version-meta { font-size: var(--fs-2xs); line-height: 1.4; }
 .vc-version-status { margin-top: 0.15rem; }
+/* 버전 관리 화면(#tab-versions) — 판 이름 입력과 저장 버튼을 한 칸에. */
+.vm-name-cell {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+/* .input 은 width:100% 인데 표 셀 flex 안에서는 기준 폭이 없어 몇 px 로 눌린다. 고정 폭을 준다. */
+.vm-name-input { width: 12rem; flex: 0 0 12rem; min-width: 0; }
 
 .vc-detail { min-width: 0; }
 .vc-single-note { font-size: var(--fs-xs); color: var(--text-secondary); margin: 0 0 0.5rem; }

@@ -9,6 +9,8 @@
  *
  * Factory: IRMS.management.createVersionCompare(ctx)
  * Returns: { loadVersionsForProduct, openVersionCompareTab, rerenderCompare }
+ *
+ * 읽기 전용 화면이다. 판 이름 붙이기·되돌리기·삭제·정리는 '버전 관리'(version-manage.js)가 맡는다.
  */
 (function () {
   "use strict";
@@ -129,11 +131,15 @@
           const nameTag = showName && it.product_name
             ? ` <span class="vc-version-name">${IRMS.escapeHtml(it.product_name)}</span>`
             : "";
+          // 판 이름(버전 관리 화면에서 책임자가 붙인 자유 문구). 있을 때만.
+          const versionNameTag = it.version_name
+            ? ` <span class="vc-version-name">${IRMS.escapeHtml(it.version_name)}</span>`
+            : "";
           return `<label class="vc-version-row${it.is_current ? " is-current" : ""}${it.status === "canceled" ? " is-canceled" : ""}" data-recipe-id="${it.id}">`
             + `<input type="checkbox" class="vc-version-check" value="${it.id}"${checked} />`
             + `<span class="vc-version-main">`
-            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
-            + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count}</span>`
+            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${versionNameTag}${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
+            + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count} · 기록 ${Number(it.linked_record_count || 0)}건</span>`
             + `<span class="vc-version-status">${statusChip(it)}</span>`
             + `</span>`
             + `</label>`;
@@ -199,7 +205,7 @@
         }).join("");
       return `<p class="vc-single-note">단일 버전 표시 · 비교하려면 왼쪽에서 버전을 하나 더 선택하세요.</p>`
         + `<div class="compare-scroll"><table class="compare-table vc-compare-table">`
-        + `<thead><tr><th class="compare-sticky">${IRMS.escapeHtml(version.version_label)} 자재</th><th>배합량 (g · %)</th></tr></thead>`
+        + `<thead><tr><th class="compare-sticky">${IRMS.escapeHtml(version.version_label)}${version.version_name ? ` · ${IRMS.escapeHtml(version.version_name)}` : ""} 자재</th><th>배합량 (g · %)</th></tr></thead>`
         + `<tbody>${rows || '<tr><td colspan="2"><span class="muted">자재가 없습니다.</span></td></tr>'}</tbody>`
         + `<tfoot><tr class="vc-total-row"><td class="compare-sticky">총량</td><td class="num">${num(total)}</td></tr></tfoot>`
         + `</table></div>`;
@@ -271,7 +277,9 @@
         ...sortedByTime.map((ver) => {
           const h = (cache.historyItems || []).find((it) => it.id === ver.id);
           const cur = h && h.is_current ? ' <span class="status-chip status-completed">현재</span>' : "";
-          return `<th>${IRMS.escapeHtml(ver.version_label)}${cur}<br><span class="muted">${IRMS.formatDateTime(ver.created_at || (h || {}).created_at)}</span></th>`;
+          const vName = ver.version_name || (h || {}).version_name;
+          const nameLine = vName ? `<br><span class="muted small">${IRMS.escapeHtml(vName)}</span>` : "";
+          return `<th>${IRMS.escapeHtml(ver.version_label)}${cur}${nameLine}<br><span class="muted">${IRMS.formatDateTime(ver.created_at || (h || {}).created_at)}</span></th>`;
         }),
         "<th>상태</th>",
       ].join("");

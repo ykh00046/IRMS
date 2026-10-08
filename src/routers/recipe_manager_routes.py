@@ -208,6 +208,52 @@ def build_router() -> APIRouter:
             "tolerance_g": tolerance_g,
         }
 
+    @router.put("/recipes/{recipe_id}/version-name")
+    def set_recipe_version_name(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """판 이름(version_name) 지정/해제 — 책임자 전용.
+
+        body: {"version_name": str | None}. 앞뒤 공백을 걷고, 빈 값은 NULL(이름 없음).
+        같은 체인의 판을 사람이 구분하게 하는 자유 문구(예: "저점도용")라 체인 전파는 없다.
+        """
+        raw = body.get("version_name")
+        if raw is not None and not isinstance(raw, str):
+            raise HTTPException(status_code=400, detail="버전 이름은 문자열이어야 합니다.")
+        version_name = (raw or "").strip() or None
+        if version_name is not None and len(version_name) > 40:
+            raise HTTPException(status_code=400, detail="버전 이름은 40자 이내입니다.")
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+
+            connection.execute(
+                "UPDATE recipes SET version_name = ? WHERE id = ?",
+                (version_name, recipe_id),
+            )
+            write_audit_log(
+                connection,
+                action="recipe_version_name_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={"version_name": version_name},
+            )
+            connection.commit()
+
+        return {
+            "status": "ok",
+            "recipe_id": recipe_id,
+            "version_name": version_name,
+        }
+
     @router.put("/recipes/{recipe_id}/loss-comp")
     def set_recipe_loss_comp(
         recipe_id: int,

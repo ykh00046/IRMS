@@ -209,6 +209,19 @@
 - 일반 조회/배합 선택은 `COALESCE(is_dhr,0)=0` 만(`recipe_operator_routes.py:99,123`),
   DHR 전용은 `dhr=true` 로 분리 조회. 배합일지 변경본(인허가) 전용.
 
+### 5.4 버전 비교(읽기 전용)와 버전 관리(책임자) — 2026-10-08
+- **버전 비교**(`#tab-lookup`, `version-compare.js`)는 이력 보기 전용이다. 타임라인 각 판에
+  `기록 N건`(`/recipes/{id}/history` 의 `linked_record_count`, 체인 전체 GROUP BY 1회)과
+  판 이름을 보여줄 뿐 쓰기 동작은 없다.
+- **버전 관리**(`#tab-versions`, `version-manage.js`)는 현황 상세의 [버전 관리] 버튼으로 들어가며
+  책임자에게만 보인다. 동작 네 가지:
+  - **이름**: 판마다 자유 문구(예: 저점도용) 40자 이내. `PUT /recipes/{id}/version-name`,
+    빈 값=해제, 감사 `recipe_version_name_set`. 컬럼 `recipes.version_name`(마이그레이션 추가).
+  - **되돌리기**: 옛 판 내용(상세 `tsv`)으로 **새 판을 등록**한다(`revision_of`=현재판). 반제품명은
+    현재판 이름으로 바꿔 넣고, 옛 판의 이름도 새 판에 옮긴다. 현재판은 이전 버전이 된다.
+  - **삭제**: 배합 기록이 없는 이전 판만(`DELETE /recipes/{id}`, 자식은 조부모로 재연결).
+  - **정리**: 기록 없는 이전 판을 한 번에 차례로 삭제한다.
+
 ---
 
 ## 6. 분류 체계 (약품/합성/잉크/용수)

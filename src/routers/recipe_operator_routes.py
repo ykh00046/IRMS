@@ -127,7 +127,7 @@ def build_router() -> APIRouter:
                 f"""
                 SELECT r.id, r.product_name, r.position, r.ink_name, r.status,
                        r.created_by, r.created_at, r.completed_at, r.revision_of, r.remark,
-                       r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr
+                       r.effective_from, COALESCE(r.is_dhr, 0) AS is_dhr, r.version_name
                 FROM recipes r
                 WHERE r.product_name = ? {revision_filter} {dhr_filter}
                 ORDER BY r.created_at DESC, r.id DESC
@@ -203,7 +203,7 @@ def build_router() -> APIRouter:
                        r.base_total, r.base_totals,
                        r.anchor_material_id,
                        am.name AS anchor_material_name,
-                       r.tolerance_g, r.category, r.product_code,
+                       r.tolerance_g, r.category, r.product_code, r.version_name,
                        COALESCE(r.use_reactor, 0) AS use_reactor,
                        COALESCE(r.is_derived, 0) AS is_derived,
                        r.stage1_recipe_id,
@@ -286,6 +286,25 @@ def build_router() -> APIRouter:
             root_id = find_chain_root(connection, recipe_id)
             chain = fetch_chain(connection, root_id)
             item_map = fetch_recipe_items(connection, [r["id"] for r in chain])
+            # 판마다 연결된 배합 기록 수 — 버전 비교 탭의 '기록 N건'·삭제 가능 판정용.
+            # 체인 전체를 한 번의 GROUP BY 로 센다(판마다 쿼리하지 않는다).
+            record_counts: dict[int, int] = {}
+            version_names: dict[int, str | None] = {}
+            if chain:
+                chain_ids = [int(r["id"]) for r in chain]
+                placeholders = ",".join("?" for _ in chain_ids)
+                for row in connection.execute(
+                    f"SELECT recipe_id, COUNT(*) AS cnt FROM blend_records "
+                    f"WHERE recipe_id IN ({placeholders}) GROUP BY recipe_id",
+                    chain_ids,
+                ).fetchall():
+                    record_counts[int(row["recipe_id"])] = int(row["cnt"])
+                # 판 이름은 fetch_chain(공용 헬퍼)에 없어 같은 id 목록으로 따로 읽는다.
+                for row in connection.execute(
+                    f"SELECT id, version_name FROM recipes WHERE id IN ({placeholders})",
+                    chain_ids,
+                ).fetchall():
+                    version_names[int(row["id"])] = row["version_name"]
 
             if not chain:
                 return {"root_id": root_id, "current_id": recipe_id, "items": []}
@@ -305,6 +324,7 @@ def build_router() -> APIRouter:
             items.append({
                 "id": rec["id"],
                 "version_label": f"v{idx}",
+                "version_name": version_names.get(int(rec["id"])),
                 "product_name": rec["product_name"],
                 "position": rec["position"],
                 "ink_name": rec["ink_name"],
@@ -315,6 +335,7 @@ def build_router() -> APIRouter:
                 "remark": rec.get("remark"),
                 "revision_of": rec.get("revision_of"),
                 "item_count": len(item_map.get(rec["id"], [])),
+                "linked_record_count": record_counts.get(int(rec["id"]), 0),
                 "is_current": rec["id"] == current_id,
                 "is_root": rec.get("revision_of") is None,
                 "use_reactor": bool(rec.get("use_reactor", 0)),
@@ -330,8 +351,10 @@ def build_router() -> APIRouter:
             id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
         except ValueError:
             raise HTTPException(status_code=400, detail="INVALID_IDS")
-        if len(id_list) < 2:
-            raise HTTPException(status_code=400, detail="NEED_AT_LEAST_TWO")
+        # 한 판만 남은 체인(정리 뒤·첫 등록 직후)도 단일 버전 표로 보여야 한다. 종전 "2개 이상"
+        # 규칙이면 버전 비교가 400 을 받고 "자재가 없습니다"를 띄웠다(2026-10-08 실연에서 적발).
+        if not id_list:
+            raise HTTPException(status_code=400, detail="INVALID_IDS")
         if len(id_list) > 50:
             raise HTTPException(status_code=400, detail="TOO_MANY_IDS")
 
@@ -340,7 +363,7 @@ def build_router() -> APIRouter:
             recipe_rows = connection.execute(
                 f"""
                 SELECT id, product_name, position, ink_name, status, created_by,
-                       created_at, revision_of, remark
+                       created_at, revision_of, remark, version_name
                 FROM recipes WHERE id IN ({placeholders})
                 """,
                 id_list,
@@ -371,6 +394,7 @@ def build_router() -> APIRouter:
             versions.append({
                 "id": rid,
                 "version_label": label_map.get(rid, "?"),
+                "version_name": rec.get("version_name"),
                 "product_name": rec["product_name"],
                 "position": rec["position"],
                 "ink_name": rec["ink_name"],
@@ -678,7 +702,7 @@ def build_router() -> APIRouter:
                        r.created_at, r.completed_at, r.remark, COALESCE(r.is_dhr, 0) AS is_dhr,
                        r.product_code, COALESCE(r.use_reactor, 0) AS use_reactor,
                        COALESCE(r.is_derived, 0) AS is_derived,
-                       r.stage1_recipe_id,
+                       r.stage1_recipe_id, r.version_name,
                        s.product_name AS stage1_product_name
                 FROM recipes r
                 LEFT JOIN recipes s ON s.id = r.stage1_recipe_id

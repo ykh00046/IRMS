@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20261008c" />
 {% endblock %}
 
 {% block content %}
@@ -267,6 +267,38 @@
           </section>
         </div>
 
+        <!-- ── 버전 관리(책임자) · 판 이름·되돌리기·삭제·정리. 버전 비교는 읽기 전용으로 둔다. ── -->
+        <div class="tab-panel" id="tab-versions" {% if not can_manage %}hidden{% endif %}>
+          <section class="panel">
+            <div class="vc-header">
+              <button id="vm-back-btn" class="btn" type="button">← 레시피 현황으로</button>
+              <h3 class="panel-title">버전 관리 · <span id="vm-product-title">-</span></h3>
+            </div>
+            <p class="panel-subtitle">이름을 붙이고, 옛 판으로 되돌리거나 기록 없는 판을 지웁니다.</p>
+            <div class="button-row">
+              <button id="vm-prune-btn" class="btn btn-sm" type="button" hidden>정리</button>
+              <span id="vm-prune-note" class="muted small"></span>
+            </div>
+            <div class="table-wrap">
+              <table class="recipe-list-table" id="vm-table">
+                <thead>
+                  <tr>
+                    <th>버전</th>
+                    <th>이름</th>
+                    <th>등록일시</th>
+                    <th>등록자</th>
+                    <th>항목수</th>
+                    <th>기록</th>
+                    <th>상태</th>
+                    <th>동작</th>
+                  </tr>
+                </thead>
+                <tbody id="vm-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <!-- 버전 이력·비교 모달은 '버전 비교' 탭(#tab-lookup)이 한 화면으로 대체(2026-08-06). -->
 
 {% endblock %}
@@ -278,8 +310,9 @@
     <script src="/static/js/management/bom-editor.js?v=20260910a"></script>
     <script src="/static/js/management/recipe-edit-loader.js?v=20260910a"></script>
     <script src="/static/js/management/import-validate.js?v=20260910a"></script>
-    <script src="/static/js/management/recipe-history.js?v=20260910a"></script>
+    <script src="/static/js/management/recipe-history.js?v=20261008b"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260910a"></script>
-    <script src="/static/js/management/version-compare.js?v=20261008a"></script>
-    <script src="/static/js/management.js?v=20260910a"></script>
+    <script src="/static/js/management/version-compare.js?v=20261008b"></script>
+    <script src="/static/js/management/version-manage.js?v=20261008b"></script>
+    <script src="/static/js/management.js?v=20261008b"></script>
 {% endblock %}

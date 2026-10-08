@@ -149,3 +149,110 @@ def test_history_compare_keeps_repeated_material_rows():
     # B 는 한 행뿐이라 번호 표기 대상이 아니다.
     row_b = next(m for m in cmp["materials"] if m["material_name"] == "B")
     assert row_b["occurrence_count"] == 1 and row_b["change_status"] == "same"
+
+
+def test_history_items_carry_linked_record_count():
+    """history 각 판에 linked_record_count(연결 배합 기록 수)가 있다. 새 판은 0."""
+    client = _client()
+    headers = _mgr(client)
+    product = "VCLR" + uuid.uuid4().hex[:6].upper()
+    rid1 = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
+    _import(client, headers, f"반제품명\tA\tB\n{product}\t70\t30", revision_of=rid1)
+
+    h = client.get(f"/api/recipes/{rid1}/history").json()
+    assert len(h["items"]) == 2
+    assert all(it["linked_record_count"] == 0 for it in h["items"])
+
+
+def test_revert_registers_old_content_as_new_current_version():
+    """되돌리기: 옛 판(v1)의 tsv 를 현재판(v2)의 개정으로 등록하면 v3 이 현재판이고 내용은 v1."""
+    client = _client()
+    headers = _mgr(client)
+    product = "VCRV" + uuid.uuid4().hex[:6].upper()
+    rid1 = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
+    rid2 = _import(
+        client, headers, f"반제품명\tA\tB\n{product}\t70\t30", revision_of=rid1
+    ).json()["created_ids"][0]
+
+    tsv = client.get(f"/api/recipes/{rid1}/detail").json()["tsv"]
+    res = _import(client, headers, tsv, revision_of=rid2, created_by="레시피 관리")
+    assert res.status_code == 200, res.text
+    rid3 = res.json()["created_ids"][0]
+
+    h = client.get(f"/api/recipes/{rid1}/history").json()
+    assert [it["id"] for it in h["items"]][-1] == rid3
+    v3 = next(it for it in h["items"] if it["id"] == rid3)
+    assert v3["is_current"] and v3["version_label"] == "v3"
+    assert sum(1 for it in h["items"] if it["is_current"]) == 1
+
+    def weights(rid):
+        items = client.get(f"/api/recipes/{rid}/detail").json()["items"]
+        return sorted((it["material_name"], float(it["value"])) for it in items)
+
+    assert weights(rid3) == weights(rid1) == [("A", 60.0), ("B", 40.0)]
+
+
+def test_delete_old_version_leaves_single_current():
+    """삭제: v1→v2(v2 현재)에서 v1 을 지우면 이력은 현재판 1개만 남는다."""
+    client = _client()
+    headers = _mgr(client)
+    product = "VCDL" + uuid.uuid4().hex[:6].upper()
+    rid1 = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
+    rid2 = _import(
+        client, headers, f"반제품명\tA\tB\n{product}\t70\t30", revision_of=rid1
+    ).json()["created_ids"][0]
+
+    res = client.delete(f"/api/recipes/{rid1}?delete_blend_records=false", headers=headers)
+    assert res.status_code == 200, res.text
+
+    h = client.get(f"/api/recipes/{rid2}/history").json()
+    assert len(h["items"]) == 1
+    assert h["items"][0]["id"] == rid2 and h["items"][0]["is_current"]
+
+
+def test_version_name_set_clear_and_exposed():
+    """PUT version-name: 지정하면 history·detail 에 실리고, 빈 값은 해제(NULL), 41자는 400."""
+    client = _client()
+    headers = _mgr(client)
+    product = "VCVN" + uuid.uuid4().hex[:6].upper()
+    rid1 = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
+    rid2 = _import(
+        client, headers, f"반제품명\tA\tB\n{product}\t70\t30", revision_of=rid1
+    ).json()["created_ids"][0]
+
+    res = client.put(
+        f"/api/recipes/{rid1}/version-name", json={"version_name": "  저점도용  "}, headers=headers
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"status": "ok", "recipe_id": rid1, "version_name": "저점도용"}
+
+    h = client.get(f"/api/recipes/{rid2}/history").json()
+    names = {it["id"]: it["version_name"] for it in h["items"]}
+    assert names == {rid1: "저점도용", rid2: None}
+    assert client.get(f"/api/recipes/{rid1}/detail").json()["version_name"] == "저점도용"
+    cmp = client.get(f"/api/recipes/history/compare?ids={rid1},{rid2}").json()
+    assert {v["id"]: v["version_name"] for v in cmp["versions"]} == {rid1: "저점도용", rid2: None}
+
+    res = client.put(f"/api/recipes/{rid1}/version-name", json={"version_name": "   "}, headers=headers)
+    assert res.status_code == 200 and res.json()["version_name"] is None
+    assert client.get(f"/api/recipes/{rid1}/detail").json()["version_name"] is None
+
+    res = client.put(f"/api/recipes/{rid1}/version-name", json={"version_name": "가" * 41}, headers=headers)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "버전 이름은 40자 이내입니다."
+
+    res = client.put("/api/recipes/99999999/version-name", json={"version_name": "x"}, headers=headers)
+    assert res.status_code == 404
+
+
+def test_history_compare_accepts_single_version():
+    """한 판뿐인 체인도 비교 API가 행렬을 내린다(정리로 한 판만 남은 뒤 버전 비교가 비던 회귀)."""
+    client = _client()
+    headers = _mgr(client)
+    product = "VCS1" + uuid.uuid4().hex[:6].upper()
+    rid = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
+    res = client.get(f"/api/recipes/history/compare?ids={rid}")
+    assert res.status_code == 200, res.text
+    cmp = res.json()
+    assert [v["id"] for v in cmp["versions"]] == [rid]
+    assert {m["material_name"] for m in cmp["materials"]} == {"A", "B"}

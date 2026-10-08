@@ -37,6 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
     vcTimeline: document.getElementById("vc-timeline"),
     vcCompare: document.getElementById("vc-compare"),
     vcBackBtn: document.getElementById("vc-back-btn"),
+    vmBackBtn: document.getElementById("vm-back-btn"),
   };
 
   // ── Tab navigation ──
@@ -44,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
     history: { eyebrow: "운영 관리", heading: "레시피 현황" },
     import: { eyebrow: "레시피 관리", heading: "레시피 등록·수정" },
     lookup: { eyebrow: "레시피 관리", heading: "버전 비교" },
+    versions: { eyebrow: "레시피 관리", heading: "버전 관리" },
   };
   const canManage = dom.shell && dom.shell.dataset.canManage === "1";
 
@@ -91,6 +93,17 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.versionCompare.openVersionCompareTab(recipeId);
     }
   }
+  // 현황 [버전 관리] 버튼 → 버전 관리 탭(책임자). 탭 버튼이 없는 숨은 탭이라
+  // 패널만 켠다. 데이터 로드는 versionManage.open 이 맡는다.
+  function switchToVersionsTab(recipeId) {
+    dom.tabBtns.forEach((b) => b.classList.remove("active"));
+    dom.tabPanels.forEach((p) => p.classList.remove("active"));
+    document.getElementById("tab-versions").classList.add("active");
+    syncTopbarTitle("versions");
+    if (ctx.versionManage && ctx.versionManage.open) {
+      ctx.versionManage.open(recipeId);
+    }
+  }
   // ⚠️ ctx 에 다는 건 ctx 가 정의된 뒤에(switchToImportTab 과 같은 자리). 여기서 대입하면
   // const ctx 의 TDZ 에 걸려 ReferenceError 로 초기화 전체가 죽는다(칩·목록이 아무것도
   // 안 그려졌다 — 2026-08-07 브라우저 검증에서 적발).
@@ -129,6 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   ctx.switchToImportTab = switchToImportTab;
   ctx.switchToLookupTab = switchToLookupTab;
+  ctx.switchToVersionsTab = switchToVersionsTab;
 
   // ── Module assembly (2-stage wiring; order is convention, see design §5) ──
   // 세로 BOM 편집기(item-code P5) — 인터페이스는 구 spreadsheet-editor 와 호환
@@ -148,6 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const versionCompare = IRMS.management.createVersionCompare(ctx);
   ctx.versionCompare = versionCompare;
+  ctx.versionManage = IRMS.management.createVersionManage(ctx);
   const recipeHistory = IRMS.management.createRecipeHistory(ctx);
   ctx.recipeHistory = recipeHistory;
 
@@ -235,8 +250,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 3단계 정리(2026-08-06) — 비교 화면 검색·칩·액션 제거. 남은 바인딩: 현황으로 복귀 버튼.
-  if (dom.vcBackBtn) {
-    dom.vcBackBtn.addEventListener("click", () => {
+  // 버전 관리 탭의 복귀 버튼도 같은 동작이다.
+  [dom.vcBackBtn, dom.vmBackBtn].filter(Boolean).forEach((backBtn) => {
+    backBtn.addEventListener("click", () => {
       dom.tabBtns.forEach((b) => b.classList.remove("active"));
       dom.tabPanels.forEach((p) => p.classList.remove("active"));
       const historyTab = document.querySelector('[data-tab="history"]');
@@ -245,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
       syncTopbarTitle("history");
       // 필터는 건드리지 않는다 — 그 반제품 행이 보이도록.
     });
-  }
+  });
 
   // ── Init sequence ──
   (async () => {

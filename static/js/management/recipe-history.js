@@ -404,6 +404,7 @@
                     <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
                     <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
                     <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
+                    <button class="btn btn-sm history-versions-btn" data-recipe-id="${recipeId}">버전 관리</button>
                     <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
                     ${detail.status !== "canceled"
                       ? `<button class="btn btn-sm warn history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
@@ -421,7 +422,7 @@
               if (!ctx.canManage) {
                 detailRow
                   .querySelectorAll(
-                    ".history-edit-btn, .history-dhr-btn, .history-cancel-btn, .history-restore-btn, .history-delete-btn, .history-delete-with-records-btn",
+                    ".history-edit-btn, .history-versions-btn, .history-dhr-btn, .history-cancel-btn, .history-restore-btn, .history-delete-btn, .history-delete-with-records-btn",
                   )
                   .forEach((button) => {
                     button.hidden = true;
@@ -454,6 +455,14 @@
                 // 모달(handleLookupHistory) 대신 탭 렌더러(openVersionCompareTab) 로.
                 if (ctx.switchToLookupTab) {
                   ctx.switchToLookupTab(recipeId);
+                }
+              });
+
+              // 버전 관리(책임자) — 판 이름·되돌리기·삭제·정리. 버전 비교는 읽기 전용으로 남긴다.
+              detailRow.querySelector(".history-versions-btn").addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (ctx.switchToVersionsTab) {
+                  ctx.switchToVersionsTab(recipeId);
                 }
               });
 
