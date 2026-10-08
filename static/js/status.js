@@ -662,11 +662,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const baseRecipeLine = rec.is_test && rec.base_recipe_name
       ? `<p class="status-base-recipe">기준 레시피: ${esc(rec.base_recipe_name)}</p>`
       : "";
+    // 어느 판으로 만든 기록인지(판 번호 · 책임자가 붙인 판 이름). 지금 현재판이 아닌 판이면
+    // 그 사실을 덧붙여, 엉뚱한 판으로 등록된 기록을 책임자가 바로 알아보게 한다(2026-10-08).
+    // 출력물(DHR PDF/Excel)에는 싣지 않는다 — 이 화면만.
+    const versionCell = rec.recipe_version_label
+      ? `<div><span class="dhr-k">레시피 판</span><b>${esc(rec.recipe_version_label)}${
+        rec.recipe_version_name ? ` · ${esc(rec.recipe_version_name)}` : ""}</b>${
+        rec.recipe_version_is_current === false ? ' <span class="muted small">현재판 아님</span>' : ""}</div>`
+      : "";
     $("status-detail-body").innerHTML =
       `<div class="dhr-head">
         <div><span class="dhr-k">제품 LOT</span><b>${esc(rec.product_lot)}</b></div>
         <div><span class="dhr-k">제품</span><b>${esc(rec.product_name)}${testBadge}</b></div>
         <div><span class="dhr-k">품목코드</span><b>${esc(rec.product_code || "-")}</b></div>
+        ${versionCell}
         ${detailName}
         <div><span class="dhr-k">작업자</span><b>${esc(rec.worker)}${manualBadge}</b></div>
         <div><span class="dhr-k">작업일시</span><b>${esc(rec.work_date)} ${esc(rec.work_time || "")}</b></div>

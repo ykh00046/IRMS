@@ -496,3 +496,31 @@ def test_history_items_expose_usage_period():
     # 건수는 취소 포함(삭제 판정 의미 그대로).
     assert by_id[rid2]["linked_record_count"] == 4
     assert by_id[rid1]["first_used_on"] is None and by_id[rid1]["last_used_on"] is None
+
+
+def test_record_detail_names_the_recipe_version():
+    """기록 상세는 어느 판으로 만들었는지(vN · 판 이름 · 현재판 여부)를 싣는다."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, rid2, rid3 = _chain3(client, headers, "VCRV")
+    assert client.put(
+        f"/api/recipes/{rid2}/version-name", json={"version_name": "고점도용"}, headers=headers
+    ).status_code == 200
+    rec_old = _seed_record(rid2, product, "2026-07-23")
+    rec_cur = _seed_record(rid3, product, "2026-07-24")
+
+    old = client.get(f"/api/blend/records/{rec_old}").json()
+    assert old["recipe_version_label"] == "v2"
+    assert old["recipe_version_name"] == "고점도용"
+    assert old["recipe_version_is_current"] is False
+
+    cur = client.get(f"/api/blend/records/{rec_cur}").json()
+    assert cur["recipe_version_label"] == "v3"
+    assert cur["recipe_version_name"] is None
+    assert cur["recipe_version_is_current"] is True
+
+    # 판이 지워져 recipe_id 가 비면 판 정보도 비어 있어야 한다(화면은 줄을 숨긴다).
+    assert client.delete(f"/api/recipes/{rid2}", headers=headers).status_code == 200
+    gone = client.get(f"/api/blend/records/{rec_old}").json()
+    assert gone["recipe_id"] is None
+    assert gone["recipe_version_label"] is None

@@ -24,6 +24,8 @@ from .material_resolver import resolve_material
 from .recipe_helpers import (
     SUPERSEDED_RECIPE_IDS_SQL,
     current_recipe_by_names,
+    fetch_chain,
+    find_chain_root,
     resolve_chain_tip,
 )
 
@@ -3141,7 +3143,47 @@ def get_blend_record(connection: sqlite3.Connection, record_id: int) -> dict[str
         record["discard_events_json"] = dr["discard_events_json"] if dr else None
     except sqlite3.OperationalError:  # 컬럼이 없는 구버전/테스트 DB
         record["discard_events_json"] = None
+    # 어느 판으로 만든 기록인지 — 상세 화면의 "레시피 판 v2 · 고점도 만드는 레시피" 줄.
+    # 판 번호는 버전 화면(history)과 같은 규칙(체인 등록순)이고, 배합일지 출력물에는 싣지 않는다.
+    record.update(_recipe_version_info(connection, record.get("recipe_id")))
     return record
+
+
+def _recipe_version_info(connection: sqlite3.Connection, recipe_id: Any) -> dict[str, Any]:
+    """기록이 가리키는 판의 번호(vN)·이름·현재판 여부. 판이 없거나 지워졌으면 전부 None.
+
+    recipe_helpers 의 체인 조회를 그대로 써서 버전 이력·관리 화면과 번호가 어긋나지 않는다.
+    version_name 컬럼이 없는 구버전/단위테스트 스키마는 이름 None 으로 폴백한다.
+    """
+    empty = {
+        "recipe_version_label": None,
+        "recipe_version_name": None,
+        "recipe_version_is_current": None,
+    }
+    if recipe_id is None:
+        return empty
+    try:
+        rid = int(recipe_id)
+        root_id = find_chain_root(connection, rid)
+        chain = fetch_chain(connection, root_id)
+        idx = next((i for i, r in enumerate(chain, start=1) if int(r["id"]) == rid), None)
+        if idx is None:
+            return empty
+        name = None
+        try:
+            row = connection.execute(
+                "SELECT version_name FROM recipes WHERE id = ?", (rid,)
+            ).fetchone()
+            name = row["version_name"] if row else None
+        except sqlite3.OperationalError:  # version_name 컬럼 없는 구버전/테스트 DB
+            name = None
+        return {
+            "recipe_version_label": f"v{idx}",
+            "recipe_version_name": name,
+            "recipe_version_is_current": resolve_chain_tip(connection, root_id) == rid,
+        }
+    except (sqlite3.OperationalError, TypeError, ValueError):
+        return empty
 
 
 def _viscosity_state_select_expr(connection: sqlite3.Connection) -> str:
