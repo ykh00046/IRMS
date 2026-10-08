@@ -17,6 +17,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..auth import require_access_level
 from ..db import get_connection, write_audit_log
 from ..services import record_delete_service
+from ..services.recipe_helpers import (
+    chain_member_ids,
+    default_chain_tip,
+    find_chain_root,
+    resolve_chain_tip,
+)
 
 
 def _stage1_would_cycle(
@@ -252,6 +258,66 @@ def build_router() -> APIRouter:
             "status": "ok",
             "recipe_id": recipe_id,
             "version_name": version_name,
+        }
+
+    @router.put("/recipes/{recipe_id}/current")
+    def set_recipe_current(
+        recipe_id: int,
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """현재판 지정 — 책임자 전용. 복사본을 만들지 않고 체인의 현재판을 이 판으로 바꾼다.
+
+        체인 전체의 is_pinned_current 를 끄고 이 판만 켠다. 이 판이 기본 규칙의 현재판
+        (recipe_helpers.default_chain_tip)이면 지정 없이도 같은 결과라 플래그를 전부
+        끈 채로 둔다(일관 규칙: 플래그는 "최신이 아닌 판을 현재판으로 쓸 때"에만 남는다).
+        판정은
+        recipe_helpers.resolve_chain_tip·SUPERSEDED_RECIPE_IDS_SQL 이 읽는다.
+        """
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name, status FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+            if recipe_row["status"] in ("canceled", "draft"):
+                raise HTTPException(
+                    status_code=409, detail="취소된 판은 현재판으로 지정할 수 없습니다."
+                )
+
+            root_id = find_chain_root(connection, recipe_id)
+            previous_current_id = resolve_chain_tip(connection, root_id)
+            chain_ids = chain_member_ids(connection, recipe_id)
+            # 지정을 무시한 기본 현재판과 같으면 플래그 없이 둔다.
+            pin = default_chain_tip(connection, root_id) != recipe_id
+
+            placeholders = ",".join("?" for _ in chain_ids)
+            connection.execute(
+                f"UPDATE recipes SET is_pinned_current = 0 WHERE id IN ({placeholders})",
+                chain_ids,
+            )
+            if pin:
+                connection.execute(
+                    "UPDATE recipes SET is_pinned_current = 1 WHERE id = ?", (recipe_id,)
+                )
+            write_audit_log(
+                connection,
+                action="recipe_current_set",
+                actor=current_user,
+                target_type="recipe",
+                target_id=recipe_id,
+                target_label=str(recipe_row["product_name"]),
+                details={
+                    "chain_root_id": root_id,
+                    "previous_current_id": previous_current_id,
+                },
+            )
+            connection.commit()
+
+        return {
+            "status": "ok",
+            "recipe_id": recipe_id,
+            "previous_current_id": previous_current_id,
+            "is_pinned": pin,
         }
 
     @router.put("/recipes/{recipe_id}/loss-comp")

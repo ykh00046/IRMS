@@ -20,6 +20,7 @@ Endpoints:
     PATCH  /recipes/{recipe_id}/status
 """
 
+import sqlite3
 from datetime import date
 from typing import Any
 
@@ -290,6 +291,7 @@ def build_router() -> APIRouter:
             # 체인 전체를 한 번의 GROUP BY 로 센다(판마다 쿼리하지 않는다).
             record_counts: dict[int, int] = {}
             version_names: dict[int, str | None] = {}
+            pinned_ids: set[int] = set()
             if chain:
                 chain_ids = [int(r["id"]) for r in chain]
                 placeholders = ",".join("?" for _ in chain_ids)
@@ -305,6 +307,16 @@ def build_router() -> APIRouter:
                     chain_ids,
                 ).fetchall():
                     version_names[int(row["id"])] = row["version_name"]
+                # 현재판 지정 플래그 — 화면이 "사용중 · 지정"(최신이 아닌 판을 쓰는 중)을 표시.
+                try:
+                    for row in connection.execute(
+                        f"SELECT id FROM recipes WHERE id IN ({placeholders}) "
+                        f"AND COALESCE(is_pinned_current, 0) = 1",
+                        chain_ids,
+                    ).fetchall():
+                        pinned_ids.add(int(row["id"]))
+                except sqlite3.OperationalError:  # is_pinned_current 컬럼 없는 구버전 DB
+                    pass
 
             if not chain:
                 return {"root_id": root_id, "current_id": recipe_id, "items": []}
@@ -337,6 +349,7 @@ def build_router() -> APIRouter:
                 "item_count": len(item_map.get(rec["id"], [])),
                 "linked_record_count": record_counts.get(int(rec["id"]), 0),
                 "is_current": rec["id"] == current_id,
+                "is_pinned": int(rec["id"]) in pinned_ids,
                 "is_root": rec.get("revision_of") is None,
                 "use_reactor": bool(rec.get("use_reactor", 0)),
                 "is_derived": bool(rec.get("is_derived", 0)),

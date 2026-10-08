@@ -117,7 +117,7 @@
         }
         return it.is_current
           ? '<span class="status-chip status-completed">사용중</span>'
-          : '<span class="status-chip">이전 버전</span>';
+          : '<span class="status-chip">미사용</span>'; // 현재판 지정으로 더 새 판일 수도 있다
       };
       // 이름을 갈아탄 계보(예: NPR → NPR-S2 → NPR-S 를 소급 연결한 체인)에서는 판마다
       // 그 시절 반제품명을 함께 보여준다 — 안 그러면 v1~v5 만 보여 "어느 판이 어느 이름

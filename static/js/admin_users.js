@@ -90,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["recipe_anchor_set", "기준 자재 지정"],
       ["recipe_tolerance_set", "허용 편차 지정"],
       ["recipe_version_name_set", "버전 이름 지정"],
+      ["recipe_current_set", "현재판 지정"],
       ["recipe_loss_comp_set", "투입 로스 보정 지정"],
       ["recipe_category_set", "레시피 분류 지정"],
       ["recipe_stage1_set", "1차 레시피 연결"],

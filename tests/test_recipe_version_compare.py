@@ -164,32 +164,162 @@ def test_history_items_carry_linked_record_count():
     assert all(it["linked_record_count"] == 0 for it in h["items"])
 
 
-def test_revert_registers_old_content_as_new_current_version():
-    """되돌리기: 옛 판(v1)의 tsv 를 현재판(v2)의 개정으로 등록하면 v3 이 현재판이고 내용은 v1."""
-    client = _client()
-    headers = _mgr(client)
-    product = "VCRV" + uuid.uuid4().hex[:6].upper()
+def _chain3(client, headers, prefix):
+    """v1(60/40) → v2(70/30) → v3(80/20) 체인. v3 이 현재판."""
+    product = prefix + uuid.uuid4().hex[:6].upper()
     rid1 = _import(client, headers, f"반제품명\tA\tB\n{product}\t60\t40").json()["created_ids"][0]
     rid2 = _import(
         client, headers, f"반제품명\tA\tB\n{product}\t70\t30", revision_of=rid1
     ).json()["created_ids"][0]
+    rid3 = _import(
+        client, headers, f"반제품명\tA\tB\n{product}\t80\t20", revision_of=rid2
+    ).json()["created_ids"][0]
+    return product, rid1, rid2, rid3
 
-    tsv = client.get(f"/api/recipes/{rid1}/detail").json()["tsv"]
-    res = _import(client, headers, tsv, revision_of=rid2, created_by="레시피 관리")
+
+def _list_ids(client, product):
+    items = client.get(f"/api/recipes?search={product}").json()["items"]
+    return {it["id"] for it in items if it["product_name"] == product}
+
+
+def test_pin_old_version_switches_current_without_copy():
+    """현재판 지정: v1 을 지정하면 새 판 없이 v1 이 현재판, 목록·by-product 도 v1 만."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, rid2, rid3 = _chain3(client, headers, "VCPN")
+
+    res = client.put(f"/api/recipes/{rid1}/current", headers=headers)
     assert res.status_code == 200, res.text
-    rid3 = res.json()["created_ids"][0]
+    assert res.json()["previous_current_id"] == rid3
+    assert res.json()["is_pinned"] is True
+
+    h = client.get(f"/api/recipes/{rid3}/history").json()
+    assert len(h["items"]) == 3, "복사본(새 판)을 만들지 않는다"
+    by_id = {it["id"]: it for it in h["items"]}
+    assert h["current_id"] == rid1
+    assert by_id[rid1]["is_current"] and by_id[rid1]["is_pinned"]
+    assert not by_id[rid3]["is_current"] and not by_id[rid3]["is_pinned"]
+    assert not by_id[rid2]["is_current"]
+
+    assert _list_ids(client, product) == {rid1}
+    cur = client.get(f"/api/recipes/by-product?product_name={product}").json()
+    assert [it["id"] for it in cur["items"]] == [rid1]
+
+    # 배합 화면 레시피 목록(blend_service.list_blend_recipes)도 같은 판정.
+    blend = client.get("/api/blend/recipes").json()
+    blend_items = blend.get("items", blend) if isinstance(blend, dict) else blend
+    ids = {it["id"] for it in blend_items if it.get("product_name") == product}
+    assert ids == {rid1}
+
+    # 다시 최신(v3)을 지정하면 지정이 풀린다(기본 규칙과 같은 결과).
+    res = client.put(f"/api/recipes/{rid3}/current", headers=headers)
+    assert res.status_code == 200 and res.json()["is_pinned"] is False
+    h = client.get(f"/api/recipes/{rid1}/history").json()
+    assert h["current_id"] == rid3
+    assert not any(it["is_pinned"] for it in h["items"])
+    assert _list_ids(client, product) == {rid3}
+
+
+def test_pin_then_revision_on_pinned_becomes_current_and_clears_pin():
+    """지정된 현재판(v1)에서 수정 등록하면 성공하고, 새 판이 현재판·지정은 풀린다."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, _rid2, rid3 = _chain3(client, headers, "VCPR")
+    assert client.put(f"/api/recipes/{rid1}/current", headers=headers).status_code == 200
+
+    # 지정 뒤엔 v3 이 더 이상 현재판이 아니므로 v3 기준 수정 등록은 409.
+    stale = _import(client, headers, f"반제품명\tA\tB\n{product}\t90\t10", revision_of=rid3)
+    assert stale.status_code == 409, stale.text
+
+    res = _import(client, headers, f"반제품명\tA\tB\n{product}\t65\t35", revision_of=rid1)
+    assert res.status_code == 200, res.text
+    rid4 = res.json()["created_ids"][0]
 
     h = client.get(f"/api/recipes/{rid1}/history").json()
-    assert [it["id"] for it in h["items"]][-1] == rid3
-    v3 = next(it for it in h["items"] if it["id"] == rid3)
-    assert v3["is_current"] and v3["version_label"] == "v3"
-    assert sum(1 for it in h["items"] if it["is_current"]) == 1
+    assert h["current_id"] == rid4
+    assert not any(it["is_pinned"] for it in h["items"])
+    assert _list_ids(client, product) == {rid4}
 
-    def weights(rid):
-        items = client.get(f"/api/recipes/{rid}/detail").json()["items"]
-        return sorted((it["material_name"], float(it["value"])) for it in items)
 
-    assert weights(rid3) == weights(rid1) == [("A", 60.0), ("B", 40.0)]
+def test_pin_canceled_version_is_409_and_missing_is_404():
+    client = _client()
+    headers = _mgr(client)
+    _product, rid1, rid2, _rid3 = _chain3(client, headers, "VCPC")
+    cancel = client.patch(
+        f"/api/recipes/{rid2}/status",
+        json={"action": "cancel", "reason": "시험 등록분 정리"},
+        headers=headers,
+    )
+    assert cancel.status_code == 200, cancel.text
+
+    res = client.put(f"/api/recipes/{rid2}/current", headers=headers)
+    assert res.status_code == 409
+    assert res.json()["detail"] == "취소된 판은 현재판으로 지정할 수 없습니다."
+    assert client.put("/api/recipes/99999999/current", headers=headers).status_code == 404
+
+
+def test_delete_pinned_version_falls_back_to_newest():
+    """지정된 판을 지우면 남은 체인의 현재판은 기본 규칙(활성 최신본)으로 돌아온다."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, rid2, rid3 = _chain3(client, headers, "VCPD")
+    assert client.put(f"/api/recipes/{rid2}/current", headers=headers).status_code == 200
+    assert _list_ids(client, product) == {rid2}
+
+    res = client.delete(f"/api/recipes/{rid2}?delete_blend_records=false", headers=headers)
+    assert res.status_code == 200, res.text
+
+    h = client.get(f"/api/recipes/{rid1}/history").json()
+    assert {it["id"] for it in h["items"]} == {rid1, rid3}
+    assert h["current_id"] == rid3
+    assert _list_ids(client, product) == {rid3}
+
+
+def test_superseded_sql_and_resolve_tip_honour_pin_in_memory():
+    """판정 단일 소스(SQL·파이썬)가 같은 답: 지정·취소된 지정·지정 없음."""
+    import sqlite3
+
+    from src.services.recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE recipes (id INTEGER PRIMARY KEY, revision_of INTEGER, status TEXT, "
+        "is_pinned_current INTEGER NOT NULL DEFAULT 0)"
+    )
+    # 체인 A: 1→2→3 (2 지정) / 체인 B: 10→11 (지정 없음) / 체인 C: 20→21 (21 지정이지만 취소)
+    conn.executemany(
+        "INSERT INTO recipes (id, revision_of, status, is_pinned_current) VALUES (?, ?, ?, ?)",
+        [
+            (1, None, "completed", 0), (2, 1, "completed", 1), (3, 2, "completed", 0),
+            (10, None, "completed", 0), (11, 10, "completed", 0),
+            (20, None, "completed", 0), (21, 20, "canceled", 1),
+            # 체인 D: 지정 판에서 수정 등록해 가지가 생긴 뒤 지정이 풀린 모양(30→31→32, 30→33)
+            (30, None, "completed", 0), (31, 30, "completed", 0), (32, 31, "completed", 0),
+            (33, 30, "completed", 0),
+            # 체인 E: 소급 연결로 id 순서가 뒤집힌 체인(50→40). 계보상 끝인 40 이 현재판.
+            (50, None, "completed", 0), (40, 50, "completed", 0),
+        ],
+    )
+
+    def visible():
+        return {
+            r["id"] for r in conn.execute(
+                f"SELECT id FROM recipes WHERE status NOT IN ('canceled','draft') "
+                f"AND id NOT IN ({SUPERSEDED_RECIPE_IDS_SQL})"
+            ).fetchall()
+        }
+
+    assert visible() == {2, 11, 20, 33, 40}
+    assert {r["ancestor"] for r in conn.execute(SUPERSEDED_RECIPE_IDS_SQL)} >= {1, 3, 10, 30, 31, 32, 50}
+    for rid in (1, 2, 3):
+        assert resolve_chain_tip(conn, rid) == 2
+    assert resolve_chain_tip(conn, 10) == 11
+    assert resolve_chain_tip(conn, 20) == 20
+    assert resolve_chain_tip(conn, 21) == 21  # 취소된 말단 자신 → 입력 그대로(기존 규칙)
+    for rid in (30, 31, 32, 33):
+        assert resolve_chain_tip(conn, rid) == 33
+    assert resolve_chain_tip(conn, 50) == 40 and resolve_chain_tip(conn, 40) == 40
 
 
 def test_delete_old_version_leaves_single_current():

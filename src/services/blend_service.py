@@ -21,7 +21,11 @@ from typing import Any
 from ..db.queries import normalize_token
 from ..db.time_utils import local_today_text
 from .material_resolver import resolve_material
-from .recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
+from .recipe_helpers import (
+    SUPERSEDED_RECIPE_IDS_SQL,
+    current_recipe_by_names,
+    resolve_chain_tip,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2622,12 +2626,7 @@ def product_uses_reactor(connection: sqlite3.Connection, product_name: str) -> b
         return False
     # recipes.use_reactor 컬럼이 없는 레거시/단위테스트 스키마에서는 점도 폴백으로 간주.
     try:
-        recipe_row = connection.execute(
-            "SELECT use_reactor FROM recipes "
-            "WHERE product_name = ? AND status = 'completed' "
-            "ORDER BY id DESC LIMIT 1",
-            (name,),
-        ).fetchone()
+        recipe_row = current_recipe_by_names(connection, "use_reactor", [name])
     except sqlite3.OperationalError:
         recipe_row = None
     if recipe_row:

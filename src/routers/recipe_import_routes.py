@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ..auth import get_current_user, require_access_level
 from ..db import get_connection, normalize_token, utc_now_text, write_audit_log
 from ..services.import_parser import parse_import_text
-from ..services.recipe_helpers import resolve_chain_tip
+from ..services.recipe_helpers import SUPERSEDED_RECIPE_IDS_SQL, resolve_chain_tip
 from .item_code_routes import (
     _PRODUCT_CODE_PATTERN,
     _material_code_holder,
@@ -336,12 +336,13 @@ def build_router() -> APIRouter:
             # 수정 등록(revision_of)·force 는 그대로 통과시킨다.
             if body.revision_of is None and not body.force:
                 for parsed_row in parsed["parsed_rows"]:
+                    # 살아 있는 현재판(tip)을 찾는다. 판정은 목록과 같은 단일 규칙
+                    # (SUPERSEDED_RECIPE_IDS_SQL: 현재판 지정·취소 말단 건너뛰기 포함).
                     dup = connection.execute(
                         """
                         SELECT id FROM recipes
                         WHERE product_name = ? AND status NOT IN ('canceled', 'draft')
-                          AND id NOT IN (SELECT revision_of FROM recipes
-                                         WHERE revision_of IS NOT NULL)
+                          AND id NOT IN (""" + SUPERSEDED_RECIPE_IDS_SQL + """)
                         LIMIT 1
                         """,
                         (parsed_row["product_name"],),
@@ -546,6 +547,21 @@ def build_router() -> APIRouter:
                         "INSERT INTO recipe_steps (recipe_id, position, note) VALUES (?, ?, ?)",
                         (recipe_id, int(step["position"]), step["note"]),
                     )
+
+            # 현재판 지정 해제 — 수정 등록은 현재판(지정된 판 포함)에서만 허용되므로(위 409),
+            # 새로 등록한 판이 기본 규칙(활성 최신본)으로 현재판이 되도록 체인 전체의 지정을 끈다.
+            if body.revision_of is not None:
+                pin_chain_ids = _revision_chain_ids(connection, int(body.revision_of))
+                if pin_chain_ids:
+                    try:
+                        connection.execute(
+                            "UPDATE recipes SET is_pinned_current = 0 WHERE id IN ({})".format(
+                                ",".join("?" for _ in pin_chain_ids)
+                            ),
+                            pin_chain_ids,
+                        )
+                    except sqlite3.OperationalError:  # is_pinned_current 컬럼 없는 구버전 DB
+                        pass
 
             write_audit_log(
                 connection,

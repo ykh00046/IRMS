@@ -22,6 +22,7 @@ from datetime import date, datetime
 from typing import Any
 
 from . import settings_service
+from .recipe_helpers import current_recipe_by_names
 
 # 추세 룰 파라미터
 RUN_LENGTH = 5  # 연속 단조 상승/하락 N회 → 추세 경보
@@ -149,14 +150,8 @@ def _recipe_use_reactor(connection: sqlite3.Connection, code: Any, name: Any) ->
     candidates = [v for v in (code, name) if v not in (None, "")]
     if not candidates:
         return None
-    placeholders = " OR ".join("product_name = ?" for _ in candidates)
     try:
-        row = connection.execute(
-            f"SELECT use_reactor FROM recipes "
-            f"WHERE ({placeholders}) AND status = 'completed' "
-            f"ORDER BY id DESC LIMIT 1",
-            candidates,
-        ).fetchone()
+        row = current_recipe_by_names(connection, "use_reactor", candidates)
     except sqlite3.OperationalError:
         # recipes 테이블이 없는 스키마(단위 테스트) — 폴백.
         return None
@@ -174,14 +169,8 @@ def _recipe_category(connection: sqlite3.Connection, code: Any, name: Any) -> st
     candidates = [v for v in (code, name) if v not in (None, "")]
     if not candidates:
         return None
-    placeholders = " OR ".join("product_name = ?" for _ in candidates)
     try:
-        row = connection.execute(
-            f"SELECT category FROM recipes "
-            f"WHERE ({placeholders}) AND status = 'completed' "
-            f"ORDER BY id DESC LIMIT 1",
-            candidates,
-        ).fetchone()
+        row = current_recipe_by_names(connection, "category", candidates)
     except sqlite3.OperationalError:
         # recipes 테이블/열이 없는 스키마(단위 테스트) — 분류 없음으로 본다.
         return None
@@ -835,13 +824,8 @@ def _recipe_material_keys(connection: sqlite3.Connection, code: Any, name: Any) 
     candidates = [v for v in (code, name) if v not in (None, "")]
     if not candidates:
         return []
-    placeholders = " OR ".join("product_name = ?" for _ in candidates)
     try:
-        recipe = connection.execute(
-            f"SELECT id FROM recipes WHERE ({placeholders}) AND status = 'completed' "
-            f"ORDER BY id DESC LIMIT 1",
-            candidates,
-        ).fetchone()
+        recipe = current_recipe_by_names(connection, "id", candidates)
     except sqlite3.OperationalError:
         return []
     if not recipe:

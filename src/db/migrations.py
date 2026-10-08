@@ -252,6 +252,10 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "recipes", "tolerance_g", "REAL")
     # 판 이름(자유 문구, 예: "저점도용"). NULL = 이름 없음. 버전 관리 화면에서 책임자가 붙인다.
     ensure_column(connection, "recipes", "version_name", "TEXT")
+    # 현재판 지정(1=이 판을 체인의 현재판으로 고정). 0 = 기본 규칙(활성 최신본).
+    # 버전 관리의 '현재판 지정'이 켜고, 수정 등록이 체인 전체에서 끈다.
+    # 판정은 recipe_helpers(resolve_chain_tip·SUPERSEDED_RECIPE_IDS_SQL) 한 곳에서만.
+    ensure_column(connection, "recipes", "is_pinned_current", "INTEGER NOT NULL DEFAULT 0")
     # 레시피 분류(약품/합성/잉크). NULL = 미분류(하위호환 — 기존 레시피 동작 불변).
     # 값 검증은 API에서(여기선 컬럼만). 배합·이어서계량 화면의 2단계 선택(분류→레시피)용.
     ensure_column(connection, "recipes", "category", "TEXT")

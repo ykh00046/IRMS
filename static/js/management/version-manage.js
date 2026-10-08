@@ -2,11 +2,12 @@
  * version-manage module — '버전 관리' 탭(#tab-versions, 책임자 전용) 렌더러(2026-10-08).
  *
  * 버전 비교(version-compare.js)는 읽기 전용 이력 화면으로 두고, 쓰기 동작은 여기로 모았다.
- *   이름     PUT    /api/recipes/{id}/version-name   (판을 사람이 구분하게 하는 자유 문구)
- *   되돌리기 POST   /api/recipes/import              (옛 판 내용으로 새 판 등록, revision_of = 현재판)
- *   삭제     DELETE /api/recipes/{id}                (기록 없는 이전 판만, 기록은 건드리지 않음)
- *   정리     기록 없는 이전 판을 차례로 삭제
- * 되돌리기는 옛 판을 되살리지 않는다. 이력은 앞으로만 쌓이고 현재판은 이전 버전이 된다.
+ *   이름        PUT    /api/recipes/{id}/version-name   (판을 사람이 구분하게 하는 자유 문구)
+ *   현재판 지정 PUT    /api/recipes/{id}/current        (복사 없이 체인의 현재판을 이 판으로 바꿈)
+ *   삭제        DELETE /api/recipes/{id}                (기록 없는 미사용 판만, 기록은 건드리지 않음)
+ *   정리        기록 없는 미사용 판을 차례로 삭제
+ * 현재판 지정은 새 판을 만들지 않는다(2026-10-08 현장 요청: 저점도용 v2 ↔ 고점도용 v4 전환).
+ * 지정은 다음 수정 등록 때 풀리고 새 판이 현재판이 된다(서버 import 라우트).
  *
  * Factory: IRMS.management.createVersionManage(ctx)
  * Returns: { open }
@@ -25,13 +26,14 @@
     }
 
     // 상태칩 — 버전 비교 타임라인과 같은 규칙.
+    // 현재판이 아닌 판은 더 새 판일 수도 있어(현재판 지정) '이전'이 아니라 '미사용'.
     function statusChip(it) {
       if (it.status === "canceled") {
         return `<span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span>`;
       }
       return it.is_current
         ? '<span class="status-chip status-completed">사용중</span>'
-        : '<span class="status-chip">이전 버전</span>';
+        : '<span class="status-chip">미사용</span>';
     }
 
     function jsonHeaders() {
@@ -69,17 +71,6 @@
       try {
         if (ctx.recipeHistory && ctx.recipeHistory.renderHistory) ctx.recipeHistory.renderHistory();
       } catch (_e) { /* 무시 */ }
-    }
-
-    // TSV 값 행의 첫 칸(반제품명)을 현재판 이름으로 바꾼다. 이름을 갈아탄 계보에서
-    // 옛 판 이름으로 등록되면 현재 이름이 되돌아가 버리므로 현재 이름을 지킨다.
-    function renameTsvProduct(tsv, productName) {
-      const lines = String(tsv || "").split(/\r?\n/);
-      if (lines.length < 2) throw new Error("레시피 내용을 읽지 못했습니다.");
-      const cells = lines[1].split("\t");
-      cells[0] = productName;
-      lines[1] = cells.join("\t");
-      return lines.join("\n");
     }
 
     function renderEmpty(message) {
@@ -121,30 +112,42 @@
       // 이름을 갈아탄 계보면 판마다 그 시절 반제품명을 버전 칸에 덧붙인다(버전 비교와 같은 규칙).
       const names = new Set(items.map((it) => it.product_name).filter(Boolean));
       const showName = names.size > 1;
+      // '지정' 표기는 최신이 아닌 판을 현재판으로 쓰는 중일 때만. 최신=현재면 덧붙이지 않는다.
+      const activeIds = items
+        .filter((it) => it.status !== "canceled" && it.status !== "draft")
+        .map((it) => Number(it.id));
+      const newestActiveId = activeIds.length ? Math.max(...activeIds) : null;
+      const pinnedNote = (it) => (it.is_current && it.is_pinned && Number(it.id) !== newestActiveId
+        ? ' <span class="muted small">· 지정</span>'
+        : "");
       body.innerHTML = items.map((it) => {
         const nameTag = showName && it.product_name
           ? ` <span class="muted small">${IRMS.escapeHtml(it.product_name)}</span>`
           : "";
         const curChip = it.is_current ? ' <span class="status-chip status-completed">현재</span>' : "";
+        const canPin = !it.is_current && it.status !== "canceled" && it.status !== "draft";
         const actions = it.is_current
           ? '<span class="muted">-</span>'
           : `<div class="button-row">`
-            + `<button type="button" class="btn btn-sm vm-revert-btn" data-recipe-id="${it.id}">되돌리기</button>`
+            + (canPin
+              ? `<button type="button" class="btn btn-sm accent vm-pin-btn" data-recipe-id="${it.id}">현재판 지정</button>`
+              : "")
             + `<button type="button" class="btn btn-sm danger vm-delete-btn" data-recipe-id="${it.id}"`
             + (recCount(it) > 0 ? ' disabled title="배합 기록이 있어 삭제할 수 없습니다"' : "")
             + `>삭제</button>`
             + `</div>`;
+        const savedName = IRMS.escapeHtml(it.version_name || "");
         return `<tr data-recipe-id="${it.id}">`
           + `<td><b>${IRMS.escapeHtml(it.version_label)}</b>${curChip}${nameTag}</td>`
           + `<td><div class="vm-name-cell">`
-          + `<input type="text" class="input vm-name-input" maxlength="40" data-recipe-id="${it.id}" value="${IRMS.escapeHtml(it.version_name || "")}" />`
+          + `<input type="text" class="input vm-name-input" maxlength="40" data-recipe-id="${it.id}" data-saved="${savedName}" value="${savedName}" />`
           + `<button type="button" class="btn btn-sm vm-name-save-btn" data-recipe-id="${it.id}">저장</button>`
           + `</div></td>`
           + `<td>${IRMS.formatDateTime(it.created_at)}</td>`
           + `<td>${IRMS.escapeHtml(it.created_by || "-")}</td>`
           + `<td class="num">${Number(it.item_count || 0)}</td>`
           + `<td class="num">${recCount(it)}건</td>`
-          + `<td>${statusChip(it)}</td>`
+          + `<td>${statusChip(it)}${pinnedNote(it)}</td>`
           + `<td>${actions}</td>`
           + `</tr>`;
       }).join("");
@@ -164,11 +167,15 @@
             handleSaveName(Number(input.dataset.recipeId), input);
           }
         });
+        // 값이 바뀐 채로 칸을 벗어나면(blur) 저장. Enter 직후의 change 는 data-saved 비교로 건너뛴다.
+        input.addEventListener("change", () => {
+          handleSaveName(Number(input.dataset.recipeId), input);
+        });
       });
-      body.querySelectorAll(".vm-revert-btn").forEach((btn) => {
+      body.querySelectorAll(".vm-pin-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const target = byId.get(Number(btn.dataset.recipeId));
-          if (target) revertToVersion(target, current, items.length);
+          if (target) pinVersion(target);
         });
       });
       body.querySelectorAll(".vm-delete-btn").forEach((btn) => {
@@ -179,7 +186,7 @@
         });
       });
 
-      // 정리 = 기록 없는 이전 판(현재판 제외). 하나도 없으면 버튼을 숨긴다.
+      // 정리 = 기록 없는 미사용 판(현재판 제외). 하나도 없으면 버튼을 숨긴다.
       const prunable = items.filter((it) => !it.is_current && recCount(it) === 0);
       const pruneBtn = document.getElementById("vm-prune-btn");
       const pruneNote = document.getElementById("vm-prune-note");
@@ -188,50 +195,39 @@
         // 다시 그릴 때마다 핸들러가 쌓이지 않게 onclick 으로 덮어쓴다.
         pruneBtn.onclick = () => pruneVersions(prunable, current);
       }
-      if (pruneNote) pruneNote.textContent = prunable.length ? `기록 없는 이전 판 ${prunable.length}개` : "";
+      if (pruneNote) pruneNote.textContent = prunable.length ? `기록 없는 미사용 판 ${prunable.length}개` : "";
     }
 
+    // 같은 값이면 요청하지 않는다(Enter 저장 뒤 blur 의 change 가 한 번 더 부르는 것을 막음).
     async function handleSaveName(recipeId, input) {
       const name = String(input.value || "").trim();
+      if (name === (input.dataset.saved || "")) {
+        input.value = name;
+        return;
+      }
+      input.dataset.saved = name; // 응답 전에 같은 값으로 다시 불려도 건너뛴다
       try {
         await saveVersionName(recipeId, name);
-        input.value = name;
         IRMS.notify("이름을 저장했습니다.", "success");
       } catch (error) {
         IRMS.notify(`이름 저장 실패: ${error.message}`, "error");
       }
+      // 서버에 남은 값으로 다시 그린다(실패했으면 원래 이름으로 돌아온다).
+      await open(currentTipId || recipeId);
     }
 
-    // 되돌리기 = 옛 판 내용으로 새 판을 등록한다. 판 이름도 옛 판 것을 옮긴다.
-    async function revertToVersion(target, current, chainLength) {
-      const newLabel = `v${chainLength + 1}`;
-      const ok = window.confirm(
-        `${target.version_label} 내용으로 새 판을 등록합니다.\n`
-        + `현재판 ${current.version_label} 대신 새 판이 사용됩니다.`,
-      );
-      if (!ok) return;
-      let newId = null;
+    // 현재판 지정 = 복사 없이 체인의 현재판을 이 판으로 바꾼다.
+    async function pinVersion(target) {
+      const label = target.version_label;
+      if (!window.confirm(`${label} 판을 현재판으로 지정합니다.\n배합 화면은 이 판을 씁니다.`)) return;
       try {
-        const detail = await IRMS.getRecipeDetail(target.id);
-        const rawText = renameTsvProduct(detail.tsv, current.product_name || detail.product_name);
-        const result = await sendJson("/api/recipes/import", "POST", {
-          raw_text: rawText,
-          created_by: "레시피 관리",
-          revision_of: current.id,
-          force: true,
-        });
-        newId = (result.created_ids || [])[0] || null;
+        await sendJson(`/api/recipes/${target.id}/current`, "PUT", {});
       } catch (error) {
-        IRMS.notify(`되돌리기 실패: ${error.message}`, "error");
+        IRMS.notify(`현재판 지정 실패: ${error.message}`, "error");
         return;
       }
-      if (newId && target.version_name) {
-        try {
-          await saveVersionName(newId, target.version_name);
-        } catch (_e) { /* 등록은 이미 성공 · 이름은 다시 붙이면 된다 */ }
-      }
-      IRMS.notify(`${target.version_label} 내용으로 ${newLabel} 판을 등록했습니다.`, "success");
-      await open(newId || current.id);
+      IRMS.notify(`${label} 판을 현재판으로 지정했습니다.`, "success");
+      await open(target.id);
       refreshHistoryTable();
     }
 
@@ -252,7 +248,7 @@
     async function pruneVersions(targets, current) {
       const n = targets.length;
       if (!n) return;
-      if (!window.confirm(`기록 없는 이전 판 ${n}개를 삭제합니다. 되돌릴 수 없습니다.`)) return;
+      if (!window.confirm(`기록 없는 미사용 판 ${n}개를 삭제합니다. 되돌릴 수 없습니다.`)) return;
       let done = 0;
       let firstError = null;
       for (const it of targets) {
@@ -264,9 +260,9 @@
         }
       }
       if (firstError) {
-        IRMS.notify(`이전 판 ${done}개를 삭제했습니다. 실패: ${firstError}`, "error");
+        IRMS.notify(`미사용 판 ${done}개를 삭제했습니다. 실패: ${firstError}`, "error");
       } else {
-        IRMS.notify(`이전 판 ${done}개를 삭제했습니다.`, "success");
+        IRMS.notify(`미사용 판 ${done}개를 삭제했습니다.`, "success");
       }
       await open(current.id || currentTipId);
       refreshHistoryTable();
