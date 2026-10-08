@@ -5,6 +5,12 @@
  * Split from static/js/management.js during the split-management-js
  * PDCA cycle (2026-05). See docs/01-plan/features/split-management-js.plan.md.
  *
+ * Detail row (2026-10-09): two columns + footer.
+ *   left  .rh-items     자재 구성 표(#·자재·배합량·비율·보정, '기준' 칩, 합계)
+ *   right .rh-settings  설정(기준 자재·허용 편차는 바꾸면 저장, 투입 로스 보정은 [저장])
+ *   foot  .rh-actions   주 동작(수정 등록·버전·Excel) | 관리 동작(DHR·취소·삭제)
+ *   분류는 현황 행의 인라인 선택에서만 바꾼다.
+ *
  * Factory: IRMS.management.createRecipeHistory(ctx)
  * Returns: { persistHistoryFilters, updateHistorySummary,
  *            restoreHistoryFilters, resetHistoryFilters, renderHistory }
@@ -386,37 +392,36 @@
             row.classList.add("selected");
             try {
               const detail = await IRMS.getRecipeDetail(recipeId);
-              const items = detail.items || [];
-              const itemsHtml = items.length
-                ? items.map((it) =>
-                    `<span class="detail-chip">${IRMS.escapeHtml(it.material_name)}: ${IRMS.escapeHtml(String(it.value))}</span>`
-                  ).join("")
-                : '<span class="muted">재료 없음</span>';
-
               const detailRow = document.createElement("tr");
               detailRow.classList.add("history-detail-row");
               const dhrActionLabel = detail.is_dhr ? "DHR 전용 해제" : "DHR 전용 지정";
+              // 상세 = [자재 구성 표 | 설정] 2단 + 아래 동작 줄(왼쪽 주 동작, 오른쪽 관리 동작).
               detailRow.innerHTML = `<td colspan="11">
                 <div class="history-detail-content">
-                  <div class="detail-items">${itemsHtml}</div>
-                  <div class="history-attrs" data-attrs-for="${recipeId}"></div>
-                  <div class="detail-actions">
-                    <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
-                    <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
-                    <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
-                    <button class="btn btn-sm history-versions-btn" data-recipe-id="${recipeId}">버전 관리</button>
-                    <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
-                    ${detail.status !== "canceled"
-                      ? `<button class="btn btn-sm warn history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
-                      : `<button class="btn btn-sm accent history-restore-btn" data-recipe-id="${recipeId}">취소 해제</button>`}
-                    <button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">레시피 삭제</button>
-                    <button class="btn btn-sm danger history-delete-with-records-btn" data-recipe-id="${recipeId}">레시피+기록 삭제</button>
+                  <section class="rh-items"></section>
+                  <section class="rh-settings history-attrs" data-attrs-for="${recipeId}"></section>
+                  <div class="rh-actions">
+                    <div class="rh-actions-main">
+                      <button class="btn btn-sm accent history-edit-btn" data-recipe-id="${recipeId}">수정 등록</button>
+                      <button class="btn btn-sm history-version-btn" data-recipe-id="${recipeId}">버전 이력</button>
+                      <button class="btn btn-sm history-versions-btn" data-recipe-id="${recipeId}">버전 관리</button>
+                      <button class="btn btn-sm history-copy-btn" data-recipe-id="${recipeId}">엑셀로 복사</button>
+                    </div>
+                    <div class="rh-actions-manage">
+                      <button class="btn btn-sm history-dhr-btn" data-recipe-id="${recipeId}">${dhrActionLabel}</button>
+                      ${detail.status !== "canceled"
+                        ? `<button class="btn btn-sm warn history-cancel-btn" data-recipe-id="${recipeId}">등록 취소</button>`
+                        : `<button class="btn btn-sm accent history-restore-btn" data-recipe-id="${recipeId}">취소 해제</button>`}
+                      <button class="btn btn-sm danger history-delete-btn" data-recipe-id="${recipeId}">레시피 삭제</button>
+                      <button class="btn btn-sm danger history-delete-with-records-btn" data-recipe-id="${recipeId}">레시피+기록 삭제</button>
+                    </div>
                   </div>
                 </div>
               </td>`;
-              // 속성 편집기(기준 자재·허용 편차·분류·투입 로스 보정) — detailRow 스코프 내 렌더.
+              // 자재 구성 표와 설정 칸 — detailRow 스코프 내 렌더.
               // 펼침은 한 번에 한 행만(위에서 다른 detail-row 를 닫는다)이므로 id 충돌은 없지만,
               // 안전하게 detailRow.querySelector 스코프로 저장 핸들러를 건다.
+              renderItemsTable(detailRow, detail);
               await renderAttributePanel(detailRow, detail, recipeId);
               row.after(detailRow);
               if (!ctx.canManage) {
@@ -583,118 +588,161 @@
       });
     }
 
-    // ── 속성 편집기(3단계 정리 2026-08-06) — recipe-lookup.js 에서 이전 ──
-    // 현황 행 펼침(detailRow) 안에 4줄(기준 자재·허용 편차·분류·투입 로스 보정)을 그린다.
+    // ── 현황 행 상세(2026-10-09 재배치) ──
+    // 왼쪽 = 자재 구성 표(.rh-items), 오른쪽 = 설정 칸(.rh-settings, 기준 자재·허용 편차·
+    // 투입 로스 보정), 아래 = 동작 줄(.rh-actions). 분류는 현황 행의 인라인 선택에서만 바꾼다.
+    // 컨트롤 자체가 현재값을 보여 준다("현재:" 중복 표기 없음). 기준 자재·허용 편차는 바꾸면
+    // 바로 저장, 보정은 여러 줄이라 [저장]으로 한꺼번에 보낸다.
     // detailRow 스코프 내 querySelector 로 저장 핸들러를 묶는다(여러 행 동시 열림 방지).
-    // 책임자가 아니면 현재값만 읽기 전용으로 표시.
+    // 책임자가 아니면 같은 칸을 값만 읽기 전용으로 표시.
+
+    function formatFixed(value, digits) {
+      return Number(value).toLocaleString("ko-KR", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+    }
+
+    function uniqueMaterialNames(detail) {
+      const seen = new Set();
+      const uniq = [];
+      for (const it of detail.items || []) {
+        const n = it.material_name;
+        if (n && !seen.has(n)) { seen.add(n); uniq.push(n); }
+      }
+      return uniq;
+    }
+
+    // 자재 구성 표 — 저장 후(기준 자재·보정) 다시 그릴 수 있게 detail 을 행에 붙여 둔다.
+    function renderItemsTable(detailRow, detail) {
+      detailRow._rhDetail = detail;
+      const wrap = detailRow.querySelector(".rh-items");
+      if (!wrap) return;
+      const items = detail.items || [];
+      if (!items.length) {
+        wrap.innerHTML = '<p class="empty-state">자재가 없습니다.</p>';
+        return;
+      }
+      const anchorName = detail.anchor_material_name || "";
+      const weights = items.map((it) => Number(it.value));
+      const total = weights.reduce((sum, w) => sum + (Number.isFinite(w) ? w : 0), 0);
+      const rowsHtml = items.map((it, idx) => {
+        const w = weights[idx];
+        const name = IRMS.escapeHtml(it.material_name || "");
+        const anchorChip = anchorName && it.material_name === anchorName
+          ? ' <span class="status-chip rh-anchor-chip">기준</span>'
+          : "";
+        const weightText = Number.isFinite(w) ? formatFixed(w, 2) : IRMS.escapeHtml(String(it.value ?? ""));
+        const ratioText = Number.isFinite(w) && total > 0 ? formatFixed((w / total) * 100, 1) : "-";
+        const comp = Number(it.loss_comp_g);
+        const compHtml = comp > 0
+          ? `+${formatFixed(comp, 1)}`
+          : '<span class="muted">-</span>';
+        return `<tr>`
+          + `<td class="num rh-idx">${idx + 1}</td>`
+          + `<td>${name}${anchorChip}</td>`
+          + `<td class="num">${weightText}</td>`
+          + `<td class="num">${ratioText}</td>`
+          + `<td class="num">${compHtml}</td>`
+          + `</tr>`;
+      }).join("");
+      wrap.innerHTML =
+        `<h4 class="rh-section-title">자재 구성 · ${items.length}종 · ${formatFixed(total, 2)} g</h4>`
+        + `<div class="table-wrap rh-items-wrap"><table class="blend-table rh-items-table">`
+        + `<thead><tr><th class="num">#</th><th>자재</th><th class="num">배합량(g)</th><th class="num">비율(%)</th><th class="num">보정(g)</th></tr></thead>`
+        + `<tbody>${rowsHtml}</tbody>`
+        + `<tfoot><tr><td></td><td>합계</td><td class="num">${formatFixed(total, 2)}</td><td class="num">100.0</td><td></td></tr></tfoot>`
+        + `</table></div>`;
+    }
 
     async function renderAttributePanel(detailRow, detail, recipeId) {
       const wrap = detailRow.querySelector(".history-attrs");
       if (!wrap) return;
       const canManage = !!ctx.canManage;
       const currentName = detail.anchor_material_name || "";
-      const itemNames = (detail.items || [])
-        .map((it) => it.material_name)
-        .filter((n) => !!n);
-      const seen = new Set();
-      const uniq = [];
-      for (const n of itemNames) {
-        if (!seen.has(n)) { seen.add(n); uniq.push(n); }
+      const uniq = uniqueMaterialNames(detail);
+
+      const settingRow = (labelHtml, controlHtml, extraClass) =>
+        `<div class="rh-setting${extraClass ? ` ${extraClass}` : ""}">${labelHtml}`
+        + `<div class="rh-setting-control">${controlHtml}</div></div>`;
+
+      const tolCurrent = detail.tolerance_g != null ? Number(detail.tolerance_g) : null;
+      const tolSet = tolCurrent != null && Number.isFinite(tolCurrent);
+      const lossLabel = `<label class="filter-label" title="자재 마스터 기본값보다 이 값이 우선합니다.">투입 로스 보정</label>`;
+
+      if (!canManage) {
+        const lossItems = (detail.items || []).filter((it) => Number(it.loss_comp_g) > 0 && it.material_name);
+        const lossText = lossItems.length
+          ? lossItems.map((it) => `${IRMS.escapeHtml(it.material_name)} +${formatFixed(it.loss_comp_g, 1)} g`).join(" · ")
+          : '<span class="muted">없음</span>';
+        wrap.innerHTML =
+          `<h4 class="rh-section-title">설정</h4>`
+          + settingRow(`<label class="filter-label">기준 자재</label>`,
+            currentName ? IRMS.escapeHtml(currentName) : '<span class="muted">없음</span>')
+          + settingRow(`<label class="filter-label">허용 편차</label>`,
+            tolSet ? `±${IRMS.escapeHtml(String(tolCurrent))} g` : '<span class="muted">±0.05 g 기본</span>')
+          + settingRow(lossLabel, lossText);
+        return;
       }
 
-      const attrRow = (labelHtml, currentHtml, editorHtml) =>
-        `<div class="lookup-attr-row">${labelHtml}`
-        + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentHtml}</span>`
-        + (editorHtml ? `<span class="lookup-attr-editor">${editorHtml}</span>` : "")
-        + `</div>`;
-
-      // 기준 자재
-      const currentText = currentName
-        ? IRMS.escapeHtml(currentName)
-        : '<span class="muted">없음</span>';
+      // 기준 자재 — 바꾸면 바로 저장. data-saved 는 실패 시 되돌릴 값.
       const anchorOptions = '<option value="">없음</option>'
         + uniq.map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === currentName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`).join("");
-      const anchorEditor = canManage
-        ? `<select class="input attr-anchor-select">${anchorOptions}</select>` +
-          `<button class="btn attr-anchor-save" type="button">저장</button>`
-        : "";
+      const anchorControl = `<select class="input attr-anchor-select" data-saved="${IRMS.escapeHtml(currentName)}">${anchorOptions}</select>`;
 
-      // 허용 편차
-      const tolCurrent = detail.tolerance_g != null ? Number(detail.tolerance_g) : null;
-      const tolCurrentText = tolCurrent != null && Number.isFinite(tolCurrent)
-        ? `±${IRMS.escapeHtml(String(tolCurrent))} g`
-        : '<span class="muted">기본 ±0.05 g</span>';
-      const tolEditor = canManage
-        ? `<input class="input attr-tolerance-input" type="number" step="0.01" min="0" `
-          + `placeholder="선택 · 비우면 기본 0.05" value="${tolCurrent != null && Number.isFinite(tolCurrent) ? IRMS.escapeHtml(String(tolCurrent)) : ""}" />`
-          + `<button class="btn attr-tolerance-save" type="button">저장</button>`
-        : "";
-
-      // 분류
-      const CATS = ["약품", "합성", "잉크", "용수"];
-      const catCurrent = detail.category || "";
-      const catCurrentText = catCurrent
-        ? IRMS.escapeHtml(catCurrent)
-        : '<span class="muted">미분류</span>';
-      const catOptions = '<option value="">미분류</option>'
-        + CATS.map((c) => `<option value="${c}"${c === catCurrent ? " selected" : ""}>${c}</option>`).join("");
-      const catEditor = canManage
-        ? `<select class="input attr-category-select">${catOptions}</select>`
-          + `<button class="btn attr-category-save" type="button">저장</button>`
-        : "";
+      // 허용 편차 — Enter 또는 칸을 벗어날 때(change) 값이 달라졌으면 저장.
+      const tolValue = tolSet ? IRMS.escapeHtml(String(tolCurrent)) : "";
+      const tolControl =
+        `<input class="input attr-tolerance-input" type="number" step="0.01" min="0" placeholder="0.05" value="${tolValue}" data-saved="${tolValue}" />`
+        + `<span class="rh-unit">g</span>`
+        + `<span class="muted rh-hint">비우면 기본 0.05</span>`;
 
       wrap.innerHTML =
-        attrRow(`<label class="filter-label">기준 자재</label>`, `<span class="attr-anchor-current">${currentText}</span>`, anchorEditor) +
-        attrRow(`<label class="filter-label">허용 편차</label>`, `<span class="attr-tolerance-current">${tolCurrentText}</span>`, tolEditor) +
-        attrRow(`<label class="filter-label">분류</label>`, `<span class="attr-category-current">${catCurrentText}</span>`, catEditor) +
-        renderLossCompBlock(detail, uniq, canManage);
+        `<h4 class="rh-section-title">설정</h4>`
+        + settingRow(`<label class="filter-label">기준 자재</label>`, anchorControl)
+        + settingRow(`<label class="filter-label">허용 편차</label>`, tolControl)
+        + settingRow(lossLabel, renderLossCompBlock(detail, uniq), "rh-setting-losscomp");
 
-      if (canManage) {
-        wrap.querySelector(".attr-anchor-save")?.addEventListener("click", () => handleSaveAnchor(detailRow, recipeId));
-        wrap.querySelector(".attr-tolerance-save")?.addEventListener("click", () => handleSaveTolerance(detailRow, recipeId));
-        wrap.querySelector(".attr-category-save")?.addEventListener("click", () => handleSaveCategory(detailRow, recipeId));
-        wireLossCompEditor(detailRow, recipeId, uniq);
+      const anchorSel = wrap.querySelector(".attr-anchor-select");
+      if (anchorSel) anchorSel.addEventListener("change", () => handleSaveAnchor(detailRow, recipeId));
+      const tolInput = wrap.querySelector(".attr-tolerance-input");
+      if (tolInput) {
+        tolInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            handleSaveTolerance(detailRow, recipeId);
+          }
+        });
+        // Enter 직후의 change 는 data-saved 비교로 건너뛴다.
+        tolInput.addEventListener("change", () => handleSaveTolerance(detailRow, recipeId));
       }
+      wireLossCompEditor(detailRow, recipeId, uniq);
     }
 
-    function renderLossCompBlock(detail, itemNames, canManage) {
+    // 보정 편집기(책임자 전용) — [자재 ▼][g][✕] 반복 줄 + [+ 보정 추가][저장] + 안내 한 줄.
+    function renderLossCompBlock(detail, itemNames) {
       const existing = (detail.items || []).filter(
         (it) => Number(it.loss_comp_g) > 0 && it.material_name,
       );
-      const currentText = existing.length
-        ? existing.map((it) => `<span class="lookup-losscomp-badge">+${it.loss_comp_g}g 보정</span> ${IRMS.escapeHtml(it.material_name)}`).join(" · ")
-        : '<span class="muted">없음</span>';
-      if (!canManage) {
-        return `<div class="lookup-attr-row"><label class="filter-label">투입 로스 보정</label>`
-          + `<span class="lookup-attr-current"><span class="muted">현재:</span> ${currentText}</span></div>`;
-      }
-      const options = itemNames.length
-        ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}">${IRMS.escapeHtml(n)}</option>`).join("")
-        : "";
       const rowsHtml = existing.map((it) => lossCompRowHtml(itemNames, it.material_name, it.loss_comp_g)).join("");
-      return `<div class="lookup-attr-row lookup-attr-row-block">`
-        + `<label class="filter-label lookup-losscomp-label">투입 로스 보정</label>`
-        + `<span class="lookup-attr-current"><span class="muted">현재:</span> <span class="attr-losscomp-current">${currentText}</span></span>`
-        + `<div class="lookup-losscomp-rows attr-losscomp-rows">${rowsHtml}</div>`
-        + `<div class="lookup-losscomp-actions">`
+      return `<div class="rh-losscomp-rows attr-losscomp-rows">${rowsHtml}</div>`
+        + `<div class="button-row rh-losscomp-actions">`
         + `<button class="btn btn-sm attr-losscomp-add" type="button">+ 보정 추가</button>`
-        + `<button class="btn attr-losscomp-save" type="button">저장</button>`
+        + `<button class="btn btn-sm accent attr-losscomp-save" type="button">저장</button>`
         + `</div>`
-        + `<p class="imp-attr-desc lookup-losscomp-desc">지정 자재는 계량 목표가 (비율 환산량 + 보정 g)이 됩니다. 붓는 과정 로스가 있는 파우더용 · 기록·출력엔 보정 포함량이 그대로 남습니다.</p>`
-        + `<p class="imp-attr-desc lookup-losscomp-desc">기본은 품목코드 탭의 자재 마스터에서 지정합니다. 여기는 이 레시피만의 예외값(마스터보다 우선).</p>`
-        + (itemNames.length ? "" : '<p class="login-error attr-losscomp-error">BOM 자재가 없습니다.</p>')
-        + `<input type="hidden" class="attr-losscomp-options" value="" data-options="${IRMS.escapeHtml(options)}" />`
-        + `</div>`;
+        + `<p class="rh-hint muted">보정 g만큼 계량 목표가 늘어납니다.</p>`
+        + (itemNames.length ? "" : '<p class="login-error attr-losscomp-error">자재가 없습니다.</p>');
     }
 
     function lossCompRowHtml(itemNames, selectedName, value) {
       const opts = itemNames.length
         ? itemNames.map((n) => `<option value="${IRMS.escapeHtml(n)}"${n === selectedName ? " selected" : ""}>${IRMS.escapeHtml(n)}</option>`).join("")
         : "";
-      return `<div class="lookup-losscomp-row">`
+      return `<div class="rh-losscomp-row">`
         + `<select class="input attr-losscomp-mat">${opts}</select>`
-        + `<input class="input attr-losscomp-g" type="number" step="0.1" min="0" max="100" placeholder="보정 g" value="${value != null ? IRMS.escapeHtml(String(value)) : ""}" />`
-        + `<button class="btn btn-sm attr-losscomp-del" type="button" title="삭제">✕</button>`
+        + `<input class="input attr-losscomp-g" type="number" step="0.1" min="0" max="100" placeholder="0.0" value="${value != null ? IRMS.escapeHtml(String(value)) : ""}" />`
+        + `<span class="rh-unit">g</span>`
+        + `<button class="btn btn-sm attr-losscomp-del" type="button" title="삭제" aria-label="삭제">✕</button>`
         + `</div>`;
     }
 
@@ -712,7 +760,7 @@
       });
       if (rowsEl) rowsEl.addEventListener("click", (e) => {
         const del = e.target.closest(".attr-losscomp-del");
-        if (del) del.closest(".lookup-losscomp-row").remove();
+        if (del) del.closest(".rh-losscomp-row").remove();
       });
       if (saveBtn) saveBtn.addEventListener("click", () => handleSaveLossComp(detailRow, recipeId));
     }
@@ -721,25 +769,30 @@
     async function handleSaveAnchor(detailRow, recipeId) {
       const wrap = detailRow.querySelector(".history-attrs");
       const sel = wrap && wrap.querySelector(".attr-anchor-select");
-      const saveBtn = wrap && wrap.querySelector(".attr-anchor-save");
       if (!sel) return;
-      let materialId = null;
+      const previous = sel.dataset.saved || "";
       const chosenName = sel.value.trim();
+      if (chosenName === previous) return;
+      // 실패하면 선택을 저장된 값으로 되돌린다.
+      const revert = () => { sel.value = previous; };
+      let materialId = null;
       if (chosenName) {
         try {
           const detail = await IRMS.getRecipeDetail(recipeId);
           const match = (detail.items || []).find((it) => it.material_name === chosenName);
           if (!match || match.material_id == null) {
             IRMS.notify("선택한 자재의 식별자를 찾을 수 없습니다.", "error");
+            revert();
             return;
           }
           materialId = Number(match.material_id);
         } catch (error) {
           IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
+          revert();
           return;
         }
       }
-      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      sel.disabled = true;
       try {
         const headers = { "Content-Type": "application/json" };
         const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
@@ -750,36 +803,44 @@
         });
         if (!resp.ok) throw new Error(await fetchErrDetail(resp));
         await resp.json();
-        const cur = wrap.querySelector(".attr-anchor-current");
-        if (cur) cur.innerHTML = chosenName ? IRMS.escapeHtml(chosenName) : '<span class="muted">없음</span>';
+        sel.dataset.saved = chosenName;
+        // 자재 구성 표의 '기준' 표시를 새 값으로 다시 그린다.
+        const cached = detailRow._rhDetail;
+        if (cached) {
+          cached.anchor_material_name = chosenName || null;
+          renderItemsTable(detailRow, cached);
+        }
         IRMS.notify(chosenName ? `기준 자재를 '${chosenName}'(으)로 지정했습니다.` : "기준 자재를 해제했습니다.", "success");
       } catch (error) {
+        revert();
         IRMS.notify(`기준 자재 저장 실패: ${error.message}`, "error");
       } finally {
-        if (saveBtn) IRMS.btnLoading(saveBtn, false);
+        sel.disabled = false;
       }
     }
 
     async function handleSaveTolerance(detailRow, recipeId) {
       const wrap = detailRow.querySelector(".history-attrs");
       const input = wrap && wrap.querySelector(".attr-tolerance-input");
-      const saveBtn = wrap && wrap.querySelector(".attr-tolerance-save");
       if (!input) return;
       const raw = (input.value || "").trim();
+      const previous = input.dataset.saved || "";
+      // 같은 값이면 요청하지 않는다(Enter 저장 뒤 blur 의 change 가 한 번 더 부르는 것을 막음).
+      if (raw === previous) {
+        input.value = raw;
+        return;
+      }
       let toleranceG = null;
-      let label;
       if (raw !== "") {
         const v = Number(raw);
         if (!Number.isFinite(v) || !(v > 0)) {
-          IRMS.notify("허용 편차는 0 초과 숫자여야 합니다. (비우면 기본 0.05g)", "error");
+          IRMS.notify("허용 편차는 0보다 큰 숫자여야 합니다.", "error");
+          input.value = previous;
           return;
         }
         toleranceG = v;
-        label = `±${v} g`;
-      } else {
-        label = '<span class="muted">기본 ±0.05 g</span>';
       }
-      if (saveBtn) IRMS.btnLoading(saveBtn, true);
+      input.dataset.saved = raw; // 응답 전에 같은 값으로 다시 불려도 건너뛴다
       try {
         const headers = { "Content-Type": "application/json" };
         const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
@@ -790,40 +851,14 @@
         });
         if (!resp.ok) throw new Error(await fetchErrDetail(resp));
         await resp.json();
-        const cur = wrap.querySelector(".attr-tolerance-current");
-        if (cur) cur.innerHTML = label;
-        IRMS.notify(toleranceG != null ? `허용 편차를 ±${toleranceG} g으로 지정했습니다.` : "허용 편차를 기본값(±0.05 g)으로 되돌렸습니다.", "success");
+        const cached = detailRow._rhDetail;
+        if (cached) cached.tolerance_g = toleranceG;
+        IRMS.notify(toleranceG != null ? `허용 편차를 ±${toleranceG} g으로 지정했습니다.` : "허용 편차를 기본값 ±0.05 g으로 되돌렸습니다.", "success");
       } catch (error) {
+        // 서버에 남은 값으로 되돌린다.
+        input.dataset.saved = previous;
+        input.value = previous;
         IRMS.notify(`허용 편차 저장 실패: ${error.message}`, "error");
-      } finally {
-        if (saveBtn) IRMS.btnLoading(saveBtn, false);
-      }
-    }
-
-    async function handleSaveCategory(detailRow, recipeId) {
-      const wrap = detailRow.querySelector(".history-attrs");
-      const sel = wrap && wrap.querySelector(".attr-category-select");
-      const saveBtn = wrap && wrap.querySelector(".attr-category-save");
-      if (!sel) return;
-      const category = sel.value ? sel.value : null;
-      if (saveBtn) IRMS.btnLoading(saveBtn, true);
-      try {
-        const headers = { "Content-Type": "application/json" };
-        const token = IRMS._core && IRMS._core.getCsrfToken ? IRMS._core.getCsrfToken() : "";
-        if (token) headers["x-csrftoken"] = token;
-        const resp = await fetch(`/api/recipes/${recipeId}/category`, {
-          method: "PUT", credentials: "same-origin", headers,
-          body: JSON.stringify({ category }),
-        });
-        if (!resp.ok) throw new Error(await fetchErrDetail(resp));
-        await resp.json();
-        const cur = wrap.querySelector(".attr-category-current");
-        if (cur) cur.innerHTML = category ? IRMS.escapeHtml(category) : '<span class="muted">미분류</span>';
-        IRMS.notify(category ? `분류를 '${category}'(으)로 지정했습니다.` : "분류를 미분류로 되돌렸습니다.", "success");
-      } catch (error) {
-        IRMS.notify(`분류 저장 실패: ${error.message}`, "error");
-      } finally {
-        if (saveBtn) IRMS.btnLoading(saveBtn, false);
       }
     }
 
@@ -837,7 +872,7 @@
       const seen = new Set();
       let bad = "";
       if (rowsEl) {
-        rowsEl.querySelectorAll(".lookup-losscomp-row").forEach((row) => {
+        rowsEl.querySelectorAll(".rh-losscomp-row").forEach((row) => {
           const matSel = row.querySelector(".attr-losscomp-mat");
           const gInput = row.querySelector(".attr-losscomp-g");
           const name = (matSel && matSel.value || "").trim();
@@ -863,8 +898,9 @@
         });
         if (!resp.ok) throw new Error(await fetchErrDetail(resp));
         await resp.json();
-        // 성공 — 속성 영역을 detail 재조회로 다시 그린다.
+        // 성공 — 자재 구성 표(보정 열)와 설정 칸을 detail 재조회로 다시 그린다.
         const detail = await IRMS.getRecipeDetail(recipeId);
+        renderItemsTable(detailRow, detail);
         await renderAttributePanel(detailRow, detail, recipeId);
         IRMS.notify(items.length ? `투입 로스 보정 ${items.length}건을 저장했습니다.` : "투입 로스 보정을 모두 해제했습니다.", "success");
       } catch (error) {

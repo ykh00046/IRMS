@@ -393,42 +393,125 @@
   color: var(--text-secondary);
 }
 
-.history-detail-row td {
+/* 직계 셀만 여백을 없앤다. 후손 선택자(td)로 두면 상세 안 자재 표의 셀 여백까지
+   !important 로 0 이 되어 번호와 자재명이 붙어 보인다(2026-10-09 실연에서 적발). */
+.history-detail-row > td {
   padding: 0 !important;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* 펼친 상세 = 자재 구성 칩 → 속성 편집기 → 액션 버튼, 위에서 아래로.
-   종전 가로 배치(align-items:center)는 속성 편집기가 들어오면서 왼쪽 칩 묶음이 세로
-   가운데에 뜨고 왼쪽 절반이 텅 비었다(2026-08-07 검토). 각 블록이 전 폭을 쓴다. */
+/* 펼친 상세(2026-10-09) = [자재 구성 표 | 설정] 2단 + 아래 동작 줄.
+   종전 자재 칩 가로 나열은 한눈에 안 읽혔고, 설정은 "현재: 값 [편집기][저장]"이 겹쳤다. */
 .history-detail-content {
-  padding: 0.75rem 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   background: var(--bg-surface-200);
   border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.75rem;
 }
-/* 속성 편집기는 상세 안에서만 폭을 제한 — 입력칸이 화면 끝까지 늘어지지 않게. */
-.history-detail-content .lookup-anchor { margin-top: 0; max-width: 62rem; }
 
-.detail-items {
+.rh-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 왼쪽: 자재 구성 표 — 오른쪽 설정 카드와 같은 틀 */
+.rh-items {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.rh-items .rh-items-wrap { margin-top: 0; }
+.rh-items .empty-state { padding: var(--space-6) var(--space-4); }
+.rh-items-table th,
+.rh-items-table td {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-md);
+  line-height: 1.3;
+}
+.rh-items-table th { font-size: var(--fs-xs); }
+.rh-items-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rh-items-table .rh-idx { color: var(--text-tertiary); width: 2.5rem; }
+.rh-items-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--border-strong);
+  background: var(--bg-surface-100);
+}
+.rh-anchor-chip {
+  margin-left: var(--space-1);
+  background: var(--status-info-bg);
+  color: var(--status-info);
+  border: 1px solid color-mix(in srgb, var(--status-info) 30%, transparent);
+  vertical-align: middle;
+}
+
+/* 오른쪽: 설정 — [라벨 | 컨트롤] 두 칸 격자 */
+.rh-settings {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.rh-setting {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+.rh-setting:last-child { border-bottom: none; }
+.rh-setting > .filter-label { margin: 0; }
+.rh-setting-losscomp { align-items: start; }
+.rh-setting-losscomp > .filter-label { padding-top: var(--space-2); cursor: help; }
+.rh-setting-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: 600;
+}
+.rh-setting-losscomp .rh-setting-control { flex-direction: column; align-items: stretch; }
+/* .input 은 공용 width:100% 라 그대로 두면 단위·안내가 다음 줄로 밀린다. */
+.rh-setting-control .attr-anchor-select { width: auto; flex: 1 1 10rem; max-width: 18rem; }
+.rh-setting-control .attr-tolerance-input { width: 7rem; flex: 0 0 7rem; }
+.rh-unit { color: var(--text-secondary); font-weight: 400; }
+.rh-hint { margin: 0; font-size: var(--fs-xs); font-weight: 400; }
+
+.rh-losscomp-rows { display: flex; flex-direction: column; gap: var(--space-2); }
+.rh-losscomp-rows:empty { display: none; }
+.rh-losscomp-row { display: flex; align-items: center; gap: var(--space-2); }
+.rh-losscomp-row .attr-losscomp-mat { width: auto; flex: 1 1 9rem; min-width: 0; }
+.rh-losscomp-row .attr-losscomp-g { width: 6rem; flex: 0 0 6rem; }
+.rh-losscomp-row .attr-losscomp-del { flex: 0 0 auto; }
+.rh-losscomp-actions { margin: 0; gap: var(--space-2); }
+.rh-setting-losscomp .login-error { margin: 0; }
+
+/* 아래: 동작 줄 — 왼쪽 주 동작, 오른쪽 관리 동작 */
+.rh-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.rh-actions-main,
+.rh-actions-manage {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  flex: 1;
-}
-
-.detail-chip {
-  display: inline-block;
-  padding: 0.25rem 0.6rem;
-  background: var(--bg-surface-300);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-2xs);
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
+  gap: var(--space-2);
 }
 
 .chip-dhr {
@@ -444,12 +527,6 @@
   vertical-align: middle;
 }
 
-.detail-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
 /* .btn-sm 정의는 common.css 로 이관(2026-08-08) — 여기 있으면 이 파일을 부르지 않는
    화면에서 작은 버튼이 작아지지 않는다. */
 
@@ -458,6 +535,9 @@
 /* Preview Mode Badge */
 
 @media (max-width: 1100px) {
+  .history-detail-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .mgmt-tabs {
     width: 100%;
   }
@@ -796,35 +876,6 @@
 }
 .mg-flow-note b { color: var(--text-primary); }
 
-/* 레시피 속성 편집기(기준 자재·허용 편차·분류·투입 로스 보정) — .lookup-anchor 에 CSS 가
-   아예 없어 "기준 자재현재:없음" 처럼 글자가 붙고 [저장] 이 다음 항목 라벨과 같은 줄에
-   엉켰다(2026-08-06 검토). 한 줄 = [라벨][현재값][편집기]. */
-.lookup-anchor {
-  margin-top: 0.9rem;
-  border-top: 1px solid var(--border-subtle);
-}
-.lookup-attr-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  padding: 0.6rem 0;
-  border-bottom: 1px dashed var(--border-subtle);
-}
-.lookup-attr-row:last-child { border-bottom: none; }
-.lookup-attr-row > .filter-label { flex: 0 0 7.5rem; margin: 0; }
-.lookup-attr-current { flex: 1 1 12rem; min-width: 9rem; font-weight: 600; }
-.lookup-attr-editor { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 22rem; }
-/* .input 은 공용 width:100% 라 그대로 두면 편집기가 줄을 통째로 차지한다. */
-.lookup-attr-editor .input { width: auto; flex: 1 1 8rem; min-width: 7rem; }
-.lookup-attr-editor .btn { flex: 0 0 auto; }
-/* 보정 줄은 반복 행·설명문까지 딸려 다층이라 세로로 쌓는다. 세로 방향에서는 flex-grow 가
-   '높이'로 작동하므로 현재값 칸의 grow 를 반드시 꺼야 한다(안 그러면 빈 칸이 세로로 늘어나
-   설명문과 버튼 사이가 텅 빈다). */
-.lookup-attr-row-block { flex-direction: column; align-items: stretch; }
-.lookup-attr-row-block > .filter-label { flex: none; }
-.lookup-attr-row-block > .lookup-attr-current { flex: 0 0 auto; }
-
 /* 이름을 갈아탄 계보의 판별 이름표(NPR / NPR-S2 / NPR-S) — 버전 라벨 옆 작은 회색 알약. */
 .vc-version-name {
   display: inline-block;
@@ -838,41 +889,11 @@
   white-space: nowrap;
 }
 
-/* 품목코드 빠른 지정·검색 — 위와 같은 이유(.input width:100%)로 입력칸이 한 줄씩
+/* 품목코드 빠른 지정·검색 — 공용 .input 이 width:100% 라 입력칸이 한 줄씩
    차지해 세로로 쌓였다. 한 줄에 나란히 놓는다. */
 .codes-quick-assign { justify-content: flex-start; }
 #tab-codes .filter-bar .input { width: auto; flex: 1 1 16rem; min-width: 11rem; }
 #tab-codes .filter-bar .btn { flex: 0 0 auto; }
-
-/* 투입 로스 보정(파우더 투입 손실 보정) 반복 행 에디터 — lookup-anchor 패널 안.
-   [자재 ▼][보정 g][✕] 행 + [+ 보정 추가]/[저장]. BOM 표는 건드리지 않는 별도 속성 줄. */
-.lookup-losscomp-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-}
-.lookup-losscomp-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.lookup-losscomp-row .lookup-losscomp-mat { flex: 1 1 11rem; min-width: 11rem; }
-.lookup-losscomp-row .lookup-losscomp-g { width: 7rem; flex: 0 0 7rem; }
-.lookup-losscomp-row .lookup-losscomp-del {
-  flex: 0 0 auto; padding: 0.2rem 0.5rem; line-height: 1;
-  color: var(--cal-sunday); border-color: var(--cal-holiday-bg);
-}
-.lookup-losscomp-actions {
-  display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem;
-}
-.lookup-losscomp-desc { max-width: 46rem; }
-.lookup-losscomp-error { margin: 0.3rem 0 0; }
-.lookup-losscomp-badge {
-  display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px;
-  background: var(--status-warning-bg); color: var(--status-warning); font-size: var(--fs-2xs); font-weight: 700;
-  white-space: nowrap;
-}
 
 /* 품목코드 탭 자재 목록 — 투입 로스 보정 인라인 편집 셀(3라운드 2026-08-05). */
 .losscomp-cell { white-space: nowrap; }
