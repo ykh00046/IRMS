@@ -378,33 +378,45 @@ def build_router() -> APIRouter:
                 "created_at": rec["created_at"],
             })
 
-        material_order: list[int] = []
-        material_names: dict[int, str] = {}
-        per_recipe: dict[int, dict[int, dict]] = {}
+        # 같은 자재가 한 레시피에 여러 행일 수 있다(투입 단계가 다르거나, 나눠 담기가 없던
+        # 시절의 분할 등록). material_id 하나로 묶으면 뒤 행이 앞 행을 덮어 1행만 남고 총량도
+        # 줄었다(2026-10-08 운영 신고: SCRA의 PMA 4행이 1행으로). 행 키를 (자재, 몇 번째)로
+        # 두어 전 행을 보존한다. 몇 번째는 각 판의 등록(투입) 순서로 센다.
+        row_order: list[tuple[int, int]] = []
+        row_names: dict[tuple[int, int], str] = {}
+        per_recipe: dict[int, dict[tuple[int, int], dict]] = {}
         for rid in ordered:
             per_recipe[rid] = {}
+            seen_count: dict[int, int] = {}
             for it in item_map.get(rid, []):
                 mid = int(it["material_id"])
-                per_recipe[rid][mid] = it
-                if mid not in material_names:
-                    material_names[mid] = it["material_name"]
-                    material_order.append(mid)
+                occ = seen_count.get(mid, 0) + 1
+                seen_count[mid] = occ
+                key = (mid, occ)
+                per_recipe[rid][key] = it
+                if key not in row_names:
+                    row_names[key] = it["material_name"]
+                    row_order.append(key)
 
-        material_order.sort(key=lambda mid: material_names[mid])
+        # 비교한 판들 중 이 자재가 최대 몇 행까지 나오는지 — 화면이 "2번째" 표기를 붙일지 정한다.
+        occurrence_count: dict[int, int] = {}
+        for mid, occ in row_order:
+            occurrence_count[mid] = max(occurrence_count.get(mid, 0), occ)
+        row_order.sort(key=lambda k: (row_names[k], k[1]))
 
         materials_payload = []
-        for mid in material_order:
+        for key in row_order:
+            mid, occ = key
             values = []
             distinct_values: set[str] = set()
             present_count = 0
             for rid in ordered:
-                it = per_recipe[rid].get(mid)
+                it = per_recipe[rid].get(key)
                 if it:
                     present_count += 1
                     weight = it.get("value_weight")
                     text = it.get("value_text")
-                    key = f"{weight}|{text}"
-                    distinct_values.add(key)
+                    distinct_values.add(f"{weight}|{text}")
                     values.append({
                         "version_id": rid,
                         "value_weight": weight,
@@ -428,7 +440,10 @@ def build_router() -> APIRouter:
 
             materials_payload.append({
                 "material_id": mid,
-                "material_name": material_names[mid],
+                "material_name": row_names[key],
+                "row_key": f"{mid}#{occ}",
+                "occurrence": occ,
+                "occurrence_count": occurrence_count[mid],
                 "values": values,
                 "change_status": status,
             })

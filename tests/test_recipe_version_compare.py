@@ -120,3 +120,32 @@ def test_history_compare_requires_same_chain():
     r2 = _import(client, headers, f"반제품명\tA\n{p2}\t100").json()["created_ids"][0]
     res = client.get(f"/api/recipes/history/compare?ids={r1},{r2}")
     assert res.status_code == 400
+
+
+def test_history_compare_keeps_repeated_material_rows():
+    """같은 자재가 한 판에 여러 행이면 행마다 따로 내린다(material_id 로 덮어쓰지 않는다).
+
+    2026-10-08 운영 신고: 투입 단계가 다른 PMA 4행이 버전 비교에서 1행·한 배합량만 보였다.
+    """
+    client = _client()
+    headers = _mgr(client)
+    product = "VCDU" + uuid.uuid4().hex[:6].upper()
+    rid1 = _import(client, headers, f"반제품명\tA\tB\tA\n{product}\t60\t30\t10").json()["created_ids"][0]
+    rid2 = _import(
+        client, headers, f"반제품명\tA\tB\tA\n{product}\t50\t30\t20", revision_of=rid1
+    ).json()["created_ids"][0]
+
+    cmp = client.get(f"/api/recipes/history/compare?ids={rid1},{rid2}").json()
+    rows_a = [m for m in cmp["materials"] if m["material_name"] == "A"]
+    assert len(rows_a) == 2, "A 가 2행이면 비교표에도 2행"
+    assert [m["occurrence"] for m in rows_a] == [1, 2]
+    assert all(m["occurrence_count"] == 2 for m in rows_a)
+    assert len({m["row_key"] for m in cmp["materials"]}) == 3
+    first = {v["version_id"]: v["value_weight"] for v in rows_a[0]["values"]}
+    second = {v["version_id"]: v["value_weight"] for v in rows_a[1]["values"]}
+    assert (first[rid1], first[rid2]) == (60.0, 50.0)
+    assert (second[rid1], second[rid2]) == (10.0, 20.0)
+    assert all(m["change_status"] == "modified" for m in rows_a)
+    # B 는 한 행뿐이라 번호 표기 대상이 아니다.
+    row_b = next(m for m in cmp["materials"] if m["material_name"] == "B")
+    assert row_b["occurrence_count"] == 1 and row_b["change_status"] == "same"

@@ -27,6 +27,21 @@
       return n.toFixed(d === undefined ? 2 : d);
     }
 
+    // 행 키 — 같은 자재가 한 판에 여러 행(투입 단계 분할)일 수 있어 material_id 만으로
+    // 묶으면 뒤 행이 앞 행을 덮는다(2026-10-08). 서버의 row_key("자재id#몇번째")를 쓴다.
+    function rowKey(mat) {
+      return mat.row_key || String(mat.material_id);
+    }
+
+    // 자재명 셀 — 같은 자재가 여러 행이면 "2번째"를 붙여 어느 행인지 보이게 한다.
+    function matLabel(mat) {
+      const name = IRMS.escapeHtml(mat.material_name);
+      if (Number(mat.occurrence_count) > 1) {
+        return `${name} <span class="muted small">${Number(mat.occurrence)}번째</span>`;
+      }
+      return name;
+    }
+
     // ── 반제품(또는 특정 레시피 id)의 체인 전체를 로드 → 타임라인+비교표 렌더 ──
     // recipeId: 체인의 아무 버전 id(현황 [버전 이력] 버튼이 넘김) 또는 제품명에서 찾은 id.
     async function loadVersionsForProduct(recipeId) {
@@ -161,12 +176,12 @@
 
     // ── 단일 버전 보기(비교 아님 명시) ──
     function renderSingleVersion(version, compareData) {
-      const vMap = {}; // material_id → {display, value_weight}
+      const vMap = {}; // row_key → {display, value_weight}
       const totals = {}; // version_id → sum
       (compareData.materials || []).forEach((mat) => {
         const v = (mat.values || []).find((x) => x.version_id === version.id);
         if (v && v.value_weight != null) {
-          vMap[mat.material_id] = v;
+          vMap[rowKey(mat)] = v;
           totals[version.id] = (totals[version.id] || 0) + Number(v.value_weight);
         }
       });
@@ -174,12 +189,12 @@
       // 현재판 순서 재정렬 — compareData.materials 가 알파벳 순이므로 historyItems 의 현재판
       // item 순서를 알 수 없으면 그대로 둔다(서버가 material_id 만 주므로 순서 보존 안 됨).
       const rows = (compareData.materials || [])
-        .filter((mat) => vMap[mat.material_id])
+        .filter((mat) => vMap[rowKey(mat)])
         .map((mat) => {
-          const v = vMap[mat.material_id];
+          const v = vMap[rowKey(mat)];
           const w = Number(v.value_weight) || 0;
           const pct = total > 0 ? (w / total) * 100 : 0;
-          return `<tr><td class="vc-mat-cell">${IRMS.escapeHtml(mat.material_name)}</td>`
+          return `<tr><td class="vc-mat-cell">${matLabel(mat)}</td>`
             + `<td class="num">${num(w)} <span class="muted small">(${num(pct, 1)}%)</span></td></tr>`;
         }).join("");
       return `<p class="vc-single-note">단일 버전 표시 · 비교하려면 왼쪽에서 버전을 하나 더 선택하세요.</p>`
@@ -205,21 +220,21 @@
         const h = (cache.historyItems || []).find((it) => it.id === v.id);
         return h && h.is_current;
       }) || versions[0];
-      const currentOrder = []; // 현재판에 있는 material_id 순서
+      const currentOrder = []; // 현재판에 있는 행 키 순서
       (compareData.materials || []).forEach((mat) => {
         const v = (mat.values || []).find((x) => x.version_id === currentVer.id);
-        if (v && v.value_weight != null) currentOrder.push(mat.material_id);
+        if (v && v.value_weight != null) currentOrder.push(rowKey(mat));
       });
       const orderedMats = [];
       const seen = new Set();
       // 1) 현재판 순서
-      currentOrder.forEach((mid) => {
-        const m = (compareData.materials || []).find((x) => x.material_id === mid);
-        if (m) { orderedMats.push(m); seen.add(mid); }
+      currentOrder.forEach((key) => {
+        const m = (compareData.materials || []).find((x) => rowKey(x) === key);
+        if (m) { orderedMats.push(m); seen.add(key); }
       });
       // 2) 나머지(사라졌거나 현재판엔 없는 자재) — 알파벳 순 유지
       (compareData.materials || []).forEach((mat) => {
-        if (!seen.has(mat.material_id)) orderedMats.push(mat);
+        if (!seen.has(rowKey(mat))) orderedMats.push(mat);
       });
 
       // 직전 버전(reference): 선택된 버전 중 현재판의 바로 직전(역사적).
@@ -289,7 +304,7 @@
           return `<td class="num${changed}">${num(w)} <span class="muted small">(${num(pct, 1)}%)</span>${deltaHtml}</td>`;
         }).join("");
         return `<tr class="compare-${st}">`
-          + `<td class="compare-sticky vc-mat-cell">${IRMS.escapeHtml(mat.material_name)}</td>`
+          + `<td class="compare-sticky vc-mat-cell">${matLabel(mat)}</td>`
           + `${cells}`
           + `<td class="vc-status-cell">${statusLabel[st] || st}</td>`
           + `</tr>`;
