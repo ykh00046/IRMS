@@ -386,3 +386,113 @@ def test_history_compare_accepts_single_version():
     cmp = res.json()
     assert [v["id"] for v in cmp["versions"]] == [rid]
     assert {m["material_name"] for m in cmp["materials"]} == {"A", "B"}
+
+
+def _seed_record(recipe_id, product, work_date, status="completed"):
+    """판에 배합 기록 한 건을 직접 넣는다(자재 행 1개 포함). 기록 id 를 돌려준다."""
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO blend_records (product_lot, recipe_id, product_name, worker, work_date,"
+            " total_amount, status, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (f"{product}-{uuid.uuid4().hex[:8]}", recipe_id, product, "테스트", work_date,
+             100.0, status, f"{work_date}T09:00:00Z"),
+        )
+        rid = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO blend_details (blend_record_id, material_name, theory_amount,"
+            " actual_amount, sequence_order, created_at) VALUES (?,?,?,?,?,?)",
+            (rid, "A", 60.0, 60.0, 0, f"{work_date}T09:00:00Z"),
+        )
+        conn.commit()
+    return rid
+
+
+def _record_recipe_id(record_id):
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT recipe_id FROM blend_records WHERE id = ?", (record_id,)
+        ).fetchone()
+    return None if row is None else row["recipe_id"]
+
+
+def test_delete_version_moves_records_to_target():
+    """기록이 있는 판 삭제: move_records_to 로 같은 체인의 판으로 기록을 옮기고 판은 지운다."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, rid2, rid3 = _chain3(client, headers, "VCMV")
+    rec_a = _seed_record(rid2, product, "2026-07-23")
+    rec_b = _seed_record(rid2, product, "2026-07-24")
+    _seed_record(rid1, product, "2026-07-01")
+
+    res = client.delete(f"/api/recipes/{rid2}?move_records_to={rid1}", headers=headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["moved_record_count"] == 2
+    assert body["moved_records_to"] == rid1
+    assert body["deleted_linked_records"] is False
+
+    assert _record_recipe_id(rec_a) == rid1 and _record_recipe_id(rec_b) == rid1
+    h = client.get(f"/api/recipes/{rid3}/history").json()
+    by_id = {it["id"]: it for it in h["items"]}
+    assert rid2 not in by_id
+    assert by_id[rid1]["linked_record_count"] == 3
+
+
+def test_delete_version_move_validation_errors():
+    client = _client()
+    headers = _mgr(client)
+    _product, rid1, rid2, rid3 = _chain3(client, headers, "VCMX")
+    _other, orid1, _orid2, _orid3 = _chain3(client, headers, "VCMY")
+
+    # 같은 판
+    res = client.delete(f"/api/recipes/{rid2}?move_records_to={rid2}", headers=headers)
+    assert res.status_code == 400 and res.json()["detail"] == "같은 판으로는 옮길 수 없습니다."
+    # 없는 판
+    res = client.delete(f"/api/recipes/{rid2}?move_records_to=99999999", headers=headers)
+    assert res.status_code == 404 and res.json()["detail"] == "옮길 판을 찾을 수 없습니다."
+    # 다른 체인
+    res = client.delete(f"/api/recipes/{rid2}?move_records_to={orid1}", headers=headers)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "같은 반제품의 판으로만 옮길 수 있습니다."
+    # 기록 삭제와 함께
+    res = client.delete(
+        f"/api/recipes/{rid2}?move_records_to={rid1}&delete_blend_records=1", headers=headers
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "기록 삭제와 옮기기는 함께 쓸 수 없습니다."
+    # 취소된 판
+    cancel = client.patch(
+        f"/api/recipes/{rid1}/status",
+        json={"action": "cancel", "reason": "시험 등록분 정리"},
+        headers=headers,
+    )
+    assert cancel.status_code == 200, cancel.text
+    res = client.delete(f"/api/recipes/{rid2}?move_records_to={rid1}", headers=headers)
+    assert res.status_code == 409 and res.json()["detail"] == "취소된 판으로는 옮길 수 없습니다."
+
+    # 어느 실패도 판을 지우지 않았다.
+    h = client.get(f"/api/recipes/{rid3}/history").json()
+    assert rid2 in {it["id"] for it in h["items"]}
+
+
+def test_history_items_expose_usage_period():
+    """first/last_used_on = 취소 아닌 기록의 work_date 최소·최대. 기록 없는 판은 null."""
+    client = _client()
+    headers = _mgr(client)
+    product, rid1, rid2, _rid3 = _chain3(client, headers, "VCUP")
+    _seed_record(rid2, product, "2026-07-23")
+    _seed_record(rid2, product, "2026-09-17")
+    _seed_record(rid2, product, "2026-08-01")
+    _seed_record(rid2, product, "2026-09-30", status="canceled")
+
+    h = client.get(f"/api/recipes/{rid1}/history").json()
+    by_id = {it["id"]: it for it in h["items"]}
+    assert by_id[rid2]["first_used_on"] == "2026-07-23"
+    assert by_id[rid2]["last_used_on"] == "2026-09-17"
+    # 건수는 취소 포함(삭제 판정 의미 그대로).
+    assert by_id[rid2]["linked_record_count"] == 4
+    assert by_id[rid1]["first_used_on"] is None and by_id[rid1]["last_used_on"] is None

@@ -195,3 +195,53 @@ def test_hard_delete_purges_dhr_cache(tmp_path, monkeypatch) -> None:
     # hard 삭제 후 캐시 잔류 없음.
     assert not pdf_path.exists()
     assert not marker_path.exists()
+
+
+def test_delete_recipe_moves_records_to_target() -> None:
+    """판 삭제 시 기록을 같은 체인의 다른 판으로 옮긴다(최소 스키마: base_recipe_id·폐기 표 없음)."""
+    connection = _make_db()
+    v1 = int(connection.execute("INSERT INTO recipes (product_name) VALUES ('PB')").lastrowid)
+    v2 = int(
+        connection.execute(
+            "INSERT INTO recipes (product_name, revision_of) VALUES ('PB', ?)", (v1,)
+        ).lastrowid
+    )
+    record_id = int(
+        connection.execute(
+            "INSERT INTO blend_records (product_lot, recipe_id, product_name) "
+            "VALUES ('PB26100801', ?, 'PB')",
+            (v2,),
+        ).lastrowid
+    )
+    connection.execute("INSERT INTO blend_details (blend_record_id) VALUES (?)", (record_id,))
+
+    result = deletes.delete_recipe(
+        connection, v2, delete_linked_records=False, move_records_to=v1
+    )
+
+    assert result is not None
+    assert result.moved_records_to == v1
+    assert result.moved_record_count == 1
+    assert result.linked_record_count == 1
+    assert result.deleted_linked_records is False
+    assert connection.execute("SELECT 1 FROM recipes WHERE id = ?", (v2,)).fetchone() is None
+    record = connection.execute(
+        "SELECT recipe_id FROM blend_records WHERE id = ?", (record_id,)
+    ).fetchone()
+    assert record["recipe_id"] == v1
+    assert connection.execute(
+        "SELECT 1 FROM blend_details WHERE blend_record_id = ?", (record_id,)
+    ).fetchone() is not None
+
+
+def test_delete_recipe_move_and_delete_flags_exclusive() -> None:
+    import pytest
+
+    connection = _make_db()
+    recipe_id, _ = _seed_recipe_with_record(connection)
+    with pytest.raises(ValueError):
+        deletes.delete_recipe(
+            connection, recipe_id, delete_linked_records=True, move_records_to=999
+        )
+    # 아무것도 지워지지 않았다.
+    assert connection.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone()

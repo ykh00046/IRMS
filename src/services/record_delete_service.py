@@ -15,6 +15,9 @@ class RecipeDeletionResult:
     relinked_child_ids: tuple[int, ...] = ()
     # GAP 4: 삭제 대상을 1차(stage1)로 참조하던 2차 레시피들의 링크를 NULL 로 정리한 id 목록.
     stage1_cleared_recipe_ids: tuple[int, ...] = ()
+    # 판 삭제 시 기록을 같은 체인의 다른 판으로 옮겼으면 그 판 id 와 옮긴 기록 수.
+    moved_records_to: int | None = None
+    moved_record_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +31,18 @@ def delete_recipe(
     recipe_id: int,
     *,
     delete_linked_records: bool,
+    move_records_to: int | None = None,
 ) -> RecipeDeletionResult | None:
+    """레시피 한 판을 지운다.
+
+    연결된 배합 기록은 셋 중 하나로 처리한다.
+      · delete_linked_records=True → 기록도 함께 삭제
+      · move_records_to=<판 id>     → 기록을 그 판으로 옮김(같은 체인 검증은 라우터 몫)
+      · 둘 다 아님                  → 기록의 recipe_id 를 NULL 로(스냅샷 컬럼은 보존)
+    """
+    if move_records_to is not None and delete_linked_records:
+        raise ValueError("move_records_to and delete_linked_records are exclusive")
+
     row = connection.execute(
         "SELECT id, product_name, revision_of FROM recipes WHERE id = ?",
         (recipe_id,),
@@ -42,9 +56,35 @@ def delete_recipe(
     ).fetchall()
     linked_ids = [int(linked_row["id"]) for linked_row in linked_rows]
 
+    moved_record_count = 0
     if delete_linked_records:
         for linked_id in linked_ids:
             delete_blend_record(connection, linked_id)
+    elif move_records_to is not None:
+        # 기록을 같은 체인의 다른 판으로 옮긴다. 배합일지는 기록의 스냅샷 컬럼만 쓰므로
+        # (recipe_id 로 판 정보를 읽지 않는다) DHR 캐시는 지우지 않는다.
+        connection.execute(
+            "UPDATE blend_records SET recipe_id = ? WHERE recipe_id = ?",
+            (move_records_to, recipe_id),
+        )
+        moved_record_count = len(linked_ids)
+        record_cols = {
+            r["name"]
+            for r in connection.execute("PRAGMA table_info(blend_records)").fetchall()
+        }
+        if "base_recipe_id" in record_cols:
+            connection.execute(
+                "UPDATE blend_records SET base_recipe_id = ? WHERE base_recipe_id = ?",
+                (move_records_to, recipe_id),
+            )
+        has_discards = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'blend_batch_discards'"
+        ).fetchone()
+        if has_discards:
+            connection.execute(
+                "UPDATE blend_batch_discards SET recipe_id = ? WHERE recipe_id = ?",
+                (move_records_to, recipe_id),
+            )
     else:
         connection.execute(
             "UPDATE blend_records SET recipe_id = NULL WHERE recipe_id = ?",
@@ -94,6 +134,8 @@ def delete_recipe(
         deleted_linked_records=delete_linked_records,
         relinked_child_ids=relinked_child_ids,
         stage1_cleared_recipe_ids=stage1_cleared_recipe_ids,
+        moved_records_to=move_records_to,
+        moved_record_count=moved_record_count,
     )
 
 

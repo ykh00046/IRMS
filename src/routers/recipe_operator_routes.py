@@ -290,17 +290,26 @@ def build_router() -> APIRouter:
             # 판마다 연결된 배합 기록 수 — 버전 비교 탭의 '기록 N건'·삭제 가능 판정용.
             # 체인 전체를 한 번의 GROUP BY 로 센다(판마다 쿼리하지 않는다).
             record_counts: dict[int, int] = {}
+            # 판마다 사용 기간 — 취소 아닌 기록의 work_date 최소·최대(같은 GROUP BY 로 함께 센다).
+            first_used: dict[int, str | None] = {}
+            last_used: dict[int, str | None] = {}
             version_names: dict[int, str | None] = {}
             pinned_ids: set[int] = set()
             if chain:
                 chain_ids = [int(r["id"]) for r in chain]
                 placeholders = ",".join("?" for _ in chain_ids)
                 for row in connection.execute(
-                    f"SELECT recipe_id, COUNT(*) AS cnt FROM blend_records "
+                    f"SELECT recipe_id, COUNT(*) AS cnt, "
+                    f"MIN(CASE WHEN status <> 'canceled' THEN work_date END) AS first_used, "
+                    f"MAX(CASE WHEN status <> 'canceled' THEN work_date END) AS last_used "
+                    f"FROM blend_records "
                     f"WHERE recipe_id IN ({placeholders}) GROUP BY recipe_id",
                     chain_ids,
                 ).fetchall():
-                    record_counts[int(row["recipe_id"])] = int(row["cnt"])
+                    rid = int(row["recipe_id"])
+                    record_counts[rid] = int(row["cnt"])
+                    first_used[rid] = row["first_used"]
+                    last_used[rid] = row["last_used"]
                 # 판 이름은 fetch_chain(공용 헬퍼)에 없어 같은 id 목록으로 따로 읽는다.
                 for row in connection.execute(
                     f"SELECT id, version_name FROM recipes WHERE id IN ({placeholders})",
@@ -348,6 +357,8 @@ def build_router() -> APIRouter:
                 "revision_of": rec.get("revision_of"),
                 "item_count": len(item_map.get(rec["id"], [])),
                 "linked_record_count": record_counts.get(int(rec["id"]), 0),
+                "first_used_on": first_used.get(int(rec["id"])),
+                "last_used_on": last_used.get(int(rec["id"])),
                 "is_current": rec["id"] == current_id,
                 "is_pinned": int(rec["id"]) in pinned_ids,
                 "is_root": rec.get("revision_of") is None,

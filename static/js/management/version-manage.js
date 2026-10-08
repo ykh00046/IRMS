@@ -4,8 +4,12 @@
  * 버전 비교(version-compare.js)는 읽기 전용 이력 화면으로 두고, 쓰기 동작은 여기로 모았다.
  *   이름        PUT    /api/recipes/{id}/version-name   (판을 사람이 구분하게 하는 자유 문구)
  *   현재판 지정 PUT    /api/recipes/{id}/current        (복사 없이 체인의 현재판을 이 판으로 바꿈)
- *   삭제        DELETE /api/recipes/{id}                (기록 없는 미사용 판만, 기록은 건드리지 않음)
+ *   삭제        DELETE /api/recipes/{id}                (기록 없는 미사용 판은 바로 확인 후 삭제)
+ *               DELETE /api/recipes/{id}?move_records_to=<판 id>
+ *                 기록이 있는 미사용 판은 행 안의 옮기기 폼에서 같은 체인의 다른 판을 골라
+ *                 기록을 그 판으로 옮긴 뒤 삭제한다(옮길 판이 없으면 버튼 비활성).
  *   정리        기록 없는 미사용 판을 차례로 삭제
+ *   사용 기간   history 의 first_used_on ~ last_used_on(취소 아닌 기록의 작업일 최소·최대)
  * 현재판 지정은 새 판을 만들지 않는다(2026-10-08 현장 요청: 저점도용 v2 ↔ 고점도용 v4 전환).
  * 지정은 다음 수정 등록 때 풀리고 새 판이 현재판이 된다(서버 import 라우트).
  *
@@ -23,6 +27,25 @@
 
     function recCount(it) {
       return Number(it.linked_record_count || 0);
+    }
+
+    // 사용 기간 칸 — 첫날 ~ 마지막 날(같으면 하루), 기록 없으면 '-'.
+    function usagePeriod(it) {
+      const first = it.first_used_on;
+      const last = it.last_used_on;
+      if (!first && !last) return "-";
+      if (!first || !last || first === last) return IRMS.escapeHtml(first || last);
+      return `${IRMS.escapeHtml(first)} ~ ${IRMS.escapeHtml(last)}`;
+    }
+
+    // 기록을 옮겨 받을 수 있는 판 — 같은 체인의 다른 판 중 취소·초안이 아닌 것.
+    function moveCandidates(items, target) {
+      return items.filter((it) => it.id !== target.id
+        && it.status !== "canceled" && it.status !== "draft");
+    }
+
+    function versionOptionText(it) {
+      return it.version_name ? `${it.version_label} · ${it.version_name}` : it.version_label;
     }
 
     // 상태칩 — 버전 비교 타임라인과 같은 규칙.
@@ -75,7 +98,7 @@
 
     function renderEmpty(message) {
       const body = document.getElementById("vm-body");
-      if (body) body.innerHTML = `<tr><td colspan="8"><p class="empty-state">${IRMS.escapeHtml(message)}</p></td></tr>`;
+      if (body) body.innerHTML = `<tr><td colspan="9"><p class="empty-state">${IRMS.escapeHtml(message)}</p></td></tr>`;
       const pruneBtn = document.getElementById("vm-prune-btn");
       const pruneNote = document.getElementById("vm-prune-note");
       if (pruneBtn) pruneBtn.hidden = true;
@@ -126,6 +149,8 @@
           : "";
         const curChip = it.is_current ? ' <span class="status-chip status-completed">현재</span>' : "";
         const canPin = !it.is_current && it.status !== "canceled" && it.status !== "draft";
+        // 기록이 있는 판은 옮길 판이 있어야 삭제할 수 있다(옮기기 폼으로 이어짐).
+        const noMoveTarget = recCount(it) > 0 && moveCandidates(items, it).length === 0;
         const actions = it.is_current
           ? '<span class="muted">-</span>'
           : `<div class="button-row">`
@@ -133,7 +158,7 @@
               ? `<button type="button" class="btn btn-sm accent vm-pin-btn" data-recipe-id="${it.id}">현재판 지정</button>`
               : "")
             + `<button type="button" class="btn btn-sm danger vm-delete-btn" data-recipe-id="${it.id}"`
-            + (recCount(it) > 0 ? ' disabled title="배합 기록이 있어 삭제할 수 없습니다"' : "")
+            + (noMoveTarget ? ' disabled title="옮길 판이 없어 삭제할 수 없습니다"' : "")
             + `>삭제</button>`
             + `</div>`;
         const savedName = IRMS.escapeHtml(it.version_name || "");
@@ -147,8 +172,9 @@
           + `<td>${IRMS.escapeHtml(it.created_by || "-")}</td>`
           + `<td class="num">${Number(it.item_count || 0)}</td>`
           + `<td class="num">${recCount(it)}건</td>`
+          + `<td>${usagePeriod(it)}</td>`
           + `<td>${statusChip(it)}${pinnedNote(it)}</td>`
-          + `<td>${actions}</td>`
+          + `<td class="vm-actions-cell">${actions}</td>`
           + `</tr>`;
       }).join("");
 
@@ -182,7 +208,12 @@
         btn.addEventListener("click", () => {
           if (btn.disabled) return;
           const target = byId.get(Number(btn.dataset.recipeId));
-          if (target) deleteVersion(target, current);
+          if (!target) return;
+          if (recCount(target) > 0) {
+            showMoveForm(btn, target, items, current);
+          } else {
+            deleteVersion(target, current);
+          }
         });
       });
 
@@ -236,6 +267,47 @@
       try {
         await IRMS.deleteRecipe(target.id, false);
         IRMS.notify(`${target.version_label} 판을 삭제했습니다.`, "success");
+      } catch (error) {
+        IRMS.notify(`삭제 실패: ${error.message}`, "error");
+        return;
+      }
+      await open(current.id || currentTipId);
+      refreshHistoryTable();
+    }
+
+    // 기록이 있는 판의 삭제 = 그 행 동작 칸을 옮기기 폼으로 바꾼다. 취소하면 표를 다시 그린다.
+    function showMoveForm(btn, target, items, current) {
+      const cell = btn.closest(".vm-actions-cell");
+      if (!cell) return;
+      const candidates = moveCandidates(items, target);
+      if (!candidates.length) return;
+      const n = recCount(target);
+      const defaultId = (candidates.find((it) => it.is_current) || candidates[candidates.length - 1]).id;
+      const options = candidates.map((it) => `<option value="${it.id}"`
+        + (it.id === defaultId ? " selected" : "")
+        + `>${IRMS.escapeHtml(versionOptionText(it))}</option>`).join("");
+      cell.innerHTML = `<div class="vm-move-form">`
+        + `<label class="filter-label">기록 ${n}건을 옮길 판</label>`
+        + `<select class="input vm-move-target">${options}</select>`
+        + `<button type="button" class="btn btn-sm danger vm-move-delete-btn">옮기고 삭제</button>`
+        + `<button type="button" class="btn btn-sm vm-move-cancel-btn">취소</button>`
+        + `</div>`;
+      const select = cell.querySelector(".vm-move-target");
+      cell.querySelector(".vm-move-cancel-btn").addEventListener("click", () => render(items, current));
+      cell.querySelector(".vm-move-delete-btn").addEventListener("click", () => {
+        const dest = candidates.find((it) => String(it.id) === String(select.value));
+        if (dest) moveAndDeleteVersion(target, dest, current);
+      });
+    }
+
+    async function moveAndDeleteVersion(target, dest, current) {
+      const n = recCount(target);
+      const from = target.version_label;
+      const to = dest.version_label;
+      if (!window.confirm(`${from} 판의 기록 ${n}건을 ${to} 판으로 옮기고 ${from} 판을 삭제합니다.\n되돌릴 수 없습니다.`)) return;
+      try {
+        await IRMS.deleteRecipe(target.id, false, { moveRecordsTo: dest.id });
+        IRMS.notify(`${from} 판을 삭제했습니다. 기록 ${n}건은 ${to} 판으로 옮겼습니다.`, "success");
       } catch (error) {
         IRMS.notify(`삭제 실패: ${error.message}`, "error");
         return;

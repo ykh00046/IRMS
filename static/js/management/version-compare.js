@@ -107,7 +107,19 @@
       }
     }
 
-    // ── 타임라인 렌더 — 세로 목록, 각 행 = 체크박스 + v번호 + 등록일시 + 등록자 + 항목수 + 상태칩 ──
+    // 사용 기간 문구 — 취소 아닌 기록의 작업일 첫날~마지막 날(history 의 first/last_used_on).
+    // 기록이 있는데 날짜가 없으면(전부 취소) 건수만, 기록이 없으면 '기록 없음'.
+    function usageText(it) {
+      const n = Number((it && it.linked_record_count) || 0);
+      if (!n) return "기록 없음";
+      const first = it.first_used_on;
+      const last = it.last_used_on;
+      if (!first && !last) return `기록 ${n}건`;
+      const range = !first || !last || first === last ? (first || last) : `${first} ~ ${last}`;
+      return `사용 ${range} · ${n}건`;
+    }
+
+    // ── 타임라인 렌더 — 세로 목록, 각 행 = 체크박스 + v번호 + 등록일시 + 등록자 + 항목수 + 사용 기간 + 상태칩 ──
     function renderTimeline(items, selectedIds) {
       const timeline = document.getElementById("vc-timeline");
       if (!timeline) return;
@@ -139,7 +151,7 @@
             + `<input type="checkbox" class="vc-version-check" value="${it.id}"${checked} />`
             + `<span class="vc-version-main">`
             + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${versionNameTag}${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
-            + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count} · 기록 ${Number(it.linked_record_count || 0)}건</span>`
+            + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count} · ${IRMS.escapeHtml(usageText(it))}</span>`
             + `<span class="vc-version-status">${statusChip(it)}</span>`
             + `</span>`
             + `</label>`;
@@ -279,7 +291,11 @@
           const cur = h && h.is_current ? ' <span class="status-chip status-completed">현재</span>' : "";
           const vName = ver.version_name || (h || {}).version_name;
           const nameLine = vName ? `<br><span class="muted small">${IRMS.escapeHtml(vName)}</span>` : "";
-          return `<th>${IRMS.escapeHtml(ver.version_label)}${cur}${nameLine}<br><span class="muted">${IRMS.formatDateTime(ver.created_at || (h || {}).created_at)}</span></th>`;
+          // 기록이 있는 판만 사용 기간 줄을 덧붙인다.
+          const usageLine = h && Number(h.linked_record_count || 0) > 0
+            ? `<br><span class="muted small">${IRMS.escapeHtml(usageText(h))}</span>`
+            : "";
+          return `<th>${IRMS.escapeHtml(ver.version_label)}${cur}${nameLine}<br><span class="muted">${IRMS.formatDateTime(ver.created_at || (h || {}).created_at)}</span>${usageLine}</th>`;
         }),
         "<th>상태</th>",
       ].join("");

@@ -8,6 +8,8 @@
  *   getRecipeImportNotifications,  getRecipes, updateRecipeStatus, deleteRecipe, previewImport,
  *   importRecipes, getProducts, getRecipesByProduct, getRecipeDetail
  *
+ *   deleteRecipe(recipeId, deleteBlendRecords, { moveRecordsTo }?) — 3번째 인자는 선택.
+ *
  * Side effects: none.
  * Dependencies: core.js, mappers.js.
  */
@@ -54,10 +56,15 @@
     return mapRecipe(payload);
   }
 
-  async function deleteRecipe(recipeId, deleteBlendRecords) {
+  // options.moveRecordsTo: 연결 기록을 같은 체인의 이 판 id 로 옮기고 삭제(삭제 플래그와 배타).
+  async function deleteRecipe(recipeId, deleteBlendRecords, options) {
+    const moveTo = options && options.moveRecordsTo;
     return request(`/recipes/${recipeId}`, {
       method: "DELETE",
-      query: { delete_blend_records: deleteBlendRecords ? 1 : undefined },
+      query: {
+        delete_blend_records: deleteBlendRecords ? 1 : undefined,
+        move_records_to: moveTo ? moveTo : undefined,
+      },
     });
   }
 

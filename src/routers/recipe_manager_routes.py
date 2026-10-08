@@ -61,12 +61,42 @@ def build_router() -> APIRouter:
         recipe_id: int,
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
         delete_blend_records: bool = Query(default=False),
+        move_records_to: int | None = Query(default=None),
     ) -> dict[str, Any]:
+        if move_records_to is not None and delete_blend_records:
+            raise HTTPException(
+                status_code=400, detail="기록 삭제와 옮기기는 함께 쓸 수 없습니다."
+            )
+        if move_records_to is not None and move_records_to == recipe_id:
+            raise HTTPException(status_code=400, detail="같은 판으로는 옮길 수 없습니다.")
         with get_connection() as connection:
+            if move_records_to is not None:
+                # 기록을 옮길 판 검증 — 같은 반제품(체인)의 살아 있는 판이어야 한다.
+                exists = connection.execute(
+                    "SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)
+                ).fetchone()
+                if exists is None:
+                    raise HTTPException(status_code=404, detail="RECIPE_NOT_FOUND")
+                target_row = connection.execute(
+                    "SELECT id, status FROM recipes WHERE id = ?", (move_records_to,)
+                ).fetchone()
+                if target_row is None:
+                    raise HTTPException(status_code=404, detail="옮길 판을 찾을 수 없습니다.")
+                if find_chain_root(connection, move_records_to) != find_chain_root(
+                    connection, recipe_id
+                ):
+                    raise HTTPException(
+                        status_code=400, detail="같은 반제품의 판으로만 옮길 수 있습니다."
+                    )
+                if target_row["status"] == "canceled":
+                    raise HTTPException(
+                        status_code=409, detail="취소된 판으로는 옮길 수 없습니다."
+                    )
             result = record_delete_service.delete_recipe(
                 connection,
                 recipe_id,
                 delete_linked_records=delete_blend_records,
+                move_records_to=move_records_to,
             )
             if result is None:
                 raise HTTPException(status_code=404, detail="RECIPE_NOT_FOUND")
@@ -83,6 +113,8 @@ def build_router() -> APIRouter:
                     "deleted_linked_records": result.deleted_linked_records,
                     "relinked_child_ids": list(result.relinked_child_ids),
                     "stage1_cleared_recipe_ids": list(result.stage1_cleared_recipe_ids),
+                    "moved_records_to": result.moved_records_to,
+                    "moved_record_count": result.moved_record_count,
                 },
             )
             connection.commit()
@@ -92,6 +124,8 @@ def build_router() -> APIRouter:
             "deleted_recipe_id": result.recipe_id,
             "linked_record_count": result.linked_record_count,
             "deleted_linked_records": result.deleted_linked_records,
+            "moved_records_to": result.moved_records_to,
+            "moved_record_count": result.moved_record_count,
         }
 
     @router.put("/recipes/{recipe_id}/anchor")

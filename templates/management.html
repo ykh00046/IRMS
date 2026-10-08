@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20261008c" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20261008d" />
 {% endblock %}
 
 {% block content %}
@@ -274,7 +274,7 @@
               <button id="vm-back-btn" class="btn" type="button">← 레시피 현황으로</button>
               <h3 class="panel-title">버전 관리 · <span id="vm-product-title">-</span></h3>
             </div>
-            <p class="panel-subtitle">이름을 붙이고, 현재판을 고르고, 기록 없는 판을 지웁니다.</p>
+            <p class="panel-subtitle">이름을 붙이고, 현재판을 고르고, 안 쓰는 판을 지웁니다.</p>
             <div class="button-row">
               <button id="vm-prune-btn" class="btn btn-sm" type="button" hidden>정리</button>
               <span id="vm-prune-note" class="muted small"></span>
@@ -289,6 +289,7 @@
                     <th>등록자</th>
                     <th>항목수</th>
                     <th>기록</th>
+                    <th>사용 기간</th>
                     <th>상태</th>
                     <th>동작</th>
                   </tr>
@@ -312,7 +313,7 @@
     <script src="/static/js/management/import-validate.js?v=20260910a"></script>
     <script src="/static/js/management/recipe-history.js?v=20261008b"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260910a"></script>
-    <script src="/static/js/management/version-compare.js?v=20261008c"></script>
-    <script src="/static/js/management/version-manage.js?v=20261008c"></script>
+    <script src="/static/js/management/version-compare.js?v=20261008d"></script>
+    <script src="/static/js/management/version-manage.js?v=20261008d"></script>
     <script src="/static/js/management.js?v=20261008c"></script>
 {% endblock %}

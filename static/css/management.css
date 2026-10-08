@@ -1033,6 +1033,14 @@
 }
 /* .input 은 width:100% 인데 표 셀 flex 안에서는 기준 폭이 없어 몇 px 로 눌린다. 고정 폭을 준다. */
 .vm-name-input { width: 12rem; flex: 0 0 12rem; min-width: 0; }
+/* 기록이 있는 판 삭제 = 동작 칸 안의 옮기기 폼(옮길 판 고르기 + 옮기고 삭제/취소). */
+.vm-move-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+.vm-move-target { width: 14rem; flex: 0 0 14rem; min-width: 0; }
 
 .vc-detail { min-width: 0; }
 .vc-single-note { font-size: var(--fs-xs); color: var(--text-secondary); margin: 0 0 0.5rem; }
