@@ -491,3 +491,38 @@ def test_item_codes_materials_exposes_loss_comp_g():
     item = next((it for it in data["items"] if it["id"] == mid), None)
     assert item is not None, "자재가 목록에 있어야 한다"
     assert item["loss_comp_g"] == 1.5
+
+
+def test_put_loss_comp_clears_items_left_out_of_the_list():
+    """보낸 목록이 보정 전체다 — 빠진 자재는 해제되고, 빈 목록은 모두 해제한다."""
+    client = _client()
+    headers = _login(client)
+    product = f"PLX{_uid()}"
+    rid = _import(client, headers, product, {"PowderA": 60, "LiquidB": 40}).json()["created_ids"][0]
+    url = f"/api/recipes/{rid}/loss-comp"
+
+    res = client.put(url, json={"items": [
+        {"material_name": "PowderA", "loss_comp_g": 1.0},
+        {"material_name": "LiquidB", "loss_comp_g": 2.0},
+    ]}, headers=headers)
+    assert res.status_code == 200, res.text
+
+    def comps():
+        detail = client.get(f"/api/recipes/{rid}/detail").json()
+        return {it["material_name"]: it["loss_comp_g"] for it in detail["items"]}
+
+    res = client.put(url, json={"items": [{"material_name": "LiquidB", "loss_comp_g": 2.0}]}, headers=headers)
+    assert res.status_code == 200, res.text
+    assert res.json()["cleared"] == ["PowderA"]
+    assert comps() == {"PowderA": 0.0, "LiquidB": 2.0}
+
+    res = client.put(url, json={"items": []}, headers=headers)
+    assert res.status_code == 200, res.text
+    assert res.json()["cleared"] == ["LiquidB"]
+    assert comps() == {"PowderA": 0.0, "LiquidB": 0.0}
+
+    # 목록에 없는 자재명이 섞이면 아무것도 바꾸지 않는다.
+    client.put(url, json={"items": [{"material_name": "PowderA", "loss_comp_g": 1.0}]}, headers=headers)
+    res = client.put(url, json={"items": [{"material_name": "Nope", "loss_comp_g": 1.0}]}, headers=headers)
+    assert res.status_code == 400
+    assert comps()["PowderA"] == 1.0

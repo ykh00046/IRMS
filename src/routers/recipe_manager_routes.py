@@ -365,6 +365,7 @@ def build_router() -> APIRouter:
         body: {"items": [{material_name, loss_comp_g}, ...]}.
         - material_name 은 이 레시피의 BOM 자재명이어야 한다(없으면 400).
         - loss_comp_g 는 0 이상 100 이하(음수 거부, 상한 100g). 0=보정 없음(해제).
+        - 보낸 목록이 이 레시피 보정의 전체다. 목록에 없는 자재는 해제된다(빈 목록=모두 해제).
         보정은 총량과 무관한 고정 g 이고, 배합 저장 시 theory_amount = 비율×총량+보정.
         """
         raw_items = body.get("items")
@@ -413,23 +414,37 @@ def build_router() -> APIRouter:
                 # 같은 이름의 자재가 여러 행이면 첫째 행(등록 순)에 적용 — 실제로는 드물다.
                 bom_by_name.setdefault(str(r["material_name"]).strip(), int(r["id"]))
 
-            missing: list[str] = []
-            applied: list[dict[str, Any]] = []
-            for name, val in normalized:
-                item_id = bom_by_name.get(name)
-                if item_id is None:
-                    missing.append(name)
-                    continue
-                connection.execute(
-                    "UPDATE recipe_items SET loss_comp_g = ? WHERE id = ?",
-                    (val, item_id),
-                )
-                applied.append({"material_name": name, "loss_comp_g": val})
+            missing = [name for name, _ in normalized if name not in bom_by_name]
             if missing:
                 raise HTTPException(
                     status_code=400,
                     detail="BOM 에 없는 자재명입니다: " + ", ".join(missing),
                 )
+
+            # 보낸 목록 = 이 레시피의 보정 전체. 목록에서 빠진 자재는 해제(0)한다 —
+            # 편집기에서 ✕ 로 지운 줄이 저장 후 되살아나지 않게.
+            sent = {name for name, _ in normalized}
+            cleared = sorted({
+                str(r["material_name"]).strip()
+                for r in connection.execute(
+                    """
+                    SELECT m.name AS material_name
+                    FROM recipe_items ri JOIN materials m ON m.id = ri.material_id
+                    WHERE ri.recipe_id = ? AND COALESCE(ri.loss_comp_g, 0) > 0
+                    """,
+                    (recipe_id,),
+                ).fetchall()
+            } - sent)
+            connection.execute(
+                "UPDATE recipe_items SET loss_comp_g = 0 WHERE recipe_id = ?", (recipe_id,)
+            )
+            applied: list[dict[str, Any]] = []
+            for name, val in normalized:
+                connection.execute(
+                    "UPDATE recipe_items SET loss_comp_g = ? WHERE id = ?",
+                    (val, bom_by_name[name]),
+                )
+                applied.append({"material_name": name, "loss_comp_g": val})
 
             write_audit_log(
                 connection,
@@ -438,11 +453,11 @@ def build_router() -> APIRouter:
                 target_type="recipe",
                 target_id=recipe_id,
                 target_label=str(recipe_row["product_name"]),
-                details={"items": applied},
+                details={"items": applied, "cleared": cleared},
             )
             connection.commit()
 
-        return {"status": "ok", "recipe_id": recipe_id, "items": applied}
+        return {"status": "ok", "recipe_id": recipe_id, "items": applied, "cleared": cleared}
 
     @router.put("/recipes/{recipe_id}/category")
     def set_recipe_category(
