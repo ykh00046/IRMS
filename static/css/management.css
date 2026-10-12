@@ -472,7 +472,11 @@
 .rh-setting:last-child { border-bottom: none; }
 .rh-setting > .filter-label { margin: 0; }
 .rh-setting-losscomp { align-items: start; }
-.rh-setting-losscomp > .filter-label { padding-top: var(--space-2); cursor: help; }
+.rh-setting-losscomp > .filter-label { padding-top: var(--space-2); }
+/* 설정 이름에 마우스를 올리면 설명(title)이 뜬다는 표시 — 점선 밑줄 + 도움말 커서. */
+.rh-setting > .filter-label[title],
+.rh-anchor-chip[title] { cursor: help; }
+.rh-setting > .filter-label[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
 .rh-setting-control {
   display: flex;
   align-items: center;

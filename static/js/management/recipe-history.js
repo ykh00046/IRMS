@@ -630,7 +630,7 @@
         const w = weights[idx];
         const name = IRMS.escapeHtml(it.material_name || "");
         const anchorChip = anchorName && it.material_name === anchorName
-          ? ' <span class="status-chip rh-anchor-chip">기준</span>'
+          ? ' <span class="status-chip rh-anchor-chip" title="먼저 계량하는 기준 자재입니다. 이 실측값으로 나머지를 계산합니다.">기준</span>'
           : "";
         const weightText = Number.isFinite(w) ? formatFixed(w, 2) : IRMS.escapeHtml(String(it.value ?? ""));
         const ratioText = Number.isFinite(w) && total > 0 ? formatFixed((w / total) * 100, 1) : "-";
@@ -668,7 +668,9 @@
 
       const tolCurrent = detail.tolerance_g != null ? Number(detail.tolerance_g) : null;
       const tolSet = tolCurrent != null && Number.isFinite(tolCurrent);
-      const lossLabel = `<label class="filter-label" title="자재 마스터 기본값보다 이 값이 우선합니다.">투입 로스 보정</label>`;
+      const lossLabel = `<label class="filter-label" title="붓다가 흘리는 양만큼 계량 목표에 더합니다. 자재 기본값보다 이 값이 우선합니다.">투입 로스 보정</label>`;
+      const anchorLabel = `<label class="filter-label" title="배합 때 이 자재를 먼저 계량합니다. 그 실측값으로 나머지 자재와 총량을 계산합니다. 없음이면 총량을 입력해 계량합니다.">기준 자재</label>`;
+      const tolLabel = `<label class="filter-label" title="실측이 목표에서 이 값보다 벗어나면 저장되지 않습니다. 비우면 ±0.05 g입니다.">허용 편차</label>`;
 
       if (!canManage) {
         const lossItems = (detail.items || []).filter((it) => Number(it.loss_comp_g) > 0 && it.material_name);
@@ -677,9 +679,9 @@
           : '<span class="muted">없음</span>';
         wrap.innerHTML =
           `<h4 class="rh-section-title">설정</h4>`
-          + settingRow(`<label class="filter-label">기준 자재</label>`,
+          + settingRow(anchorLabel,
             currentName ? IRMS.escapeHtml(currentName) : '<span class="muted">없음</span>')
-          + settingRow(`<label class="filter-label">허용 편차</label>`,
+          + settingRow(tolLabel,
             tolSet ? `±${IRMS.escapeHtml(String(tolCurrent))} g` : '<span class="muted">±0.05 g 기본</span>')
           + settingRow(lossLabel, lossText);
         return;
@@ -699,8 +701,8 @@
 
       wrap.innerHTML =
         `<h4 class="rh-section-title">설정</h4>`
-        + settingRow(`<label class="filter-label">기준 자재</label>`, anchorControl)
-        + settingRow(`<label class="filter-label">허용 편차</label>`, tolControl)
+        + settingRow(anchorLabel, anchorControl)
+        + settingRow(tolLabel, tolControl)
         + settingRow(lossLabel, renderLossCompBlock(detail, uniq), "rh-setting-losscomp");
 
       const anchorSel = wrap.querySelector(".attr-anchor-select");
