@@ -421,11 +421,17 @@
 .blend-label-row {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
   min-width: 0;
+  /* 칸이 150px 까지 좁아지면(다중 계량 폼, 확대 화면) 라벨+기본량이 칸을 넘쳐 옆 칸 라벨
+     위에 겹쳐 그려졌다(2026-10-21 "기본량 4000" 이 "작업자" 와 겹침). 넘치는 꼬리는 자른다. */
+  overflow: hidden;
 }
 /* 기본량 링크는 라벨 줄 한 줄에 머문다. 값이 둘이면 13px 로도 꺾여 라벨 "(g)" 까지
    밀어냈다(2026-09-09). 표준 최소 크기(12px)로 두고 줄바꿈을 막는다. */
 .blend-label-row .filter-label { white-space: nowrap; }
-.blend-base-links { display: inline-flex; gap: 0.35rem; align-items: baseline; white-space: nowrap; }
+.blend-base-links {
+  display: inline-flex; gap: 0.35rem; align-items: baseline; white-space: nowrap;
+  min-width: 0; overflow: hidden;
+}
 .blend-base-label { font-size: var(--fs-2xs); color: var(--muted); }
 .blend-base-link {
   background: none; border: none; padding: 0; cursor: pointer;

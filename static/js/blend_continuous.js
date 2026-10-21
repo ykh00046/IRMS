@@ -1054,10 +1054,11 @@
       $("cont-note").value = "";
       $("cont-reactor").value = "";
       if (state.workerPad) state.workerPad.clear();
-    } else {
-      // 판이 바뀌면 목표량이 달라 입력한 실제량·LOT 을 그대로 둘 수 없다.
-      state.cells = [];
     }
+    // 레시피(판)가 바뀌면 입력한 실제량·LOT 은 새 레시피의 것이 아니다. 예전에는 셀을 비우지
+    // 않아 rebuildCells 가 같은 자리의 옛 값을 그대로 이어 붙였고, 그 값 때문에 총량 잠금이
+    // 걸린 채 총량은 비어 있는 상태(기본량 버튼도 눌리지 않음)가 됐다(현장 2026-10-21).
+    state.cells = [];
     state.reactorPrev = $("cont-reactor").value;
     state.total = keepSettings ? (Number($("cont-total").value) || 0) : 0;
     state.theory = state.materials.map(() => null);
@@ -2435,7 +2436,9 @@
   function updateContTotalLock() {
     const totalInput = $("cont-total");
     if (!totalInput) return;
-    const anyActual = state.cells.some((row) =>
+    // 잠그는 대상은 '정해진 총량'이다 — 총량이 비어 있으면(이론량 없음) 잠글 것이 없고,
+    // 잠그면 사용자가 총량을 넣을 길이 없어 화면이 막힌다. 그때는 실측이 있어도 열어 둔다.
+    const anyActual = (Number(totalInput.value) || 0) > 0 && state.cells.some((row) =>
       row && row.some((c) => c && c.actual !== "" && c.actual != null)
     );
     const links = $("cont-base-links");
@@ -3110,6 +3113,7 @@
       state.total = Number($("cont-total").value) || 0;
       recomputeTheory();
       refreshTheoryCells();
+      updateContTotalLock();  // 실측이 있는 상태에서 총량이 정해지면 그 순간부터 잠근다
       scheduleDraftSave();  // 총 배합량 변경도 임시 저장(복구용)
     });
     // 비고·반응기·저울 변경도 임시 저장에 반영(단건 배합 blend.js 와 동일).

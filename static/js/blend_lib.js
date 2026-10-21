@@ -219,7 +219,7 @@
     return label + values.map((v) =>
       `<button class="blend-base-link" type="button" data-value="${v}" ` +
       `title="총 배합량에 ${fmt(v)} g을 채웁니다">` +
-      `${values.length === 1 ? `기본량 ${short(v)} 적용` : short(v)}</button>`
+      `${values.length === 1 ? `기본량 ${short(v)}` : short(v)}</button>`
     ).join("");
   }
 
