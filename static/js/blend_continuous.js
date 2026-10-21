@@ -556,7 +556,12 @@
         const data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(draft.reactor)}`);
         if (data.recipe.id !== state.current.recipe.id) applyRecipeData(data, { keepSettings: true });
         if (Number(data.recipe.id) !== Number(draft.recipe_id)) {
-          draft = { ...draft, cells: [], sharedLot: null };
+          // 판이 바뀌었으면 총량도 새 판의 기본량으로(없으면 초안 값 유지).
+          const base = baseTotalValues(state.current);
+          draft = {
+            ...draft, cells: [], sharedLot: null,
+            total: base.length ? String(base[0]) : draft.total,
+          };
           notify("반응기에 맞는 판으로 바꿨습니다.", "info");
         }
       } catch (e) {
@@ -1175,6 +1180,8 @@
       state.current.recipe.reactor_assigned = data.recipe.reactor_assigned;
       state.reactorPrev = reactor;
       render();
+      // 게이트를 처음 푸는 순간이면 이 판의 기본량을 총량으로 넣는다(계량 전에만).
+      if (!hasEnteredWeighing()) applyVersionBaseTotal();
       renderReactorVersionChip();
       return;
     }
@@ -1183,9 +1190,22 @@
       return;
     }
     applyRecipeData(data, { keepSettings: true });
+    applyVersionBaseTotal();
     state.reactorPrev = reactor;
     renderReactorVersionChip();
     scheduleDraftSave();
+  }
+
+  // 반응기로 판이 정해지면 그 판의 기본량(첫 값)을 총 배합량으로 넣는다. 판마다 기본량이
+  // 달라 옛 판의 총량을 그대로 두면 이론량이 어긋난다(현장 요청 2026-10-21). 기본량이
+  // 없는 판은 입력값을 그대로 둔다. 기준 버튼 클릭과 같은 경로.
+  function applyVersionBaseTotal() {
+    if (state.anchorBlocked) return;
+    const values = baseTotalValues(state.current);
+    if (!values.length) return;
+    const totalInput = $("cont-total");
+    totalInput.value = String(values[0]);
+    totalInput.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   // ── 반제품 원료 LOT 자동 제안 ───────────────────────────────

@@ -1196,6 +1196,8 @@
       state.current.recipe.reactor_assigned = data.recipe.reactor_assigned;
       state.reactorPrev = reactor;
       renderMatRows();
+      // 게이트를 처음 푸는 순간이면 이 판의 기본량을 총량으로 넣는다(계량 전에만).
+      if (!hasEnteredWeighing()) applyVersionBaseTotal();
       if (hasAnchor()) applyAnchorMode();
       renderReactorVersionChip();
       updateInputGuide();
@@ -1206,9 +1208,22 @@
       return;
     }
     applyRecipeData(data, { keepSettings: true });
+    applyVersionBaseTotal();
     state.reactorPrev = reactor;
     renderReactorVersionChip();
     scheduleDraftSave();
+  }
+
+  // 반응기로 판이 정해지면 그 판의 기본량(첫 값)을 총 배합량으로 넣는다. 판마다 기본량이
+  // 달라 옛 판의 총량을 그대로 두면 이론량이 어긋난다(현장 요청 2026-10-21). 기준 자재
+  // 레시피는 총량을 실측에서 얻으므로 건드리지 않고, 기본량이 없는 판은 입력값을 둔다.
+  function applyVersionBaseTotal() {
+    if (hasAnchor()) return;
+    const values = baseTotalValues(state.current);
+    if (!values.length) return;
+    const totalInput = $("blend-total");
+    totalInput.value = String(values[0]);
+    totalInput.dispatchEvent(new Event("input"));  // 이론량 재계산 경로 재사용(기준 버튼과 동일)
   }
 
   // ── 시험 배합: 레시피 → 목표량 채우기 ───────────────────────────
@@ -1801,7 +1816,12 @@
     }
     renderReactorVersionChip();
     if (versionSwitched) {
-      draft = { ...draft, items: [], rescaleTotalG: 0, rescaleEvents: [], discardEvents: [] };
+      // 판이 바뀌었으면 총량도 새 판의 기본량으로(없으면 초안 값 유지).
+      const base = baseTotalValues(state.current);
+      draft = {
+        ...draft, items: [], rescaleTotalG: 0, rescaleEvents: [], discardEvents: [],
+        total: base.length ? String(base[0]) : draft.total,
+      };
     }
     state.lotOverrides = draft.lotOverrides || {};
     // 수기 입력 승인/부재 상태 복구 — onRecipeChange 가 null 로 리셋했으므로 되살린다.
