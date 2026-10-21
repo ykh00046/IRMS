@@ -590,6 +590,8 @@
     // 우선순위 규칙은 blend_lib.pickScaleRow 가 소유한다(테스트로 잠근 순수 함수).
     // 모달이 열려 있는 행(_addWeighIdx)까지 포함해야 2회차 이후 PRINT 가 다음 품목으로
     // 새지 않는다(현장 신고 2026-08-03).
+    // 반응기를 고르기 전에는 판이 정해지지 않았다 — PRINT 를 어느 행에도 넣지 않는다.
+    if (reactorGated()) return null;
     const focused = document.activeElement;
     const focusedIdx = (
       focused && focused.classList
@@ -738,7 +740,8 @@
     return ["rescale-approve-modal", "manual-approve-modal", "rescale-modal",
       "discard-modal", "rescale-block-modal", "carry-over-modal",
       "lot-invalid-modal", "scale-state-modal",
-      "discard-ask-modal", "batch-discard-modal", "save-confirm-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "discard-ask-modal", "batch-discard-modal", "save-confirm-modal",
+      "reactor-switch-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -1018,9 +1021,22 @@
     if (!id) return;
     // 같은 레시피 재선택은 무시 — 입력 중인 값(실제량·LOT 등)을 보존.
     const prevId = state.current && state.current.recipe ? String(state.current.recipe.id) : "";
-    if (id === prevId) return;
+    if (id === prevId || (state.current && id === String(state.selectedRecipeOptionId || ""))) return;
     const data = await request(`/blend/recipes/${id}`);
+    // 목록에서 고른 id(반응기별 판 귀결의 기준). 시험의 baseRecipeId 와 별개다.
+    state.selectedRecipeOptionId = Number(id);
+    applyRecipeData(data, { keepSettings: false });
+  }
+
+  // 레시피 상세(data)를 화면 상태에 적용한다. keepSettings=true 면 총 배합량·작업자·
+  // 작업일자·비고·반응기를 그대로 두고 자재·기준 자재·증량·초안 관련 상태만 새로 잡는다
+  // (반응기별 현재판으로 판이 바뀔 때).
+  function applyRecipeData(data, { keepSettings = false } = {}) {
     state.current = data;
+    // 판이 바뀌면 옛 자재 기준으로 열려 있던 증량·폐기 창은 뜻을 잃는다. 닫고 시작한다.
+    ["rescale-modal", "discard-modal", "discard-ask-modal"].forEach((id) => {
+      const m = $(id); if (m) m.hidden = true;
+    });
     // 레시피가 선택되면 DHR 카드의 빈 상태 안내를 걷고 LOT·합계를 노출.
     const dhrCard = document.querySelector(".blend-dhr-card");
     if (dhrCard) dhrCard.classList.remove("is-empty");
@@ -1056,10 +1072,13 @@
     clearRescaleSummary();
     // 레시피가 바뀌면 이전 레시피의 입력을 모두 초기화 — 총량·비고·서명·반응기가
     // 새 레시피에 섞여 들어가는 것을 방지. 총량은 다시 입력(또는 기준 버튼).
-    $("blend-total").value = "";
-    $("blend-note").value = "";
-    $("blend-reactor").value = "";
-    if (state.workerPad) state.workerPad.clear();
+    if (!keepSettings) {
+      $("blend-total").value = "";
+      $("blend-note").value = "";
+      $("blend-reactor").value = "";
+      if (state.workerPad) state.workerPad.clear();
+    }
+    state.reactorPrev = $("blend-reactor").value;
     if (state.testMode) {
       // 시험: 레시피의 자재·목표량을 표에 채운다(기준 배합량 첫 값 기준, 기준 자재
       // 레시피는 value_weight 로 산출). 이후 목표량은 사람이 자유롭게 고친다.
@@ -1076,10 +1095,120 @@
       renderBaseTotalButton();
       applyAnchorMode();
     }
+    // 총 배합량을 유지했으면 새 판 기준으로 이론량을 다시 계산한다(입력 경로 재사용).
+    if (keepSettings && !state.testMode && $("blend-total").value) {
+      $("blend-total").dispatchEvent(new Event("input"));
+    }
     updateLotPreview();
     updateInputGuide();
     updateManualEntryControl();  // 승인 해제 반영(배너 텍스트·버튼 복귀)
     loadLotSuggest();
+  }
+
+  // ── 반응기별 현재판(2026-10-21) ─────────────────────────────
+  // 체인에 반응기별 지정이 있는 레시피는 반응기를 먼저 골라야 판(자재 목표량)이 정해진다.
+  // 판정은 서버 recipe_helpers.resolve_recipe_for_reactor(저장 검증과 같은 규칙)가 한다.
+  function reactorVersionRelevant() {
+    if (state.testMode) return false;
+    const r = state.current && state.current.recipe;
+    return Boolean(r && r.use_reactor && r.chain_has_reactor_assignments);
+  }
+
+  function reactorGated() {
+    return reactorVersionRelevant() && !$("blend-reactor").value;
+  }
+
+  function renderReactorVersionChip() {
+    const chip = $("blend-reactor-version");
+    if (!chip) return;
+    const r = state.current && state.current.recipe;
+    const reactor = $("blend-reactor") ? $("blend-reactor").value : "";
+    if (!reactorVersionRelevant() || !reactor || !r.version_label) {
+      chip.hidden = true;
+      chip.textContent = "";
+      return;
+    }
+    let text = `반응기 ${reactor} · ${r.version_label}`;
+    if (r.reactor_assigned) {
+      if (r.version_name) text += ` ${r.version_name}`;
+    } else {
+      text += " (현재판)";
+    }
+    chip.textContent = text;
+    chip.hidden = false;
+  }
+
+  function hasEnteredWeighing() {
+    return state.items.some((it) =>
+      (it.actual_amount !== "" && it.actual_amount != null)
+      || (it.material_lot && String(it.material_lot).trim())
+      || (Array.isArray(it.portions) && it.portions.length));
+  }
+
+  // 반응기 변경 확인 모달 — 입력한 실제량이 지워진다는 것을 알리고 확답을 받는다.
+  function confirmReactorSwitch() {
+    const modal = $("reactor-switch-modal");
+    if (!modal) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const ok = $("reactor-switch-ok");
+      const cancel = $("reactor-switch-cancel");
+      const done = (answer) => {
+        modal.hidden = true;
+        ok.removeEventListener("click", onOk);
+        cancel.removeEventListener("click", onCancel);
+        resolve(answer);
+      };
+      const onOk = () => done(true);
+      const onCancel = () => done(false);
+      ok.addEventListener("click", onOk);
+      cancel.addEventListener("click", onCancel);
+      modal.hidden = false;
+      ok.focus();
+    });
+  }
+
+  async function onReactorChange() {
+    const sel = $("blend-reactor");
+    if (!sel || !reactorVersionRelevant()) {
+      state.reactorPrev = sel ? sel.value : "";
+      renderReactorVersionChip();
+      return;
+    }
+    const reactor = sel.value;
+    const optionId = state.selectedRecipeOptionId || state.current.recipe.id;
+    if (!reactor) {
+      state.reactorPrev = "";
+      renderMatRows();
+      renderReactorVersionChip();
+      updateInputGuide();
+      return;
+    }
+    let data;
+    try {
+      data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(reactor)}`);
+    } catch (e) {
+      notify(e.message, "error");
+      sel.value = state.reactorPrev || "";
+      return;
+    }
+    if (data.recipe.id === state.current.recipe.id) {
+      // 같은 판 — 지정 표시만 갱신하고 게이트를 푼다.
+      state.current.recipe.reactor_assigned = data.recipe.reactor_assigned;
+      state.reactorPrev = reactor;
+      renderMatRows();
+      if (hasAnchor()) applyAnchorMode();
+      renderReactorVersionChip();
+      updateInputGuide();
+      return;
+    }
+    if (hasEnteredWeighing() && !(await confirmReactorSwitch())) {
+      sel.value = state.reactorPrev || "";
+      return;
+    }
+    applyRecipeData(data, { keepSettings: true });
+    state.reactorPrev = reactor;
+    renderReactorVersionChip();
+    scheduleDraftSave();
   }
 
   // ── 시험 배합: 레시피 → 목표량 채우기 ───────────────────────────
@@ -1334,6 +1463,8 @@
     if (!hasInput) return null;  // 의미 있는 입력이 없으면 초안 없음
     return {
       recipe_id: state.current.recipe.id,
+      // 목록에서 고른 id — 반응기별 판으로 바뀐 경우 recipe_id 는 목록에 없는 판일 수 있다.
+      recipe_option_id: state.selectedRecipeOptionId || state.current.recipe.id,
       product_name: state.current.recipe.product_name,
       // 계량한 작업자 — 공용 PC 에서 다른 사람이 이어서 저장해도 계량한 사람 이름으로
       // 교대해 기록하고(2026-09-14 사용자 결정), 저장 안 된 배합 안내에 이름을 보여 준다.
@@ -1615,7 +1746,7 @@
   // "작성 중 배합" 화면에서 [이어서 하기]로 넘어온 슬롯을 복원한다.
   // (배너 폐지 후 유일한 진입 경로 — 복구 실행 로직 자체는 그대로 재사용.)
   async function restoreDraft(slotId) {
-    const draft = blendDrafts ? blendDrafts.getSlot(DRAFT_KIND, slotId) : null;
+    let draft = blendDrafts ? blendDrafts.getSlot(DRAFT_KIND, slotId) : null;
     if (!draft) {
       notify("이어서 할 임시저장을 찾지 못했습니다(만료되었거나 이미 삭제됨).", "warn");
       return;
@@ -1635,7 +1766,8 @@
     const catSel = $("blend-recipe-cat");
     if (catSel && catSel.value !== "") { catSel.value = ""; populateRecipeSelect(); }
     const recipeSel = $("blend-recipe");
-    recipeSel.value = String(draft.recipe_id);
+    recipeSel.value = String(draft.recipe_option_id || draft.recipe_id);
+    if (!recipeSel.value) recipeSel.value = String(draft.recipe_id);
     await onRecipeChange();  // 레시피 로드 + 렌더(빈 상태) · 이후 초안 값을 덮어씌운다.
     // 레시피가 삭제·비활성화돼 option 이 없으면 value 지정이 붙지 않아 state.current 가
     // 비어 있다. 이 상태로 진행하면 아래 정합성 판정이 터지므로 여기서 멈춘다(초안은 보존 —
@@ -1650,6 +1782,27 @@
     if (draft.scale) $("blend-scale").value = draft.scale;
     if (draft.note) $("blend-note").value = draft.note;
     if (draft.reactor) $("blend-reactor").value = draft.reactor;
+    state.reactorPrev = $("blend-reactor").value;
+    // 반응기별 판 지정 — 복구한 반응기로 판을 다시 정한다. 초안과 다른 판이면 새 판으로
+    // 바꾸고 계량값은 버린다(목표량이 달라 그대로 얹으면 편차 판정이 틀린다).
+    let versionSwitched = false;
+    if (draft.reactor && reactorVersionRelevant()) {
+      try {
+        const optionId = state.selectedRecipeOptionId || state.current.recipe.id;
+        const data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(draft.reactor)}`);
+        if (data.recipe.id !== state.current.recipe.id) applyRecipeData(data, { keepSettings: true });
+        if (Number(data.recipe.id) !== Number(draft.recipe_id)) {
+          versionSwitched = true;
+          notify("반응기에 맞는 판으로 바꿨습니다.", "info");
+        }
+      } catch (e) {
+        notify(e.message, "error");
+      }
+    }
+    renderReactorVersionChip();
+    if (versionSwitched) {
+      draft = { ...draft, items: [], rescaleTotalG: 0, rescaleEvents: [], discardEvents: [] };
+    }
     state.lotOverrides = draft.lotOverrides || {};
     // 수기 입력 승인/부재 상태 복구 — onRecipeChange 가 null 로 리셋했으므로 되살린다.
     // 이게 없으면 복구 후 저장이 사유 없는 정상 배치로 기록된다.
@@ -1803,11 +1956,13 @@
       field.hidden = true;
       const sel = $("blend-reactor");
       if (sel) sel.value = "";
+      renderReactorVersionChip();
       return;
     }
     const use = Boolean(state.current && state.current.recipe && state.current.recipe.use_reactor);
     field.hidden = !use;
     if (!use) $("blend-reactor").value = "";
+    renderReactorVersionChip();
   }
 
   // 계량값 표시 소수 자릿수 — 현재 레시피 허용 편차(state.toleranceG)를 따른다(표시 전용).
@@ -1909,6 +2064,12 @@
       body.innerHTML = state.testMode
         ? '<tr><td colspan="7" class="muted">자재를 추가하세요.</td></tr>'
         : '<tr><td colspan="7" class="muted">레시피를 선택하세요.</td></tr>';
+      updateTotals();
+      return;
+    }
+    // 반응기별 판 지정이 있는 레시피는 반응기를 고르기 전까지 자재를 보이지 않는다.
+    if (reactorGated()) {
+      body.innerHTML = '<tr><td colspan="7" class="empty-state">반응기를 선택하면 자재 목록이 나옵니다.</td></tr>';
       updateTotals();
       return;
     }
@@ -4818,7 +4979,13 @@
       const el = $(id); if (el) el.addEventListener("input", scheduleDraftSave);
     });
     const reactorEl = $("blend-reactor");
-    if (reactorEl) reactorEl.addEventListener("change", scheduleDraftSave);
+    if (reactorEl) {
+      reactorEl.addEventListener("change", scheduleDraftSave);
+      // 반응기별 판 지정 — 반응기를 고르면 그 반응기의 판으로 자재를 다시 잡는다.
+      reactorEl.addEventListener("change", () => {
+        onReactorChange().catch((e) => notify(e.message, "error"));
+      });
+    }
     // 저울 에이전트 감지(있으면 각 행에 [저울] 버튼 노출). 30초마다 재확인.
     detectScale();
     setInterval(detectScale, 30000);

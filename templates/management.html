@@ -6,7 +6,7 @@
 
 {% block styles %}
     <!-- JSpreadsheet CE (local vendor) -->
-    <link rel="stylesheet" href="/static/css/management.css?v=20261012a" />
+    <link rel="stylesheet" href="/static/css/management.css?v=20261021a" />
 {% endblock %}
 
 {% block content %}
@@ -275,6 +275,8 @@
               <h3 class="panel-title">버전 관리 · <span id="vm-product-title">-</span></h3>
             </div>
             <p class="panel-subtitle">이름을 붙이고, 현재판을 고르고, 안 쓰는 판을 지웁니다.</p>
+            {# 반응기별 적용 · use_reactor 레시피만 version-manage.js 가 채운다 #}
+            <div id="vm-reactor-panel" class="vm-reactor-panel" hidden></div>
             <div class="button-row">
               <button id="vm-prune-btn" class="btn btn-sm" type="button" hidden>정리</button>
               <span id="vm-prune-note" class="muted small"></span>
@@ -313,7 +315,7 @@
     <script src="/static/js/management/import-validate.js?v=20260910a"></script>
     <script src="/static/js/management/recipe-history.js?v=20261012a"></script>
     <script src="/static/js/management/recipe-lookup.js?v=20260910a"></script>
-    <script src="/static/js/management/version-compare.js?v=20261008d"></script>
-    <script src="/static/js/management/version-manage.js?v=20261008d"></script>
+    <script src="/static/js/management/version-compare.js?v=20261021a"></script>
+    <script src="/static/js/management/version-manage.js?v=20261021a"></script>
     <script src="/static/js/management.js?v=20261008c"></script>
 {% endblock %}

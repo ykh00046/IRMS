@@ -363,6 +363,8 @@
     if (!hasCell && !hasLot) return null;
     return {
       recipe_id: state.current.recipe.id,
+      // 목록에서 고른 id — 반응기별 판으로 바뀐 경우 recipe_id 는 목록에 없는 판일 수 있다.
+      recipe_option_id: state.selectedRecipeOptionId || state.current.recipe.id,
       product_name: state.current.recipe.product_name,
       // 계량한 작업자 — 공용 PC 에서 다른 사람이 이어서 저장해도 계량한 사람 이름으로
       // 교대해 기록하고(2026-09-14 사용자 결정), 저장 안 된 배합 안내에 이름을 보여 준다.
@@ -502,7 +504,7 @@
   // "작성 중 배합" 화면에서 [이어서 하기]로 넘어온 슬롯을 복원한다.
   // (배너 폐지 후 유일한 진입 경로 — 복구 실행 로직 자체는 그대로 재사용.)
   async function restoreDraft(slotId) {
-    const draft = blendDrafts ? blendDrafts.getSlot(DRAFT_KIND, slotId) : null;
+    let draft = blendDrafts ? blendDrafts.getSlot(DRAFT_KIND, slotId) : null;
     if (!draft || !draft.recipe_id) {
       notify("이어서 할 임시저장을 찾지 못했습니다(만료되었거나 이미 삭제됨).", "warn");
       return;
@@ -523,7 +525,8 @@
     const catSel = $("cont-recipe-cat");
     if (catSel && catSel.value !== "") { catSel.value = ""; populateRecipeSelect(); }
     const recipeSel = $("cont-recipe");
-    recipeSel.value = String(draft.recipe_id);
+    recipeSel.value = String(draft.recipe_option_id || draft.recipe_id);
+    if (!recipeSel.value) recipeSel.value = String(draft.recipe_id);
     await onRecipeChange();  // 레시피 로드 + 초기화 + 빈 렌더 · 이후 초안 값을 덮어씌운다.
     // 레시피가 삭제·비활성화돼 option 이 없으면 value 지정이 붙지 않아 state.current 가
     // 비어 있다. 이 상태로 진행하면 아래 정합성 판정이 터지므로 여기서 멈춘다(초안은 보존 —
@@ -544,6 +547,23 @@
     if (draft.scale) $("cont-scale").value = draft.scale;
     if (draft.note) $("cont-note").value = draft.note;
     if (draft.reactor) $("cont-reactor").value = draft.reactor;
+    state.reactorPrev = $("cont-reactor").value;
+    // 반응기별 판 지정 — 복구한 반응기로 판을 다시 정한다. 초안과 다른 판이면 새 판으로
+    // 바꾸고 계량값은 버린다(목표량이 달라 그대로 얹으면 편차 판정이 틀린다).
+    if (draft.reactor && reactorVersionRelevant()) {
+      try {
+        const optionId = state.selectedRecipeOptionId || state.current.recipe.id;
+        const data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(draft.reactor)}`);
+        if (data.recipe.id !== state.current.recipe.id) applyRecipeData(data, { keepSettings: true });
+        if (Number(data.recipe.id) !== Number(draft.recipe_id)) {
+          draft = { ...draft, cells: [], sharedLot: null };
+          notify("반응기에 맞는 판으로 바꿨습니다.", "info");
+        }
+      } catch (e) {
+        notify(e.message, "error");
+      }
+    }
+    renderReactorVersionChip();
     state.lotOverrides = draft.lotOverrides || {};
     // 수기 입력 승인/부재 상태 복구(onRecipeChange 가 null 로 리셋했으므로 되살린다).
     state.manualApproved = draft.manualApproved ? { ...draft.manualApproved } : null;
@@ -660,7 +680,8 @@
     // cont-save-confirm-modal: 저장 확인이 떠 있는 동안 저장이 확정되지 않았으므로 버린다.
     return ["cont-rescale-approve-modal", "cont-manual-approve-modal", "cont-rescale-modal",
       "cont-discard-modal", "cont-rescale-block-modal",
-      "cont-lot-invalid-modal", "cont-scale-state-modal", "cont-save-confirm-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
+      "cont-lot-invalid-modal", "cont-scale-state-modal", "cont-save-confirm-modal",
+      "cont-reactor-switch-modal"].some((id) => { const m = $(id); return m && !m.hidden; });
   }
 
   async function pollScaleEvents() {
@@ -725,6 +746,8 @@
   function activeScaleCell() {
     // 우선순위 규칙은 blend_lib.pickScaleRow 가 소유(배합 화면과 동일 규칙, 테스트로 잠금).
     // 위치는 {i,j} 셀 객체 — pickScaleRow 는 opaque 위치를 그대로 돌려준다.
+    // 반응기를 고르기 전에는 판이 정해지지 않았다 — PRINT 를 어느 셀에도 넣지 않는다.
+    if (reactorGated()) return null;
     const focused = document.activeElement;
     const focusedCell = (focused && focused.classList && focused.classList.contains("cont-actual"))
       ? { i: Number(focused.dataset.i), j: Number(focused.dataset.j) }
@@ -993,9 +1016,21 @@
     const id = selectedRecipeId();
     if (!id) return;
     const prevId = state.current && state.current.recipe ? String(state.current.recipe.id) : "";
-    if (id === prevId) return;
+    if (id === prevId || (state.current && id === String(state.selectedRecipeOptionId || ""))) return;
     const data = await request(`/blend/recipes/${id}`);
+    // 목록에서 고른 id(반응기별 판 귀결의 기준).
+    state.selectedRecipeOptionId = Number(id);
+    applyRecipeData(data, { keepSettings: false });
+  }
+
+  // 레시피 상세(data)를 화면 상태에 적용한다. keepSettings=true 면 총 배합량·작업자·
+  // 작업일자·비고·반응기를 그대로 두고 자재·셀·증량 상태만 새로 잡는다(반응기별 판 전환).
+  function applyRecipeData(data, { keepSettings = false } = {}) {
     state.current = data;
+    // 판이 바뀌면 옛 자재 기준으로 열려 있던 증량·폐기 창은 뜻을 잃는다. 닫고 시작한다.
+    ["cont-rescale-modal", "cont-discard-modal"].forEach((id) => {
+      const m = $(id); if (m) m.hidden = true;
+    });
     state.materials = (data.items || []).map((it) => ({
       material_id: it.material_id,
       material_code: it.material_code,
@@ -1009,11 +1044,17 @@
     state.toleranceG = (data.recipe && data.recipe.tolerance_g) || TOLERANCE_G;
 
     // 새 레시피 → 입력 초기화
-    $("cont-total").value = "";
-    $("cont-note").value = "";
-    $("cont-reactor").value = "";
-    if (state.workerPad) state.workerPad.clear();
-    state.total = 0;
+    if (!keepSettings) {
+      $("cont-total").value = "";
+      $("cont-note").value = "";
+      $("cont-reactor").value = "";
+      if (state.workerPad) state.workerPad.clear();
+    } else {
+      // 판이 바뀌면 목표량이 달라 입력한 실제량·LOT 을 그대로 둘 수 없다.
+      state.cells = [];
+    }
+    state.reactorPrev = $("cont-reactor").value;
+    state.total = keepSettings ? (Number($("cont-total").value) || 0) : 0;
     state.theory = state.materials.map(() => null);
     state.lotOverrides = {};        // 레시피 변경 → 미등록 LOT 진행 승인 리셋
     state.lotRescale = [];          // 레시피 변경 → 증량 오버라이드 전부 리셋(스펙)
@@ -1043,10 +1084,108 @@
     } else {
       warn.hidden = true;
     }
+    if (keepSettings && state.total > 0) recomputeTheory();
     renderReactorField();
     renderBaseTotals();
     render();
     loadLotSuggest();
+  }
+
+  // ── 반응기별 현재판(2026-10-21) · blend.js 와 같은 규칙 ─────────
+  function reactorVersionRelevant() {
+    const r = state.current && state.current.recipe;
+    return Boolean(r && r.use_reactor && r.chain_has_reactor_assignments);
+  }
+
+  function reactorGated() {
+    return reactorVersionRelevant() && !$("cont-reactor").value;
+  }
+
+  function renderReactorVersionChip() {
+    const chip = $("cont-reactor-version");
+    if (!chip) return;
+    const r = state.current && state.current.recipe;
+    const reactor = $("cont-reactor") ? $("cont-reactor").value : "";
+    if (!reactorVersionRelevant() || !reactor || !r.version_label) {
+      chip.hidden = true;
+      chip.textContent = "";
+      return;
+    }
+    let text = `반응기 ${reactor} · ${r.version_label}`;
+    if (r.reactor_assigned) {
+      if (r.version_name) text += ` ${r.version_name}`;
+    } else {
+      text += " (현재판)";
+    }
+    chip.textContent = text;
+    chip.hidden = false;
+  }
+
+  function hasEnteredWeighing() {
+    return state.cells.some((row) => row && row.some((c) =>
+      c && ((c.actual !== "" && c.actual != null) || (c.lot || "").trim())));
+  }
+
+  // 반응기 변경 확인 모달 — 입력한 실제량이 지워진다는 것을 알리고 확답을 받는다.
+  function confirmReactorSwitch() {
+    const modal = $("cont-reactor-switch-modal");
+    if (!modal) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const ok = $("cont-reactor-switch-ok");
+      const cancel = $("cont-reactor-switch-cancel");
+      const done = (answer) => {
+        modal.hidden = true;
+        ok.removeEventListener("click", onOk);
+        cancel.removeEventListener("click", onCancel);
+        resolve(answer);
+      };
+      const onOk = () => done(true);
+      const onCancel = () => done(false);
+      ok.addEventListener("click", onOk);
+      cancel.addEventListener("click", onCancel);
+      modal.hidden = false;
+      ok.focus();
+    });
+  }
+
+  async function onReactorChange() {
+    const sel = $("cont-reactor");
+    if (!sel || !reactorVersionRelevant()) {
+      state.reactorPrev = sel ? sel.value : "";
+      renderReactorVersionChip();
+      return;
+    }
+    const reactor = sel.value;
+    const optionId = state.selectedRecipeOptionId || state.current.recipe.id;
+    if (!reactor) {
+      state.reactorPrev = "";
+      render();
+      renderReactorVersionChip();
+      return;
+    }
+    let data;
+    try {
+      data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(reactor)}`);
+    } catch (e) {
+      notify(e.message, "error");
+      sel.value = state.reactorPrev || "";
+      return;
+    }
+    if (data.recipe.id === state.current.recipe.id) {
+      state.current.recipe.reactor_assigned = data.recipe.reactor_assigned;
+      state.reactorPrev = reactor;
+      render();
+      renderReactorVersionChip();
+      return;
+    }
+    if (hasEnteredWeighing() && !(await confirmReactorSwitch())) {
+      sel.value = state.reactorPrev || "";
+      return;
+    }
+    applyRecipeData(data, { keepSettings: true });
+    state.reactorPrev = reactor;
+    renderReactorVersionChip();
+    scheduleDraftSave();
   }
 
   // ── 반제품 원료 LOT 자동 제안 ───────────────────────────────
@@ -1390,6 +1529,7 @@
     const use = Boolean(state.current && state.current.recipe && state.current.recipe.use_reactor);
     field.hidden = !use;
     if (!use) $("cont-reactor").value = "";
+    renderReactorVersionChip();
   }
 
   // cells 를 (재료 수 × lotCount)에 맞춘다 — 기존 값 보존.
@@ -1489,6 +1629,12 @@
     if (!state.materials.length || state.anchorBlocked) {
       head.innerHTML = "";
       body.innerHTML = `<tr><td class="muted">${state.anchorBlocked ? "기준 자재 레시피 · 배합(단건) 화면을 이용하세요." : "레시피를 선택하세요."}</td></tr>`;
+      return;
+    }
+    // 반응기별 판 지정이 있는 레시피는 반응기를 고르기 전까지 자재를 보이지 않는다.
+    if (reactorGated()) {
+      head.innerHTML = "";
+      body.innerHTML = '<tr><td class="empty-state">반응기를 선택하면 자재 목록이 나옵니다.</td></tr>';
       return;
     }
     const lotHeads = [];
@@ -2948,7 +3094,13 @@
     const noteEl = $("cont-note");
     if (noteEl) noteEl.addEventListener("input", scheduleDraftSave);
     const reactorEl = $("cont-reactor");
-    if (reactorEl) reactorEl.addEventListener("change", scheduleDraftSave);
+    if (reactorEl) {
+      reactorEl.addEventListener("change", scheduleDraftSave);
+      // 반응기별 판 지정 — 반응기를 고르면 그 반응기의 판으로 자재를 다시 잡는다.
+      reactorEl.addEventListener("change", () => {
+        onReactorChange().catch((e) => notify(e.message, "error"));
+      });
+    }
     const scaleEl = $("cont-scale");
     if (scaleEl) scaleEl.addEventListener("input", scheduleDraftSave);
     // 총량 확정(change) 시 — 이미 계량된 셀이 새 이론량 기준으로 초과면 즉시 경고

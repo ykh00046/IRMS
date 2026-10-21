@@ -259,6 +259,92 @@ def resolve_chain_tip(connection, recipe_id: int) -> int:
     return tip if tip is not None else int(recipe_id)
 
 
+REACTOR_NUMBERS = (1, 2, 3, 4)
+
+
+def current_reactor_assignments(connection, root_id: int) -> dict[int, dict[str, Any]]:
+    """체인(루트 id)의 반응기별 현재 지정. reactor -> {recipe_id, note, assigned_by, assigned_at}.
+
+    추가 전용 표라 (chain_root_id, reactor) 마다 MAX(id) 행이 현재 지정이다. recipe_id 가
+    None 이면 "현재판 따름"(지정 해제)이다. 표가 없는 구버전/단위테스트 스키마는 빈 dict.
+    """
+    try:
+        rows = connection.execute(
+            """
+            SELECT a.reactor, a.recipe_id, a.note, a.assigned_by, a.assigned_at
+            FROM recipe_reactor_assignments a
+            JOIN (
+                SELECT reactor, MAX(id) AS max_id FROM recipe_reactor_assignments
+                WHERE chain_root_id = ? GROUP BY reactor
+            ) m ON m.max_id = a.id
+            """,
+            (int(root_id),),
+        ).fetchall()
+    except sqlite3.OperationalError:  # 표 없음
+        return {}
+    result: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        result[int(r["reactor"])] = {
+            "recipe_id": int(r["recipe_id"]) if r["recipe_id"] is not None else None,
+            "note": r["note"],
+            "assigned_by": r["assigned_by"],
+            "assigned_at": r["assigned_at"],
+        }
+    return result
+
+
+def active_reactor_assignments(connection, root_id: int) -> dict[int, int]:
+    """현재 지정 중 실제로 효력이 있는 것만. reactor -> recipe_id.
+
+    지정 판이 해제(None)거나 취소·초안·삭제된 판이면 효력이 없다(현재판 폴백).
+    """
+    current = current_reactor_assignments(connection, root_id)
+    ids = {a["recipe_id"] for a in current.values() if a["recipe_id"] is not None}
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    active_ids = {
+        int(r["id"])
+        for r in connection.execute(
+            f"SELECT id FROM recipes WHERE id IN ({placeholders}) "
+            f"AND status NOT IN ('canceled', 'draft')",
+            list(ids),
+        ).fetchall()
+    }
+    return {
+        reactor: a["recipe_id"]
+        for reactor, a in current.items()
+        if a["recipe_id"] is not None and a["recipe_id"] in active_ids
+    }
+
+
+def resolve_recipe_for_reactor(connection, recipe_id: int, reactor: int | None) -> int:
+    """반응기를 고려한 배합 귀결 판 id. 배합 상세 조회·단건 저장·이어서 계량 저장이 공유하는 단일 규칙.
+
+    1) reactor 가 None 이면 체인 현재판(resolve_chain_tip).
+    2) 체인 루트의 그 반응기 현재 지정이 활성 판(비취소·비초안)이면 그 판.
+    3) 지정이 없거나 해제·무효면 체인 현재판으로 폴백한다.
+    """
+    if reactor is None:
+        return resolve_chain_tip(connection, recipe_id)
+    root_id = find_chain_root(connection, int(recipe_id))
+    assigned = active_reactor_assignments(connection, root_id).get(int(reactor))
+    if assigned is not None:
+        return int(assigned)
+    return resolve_chain_tip(connection, recipe_id)
+
+
+def version_labels(connection, root_id: int) -> dict[int, str]:
+    """체인 판마다 "vN" 표기. fetch_chain 순서(등록 시각, id)로 센다.
+
+    버전 이력(/recipes/{id}/history)·배합 기록·반응기 지정이 같은 표기를 쓰도록 한 곳에 둔다.
+    """
+    return {
+        int(rec["id"]): f"v{idx}"
+        for idx, rec in enumerate(fetch_chain(connection, int(root_id)), start=1)
+    }
+
+
 def current_recipe_by_names(connection, select_cols: str, names: list[Any]):
     """반제품명(names 중 하나)이 일치하는 completed 레시피 중 현재판(tip) 한 행.
 

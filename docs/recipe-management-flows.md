@@ -261,6 +261,28 @@
     머리에 `레시피 판 v2 · 고점도 만드는 레시피` 줄을 보인다(현재판이 아니면 `현재판 아님` 덧붙임).
     판이 지워져 recipe_id 가 비면 줄을 숨긴다. 배합일지 출력물에는 싣지 않는다.
 
+### 반응기별 현재판 (2026-10-21)
+
+- **목적**: 한 체인에서 반응기마다 다른 판을 쓴다(예: 반응기 1은 v2, 반응기 3은 v3). 지정이 없는
+  반응기는 체인 현재판(`resolve_chain_tip`)을 따른다.
+- **데이터**: `recipe_reactor_assignments(id, chain_root_id, reactor, recipe_id, note, assigned_by,
+  assigned_at)`. 추가 전용이라 (체인 루트, 반응기)의 현재 지정은 MAX(id) 행이고, 지난 행은 이력이다.
+  `recipe_id` NULL 은 "현재판 따름"(지정 해제). 루트 판을 지우면 지정 행의 루트 id 를 새 루트로 옮긴다.
+- **판정 규칙**: `recipe_helpers.resolve_recipe_for_reactor(recipe_id, reactor)` 한 곳. 반응기가
+  없으면 체인 현재판, 있으면 그 반응기의 현재 지정이 활성 판(비취소·비초안)일 때 그 판, 아니면
+  체인 현재판. 배합 상세(`GET /api/blend/recipes/{id}?reactor=N`)·단건 저장·이어서 계량 저장이
+  같은 함수를 쓴다. 판 번호(vN)는 `recipe_helpers.version_labels` 하나로 이력·기록·지정이 같다.
+- **API**: `GET /api/recipes/{id}/reactor-assignments`(반응기 1~4의 지정·지금 적용 판·`is_fallback`,
+  최근 20건 이력, 체인 판 목록 `versions`), `PUT` 같은 주소(책임자, body `{reactor, recipe_id|null,
+  note}`). 검증: 반응기 1~4(400), 같은 체인의 판(400), 취소·초안 판 409, 비고 200자. 감사 로그
+  `recipe_reactor_assigned`. history 항목에는 `assigned_reactors`(이 판을 쓰는 반응기)가 붙는다.
+- **삭제 보호**: 반응기에 지정된 판은 `DELETE /api/recipes/{id}` 가 409 "반응기 N에 지정된 판입니다.
+  지정을 먼저 바꾸세요."로 막는다(정리 대상에서도 빠진다).
+- **화면**: 버전 관리 탭 위쪽 `반응기별 적용` 표(반응기·적용 판·비고·저장·지금 적용·지정)와 최근
+  10건 `지정 이력`(`version-manage.js`). 반응기 레시피일 때만 보인다. 지정된 판의 상태 칸은
+  `미사용` 대신 `반응기 1·3` 칩이고 삭제 버튼이 잠긴다. 버전 비교 타임라인에도 같은 칩이 붙는다.
+  점도 화면 이상 측정 목록의 `판` 열은 연계 배합 기록이 쓴 판이다.
+
 ---
 
 ## 6. 분류 체계 (약품/합성/잉크/용수)

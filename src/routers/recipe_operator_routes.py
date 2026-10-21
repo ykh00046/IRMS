@@ -15,6 +15,7 @@ Endpoints:
     GET    /recipes/by-product
     GET    /recipes/{recipe_id}/detail
     GET    /recipes/{recipe_id}/history
+    GET    /recipes/{recipe_id}/reactor-assignments
     GET    /recipes/history/compare
     GET    /recipes
     PATCH  /recipes/{recipe_id}/status
@@ -36,11 +37,14 @@ from ..db import (
 )
 from ..services.recipe_helpers import (
     SUPERSEDED_RECIPE_IDS_SQL,
+    active_reactor_assignments,
     fetch_chain,
     fetch_recipe_items,
     find_chain_root,
     resolve_chain_tip,
+    version_labels,
 )
+from ..services.recipe_reactor_service import build_reactor_assignment_payload
 from .models import StatusUpdateRequest, actor_name, recipe_label
 
 
@@ -340,11 +344,17 @@ def build_router() -> APIRouter:
             active = [r for r in chain if r["status"] not in ("canceled", "draft")]
             if not active:
                 current_id = max(chain, key=lambda r: (r["created_at"] or "", r["id"]))["id"]
+            labels = version_labels(connection, root_id)
+            # 반응기별 지정 — 이 판을 지금 쓰는 반응기 목록(지정 판은 '미사용'이 아니다).
+            assigned_by_recipe: dict[int, list[int]] = {}
+            for reactor, rid in sorted(active_reactor_assignments(connection, root_id).items()):
+                assigned_by_recipe.setdefault(int(rid), []).append(int(reactor))
         items = []
         for idx, rec in enumerate(chain, start=1):
             items.append({
                 "id": rec["id"],
-                "version_label": f"v{idx}",
+                "version_label": labels.get(int(rec["id"]), f"v{idx}"),
+                "assigned_reactors": assigned_by_recipe.get(int(rec["id"]), []),
                 "version_name": version_names.get(int(rec["id"])),
                 "product_name": rec["product_name"],
                 "position": rec["position"],
@@ -368,6 +378,15 @@ def build_router() -> APIRouter:
                 "stage1_product_name": rec.get("stage1_product_name"),
             })
         return {"root_id": root_id, "current_id": current_id, "items": items}
+
+    @router.get("/recipes/{recipe_id}/reactor-assignments")
+    def recipe_reactor_assignments(recipe_id: int) -> dict[str, Any]:
+        """반응기별 적용 판(지정·효력·이력). 지정 쓰기는 recipe_manager_routes 의 PUT."""
+        with get_connection() as connection:
+            exists = connection.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            return build_reactor_assignment_payload(connection, recipe_id)
 
     @router.get("/recipes/history/compare")
     def recipe_history_compare(ids: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:

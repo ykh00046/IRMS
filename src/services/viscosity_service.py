@@ -22,7 +22,7 @@ from datetime import date, datetime
 from typing import Any
 
 from . import settings_service
-from .recipe_helpers import current_recipe_by_names
+from .recipe_helpers import current_recipe_by_names, find_chain_root, version_labels
 
 # 추세 룰 파라미터
 RUN_LENGTH = 5  # 연속 단조 상승/하락 N회 → 추세 경보
@@ -735,6 +735,45 @@ def _lots_match(a: Any, b: Any) -> bool:
 _DAY_KEY = "d:"  # 날짜 키 접두사(_source_viscosity_map 안에서 정확 키와 섞이지 않게)
 
 
+def _record_version_map(
+    connection: sqlite3.Connection, record_ids: list[Any]
+) -> dict[Any, dict[str, Any]]:
+    """배합 기록 id -> 그 기록이 쓴 레시피 판 {label, name}. 판별 계산은 레시피 id 당 한 번.
+
+    blend_records·recipes 가 없는 구버전/단위테스트 스키마는 빈 dict(표시만 '-').
+    """
+    ids = sorted({int(x) for x in record_ids if x is not None})
+    if not ids:
+        return {}
+    result: dict[Any, dict[str, Any]] = {}
+    try:
+        placeholders = ",".join("?" for _ in ids)
+        rows = connection.execute(
+            f"SELECT id, recipe_id FROM blend_records WHERE id IN ({placeholders})", ids
+        ).fetchall()
+        cache: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            rid = row["recipe_id"]
+            if rid is None:
+                continue
+            rid = int(rid)
+            if rid not in cache:
+                label = version_labels(connection, find_chain_root(connection, rid)).get(rid)
+                name = None
+                try:
+                    name_row = connection.execute(
+                        "SELECT version_name FROM recipes WHERE id = ?", (rid,)
+                    ).fetchone()
+                    name = name_row["version_name"] if name_row else None
+                except sqlite3.OperationalError:  # version_name 컬럼 없음
+                    name = None
+                cache[rid] = {"label": label, "name": name}
+            result[int(row["id"])] = cache[rid]
+    except sqlite3.OperationalError:
+        return {}
+    return result
+
+
 def _source_viscosity_map(
     connection: sqlite3.Connection,
     source_product_id: int | None,
@@ -1367,6 +1406,9 @@ def analyze_product(
     valid_readings: list[dict[str, Any]] = []
     anomalies: list[dict[str, Any]] = []
     excluded_count = 0
+    record_versions = _record_version_map(
+        connection, [_row_value(r, "blend_record_id") for r in rows]
+    )
     for r in rows:
         value = float(r["viscosity"])
         excluded = _is_excluded(r)
@@ -1407,6 +1449,12 @@ def analyze_product(
             "review_note": _row_value(r, "review_note"),
             "blend_record_id": _row_value(r, "blend_record_id"),
         }
+        # 연계 배합 기록이 쓴 레시피 판(반응기별 현재판 이후 같은 제품도 판이 다를 수 있다).
+        linked_id = _row_value(r, "blend_record_id")
+        version = record_versions.get(int(linked_id)) if linked_id is not None else None
+        version = version or {}
+        item["recipe_version_label"] = version.get("label")
+        item["recipe_version_name"] = version.get("name")
         if excluded:
             # 제외된 측정은 spec/σ 판정을 건너뛰고 status='excluded' 로만 표시한다.
             excluded_count += 1

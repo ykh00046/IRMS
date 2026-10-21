@@ -1171,3 +1171,6 @@ body.dhr-open { overflow: hidden; }
   border-color: color-mix(in srgb, var(--status-error) 30%, transparent);
   color: var(--status-error);
 }
+
+/* 반응기별 판 지정(2026-10-21) · 반응기 선택 아래 어느 판으로 계량하는지 */
+.blend-reactor-version { align-self: flex-start; }

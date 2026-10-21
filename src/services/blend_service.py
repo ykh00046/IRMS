@@ -23,10 +23,12 @@ from ..db.time_utils import local_today_text
 from .material_resolver import resolve_material
 from .recipe_helpers import (
     SUPERSEDED_RECIPE_IDS_SQL,
+    active_reactor_assignments,
     current_recipe_by_names,
-    fetch_chain,
     find_chain_root,
     resolve_chain_tip,
+    resolve_recipe_for_reactor,
+    version_labels,
 )
 
 logger = logging.getLogger(__name__)
@@ -286,12 +288,22 @@ def _resolve_latest_revision(connection: sqlite3.Connection, recipe_id: int) -> 
     return resolve_chain_tip(connection, recipe_id)
 
 
+def _recipe_version_brief(connection: sqlite3.Connection, recipe_id: int) -> dict[str, Any]:
+    """배합 상세용 판 번호(vN)·이름. 구버전 스키마는 None 폴백."""
+    info = _recipe_version_info(connection, recipe_id)
+    return {
+        "version_label": info["recipe_version_label"],
+        "version_name": info["recipe_version_name"],
+    }
+
+
 def get_recipe_for_blend(
     connection: sqlite3.Connection,
     recipe_id: int,
     total_amount: float | None = None,
     *,
     resolve_revision: bool = True,
+    reactor: int | None = None,
 ) -> dict[str, Any] | None:
     """레시피와 자재 목록을 비율·이론량과 함께 반환 (배합 입력 화면용).
 
@@ -302,9 +314,24 @@ def get_recipe_for_blend(
     개정본을 그대로 써야 한다 — 최신 개정판으로 귀결시키면 작업시간·비고만 고쳐도
     배합비율·이론량이 새 레시피 값으로 조용히 바뀌어 규제 문서(DHR)의 과거 값이
     변조되고, 개정 이후에는 편차 초과 400 으로 메타 정정조차 막힌다.
+
+    reactor: 반응기별 현재판 지정(2026-10-21). resolve_revision=True 일 때 그 반응기에
+    지정된 판으로 귀결한다(recipe_helpers.resolve_recipe_for_reactor, 저장 검증과 같은 규칙).
     """
+    reactor_assigned = False
+    chain_assignments: dict[int, int] = {}
+    try:
+        chain_assignments = active_reactor_assignments(
+            connection, find_chain_root(connection, int(recipe_id))
+        )
+    except sqlite3.OperationalError:
+        chain_assignments = {}
     if resolve_revision:
-        recipe_id = _resolve_latest_revision(connection, recipe_id)
+        if reactor is not None:
+            recipe_id = resolve_recipe_for_reactor(connection, recipe_id, reactor)
+            reactor_assigned = chain_assignments.get(int(reactor)) == int(recipe_id)
+        else:
+            recipe_id = _resolve_latest_revision(connection, recipe_id)
     recipe = connection.execute(
         "SELECT id, product_name, position, ink_name, status, "
         "       base_total AS base_total_setting, base_totals AS base_totals_setting "
@@ -470,6 +497,10 @@ def get_recipe_for_blend(
             "anchor_material_id": effective_anchor,
             # 레시피별 허용 편차(EFFECTIVE). tolerance_g 미지정/무효면 기본값 0.05g.
             "tolerance_g": recipe_tolerance_g(connection, int(recipe["id"])),
+            # 판 표기·반응기별 지정(2026-10-21). 배합 화면 배지와 반응기 먼저 선택 게이트용.
+            **_recipe_version_brief(connection, int(recipe["id"])),
+            "reactor_assigned": reactor_assigned,
+            "chain_has_reactor_assignments": bool(chain_assignments),
         },
         "base_total": round(base_total, 3),
         "steps": steps,
@@ -2307,6 +2338,7 @@ def derive_details_from_recipe(
     details: list[dict[str, Any]],
     *,
     resolve_revision: bool = True,
+    reactor: int | None = None,
 ) -> tuple[list[dict[str, Any]], float]:
     """비율·이론량을 **서버가 레시피에서 직접 산출**해 상세를 재구성한다 (감사 F-5).
 
@@ -2324,7 +2356,11 @@ def derive_details_from_recipe(
     개정 여부는 호출부가 먼저 검사한다(RecipeRevisedError).
     """
     recipe = get_recipe_for_blend(
-        connection, recipe_id, total_amount, resolve_revision=resolve_revision
+        connection,
+        recipe_id,
+        total_amount,
+        resolve_revision=resolve_revision,
+        reactor=reactor,
     )
     if not recipe:
         raise RecipeMismatchError("레시피를 찾을 수 없습니다.")
@@ -3165,9 +3201,8 @@ def _recipe_version_info(connection: sqlite3.Connection, recipe_id: Any) -> dict
     try:
         rid = int(recipe_id)
         root_id = find_chain_root(connection, rid)
-        chain = fetch_chain(connection, root_id)
-        idx = next((i for i, r in enumerate(chain, start=1) if int(r["id"]) == rid), None)
-        if idx is None:
+        label = version_labels(connection, root_id).get(rid)
+        if label is None:
             return empty
         name = None
         try:
@@ -3178,7 +3213,7 @@ def _recipe_version_info(connection: sqlite3.Connection, recipe_id: Any) -> dict
         except sqlite3.OperationalError:  # version_name 컬럼 없는 구버전/테스트 DB
             name = None
         return {
-            "recipe_version_label": f"v{idx}",
+            "recipe_version_label": label,
             "recipe_version_name": name,
             "recipe_version_is_current": resolve_chain_tip(connection, root_id) == rid,
         }

@@ -33,6 +33,7 @@ _ALLOWED_TABLES = frozenset({
     "manual_material_lots",
     "test_viscosity_readings",
     "attendance_approvals",
+    "recipe_reactor_assignments",
 })
 
 
@@ -998,6 +999,27 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     # 그 회차에 들어온 문서만 보이고 어제 것은 화면에서 사라진다 — 책임자 화면의
     # '확인 필요' 줄이 이 값을 읽는다.
     ensure_column(connection, "attendance_approvals", "unresolved", "TEXT")
+
+    # 반응기별 현재판 지정(2026-10-21). 체인(루트 id)·반응기마다 쓸 판을 정한다.
+    # 추가 전용(append-only): (chain_root_id, reactor) 의 현재 지정은 MAX(id) 행이다.
+    # recipe_id NULL 은 "현재판 따름"(지정 해제). 판정은 recipe_helpers.resolve_recipe_for_reactor.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_reactor_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chain_root_id INTEGER NOT NULL,
+            reactor INTEGER NOT NULL,
+            recipe_id INTEGER NULL,
+            note TEXT,
+            assigned_by TEXT,
+            assigned_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_recipe_reactor_assignments_root "
+        "ON recipe_reactor_assignments(chain_root_id, reactor, id)"
+    )
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

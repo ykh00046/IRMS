@@ -5,7 +5,7 @@
 {% block heading %}다중 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20260930a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20261021a" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260915a" />
 {% endblock %}
 
@@ -71,6 +71,8 @@
                   <option value="3">반응기 3</option>
                   <option value="4">반응기 4</option>
                 </select>
+                {# 반응기별 판 지정이 있는 레시피만 보인다 · 어느 판으로 계량하는지 #}
+                <span class="status-chip status-info blend-reactor-version" id="cont-reactor-version" hidden></span>
               </div>
               <div class="blend-field">
                 <label class="filter-label">로트 수</label>
@@ -144,6 +146,20 @@
             <div class="ss-modal-footer blend-actions">
               <button class="btn" id="cont-rescale-cancel" type="button">다시 계량</button>
               <button class="btn accent" id="cont-rescale-apply" type="button">증량 적용</button>
+            </div>
+          </div>
+        </div>
+
+        {# 반응기 변경 확인 · 반응기마다 판이 달라 목표량이 바뀌면 입력한 실제량을 지운다. #}
+        <div class="ss-modal-overlay" id="cont-reactor-switch-modal" hidden>
+          <div class="ss-modal ss-modal-mid" role="dialog" aria-modal="true" aria-labelledby="cont-reactor-switch-title">
+            <div class="ss-modal-header"><h3 id="cont-reactor-switch-title">반응기 변경</h3></div>
+            <div class="ss-modal-body">
+              <p>반응기를 바꾸면 자재 목표량이 바뀌어 입력한 실제량이 지워집니다.</p>
+            </div>
+            <div class="ss-modal-footer blend-actions">
+              <button class="btn" id="cont-reactor-switch-cancel" type="button">취소</button>
+              <button class="btn accent" id="cont-reactor-switch-ok" type="button">바꾸기</button>
             </div>
           </div>
         </div>
@@ -294,5 +310,5 @@
     <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend_continuous.js?v=20260930a"></script>
+    <script src="/static/js/blend_continuous.js?v=20261021a"></script>
 {% endblock %}

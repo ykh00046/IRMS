@@ -10,6 +10,9 @@
  *                 기록을 그 판으로 옮긴 뒤 삭제한다(옮길 판이 없으면 버튼 비활성).
  *   정리        기록 없는 미사용 판을 차례로 삭제
  *   사용 기간   history 의 first_used_on ~ last_used_on(취소 아닌 기록의 작업일 최소·최대)
+ *   반응기별 적용 GET/PUT /api/recipes/{id}/reactor-assignments (2026-10-21)
+ *                 반응기(1~4)마다 쓸 판을 지정한다. 지정 없음 = 현재판 따름. 지정된 판은
+ *                 '미사용'이 아니며 삭제할 수 없다(지정을 먼저 바꾼다).
  * 현재판 지정은 새 판을 만들지 않는다(2026-10-08 현장 요청: 저점도용 v2 ↔ 고점도용 v4 전환).
  * 지정은 다음 수정 등록 때 풀리고 새 판이 현재판이 된다(서버 import 라우트).
  *
@@ -54,9 +57,114 @@
       if (it.status === "canceled") {
         return `<span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span>`;
       }
-      return it.is_current
-        ? '<span class="status-chip status-completed">사용중</span>'
-        : '<span class="status-chip">미사용</span>';
+      if (it.is_current) {
+        return '<span class="status-chip status-completed">사용중</span>' + reactorChip(it, " ");
+      }
+      // 반응기에 지정된 판은 쓰는 중이다 — '미사용'이라 부르지 않는다.
+      return hasAssignedReactors(it) ? reactorChip(it, "") : '<span class="status-chip">미사용</span>';
+    }
+
+    function hasAssignedReactors(it) {
+      return Array.isArray(it.assigned_reactors) && it.assigned_reactors.length > 0;
+    }
+
+    function reactorChip(it, lead) {
+      if (!hasAssignedReactors(it)) return "";
+      return `${lead}<span class="status-chip status-info">반응기 ${it.assigned_reactors.map(Number).join("·")}</span>`;
+    }
+
+    function shortDate(value) {
+      const text = IRMS.formatDateTime(value);
+      return text === "-" ? "-" : text.slice(0, 10);
+    }
+
+    // ── 반응기별 적용 ───────────────────────────────────────────
+    async function renderReactorPanel(items, recipeId) {
+      const panel = document.getElementById("vm-reactor-panel");
+      if (!panel) return;
+      if (!items.some((it) => it.use_reactor)) {
+        panel.hidden = true;
+        panel.innerHTML = "";
+        return;
+      }
+      panel.hidden = false;
+      let data;
+      try {
+        const res = await fetch(`/api/recipes/${recipeId}/reactor-assignments`, { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      } catch (error) {
+        panel.innerHTML = `<p class="login-error">반응기별 적용 조회 실패: ${IRMS.escapeHtml(error.message)}</p>`;
+        return;
+      }
+      const active = (data.versions || []).filter((v) => v.status !== "canceled" && v.status !== "draft");
+      const rows = (data.reactors || []).map((r) => {
+        const known = active.some((v) => v.id === r.recipe_id);
+        let options = `<option value=""${r.recipe_id == null ? " selected" : ""}>현재판 따름</option>`;
+        options += active.map((v) => `<option value="${v.id}"${v.id === r.recipe_id ? " selected" : ""}>`
+          + `${IRMS.escapeHtml(versionOptionText(v))}</option>`).join("");
+        if (r.recipe_id != null && !known) {
+          // 지정 판이 취소됐으면 효력이 없다(현재판 폴백). 그래도 무엇이 지정돼 있었는지 보인다.
+          options += `<option value="${r.recipe_id}" selected disabled>`
+            + `${IRMS.escapeHtml(r.version_label || "?")} · 취소</option>`;
+        }
+        const eff = r.effective_version_name
+          ? `${r.effective_version_label} · ${r.effective_version_name}`
+          : (r.effective_version_label || "-");
+        const effNote = r.is_fallback ? "현재판" : "지정";
+        const assigned = r.assigned_at
+          ? `${shortDate(r.assigned_at)} · ${IRMS.escapeHtml(r.assigned_by || "-")}`
+          : "-";
+        return `<tr data-reactor="${r.reactor}">`
+          + `<td><b>반응기 ${r.reactor}</b></td>`
+          + `<td><select class="input vm-reactor-select">${options}</select></td>`
+          + `<td><input type="text" class="input vm-reactor-note" maxlength="200" value="${IRMS.escapeHtml(r.note || "")}" /></td>`
+          + `<td><button type="button" class="btn btn-sm accent vm-reactor-save-btn">저장</button></td>`
+          + `<td>${IRMS.escapeHtml(eff)} <span class="muted small">${effNote}</span></td>`
+          + `<td>${assigned}</td>`
+          + `</tr>`;
+      }).join("");
+      const history = (data.history || []).slice(0, 10).map((h) => {
+        const target = h.recipe_id == null
+          ? "현재판 따름"
+          : (h.version_name ? `${h.version_label} ${h.version_name}` : (h.version_label || "?"));
+        const parts = [shortDate(h.assigned_at).slice(5), `반응기 ${h.reactor} → ${target}`, h.assigned_by || "-"];
+        if (h.note) parts.push(h.note);
+        return `<li>${IRMS.escapeHtml(parts.join(" · "))}</li>`;
+      }).join("");
+      panel.innerHTML = `<h4 class="vm-reactor-title">반응기별 적용</h4>`
+        + `<div class="table-wrap"><table class="recipe-list-table vm-reactor-table">`
+        + `<thead><tr><th>반응기</th><th>적용 판</th><th>비고</th><th>저장</th><th>지금 적용</th><th>지정</th></tr></thead>`
+        + `<tbody>${rows}</tbody></table></div>`
+        + (history
+          ? `<h4 class="vm-reactor-title">지정 이력</h4><ul class="vm-reactor-history">${history}</ul>`
+          : "");
+      panel.querySelectorAll(".vm-reactor-save-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const tr = btn.closest("tr");
+          if (tr) saveReactorAssignment(recipeId, tr);
+        });
+      });
+    }
+
+    async function saveReactorAssignment(recipeId, tr) {
+      const reactor = Number(tr.dataset.reactor);
+      const select = tr.querySelector(".vm-reactor-select");
+      const noteInput = tr.querySelector(".vm-reactor-note");
+      const value = select ? select.value : "";
+      const note = noteInput ? String(noteInput.value || "").trim() : "";
+      try {
+        await sendJson(`/api/recipes/${recipeId}/reactor-assignments`, "PUT", {
+          reactor,
+          recipe_id: value ? Number(value) : null,
+          note: note || null,
+        });
+        IRMS.notify(`반응기 ${reactor} 지정을 저장했습니다.`, "success");
+      } catch (error) {
+        IRMS.notify(`반응기 지정 실패: ${error.message}`, "error");
+        return;
+      }
+      await open(currentTipId || recipeId);
     }
 
     function jsonHeaders() {
@@ -103,6 +211,8 @@
       const pruneNote = document.getElementById("vm-prune-note");
       if (pruneBtn) pruneBtn.hidden = true;
       if (pruneNote) pruneNote.textContent = "";
+      const panel = document.getElementById("vm-reactor-panel");
+      if (panel) { panel.hidden = true; panel.innerHTML = ""; }
     }
 
     async function open(recipeId) {
@@ -128,6 +238,7 @@
       const titleEl = document.getElementById("vm-product-title");
       if (titleEl) titleEl.textContent = current.product_name || "-";
       render(items, current);
+      await renderReactorPanel(items, current.id);
     }
 
     function render(items, current) {
@@ -151,6 +262,8 @@
         const canPin = !it.is_current && it.status !== "canceled" && it.status !== "draft";
         // 기록이 있는 판은 옮길 판이 있어야 삭제할 수 있다(옮기기 폼으로 이어짐).
         const noMoveTarget = recCount(it) > 0 && moveCandidates(items, it).length === 0;
+        // 반응기에 지정된 판은 지정을 먼저 바꿔야 지울 수 있다(서버도 409).
+        const assignedLock = hasAssignedReactors(it);
         const actions = it.is_current
           ? '<span class="muted">-</span>'
           : `<div class="button-row">`
@@ -158,7 +271,8 @@
               ? `<button type="button" class="btn btn-sm accent vm-pin-btn" data-recipe-id="${it.id}">현재판 지정</button>`
               : "")
             + `<button type="button" class="btn btn-sm danger vm-delete-btn" data-recipe-id="${it.id}"`
-            + (noMoveTarget ? ' disabled title="옮길 판이 없어 삭제할 수 없습니다"' : "")
+            + (assignedLock ? ' disabled title="반응기에 지정된 판입니다"'
+              : (noMoveTarget ? ' disabled title="옮길 판이 없어 삭제할 수 없습니다"' : ""))
             + `>삭제</button>`
             + `</div>`;
         const savedName = IRMS.escapeHtml(it.version_name || "");
@@ -218,7 +332,8 @@
       });
 
       // 정리 = 기록 없는 미사용 판(현재판 제외). 하나도 없으면 버튼을 숨긴다.
-      const prunable = items.filter((it) => !it.is_current && recCount(it) === 0);
+      const prunable = items.filter((it) => !it.is_current && recCount(it) === 0
+        && !hasAssignedReactors(it));
       const pruneBtn = document.getElementById("vm-prune-btn");
       const pruneNote = document.getElementById("vm-prune-note");
       if (pruneBtn) {

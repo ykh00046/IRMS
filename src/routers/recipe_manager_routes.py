@@ -8,6 +8,7 @@ PDCA cycle (2026-05).
 
 Endpoints:
     DELETE /recipes/{recipe_id}
+    PUT    /recipes/{recipe_id}/reactor-assignments
 """
 
 from typing import Any
@@ -15,14 +16,23 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
-from ..db import get_connection, write_audit_log
+from ..db import get_connection, utc_now_text, write_audit_log
 from ..services import record_delete_service
 from ..services.recipe_helpers import (
+    REACTOR_NUMBERS,
     chain_member_ids,
+    current_reactor_assignments,
     default_chain_tip,
     find_chain_root,
     resolve_chain_tip,
 )
+from ..services.recipe_reactor_service import (
+    build_reactor_assignment_payload,
+    insert_reactor_assignment,
+    reactors_assigned_to,
+    rekey_chain_root,
+)
+from .models import actor_name
 
 
 def _stage1_would_cycle(
@@ -70,6 +80,15 @@ def build_router() -> APIRouter:
         if move_records_to is not None and move_records_to == recipe_id:
             raise HTTPException(status_code=400, detail="같은 판으로는 옮길 수 없습니다.")
         with get_connection() as connection:
+            # 반응기에 지정된 판은 지울 수 없다(지정이 사라진 판을 가리키게 된다).
+            assigned = reactors_assigned_to(connection, recipe_id)
+            if assigned:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"반응기 {'·'.join(str(r) for r in assigned)}에 지정된 판입니다. "
+                    f"지정을 먼저 바꾸세요.",
+                )
+            old_root_id = find_chain_root(connection, recipe_id)
             if move_records_to is not None:
                 # 기록을 옮길 판 검증 — 같은 반제품(체인)의 살아 있는 판이어야 한다.
                 exists = connection.execute(
@@ -100,6 +119,13 @@ def build_router() -> APIRouter:
             )
             if result is None:
                 raise HTTPException(status_code=404, detail="RECIPE_NOT_FOUND")
+            # 루트 판을 지우면 자식이 새 루트가 된다. 반응기 지정은 루트 id 로 묶여 있어 옮긴다.
+            if old_root_id == recipe_id and result.relinked_child_ids:
+                rekey_chain_root(
+                    connection,
+                    old_root_id,
+                    find_chain_root(connection, result.relinked_child_ids[0]),
+                )
 
             write_audit_log(
                 connection,
@@ -353,6 +379,85 @@ def build_router() -> APIRouter:
             "previous_current_id": previous_current_id,
             "is_pinned": pin,
         }
+
+    @router.put("/recipes/{recipe_id}/reactor-assignments")
+    def set_recipe_reactor_assignment(
+        recipe_id: int,
+        body: dict[str, Any],
+        current_user: dict[str, Any] = Depends(require_access_level("manager")),
+    ) -> dict[str, Any]:
+        """반응기별 적용 판 지정/해제 — 책임자 전용.
+
+        body: {"reactor": 1..4, "recipe_id": int | None, "note": str | None}.
+        recipe_id None 은 "현재판 따름"(해제). 지정은 추가 전용 행으로 남아 이력이 된다.
+        판정은 recipe_helpers.resolve_recipe_for_reactor 가 읽는다.
+        """
+        raw_reactor = body.get("reactor")
+        try:
+            reactor = int(raw_reactor)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="반응기는 1~4입니다.")
+        if isinstance(raw_reactor, bool) or reactor not in REACTOR_NUMBERS:
+            raise HTTPException(status_code=400, detail="반응기는 1~4입니다.")
+        raw_target = body.get("recipe_id")
+        target_id: int | None
+        if raw_target is None or raw_target == "":
+            target_id = None
+        else:
+            try:
+                target_id = int(raw_target)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="같은 레시피의 판이 아닙니다.")
+        raw_note = body.get("note")
+        if raw_note is not None and not isinstance(raw_note, str):
+            raise HTTPException(status_code=400, detail="비고는 문자열이어야 합니다.")
+        note = (raw_note or "").strip() or None
+        if note is not None and len(note) > 200:
+            raise HTTPException(status_code=400, detail="비고는 200자 이내입니다.")
+
+        with get_connection() as connection:
+            recipe_row = connection.execute(
+                "SELECT id, product_name FROM recipes WHERE id = ?", (recipe_id,)
+            ).fetchone()
+            if not recipe_row:
+                raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
+            root_id = find_chain_root(connection, recipe_id)
+            if target_id is not None:
+                target_row = connection.execute(
+                    "SELECT id, status FROM recipes WHERE id = ?", (target_id,)
+                ).fetchone()
+                if target_row is None or find_chain_root(connection, target_id) != root_id:
+                    raise HTTPException(status_code=400, detail="같은 레시피의 판이 아닙니다.")
+                if target_row["status"] in ("canceled", "draft"):
+                    raise HTTPException(status_code=409, detail="취소된 판은 지정할 수 없습니다.")
+
+            previous = current_reactor_assignments(connection, root_id).get(reactor) or {}
+            insert_reactor_assignment(
+                connection,
+                root_id=root_id,
+                reactor=reactor,
+                recipe_id=target_id,
+                note=note,
+                assigned_by=actor_name(current_user),
+                assigned_at=utc_now_text(),
+            )
+            write_audit_log(
+                connection,
+                action="recipe_reactor_assigned",
+                actor=current_user,
+                target_type="recipe",
+                target_id=target_id if target_id is not None else root_id,
+                target_label=str(recipe_row["product_name"]),
+                details={
+                    "reactor": reactor,
+                    "recipe_id": target_id,
+                    "previous_recipe_id": previous.get("recipe_id"),
+                    "chain_root_id": root_id,
+                    "note": note,
+                },
+            )
+            connection.commit()
+            return build_reactor_assignment_payload(connection, recipe_id)
 
     @router.put("/recipes/{recipe_id}/loss-comp")
     def set_recipe_loss_comp(

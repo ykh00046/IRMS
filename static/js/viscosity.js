@@ -490,6 +490,10 @@
       row.className = "row-anomaly";
       appendTextCell(row, item.measured_date || "-");
       appendTextCell(row, item.lot_no || "-");
+      // 연계 배합 기록이 쓴 레시피 판(반응기별 현재판 이후 같은 제품도 판이 다를 수 있다).
+      appendTextCell(row, item.recipe_version_label
+        ? [item.recipe_version_label, item.recipe_version_name].filter(Boolean).join(" ")
+        : "-");
       appendTextCell(row, fmt(item.viscosity), "num");
       const reasons = (item.reasons || []).map((r) => REASON_LABEL[r] || r).join(", ");
       appendTextCell(row, reasons || "-");

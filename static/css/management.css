@@ -1105,3 +1105,11 @@
    가로로 넘친다. 표준 §4 의 표 셀 여백(--space-2 --space-3)으로 좁힌다. */
 .recipe-list-table th,
 .recipe-list-table td { padding: var(--space-2) var(--space-3); }
+
+/* 버전 관리 · 반응기별 적용(2026-10-21) */
+.vm-reactor-panel { margin-bottom: var(--space-4); }
+.vm-reactor-title { font-size: var(--fs-sm); font-weight: 600; margin: var(--space-3) 0 var(--space-2); color: var(--text-primary); }
+.vm-reactor-table .vm-reactor-select { width: 12rem; min-width: 0; }
+.vm-reactor-table .vm-reactor-note { width: 14rem; min-width: 0; }
+.vm-reactor-history { list-style: none; margin: 0; padding: 0; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.5; }
+.vm-reactor-history li { padding: var(--space-1) 0; border-bottom: 1px solid var(--border-subtle); }

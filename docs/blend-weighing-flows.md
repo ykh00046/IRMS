@@ -157,6 +157,16 @@
   (`blend_routes.blend_create`/`blend_update`/`blend_create_continuous`).
 - **점도 연계**: 배합 기록의 `reactor` 값은 점도 등록 시 함께 전달(`blend_routes.blend_add_viscosity`,
   `reactor=record.get("reactor")`).
+- **반응기별 현재판(2026-10-21)**: 체인에 반응기별 판 지정(`recipe_reactor_assignments`)이 하나라도
+  있으면 배합·이어서 계량 화면은 반응기를 먼저 고르게 한다. 고르기 전에는 자재 표 대신
+  "반응기를 선택하면 자재 목록이 나옵니다."만 보이고 저울 PRINT 도 어느 행에도 들어가지 않는다.
+  반응기를 고르면 `GET /api/blend/recipes/{목록 id}?reactor=N` 으로 그 반응기의 판을 받아 자재를
+  다시 잡는다(판이 바뀌는데 실제량·LOT 을 이미 넣었으면 `반응기 변경` 확인 창). 반응기 칸 아래에
+  `반응기 3 · v3 저점도용`(지정 없으면 `반응기 3 · v2 (현재판)`) 칩이 보인다. 임시저장 복구도 같은
+  규칙으로 판을 다시 정하고, 판이 달라졌으면 계량값을 버린다. 서버는 단건·이어서 계량 저장 모두
+  `recipe_helpers.resolve_recipe_for_reactor(recipe_id, reactor)` 와 보낸 판이 다르면 409
+  "이 반응기에 지정된 판이 아닙니다. 반응기를 다시 선택하세요."로 거부한다(지정 없는 체인은 종전
+  "레시피가 개정되었습니다…" 메시지). 기록 수정 경로(resolve_revision=False)는 그대로다.
 
 ---
 

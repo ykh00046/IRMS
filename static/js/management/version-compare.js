@@ -127,10 +127,14 @@
         if (it.status === "canceled") {
           return `<span class="status-chip ${IRMS.statusClass(it.status)}">${IRMS.statusLabel(it.status)}</span>`;
         }
-        return it.is_current
-          ? '<span class="status-chip status-completed">사용중</span>'
-          : '<span class="status-chip">미사용</span>'; // 현재판 지정으로 더 새 판일 수도 있다
+        if (it.is_current) return '<span class="status-chip status-completed">사용중</span>';
+        // 반응기에 지정된 판은 쓰는 중이다(반응기별 현재판) — '미사용'이라 부르지 않는다.
+        if (Array.isArray(it.assigned_reactors) && it.assigned_reactors.length) return "";
+        return '<span class="status-chip">미사용</span>'; // 현재판 지정으로 더 새 판일 수도 있다
       };
+      const reactorChip = (it) => (Array.isArray(it.assigned_reactors) && it.assigned_reactors.length
+        ? ` <span class="status-chip status-info">반응기 ${it.assigned_reactors.map(Number).join("·")}</span>`
+        : "");
       // 이름을 갈아탄 계보(예: NPR → NPR-S2 → NPR-S 를 소급 연결한 체인)에서는 판마다
       // 그 시절 반제품명을 함께 보여준다 — 안 그러면 v1~v5 만 보여 "어느 판이 어느 이름
       // 시절인지" 알 수 없다(2026-08-07 운영 계보 확인). 이름이 하나뿐인 흔한 체인에서는
@@ -150,7 +154,7 @@
           return `<label class="vc-version-row${it.is_current ? " is-current" : ""}${it.status === "canceled" ? " is-canceled" : ""}" data-recipe-id="${it.id}">`
             + `<input type="checkbox" class="vc-version-check" value="${it.id}"${checked} />`
             + `<span class="vc-version-main">`
-            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${versionNameTag}${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}</span>`
+            + `<span class="vc-version-label"><b>${IRMS.escapeHtml(it.version_label)}</b>${versionNameTag}${nameTag}${it.is_current ? ' <span class="status-chip status-completed">현재</span>' : ""}${reactorChip(it)}</span>`
             + `<span class="vc-version-meta muted">${IRMS.formatDateTime(it.created_at)} · ${IRMS.escapeHtml(it.created_by || "-")} · 항목 ${it.item_count} · ${IRMS.escapeHtml(usageText(it))}</span>`
             + `<span class="vc-version-status">${statusChip(it)}</span>`
             + `</span>`

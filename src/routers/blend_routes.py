@@ -54,6 +54,11 @@ from ..config import CANCELED_RETENTION_DAYS
 from ..db import get_db, utc_now_text, write_audit_log
 from ..limiter import limiter
 from ..services import blend_service, dhr_cache, dhr_excel, dhr_pdf, record_delete_service, viscosity_service
+from ..services.recipe_helpers import (
+    active_reactor_assignments,
+    find_chain_root,
+    resolve_recipe_for_reactor,
+)
 from .models import (
     BlendApprovalBody,
     BlendBatchDiscardBody,
@@ -182,6 +187,23 @@ def _flag_total_anomalies(
             },
         )
     return flags
+
+
+def _ensure_expected_revision(
+    connection: sqlite3.Connection, recipe_id: int, reactor: int | None
+) -> None:
+    """저장하려는 판이 지금 귀결 판(반응기 지정 포함)과 다르면 409.
+
+    판정은 recipe_helpers.resolve_recipe_for_reactor 한 곳(배합 상세 조회와 같은 규칙).
+    """
+    expected = resolve_recipe_for_reactor(connection, recipe_id, reactor)
+    if expected == recipe_id:
+        return
+    if active_reactor_assignments(connection, find_chain_root(connection, recipe_id)):
+        detail = "이 반응기에 지정된 판이 아닙니다. 반응기를 다시 선택하세요."
+    else:
+        detail = "레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요."
+    raise HTTPException(status_code=409, detail=detail)
 
 
 def build_router() -> APIRouter:
@@ -331,9 +353,11 @@ def build_router() -> APIRouter:
     def blend_recipe_detail(
         recipe_id: int,
         total: float | None = Query(default=None, gt=0),
+        reactor: int | None = Query(default=None, ge=1, le=4),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
-        result = blend_service.get_recipe_for_blend(connection, recipe_id, total)
+        # reactor: 반응기별 현재판 지정이 있으면 그 반응기의 판으로 귀결한다(저장 검증과 같은 규칙).
+        result = blend_service.get_recipe_for_blend(connection, recipe_id, total, reactor=reactor)
         if not result:
             raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
         return result
@@ -1412,14 +1436,11 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=400, detail=exc.detail) from exc
             if recipe_id:
                 # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
-                if blend_service.resolve_chain_tip(connection, recipe_id) != recipe_id:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
-                    )
+                # 반응기별 지정이 있으면 그 반응기에 지정된 판이어야 한다(배합 상세와 같은 규칙).
+                _ensure_expected_revision(connection, recipe_id, body.reactor)
                 try:
                     details, total_amount = blend_service.derive_details_from_recipe(
-                        connection, recipe_id, body.total_amount, details
+                        connection, recipe_id, body.total_amount, details, reactor=body.reactor
                     )
                 except blend_service.RecipeMismatchError as exc:
                     raise HTTPException(status_code=400, detail=exc.detail) from exc
@@ -2024,11 +2045,7 @@ def build_router() -> APIRouter:
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         # 화면이 열린 사이 개정됐으면 옛 배합비 — 저장 거부(감사 F-5 / 단건과 동일).
-        if blend_service.resolve_chain_tip(connection, body.recipe_id) != body.recipe_id:
-            raise HTTPException(
-                status_code=409,
-                detail="레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요.",
-            )
+        _ensure_expected_revision(connection, body.recipe_id, body.reactor)
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         # 저장 전 전 로트 도출·편차검사 (원자성: 하나라도 실패하면 중단, 저장 없음)
         # lot_totals 가 있으면 그 로트의 총량 오버라이드를 사용(초과 계량 증량).
@@ -2041,7 +2058,7 @@ def build_router() -> APIRouter:
             details = [d.model_dump() for d in lot]
             try:
                 derived, _total = blend_service.derive_details_from_recipe(
-                    connection, body.recipe_id, lot_total, details
+                    connection, body.recipe_id, lot_total, details, reactor=body.reactor
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
