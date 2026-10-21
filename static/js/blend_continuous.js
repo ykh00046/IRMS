@@ -1116,13 +1116,15 @@
       chip.textContent = "";
       return;
     }
-    let text = `반응기 ${reactor} · ${r.version_label}`;
+    // 라벨 줄 칩이라 짧게 — 반응기 번호는 바로 아래 선택칸에 보이므로 판만 적는다.
+    let text = r.version_label;
     if (r.reactor_assigned) {
       if (r.version_name) text += ` ${r.version_name}`;
     } else {
-      text += " (현재판)";
+      text += " 현재판";
     }
     chip.textContent = text;
+    chip.title = `반응기 ${reactor} · ${text}`;
     chip.hidden = false;
   }
 

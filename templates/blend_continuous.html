@@ -5,7 +5,7 @@
 {% block heading %}다중 계량 (연속 배합){% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20261021a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20261021b" />
     <link rel="stylesheet" href="/static/css/blend_continuous.css?v=20260915a" />
 {% endblock %}
 
@@ -63,7 +63,11 @@
                 <input class="input" id="cont-date" type="date" />
               </div>
               <div class="blend-field" id="cont-reactor-field" hidden>
-                <label class="filter-label" for="cont-reactor">반응기 (필수)</label>
+                {# 판 칩은 라벨 줄 오른쪽에 둔다(기준 버튼과 같은 자리) · 칸 높이가 변하지 않아 옆 입력칸과 줄이 맞는다 #}
+                <div class="blend-label-row">
+                  <label class="filter-label" for="cont-reactor">반응기 (필수)</label>
+                  <span class="status-chip status-info blend-reactor-version" id="cont-reactor-version" hidden></span>
+                </div>
                 <select class="input" id="cont-reactor">
                   <option value="">반응기 선택</option>
                   <option value="1">반응기 1</option>
@@ -71,8 +75,6 @@
                   <option value="3">반응기 3</option>
                   <option value="4">반응기 4</option>
                 </select>
-                {# 반응기별 판 지정이 있는 레시피만 보인다 · 어느 판으로 계량하는지 #}
-                <span class="status-chip status-info blend-reactor-version" id="cont-reactor-version" hidden></span>
               </div>
               <div class="blend-field">
                 <label class="filter-label">로트 수</label>
@@ -310,5 +312,5 @@
     <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend_continuous.js?v=20261021b"></script>
+    <script src="/static/js/blend_continuous.js?v=20261021c"></script>
 {% endblock %}

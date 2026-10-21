@@ -1172,5 +1172,9 @@ body.dhr-open { overflow: hidden; }
   color: var(--status-error);
 }
 
-/* 반응기별 판 지정(2026-10-21) · 반응기 선택 아래 어느 판으로 계량하는지 */
-.blend-reactor-version { align-self: flex-start; }
+/* 반응기별 판 지정(2026-10-21) · 라벨 줄 오른쪽에 어느 판으로 계량하는지. 선택칸 아래 두면
+   칸이 한 줄 높아져 옆 입력칸과 줄이 어긋났다(현장 지적) — 기준 버튼처럼 라벨 줄에 붙인다. */
+.blend-reactor-version {
+  font-size: var(--fs-2xs); padding: 0 var(--space-2); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%;
+}

@@ -5,7 +5,7 @@
 {% block heading %}{{ '시험 배합' if test_mode else '배합 · 반제품 제조 (DHR)' }}{% endblock %}
 
 {% block styles %}
-    <link rel="stylesheet" href="/static/css/blend.css?v=20261021a" />
+    <link rel="stylesheet" href="/static/css/blend.css?v=20261021b" />
 {% endblock %}
 
 {% block content %}
@@ -77,7 +77,11 @@
                   <input class="input" id="blend-date" type="date" />
                 </div>
                 <div class="blend-field" id="blend-reactor-field" hidden>
-                  <label class="filter-label" for="blend-reactor">반응기 (필수)</label>
+                  {# 판 칩은 라벨 줄 오른쪽에 둔다(기준 버튼과 같은 자리) · 칸 높이가 변하지 않아 옆 입력칸과 줄이 맞는다 #}
+                  <div class="blend-label-row">
+                    <label class="filter-label" for="blend-reactor">반응기 (필수)</label>
+                    <span class="status-chip status-info blend-reactor-version" id="blend-reactor-version" hidden></span>
+                  </div>
                   <select class="input" id="blend-reactor">
                     <option value="">반응기 선택</option>
                     <option value="1">반응기 1</option>
@@ -85,8 +89,6 @@
                     <option value="3">반응기 3</option>
                     <option value="4">반응기 4</option>
                   </select>
-                  {# 반응기별 판 지정이 있는 레시피만 보인다 · 어느 판으로 계량하는지 #}
-                  <span class="status-chip status-info blend-reactor-version" id="blend-reactor-version" hidden></span>
                 </div>
               </div>
               <div class="blend-settings-foot">
@@ -576,7 +578,7 @@
     <script src="/static/js/blend_drafts.js?v=20260918a"></script>
     <script src="/static/js/blend_window_guard.js?v=20260915a"></script>
     <script src="/static/js/blend_lot_modal.js?v=20260915a"></script>
-    <script src="/static/js/blend.js?v=20261021b"></script>
+    <script src="/static/js/blend.js?v=20261021c"></script>
     <!-- blend_session.js(3분 유휴 카운트다운·pagehide 로그아웃)는 계량 중 손이
          저울에 가 있는 배합 화면과 충돌해 제거(2026-07-03). 화면이 떠 있는 동안은
          blend.js 하트비트(2분)가 세션을 유지하고, 닫으면 서버 유휴 만료(5분). -->
