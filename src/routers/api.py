@@ -18,6 +18,7 @@ from . import (
     public_attendance_alert_routes,
     public_rescale_alert_routes,
     public_material_usage_routes,
+    public_recipe_usage_routes,
     public_viscosity_reminder_routes,
     recipe_import_routes,
     recipe_manager_routes,
@@ -35,6 +36,7 @@ def build_router() -> APIRouter:
     admin_router = admin_routes.build_router()
     public_attendance_alert_router = public_attendance_alert_routes.build_router()
     public_material_usage_router = public_material_usage_routes.build_router()
+    public_recipe_usage_router = public_recipe_usage_routes.build_router()
     public_viscosity_reminder_router = public_viscosity_reminder_routes.build_router()
     attendance_router = attendance_routes.build_router()
     recipe_op_router = recipe_operator_routes.build_router()
@@ -56,6 +58,7 @@ def build_router() -> APIRouter:
     router.include_router(public_router)
     router.include_router(public_attendance_alert_router)
     router.include_router(public_material_usage_router)     # 재고 대시보드 연동(자재 불출량)
+    router.include_router(public_recipe_usage_router)       # 양산대응 배합 사용량(Recipe-Intake 입구·조회)
     router.include_router(public_viscosity_reminder_router)
     router.include_router(attendance_router)
     router.include_router(auth_me_router)

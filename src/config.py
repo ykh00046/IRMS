@@ -39,6 +39,9 @@ REQUIRE_TRAY_API_TOKEN = _env_flag(
 # 한정이라, 터널이 앱 전체를 인터넷에 게시하면 기록 반출·위조 기록 삽입이 열린다.
 # 터널을 안 쓰면 CF 헤더가 없어 아무 영향이 없으므로 기본값은 켬.
 TUNNEL_REQUIRE_LOGIN = _env_flag("IRMS_TUNNEL_REQUIRE_LOGIN", True)
+# 양산대응 배합 사용량 입구(POST /api/intake/recipe-usage) 전용 쓰기 토큰. Recipe-Intake 가
+# 보낸다. 읽기용 트레이 토큰과 분리 — 쓰기라서. 비어 있으면 사내망(사설 IP·비터널) 요청만으로 받는다.
+RECIPE_INTAKE_TOKEN = os.getenv("IRMS_RECIPE_INTAKE_TOKEN", "").strip()
 # 취소(soft)된 배합 기록의 보존일 — 지나면 스냅샷 감사를 남기고 자동 물리 삭제.
 # 실수 되돌리기는 하루 이틀 안에 일어난다는 현장 판단(2026-07-29). 0 = 무기한(비활성).
 CANCELED_RETENTION_DAYS = max(0, int(os.getenv("IRMS_CANCELED_RETENTION_DAYS", "3")))

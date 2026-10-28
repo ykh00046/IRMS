@@ -34,6 +34,8 @@ _ALLOWED_TABLES = frozenset({
     "test_viscosity_readings",
     "attendance_approvals",
     "recipe_reactor_assignments",
+    "recipe_usage_daily",
+    "recipe_usage_imports",
 })
 
 
@@ -1019,6 +1021,45 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_reactor_assignments_root "
         "ON recipe_reactor_assignments(chain_root_id, reactor, id)"
+    )
+
+    # 양산대응 배합 사용량(2026-10-28). 메신저 레시피 이미지에서 Recipe-Intake 가 만든 일일 장부를
+    # 받아 둔다. 배합 기록(blend_records)과 섞지 않는다 — 반제품제조 불출량(material-usage)은 불변.
+    # 입구는 (source, 기간) 단위로 통째로 바꿔 넣는다(멱등). 설계: Recipe-Intake docs/2026-10-28-…design.md
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_usage_daily (
+            source TEXT NOT NULL,
+            day TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            item_code TEXT,
+            used_g REAL NOT NULL,
+            batch_g REAL NOT NULL DEFAULT 0,
+            lines INTEGER NOT NULL DEFAULT 0,
+            images INTEGER NOT NULL DEFAULT 0,
+            import_id INTEGER NOT NULL,
+            PRIMARY KEY (source, day, material_name)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_recipe_usage_daily_day ON recipe_usage_daily(day)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_usage_imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            first_day TEXT NOT NULL,
+            through TEXT NOT NULL,
+            computed_at TEXT,
+            received_at TEXT NOT NULL,
+            row_count INTEGER NOT NULL,
+            total_g REAL NOT NULL,
+            unknown_codes TEXT,
+            client_ip TEXT
+        )
+        """
     )
 
 
