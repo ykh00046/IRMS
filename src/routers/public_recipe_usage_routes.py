@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .. import config as cfg
 from ..db import get_db, local_today_text
-from ..middleware.internal_only import _is_private
+from ..middleware.internal_only import is_private
 from ..services import recipe_usage_service
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -45,7 +45,7 @@ def _iso_day(value: str) -> str:
 
 class RecipeUsageRow(BaseModel):
     day: str
-    material: str = Field(min_length=1, max_length=200)
+    material: str = Field(max_length=200)
     item_code: str | None = Field(default=None, max_length=20)
     used_g: float = Field(ge=0, le=10_000_000)
     batch_g: float = Field(default=0, ge=0, le=10_000_000)
@@ -56,6 +56,15 @@ class RecipeUsageRow(BaseModel):
     @classmethod
     def _day(cls, v: str) -> str:
         return _iso_day(v)
+
+    @field_validator("material")
+    @classmethod
+    def _material(cls, v: str) -> str:
+        # 앞뒤 공백이 다른 같은 이름이 다른 행(PK)으로 갈라지지 않게 정리하고, 빈 이름은 거부
+        v = v.strip()
+        if not v:
+            raise ValueError("자재 이름이 비어 있습니다.")
+        return v
 
     @field_validator("item_code")
     @classmethod
@@ -72,7 +81,8 @@ class RecipeUsageSnapshot(BaseModel):
     first_day: str
     through: str
     computed_at: str | None = Field(default=None, max_length=40)
-    rows: list[RecipeUsageRow] = Field(max_length=MAX_ROWS)
+    # 빈 스냅샷은 거부 — 받으면 기간 안 장부를 전부 지운다. 송신 쪽은 장부 전체를 보내므로 빈 값이 올 일이 없다.
+    rows: list[RecipeUsageRow] = Field(min_length=1, max_length=MAX_ROWS)
 
     @field_validator("first_day", "through")
     @classmethod
@@ -102,7 +112,7 @@ def _require_intake_token(request: Request) -> str:
     if any(h in request.headers for h in _CLOUDFLARE_HEADERS):
         raise HTTPException(status_code=403, detail="INTAKE_LAN_ONLY")
     host = request.client.host if request.client else ""
-    if not _is_private(host):
+    if not is_private(host):
         raise HTTPException(status_code=403, detail="INTAKE_LAN_ONLY")
     expected = cfg.RECIPE_INTAKE_TOKEN
     if expected and not hmac.compare_digest(request.headers.get("X-IRMS-Intake-Token", ""), expected):

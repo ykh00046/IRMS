@@ -1061,6 +1061,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # 바꿔 넣으며 지운 행 수 — 송신 오류로 장부가 줄었을 때 언제 얼마나 지워졌는지 남긴다.
+    ensure_column(connection, "recipe_usage_imports", "replaced", "INTEGER")
 
 
 def standardize_recipe_units_to_grams(connection: sqlite3.Connection) -> None:

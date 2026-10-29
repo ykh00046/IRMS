@@ -92,6 +92,8 @@ def test_snapshot_is_idempotent_and_replaces_range(monkeypatch):
     assert first["row_count"] == again["row_count"] == 5
     assert again["replaced"] == 5 and again["total_g"] == first["total_g"] == 1047.0
     assert again["import_id"] > first["import_id"]
+    st = lan.get("/api/public/recipe-usage/status", params={"source": src}).json()
+    assert st["replaced"] == 5  # 지운 행 수가 수신 이력에 남는다
 
     q = {"start_date": "2026-09-01", "end_date": "2026-09-30", "source": src}
     total = lan.get("/api/public/recipe-usage", params=q).json()
@@ -153,6 +155,10 @@ def test_kind_filter_month_group_and_status(monkeypatch):
     {"rows": [{"day": "2026-09-29", "material": "X", "used_g": 1},
               {"day": "2026-09-29", "material": "X", "used_g": 2}]},              # 중복
     {"rows": [{"day": "2026-09-29", "material": "X", "item_code": "BC10;--", "used_g": 1}]},
+    {"rows": [{"day": "2026-09-29", "material": "X", "used_g": 1},
+              {"day": "2026-09-29", "material": "X ", "used_g": 2}]},             # 공백만 다른 중복
+    {"rows": [{"day": "2026-09-29", "material": "   ", "used_g": 1}]},            # 빈 자재 이름
+    {"rows": []},                                                                 # 빈 스냅샷(기간 전부 삭제)
     {"first_day": "2026-10-01"},                                                  # first_day > through
     {"through": "2026-02-30"},
 ])

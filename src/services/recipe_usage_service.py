@@ -56,6 +56,7 @@ def replace_snapshot(
             "DELETE FROM recipe_usage_daily WHERE source = ? AND day BETWEEN ? AND ?",
             (source, first_day, through),
         ).rowcount
+        connection.execute("UPDATE recipe_usage_imports SET replaced = ? WHERE id = ?", (replaced, import_id))
         connection.executemany(
             """
             INSERT INTO recipe_usage_daily
@@ -123,7 +124,7 @@ def usage_periods(
 def import_status(connection: sqlite3.Connection, *, source: str = DEFAULT_SOURCE) -> dict[str, Any]:
     row = connection.execute(
         """
-        SELECT id, first_day, through, computed_at, received_at, row_count, total_g, unknown_codes
+        SELECT id, first_day, through, computed_at, received_at, row_count, replaced, total_g, unknown_codes
         FROM recipe_usage_imports WHERE source = ? ORDER BY id DESC LIMIT 1
         """,
         (source,),

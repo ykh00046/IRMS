@@ -25,7 +25,7 @@ _PRIVATE_NETWORKS: tuple[ipaddress._BaseNetwork, ...] = (
 )
 
 
-def _is_private(ip_str: str) -> bool:
+def is_private(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
@@ -75,7 +75,7 @@ class InternalNetworkOnlyMiddleware(BaseHTTPMiddleware):
 
         client = request.client
         client_host = client.host if client else ""
-        if not (_is_private(client_host) or self._has_valid_token(request)):
+        if not (is_private(client_host) or self._has_valid_token(request)):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "INTERNAL_NETWORK_ONLY"},
