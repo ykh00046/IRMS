@@ -2775,6 +2775,11 @@
 
   // ── 저장 ────────────────────────────────────────────────────
   let _saving = false;   // 중복 저장 방지(blend.js와 동일) · 늦으면 한 번 더 누른다.
+
+  // 새 배포 자동 새로고침(auto-refresh.js)이 묻는 '지금 진행 중인 배합이 있나'. 이 화면이 쓰는
+  // 초안 슬롯이 있거나 저장 중이면 새로고침을 미룬다(저장소 키 추측 대신 화면이 직접 답한다).
+  window.IRMS = window.IRMS || {};
+  window.IRMS.blendDraftActive = () => Boolean(state.draftSlotId) || _saving;
   // 저장 멱등 키(blend.js 와 동일 규약) — 성공할 때까지 유지한다. 재시도가 N로트를
   // 두 벌 만드는 것을 서버가 이 키로 막는다.
   let _saveRequestId = null;

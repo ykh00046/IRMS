@@ -6,8 +6,11 @@
  * GET /api/version 을 폴링해 마커가 바뀌면(=새 배포) 안전한 시점에 새로고침한다.
  *
  * 안전 원칙(단일 경로): 새 버전을 감지하면 항상 배너를 먼저 띄우고, 실제 새로고침은
- * '안전한 시점'에만 한다 — 진행 중인 배합 초안이 없고(단건 irms.blend.draft·이어서
- * irms.blend.cont.draft 모두 확인) 사용자가 ~30초 무활동일 때. 사용자가 실제로
+ * '안전한 시점'에만 한다 — 진행 중인 배합이 없고 사용자가 ~30초 무활동일 때.
+ * 배합 화면(단건·다중·시험)은 IRMS.blendDraftActive() 로 '이 화면이 쓰는 초안이 있는지'를
+ * 직접 답한다. 예전엔 저장소 키(irms.blend.draft 등)로 추측했는데, 초안이 슬롯 키
+ * (irms.blend.drafts 등)로 옮겨 간 뒤 늘 '없음'이 되어 배포 직후 계량 중 화면이
+ * 새로고침됐다(2026-10-29 확인). 옛 키 검사는 훅이 없는 화면용 폴백으로만 남긴다. 사용자가 실제로
  * 조작 중일 때는 절대 강제 새로고침하지 않는다(레시피/점도 폼의 미저장 입력 보호).
  * window-guard 로 막힌 중복 창은 아예 새로고침을 예약하지 않는다.
  *
@@ -70,6 +73,10 @@
   }
 
   function draftInProgress() {
+    var hook = window.IRMS && window.IRMS.blendDraftActive;
+    if (typeof hook === "function") {
+      try { return Boolean(hook()); } catch (_e) { return true; } // 모르면 미룬다
+    }
     for (var i = 0; i < DRAFT_KEYS.length; i++) {
       if (draftExists(DRAFT_KEYS[i])) return true;
     }
