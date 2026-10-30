@@ -57,13 +57,16 @@
   }
 
   // options.moveRecordsTo: 연결 기록을 같은 체인의 이 판 id 로 옮기고 삭제(삭제 플래그와 배타).
+  // options.reason: 연결 기록까지 지울 때 필수 사유(서버가 기록마다 사본과 함께 감사에 남긴다).
   async function deleteRecipe(recipeId, deleteBlendRecords, options) {
     const moveTo = options && options.moveRecordsTo;
+    const reason = options && options.reason;
     return request(`/recipes/${recipeId}`, {
       method: "DELETE",
       query: {
         delete_blend_records: deleteBlendRecords ? 1 : undefined,
         move_records_to: moveTo ? moveTo : undefined,
+        reason: reason ? reason : undefined,
       },
     });
   }

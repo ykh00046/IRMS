@@ -26,6 +26,37 @@ class BlendRecordDeletionResult:
     product_lot: str
 
 
+_SNAPSHOT_HEADER_KEYS = (
+    "id", "product_lot", "recipe_id", "product_name", "ink_name",
+    "position", "worker", "work_date", "work_time", "total_amount",
+    "scale", "status", "note", "reactor", "manual_entry",
+    "is_bulk_regenerated", "manual_absence_reason",
+    "reviewed_by", "reviewed_at", "approved_by", "approved_at",
+    "created_by", "created_at", "updated_at",
+)
+
+
+def blend_record_snapshot(record: dict) -> dict:
+    """완전 삭제 직전 기록 전체 사본(감사 blend_record_deleted.details.snapshot).
+
+    record 는 blend_service.get_blend_record 결과. 단건 완전 삭제와 레시피 판 삭제(연결 기록
+    함께 삭제)가 같은 형식을 쓴다 — 물리 삭제는 백업 외 복구 수단이 없으므로 무엇이
+    지워졌는지를 감사에 그대로 남긴다.
+    """
+    return {
+        "header": {k: record.get(k) for k in _SNAPSHOT_HEADER_KEYS},
+        "rows": [
+            [
+                d.get("material_name"), d.get("material_code"), d.get("material_lot"),
+                d.get("ratio"), d.get("theory_amount"), d.get("actual_amount"),
+                1 if d.get("carried_over") else 0,
+                1 if d.get("manual_entry") else 0,
+            ]
+            for d in (record.get("details") or [])
+        ],
+    }
+
+
 def delete_recipe(
     connection: sqlite3.Connection,
     recipe_id: int,

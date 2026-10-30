@@ -542,8 +542,17 @@
                       "계속할까요?",
                     ].join("\n");
                 if (!window.confirm(message)) return;
+                // 기록까지 지우면 사유 필수(취소와 같은 입력 방식). 서버가 지워지는 기록마다
+                // 사유와 전체 사본을 감사에 남긴다.
+                let reason = "";
+                if (deleteBlendRecords && linked) {
+                  const input = window.prompt(`배합 기록 ${linked}건을 지우는 사유를 입력하세요.`);
+                  if (input === null) return;
+                  reason = input.trim();
+                  if (!reason) { IRMS.notify("사유를 입력해야 기록까지 지울 수 있습니다.", "error"); return; }
+                }
                 try {
-                  const result = await IRMS.deleteRecipe(recipeId, deleteBlendRecords);
+                  const result = await IRMS.deleteRecipe(recipeId, deleteBlendRecords, { reason });
                   const linkedCount = Number(result.linked_record_count || 0);
                   const suffix = linkedCount
                     ? ` 연결 기록 ${linkedCount}건 ${deleteBlendRecords ? "삭제" : "보존"}`

@@ -2347,28 +2347,7 @@ def build_router() -> APIRouter:
                     status_code=400,
                     detail="완전 삭제는 사유가 필요합니다. 되돌릴 수 없으니 취소를 먼저 검토하세요.",
                 )
-            snapshot = {
-                "header": {
-                    k: record.get(k)
-                    for k in (
-                        "id", "product_lot", "recipe_id", "product_name", "ink_name",
-                        "position", "worker", "work_date", "work_time", "total_amount",
-                        "scale", "status", "note", "reactor", "manual_entry",
-                        "is_bulk_regenerated", "manual_absence_reason",
-                        "reviewed_by", "reviewed_at", "approved_by", "approved_at",
-                        "created_by", "created_at", "updated_at",
-                    )
-                },
-                "rows": [
-                    [
-                        d.get("material_name"), d.get("material_code"), d.get("material_lot"),
-                        d.get("ratio"), d.get("theory_amount"), d.get("actual_amount"),
-                        1 if d.get("carried_over") else 0,
-                        1 if d.get("manual_entry") else 0,
-                    ]
-                    for d in (record.get("details") or [])
-                ],
-            }
+            snapshot = record_delete_service.blend_record_snapshot(record)
             result = record_delete_service.delete_blend_record(connection, record_id)
             if result is None:
                 raise HTTPException(status_code=404, detail="배합 기록을 찾을 수 없습니다.")

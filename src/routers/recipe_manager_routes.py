@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import require_access_level
 from ..db import get_connection, utc_now_text, write_audit_log
-from ..services import record_delete_service
+from ..services import blend_service, record_delete_service
 from ..services.recipe_helpers import (
     REACTOR_NUMBERS,
     chain_member_ids,
@@ -72,11 +72,13 @@ def build_router() -> APIRouter:
         current_user: dict[str, Any] = Depends(require_access_level("manager")),
         delete_blend_records: bool = Query(default=False),
         move_records_to: int | None = Query(default=None),
+        reason: str | None = Query(default=None, max_length=500),
     ) -> dict[str, Any]:
         if move_records_to is not None and delete_blend_records:
             raise HTTPException(
                 status_code=400, detail="기록 삭제와 옮기기는 함께 쓸 수 없습니다."
             )
+        clean_reason = (reason or "").strip()
         if move_records_to is not None and move_records_to == recipe_id:
             raise HTTPException(status_code=400, detail="같은 판으로는 옮길 수 없습니다.")
         with get_connection() as connection:
@@ -111,6 +113,26 @@ def build_router() -> APIRouter:
                     raise HTTPException(
                         status_code=409, detail="취소된 판으로는 옮길 수 없습니다."
                     )
+            # 연결 기록을 함께 지우면 단건 완전 삭제와 같은 통제 — 사유 필수, 기록마다 전체
+            # 사본을 감사에 남긴다. 예전엔 건수만 남아 수십 건이 흔적 없이 사라질 수 있었다.
+            doomed_snapshots: list[dict[str, Any]] = []
+            if delete_blend_records:
+                linked_ids = [
+                    int(r["id"])
+                    for r in connection.execute(
+                        "SELECT id FROM blend_records WHERE recipe_id = ? ORDER BY id",
+                        (recipe_id,),
+                    ).fetchall()
+                ]
+                if linked_ids and not clean_reason:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="기록까지 지우려면 사유가 필요합니다. 되돌릴 수 없습니다.",
+                    )
+                for linked_id in linked_ids:
+                    linked = blend_service.get_blend_record(connection, linked_id)
+                    if linked:
+                        doomed_snapshots.append(record_delete_service.blend_record_snapshot(linked))
             result = record_delete_service.delete_recipe(
                 connection,
                 recipe_id,
@@ -141,8 +163,24 @@ def build_router() -> APIRouter:
                     "stage1_cleared_recipe_ids": list(result.stage1_cleared_recipe_ids),
                     "moved_records_to": result.moved_records_to,
                     "moved_record_count": result.moved_record_count,
+                    **({"reason": clean_reason} if clean_reason else {}),
                 },
             )
+            for snapshot in doomed_snapshots:
+                header = snapshot["header"]
+                write_audit_log(
+                    connection,
+                    action="blend_record_deleted",
+                    actor=current_user,
+                    target_type="blend_record",
+                    target_id=str(header.get("id")),
+                    target_label=header.get("product_lot"),
+                    details={
+                        "reason": clean_reason,
+                        "snapshot": snapshot,
+                        "via_recipe_delete": result.recipe_id,
+                    },
+                )
             connection.commit()
 
         return {
