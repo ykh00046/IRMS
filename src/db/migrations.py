@@ -717,6 +717,8 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # 저장 내용 지문 — 같은 멱등 키로 값이 바뀐 재저장을 가려낸다(2026-10-30).
+    ensure_column(connection, "blend_save_requests", "body_hash", "TEXT")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_blend_save_requests_created "
         "ON blend_save_requests(created_at)"
@@ -1021,6 +1023,18 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_reactor_assignments_root "
         "ON recipe_reactor_assignments(chain_root_id, reactor, id)"
+    )
+
+    # 완전 삭제된 제품 LOT(2026-10-30). 채번은 현존 기록의 최대 순번+1 이라, 그날 마지막
+    # 순번을 지우면 같은 LOT 이 다른 배치에 다시 붙었다(출력된 배합일지·감사 사본과 충돌).
+    # 지운 LOT 을 여기 남기고 채번이 함께 본다.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS retired_product_lots (
+            product_lot TEXT PRIMARY KEY,
+            retired_at TEXT NOT NULL
+        )
+        """
     )
 
     # 양산대응 배합 사용량(2026-10-28). 메신저 레시피 이미지에서 Recipe-Intake 가 만든 일일 장부를

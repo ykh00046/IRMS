@@ -1713,7 +1713,10 @@ def _cluster_recipe_families(items: list[dict[str, Any]]) -> list[dict[str, Any]
 def generate_product_lot(
     connection: sqlite3.Connection, product_name: str, work_date: str
 ) -> str:
-    """{제품명}{YYMMDD}{순번:02d}. 같은 날 같은 제품의 기존 최대 순번+1."""
+    """{제품명}{YYMMDD}{순번:02d}. 같은 날 같은 제품의 기존 최대 순번+1.
+
+    완전 삭제된 LOT(retired_product_lots)도 순번에 넣는다 — 지운 번호를 다른 배치에 다시
+    붙이지 않는다."""
     digits = "".join(ch for ch in work_date if ch.isdigit())
     yymmdd = digits[2:8] if len(digits) >= 8 else digits[-6:]
     base = f"{product_name.strip()}{yymmdd}"
@@ -1727,6 +1730,14 @@ def generate_product_lot(
         "WHERE product_lot >= ? AND product_lot < ?",
         (base, base + "\U0010FFFF"),
     ).fetchall()
+    try:
+        rows += connection.execute(
+            "SELECT product_lot FROM retired_product_lots "
+            "WHERE product_lot >= ? AND product_lot < ?",
+            (base, base + "\U0010FFFF"),
+        ).fetchall()
+    except sqlite3.OperationalError:  # 표가 없는 구버전/단위테스트 스키마
+        pass
     max_seq = 0
     for r in rows:
         suffix = str(r["product_lot"])[len(base):]
@@ -3577,8 +3588,24 @@ def lookup_save_request(
     return [int(i) for i in ids] if isinstance(ids, list) else None
 
 
+def save_request_hash(connection: sqlite3.Connection, request_id: str) -> str | None:
+    """이 request_id 로 저장할 때의 내용 지문(없거나 구버전 행이면 None)."""
+    try:
+        row = connection.execute(
+            "SELECT body_hash FROM blend_save_requests WHERE request_id = ?",
+            ((request_id or "").strip(),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return row["body_hash"] if row else None
+
+
 def remember_save_request(
-    connection: sqlite3.Connection, request_id: str, endpoint: str, record_ids: list[int]
+    connection: sqlite3.Connection,
+    request_id: str,
+    endpoint: str,
+    record_ids: list[int],
+    body_hash: str | None = None,
 ) -> None:
     """이 request_id 로 만든 기록 id 를 남긴다(호출부의 최종 commit 에 함께 실린다).
 
@@ -3593,9 +3620,9 @@ def remember_save_request(
         return
     now = utc_now_text()
     connection.execute(
-        "INSERT INTO blend_save_requests (request_id, endpoint, record_ids, created_at) "
-        "VALUES (?, ?, ?, ?)",
-        (rid, endpoint, json.dumps([int(i) for i in record_ids]), now),
+        "INSERT INTO blend_save_requests (request_id, endpoint, record_ids, created_at, body_hash) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (rid, endpoint, json.dumps([int(i) for i in record_ids]), now, body_hash),
     )
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=_SAVE_REQUEST_RETENTION_DAYS)

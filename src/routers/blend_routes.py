@@ -32,6 +32,7 @@ Endpoints:
     GET    /blend/records/{id}/pdf            배합일지 PDF(?sign=1 서명 합성)
 """
 
+import hashlib
 import io
 import json
 import logging
@@ -308,6 +309,38 @@ def build_router() -> APIRouter:
             "blend save deduplicated: request_id=%s records=%s lot=%s",
             request_id, record_ids, label,
         )
+
+    def _save_fingerprint(recipe_id: Any, total: Any, reactor: Any, lots: list[list[Any]]) -> str:
+        """멱등 재전송이 처음 저장과 같은 내용인지 가리는 지문. 작업자가 고칠 수 있는 값
+        (자재별 실제량·LOT, 총량, 반응기, 판)만 쓴다 — 작업 시각처럼 재시도마다 다시
+        만들어지는 값은 넣지 않아 정상 재시도가 막히지 않는다."""
+        payload = {
+            "recipe_id": recipe_id,
+            "total": total,
+            "reactor": reactor,
+            "lots": [
+                [
+                    [d.material_name, d.actual_amount, (d.material_lot or "").strip()]
+                    for d in lot
+                ]
+                for lot in lots
+            ],
+        }
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+    def _reject_changed_resend(
+        connection: sqlite3.Connection, request_id: str, fingerprint: str, label: str
+    ) -> None:
+        """같은 멱등 키인데 내용이 바뀌었으면 409 — 처음 저장이 이미 커밋됐다(응답만 유실).
+        첫 기록을 '저장 완료'로 돌려주면 고친 값이 아무 데도 남지 않는다."""
+        stored = blend_service.save_request_hash(connection, request_id)
+        if stored and stored != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail=f"이미 저장된 배합입니다(제품 LOT {label}). "
+                "그 뒤 고친 값은 배합 기록 화면에서 정정하세요.",
+            )
 
     def _resolve_duplicate_save(
         connection: sqlite3.Connection,
@@ -1431,11 +1464,17 @@ def build_router() -> APIRouter:
         # 그대로 돌려준다(검증보다 앞에 둔다 — 이미 저장된 요청을 뒤늦은 검증으로
         # 400 내면 작업자가 또 저장을 눌러 진짜 중복이 생긴다).
         request_id = (body.request_id or "").strip()
+        fingerprint = _save_fingerprint(body.recipe_id, body.total_amount, body.reactor, [body.details])
         if request_id:
             prior = blend_service.lookup_save_request(connection, request_id, _SAVE_EP_SINGLE)
             if prior:
+                # 기록 내용을 돌려주므로 작업자 세션이 있어야 한다(키만으로 조회 금지).
+                require_blend_worker(request)
                 existing = blend_service.get_blend_record(connection, prior[0])
                 if existing:
+                    _reject_changed_resend(
+                        connection, request_id, fingerprint, existing["product_lot"]
+                    )
                     _log_duplicate_save(request_id, prior, existing["product_lot"])
                     return _mask_manual_entry(request, existing)
         if not body.details:
@@ -1727,7 +1766,7 @@ def build_router() -> APIRouter:
         if request_id:
             try:
                 blend_service.remember_save_request(
-                    connection, request_id, _SAVE_EP_SINGLE, [record_id]
+                    connection, request_id, _SAVE_EP_SINGLE, [record_id], fingerprint
                 )
             except sqlite3.IntegrityError:
                 connection.rollback()
@@ -2093,10 +2132,16 @@ def build_router() -> APIRouter:
         # 멱등 재시도 먼저(단건과 동일) — 이미 저장된 회차의 재전송은 그때 만든 N로트를
         # 그대로 돌려준다. 재시도가 로트 N건을 두 벌 만드는 것을 막는다.
         request_id = (body.request_id or "").strip()
+        fingerprint = _save_fingerprint(body.recipe_id, body.total_amount, body.reactor, body.lots)
         if request_id:
             prior = blend_service.lookup_save_request(connection, request_id, _SAVE_EP_CONTINUOUS)
             if prior:
+                require_blend_worker(request)  # 기록 내용을 돌려준다 · 키만으로 조회 금지
                 result = _continuous_result(connection, prior)
+                _reject_changed_resend(
+                    connection, request_id, fingerprint,
+                    ", ".join(result.get("product_lots") or []) or f"{len(prior)}건",
+                )
                 _log_duplicate_save(request_id, prior, f"{len(prior)}건")
                 return result
         if not body.lots:
@@ -2306,7 +2351,7 @@ def build_router() -> APIRouter:
         if request_id:
             try:
                 blend_service.remember_save_request(
-                    connection, request_id, _SAVE_EP_CONTINUOUS, ids
+                    connection, request_id, _SAVE_EP_CONTINUOUS, ids, fingerprint
                 )
             except sqlite3.IntegrityError:
                 connection.rollback()

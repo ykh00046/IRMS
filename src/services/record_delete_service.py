@@ -1,6 +1,7 @@
 import sqlite3
 from dataclasses import dataclass
 
+from ..db.time_utils import utc_now_text
 from . import dhr_cache
 
 
@@ -187,6 +188,14 @@ def delete_blend_record(
     )
     connection.execute("DELETE FROM blend_details WHERE blend_record_id = ?", (record_id,))
     connection.execute("DELETE FROM blend_records WHERE id = ?", (record_id,))
+    # 지운 제품 LOT 은 다시 발급하지 않는다(blend_service.generate_product_lot 이 함께 본다).
+    try:
+        connection.execute(
+            "INSERT OR IGNORE INTO retired_product_lots (product_lot, retired_at) VALUES (?, ?)",
+            (str(row["product_lot"]), utc_now_text()),
+        )
+    except sqlite3.OperationalError:  # 표가 없는 구버전/단위테스트 스키마
+        pass
     # POLISH-7a: hard 삭제된 기록의 DHR PDF 캐시(비서명본)를 함께 지운다 — 디스크 잔류 방지.
     dhr_cache.purge(record_id)
     return BlendRecordDeletionResult(

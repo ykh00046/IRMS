@@ -46,9 +46,18 @@ def logout_worker_session(request: Request) -> None:
     request.session.pop(SESSION_KEY, None)
 
 
+# 활동 시각 갱신 최소 간격. 세션을 고칠 때마다 쿠키가 다시 내려가는데, 2분 하트비트의
+# 응답이 책임자 로그인·작업자 교대 응답보다 늦게 도착하면 옛 세션 쿠키가 방금 로그인을
+# 덮어썼다. 유휴 상한(8시간)에 비해 5분 오차는 무의미하므로 그 안에선 세션을 건드리지 않는다.
+_TOUCH_MIN_INTERVAL_SECONDS = 5 * 60
+
+
 def touch_worker_session(request: Request) -> None:
     session = request.session.get(SESSION_KEY)
     if session:
+        last = _parse_utc(session.get("last_activity"))
+        if last is not None and (_utc_now() - last).total_seconds() < _TOUCH_MIN_INTERVAL_SECONDS:
+            return
         session["last_activity"] = _format_utc(_utc_now())
         request.session[SESSION_KEY] = session
 

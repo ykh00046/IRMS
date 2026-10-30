@@ -14,4 +14,23 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 
-limiter = Limiter(key_func=get_remote_address, enabled="pytest" not in sys.modules)
+_LOOPBACK = ("127.0.0.1", "::1")
+
+
+def client_key(request) -> str:
+    """요청자 키 — 터널 경유면 Cloudflare 가 넘겨준 실제 접속 IP.
+
+    cloudflared 는 같은 PC 에서 127.0.0.1 로 붙으므로 그대로 두면 외부 요청 전부가 한
+    버킷을 나눠 써, 한 사람이 로그인을 5번 틀리면 다른 외부 책임자까지 1분간 막혔다.
+    CF 헤더는 직접 연결이 루프백일 때만 믿는다 — 사내망 PC 가 헤더를 꾸며 제한을
+    피하지 못하게.
+    """
+    direct = get_remote_address(request)
+    if direct in _LOOPBACK and request.headers.get("cf-ray"):
+        forwarded = (request.headers.get("cf-connecting-ip") or "").strip()
+        if forwarded:
+            return forwarded
+    return direct
+
+
+limiter = Limiter(key_func=client_key, enabled="pytest" not in sys.modules)
