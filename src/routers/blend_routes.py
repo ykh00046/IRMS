@@ -36,7 +36,7 @@ import io
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -58,6 +58,8 @@ from ..services.recipe_helpers import (
     active_reactor_assignments,
     find_chain_root,
     resolve_recipe_for_reactor,
+    version_kept_since_weighing,
+    version_labels,
 )
 from .models import (
     BlendApprovalBody,
@@ -189,17 +191,51 @@ def _flag_total_anomalies(
     return flags
 
 
+_WEIGHING_START_MAX_AGE = timedelta(hours=24)  # 초안 보존 기간(blend_drafts.js TTL)과 같다
+
+
+def _normalize_weighing_start(value: str | None) -> str | None:
+    """화면이 보낸 계량 시작 시각(ISO, UTC) → utc_now_text 형식. 24시간보다 오래됐거나
+    미래(5분 여유)거나 읽을 수 없으면 None — 지정 이력 판정에 쓰지 않는다."""
+    if not value:
+        return None
+    try:
+        at = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if at.tzinfo is None:
+        return None
+    at = at.astimezone(timezone.utc).replace(microsecond=0)
+    now = datetime.now(timezone.utc)
+    if at > now + timedelta(minutes=5) or now - at > _WEIGHING_START_MAX_AGE:
+        return None
+    return at.isoformat().replace("+00:00", "Z")
+
+
 def _ensure_expected_revision(
-    connection: sqlite3.Connection, recipe_id: int, reactor: int | None
-) -> None:
+    connection: sqlite3.Connection,
+    recipe_id: int,
+    reactor: int | None,
+    weighing_started_at: str | None = None,
+) -> dict[str, Any] | None:
     """저장하려는 판이 지금 귀결 판(반응기 지정 포함)과 다르면 409.
 
     판정은 recipe_helpers.resolve_recipe_for_reactor 한 곳(배합 상세 조회와 같은 규칙).
+    예외: 계량을 시작한 시각에는 그 반응기의 판이 recipe_id 였다면(그 뒤 지정만 바뀜) 받는다 —
+    반응기에는 이미 그 판대로 자재가 들어갔다. 그때는 감사에 남길 내용을 돌려준다.
     """
     expected = resolve_recipe_for_reactor(connection, recipe_id, reactor)
     if expected == recipe_id:
-        return
+        return None
     if active_reactor_assignments(connection, find_chain_root(connection, recipe_id)):
+        started = _normalize_weighing_start(weighing_started_at)
+        if version_kept_since_weighing(connection, recipe_id, reactor, started):
+            return {
+                "reactor": reactor,
+                "kept_recipe_id": recipe_id,
+                "assigned_recipe_id": expected,
+                "weighing_started_at": started,
+            }
         detail = "이 반응기에 지정된 판이 아닙니다. 반응기를 다시 선택하세요."
     else:
         detail = "레시피가 개정되었습니다. 화면을 새로고침한 뒤 다시 확인하세요."
@@ -354,9 +390,26 @@ def build_router() -> APIRouter:
         recipe_id: int,
         total: float | None = Query(default=None, gt=0),
         reactor: int | None = Query(default=None, ge=1, le=4),
+        weighing_started_at: str | None = Query(default=None, max_length=40),
         connection: sqlite3.Connection = Depends(get_db),
     ) -> dict[str, Any]:
         # reactor: 반응기별 현재판 지정이 있으면 그 반응기의 판으로 귀결한다(저장 검증과 같은 규칙).
+        # weighing_started_at: 초안 복구용. 계량을 시작한 시각에 그 반응기의 판이 recipe_id 였으면
+        # (그 뒤 지정만 바뀜) 귀결하지 않고 그 판을 돌려준다 — 저장도 같은 규칙으로 받는다.
+        if reactor is not None and weighing_started_at:
+            expected = resolve_recipe_for_reactor(connection, recipe_id, reactor)
+            started = _normalize_weighing_start(weighing_started_at)
+            if expected != recipe_id and version_kept_since_weighing(
+                connection, recipe_id, reactor, started
+            ):
+                kept = blend_service.get_recipe_for_blend(
+                    connection, recipe_id, total, resolve_revision=False, reactor=reactor
+                )
+                if kept:
+                    labels = version_labels(connection, find_chain_root(connection, recipe_id))
+                    kept["recipe"]["version_kept"] = True
+                    kept["recipe"]["assigned_version_label"] = labels.get(int(expected), "")
+                    return kept
         result = blend_service.get_recipe_for_blend(connection, recipe_id, total, reactor=reactor)
         if not result:
             raise HTTPException(status_code=404, detail="레시피를 찾을 수 없습니다.")
@@ -1387,6 +1440,7 @@ def build_router() -> APIRouter:
                     return _mask_manual_entry(request, existing)
         if not body.details:
             raise HTTPException(status_code=400, detail="배합 상세가 비어 있습니다.")
+        version_kept: dict[str, Any] | None = None  # 계량 시작 후 반응기 지정이 바뀐 저장
         # 시험 배합(계약 §4) — recipe_id 는 서버가 NULL 로 강제하고(보내와도 무시),
         # 불러온 레시피는 base_recipe_id 로만 남는다(편차 허용치의 근거).
         is_test = bool(body.is_test)
@@ -1437,10 +1491,14 @@ def build_router() -> APIRouter:
             if recipe_id:
                 # 화면이 열려 있는 사이 개정됐으면 옛 배합비다 — 조용히 저장하지 않고 되돌린다.
                 # 반응기별 지정이 있으면 그 반응기에 지정된 판이어야 한다(배합 상세와 같은 규칙).
-                _ensure_expected_revision(connection, recipe_id, body.reactor)
+                version_kept = _ensure_expected_revision(
+                    connection, recipe_id, body.reactor, body.weighing_started_at
+                )
                 try:
                     details, total_amount = blend_service.derive_details_from_recipe(
-                        connection, recipe_id, body.total_amount, details, reactor=body.reactor
+                        connection, recipe_id, body.total_amount, details, reactor=body.reactor,
+                        # 계량한 판으로 저장할 때는 반응기 지정으로 다시 귀결하지 않는다.
+                        resolve_revision=version_kept is None,
                     )
                 except blend_service.RecipeMismatchError as exc:
                     raise HTTPException(status_code=400, detail=exc.detail) from exc
@@ -1653,6 +1711,16 @@ def build_router() -> APIRouter:
             target_label=record["product_lot"],
             details=create_audit_details,
         )
+        if version_kept:
+            write_audit_log(
+                connection,
+                action="blend_reactor_version_kept",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=str(record_id),
+                target_label=record["product_lot"],
+                details=version_kept,
+            )
         # 멱등 기록 — 저장과 같은 트랜잭션으로 남긴다(400 으로 중단된 저장은 id 를
         # 소모하지 않는다). 동시 요청이 먼저 커밋했으면 IntegrityError → 이 저장을
         # 통째로 롤백하고 먼저 커밋된 결과를 돌려준다.
@@ -2045,7 +2113,9 @@ def build_router() -> APIRouter:
         if blend_service.product_uses_reactor(connection, body.product_name) and body.reactor is None:
             raise HTTPException(status_code=400, detail="반응기를 선택하세요.")
         # 화면이 열린 사이 개정됐으면 옛 배합비 — 저장 거부(감사 F-5 / 단건과 동일).
-        _ensure_expected_revision(connection, body.recipe_id, body.reactor)
+        version_kept = _ensure_expected_revision(
+            connection, body.recipe_id, body.reactor, body.weighing_started_at
+        )
         tolerance = blend_service.recipe_tolerance_g(connection, body.recipe_id)
         # 저장 전 전 로트 도출·편차검사 (원자성: 하나라도 실패하면 중단, 저장 없음)
         # lot_totals 가 있으면 그 로트의 총량 오버라이드를 사용(초과 계량 증량).
@@ -2058,7 +2128,8 @@ def build_router() -> APIRouter:
             details = [d.model_dump() for d in lot]
             try:
                 derived, _total = blend_service.derive_details_from_recipe(
-                    connection, body.recipe_id, lot_total, details, reactor=body.reactor
+                    connection, body.recipe_id, lot_total, details, reactor=body.reactor,
+                    resolve_revision=version_kept is None,  # 계량한 판 유지(지정 재귀결 안 함)
                 )
             except blend_service.RecipeMismatchError as exc:
                 raise HTTPException(status_code=400, detail=f"로트 {lot_no}: {exc.detail}") from exc
@@ -2174,6 +2245,17 @@ def build_router() -> APIRouter:
                     "reason": (body.manual_absence_reason or "").strip()[:300],
                     "records": len(ids),
                 },
+            )
+        # 계량을 시작한 뒤 반응기 지정이 바뀌었지만 계량한 판으로 저장 — 전 로트 공통.
+        if version_kept:
+            write_audit_log(
+                connection,
+                action="blend_reactor_version_kept",
+                actor=current_user,
+                target_type="blend_record",
+                target_id=",".join(str(i) for i in ids),
+                target_label=f"{body.product_name} ({len(ids)}로트)",
+                details=version_kept,
             )
         # 앞 단계 기록에 없는 LOT 진행 — 로트별 record_id 에 대사용 기록(사유가 비어도 남는다).
         saved_at = utc_now_text()

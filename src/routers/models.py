@@ -284,6 +284,9 @@ class BlendCreateBody(BaseModel):
     # 않고 첫 결과를 그대로 돌려준다 — 타임아웃 재시도로 같은 계량값이 두 LOT 이 되는
     # 것을 막는다. 미전송(None)이면 종전과 동일하게 매번 새 기록(하위호환).
     request_id: str | None = Field(default=None, max_length=64)
+    # 계량 시작 시각(ISO, UTC). 그 뒤 책임자가 반응기 지정을 바꿨어도 시작 시각에 그 반응기의
+    # 판이었으면 계량한 판으로 저장한다(_ensure_expected_revision). 미전송이면 종전 규칙.
+    weighing_started_at: str | None = Field(default=None, max_length=40)
     # 시험 배합(2026-09-18). True 면 details[*].theory_amount 가 **목표량(g) 직접 입력**
     # 이고 총량은 서버가 그 합으로 산출한다. recipe_id 는 서버가 NULL 로 강제하며,
     # 불러온 레시피는 base_recipe_id 로만 남는다(편차 허용치의 근거). 반응기·이월·
@@ -340,6 +343,9 @@ class BlendContinuousBody(BaseModel):
     # 저장 멱등 키 — 단건(BlendCreateBody.request_id)과 동일 규약. 재시도가 N로트를
     # 두 벌 만드는 것을 막는다(미전송이면 종전 동작).
     request_id: str | None = Field(default=None, max_length=64)
+    # 계량 시작 시각(ISO, UTC). 그 뒤 책임자가 반응기 지정을 바꿨어도 시작 시각에 그 반응기의
+    # 판이었으면 계량한 판으로 저장한다(_ensure_expected_revision). 미전송이면 종전 규칙.
+    weighing_started_at: str | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def _check_worker_sign(self) -> "BlendContinuousBody":

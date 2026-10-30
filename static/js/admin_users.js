@@ -76,6 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ["blend_manual_absence_saved", "수기 입력(책임자 부재)"],
       ["blend_rescale_saved", "증량 배합 저장"],
       ["blend_discard_saved", "계량 중 자재 폐기"],
+      ["blend_reactor_version_kept", "계량한 판으로 저장(반응기 지정 변경)"],
       ["blend_batch_discarded", "배치 폐기"],
       ["blend_rescale_approve_denied", "증량 승인 거절"],
       // 총량 통제(2026-08-04) — 둘 다 저장을 막지 않고 기록만 남기는 사후 점검 신호.

@@ -82,6 +82,7 @@
     // 이 창이 쓰고 있는 임시저장 슬롯 id(최대 3칸 중 하나). 같은 레시피로 이어서 작업하는
     // 동안은 이 슬롯만 갱신한다. 저장 완료·복구 실패 시 null 로 되돌린다.
     draftSlotId: null,
+    weighingStartedAt: null,  // 계량 시작 시각(ISO) · 초안 왕복 · 저장에 실린다
     // 계량 중 자재 폐기 이력 [{material_name, material_code, amount_g}] — '처음부터 다시'
     // 재계량에서 실제로 버린 자재. 저장 body.discard_events 로 전송돼 기록에 남는다
     // (편차 강제라 최종 수치엔 안 보이는 소모의 유일한 흔적). 초안에도 왕복.
@@ -1130,7 +1131,9 @@
     }
     // 라벨 줄 칩이라 짧게 — 반응기 번호는 바로 아래 선택칸에 보이므로 판만 적는다.
     let text = r.version_label;
-    if (r.reactor_assigned) {
+    if (r.version_kept) {
+      text += " 계량한 판";  // 계량을 시작한 뒤 반응기 지정이 바뀌었다 · 이 판으로 저장된다
+    } else if (r.reactor_assigned) {
       if (r.version_name) text += ` ${r.version_name}`;
     } else {
       text += " 현재판";
@@ -1477,7 +1480,10 @@
       // 폐기 이력도 의미 있는 입력 — 전량 폐기 직후엔 화면이 비지만, 그 폐기 기록은
       // 초안에 남아야 창을 닫아도 다음 저장에 실린다(실물 소모의 유일한 흔적).
       || (state.discardEvents && state.discardEvents.length > 0);
-    if (!hasInput) return null;  // 의미 있는 입력이 없으면 초안 없음
+    if (!hasInput) { state.weighingStartedAt = null; return null; }  // 의미 있는 입력이 없으면 초안 없음
+    // 계량 시작 시각 — 첫 입력이 초안에 담기는 순간. 그 뒤 책임자가 반응기 지정을 바꿔도
+    // 서버는 이 시각의 판으로 저장을 받는다(_ensure_expected_revision · 2026-10-30).
+    if (!state.weighingStartedAt) state.weighingStartedAt = new Date().toISOString();
     return {
       recipe_id: state.current.recipe.id,
       // 목록에서 고른 id — 반응기별 판으로 바뀐 경우 recipe_id 는 목록에 없는 판일 수 있다.
@@ -1521,6 +1527,7 @@
         portions: (Array.isArray(it.portions) && it.portions.length)
           ? it.portions.map(Number) : undefined,
       })),
+      weighingStartedAt: state.weighingStartedAt,
       savedAt: new Date().toISOString(),
     };
   }
@@ -1596,6 +1603,7 @@
       if (blendDrafts && state.draftSlotId) blendDrafts.removeSlot(DRAFT_KIND, state.draftSlotId);
     } catch (_e) { /* 무시 */ }
     state.draftSlotId = null;
+    state.weighingStartedAt = null;
   }
 
   // F12: 본인 초안(이 kind)이 1건 이상이면 페이지 로드당 1회 안내 + 사이드바
@@ -1803,11 +1811,25 @@
     // 반응기별 판 지정 — 복구한 반응기로 판을 다시 정한다. 초안과 다른 판이면 새 판으로
     // 바꾸고 계량값은 버린다(목표량이 달라 그대로 얹으면 편차 판정이 틀린다).
     let versionSwitched = false;
+    let versionKeptLine = "";
+    // 구 초안(시작 시각 없음)은 마지막 저장 시각으로 대신한다 — 그 뒤에 바뀐 지정은 걸러진다.
+    const draftStarted = draft.weighingStartedAt || draft.savedAt || null;
     if (draft.reactor && reactorVersionRelevant()) {
       try {
-        const optionId = state.selectedRecipeOptionId || state.current.recipe.id;
-        const data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(draft.reactor)}`);
+        // 계량값이 있는 초안은 계량한 판 id 와 시작 시각을 보낸다 — 그 시각에 이 반응기의 판이었으면
+        // 서버가 그 판을 그대로 돌려준다(그 뒤 지정만 바뀐 경우 · 저장도 같은 규칙으로 받는다).
+        const weighed = (draft.items || []).some((it) =>
+          (it.actual_amount !== "" && it.actual_amount != null) || (it.material_lot || "").trim());
+        const optionId = weighed ? draft.recipe_id : (state.selectedRecipeOptionId || state.current.recipe.id);
+        const startedQ = weighed && draftStarted ? `&weighing_started_at=${encodeURIComponent(draftStarted)}` : "";
+        const data = await request(`/blend/recipes/${optionId}?reactor=${encodeURIComponent(draft.reactor)}${startedQ}`);
         if (data.recipe.id !== state.current.recipe.id) applyRecipeData(data, { keepSettings: true });
+        if (data.recipe.version_kept) {
+          const esc = blendDrafts ? blendDrafts.esc : String;
+          versionKeptLine = `<p class="blend-draft-notice-line">반응기 ${esc(draft.reactor)} 지정 판이 `
+            + `${esc(data.recipe.assigned_version_label)}로 바뀌었습니다. 계량한 `
+            + `${esc(data.recipe.version_label)} 그대로 이어서 합니다.</p>`;
+        }
         if (Number(data.recipe.id) !== Number(draft.recipe_id)) {
           versionSwitched = true;
           notify("반응기에 맞는 판으로 바꿨습니다.", "info");
@@ -1889,12 +1911,13 @@
     // 복구된 수기 입력 승인/부재 상태를 화면에 반영(잠금 해제 + 배너 문구).
     applyScaleOnlyToRows();
     updateManualEntryControl();
+    state.weighingStartedAt = draftStarted;  // 저장 때 서버가 판 판정에 쓴다
     notify("작성 중이던 배합을 복원했습니다.", "success");
     // 레시피 변경 고지 — 사라진 재료의 계량값은 조용히 버리지 않고 값까지 적어 남긴다.
     // 작업자 교대 문구를 앞에 얹어, 변경이 없어도 누가 계량했는지는 남는다(빈 상자 없음).
     if (blendDrafts) {
       const noticeHtml = blendDrafts.restoreNoticeHtml(diff);
-      showDraftNotice(workerLine + noticeHtml);
+      showDraftNotice(workerLine + versionKeptLine + noticeHtml);
       if (diff.legacy) {
         notify("레시피 변경 여부를 확인할 수 없는 오래된 임시저장입니다. 재료별 값을 확인하세요.", "warn");
       }
@@ -4476,6 +4499,8 @@
       manual_entry: state.items.some((it) => it.manual === true),
       // 저장 멱등 키 — 응답 유실 후 재시도해도 기록이 두 벌 생기지 않는다.
       request_id: _saveRequestId,
+      // 계량 시작 시각 — 그 뒤 반응기 지정이 바뀌어도 계량한 판으로 저장된다(서버 판정).
+      weighing_started_at: state.weighingStartedAt || null,
       details: state.items.map((it, idx) => ({
         material_id: it.material_id,
         material_name: it.material_name,

@@ -265,3 +265,136 @@ def test_root_delete_keeps_assignments_on_new_root():
     got = client.get(f"/api/recipes/{v3}/reactor-assignments").json()
     assert got["root_id"] == v2
     assert got["reactors"][3]["effective_recipe_id"] == v2
+
+
+def _iso_ago(hours):
+    from datetime import datetime, timedelta, timezone
+
+    at = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=hours)
+    return at.isoformat().replace("+00:00", "Z")
+
+
+def _backdate_assignments(product_root, hours):
+    """지금까지의 지정 행을 hours 시간 전으로 옮긴다(같은 초 안에 지정·계량이 겹치지 않게)."""
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE recipe_reactor_assignments SET assigned_at = ? WHERE chain_root_id = ?",
+            (_iso_ago(hours), product_root),
+        )
+        conn.commit()
+
+
+def _kept_audits(target_label_like):
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT details_json FROM audit_logs WHERE action = 'blend_reactor_version_kept' "
+            "AND target_label LIKE ?",
+            (target_label_like,),
+        ).fetchall()
+
+
+def test_save_keeps_weighed_version_when_assignment_changed_after_start():
+    """계량을 v2(반응기 2 지정)로 시작한 뒤 책임자가 반응기 2를 v3로 바꿔도 v2 로 저장한다."""
+    client = _client()
+    headers = _mgr(client)
+    product, v1, v2, v3 = _chain(client, headers)
+    assert _assign(client, headers, v3, 2, v2).status_code == 200
+    _backdate_assignments(v1, 2)          # 2시간 전: 반응기 2 → v2
+    started = _iso_ago(1)                 # 1시간 전: v2 로 계량 시작
+    assert _assign(client, headers, v3, 2, v3).status_code == 200  # 지금: 반응기 2 → v3
+    worker = _blend_session(client, headers)
+    base = {
+        "product_name": product, "worker": worker, "work_date": "2026-10-21",
+        "total_amount": 100, "reactor": 2, "recipe_id": v2, "details": _details(70, 30),
+    }
+
+    # 시작 시각이 없거나 24시간보다 오래됐으면 종전대로 409.
+    assert client.post("/api/blend/records", json=base, headers=headers).status_code == 409
+    old = client.post(
+        "/api/blend/records", json={**base, "weighing_started_at": _iso_ago(30)}, headers=headers
+    )
+    assert old.status_code == 409
+
+    ok = client.post(
+        "/api/blend/records", json={**base, "weighing_started_at": started}, headers=headers
+    )
+    assert ok.status_code == 200, ok.text
+    from src.db import get_connection
+
+    with get_connection() as conn:
+        stored = conn.execute(
+            "SELECT recipe_id FROM blend_records WHERE id = ?", (ok.json()["id"],)
+        ).fetchone()["recipe_id"]
+    assert stored == v2
+    audits = _kept_audits(ok.json()["product_lot"])
+    assert len(audits) == 1
+    assert '"assigned_recipe_id": %d' % v3 in audits[0]["details_json"]
+
+    # 다중 계량도 같은 규칙.
+    cont = {
+        "product_name": product, "work_date": "2026-10-21", "total_amount": 100, "reactor": 2,
+        "recipe_id": v2, "lots": [_details(70, 30)],
+    }
+    assert client.post("/api/blend/records/continuous", json=cont, headers=headers).status_code == 409
+    ok = client.post(
+        "/api/blend/records/continuous",
+        json={**cont, "weighing_started_at": started}, headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+    assert len(_kept_audits(f"{product} (1로트)")) == 1
+
+    # 시작 시각에도 v2 가 아니었던 판(v1)은 여전히 거부.
+    bad = client.post(
+        "/api/blend/records",
+        json={**base, "recipe_id": v1, "details": _details(60, 40), "weighing_started_at": started},
+        headers=headers,
+    )
+    assert bad.status_code == 409
+
+
+def test_save_keeps_tip_when_reactor_assigned_after_start():
+    """지정 없이 현재판(v3)으로 계량을 시작했는데 그 뒤 반응기 2가 v2로 지정됐다 — v3 로 저장."""
+    client = _client()
+    headers = _mgr(client)
+    product, _v1, v2, v3 = _chain(client, headers)
+    started = _iso_ago(1)
+    assert _assign(client, headers, v3, 2, v2).status_code == 200
+    worker = _blend_session(client, headers)
+    body = {
+        "product_name": product, "worker": worker, "work_date": "2026-10-21",
+        "total_amount": 100, "reactor": 2, "recipe_id": v3, "details": _details(50, 50),
+    }
+    assert client.post("/api/blend/records", json=body, headers=headers).status_code == 409
+    ok = client.post(
+        "/api/blend/records", json={**body, "weighing_started_at": started}, headers=headers
+    )
+    assert ok.status_code == 200, ok.text
+
+
+def test_blend_detail_returns_weighed_version_for_restore():
+    """초안 복구: 시작 시각을 주면 그때의 판(v2)을 돌려주고, 없으면 지금 지정(v3)으로 귀결한다."""
+    client = _client()
+    headers = _mgr(client)
+    _product, v1, v2, v3 = _chain(client, headers)
+    assert _assign(client, headers, v3, 2, v2).status_code == 200
+    _backdate_assignments(v1, 2)
+    started = _iso_ago(1)
+    assert _assign(client, headers, v3, 2, v3).status_code == 200
+
+    now = client.get(f"/api/blend/recipes/{v2}", params={"reactor": 2}).json()["recipe"]
+    assert now["id"] == v3 and not now.get("version_kept")
+
+    kept = client.get(
+        f"/api/blend/recipes/{v2}", params={"reactor": 2, "weighing_started_at": started}
+    ).json()["recipe"]
+    assert kept["id"] == v2 and kept["version_kept"] is True
+    assert kept["version_label"] == "v2" and kept["assigned_version_label"] == "v3"
+
+    stale = client.get(
+        f"/api/blend/recipes/{v2}", params={"reactor": 2, "weighing_started_at": _iso_ago(30)}
+    ).json()["recipe"]
+    assert stale["id"] == v3

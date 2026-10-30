@@ -334,6 +334,41 @@ def resolve_recipe_for_reactor(connection, recipe_id: int, reactor: int | None) 
     return resolve_chain_tip(connection, recipe_id)
 
 
+def version_kept_since_weighing(
+    connection, recipe_id: int, reactor: int | None, started_at: str | None
+) -> bool:
+    """계량을 시작한 시각에 이 반응기의 귀결 판이 recipe_id 였는가.
+
+    계량 도중(또는 초안으로 남긴 사이) 책임자가 반응기 지정을 바꾸면 귀결 판이 달라진다.
+    그래도 반응기에는 이미 옛 판 기준으로 자재가 들어가 있으니 기록은 계량한 판으로 남긴다
+    (사용자 결정 2026-10-30). 판정:
+      - 그 시각의 지정(추가 전용 표, assigned_at <= started_at 중 마지막 행)이 recipe_id 면 참.
+      - 그 시각에 지정이 없었으면(또는 해제) 체인 현재판을 따랐다 — 현재판이 지금도
+        recipe_id 일 때만 참(현재판까지 개정됐으면 개정 검사로 돌려보낸다).
+    started_at 은 UTC 'YYYY-MM-DDTHH:MM:SSZ'(utc_now_text 형식)로 정규화돼 있어야 한다.
+    """
+    if reactor is None or not started_at:
+        return False
+    row = connection.execute(
+        "SELECT status FROM recipes WHERE id = ?", (int(recipe_id),)
+    ).fetchone()
+    if row is None or row["status"] in ("canceled", "draft"):
+        return False
+    root_id = find_chain_root(connection, int(recipe_id))
+    try:
+        then = connection.execute(
+            "SELECT recipe_id FROM recipe_reactor_assignments "
+            "WHERE chain_root_id = ? AND reactor = ? AND assigned_at <= ? "
+            "ORDER BY id DESC LIMIT 1",
+            (int(root_id), int(reactor), started_at),
+        ).fetchone()
+    except sqlite3.OperationalError:  # 표 없음
+        return False
+    if then is not None and then["recipe_id"] is not None:
+        return int(then["recipe_id"]) == int(recipe_id)
+    return resolve_chain_tip(connection, int(recipe_id)) == int(recipe_id)
+
+
 def version_labels(connection, root_id: int) -> dict[int, str]:
     """체인 판마다 "vN" 표기. fetch_chain 순서(등록 시각, id)로 센다.
 
