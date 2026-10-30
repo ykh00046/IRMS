@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
             # Recipe-Intake 기계 호출(쿠키 세션 없음) — 사설 IP·비터널(+설정 시 전용 쓰기 토큰)이 대신 막는다
             # (public_recipe_usage_routes._require_intake_token).
             re.compile(r"^/api/intake/recipe-usage$"),
+            re.compile(r"^/api/intake/recipe-watch$"),
         ],
     )
     # CSRF 면제로 뚫린 로그인 경로를 Origin 검사로 막는다 (감사 F-10).

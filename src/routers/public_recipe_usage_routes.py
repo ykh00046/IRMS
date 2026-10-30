@@ -1,6 +1,10 @@
 """양산대응 배합 사용량 — Recipe-Intake 입구(쓰기)와 재고 대시보드용 조회(읽기).
 
 쓰기와 읽기는 보호가 다르다:
+    POST /intake/recipe-watch
+        원재료·코드 감시 결과(최신 목록 하나). 보호는 recipe-usage 입구와 같다.
+    GET /recipe-watch
+        책임자 화면 배너용 최신 감시 결과(책임자 로그인 필요).
     POST /intake/recipe-usage
         Recipe-Intake 가 일일 장부 스냅샷을 보낸다. 사설 IP 필수, 터널 경유(CF 헤더)는 403.
         전용 토큰(X-IRMS-Intake-Token = IRMS_RECIPE_INTAKE_TOKEN)은 설정했을 때만 필수
@@ -25,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .. import config as cfg
+from ..auth import require_access_level
 from ..db import get_db, local_today_text
 from ..middleware.internal_only import is_private
 from ..services import recipe_usage_service
@@ -104,6 +109,22 @@ class RecipeUsageSnapshot(BaseModel):
         return self
 
 
+class RecipeWatchItem(BaseModel):
+    # kind 는 자유 문자열 — 송신 쪽이 종류를 늘려도 받는다(ERP 대기·ERP 생김·신규 원재료 후보 등).
+    kind: str = Field(min_length=1, max_length=40)
+    code: str = Field(default="", max_length=40)
+    name: str = Field(default="", max_length=200)
+    detail: str = Field(default="", max_length=500)
+    action_needed: bool = False
+
+
+class RecipeWatchSnapshot(BaseModel):
+    source: str = Field(default=recipe_usage_service.DEFAULT_SOURCE, pattern=_SOURCE_PATTERN)
+    generated_at: str | None = Field(default=None, max_length=40)
+    erp_file: str | None = Field(default=None, max_length=200)
+    items: list[RecipeWatchItem] = Field(default_factory=list, max_length=1000)
+
+
 def _require_intake_token(request: Request) -> str:
     """입구 보호 — 터널 차단 → 사설 IP → (토큰이 설정돼 있으면) 토큰 일치 순.
 
@@ -145,6 +166,29 @@ def build_router() -> APIRouter:
             rows=[r.model_dump() for r in payload.rows],
             client_ip=client_ip,
         )
+
+    @router.post("/intake/recipe-watch")
+    def intake_recipe_watch(
+        payload: RecipeWatchSnapshot,
+        client_ip: str = Depends(_require_intake_token),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        return recipe_usage_service.replace_watch(
+            connection,
+            source=payload.source,
+            generated_at=payload.generated_at,
+            erp_file=payload.erp_file,
+            items=[i.model_dump() for i in payload.items],
+            client_ip=client_ip,
+        )
+
+    # 책임자 화면 배너용 — 책임자 로그인이 있어야 한다(터널로 들어온 책임자도 본다).
+    @router.get("/recipe-watch")
+    def recipe_watch(
+        _user: dict[str, Any] = Depends(require_access_level("manager")),
+        connection: sqlite3.Connection = Depends(get_db),
+    ) -> dict[str, Any]:
+        return recipe_usage_service.latest_watch(connection)
 
     @router.get("/public/recipe-usage")
     def recipe_usage(

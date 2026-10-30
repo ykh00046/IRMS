@@ -1559,3 +1559,38 @@ tr:hover td.sticky-right {
 .chart-wrap { position: relative; flex: 1; min-height: 260px; margin-top: 8px; }
 .chart-wrap canvas { max-height: 300px; }
 .small { font-size: var(--fs-2xs); margin-top: 6px; }
+
+/* =========================================================================
+   원재료·코드 감시 배너(Recipe-Intake) — 책임자 화면 상단 한 줄. 누르면 목록 창.
+   ========================================================================= */
+.rw-banner {
+  display: block;
+  width: calc(100% - 2 * var(--space-6));
+  margin: var(--space-3) var(--space-6) 0;
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--status-warning-bg);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
+  border-left: 4px solid var(--status-warning);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rw-banner.is-stale {
+  background: var(--bg-surface-200);
+  border-color: var(--border-strong);
+  border-left-color: var(--text-tertiary);
+  color: var(--text-secondary);
+}
+.rw-modal-card { max-width: 760px; }
+.rw-table { width: 100%; font-size: var(--fs-sm); }
+.rw-table td { vertical-align: top; }
+.rw-table td.rw-code { font-family: var(--font-mono); white-space: nowrap; }
+.rw-table tr.rw-action td:first-child { color: var(--status-warning); font-weight: 600; }
+.rw-modal-actions { justify-content: flex-end; margin-top: var(--space-4); }

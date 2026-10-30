@@ -11,6 +11,7 @@
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from typing import Any
 
 from ..db import utc_now_text
@@ -135,3 +136,57 @@ def import_status(connection: sqlite3.Connection, *, source: str = DEFAULT_SOURC
     out["unknown_codes"] = json.loads(out["unknown_codes"] or "[]")
     out["received"] = True
     return out
+
+
+# ── 원재료·코드 감시(Recipe-Intake watch_codes) ─────────────────────────
+WATCH_STALE_HOURS = 24  # 이보다 오래 갱신이 없으면 배너가 '감시 결과 오래됨'을 띄운다
+
+
+def replace_watch(
+    connection: sqlite3.Connection,
+    *,
+    source: str,
+    generated_at: str | None,
+    erp_file: str | None,
+    items: list[dict[str, Any]],
+    client_ip: str | None,
+) -> dict[str, Any]:
+    """최신 감시 목록을 통째로 바꿔 넣는다. 0건이면 '확인할 것 없음'(배너 내림)."""
+    action_needed = sum(1 for i in items if i.get("action_needed"))
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO recipe_watch_latest
+                (source, generated_at, erp_file, items_json, action_needed, received_at, client_ip)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                generated_at = excluded.generated_at, erp_file = excluded.erp_file,
+                items_json = excluded.items_json, action_needed = excluded.action_needed,
+                received_at = excluded.received_at, client_ip = excluded.client_ip
+            """,
+            (source, generated_at, erp_file, json.dumps(items, ensure_ascii=False),
+             action_needed, utc_now_text(), client_ip),
+        )
+    return {"ok": True, "action_needed": action_needed, "items": len(items)}
+
+
+def latest_watch(connection: sqlite3.Connection, *, source: str = DEFAULT_SOURCE) -> dict[str, Any]:
+    row = connection.execute(
+        "SELECT generated_at, erp_file, items_json, action_needed, received_at "
+        "FROM recipe_watch_latest WHERE source = ?",
+        (source,),
+    ).fetchone()
+    if row is None:
+        return {"source": source, "received": False, "stale": False, "action_needed": 0, "items": []}
+    received = datetime.fromisoformat(str(row["received_at"]).replace("Z", "+00:00"))
+    age_h = (datetime.now(timezone.utc) - received).total_seconds() / 3600
+    return {
+        "source": source,
+        "received": True,
+        "generated_at": row["generated_at"],
+        "erp_file": row["erp_file"],
+        "received_at": row["received_at"],
+        "stale": age_h > WATCH_STALE_HOURS,
+        "action_needed": int(row["action_needed"]),
+        "items": json.loads(row["items_json"] or "[]"),
+    }

@@ -6,7 +6,7 @@
     <title>BRM · {% block title %}{% endblock %}</title>
     <link rel="icon" type="image/png" href="/static/img/favicon.png" />
     <link rel="stylesheet" href="/static/css/fonts.css?v=20260910a" />
-    <link rel="stylesheet" href="/static/css/common.css?v=20260910a" />
+    <link rel="stylesheet" href="/static/css/common.css?v=20261030a" />
     <link rel="stylesheet" href="/static/css/assistant.css?v=20260910a" />
     {% block styles %}{% endblock %}
   </head>
@@ -136,6 +136,27 @@
           </div>
         </header>
 
+        {% if can_manage or (current_user and current_user.access_level in ["manager", "admin"]) %}
+        {# 원재료·코드 감시(Recipe-Intake) 배너 · 책임자 화면 전용(2026-10-30 사용자 결정).
+           확인할 항목이 있거나 하루 넘게 갱신이 없을 때만 common.js 가 연다. #}
+        <button type="button" id="rw-banner" class="rw-banner" hidden></button>
+        <div id="rw-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="rw-modal-title" hidden>
+          <div class="modal-card rw-modal-card">
+            <h2 id="rw-modal-title" class="panel-title">원재료 확인 목록</h2>
+            <p id="rw-modal-sub" class="panel-subtitle"></p>
+            <div class="table-wrap">
+              <table class="rw-table">
+                <thead><tr><th>종류</th><th>코드</th><th>이름</th><th>내용</th></tr></thead>
+                <tbody id="rw-modal-body"></tbody>
+              </table>
+            </div>
+            <div class="button-row rw-modal-actions">
+              <button type="button" id="rw-modal-close" class="btn">닫기</button>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
         <main id="main-content" class="app-content page-grid {% block main_class %}{% endblock %}" tabindex="-1">
           {% block content %}{% endblock %}
         </main>
@@ -156,7 +177,7 @@
     <script src="/static/js/common/ui.js?v=20260910a"></script>
     <script src="/static/js/common/auto-refresh.js?v=20261029a"></script>
     <script src="/static/js/common/audio.js?v=20260910a"></script>
-    <script src="/static/js/common.js?v=20260929a"></script>
+    <script src="/static/js/common.js?v=20261030a"></script>
     <script src="/static/js/assistant.js?v=20260910b"></script>
     {% block scripts %}{% endblock %}
   </body>

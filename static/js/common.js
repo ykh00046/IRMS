@@ -82,3 +82,57 @@
     })
     .catch(() => {});
 })();
+
+// ── 원재료·코드 감시 배너(Recipe-Intake · 책임자 화면 전용) ──────────────────
+// 배너 자리는 책임자에게만 렌더된다. 확인할 항목이 있으면 첫 항목과 건수를, 하루 넘게
+// 갱신이 없으면 '감시 결과 오래됨'을 띄운다. 조용하면 아무것도 보이지 않는다.
+(function () {
+  "use strict";
+  const banner = document.getElementById("rw-banner");
+  if (!banner) return;
+  const modal = document.getElementById("rw-modal");
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const when = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  fetch("/api/recipe-watch", { credentials: "same-origin" })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (!data || !data.received) return;
+      const items = Array.isArray(data.items) ? data.items : [];
+      const action = items.filter((i) => i.action_needed);
+      if (data.stale) {
+        banner.textContent = `원재료 감시 결과 오래됨 · 마지막 수신 ${when(data.received_at)}`;
+        banner.classList.add("is-stale");
+      } else if (action.length) {
+        const first = action[0];
+        const head = [first.kind, first.code, first.name].filter(Boolean).join(" ");
+        const more = action.length > 1 ? ` 외 ${action.length - 1}건` : "";
+        banner.textContent = `원재료 확인 필요 ${action.length}건 · ${head}${more}`;
+      } else {
+        return;
+      }
+      banner.hidden = false;
+      // 확인 필요 항목을 먼저, 나머지는 받은 순서대로.
+      const rows = action.concat(items.filter((i) => !i.action_needed));
+      document.getElementById("rw-modal-body").innerHTML = rows.length
+        ? rows.map((i) => `<tr class="${i.action_needed ? "rw-action" : ""}">`
+            + `<td>${esc(i.kind)}</td><td class="rw-code">${esc(i.code)}</td>`
+            + `<td>${esc(i.name)}</td><td>${esc(i.detail)}</td></tr>`).join("")
+        : '<tr><td colspan="4">확인할 항목이 없습니다.</td></tr>';
+      document.getElementById("rw-modal-sub").textContent =
+        [data.erp_file, data.received_at ? `수신 ${when(data.received_at)}` : ""].filter(Boolean).join(" · ");
+      banner.addEventListener("click", () => {
+        modal.hidden = false;
+        document.getElementById("rw-modal-close").focus();
+      });
+      document.getElementById("rw-modal-close").addEventListener("click", () => { modal.hidden = true; });
+      modal.addEventListener("click", (e) => { if (e.target === modal) modal.hidden = true; });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.hidden = true; });
+    })
+    .catch(() => {});
+})();

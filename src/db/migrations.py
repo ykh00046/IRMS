@@ -1037,6 +1037,22 @@ def apply_schema_migrations(connection: sqlite3.Connection) -> None:
         """
     )
 
+    # Recipe-Intake 원재료·코드 감시 결과(2026-10-30). 최신 목록 하나만 둔다(이력 없음) —
+    # 책임자 화면 배너가 읽는다. source 별 한 행.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_watch_latest (
+            source TEXT PRIMARY KEY,
+            generated_at TEXT,
+            erp_file TEXT,
+            items_json TEXT NOT NULL,
+            action_needed INTEGER NOT NULL,
+            received_at TEXT NOT NULL,
+            client_ip TEXT
+        )
+        """
+    )
+
     # 양산대응 배합 사용량(2026-10-28). 메신저 레시피 이미지에서 Recipe-Intake 가 만든 일일 장부를
     # 받아 둔다. 배합 기록(blend_records)과 섞지 않는다 — 반제품제조 불출량(material-usage)은 불변.
     # 입구는 (source, 기간) 단위로 통째로 바꿔 넣는다(멱등). 설계: Recipe-Intake docs/2026-10-28-…design.md
